@@ -2,7 +2,7 @@ use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
-use crate::task::task_source_checker::{task_cwd, task_source_content_hash, task_source_paths};
+use crate::task::task_source_checker::{task_cache_inputs, task_cwd};
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
 use eyre::{Context, Result, bail};
@@ -33,8 +33,11 @@ struct CacheKeyMaterial<'a> {
     run: &'a [RunEntry],
     args: &'a [String],
     shell: &'a Option<String>,
+    outputs: Vec<String>,
+    root: PathBuf,
     source_hash: String,
     environment: BTreeMap<String, Option<String>>,
+    vars: BTreeMap<String, String>,
     tools: Vec<String>,
     os: &'static str,
     arch: &'static str,
@@ -60,15 +63,25 @@ impl TaskArtifactCache {
         toolset: &Toolset,
         resolved_env: &BTreeMap<String, String>,
         declared_env: &[(String, String)],
-    ) -> Result<Self> {
+    ) -> Result<Option<Self>> {
         Settings::get().ensure_experimental("task artifact caching")?;
         let root = task_cwd(task, config).await?;
         validate_config(task, &root)?;
         let output_roots = resolve_output_roots(task, &root, false)?;
-        for source in task_source_paths(task, config).await? {
+        for output in &output_roots {
+            ensure_no_symlink_ancestors(&root, output)?;
+        }
+        let Some(inputs) = task_cache_inputs(task, config).await? else {
+            warn!(
+                "task {} has sources defined but no matching files found; artifact caching disabled",
+                task.name
+            );
+            return Ok(None);
+        };
+        for source in &inputs.source_paths {
             if output_roots
                 .iter()
-                .any(|output| source == *output || source.starts_with(output))
+                .any(|output| source == output || source.starts_with(output))
             {
                 bail!(
                     "task {} cache outputs must not contain source {}",
@@ -78,16 +91,21 @@ impl TaskArtifactCache {
             }
         }
 
-        let source_hash = task_source_content_hash(task, config)
-            .await?
-            .ok_or_else(|| eyre::eyre!("task {} has no matching source files", task.name))?;
         let mut environment = declared_env
             .iter()
             .map(|(key, value)| (key.clone(), Some(value.clone())))
             .collect::<BTreeMap<_, _>>();
-        for key in &task.cache.env {
+        let cache_config = task.cache.as_ref().expect("cache must be configured");
+        for key in &cache_config.env {
             environment.insert(key.clone(), resolved_env.get(key).cloned());
         }
+        let vars = task
+            .tera_ctx(config)
+            .await?
+            .get("vars")
+            .map(|value| serde::Deserialize::deserialize(value.clone()))
+            .transpose()?
+            .unwrap_or_default();
         let mut tools = toolset
             .list_current_versions()
             .into_iter()
@@ -98,11 +116,14 @@ impl TaskArtifactCache {
         let material = CacheKeyMaterial {
             format: CACHE_FORMAT_VERSION,
             task: &task.name,
-            run: &task.run,
+            run: task.run(),
             args: &task.args,
             shell: &task.shell,
-            source_hash,
+            outputs: task.outputs.patterns(),
+            root: inputs.root_identity,
+            source_hash: inputs.source_hash,
             environment,
+            vars,
             tools,
             os: std::env::consts::OS,
             arch: std::env::consts::ARCH,
@@ -118,11 +139,11 @@ impl TaskArtifactCache {
         let state_path = dirs::STATE
             .join("task-artifacts")
             .join(format!("{state_identity}.key"));
-        Ok(Self {
+        Ok(Some(Self {
             root,
             key,
             state_path,
-        })
+        }))
     }
 
     pub fn key(&self) -> &str {
@@ -154,6 +175,9 @@ impl TaskArtifactCache {
             for root in &manifest.roots {
                 ensure_safe_relative(root)?;
             }
+            if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
+                bail!("task cache manifest contains duplicate or nested roots");
+            }
 
             let staging = tempfile::Builder::new()
                 .prefix(".mise-task-cache-")
@@ -172,26 +196,23 @@ impl TaskArtifactCache {
                 if !restored.exists() && fs::symlink_metadata(&restored).is_err() {
                     bail!("task cache archive is missing {}", rel.display());
                 }
+                ensure_no_symlink_ancestors(staging.path(), rel)?;
+                ensure_no_symlink_ancestors(&self.root, rel)?;
             }
 
             let mut remove = resolve_output_roots(task, &self.root, false)?;
             remove.extend(manifest.roots.iter().cloned());
-            remove.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
-            remove.dedup();
-            for rel in remove {
-                file::remove_all(self.root.join(rel))?;
+            let remove = remove_nested_roots(remove);
+            for rel in &remove {
+                ensure_no_symlink_ancestors(&self.root, rel)?;
             }
-
-            for rel in &manifest.roots {
-                let from = staging.path().join(rel);
-                let to = self.root.join(rel);
-                if let Some(parent) = to.parent() {
-                    file::create_dir_all(parent)?;
-                }
-                file::move_file(from, to)?;
+            install_transactionally(&self.root, staging.path(), &manifest.roots, &remove)?;
+            if let Err(err) = file::touch_file(&archive_path) {
+                warn!("failed to update task cache archive access time: {err}");
             }
-            file::touch_file(&archive_path)?;
-            file::touch_file(&manifest_path)?;
+            if let Err(err) = file::touch_file(&manifest_path) {
+                warn!("failed to update task cache manifest access time: {err}");
+            }
             Ok(())
         };
 
@@ -211,6 +232,9 @@ impl TaskArtifactCache {
         let roots = remove_nested_roots(roots);
         if roots.is_empty() {
             bail!("task {} produced no cacheable outputs", task.name);
+        }
+        for root in &roots {
+            ensure_no_symlink_ancestors(&self.root, root)?;
         }
 
         let cache_dir = dirs::CACHE.join("task-artifacts").join("v1");
@@ -324,6 +348,111 @@ fn remove_nested_roots(mut roots: Vec<PathBuf>) -> Vec<PathBuf> {
     result
 }
 
+fn ensure_no_symlink_ancestors(root: &Path, rel: &Path) -> Result<()> {
+    let mut current = root.to_path_buf();
+    let component_count = rel.components().count();
+    for component in rel.components().take(component_count.saturating_sub(1)) {
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!(
+                    "output path {} traverses symlink ancestor {}",
+                    rel.display(),
+                    current.display()
+                );
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(())
+}
+
+fn install_transactionally(
+    root: &Path,
+    staging: &Path,
+    install_roots: &[PathBuf],
+    remove_roots: &[PathBuf],
+) -> Result<()> {
+    let backup = tempfile::Builder::new()
+        .prefix(".mise-task-cache-backup-")
+        .tempdir_in(root)?;
+    let mut backed_up = Vec::new();
+    for rel in remove_roots {
+        let from = root.join(rel);
+        match fs::symlink_metadata(&from) {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                rollback_install(root, backup.path(), &[], &backed_up);
+                return Err(err).wrap_err_with(|| {
+                    format!("failed to inspect existing output {}", from.display())
+                });
+            }
+        }
+        let to = backup.path().join(rel);
+        let backup_output = (|| -> Result<()> {
+            if let Some(parent) = to.parent() {
+                file::create_dir_all(parent)?;
+            }
+            fs::rename(&from, &to).wrap_err_with(|| format!("failed to back up {}", rel.display()))
+        })();
+        if let Err(err) = backup_output {
+            rollback_install(root, backup.path(), &[], &backed_up);
+            return Err(err);
+        }
+        backed_up.push(rel.clone());
+    }
+
+    let mut installed = Vec::new();
+    for rel in install_roots {
+        let from = staging.join(rel);
+        let to = root.join(rel);
+        let install = (|| -> Result<()> {
+            ensure_no_symlink_ancestors(root, rel)?;
+            if let Some(parent) = to.parent() {
+                file::create_dir_all(parent)?;
+            }
+            fs::rename(&from, &to)
+                .wrap_err_with(|| format!("failed to install cached output {}", rel.display()))
+        })();
+        if let Err(err) = install {
+            rollback_install(root, backup.path(), &installed, &backed_up);
+            return Err(err);
+        }
+        installed.push(rel.clone());
+    }
+    Ok(())
+}
+
+fn rollback_install(root: &Path, backup: &Path, installed: &[PathBuf], backed_up: &[PathBuf]) {
+    for rel in installed.iter().rev() {
+        if let Err(err) = file::remove_all(root.join(rel)) {
+            warn!(
+                "failed to remove partial cache restore {}: {err}",
+                rel.display()
+            );
+        }
+    }
+    for rel in backed_up.iter().rev() {
+        let from = backup.join(rel);
+        let to = root.join(rel);
+        if let Some(parent) = to.parent()
+            && let Err(err) = file::create_dir_all(parent)
+        {
+            warn!(
+                "failed to prepare cache restore rollback {}: {err}",
+                rel.display()
+            );
+            continue;
+        }
+        if let Err(err) = fs::rename(&from, &to) {
+            warn!("failed to roll back cached output {}: {err}", rel.display());
+        }
+    }
+}
+
 fn write_archive(path: &Path, root: &Path, roots: &[PathBuf]) -> Result<()> {
     let file = File::create(path)?;
     let encoder = zstd::Encoder::new(file, 0)?;
@@ -422,5 +551,42 @@ mod tests {
             ]),
             vec![PathBuf::from("coverage"), PathBuf::from("dist")]
         );
+    }
+
+    #[test]
+    fn failed_install_restores_previous_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/result.txt"), "old").unwrap();
+        fs::create_dir(staging.path().join("dist")).unwrap();
+        fs::write(staging.path().join("dist/result.txt"), "new").unwrap();
+
+        assert!(
+            install_transactionally(
+                root.path(),
+                staging.path(),
+                &[PathBuf::from("dist"), PathBuf::from("missing")],
+                &[PathBuf::from("dist")],
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("dist/result.txt")).unwrap(),
+            "old"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_ancestors_are_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        symlink(outside.path(), root.path().join("build")).unwrap();
+
+        assert!(ensure_no_symlink_ancestors(root.path(), Path::new("build/dist")).is_err());
+        assert!(ensure_no_symlink_ancestors(root.path(), Path::new("build")).is_ok());
     }
 }

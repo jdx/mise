@@ -34,7 +34,7 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub outputs: TaskOutputs,
     #[serde(default)]
-    pub cache: TaskCacheConfig,
+    pub cache: Option<TaskCacheConfig>,
     #[serde(default)]
     pub output: Option<TaskOutput>,
     #[serde(default)]
@@ -168,8 +168,7 @@ impl Task {
             self.outputs = template.outputs.clone();
         }
 
-        if self.cache == TaskCacheConfig::default() && template.cache != TaskCacheConfig::default()
-        {
+        if self.cache.is_none() {
             self.cache = template.cache.clone();
         }
 
@@ -335,6 +334,28 @@ mod tests {
         };
         overridden.merge_template(&template);
         assert_eq!(overridden.output, Some(TaskOutput::Interleave));
+    }
+
+    #[test]
+    fn test_merge_template_cache_can_be_disabled_locally() {
+        let template = TaskTemplate {
+            cache: Some(TaskCacheConfig {
+                enabled: true,
+                env: vec!["PROFILE".to_string()],
+            }),
+            ..Default::default()
+        };
+
+        let mut inherited = Task::default();
+        inherited.merge_template(&template);
+        assert!(inherited.cache.as_ref().is_some_and(|cache| cache.enabled));
+
+        let mut disabled = Task {
+            cache: Some(TaskCacheConfig::default()),
+            ..Default::default()
+        };
+        disabled.merge_template(&template);
+        assert_eq!(disabled.cache, Some(TaskCacheConfig::default()));
     }
 
     #[test]

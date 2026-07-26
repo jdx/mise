@@ -41,6 +41,34 @@ EOF
 
 assert_fail_contains "mise run build" "cache output must stay within"
 
+mkdir outside
+ln -s outside build
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "mkdir -p build/dist"
+sources = ["input"]
+outputs = ["build/dist"]
+cache = { enabled = true }
+EOF
+
+assert_fail_contains "mise run build" "traverses symlink ancestor"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "touch input"
+sources = ["input"]
+outputs = ["input"]
+cache = { enabled = true }
+EOF
+
+assert_fail_contains "mise run build" "cache outputs must not contain source"
+
 cat <<'EOF' >mise.toml
 [settings]
 experimental = true

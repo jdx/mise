@@ -228,7 +228,7 @@ pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
 async fn collect_source_metadatas(
     task: &Task,
     config: &Arc<Config>,
-) -> Result<(PathBuf, Vec<(PathBuf, fs::Metadata)>)> {
+) -> Result<(PathBuf, PathBuf, Vec<(PathBuf, fs::Metadata)>)> {
     let root = task_cwd(task, config).await?;
     // Anchor the Override matcher at the outermost config root that is an
     // ancestor of the task CWD (i.e. the workspace root). This allows
@@ -267,7 +267,7 @@ async fn collect_source_metadatas(
             source_metadatas.push((config_path, meta));
         }
     }
-    Ok((root, source_metadatas))
+    Ok((root, match_root_owned, source_metadatas))
 }
 
 /// Compute the current source hash for a task. Returns `(hash, hash_file_path)`
@@ -280,7 +280,7 @@ async fn compute_source_hash(
         return Ok(None);
     }
     let use_content_hash = Settings::get().task.source_freshness_hash_contents;
-    let (root, source_metadatas) = collect_source_metadatas(task, config).await?;
+    let (root, _, source_metadatas) = collect_source_metadatas(task, config).await?;
     if source_metadatas.is_empty() {
         return Ok(None);
     }
@@ -299,38 +299,60 @@ async fn compute_source_hash(
     Ok(Some((source_hash, source_hash_path)))
 }
 
-/// Compute a stable content hash for artifact-cache inputs.
-///
-/// Unlike freshness state, this deliberately excludes absolute workspace paths
-/// so identical checkouts can share entries in the global mise cache.
-pub async fn task_source_content_hash(task: &Task, config: &Arc<Config>) -> Result<Option<String>> {
+pub struct TaskCacheInputs {
+    pub source_hash: String,
+    pub source_paths: Vec<PathBuf>,
+    pub root_identity: PathBuf,
+}
+
+/// Compute stable paths and content hashes for artifact-cache inputs in one source scan.
+pub async fn task_cache_inputs(
+    task: &Task,
+    config: &Arc<Config>,
+) -> Result<Option<TaskCacheInputs>> {
     if task.sources.is_empty() {
         return Ok(None);
     }
-    let (root, mut source_metadatas) = collect_source_metadatas(task, config).await?;
+    let (root, match_root, mut source_metadatas) = collect_source_metadatas(task, config).await?;
     if source_metadatas.is_empty() {
         return Ok(None);
     }
     source_metadatas.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let cache_path = content_hash_cache_path(task, &root);
+    let mut cache = load_content_hash_cache(&cache_path);
+    let mut next = ContentHashCache::new();
     let mut hasher = blake3::Hasher::new();
-    for (path, _) in source_metadatas {
-        let relative = path.strip_prefix(&root).unwrap_or(&path);
-        let relative = relative.to_string_lossy();
-        hasher.update(&(relative.len() as u64).to_le_bytes());
-        hasher.update(relative.as_bytes());
-        let contents = hash::file_hash_blake3(&path, None)?;
+    let mut source_paths = Vec::with_capacity(source_metadatas.len());
+    for (path, metadata) in source_metadatas {
+        let identity = match path.strip_prefix(&match_root) {
+            Ok(relative) => format!("workspace\0{}", relative.to_string_lossy()),
+            // Retaining the absolute path deliberately disables cross-checkout reuse for
+            // sources outside the workspace instead of allowing ambiguous identities.
+            Err(_) => format!("external\0{}", path.to_string_lossy()),
+        };
+        hasher.update(&(identity.len() as u64).to_le_bytes());
+        hasher.update(identity.as_bytes());
+        let contents = match cache.get(&path) {
+            Some(entry) if cached_entry_matches(entry, &metadata) => entry.hash.clone(),
+            _ => hash::file_hash_blake3(&path, None)?,
+        };
         hasher.update(contents.as_bytes());
+        next.insert(path.clone(), make_cache_entry(&metadata, contents));
+        source_paths.push(path.strip_prefix(&root).unwrap_or(&path).to_path_buf());
     }
-    Ok(Some(hasher.finalize().to_hex().to_string()))
-}
-
-/// Return cache input paths relative to the task directory when possible.
-pub async fn task_source_paths(task: &Task, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
-    let (root, source_metadatas) = collect_source_metadatas(task, config).await?;
-    Ok(source_metadatas
-        .into_iter()
-        .map(|(path, _)| path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
-        .collect())
+    cache = next;
+    if let Err(e) = save_content_hash_cache(&cache_path, &cache) {
+        trace!("failed to save content hash cache: {e}");
+    }
+    let root_identity = root
+        .strip_prefix(&match_root)
+        .unwrap_or(&root)
+        .to_path_buf();
+    Ok(Some(TaskCacheInputs {
+        source_hash: hasher.finalize().to_hex().to_string(),
+        source_paths,
+        root_identity,
+    }))
 }
 
 /// Check if task sources are up to date (fresher than outputs)
@@ -343,7 +365,7 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     let equal_mtime_is_fresh = settings.task.source_freshness_equal_mtime_is_fresh;
 
     let run = async || -> Result<bool> {
-        let (root, source_metadatas) = collect_source_metadatas(task, config).await?;
+        let (root, _, source_metadatas) = collect_source_metadatas(task, config).await?;
 
         // Check if sources resolved to no files (likely a config mistake)
         if source_metadatas.is_empty() {

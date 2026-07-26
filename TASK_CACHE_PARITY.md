@@ -54,7 +54,7 @@ cache functionality.
 - [ ] Test restore behavior on Windows
 - [ ] Test executable bits, symlinks, empty directories, and case-sensitive path edge cases
 - [ ] Benchmark hashing, archive creation, and restoration for large task graphs and artifacts
-- [ ] Avoid rehashing unchanged source files when reliable metadata is available
+- [x] Avoid rehashing unchanged source files when reliable metadata is available
 - [ ] Add an optional audit mode for undeclared task reads and writes
 
 ## Remote cache

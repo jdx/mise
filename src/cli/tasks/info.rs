@@ -107,7 +107,7 @@ impl TasksInfo {
         if !outputs.is_empty() {
             info::inline_section("Outputs", outputs.join(", "))?;
         }
-        if task.cache.enabled {
+        if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
             info::inline_section("Cache", "enabled")?;
         }
         if let Some(file) = &task.file {
@@ -163,7 +163,7 @@ impl TasksInfo {
             "interactive": task.interactive,
             "sources": task.sources,
             "outputs": task.outputs,
-            "cache": task.cache,
+            "cache": task.cache.clone().unwrap_or_default(),
             "shell": task.shell,
             "quiet": task.quiet,
             "silent": task.silent,

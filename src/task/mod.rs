@@ -568,7 +568,7 @@ pub struct Task {
     pub outputs: TaskOutputs,
     /// Experimental local artifact cache configuration.
     #[serde(default)]
-    pub cache: TaskCacheConfig,
+    pub cache: Option<TaskCacheConfig>,
     #[serde(skip)]
     pub raw_outputs: RawOutputTemplates,
     #[serde(default)]
@@ -972,8 +972,7 @@ impl Task {
                 TaskCacheConfig::deserialize(v.clone())
                     .map_err(|e| eyre!("failed to parse cache field in task header: {e}"))
             })
-            .transpose()?
-            .unwrap_or_default();
+            .transpose()?;
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
         task.quiet = p.parse_bool("quiet").unwrap_or_default();
@@ -1870,7 +1869,7 @@ impl Task {
         if !other.outputs.is_empty() {
             self.outputs = other.outputs;
         }
-        if other.cache != TaskCacheConfig::default() {
+        if other.cache.is_some() {
             self.cache = other.cache;
         }
         if other.raw_outputs.templates.is_some() {
@@ -2856,7 +2855,7 @@ mod tests {
     #[cfg(unix)]
     use super::TaskConfirm;
     #[cfg(unix)]
-    use super::TaskOutput;
+    use super::{TaskCacheConfig, TaskOutput};
     use super::{
         clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
         tera_template_has_usage_ref,
@@ -3949,6 +3948,7 @@ echo "hello world"
 #MISE interactive=true
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
+#MISE cache={enabled=true,env=["PROFILE"]}
 #MISE shell="bash -c"
 #MISE quiet=true
 #MISE silent=true
@@ -3976,6 +3976,13 @@ echo "test"
         assert_eq!(task.raw_args, true);
         assert_eq!(task.interactive, true);
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
+        assert_eq!(
+            task.cache,
+            Some(TaskCacheConfig {
+                enabled: true,
+                env: vec!["PROFILE".to_string()],
+            })
+        );
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
         assert_eq!(task.output, Some(TaskOutput::Prefix));

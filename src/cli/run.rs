@@ -891,7 +891,7 @@ impl Run {
     fn validate_task(&self, task: &Task) -> Result<()> {
         use crate::file;
         use crate::ui;
-        if task.cache.enabled {
+        if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
             Settings::get().ensure_experimental("task artifact caching")?;
         }
         if let Some(path) = &task.file
