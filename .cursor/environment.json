@@ -5,12 +5,12 @@
   "terminals": [
     {
       "name": "Build",
-      "command": "cargo build --all-features",
+      "command": "mise run build",
       "description": "Build the project with cargo"
     },
     {
-      "name": "Unit tests",
-      "command": "cargo test --all-features --lib",
+      "name": "Test Watch",
+      "command": "mise run test:unit",
       "description": "Run unit tests"
     }
   ]
