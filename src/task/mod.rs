@@ -43,6 +43,7 @@ pub(crate) fn reset() {
 pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
+pub mod task_cache;
 pub mod task_confirm;
 pub mod task_context_builder;
 mod task_dep;
@@ -62,6 +63,8 @@ pub mod task_sources;
 pub mod task_template;
 pub mod task_tool_installer;
 
+pub use task_cache::TaskArtifactCache;
+pub use task_cache::TaskCacheConfig;
 pub use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
@@ -563,6 +566,9 @@ pub struct Task {
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
+    /// Experimental local artifact cache configuration.
+    #[serde(default)]
+    pub cache: TaskCacheConfig,
     #[serde(skip)]
     pub raw_outputs: RawOutputTemplates,
     #[serde(default)]
@@ -960,6 +966,14 @@ impl Task {
         task.interactive = p.parse_bool("interactive").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
+        task.cache = p
+            .get_raw("cache")
+            .map(|v| {
+                TaskCacheConfig::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse cache field in task header: {e}"))
+            })
+            .transpose()?
+            .unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
         task.quiet = p.parse_bool("quiet").unwrap_or_default();
@@ -1856,6 +1870,9 @@ impl Task {
         if !other.outputs.is_empty() {
             self.outputs = other.outputs;
         }
+        if other.cache != TaskCacheConfig::default() {
+            self.cache = other.cache;
+        }
         if other.raw_outputs.templates.is_some() {
             self.raw_outputs = other.raw_outputs;
         }
@@ -2384,6 +2401,7 @@ impl Default for Task {
             interactive: false,
             sources: vec![],
             outputs: Default::default(),
+            cache: Default::default(),
             raw_outputs: Default::default(),
             shell: None,
             silent: Silent::Off,

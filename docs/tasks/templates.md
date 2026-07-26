@@ -53,7 +53,7 @@ When a task extends a template, fields are merged according to these rules:
 | `env`                                             | Deep merge (local env added/override template)              |
 | `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                     |
 | `dir`                                             | Local overrides; defaults to config_root if not in template |
-| `sources`, `outputs`                              | Local overrides completely                                  |
+| `sources`, `outputs`, `cache`                     | Local overrides completely                                  |
 | `output`                                          | Local overrides template (if set)                           |
 | Sandbox deny fields                               | Compose with task-local settings                            |
 | Sandbox allow fields                              | Template and task-local values are combined                 |

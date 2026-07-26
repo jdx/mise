@@ -2893,6 +2893,25 @@
             }
           ]
         },
+        "cache": {
+          "description": "experimental local artifact cache for declared task outputs",
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "store and restore task outputs from the local mise cache",
+              "type": "boolean"
+            },
+            "env": {
+              "description": "ambient environment variable names whose values affect the cache key",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        },
         "output": {
           "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
           "enum": [

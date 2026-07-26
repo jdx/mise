@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = '''
+mkdir -p dist/empty
+printf '%s:%s\n' "$PROFILE" "$(cat input.txt)" > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+cache = { enabled = true, env = ["PROFILE"] }
+EOF
+
+printf 'one\n' >input.txt
+
+PROFILE=debug mise run build
+assert "wc -l < runs.txt | tr -d ' '" "1"
+assert "cat dist/result.txt" "debug:one"
+
+# Existing fresh outputs use the normal fast freshness path.
+assert_contains "PROFILE=debug mise run build 2>&1" "sources up-to-date, skipping"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Missing outputs are restored from the local artifact cache without executing.
+rm -rf dist
+assert_contains "PROFILE=debug mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+assert "cat dist/result.txt" "debug:one"
+assert_succeed "test -d dist/empty"
+
+# An allowlisted ambient environment change produces a cache miss.
+PROFILE=release mise run build
+assert "wc -l < runs.txt | tr -d ' '" "2"
+assert "cat dist/result.txt" "release:one"
+
+# Source content changes also produce a miss and a distinct artifact.
+printf 'two\n' >input.txt
+PROFILE=release mise run build
+assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "cat dist/result.txt" "release:two"
+
+# The new result is independently restorable.
+rm -rf dist
+assert_contains "PROFILE=release mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "cat dist/result.txt" "release:two"

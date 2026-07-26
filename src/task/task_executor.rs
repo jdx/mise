@@ -7,6 +7,7 @@ use crate::env_diff::EnvDiff;
 use crate::file::is_executable;
 use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
+use crate::task::TaskArtifactCache;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
@@ -274,7 +275,8 @@ impl TaskExecutor {
         }
         // If any dependency actually ran, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes
-        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
+        if !task.cache.enabled && !self.force && !dep_ran && sources_are_fresh(task, config).await?
+        {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
@@ -443,6 +445,40 @@ impl TaskExecutor {
             env.insert("__MISE_DIFF".into(), serialized);
         }
 
+        let artifact_cache = if task.cache.enabled {
+            let cache = TaskArtifactCache::new(task, config, &ts, &env, &task_env).await?;
+            if !self.force
+                && !dep_ran
+                && cache.is_current()
+                && sources_are_fresh(task, config).await?
+            {
+                if !self.quiet(Some(task)) {
+                    self.eprint(task, &prefix, "sources up-to-date, skipping");
+                }
+                return Ok(false);
+            }
+            if !self.force && !dep_ran && cache.restore(task)? {
+                if !self.quiet(Some(task)) {
+                    self.eprint(
+                        task,
+                        &prefix,
+                        &format!("restored outputs from cache {}", cache.key()),
+                    );
+                }
+                save_checksum(task, config).await?;
+                if let Err(err) = cache.mark_current() {
+                    warn!(
+                        "task {} artifact cache state update failed: {err}",
+                        task.name
+                    );
+                }
+                return Ok(true);
+            }
+            Some(cache)
+        } else {
+            None
+        };
+
         let timer = std::time::Instant::now();
 
         if let Some(file) = task.file_path(config).await? {
@@ -522,6 +558,12 @@ impl TaskExecutor {
         }
 
         save_checksum(task, config).await?;
+        if let Some(cache) = artifact_cache {
+            match cache.store(task).and_then(|_| cache.mark_current()) {
+                Ok(()) => {}
+                Err(err) => warn!("task {} artifact cache write failed: {err}", task.name),
+            }
+        }
 
         Ok(true)
     }

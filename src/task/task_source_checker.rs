@@ -299,6 +299,40 @@ async fn compute_source_hash(
     Ok(Some((source_hash, source_hash_path)))
 }
 
+/// Compute a stable content hash for artifact-cache inputs.
+///
+/// Unlike freshness state, this deliberately excludes absolute workspace paths
+/// so identical checkouts can share entries in the global mise cache.
+pub async fn task_source_content_hash(task: &Task, config: &Arc<Config>) -> Result<Option<String>> {
+    if task.sources.is_empty() {
+        return Ok(None);
+    }
+    let (root, mut source_metadatas) = collect_source_metadatas(task, config).await?;
+    if source_metadatas.is_empty() {
+        return Ok(None);
+    }
+    source_metadatas.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let mut hasher = blake3::Hasher::new();
+    for (path, _) in source_metadatas {
+        let relative = path.strip_prefix(&root).unwrap_or(&path);
+        let relative = relative.to_string_lossy();
+        hasher.update(&(relative.len() as u64).to_le_bytes());
+        hasher.update(relative.as_bytes());
+        let contents = hash::file_hash_blake3(&path, None)?;
+        hasher.update(contents.as_bytes());
+    }
+    Ok(Some(hasher.finalize().to_hex().to_string()))
+}
+
+/// Return cache input paths relative to the task directory when possible.
+pub async fn task_source_paths(task: &Task, config: &Arc<Config>) -> Result<Vec<PathBuf>> {
+    let (root, source_metadatas) = collect_source_metadatas(task, config).await?;
+    Ok(source_metadatas
+        .into_iter()
+        .map(|(path, _)| path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
+        .collect())
+}
+
 /// Check if task sources are up to date (fresher than outputs)
 pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool> {
     if task.sources.is_empty() {

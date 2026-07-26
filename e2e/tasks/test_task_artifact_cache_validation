@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "touch out"
+sources = ["input"]
+outputs = ["out"]
+cache = { enabled = true }
+EOF
+touch input
+
+assert_fail_contains \
+  "MISE_EXPERIMENTAL=0 mise run build" \
+  "task artifact caching is experimental"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "touch out"
+sources = ["input"]
+outputs = { auto = true }
+cache = { enabled = true }
+EOF
+
+assert_fail_contains \
+  "mise run build" \
+  "cache requires explicit output files or directories"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "touch ../out"
+sources = ["input"]
+outputs = ["../out"]
+cache = { enabled = true }
+EOF
+
+assert_fail_contains "mise run build" "cache output must stay within"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "touch input"
+sources = ["input"]
+outputs = ["."]
+cache = { enabled = true }
+EOF
+
+assert_fail_contains "mise run build" "cache output must stay within"
