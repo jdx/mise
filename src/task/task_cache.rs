@@ -5,7 +5,7 @@ use crate::hash;
 use crate::task::task_source_checker::{task_cache_inputs, task_cwd};
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
-use eyre::{Context, Result, bail};
+use eyre::{Context, Report, Result, bail, eyre};
 use glob::glob;
 use jdx_tar::{Builder, EntryType, Header};
 use serde::{Deserialize, Serialize};
@@ -393,10 +393,11 @@ fn install_transactionally(
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
             Err(err) => {
-                rollback_install(root, backup.path(), &[], &backed_up);
-                return Err(err).wrap_err_with(|| {
-                    format!("failed to inspect existing output {}", from.display())
-                });
+                let err = eyre!(
+                    "failed to inspect existing output {}: {err}",
+                    from.display()
+                );
+                return rollback_after_error(backup, root, &[], &backed_up, err);
             }
         }
         let to = backup.path().join(rel);
@@ -407,8 +408,7 @@ fn install_transactionally(
             fs::rename(&from, &to).wrap_err_with(|| format!("failed to back up {}", rel.display()))
         })();
         if let Err(err) = backup_output {
-            rollback_install(root, backup.path(), &[], &backed_up);
-            return Err(err);
+            return rollback_after_error(backup, root, &[], &backed_up, err);
         }
         backed_up.push(rel.clone());
     }
@@ -426,17 +426,43 @@ fn install_transactionally(
                 .wrap_err_with(|| format!("failed to install cached output {}", rel.display()))
         })();
         if let Err(err) = install {
-            rollback_install(root, backup.path(), &installed, &backed_up);
-            return Err(err);
+            return rollback_after_error(backup, root, &installed, &backed_up, err);
         }
         installed.push(rel.clone());
     }
     Ok(())
 }
 
-fn rollback_install(root: &Path, backup: &Path, installed: &[PathBuf], backed_up: &[PathBuf]) {
+fn rollback_after_error(
+    backup: tempfile::TempDir,
+    root: &Path,
+    installed: &[PathBuf],
+    backed_up: &[PathBuf],
+    err: Report,
+) -> Result<()> {
+    if rollback_install(root, backup.path(), installed, backed_up) {
+        Err(err)
+    } else {
+        let backup = backup.keep();
+        Err(err).wrap_err_with(|| {
+            format!(
+                "cache restore rollback was incomplete; original outputs were preserved at {}",
+                backup.display()
+            )
+        })
+    }
+}
+
+fn rollback_install(
+    root: &Path,
+    backup: &Path,
+    installed: &[PathBuf],
+    backed_up: &[PathBuf],
+) -> bool {
+    let mut complete = true;
     for rel in installed.iter().rev() {
         if let Err(err) = file::remove_all(root.join(rel)) {
+            complete = false;
             warn!(
                 "failed to remove partial cache restore {}: {err}",
                 rel.display()
@@ -449,6 +475,7 @@ fn rollback_install(root: &Path, backup: &Path, installed: &[PathBuf], backed_up
         if let Some(parent) = to.parent()
             && let Err(err) = file::create_dir_all(parent)
         {
+            complete = false;
             warn!(
                 "failed to prepare cache restore rollback {}: {err}",
                 rel.display()
@@ -456,9 +483,11 @@ fn rollback_install(root: &Path, backup: &Path, installed: &[PathBuf], backed_up
             continue;
         }
         if let Err(err) = fs::rename(&from, &to) {
+            complete = false;
             warn!("failed to roll back cached output {}: {err}", rel.display());
         }
     }
+    complete
 }
 
 fn write_archive(path: &Path, root: &Path, roots: &[PathBuf]) -> Result<()> {
@@ -581,6 +610,31 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(root.path().join("dist/result.txt")).unwrap(),
+            "old"
+        );
+    }
+
+    #[test]
+    fn incomplete_rollback_preserves_backup_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let backup = tempfile::tempdir_in(root.path()).unwrap();
+        let backup_path = backup.path().to_path_buf();
+        fs::create_dir(backup.path().join("blocked")).unwrap();
+        fs::write(backup.path().join("blocked/output"), "old").unwrap();
+        fs::write(root.path().join("blocked"), "not a directory").unwrap();
+
+        let err = rollback_after_error(
+            backup,
+            root.path(),
+            &[],
+            &[PathBuf::from("blocked/output")],
+            eyre!("install failed"),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("original outputs were preserved"));
+        assert_eq!(
+            fs::read_to_string(backup_path.join("blocked/output")).unwrap(),
             "old"
         );
     }
