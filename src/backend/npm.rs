@@ -17,8 +17,10 @@ use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than};
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
+use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aube::embed::EmbedderRuntime;
+use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -887,6 +889,7 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<()> {
+        crate::backend::aube_host::init();
         let install_path = tv.install_path();
         crate::file::create_dir_all(&install_path)?;
 
@@ -900,6 +903,10 @@ impl NPMBackend {
             );
         }
 
+        // aube renders nothing itself: `Events` mode routes the same phase and
+        // progress numbers to us so mise's own progress job stays the only
+        // thing drawing to the terminal. See [`AubeProgressReporter`].
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let mut opts = aube::embed::AddToProjectOptions {
             // Global-style installs pin the exact resolved version, matching
             // what `aube add --global` wrote to its synthetic manifest.
@@ -908,7 +915,7 @@ impl NPMBackend {
             // `aube.allowBuilds`; only the "allow everything" case needs the
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
-            control: aube::embed::InstallControl::default(),
+            control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx })),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
@@ -919,9 +926,23 @@ impl NPMBackend {
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
         let package = format!("{}@{}", self.tool_name(), tv.version);
-        aube::embed::add(&install_path, std::slice::from_ref(&package), opts)
-            .await
-            .map_err(|e| self.format_aube_install_error(e))?;
+        let install = aube::embed::add(&install_path, std::slice::from_ref(&package), opts);
+        tokio::pin!(install);
+        // Drain events alongside the install rather than after it: the
+        // reporter only enqueues (it must never wait on us while holding an
+        // install worker), so nothing renders unless someone is pulling.
+        let result = loop {
+            tokio::select! {
+                res = &mut install => break res,
+                Some(event) = rx.recv() => apply_aube_event(event, ctx.pr.as_ref()),
+            }
+        };
+        // Events queued between the last poll and the install returning —
+        // notably the terminal `Complete` snapshot.
+        while let Ok(event) = rx.try_recv() {
+            apply_aube_event(event, ctx.pr.as_ref());
+        }
+        result.map_err(|e| self.format_aube_install_error(e))?;
         Ok(())
     }
 
@@ -1125,6 +1146,95 @@ impl NPMBackend {
             paths.push(install_path.to_path_buf());
         }
         paths
+    }
+}
+
+/// Feeds aube's structured install events into a channel mise drains onto its
+/// own progress job.
+///
+/// aube's default `Human` output mode renders its own clx progress display —
+/// a branded root row with overall counts plus transient child rows per
+/// in-flight tarball fetch — straight to stderr. Because mise and aube both
+/// draw through clx, those rows land as siblings of the job mise already
+/// started for the install, so the user sees two competing progress displays
+/// for one operation, the second one branded by the engine they never chose.
+/// `Events` mode suppresses every one of aube's own writes (the bar, the
+/// `Resolving <pkg>...` lines, and the post-install dependency summary, all of
+/// which are gated on `Human`) and hands the underlying numbers over instead.
+#[derive(Debug)]
+struct AubeProgressReporter {
+    tx: tokio::sync::mpsc::UnboundedSender<aube::embed::InstallEvent>,
+}
+
+impl aube::embed::InstallReporter for AubeProgressReporter {
+    fn report(&self, event: aube::embed::InstallEvent) {
+        // Unbounded, so this never blocks an install worker waiting on us —
+        // what the trait requires. A closed channel means the install already
+        // returned and nobody is left to render the event.
+        let _ = self.tx.send(event);
+    }
+}
+
+/// Render one aube install event onto mise's progress job.
+///
+/// Everything goes in the message; the progress bar is deliberately left
+/// alone. Driving it would mean `set_length(snap.estimated_bytes)`, and that
+/// estimate is a moving, inflated target — aube resolves and downloads
+/// concurrently, so the denominator climbs for most of the install, and it
+/// keeps counting platform-mismatched optional deps that get pruned before
+/// anything fetches them. The result is a bar pinned near 15% with an ETA
+/// swinging between 5s and 30s. The package tally below is the honest number,
+/// and mise's spinner already says the work is live.
+fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
+    use aube::embed::{InstallEvent, InstallOutputLevel, InstallPhase};
+
+    match event {
+        // The phase repeats on every progress snapshot, which also carries the
+        // counts, so the bare transition needs no separate render.
+        InstallEvent::Phase(_) => {}
+        InstallEvent::Progress(snap) => {
+            let (label, cur, total) = match snap.phase {
+                // Resolving walks a frontier: the denominator is still growing,
+                // and `resolved` can outrun the last total we saw.
+                Some(InstallPhase::Resolving) | None => {
+                    ("resolving", snap.resolved, snap.total.max(snap.resolved))
+                }
+                // Past resolution the package count is final, and progress is
+                // how many are in place — from the store or the network.
+                Some(InstallPhase::Fetching) => {
+                    ("fetching", snap.reused + snap.downloaded, snap.resolved)
+                }
+                Some(InstallPhase::Linking) => {
+                    ("linking", snap.reused + snap.downloaded, snap.resolved)
+                }
+                Some(InstallPhase::Complete) => ("installing", snap.resolved, snap.resolved),
+            };
+
+            // The first snapshot lands before resolution has counted anything;
+            // `0/0 pkgs` is worse than no tally at all.
+            let mut message = if total == 0 {
+                label.to_string()
+            } else {
+                format!("{label} {cur}/{total} pkgs")
+            };
+            // Bytes actually transferred — no denominator, so nothing here can
+            // be wrong the way a percentage would be. Omitted entirely for an
+            // install served from the store, which downloads nothing.
+            if snap.downloaded_bytes > 0 {
+                message.push_str(&format!(
+                    " · {}",
+                    ByteSize::b(snap.downloaded_bytes).display().iec()
+                ));
+            }
+            pr.set_message(message);
+        }
+        // Text aube would have written to stderr itself. Warnings are the
+        // user's business; a fatal error also comes back as the returned
+        // `Err`, so this is never the only place one surfaces.
+        InstallEvent::Output { level, message, .. } => match level {
+            InstallOutputLevel::Info => debug!("aube: {message}"),
+            InstallOutputLevel::Warning | InstallOutputLevel::Error => warn!("{message}"),
+        },
     }
 }
 
