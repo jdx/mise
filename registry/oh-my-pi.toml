@@ -1,0 +1,8 @@
+description = "AI coding agent for the terminal — hash-anchored edits, optimized tool harness, LSP, Python, browser, subagents, and more"
+test = { cmd = "omp --version", expected = "omp/{{version}}" }
+
+[[backends]]
+full = "github:can1357/oh-my-pi"
+
+[backends.options]
+rename_exe = "omp"
