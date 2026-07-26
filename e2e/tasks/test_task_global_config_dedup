@@ -30,3 +30,57 @@ MISE_GLOBAL_CONFIG_FILE="$HOME/global-config/linked-config.toml" \
   MISE_SYSTEM_CONFIG_FILE="$HOME/global-config/config-link.toml" \
   mise tasks >/dev/null
 assert "wc -l < '$linked_marker' | tr -d ' '" "1"
+
+shared_marker="$MISE_TMP_DIR/shared-global-task-render-count"
+: >"$shared_marker"
+shared_toml_marker="$MISE_TMP_DIR/shared-global-toml-render-count"
+: >"$shared_toml_marker"
+mkdir -p "$HOME/shared-global-tasks"
+cat >"$HOME/shared-global-tasks/render-shared-once" <<EOF
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='echo rendered >> $shared_marker') }}"
+echo render-shared-once
+EOF
+chmod +x "$HOME/shared-global-tasks/render-shared-once"
+cat >"$HOME/shared-global-tasks/shared.toml" <<EOF
+[render-shared-toml-once]
+description = "{{ exec(command='echo rendered >> $shared_toml_marker') }}"
+run = "echo render-shared-toml-once"
+EOF
+ln -s "shared-global-tasks" "$HOME/shared-global-tasks-link"
+cat >"$HOME/global-config/user.toml" <<EOF
+[task_config]
+includes = ["$HOME/shared-global-tasks"]
+EOF
+cat >"$HOME/global-config/system.toml" <<EOF
+[task_config]
+includes = ["$HOME/shared-global-tasks-link"]
+EOF
+
+# Distinct global configs may reach the same physical script or TOML task file
+# through different path spellings. Reuse the higher-precedence rendered tasks
+# instead of evaluating either template again.
+MISE_GLOBAL_CONFIG_FILE="$HOME/global-config/user.toml" \
+  MISE_SYSTEM_CONFIG_FILE="$HOME/global-config/system.toml" \
+  mise tasks >/dev/null
+assert "wc -l < '$shared_marker' | tr -d ' '" "1"
+assert "wc -l < '$shared_toml_marker' | tr -d ' '" "1"
+
+mkdir -p "$HOME/include-order-tasks"
+cat >"$HOME/include-order-tasks/include-winner" <<'EOF'
+#!/usr/bin/env bash
+echo "$MISE_TASK_FILE"
+EOF
+chmod +x "$HOME/include-order-tasks/include-winner"
+ln -s "include-order-tasks" "$HOME/first-global-tasks"
+ln -s "include-order-tasks" "$HOME/second-global-tasks"
+cat >"$HOME/global-config/include-order.toml" <<EOF
+[task_config]
+includes = ["$HOME/first-global-tasks", "$HOME/second-global-tasks"]
+EOF
+
+# Reuse is limited to earlier global config units. Within one config the
+# documented later-include-wins rule still controls the task's source context.
+assert \
+  "MISE_GLOBAL_CONFIG_FILE='$HOME/global-config/include-order.toml' MISE_SYSTEM_CONFIG_FILE='$HOME/global-config/missing.toml' mise run include-winner" \
+  "$HOME/second-global-tasks/include-winner"
