@@ -385,7 +385,10 @@ fn materialize_brew_dirs(dest: &Path) -> Result<()> {
         }
         // swap: a directory cannot be renamed over a symlink, so remove the
         // link first; if the rename then fails, put the symlink back
-        crate::file::remove_file(&link_dir)?;
+        if let Err(err) = crate::file::remove_file(&link_dir) {
+            let _ = crate::file::remove_all(&staging);
+            return Err(err);
+        }
         if let Err(err) = crate::file::rename(&staging, &link_dir) {
             let _ = crate::file::make_symlink(&raw_target, &link_dir);
             let _ = crate::file::remove_all(&staging);
