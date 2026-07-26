@@ -54,3 +54,27 @@ chmod +x mise-tasks/build mise-tasks/test
 assert_contains "mise tasks" "build"
 assert_contains "mise tasks" "test"
 assert "mise run build" "building"
+
+# Monorepo-qualified task names should resolve to the scoped task include directory
+mkdir -p monorepo/projects/frontend/mise-tasks
+cat <<EOF >monorepo/mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+EOF
+cat <<'EOF' >monorepo/projects/frontend/mise-tasks/build
+#!/usr/bin/env bash
+echo "frontend building"
+EOF
+chmod 0644 monorepo/projects/frontend/mise-tasks/build
+
+cd monorepo
+assert "MISE_EXPERIMENTAL=1 MISE_YES=1 mise run '//projects/frontend:build'" "frontend building"
+[[ -x projects/frontend/mise-tasks/build ]] ||
+  fail "//projects/frontend:build did not make the task executable"
+
+chmod 0644 projects/frontend/mise-tasks/build
+cd projects/frontend
+assert "MISE_EXPERIMENTAL=1 MISE_YES=1 mise run ':build'" "frontend building"
+[[ -x mise-tasks/build ]] || fail ":build did not make the task executable"

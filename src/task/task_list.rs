@@ -187,12 +187,30 @@ async fn make_task_executable(
     let Some(cwd) = &*dirs::CWD else {
         return Ok(None);
     };
-    let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
-    let Some(path) = includes
-        .iter()
-        .map(|root| root.join(name))
-        .find(|path| path.is_file() && !file::is_executable(path))
-    else {
+    let (task_dir, task_name) = if let Some(name) = name.strip_prefix("//") {
+        let Some((scope, task_name)) = name.split_once(':') else {
+            return Ok(None);
+        };
+        let Some(monorepo_root) = config
+            .config_files
+            .values()
+            .find(|cf| cf.monorepo_root() == Some(true))
+            .and_then(|cf| cf.project_root())
+        else {
+            return Ok(None);
+        };
+        (monorepo_root.join(scope), task_name)
+    } else {
+        (cwd.clone(), name.strip_prefix(':').unwrap_or(name))
+    };
+    let includes = config::task_includes_for_dir(&task_dir, &config.config_files)?;
+    let Some(path) = includes.iter().find_map(|root| {
+        find_non_executable_task_files(std::slice::from_ref(root))
+            .into_iter()
+            .find(|path| {
+                Task::new(path, root, &task_dir).is_ok_and(|task| task.is_match(task_name))
+            })
+    }) else {
         return Ok(None);
     };
 
@@ -515,11 +533,11 @@ pub async fn get_task_lists(
             let is_default_task = t == "default" || {
                 t.starts_with("//") && t.ends_with(":default") && t[2..].matches(':').count() == 1
             };
-            if !is_default_task || !prompt || !console::user_attended_stderr() {
-                if let Some(task) = err_no_task(config, &t, effective_context.as_ref()).await? {
-                    tasks.push(task.with_args(args));
-                    continue;
-                }
+            if (!is_default_task || !prompt || !console::user_attended_stderr())
+                && let Some(task) = err_no_task(config, &t, effective_context.as_ref()).await?
+            {
+                tasks.push(task.with_args(args));
+                continue;
             }
             tasks.push(prompt_for_task().await?);
         } else {
