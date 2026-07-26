@@ -17,9 +17,9 @@ use tokio::sync::mpsc;
 /// Unique key for a task instance, including name, args, and env vars
 pub type TaskKey = (String, Vec<String>, Vec<(String, String)>);
 
-#[derive(Debug)]
 pub struct TaskCycleError {
     paths: Vec<Vec<String>>,
+    keys: Vec<Vec<TaskKey>>,
 }
 
 impl TaskCycleError {
@@ -29,6 +29,18 @@ impl TaskCycleError {
 
     pub fn paths(&self) -> &[Vec<String>] {
         &self.paths
+    }
+
+    pub(crate) fn keys(&self) -> &[Vec<TaskKey>] {
+        &self.keys
+    }
+}
+
+impl fmt::Debug for TaskCycleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TaskCycleError")
+            .field("paths", &self.paths)
+            .finish_non_exhaustive()
     }
 }
 
@@ -180,7 +192,11 @@ impl Deps {
                         .collect()
                 })
                 .collect();
-            return Err(eyre::Report::new(TaskCycleError { paths }));
+            let keys = cycles
+                .iter()
+                .map(|cycle| cycle.iter().map(|&idx| task_key(&graph[idx])).collect())
+                .collect();
+            return Err(eyre::Report::new(TaskCycleError { paths, keys }));
         }
         let (tx, _) = mpsc::unbounded_channel();
         let sent = HashSet::new();

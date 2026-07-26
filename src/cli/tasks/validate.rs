@@ -7,7 +7,7 @@ use crate::duration;
 use crate::file;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{
-    Deps, GetMatchingExt, Task, TaskCycleError, build_task_ref_map, resolve_task_pattern,
+    Deps, GetMatchingExt, Task, TaskCycleError, TaskKey, build_task_ref_map, resolve_task_pattern,
 };
 use crate::tera::contains_template_syntax;
 use crate::ui::style;
@@ -152,7 +152,7 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let mut valid_tasks = Vec::new();
-        let mut reported_cycles = HashSet::new();
+        let mut reported_cycles: HashSet<Vec<TaskKey>> = HashSet::new();
         let mut reported_error_details = HashSet::new();
         if let Some(cycle) = initial_cycle {
             push_cycle_issue(&mut issues, &mut reported_cycles, cycle);
@@ -763,17 +763,17 @@ fn cycle_issue(path: &[String]) -> ValidationIssue {
 
 fn push_cycle_issue(
     issues: &mut Vec<ValidationIssue>,
-    reported_cycles: &mut HashSet<Vec<String>>,
+    reported_cycles: &mut HashSet<Vec<TaskKey>>,
     cycle: &TaskCycleError,
 ) {
-    for path in cycle.paths() {
-        if reported_cycles.insert(canonical_cycle(path)) {
+    for (path, keys) in cycle.paths().iter().zip(cycle.keys()) {
+        if reported_cycles.insert(canonical_cycle(keys)) {
             issues.push(cycle_issue(path));
         }
     }
 }
 
-fn canonical_cycle(path: &[String]) -> Vec<String> {
+fn canonical_cycle<T: Clone + Ord>(path: &[T]) -> Vec<T> {
     let path = if path.len() > 1 && path.first() == path.last() {
         &path[..path.len() - 1]
     } else {
@@ -833,3 +833,32 @@ The validate command performs the following checks:
   • <bold>Run Entries</bold>: Ensures tasks reference valid dependencies
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task_key(name: &str, value: &str) -> TaskKey {
+        (
+            name.to_string(),
+            Vec::new(),
+            vec![("TARGET".to_string(), value.to_string())],
+        )
+    }
+
+    #[test]
+    fn cycle_identity_includes_environment_values() {
+        let red = vec![
+            task_key("build", "red"),
+            task_key("test", "red"),
+            task_key("build", "red"),
+        ];
+        let blue = vec![
+            task_key("build", "blue"),
+            task_key("test", "blue"),
+            task_key("build", "blue"),
+        ];
+
+        assert_ne!(canonical_cycle(&red), canonical_cycle(&blue));
+    }
+}
