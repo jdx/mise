@@ -1143,6 +1143,7 @@ impl TaskExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_file(
         &self,
         config: &Arc<Config>,
@@ -1223,6 +1224,7 @@ impl TaskExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_program(
         &self,
         program: &str,

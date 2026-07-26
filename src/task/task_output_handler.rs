@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 type TaskPrMap = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
+type TimedOutputMap = Arc<Mutex<IndexMap<String, (SystemTime, Vec<String>)>>>;
 
 /// A single line of output, tagged by stream.
 pub enum KeepOrderLine {
@@ -183,7 +184,7 @@ pub struct OutputHandlerConfig {
 pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
     pub task_prs: TaskPrMap,
-    pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, Vec<String>)>>>,
+    pub timed_outputs: TimedOutputMap,
 
     // Configuration from CLI args
     output: Option<TaskOutput>,

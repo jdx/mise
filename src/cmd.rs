@@ -103,6 +103,8 @@ where
     duct::cmd(program, args)
 }
 
+type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
+
 pub struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,
@@ -113,8 +115,8 @@ pub struct CmdLineRunner<'a> {
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
-    observe_stdout: Option<Box<dyn Fn(&str) + Send + 'a>>,
-    observe_stderr: Option<Box<dyn Fn(&str) + Send + 'a>>,
+    observe_stdout: Option<OutputObserver<'a>>,
+    observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
 }
