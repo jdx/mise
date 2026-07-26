@@ -80,6 +80,30 @@ depends = ["b"]
 run = "echo b"
 depends = ["a"]
 
+[tasks.c]
+run = "echo c"
+depends = ["d"]
+
+[tasks.d]
+run = "echo d"
+depends = ["c"]
+
+[tasks.wait-a]
+run = "echo wait-a"
+wait_for = ["wait-b"]
+
+[tasks.wait-b]
+run = "echo wait-b"
+wait_for = ["wait-a"]
+
+[tasks.wait-c]
+run = "echo wait-c"
+wait_for = ["wait-d"]
+
+[tasks.wait-d]
+run = "echo wait-d"
+wait_for = ["wait-c"]
+
 [tasks.invalid]
 run = "echo invalid"
 depends = ["nonexistent"]
@@ -94,6 +118,8 @@ assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
 assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
 graph_error_count=$(mise tasks validate --json 2>&1 | grep -c '"category": "dependency-graph-error"' || true)
 assert "echo $graph_error_count" "2"
+cycle_error_count=$(mise tasks validate --json 2>&1 | grep -c '"category": "circular-dependency"' || true)
+assert "echo $cycle_error_count" "4"
 
 # A depends_post reference reverses the scheduling edge, so this is acyclic:
 # a runs before b both because a schedules b afterward and b depends on a.

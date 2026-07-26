@@ -8,6 +8,7 @@ use crate::file;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{
     Deps, GetMatchingExt, Task, TaskCycleError, build_task_ref_map, resolve_task_pattern,
+    task_cycle_label,
 };
 use crate::tera::contains_template_syntax;
 use crate::ui::style;
@@ -88,15 +89,15 @@ impl TasksValidate {
         let mut issues = Vec::new();
         if let Err(err) = Deps::new(&config, tasks.clone()).await {
             let details = err.to_string();
-            let additional_issues = self.find_additional_graph_issues(&config, &tasks).await;
             if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                if !additional_issues
-                    .iter()
-                    .any(|issue| issue.category == "circular-dependency")
-                {
-                    issues.push(cycle_issue(cycle, details));
-                }
+                issues.extend(
+                    self.find_additional_graph_issues(&config, &tasks, Some((cycle, details)))
+                        .await,
+                );
             } else {
+                let additional_issues = self
+                    .find_additional_graph_issues(&config, &tasks, None)
+                    .await;
                 let graph_error_is_represented = additional_issues.iter().any(|issue| {
                     issue.category == "dependency-graph-error"
                         && issue.details.as_deref() == Some(details.as_str())
@@ -104,8 +105,8 @@ impl TasksValidate {
                 if !graph_error_is_represented {
                     issues.push(graph_error_issue("task graph", details));
                 }
+                issues.extend(additional_issues);
             }
-            issues.extend(additional_issues);
         }
         for task in &tasks {
             issues.extend(self.validate_task(task, &all_tasks, &config).await);
@@ -148,17 +149,21 @@ impl TasksValidate {
         &self,
         config: &Arc<Config>,
         tasks: &[Task],
+        initial_cycle: Option<(&TaskCycleError, String)>,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let mut valid_tasks = Vec::new();
-        let mut found_cycle = None;
+        let mut reported_cycles = HashSet::new();
         let mut reported_error_details = HashSet::new();
+        if let Some((cycle, details)) = initial_cycle {
+            push_cycle_issue(&mut issues, &mut reported_cycles, cycle, details);
+        }
         for task in tasks {
             match Deps::new(config, vec![task.clone()]).await {
                 Ok(_) => valid_tasks.push(task.clone()),
                 Err(err) => {
                     if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                        found_cycle.get_or_insert_with(|| cycle_issue(cycle, err.to_string()));
+                        push_cycle_issue(&mut issues, &mut reported_cycles, cycle, err.to_string());
                     } else {
                         let details = err.to_string();
                         reported_error_details.insert(details.clone());
@@ -170,22 +175,26 @@ impl TasksValidate {
 
         // A wait_for relationship only applies when both tasks are selected, so
         // retry the tasks whose individual graphs built successfully together.
-        let combined_error = if valid_tasks.len() > 1 {
-            Deps::new(config, valid_tasks).await.err()
-        } else {
-            None
-        };
-        if let Some(err) = combined_error {
+        while valid_tasks.len() > 1 {
+            let Some(err) = Deps::new(config, valid_tasks.clone()).await.err() else {
+                break;
+            };
             if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                found_cycle.get_or_insert_with(|| cycle_issue(cycle, err.to_string()));
+                push_cycle_issue(&mut issues, &mut reported_cycles, cycle, err.to_string());
+                let cycle_labels: HashSet<_> = cycle.path().iter().map(String::as_str).collect();
+                let previous_len = valid_tasks.len();
+                valid_tasks.retain(|task| !cycle_labels.contains(task_cycle_label(task).as_str()));
+                if valid_tasks.len() == previous_len {
+                    break;
+                }
             } else {
                 let details = err.to_string();
                 if reported_error_details.insert(details.clone()) {
                     issues.push(graph_error_issue("task graph", details));
                 }
+                break;
             }
         }
-        issues.extend(found_cycle);
         issues
     }
 
@@ -757,6 +766,36 @@ fn cycle_issue(cycle: &TaskCycleError, details: String) -> ValidationIssue {
         message: "Circular dependency detected".to_string(),
         details: Some(details),
     }
+}
+
+fn push_cycle_issue(
+    issues: &mut Vec<ValidationIssue>,
+    reported_cycles: &mut HashSet<Vec<String>>,
+    cycle: &TaskCycleError,
+    details: String,
+) {
+    if reported_cycles.insert(canonical_cycle(cycle.path())) {
+        issues.push(cycle_issue(cycle, details));
+    }
+}
+
+fn canonical_cycle(path: &[String]) -> Vec<String> {
+    let path = if path.len() > 1 && path.first() == path.last() {
+        &path[..path.len() - 1]
+    } else {
+        path
+    };
+    (0..path.len())
+        .map(|offset| {
+            path.iter()
+                .cycle()
+                .skip(offset)
+                .take(path.len())
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .min()
+        .unwrap_or_default()
 }
 
 fn graph_error_issue(task: &str, details: String) -> ValidationIssue {

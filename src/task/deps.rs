@@ -364,7 +364,7 @@ fn leaves(graph: &DiGraph<Task, ()>) -> Vec<Task> {
         .collect()
 }
 
-fn task_cycle_label(task: &Task) -> String {
+pub(crate) fn task_cycle_label(task: &Task) -> String {
     let label = if task.args.is_empty() {
         task.name.clone()
     } else {
