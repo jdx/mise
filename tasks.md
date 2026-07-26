@@ -108,6 +108,12 @@ Lint HK files
 
 Run pre-commit hooks
 
+## `release`
+
+- **Usage**: `release`
+
+Release the project
+
 ## `release-plz`
 
 - **Usage**: `release-plz`

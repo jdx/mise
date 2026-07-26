@@ -4,6 +4,10 @@
 description = 'Clean build artifacts'
 run = 'cargo clean'
 
+[release]
+description = 'Release the project'
+run = 'cargo release --exclude-unchanged'
+
 [ci]
 depends = ["format", "build", "test"]
 description = "Run all CI checks"
