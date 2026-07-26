@@ -61,7 +61,6 @@ fi
     // uses taplo for TOML formatting and validation
     ["taplo"] {
         glob = List("**/*.toml")
-        exclude = List("docs/registry/") // exclude docs/registry/ symlink
         check = "taplo fmt --check {{files}} && taplo check {{files}}"
         fix = "taplo fmt {{files}} && taplo check {{files}}"
     }
