@@ -11,7 +11,7 @@ function mise {
     [CmdletBinding()]
     param(
         [Parameter(ValueFromRemainingArguments=$true)]  # Allow any number of arguments, including none
-        [string[]] $arguments
+        [string[]] $arguments = @()  # defaults to an empty array: a bare `mise` binds $null, which Set-StrictMode rejects on .count
     )
 
     $previous_out_encoding = $OutputEncoding
@@ -74,7 +74,7 @@ function __enable_mise_chpwd{
         }
         return
     }
-    if (-not $__mise_pwsh_chpwd){
+    if (-not (Test-Path variable:global:__mise_pwsh_chpwd)){
         $Global:__mise_pwsh_chpwd= $true
         $_mise_chpwd_hook = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {
             param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
@@ -84,7 +84,7 @@ function __enable_mise_chpwd{
         };
         $__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
 
-        if ($__mise_original_pwsh_chpwd_function) {
+        if ($__mise_pwsh_previous_chpwd_function) {
             $ExecutionContext.SessionState.InvokeCommand.LocationChangedAction = [Delegate]::Combine($__mise_pwsh_previous_chpwd_function, $_mise_chpwd_hook)
         }
         else {
@@ -96,7 +96,7 @@ __enable_mise_chpwd
 Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_chpwd
 
 function __enable_mise_prompt {
-    if (-not $__mise_pwsh_previous_prompt_function){
+    if (-not (Test-Path variable:global:__mise_pwsh_previous_prompt_function)){
         $Global:__mise_pwsh_previous_prompt_function=$function:prompt
         function global:prompt {
             if (Test-Path -Path Function:\_mise_hook){
@@ -110,13 +110,31 @@ __enable_mise_prompt
 Remove-Item -ErrorAction SilentlyContinue -Path Function:/__enable_mise_prompt
 
 _mise_hook
-if (-not $__mise_pwsh_command_not_found){
+if (-not (Test-Path variable:global:__mise_pwsh_command_not_found)){
     $Global:__mise_pwsh_command_not_found= $true
     function __enable_mise_command_not_found {
         $_mise_pwsh_cmd_not_found_hook = [EventHandler[System.Management.Automation.CommandLookupEventArgs]] {
             param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
             end {
-                if ([Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()[-1].CommandLine -match ([regex]::Escape($Name))) {
+                # Only auto-install when the missing command is what the
+                # user actually typed. PSReadLine is absent in
+                # non-interactive sessions, and even when its module is
+                # loaded GetHistoryItems() throws until the line editor
+                # initializes, so treat "cannot tell" as "not typed".
+                $lastCommand = $null
+                try {
+                    $psReadLine = 'Microsoft.PowerShell.PSConsoleReadLine' -as [type]
+                    if ($psReadLine) {
+                        $history = @($psReadLine::GetHistoryItems())
+                        if ($history.Count -gt 0) {
+                            $lastCommand = $history[-1].CommandLine
+                        }
+                    }
+                } catch { }
+                # compare whole tokens: a substring match would fire for
+                # `mise` when the user typed `premise`, while matching only
+                # the first token would miss `... | some-missing-tool`
+                if ($lastCommand -and (($lastCommand -split '\s+') -contains $Name)) {
                     if (& "/some/dir/mise" hook-not-found -s pwsh -- $Name){
                         _mise_hook
                         if (Get-Command $Name -ErrorAction SilentlyContinue){
