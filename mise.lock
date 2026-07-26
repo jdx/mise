@@ -316,10 +316,6 @@ url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/44475786
 version = "0.13.11"
 backend = "cargo:cargo-edit"
 
-[[tools."cargo:toml-cli"]]
-version = "0.2.3"
-backend = "cargo:toml-cli"
-
 [[tools.communique]]
 version = "1.2.3"
 backend = "github:jdx/communique"

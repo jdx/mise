@@ -306,9 +306,3 @@ Run tests with shuffling enabled
 - **Usage**: `test:unit`
 
 run unit tests
-
-## `update-descriptions`
-
-- **Usage**: `update-descriptions`
-
-Update all task descriptions in the project
