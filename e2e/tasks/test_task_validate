@@ -83,11 +83,17 @@ depends = ["a"]
 [tasks.invalid]
 run = "echo invalid"
 depends = ["nonexistent"]
+
+[tasks.also-invalid]
+run = "echo also-invalid"
+depends = ["also-nonexistent"]
 EOF
 
 assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"
 assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
 assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+graph_error_count=$(mise tasks validate --json 2>&1 | grep -c '"category": "dependency-graph-error"' || true)
+assert "echo $graph_error_count" "2"
 
 # A depends_post reference reverses the scheduling edge, so this is acyclic:
 # a runs before b both because a schedules b afterward and b depends on a.

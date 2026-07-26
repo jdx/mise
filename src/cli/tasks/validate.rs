@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -91,16 +91,11 @@ impl TasksValidate {
             if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
                 issues.push(cycle_issue(cycle, details));
             } else {
-                issues.push(ValidationIssue {
-                    task: "task graph".to_string(),
-                    severity: Severity::Error,
-                    category: "dependency-graph-error".to_string(),
-                    message: "Failed to build task dependency graph".to_string(),
-                    details: Some(details),
-                });
-                if let Some(issue) = self.find_cycle_in_valid_subgraph(&config, &tasks).await {
-                    issues.push(issue);
-                }
+                issues.push(graph_error_issue("task graph", details.clone()));
+                issues.extend(
+                    self.find_additional_graph_issues(&config, &tasks, details)
+                        .await,
+                );
             }
         }
         for task in &tasks {
@@ -140,18 +135,27 @@ impl TasksValidate {
         Ok(())
     }
 
-    async fn find_cycle_in_valid_subgraph(
+    async fn find_additional_graph_issues(
         &self,
         config: &Arc<Config>,
         tasks: &[Task],
-    ) -> Option<ValidationIssue> {
+        reported_details: String,
+    ) -> Vec<ValidationIssue> {
+        let mut issues = Vec::new();
         let mut valid_tasks = Vec::new();
+        let mut found_cycle = None;
+        let mut reported_errors = HashSet::from([reported_details]);
         for task in tasks {
             match Deps::new(config, vec![task.clone()]).await {
                 Ok(_) => valid_tasks.push(task.clone()),
                 Err(err) => {
                     if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                        return Some(cycle_issue(cycle, err.to_string()));
+                        found_cycle.get_or_insert_with(|| cycle_issue(cycle, err.to_string()));
+                    } else {
+                        let details = err.to_string();
+                        if reported_errors.insert(details.clone()) {
+                            issues.push(graph_error_issue(&task.name, details));
+                        }
                     }
                 }
             }
@@ -159,12 +163,23 @@ impl TasksValidate {
 
         // A wait_for relationship only applies when both tasks are selected, so
         // retry the tasks whose individual graphs built successfully together.
-        if valid_tasks.len() <= 1 {
-            return None;
+        let combined_error = if valid_tasks.len() > 1 {
+            Deps::new(config, valid_tasks).await.err()
+        } else {
+            None
+        };
+        if let Some(err) = combined_error {
+            if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
+                found_cycle.get_or_insert_with(|| cycle_issue(cycle, err.to_string()));
+            } else {
+                let details = err.to_string();
+                if reported_errors.insert(details.clone()) {
+                    issues.push(graph_error_issue("task graph", details));
+                }
+            }
         }
-        let err = Deps::new(config, valid_tasks).await.err()?;
-        let cycle = err.downcast_ref::<TaskCycleError>()?;
-        Some(cycle_issue(cycle, err.to_string()))
+        issues.extend(found_cycle);
+        issues
     }
 
     fn get_all_tasks(&self, all_tasks: &BTreeMap<String, Task>) -> Vec<Task> {
@@ -733,6 +748,16 @@ fn cycle_issue(cycle: &TaskCycleError, details: String) -> ValidationIssue {
         severity: Severity::Error,
         category: "circular-dependency".to_string(),
         message: "Circular dependency detected".to_string(),
+        details: Some(details),
+    }
+}
+
+fn graph_error_issue(task: &str, details: String) -> ValidationIssue {
+    ValidationIssue {
+        task: task.to_string(),
+        severity: Severity::Error,
+        category: "dependency-graph-error".to_string(),
+        message: "Failed to build task dependency graph".to_string(),
         details: Some(details),
     }
 }
