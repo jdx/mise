@@ -27,7 +27,7 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Task, TaskTemplate, monorepo_scope, strip_extension};
+use crate::task::{Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
@@ -2190,6 +2190,16 @@ fn resolve_task_template(
     Ok(())
 }
 
+fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConfig>) {
+    if task.cache.is_none()
+        && !task.sources.is_empty()
+        && !task.outputs.patterns().is_empty()
+        && let Some(cache) = cache
+    {
+        task.cache = Some(cache.clone());
+    }
+}
+
 fn default_task_includes() -> Vec<String> {
     vec![
         "mise-tasks".to_string(),
@@ -2959,6 +2969,7 @@ async fn load_config_tasks(
         resolve_task_template(&mut t, templates)?;
         match t.render(&config, &config_root).await {
             Ok(()) => {
+                apply_task_config_cache_default(&mut t, &cf.task_config().cache);
                 tasks.push(t);
             }
             Err(e) => {
@@ -3311,6 +3322,7 @@ async fn load_task_sources_from_configs(
     }
     // Find task_config.dir from the highest-precedence config that defines it
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
+    let task_config_cache = configs.iter().find_map(|cf| cf.task_config().cache.clone());
 
     let mut file_tasks = vec![];
     let monorepo_cf = if monorepo_context {
@@ -3335,6 +3347,9 @@ async fn load_task_sources_from_configs(
                 require_task_include_trust,
             )
             .await?;
+            for task in &mut loaded {
+                apply_task_config_cache_default(task, &task_config_cache);
+            }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
             }

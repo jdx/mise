@@ -27,6 +27,9 @@ EOF
 assert_fail_contains \
   "mise run build" \
   "cache requires explicit output files or directories"
+assert_fail_contains \
+  "mise run --dry-run build" \
+  "cache requires explicit output files or directories"
 
 cat <<'EOF' >mise.toml
 [settings]

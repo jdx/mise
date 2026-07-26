@@ -12,6 +12,7 @@ cache functionality.
 ## Experimental local cache
 
 - [x] Opt-in experimental task cache configuration
+- [x] Scoped cache defaults for eligible tasks with task-level opt-out
 - [x] Content-derived keys for sources, task definitions, arguments, declared environment, selected
       ambient environment variables, resolved tools, operating system, and architecture
 - [x] Store and restore explicitly declared file and directory outputs

@@ -4,6 +4,10 @@ cat <<'EOF' >mise.toml
 [settings]
 experimental = true
 
+[task_config.cache]
+enabled = true
+env = ["PROFILE"]
+
 [tasks.build]
 run = '''
 mkdir -p dist/empty
@@ -12,7 +16,6 @@ printf 'ran\n' >> runs.txt
 '''
 sources = ["input.txt"]
 outputs = ["dist"]
-cache = { enabled = true, env = ["PROFILE"] }
 EOF
 
 printf 'one\n' >input.txt
@@ -67,7 +70,8 @@ printf 'ran\n' >> usage-runs.txt
 '''
 sources = ["input.txt"]
 outputs = ["usage-dist"]
-cache = { enabled = true, env = ["usage_value"] }
+env = { usage_value = "default" }
+cache = { enabled = true }
 EOF
 
 mise run usage-cache alpha
@@ -75,3 +79,28 @@ rm -rf usage-dist
 mise run usage-cache beta
 assert "cat usage-dist/result.txt" "beta"
 assert "wc -l < usage-runs.txt | tr -d ' '" "2"
+
+# A task-local cache setting overrides the scoped default.
+cat <<'EOF' >>mise.toml
+
+[tasks.uncached]
+run = '''
+mkdir -p uncached-dist
+printf 'ran\n' >> uncached-runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["uncached-dist"]
+cache = { enabled = false }
+
+[tasks.ineligible]
+run = "printf 'ran\n' >> ineligible-runs.txt"
+EOF
+
+mise run uncached
+rm -rf uncached-dist
+mise run uncached
+assert "wc -l < uncached-runs.txt | tr -d ' '" "2"
+
+# Tasks without sources and explicit outputs do not inherit the cache default.
+mise run ineligible
+assert "wc -l < ineligible-runs.txt | tr -d ' '" "1"

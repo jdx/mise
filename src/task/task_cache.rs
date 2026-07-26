@@ -63,6 +63,7 @@ impl TaskArtifactCache {
         toolset: &Toolset,
         resolved_env: &BTreeMap<String, String>,
         declared_env: &[(String, String)],
+        persist_content_hash_cache: bool,
     ) -> Result<Option<Self>> {
         Settings::get().ensure_experimental("task artifact caching")?;
         let root = task_cwd(task, config).await?;
@@ -71,7 +72,8 @@ impl TaskArtifactCache {
         for output in &output_roots {
             ensure_no_symlink_ancestors(&root, output)?;
         }
-        let Some(inputs) = task_cache_inputs(task, config).await? else {
+        let Some(inputs) = task_cache_inputs(task, config, persist_content_hash_cache).await?
+        else {
             warn!(
                 "task {} has sources defined but no matching files found; artifact caching disabled",
                 task.name
@@ -93,7 +95,7 @@ impl TaskArtifactCache {
 
         let mut environment = declared_env
             .iter()
-            .map(|(key, value)| (key.clone(), Some(value.clone())))
+            .map(|(key, _)| (key.clone(), resolved_env.get(key).cloned()))
             .collect::<BTreeMap<_, _>>();
         let cache_config = task.cache.as_ref().expect("cache must be configured");
         for key in &cache_config.env {

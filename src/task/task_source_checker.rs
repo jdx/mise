@@ -309,6 +309,7 @@ pub struct TaskCacheInputs {
 pub async fn task_cache_inputs(
     task: &Task,
     config: &Arc<Config>,
+    persist_content_hash_cache: bool,
 ) -> Result<Option<TaskCacheInputs>> {
     if task.sources.is_empty() {
         return Ok(None);
@@ -341,7 +342,7 @@ pub async fn task_cache_inputs(
         source_paths.push(path.strip_prefix(&root).unwrap_or(&path).to_path_buf());
     }
     cache = next;
-    if let Err(e) = save_content_hash_cache(&cache_path, &cache) {
+    if persist_content_hash_cache && let Err(e) = save_content_hash_cache(&cache_path, &cache) {
         trace!("failed to save content hash cache: {e}");
     }
     let root_identity = root

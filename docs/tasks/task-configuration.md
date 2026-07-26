@@ -468,6 +468,28 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
+To enable caching by default for every eligible task in a config scope, set
+`task_config.cache`. Only tasks with at least one source and explicit output paths inherit this
+default; other tasks remain uncached. A task-local `cache` value overrides the scoped default.
+
+```mise-toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+env = ["NODE_ENV"]
+
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+
+[tasks.deploy]
+run = "./deploy.sh"
+cache = { enabled = false }
+```
+
 The cache key includes source contents, the task definition and arguments, resolved task environment,
 the values (or absence) of variables named in `cache.env`, resolved tool versions, and the operating
 system and architecture. Variables inherited from the ambient process are ignored unless listed in
@@ -722,6 +744,18 @@ Change the default directory tasks are run from.
 ```toml
 [task_config]
 dir = "{{cwd}}"
+```
+
+### `task_config.cache` <Badge type="warning" text="experimental" />
+
+Sets the default artifact-cache configuration for tasks in this config scope. The default is only
+inherited by cache-eligible tasks with sources and explicit output paths. Task-local and task-template
+cache configuration takes precedence, including `cache = { enabled = false }`.
+
+```toml
+[task_config.cache]
+enabled = true
+env = ["NODE_ENV", "CI"]
 ```
 
 ### `task_config.includes` {#task-config-includes}

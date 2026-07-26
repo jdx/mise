@@ -714,6 +714,7 @@ impl Hash for dyn ConfigFile {
 pub struct TaskConfig {
     pub includes: Option<Vec<String>>,
     pub dir: Option<String>,
+    pub cache: Option<crate::task::TaskCacheConfig>,
 }
 
 #[cfg(test)]
