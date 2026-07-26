@@ -80,6 +80,6 @@ impl DepsProvider for GoDepsProvider {
 
     fn applicability(&self) -> DepsProviderApplicability {
         // Check for go.mod (the source/lockfile), not go.sum (which may be an output)
-        DepsProviderApplicability::require_file(&self.base.config_root().join("go.mod"), "go.mod")
+        DepsProviderApplicability::require_file(&self.base.config_root().join("go.mod"))
     }
 }

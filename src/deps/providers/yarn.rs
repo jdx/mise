@@ -55,10 +55,7 @@ impl DepsProvider for YarnDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("yarn.lock"),
-            "yarn.lock",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("yarn.lock"))
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

@@ -63,6 +63,6 @@ impl DepsProvider for UvDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(&self.base.config_root().join("uv.lock"), "uv.lock")
+        DepsProviderApplicability::require_file(&self.base.config_root().join("uv.lock"))
     }
 }

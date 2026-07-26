@@ -76,10 +76,7 @@ impl DepsProvider for BunDepsProvider {
         let root = self.base.config_root();
         let binary_lock = root.join("bun.lockb");
         let text_lock = root.join("bun.lock");
-        DepsProviderApplicability::require_any_file(&[
-            (&binary_lock, "bun.lockb"),
-            (&text_lock, "bun.lock"),
-        ])
+        DepsProviderApplicability::require_any_file(&[&binary_lock, &text_lock])
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

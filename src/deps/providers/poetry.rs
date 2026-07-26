@@ -62,9 +62,6 @@ impl DepsProvider for PoetryDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("poetry.lock"),
-            "poetry.lock",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("poetry.lock"))
     }
 }

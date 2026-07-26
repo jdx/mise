@@ -63,9 +63,6 @@ impl DepsProvider for BundlerDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("Gemfile.lock"),
-            "Gemfile.lock",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("Gemfile.lock"))
     }
 }

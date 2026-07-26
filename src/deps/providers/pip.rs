@@ -66,9 +66,6 @@ impl DepsProvider for PipDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("requirements.txt"),
-            "requirements.txt",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("requirements.txt"))
     }
 }

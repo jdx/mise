@@ -69,10 +69,7 @@ impl DepsProvider for DartDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("pubspec.yaml"),
-            "pubspec.yaml",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("pubspec.yaml"))
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

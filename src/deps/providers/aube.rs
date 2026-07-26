@@ -55,10 +55,7 @@ impl DepsProvider for AubeDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("aube-lock.yaml"),
-            "aube-lock.yaml",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("aube-lock.yaml"))
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

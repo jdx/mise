@@ -55,10 +55,7 @@ impl DepsProvider for PnpmDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("pnpm-lock.yaml"),
-            "pnpm-lock.yaml",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("pnpm-lock.yaml"))
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

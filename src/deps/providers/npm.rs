@@ -55,10 +55,7 @@ impl DepsProvider for NpmDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("package-lock.json"),
-            "package-lock.json",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("package-lock.json"))
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {

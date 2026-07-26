@@ -40,23 +40,31 @@ pub enum DepsProviderApplicability {
 }
 
 impl DepsProviderApplicability {
+    fn filename(path: &Path) -> String {
+        path.file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+            .into_owned()
+    }
+
     /// Require a provider-specific file to exist.
-    pub fn require_file(path: &Path, name: &str) -> Self {
+    pub fn require_file(path: &Path) -> Self {
         if path.is_file() {
             Self::Applicable
         } else {
+            let name = Self::filename(path);
             Self::Inactive(format!("missing {name}"))
         }
     }
 
     /// Require one of several provider-specific files to exist.
-    pub fn require_any_file(paths: &[(&Path, &str)]) -> Self {
-        if paths.iter().any(|(path, _)| path.is_file()) {
+    pub fn require_any_file(paths: &[&Path]) -> Self {
+        if paths.iter().any(|path| path.is_file()) {
             Self::Applicable
         } else {
             let names = paths
                 .iter()
-                .map(|(_, name)| *name)
+                .map(|path| Self::filename(path))
                 .collect::<Vec<_>>()
                 .join(" or ");
             Self::Inactive(format!("missing {names}"))
@@ -64,7 +72,8 @@ impl DepsProviderApplicability {
     }
 
     /// Require a file to exist and contain data.
-    pub fn require_nonempty_file(path: &Path, name: &str) -> Self {
+    pub fn require_nonempty_file(path: &Path) -> Self {
+        let name = Self::filename(path);
         if !path.is_file() {
             return Self::Inactive(format!("missing {name}"));
         }

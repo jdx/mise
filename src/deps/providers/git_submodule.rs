@@ -101,6 +101,6 @@ impl DepsProvider for GitSubmoduleDepsProvider {
 
     fn applicability(&self) -> DepsProviderApplicability {
         let gitmodules = self.base.config_root().join(".gitmodules");
-        DepsProviderApplicability::require_nonempty_file(&gitmodules, ".gitmodules")
+        DepsProviderApplicability::require_nonempty_file(&gitmodules)
     }
 }

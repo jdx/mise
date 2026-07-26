@@ -65,10 +65,7 @@ impl DepsProvider for DenoDepsProvider {
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
-        DepsProviderApplicability::require_file(
-            &self.base.config_root().join("deno.lock"),
-            "deno.lock",
-        )
+        DepsProviderApplicability::require_file(&self.base.config_root().join("deno.lock"))
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
