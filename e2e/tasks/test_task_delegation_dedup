@@ -24,6 +24,12 @@ run = [{ task = "check:security" }]
 
 [tasks.all]
 depends = ["fix:security"]
+
+[tasks.sequence]
+run = [
+  { task = "check:security" },
+  { task = "check:security" },
+]
 EOF
 
 # "setup" output must appear exactly once (exclude the "$ echo ..." command line)
@@ -43,3 +49,15 @@ assert_contains "echo \"$output\"" "security check done"
 # Standalone call should still trigger setup as a dependency
 assert_contains "mise run -f check:security" ">>> SETUP RUNNING <<<"
 assert_contains "mise run -f check:security" "security check done"
+
+# Sequential injected graphs share completed state, so the second entry does
+# not repeat either the delegated task or its dependency.
+output="$(mise run -f sequence 2>&1)"
+setup_count="$(echo "$output" | grep -v '^\[setup\] \$' | grep -c '>>> SETUP RUNNING <<<')"
+security_count="$(echo "$output" | grep -v '^\[check:security\] \$' | grep -c 'security check done')"
+if [[ $setup_count -ne 1 || $security_count -ne 1 ]]; then
+  echo "Expected setup and check:security to run exactly once"
+  echo "Full output:"
+  echo "$output"
+  exit 1
+fi

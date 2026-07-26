@@ -667,6 +667,7 @@ impl TaskExecutor {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
+        let mut completion_state = completion_state.clone();
 
         let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
         let mut tera_state = if needs_tera {
@@ -735,16 +736,18 @@ impl TaskExecutor {
                     // but we're holding the only one).
                     let had_permit = permit.is_some();
                     *permit = None;
-                    self.inject_and_wait(
-                        config,
-                        &[resolved_spec],
-                        task_env,
-                        override_args.as_deref(),
-                        override_env_ref,
-                        sched_tx.clone(),
-                        completion_state,
-                    )
-                    .await?;
+                    let completed = self
+                        .inject_and_wait(
+                            config,
+                            &[resolved_spec],
+                            task_env,
+                            override_args.as_deref(),
+                            override_env_ref,
+                            sched_tx.clone(),
+                            &completion_state,
+                        )
+                        .await?;
+                    completion_state.merge(completed);
                     if had_permit {
                         *permit = Some(semaphore.clone().acquire_owned().await?);
                     }
@@ -757,16 +760,18 @@ impl TaskExecutor {
                     guard = None; // drop lock before waiting on sub-tasks
                     let had_permit = permit.is_some();
                     *permit = None;
-                    self.inject_and_wait(
-                        config,
-                        &resolved_tasks,
-                        task_env,
-                        None,
-                        None,
-                        sched_tx.clone(),
-                        completion_state,
-                    )
-                    .await?;
+                    let completed = self
+                        .inject_and_wait(
+                            config,
+                            &resolved_tasks,
+                            task_env,
+                            None,
+                            None,
+                            sched_tx.clone(),
+                            &completion_state,
+                        )
+                        .await?;
+                    completion_state.merge(completed);
                     if had_permit {
                         *permit = Some(semaphore.clone().acquire_owned().await?);
                     }
@@ -786,7 +791,7 @@ impl TaskExecutor {
         override_env: Option<&[(String, String)]>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completion_state: &TaskCompletionState,
-    ) -> Result<()> {
+    ) -> Result<TaskCompletionState> {
         use crate::task::TaskLoadContext;
         trace!("inject start: {}", specs.join(", "));
         // Build tasks list from specs
@@ -947,7 +952,8 @@ impl TaskExecutor {
             return Err(eyre!("task sequence aborted due to failure"));
         }
 
-        Ok(())
+        let completion_state = sub_deps.lock().await.completion_state();
+        Ok(completion_state)
     }
 
     async fn exec_script(

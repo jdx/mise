@@ -57,17 +57,31 @@ impl fmt::Display for TaskCycleError {
 impl std::error::Error for TaskCycleError {}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// State contributed by a task's completed direct dependencies.
 pub struct TaskDependencyState {
+    /// Stable artifact identities to include in the task's cache key.
     pub cache_keys: Vec<String>,
+    /// Whether any dependency executed or restored outputs.
     pub any_did_work: bool,
+    /// Whether any dependency did work without publishing a stable artifact identity.
     pub any_unkeyed_did_work: bool,
 }
 
 #[derive(Debug, Clone, Default)]
+/// Completed task state that can be propagated into a nested task graph.
 pub struct TaskCompletionState {
     completed: HashSet<TaskKey>,
     did_work: HashSet<TaskKey>,
     cache_keys: HashMap<TaskKey, String>,
+}
+
+impl TaskCompletionState {
+    /// Merge state returned by a completed nested task graph.
+    pub fn merge(&mut self, other: Self) {
+        self.completed.extend(other.completed);
+        self.did_work.extend(other.did_work);
+        self.cache_keys.extend(other.cache_keys);
+    }
 }
 
 #[derive(Debug)]
@@ -341,12 +355,16 @@ impl Deps {
         self.cache_keys.insert(task_key(task), cache_key);
     }
 
-    /// Return the completed direct-dependency state needed for freshness and artifact caching.
+    /// Return the completed dependency state needed for freshness and artifact caching.
     pub fn dependency_state(&self, task: &Task) -> TaskDependencyState {
         let key = task_key(task);
-        let Some(deps) = self.dep_edges.get(&key) else {
-            return TaskDependencyState::default();
-        };
+        let deps = self
+            .dep_edges
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .chain(self.post_dep_parents.get(&key).into_iter().flatten())
+            .collect::<HashSet<_>>();
         let mut cache_keys = deps
             .iter()
             .filter_map(|dep_key| self.cache_keys.get(dep_key).cloned())
@@ -551,6 +569,101 @@ mod tests {
             name: name.to_string(),
             ..Default::default()
         }
+    }
+
+    fn deps_with_relationships(
+        dep_edges: HashMap<TaskKey, HashSet<TaskKey>>,
+        post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>,
+    ) -> Deps {
+        let (tx, _) = mpsc::unbounded_channel();
+        Deps {
+            graph: DiGraph::new(),
+            sent: HashSet::new(),
+            removed: HashSet::new(),
+            executed: HashSet::new(),
+            did_work: HashSet::new(),
+            cache_keys: HashMap::new(),
+            dep_edges,
+            post_dep_parents,
+            tx,
+        }
+    }
+
+    #[test]
+    fn dependency_state_tracks_direct_artifact_identity_and_unkeyed_work() {
+        let a = task("a");
+        let b = task("b");
+        let c = task("c");
+        let dep_edges = HashMap::from([
+            (task_key(&b), HashSet::from([task_key(&a)])),
+            (task_key(&c), HashSet::from([task_key(&b)])),
+        ]);
+        let mut deps = deps_with_relationships(dep_edges, HashMap::new());
+
+        deps.mark_did_work(&b);
+        assert_eq!(
+            deps.dependency_state(&c),
+            TaskDependencyState {
+                cache_keys: vec![],
+                any_did_work: true,
+                any_unkeyed_did_work: true,
+            }
+        );
+
+        deps.mark_cache_key(&b, "b-key".to_string());
+        assert_eq!(
+            deps.dependency_state(&c),
+            TaskDependencyState {
+                cache_keys: vec!["b-key".to_string()],
+                any_did_work: true,
+                any_unkeyed_did_work: false,
+            }
+        );
+    }
+
+    #[test]
+    fn dependency_state_includes_post_dependency_parents() {
+        let parent = task("parent");
+        let post = task("post");
+        let post_dep_parents =
+            HashMap::from([(task_key(&post), HashSet::from([task_key(&parent)]))]);
+        let mut deps = deps_with_relationships(HashMap::new(), post_dep_parents);
+
+        deps.mark_did_work(&parent);
+        deps.mark_cache_key(&parent, "parent-key".to_string());
+
+        assert_eq!(
+            deps.dependency_state(&post),
+            TaskDependencyState {
+                cache_keys: vec!["parent-key".to_string()],
+                any_did_work: true,
+                any_unkeyed_did_work: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn new_pruned_preserves_completed_artifact_state() {
+        let completed_task = task("completed");
+        let key = task_key(&completed_task);
+        let completion_state = TaskCompletionState {
+            completed: HashSet::from([key.clone()]),
+            did_work: HashSet::from([key.clone()]),
+            cache_keys: HashMap::from([(key.clone(), "completed-key".to_string())]),
+        };
+        let config = Config::get().await.unwrap();
+
+        let deps = Deps::new_pruned(&config, vec![completed_task], &completion_state)
+            .await
+            .unwrap();
+        let propagated = deps.completion_state();
+
+        assert!(deps.is_empty());
+        assert!(propagated.did_work.contains(&key));
+        assert_eq!(
+            propagated.cache_keys.get(&key).map(String::as_str),
+            Some("completed-key")
+        );
     }
 
     #[test]

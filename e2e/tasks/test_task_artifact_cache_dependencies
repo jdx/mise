@@ -45,12 +45,33 @@ printf 'ran\n' >> consume-runs.txt
 '''
 sources = ["consume.txt"]
 outputs = ["consume-dist"]
+
+[tasks.parent]
+depends_post = ["after"]
+run = '''
+mkdir -p parent-dist
+cat parent.txt > parent-dist/result.txt
+printf 'ran\n' >> parent-runs.txt
+'''
+sources = ["parent.txt"]
+outputs = ["parent-dist"]
+
+[tasks.after]
+run = '''
+mkdir -p after-dist
+cat parent-dist/result.txt after.txt > after-dist/result.txt
+printf 'ran\n' >> after-runs.txt
+'''
+sources = ["after.txt"]
+outputs = ["after-dist"]
 EOF
 
 printf 'lib-one\n' >lib.txt
 printf 'app\n' >app.txt
 printf 'prepare-one\n' >prepare.txt
 printf 'consume\n' >consume.txt
+printf 'parent-one\n' >parent.txt
+printf 'after\n' >after.txt
 
 mise run app
 assert "wc -l < lib-runs.txt | tr -d ' '" "1"
@@ -99,3 +120,18 @@ mise run consume
 assert "wc -l < prepare-runs.txt | tr -d ' '" "2"
 assert "wc -l < consume-runs.txt | tr -d ' '" "2"
 assert "cat consume-dist/result.txt" $'prepare-two\nconsume'
+
+# A post-dependency includes the parent artifact identity just like a regular
+# dependency, so it restores only for the matching parent outputs.
+mise run parent
+assert "wc -l < parent-runs.txt | tr -d ' '" "1"
+assert "wc -l < after-runs.txt | tr -d ' '" "1"
+rm -rf parent-dist after-dist
+assert_contains "mise run parent 2>&1" "restored outputs from cache"
+assert "wc -l < parent-runs.txt | tr -d ' '" "1"
+assert "wc -l < after-runs.txt | tr -d ' '" "1"
+printf 'parent-two\n' >parent.txt
+mise run parent
+assert "wc -l < parent-runs.txt | tr -d ' '" "2"
+assert "wc -l < after-runs.txt | tr -d ' '" "2"
+assert "cat after-dist/result.txt" $'parent-two\nafter'
