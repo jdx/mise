@@ -111,6 +111,22 @@ fn display_first_command(script: &str) -> String {
     cmd
 }
 
+/// Build the script text represented by the task command header.
+///
+/// Inline task arguments are appended to the command text before selecting the
+/// first command for display, matching how the inline shell is invoked. Shebang
+/// tasks receive arguments as script argv instead, so attaching them to a command
+/// in the script would be misleading.
+fn display_script_with_args(script: &str, args: &[String]) -> String {
+    if script.starts_with("#!") || args.is_empty() {
+        script.to_string()
+    } else if script.is_empty() {
+        shell_words::join(args)
+    } else {
+        format!("{script} {}", shell_words::join(args))
+    }
+}
+
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
     pub force: bool,
@@ -918,22 +934,20 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
+        let display_script = display_script_with_args(script, args);
         // For display, skip leading shebang/blank/`set ...` boilerplate and join
         // backslash-continued lines so the header shows the first real command as a
         // single logical line (see display_first_command). When show_full_cmd is set,
         // keep the whole script instead — the reduction would otherwise discard every
         // line past the first command, making the setting a no-op (#10469, #9844).
         let display_script = if Settings::get().task.show_full_cmd {
-            script.to_string()
+            display_script
         } else {
-            display_first_command(script)
+            display_first_command(&display_script)
         };
-        let args_str = args.join(" ");
-        let cmd = match (display_script.is_empty(), args_str.is_empty()) {
-            (true, true) => "$".to_string(),
-            (true, false) => format!("$ {args_str}"),
-            (false, true) => format!("$ {display_script}"),
-            (false, false) => format!("$ {display_script} {args_str}"),
+        let cmd = match display_script.is_empty() {
+            true => "$".to_string(),
+            false => format!("$ {display_script}"),
         };
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
@@ -1716,11 +1730,28 @@ mod tests {
     fn test_display_first_command_header_has_no_dangling_backslash_with_args() {
         // Reproduces #10083: the joined command plus extra args must not contain
         // the `\ ` sequence that confused the original output.
-        let display_script = display_first_command("echo long_command \\\n  --option1 value1");
-        let args_str = ["--extra", "args"].join(" ");
-        let header = format!("$ {display_script} {args_str}");
+        let args = ["--extra".to_string(), "args".to_string()];
+        let display_script =
+            display_script_with_args("echo long_command \\\n  --option1 value1", &args);
+        let header = format!("$ {}", display_first_command(&display_script));
         assert_eq!(header, "$ echo long_command --option1 value1 --extra args");
         assert!(!header.contains("\\ "));
+    }
+
+    #[test]
+    fn test_display_script_with_args_appends_inline_args() {
+        let args = ["a with space".to_string(), "second".to_string()];
+        assert_eq!(
+            display_script_with_args("echo first\necho last", &args),
+            "echo first\necho last 'a with space' second"
+        );
+    }
+
+    #[test]
+    fn test_display_script_with_args_keeps_shebang_args_off_commands() {
+        let script = "#!/usr/bin/env bash\necho first\necho last";
+        let args = ["arg".to_string()];
+        assert_eq!(display_script_with_args(script, &args), script);
     }
 
     #[test]
