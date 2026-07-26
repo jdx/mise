@@ -1,2 +1,4 @@
-backends = ["spm:danger/swift"]
+backends = [
+  { full = "spm:danger/swift", options = { artifactbundle = false, install_command = "make install PREFIX=\"$MISE_TOOL_INSTALL_PATH\"" } },
+]
 description = "Stop saying 'you forgot to …' in code review"
