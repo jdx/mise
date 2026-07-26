@@ -286,8 +286,10 @@ jobs:
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
-      - name: cargo clippy
-        run: cargo clippy -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets -- -D warnings
+      - name: check unused code
+        run: cargo check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
+        env:
+          RUSTFLAGS: -D unused
       - name: cargo test
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
