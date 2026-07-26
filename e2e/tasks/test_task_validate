@@ -86,7 +86,7 @@ depends = ["nonexistent"]
 
 [tasks.also-invalid]
 run = "echo also-invalid"
-depends = ["also-nonexistent"]
+depends = ["nonexistent"]
 EOF
 
 assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"

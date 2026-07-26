@@ -91,11 +91,15 @@ impl TasksValidate {
             if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
                 issues.push(cycle_issue(cycle, details));
             } else {
-                issues.push(graph_error_issue("task graph", details.clone()));
-                issues.extend(
-                    self.find_additional_graph_issues(&config, &tasks, details)
-                        .await,
-                );
+                let additional_issues = self.find_additional_graph_issues(&config, &tasks).await;
+                let graph_error_is_represented = additional_issues.iter().any(|issue| {
+                    issue.category == "dependency-graph-error"
+                        && issue.details.as_deref() == Some(details.as_str())
+                });
+                if !graph_error_is_represented {
+                    issues.push(graph_error_issue("task graph", details));
+                }
+                issues.extend(additional_issues);
             }
         }
         for task in &tasks {
@@ -139,12 +143,11 @@ impl TasksValidate {
         &self,
         config: &Arc<Config>,
         tasks: &[Task],
-        reported_details: String,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let mut valid_tasks = Vec::new();
         let mut found_cycle = None;
-        let mut reported_errors = HashSet::from([reported_details]);
+        let mut reported_error_details = HashSet::new();
         for task in tasks {
             match Deps::new(config, vec![task.clone()]).await {
                 Ok(_) => valid_tasks.push(task.clone()),
@@ -153,9 +156,8 @@ impl TasksValidate {
                         found_cycle.get_or_insert_with(|| cycle_issue(cycle, err.to_string()));
                     } else {
                         let details = err.to_string();
-                        if reported_errors.insert(details.clone()) {
-                            issues.push(graph_error_issue(&task.name, details));
-                        }
+                        reported_error_details.insert(details.clone());
+                        issues.push(graph_error_issue(&task.name, details));
                     }
                 }
             }
@@ -173,7 +175,7 @@ impl TasksValidate {
                 found_cycle.get_or_insert_with(|| cycle_issue(cycle, err.to_string()));
             } else {
                 let details = err.to_string();
-                if reported_errors.insert(details.clone()) {
+                if reported_error_details.insert(details.clone()) {
                     issues.push(graph_error_issue("task graph", details));
                 }
             }
