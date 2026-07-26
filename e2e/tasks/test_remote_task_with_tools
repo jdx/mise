@@ -51,7 +51,8 @@ mise trust
 # Run the simple local task to see if jq is available
 echo "Testing local task with jq:"
 TEST_TOOL_OUTPUT="$TMPDIR/test_tool_output.txt"
-if mise run test_tool 2>&1 | tee "$TEST_TOOL_OUTPUT" | grep -q "jq-"; then
+if mise run test_tool >"$TEST_TOOL_OUTPUT" 2>&1 &&
+  grep -Fq "jq-" "$TEST_TOOL_OUTPUT"; then
   echo "✓ Local task can find jq"
 else
   echo "✗ Local task cannot find jq"
