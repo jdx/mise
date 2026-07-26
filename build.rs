@@ -344,11 +344,7 @@ fn codegen_registry() {
                 .map(|o| format!("\"{o}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
-            idiomatic_files = idiomatic_files
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
+            idiomatic_files = idiomatic_files.to_vec().join(", "),
             detect = detect
                 .iter()
                 .map(|f| format!("\"{f}\""))
