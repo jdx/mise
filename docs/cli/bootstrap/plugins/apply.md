@@ -2,6 +2,7 @@
 # `mise bootstrap plugins apply`
 
 - **Usage**: `mise bootstrap plugins apply [-n --dry-run]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 ## Flags

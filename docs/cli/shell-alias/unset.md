@@ -3,6 +3,7 @@
 
 - **Usage**: `mise shell-alias unset <shell_alias>`
 - **Aliases**: `rm`, `remove`, `delete`, `del`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/shell_alias/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/unset.rs)
 
 Removes a shell alias

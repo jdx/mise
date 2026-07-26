@@ -2,6 +2,7 @@
 # `mise deps add`
 
 - **Usage**: `mise deps add [-D --dev] <PACKAGES>…`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/deps/add.rs`](https://github.com/jdx/mise/blob/main/src/cli/deps/add.rs)
 
 Add a dependency

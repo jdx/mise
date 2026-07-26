@@ -2,6 +2,7 @@
 # `mise oci build`
 
 - **Usage**: `mise oci build [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/oci/build.rs`](https://github.com/jdx/mise/blob/main/src/cli/oci/build.rs)
 
 [experimental] Build an OCI image from the current mise.toml

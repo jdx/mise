@@ -3,6 +3,7 @@
 
 - **Usage**: `mise plugins [FLAGS] <SUBCOMMAND>`
 - **Aliases**: `p`
+- **Effect**: read-only
 - **Source code**: [`src/cli/plugins/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/mod.rs)
 
 Manage plugins

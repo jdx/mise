@@ -3,6 +3,7 @@
 
 - **Usage**: `mise plugins ls-remote [-u --urls] [--only-names]`
 - **Aliases**: `list-remote`, `list-all`
+- **Effect**: read-only
 - **Source code**: [`src/cli/plugins/ls_remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls_remote.rs)
 
 List all available remote plugins

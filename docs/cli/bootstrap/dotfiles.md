@@ -2,6 +2,7 @@
 # `mise bootstrap dotfiles`
 
 - **Usage**: `mise bootstrap dotfiles <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage dotfiles from `[dotfiles]`

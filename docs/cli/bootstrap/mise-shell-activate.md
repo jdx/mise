@@ -2,6 +2,7 @@
 # `mise bootstrap mise-shell-activate`
 
 - **Usage**: `mise bootstrap mise-shell-activate <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`

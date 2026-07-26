@@ -2,6 +2,7 @@
 # `mise lock`
 
 - **Usage**: `mise lock [FLAGS] [TOOL]…`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/lock.rs`](https://github.com/jdx/mise/blob/main/src/cli/lock.rs)
 
 Update lockfile checksums and URLs for all specified platforms

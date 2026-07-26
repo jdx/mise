@@ -2,6 +2,7 @@
 # `mise token`
 
 - **Usage**: `mise token <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/token/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/mod.rs)
 
 Display git provider tokens mise will use

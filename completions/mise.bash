@@ -9,8 +9,11 @@ _mise() {
 
 	local cur prev words cword was_split comp_args
     _comp_initialize -n : -- "$@" || return
-    local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_7_13.spec"
+    local spec_dir="${XDG_CACHE_HOME:-$HOME/.cache}/usage"
+    [[ -d "$spec_dir" ]] || mkdir -p -m 700 "$spec_dir"
+    local spec_file="$spec_dir/usage__usage_spec_mise_2026_7_13.spec"
     if [[ ! -f "$spec_file" ]]; then
+        find "$spec_dir" -maxdepth 1 -name 'usage__usage_spec_mise_*.spec' -type f -mtime +30 -delete 2>/dev/null
         mise usage >| "$spec_file"
     fi
     # shellcheck disable=SC2207

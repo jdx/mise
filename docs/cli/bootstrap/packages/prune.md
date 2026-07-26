@@ -2,6 +2,7 @@
 # `mise bootstrap packages prune`
 
 - **Usage**: `mise bootstrap packages prune [FLAGS]`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/system/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/prune.rs)
 
 Prune installed system packages no longer declared in `[bootstrap.packages]`

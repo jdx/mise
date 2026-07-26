@@ -36,6 +36,7 @@ mod hook_not_found;
 mod tool_alias;
 
 pub use hook_env::HookReason;
+mod command_effects;
 mod deps;
 pub(crate) mod edit;
 mod implode;

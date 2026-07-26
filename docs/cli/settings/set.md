@@ -3,6 +3,7 @@
 
 - **Usage**: `mise settings set [-l --local] <SETTING> [VALUE]`
 - **Aliases**: `create`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/settings/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/set.rs)
 
 Add/update a setting

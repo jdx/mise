@@ -2,6 +2,7 @@
 # `mise patrons`
 
 - **Usage**: `mise patrons [-J --json] [--refresh]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/patrons.rs`](https://github.com/jdx/mise/blob/main/src/cli/patrons.rs)
 
 Show the individuals supporting mise as Patron-tier members

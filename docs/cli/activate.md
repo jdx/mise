@@ -2,6 +2,7 @@
 # `mise activate`
 
 - **Usage**: `mise activate [FLAGS] [SHELL_TYPE]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/activate.rs)
 
 Initializes mise in the current shell session

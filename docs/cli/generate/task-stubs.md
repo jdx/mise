@@ -2,6 +2,7 @@
 # `mise generate task-stubs`
 
 - **Usage**: `mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/task_stubs.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/task_stubs.rs)
 
 Generates shims to run mise tasks

@@ -3,6 +3,7 @@
 
 - **Usage**: `mise env [FLAGS] [TOOL@VERSION]…`
 - **Aliases**: `e`
+- **Effect**: read-only
 - **Source code**: [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
 
 Exports env vars to activate mise a single time

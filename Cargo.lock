@@ -6474,7 +6474,7 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib 3.5.7",
+ "usage-lib 4.0.0",
  "versions",
  "vfox",
  "walkdir",
@@ -11152,9 +11152,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "3.5.7"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14c48cda5d90702277243e54782ddcae91cf1430a11deee6360f5c46c05a9437"
+checksum = "b60d4043943b220cc7269576a383ff2d62ab00f208f10d94b2496791729f8b02"
 dependencies = [
  "clap",
  "heck",

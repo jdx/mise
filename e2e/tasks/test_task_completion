@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Requires usage >= 4.0, the version that accepts `effect=` (jdx/usage#739,
+# #742), which mise's spec now carries. `latest` only reaches a new release
+# once it clears the default 24h minimum_release_age, so opt out of the delay
+# here — same as test_task_completion_global_flags.
+export MISE_MINIMUM_RELEASE_AGE=0s
 
 cat <<EOF >mise.toml
 [tools]

@@ -2,6 +2,7 @@
 # `mise dotfiles edit`
 
 - **Usage**: `mise dotfiles edit [FLAGS] <TARGET>`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/dotfiles/edit.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/edit.rs)
 
 Edit a managed dotfile source

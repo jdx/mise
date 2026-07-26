@@ -2,6 +2,7 @@
 # `mise registry`
 
 - **Usage**: `mise registry [FLAGS] [NAME]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/registry.rs`](https://github.com/jdx/mise/blob/main/src/cli/registry.rs)
 
 List available tools to install

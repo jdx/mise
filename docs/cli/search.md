@@ -2,6 +2,7 @@
 # `mise search`
 
 - **Usage**: `mise search [FLAGS] [NAME]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/search.rs`](https://github.com/jdx/mise/blob/main/src/cli/search.rs)
 
 Search for tools in the registry

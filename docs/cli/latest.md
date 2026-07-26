@@ -2,6 +2,7 @@
 # `mise latest`
 
 - **Usage**: `mise latest [-i --installed] [--minimum-release-age <MINIMUM_RELEASE_AGE>] <TOOL@VERSION>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/latest.rs`](https://github.com/jdx/mise/blob/main/src/cli/latest.rs)
 
 Gets the latest available version for a plugin

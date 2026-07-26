@@ -2,6 +2,7 @@
 # `mise tool-alias`
 
 - **Usage**: `mise tool-alias [-p --tool <TOOL>] [--no-header] <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/tool_alias/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/mod.rs)
 
 Manage tool version aliases.

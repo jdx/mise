@@ -3,6 +3,7 @@
 
 - **Usage**: `mise shell-alias ls [--no-header]`
 - **Aliases**: `list`
+- **Effect**: read-only
 - **Source code**: [`src/cli/shell_alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/ls.rs)
 
 List shell aliases

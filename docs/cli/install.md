@@ -3,6 +3,7 @@
 
 - **Usage**: `mise install [FLAGS] [TOOL@VERSION]…`
 - **Aliases**: `i`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs)
 
 Install a tool version

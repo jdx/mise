@@ -3,6 +3,7 @@
 
 - **Usage**: `mise bootstrap status [-J --json] [--missing]`
 - **Aliases**: `ls`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Show the aggregate bootstrap status

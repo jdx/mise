@@ -2,6 +2,7 @@
 # `mise deps install`
 
 - **Usage**: `mise deps install [FLAGS] [PROVIDER]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/deps/install.rs`](https://github.com/jdx/mise/blob/main/src/cli/deps/install.rs)
 
 Install all project dependencies

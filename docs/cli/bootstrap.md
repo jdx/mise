@@ -2,6 +2,7 @@
 # `mise bootstrap`
 
 - **Usage**: `mise bootstrap [FLAGS] [SUBCOMMAND]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Set up a machine for the current config in one command

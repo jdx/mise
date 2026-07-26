@@ -2,6 +2,7 @@
 # `mise sponsors`
 
 - **Usage**: `mise sponsors`
+- **Effect**: read-only
 - **Source code**: [`src/cli/sponsors.rs`](https://github.com/jdx/mise/blob/main/src/cli/sponsors.rs)
 
 Show the companies sponsoring mise and the jdx.dev open source tools

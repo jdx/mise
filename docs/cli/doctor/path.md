@@ -2,6 +2,7 @@
 # `mise doctor path`
 
 - **Usage**: `mise doctor path [-f --full]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/doctor/path.rs`](https://github.com/jdx/mise/blob/main/src/cli/doctor/path.rs)
 
 Print the current PATH entries mise is providing

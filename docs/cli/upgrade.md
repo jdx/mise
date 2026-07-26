@@ -3,6 +3,7 @@
 
 - **Usage**: `mise upgrade [FLAGS] [INSTALLED_TOOL@VERSION]…`
 - **Aliases**: `up`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/upgrade.rs`](https://github.com/jdx/mise/blob/main/src/cli/upgrade.rs)
 
 Upgrades outdated tools

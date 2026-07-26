@@ -2,6 +2,7 @@
 # `mise token gitlab`
 
 - **Usage**: `mise token gitlab [--unmask] [HOST]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/token/gitlab.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/gitlab.rs)
 
 GitLab token

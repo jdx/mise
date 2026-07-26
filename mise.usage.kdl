@@ -1,4 +1,4 @@
-min_usage_version "3.5.7"
+min_usage_version "4.0"
 name mise
 bin mise
 about "Dev tools, env vars, and tasks in one CLI"
@@ -93,7 +93,7 @@ Shorthand for `mise tasks run <TASK>`.
 """# required=#false
 arg "[TASK_ARGS]…" help="Task arguments" required=#false var=#true hide=#true
 arg "[-- TASK_ARGS_LAST]…" required=#false var=#true hide=#true
-cmd activate help="Initializes mise in the current shell session" {
+cmd activate help="Initializes mise in the current shell session" effect=read {
     long_help #"""
 Initializes mise in the current shell session
 
@@ -154,13 +154,13 @@ See https://mise.en.dev/dev-tools/shims.html#shims-vs-path for more information
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd tool-alias help="Manage tool version aliases." {
+cmd tool-alias help="Manage tool version aliases." effect=read {
     alias alias aliases hide=#true
     flag "-p --tool" help="Filter aliases by tool" {
         arg <TOOL>
     }
     flag --no-header help="Don't show table header"
-    cmd get help="Show an alias for a tool" {
+    cmd get help="Show an alias for a tool" effect=read {
         long_help #"""
 Show an alias for a tool
 
@@ -180,7 +180,7 @@ Examples:
 List tool version aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.
-"""# {
+"""# effect=read {
         alias list
         long_help #"""
 List tool version aliases
@@ -202,7 +202,7 @@ Examples:
         flag --no-header help="Don't show table header"
         arg "[TOOL]" help="Show aliases for <TOOL>" required=#false
     }
-    cmd set help="Add/update an alias for a tool/backend" {
+    cmd set help="Add/update an alias for a tool/backend" effect=write {
         alias add create
         long_help #"""
 Add/update an alias for a tool/backend
@@ -220,7 +220,7 @@ Examples:
         arg <ALIAS> help="The alias to set"
         arg "[VALUE]" help="The value to set the alias to" required=#false
     }
-    cmd unset help="Clears an alias for a tool/backend" {
+    cmd unset help="Clears an alias for a tool/backend" effect=write {
         alias rm remove delete del
         long_help #"""
 Clears an alias for a tool/backend
@@ -241,7 +241,7 @@ Examples:
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
     arg "[ARGS]…" help="all arguments" required=#false double_dash=automatic var=#true
 }
-cmd backends help="Manage backends" {
+cmd backends help="Manage backends" effect=read {
     alias b backend backend-list hide=#true
     after_long_help #"""
 Deprecation:
@@ -250,7 +250,7 @@ The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
 Use `mise backends` instead.
 
 """#
-    cmd ls help="List built-in backends" {
+    cmd ls help="List built-in backends" effect=read {
         alias list
         after_long_help #"""
 Examples:
@@ -272,7 +272,7 @@ Examples:
 """#
     }
 }
-cmd bin-paths help="List all the active runtime bin paths" {
+cmd bin-paths help="List all the active runtime bin paths" effect=read {
     flag --bin-names help="Output executable names instead of bin directories"
     flag "-J --json" help="Output executable entries in JSON format (implies --bin-names)"
     arg "[TOOL@VERSION]…" help=#"""
@@ -280,7 +280,7 @@ Tool(s) to look up
 e.g.: ruby@3
 """# required=#false var=#true
 }
-cmd bootstrap help="Set up a machine for the current config in one command" {
+cmd bootstrap help="Set up a machine for the current config in one command" effect=write {
     long_help #"""
 Set up a machine for the current config in one command
 
@@ -365,8 +365,8 @@ Can be passed multiple times or as a comma-separated list.
         }
     }
     flag --update help="Refresh package manager metadata and update configured repos"
-    cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" {
-        cmd apply help="Apply dotfiles from `[dotfiles]`" {
+    cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
+        cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
             long_help #"""
 Apply dotfiles from `[dotfiles]`
 
@@ -388,7 +388,7 @@ Examples:
             flag "-y --yes" help="Skip the confirmation prompt"
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
         }
-        cmd status help="Show the status of dotfiles from `[dotfiles]`" {
+        cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
             alias ls
             after_long_help #"""
 Examples:
@@ -407,75 +407,75 @@ state (missing, source missing, differs)
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         }
     }
-    cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
-        cmd apply {
+    cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status {
+        cmd status effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
         }
     }
-    cmd linux subcommand_required=#true help="Manage Linux bootstrap config from `[bootstrap.linux]`" {
-        cmd systemd-units subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" {
+    cmd linux subcommand_required=#true help="Manage Linux bootstrap config from `[bootstrap.linux]`" effect=read {
+        cmd systemd-units subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" effect=read {
             alias systemd hide=#true
-            cmd apply {
+            cmd apply effect=write {
                 flag "-n --dry-run" help="Print the commands that would run without running them"
                 flag "-y --yes" help="Skip the confirmation prompt"
             }
-            cmd status {
+            cmd status effect=read {
                 flag "-J --json" help="Output in JSON format"
                 flag --missing help="Exit with code 1 if any configured systemd user service is not in its desired state"
             }
         }
     }
-    cmd macos subcommand_required=#true help="Manage macOS bootstrap config from `[bootstrap.macos]`" {
-        cmd defaults subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
-            cmd apply {
+    cmd macos subcommand_required=#true help="Manage macOS bootstrap config from `[bootstrap.macos]`" effect=read {
+        cmd defaults subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" effect=read {
+            cmd apply effect=write {
                 flag "-n --dry-run" help="Print the commands that would run without running them"
                 flag "-y --yes" help="Skip the confirmation prompt"
             }
-            cmd status {
+            cmd status effect=read {
                 flag "-J --json" help="Output in JSON format"
                 flag --missing help="Exit with code 1 if any configured defaults are not in their desired state"
             }
         }
-        cmd launchd-agents subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" {
+        cmd launchd-agents subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {
             alias launchd hide=#true
-            cmd apply {
+            cmd apply effect=write {
                 flag "-n --dry-run" help="Print the commands that would run without running them"
                 flag "-y --yes" help="Skip the confirmation prompt"
             }
-            cmd status {
+            cmd status effect=read {
                 flag "-J --json" help="Output in JSON format"
                 flag --missing help="Exit with code 1 if any configured LaunchAgent is not in its desired state"
             }
         }
     }
-    cmd macos-defaults hide=#true subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" {
-        cmd apply {
+    cmd macos-defaults hide=#true subcommand_required=#true help="Manage macOS defaults from `[bootstrap.macos.defaults]`" effect=read {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status {
+        cmd status effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured defaults are not in their desired state"
         }
     }
-    cmd mise-shell-activate subcommand_required=#true help="Manage mise shell activation from `[bootstrap.mise_shell_activate]`" {
+    cmd mise-shell-activate subcommand_required=#true help="Manage mise shell activation from `[bootstrap.mise_shell_activate]`" effect=read {
         alias shell hide=#true
-        cmd apply {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status {
+        cmd status effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured shell activation is not in its desired state"
         }
     }
-    cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" {
-        cmd apply help="Apply system packages from `[bootstrap.packages]`" {
+    cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" effect=read {
+        cmd apply help="Apply system packages from `[bootstrap.packages]`" effect=write {
             alias i
             alias install hide=#true
             long_help #"""
@@ -507,14 +507,14 @@ Examples:
             flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
             arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
         }
-        cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" {
+        cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" effect=read {
             long_help #"""
 Manage Homebrew taps used by bootstrap packages
 
 These commands edit `[bootstrap.brew.taps]` so tapped formulae and casks
 can be fetched directly by mise without a Homebrew installation.
 """#
-            cmd tap help="Add a Homebrew tap URL to [bootstrap.brew.taps]" {
+            cmd tap help="Add a Homebrew tap URL to [bootstrap.brew.taps]" effect=write {
                 after_long_help #"""
 Examples:
 
@@ -530,7 +530,7 @@ Examples:
                 arg <TAP> help="Tap name, e.g. `owner/repo`"
                 arg "[URL]" help="GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git" required=#false
             }
-            cmd untap help="Remove Homebrew tap URLs from [bootstrap.brew.taps]" {
+            cmd untap help="Remove Homebrew tap URLs from [bootstrap.brew.taps]" effect=write {
                 alias remove rm
                 after_long_help #"""
 Examples:
@@ -546,7 +546,7 @@ Examples:
                 arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
             }
         }
-        cmd import help="Import installed system packages into `[bootstrap.packages]`" {
+        cmd import help="Import installed system packages into `[bootstrap.packages]`" effect=write {
             long_help #"""
 Import installed system packages into `[bootstrap.packages]`
 
@@ -578,7 +578,7 @@ Examples:
                 arg <PATH>
             }
         }
-        cmd prune help="Prune installed system packages no longer declared in `[bootstrap.packages]`" {
+        cmd prune help="Prune installed system packages no longer declared in `[bootstrap.packages]`" effect=destructive {
             long_help #"""
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
@@ -602,7 +602,7 @@ Examples:
             flag "-n --dry-run" help="Print what would be removed without deleting anything"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status help="Show the status of system packages from `[bootstrap.packages]`" {
+        cmd status help="Show the status of system packages from `[bootstrap.packages]`" effect=read {
             alias ls
             after_long_help #"""
 Examples:
@@ -615,7 +615,7 @@ Examples:
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured packages are not in their desired state"
         }
-        cmd upgrade help="Upgrade installed bootstrap packages from `[bootstrap.packages]`" {
+        cmd upgrade help="Upgrade installed bootstrap packages from `[bootstrap.packages]`" effect=write {
             alias up
             long_help #"""
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
@@ -648,7 +648,7 @@ Examples:
             flag "-y --yes" help="Skip the confirmation prompt"
             arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
         }
-        cmd use help="Add bootstrap packages to [bootstrap.packages] and install them" {
+        cmd use help="Add bootstrap packages to [bootstrap.packages] and install them" effect=write {
             alias u
             long_help #"""
 Add bootstrap packages to [bootstrap.packages] and install them
@@ -683,16 +683,16 @@ Examples:
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
         }
     }
-    cmd plugins subcommand_required=#true help="Manage package manager plugins declared in `[bootstrap.plugins]`" {
-        cmd apply {
+    cmd plugins subcommand_required=#true help="Manage package manager plugins declared in `[bootstrap.plugins]`" effect=read {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print what would happen without installing plugins"
         }
-        cmd status {
+        cmd status effect=read {
             flag --missing help="Exit with code 1 if a declared plugin is missing"
         }
     }
-    cmd repos subcommand_required=#true help="Manage git repo checkouts from `[bootstrap.repos]`" {
-        cmd apply {
+    cmd repos subcommand_required=#true help="Manage git repo checkouts from `[bootstrap.repos]`" effect=read {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
@@ -702,58 +702,58 @@ Examples:
             arg "[PATH]…" help="Run only in matching configured or expanded paths" required=#false var=#true
             arg "<-- COMMAND>…" help="Command and arguments to run in each repo" var=#true
         }
-        cmd status {
+        cmd status effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured repo is not in its desired state"
         }
-        cmd update {
+        cmd update effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
             arg "[PATH]…" help="Update only matching configured or expanded paths" required=#false var=#true
         }
     }
-    cmd status help="Show the aggregate bootstrap status" {
+    cmd status help="Show the aggregate bootstrap status" effect=read {
         alias ls
         flag "-J --json" help="Output in JSON format"
         flag --missing help="Exit with code 1 if any configured bootstrap state is not in its desired state"
     }
-    cmd systemd hide=#true subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" {
-        cmd apply {
+    cmd systemd hide=#true subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" effect=read {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status {
+        cmd status effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured systemd user service is not in its desired state"
         }
     }
-    cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" {
-        cmd apply {
+    cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" effect=read {
+        cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status {
+        cmd status effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 if any configured user setting is not in its desired state"
         }
     }
 }
-cmd cache help="Manage the mise cache" {
+cmd cache help="Manage the mise cache" effect=read {
     long_help #"""
 Manage the mise cache
 
 Run `mise cache` with no args to view the current cache directory.
 """#
-    cmd clear help="Deletes all cache files in mise" {
+    cmd clear help="Deletes all cache files in mise" effect=write {
         alias c
         alias clean hide=#true
         flag --outdate help="Mark all cache files as old" hide=#true
         arg "[TOOL]…" help="Tool(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
-    cmd path help="Show the cache directory path" {
+    cmd path help="Show the cache directory path" effect=read {
         alias dir
     }
-    cmd prune help="Removes stale mise cache files" {
+    cmd prune help="Removes stale mise cache files" effect=write {
         alias p
         long_help #"""
 Removes stale mise cache files
@@ -766,7 +766,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
         arg "[TOOL]…" help="Tool(s) to prune cache for e.g.: node, python" required=#false var=#true
     }
 }
-cmd completion help="Generate shell completions" {
+cmd completion help="Generate shell completions" effect=read {
     alias complete completions hide=#true
     after_long_help #"""
 Examples:
@@ -808,7 +808,7 @@ https://usage.jdx.dev
         choices bash fish powershell zsh
     }
 }
-cmd config help="Manage config files" {
+cmd config help="Manage config files" effect=read {
     alias cfg
     alias toml hide=#true
     after_long_help #"""
@@ -823,7 +823,7 @@ Examples:
     flag "-J --json" help="Output in JSON format"
     flag --no-header help="Do not print table header"
     flag --tracked-configs help="List all tracked config files"
-    cmd get help="Display the value of a setting in a mise.toml file" {
+    cmd get help="Display the value of a setting in a mise.toml file" effect=read {
         after_long_help #"""
 Examples:
 
@@ -841,7 +841,7 @@ If not provided, the nearest mise.toml file will be used
         }
         arg "[KEY]" help="The path of the config to display" required=#false
     }
-    cmd ls help="List config files currently in use" {
+    cmd ls help="List config files currently in use" effect=read {
         alias list
         after_long_help #"""
 Examples:
@@ -856,7 +856,7 @@ Examples:
         flag --no-header help="Do not print table header"
         flag --tracked-configs help="List all tracked config files"
     }
-    cmd set help="Set the value of a setting in a mise.toml file" {
+    cmd set help="Set the value of a setting in a mise.toml file" effect=write {
         after_long_help #"""
 Examples:
 
@@ -886,7 +886,7 @@ If not provided, the nearest mise.toml file will be used
         arg "[VALUE]" help="The value to set the key to (optional if provided as KEY=VALUE)" required=#false
     }
 }
-cmd current hide=#true help="Shows current active and installed runtime versions" {
+cmd current hide=#true help="Shows current active and installed runtime versions" effect=read {
     long_help #"""
 Shows current active and installed runtime versions
 
@@ -913,7 +913,7 @@ Examples:
 """#
     arg "[PLUGIN]" help="Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc" required=#false
 }
-cmd deactivate help="Disable mise for current shell session" {
+cmd deactivate help="Disable mise for current shell session" effect=read {
     long_help #"""
 Disable mise for current shell session
 
@@ -926,7 +926,7 @@ Examples:
 
 """#
 }
-cmd direnv hide=#true help="Output direnv function to use mise inside direnv" {
+cmd direnv hide=#true help="Output direnv function to use mise inside direnv" effect=read {
     long_help #"""
 Output direnv function to use mise inside direnv
 
@@ -936,7 +936,7 @@ Because this generates the idiomatic files based on currently installed plugins,
 you should run this command after installing new plugins. Otherwise
 direnv may not know to update environment variables when idiomatic file versions change.
 """#
-    cmd activate hide=#true help="Output direnv function to use mise inside direnv" {
+    cmd activate hide=#true help="Output direnv function to use mise inside direnv" effect=read {
         long_help #"""
 Output direnv function to use mise inside direnv
 
@@ -958,13 +958,13 @@ Examples:
     cmd envrc hide=#true help=#"""
 [internal] This is an internal command that writes an envrc file
 for direnv to consume.
-"""#
+"""# effect=write
     cmd exec hide=#true help=#"""
 [internal] This is an internal command that writes an envrc file
 for direnv to consume.
 """#
 }
-cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" {
+cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
     long_help #"""
 Manage dotfiles from `[dotfiles]`
 
@@ -973,7 +973,7 @@ plus marker-delimited blocks or single lines in files mise doesn't own.
 Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
 `mise dotfiles apply`, `mise bootstrap dotfiles apply`, or `mise bootstrap`.
 """#
-    cmd add help="Add or update dotfiles in `[dotfiles]`" {
+    cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
         long_help #"""
 Add or update dotfiles in `[dotfiles]`
 
@@ -1005,7 +1005,7 @@ Examples:
         flag "-y --yes" help="Skip the confirmation prompt"
         arg <TARGET>… help="Targets to add or update" var=#true
     }
-    cmd apply help="Apply dotfiles from `[dotfiles]`" {
+    cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
         long_help #"""
 Apply dotfiles from `[dotfiles]`
 
@@ -1028,7 +1028,7 @@ Examples:
         flag "-y --yes" help="Skip the confirmation prompt"
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
     }
-    cmd edit help="Edit a managed dotfile source" {
+    cmd edit help="Edit a managed dotfile source" effect=write {
         after_long_help #"""
 Examples:
 
@@ -1046,7 +1046,7 @@ Examples:
         flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
         arg <TARGET> help="Target to edit"
     }
-    cmd status help="Show the status of dotfiles from `[dotfiles]`" {
+    cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
         alias ls
         after_long_help #"""
 Examples:
@@ -1066,7 +1066,7 @@ state (missing, source missing, differs)
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
     }
 }
-cmd doctor help="Check mise installation for possible problems" {
+cmd doctor help="Check mise installation for possible problems" effect=read {
     alias dr
     after_long_help #"""
 Examples:
@@ -1076,7 +1076,7 @@ Examples:
 
 """#
     flag "-J --json"
-    cmd path help="Print the current PATH entries mise is providing" {
+    cmd path help="Print the current PATH entries mise is providing" effect=read {
         alias paths hide=#true
         after_long_help #"""
 Examples:
@@ -1123,7 +1123,7 @@ Defaults to $SHELL
     }
     arg "[DIR]" help="Directory to start the shell in" required=#false default=.
 }
-cmd env help="Exports env vars to activate mise a single time" {
+cmd env help="Exports env vars to activate mise a single time" effect=read {
     alias e
     long_help #"""
 Exports env vars to activate mise a single time
@@ -1216,7 +1216,7 @@ macOS only in v1; on Linux falls back to allowing all network
     arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true
 }
-cmd fmt help="Formats mise.toml" {
+cmd fmt help="Formats mise.toml" effect=write {
     long_help #"""
 Formats mise.toml
 
@@ -1232,10 +1232,10 @@ Examples:
     flag "-c --check" help="Check if the configs are formatted, no formatting is done"
     flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
-cmd generate subcommand_required=#true help="Generate files for various tools/services" {
+cmd generate subcommand_required=#true help="Generate files for various tools/services" effect=read {
     alias gen
     alias g hide=#true
-    cmd bootstrap help="Generate a script to download+execute mise" {
+    cmd bootstrap help="Generate a script to download+execute mise" effect=write {
         long_help #"""
 Generate a script to download+execute mise
 
@@ -1266,7 +1266,7 @@ This is necessary if users may use a different version of mise outside the proje
             arg <LOCALIZED_DIR>
         }
     }
-    cmd config help="Generate a mise.toml file" {
+    cmd config help="Generate a mise.toml file" effect=write {
         after_long_help #"""
 Examples:
 
@@ -1284,7 +1284,7 @@ Examples:
         }
         arg "[PATH]" help="Path to the config file to create" required=#false
     }
-    cmd devcontainer help="Generate a devcontainer to execute mise" {
+    cmd devcontainer help="Generate a devcontainer to execute mise" effect=write {
         after_long_help #"""
 Examples:
 
@@ -1300,7 +1300,7 @@ Examples:
         }
         flag "-w --write" help="write to .devcontainer/devcontainer.json"
     }
-    cmd git-pre-commit help="Generate a git pre-commit hook" {
+    cmd git-pre-commit help="Generate a git pre-commit hook" effect=write {
         alias pre-commit
         long_help #"""
 Generate a git pre-commit hook
@@ -1327,7 +1327,7 @@ Examples:
             arg <HOOK>
         }
     }
-    cmd github-action help="Generate a GitHub Action workflow file" {
+    cmd github-action help="Generate a GitHub Action workflow file" effect=write {
         long_help #"""
 Generate a GitHub Action workflow file
 
@@ -1350,7 +1350,7 @@ Examples:
             arg <NAME>
         }
     }
-    cmd task-docs help="Generate documentation for tasks in a project" {
+    cmd task-docs help="Generate documentation for tasks in a project" effect=write {
         after_long_help #"""
 Examples:
 
@@ -1380,7 +1380,7 @@ run multiple times on the same file to update the documentation.
             }
         }
     }
-    cmd task-stubs help="Generates shims to run mise tasks" {
+    cmd task-stubs help="Generates shims to run mise tasks" effect=write {
         long_help #"""
 Generates shims to run mise tasks
 
@@ -1408,7 +1408,7 @@ Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate boot
             arg <MISE_BIN>
         }
     }
-    cmd tool-stub help="Generate a tool stub for HTTP-based tools" {
+    cmd tool-stub help="Generate a tool stub for HTTP-based tools" effect=write {
         long_help #"""
 Generate a tool stub for HTTP-based tools
 
@@ -1544,8 +1544,8 @@ Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.t
         arg <OUTPUT> help="Output file path for the tool stub"
     }
 }
-cmd github hide=#true subcommand_required=#true help="GitHub related commands" {
-    cmd token hide=#true help="Display the GitHub token mise will use for a given host" {
+cmd github hide=#true subcommand_required=#true help="GitHub related commands" effect=read {
+    cmd token hide=#true help="Display the GitHub token mise will use for a given host" effect=read {
         long_help #"""
 Display the GitHub token mise will use for a given host
 
@@ -1572,7 +1572,7 @@ Examples:
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
 }
-cmd global hide=#true help="Sets/gets the global tool version(s)" {
+cmd global hide=#true help="Sets/gets the global tool version(s)" effect=write {
     long_help #"""
 Sets/gets the global tool version(s)
 
@@ -1620,7 +1620,7 @@ If this is a single tool with no version, the current value of the global
 .tool-versions will be displayed
 """# required=#false var=#true
 }
-cmd hook-env hide=#true help="[internal] called by activate hook to update env vars directory change" {
+cmd hook-env hide=#true help="[internal] called by activate hook to update env vars directory change" effect=read {
     flag "-f --force" help="Skip early exit check"
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
     flag "-s --shell" help="Shell type to generate script for" {
@@ -1635,7 +1635,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
     }
     flag --status help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=#true
 }
-cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" {
+cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" effect=write {
     flag "-s --shell" help="Shell type to generate script for" {
         arg <SHELL> {
             choices bash elvish fish nu xonsh zsh pwsh
@@ -1643,7 +1643,7 @@ cmd hook-not-found hide=#true help="[internal] called by shell when a command is
     }
     arg <BIN> help="Attempted bin to run"
 }
-cmd implode help="Removes mise CLI and all related data" {
+cmd implode help="Removes mise CLI and all related data" effect=destructive {
     long_help #"""
 Removes mise CLI and all related data
 
@@ -1652,7 +1652,7 @@ Skips config directory by default.
     flag "-n --dry-run" help="List directories that would be removed without actually removing them"
     flag --config help="Also remove config directory"
 }
-cmd edit help="Edit mise.toml interactively" {
+cmd edit help="Edit mise.toml interactively" effect=write {
     after_long_help #"""
 Examples:
 
@@ -1670,7 +1670,7 @@ Examples:
     }
     arg "[PATH]" help="Path to the config file to create" required=#false
 }
-cmd install help="Install a tool version" {
+cmd install help="Install a tool version" effect=write {
     alias i
     long_help #"""
 Install a tool version
@@ -1750,7 +1750,7 @@ May require elevated permissions (e.g. sudo).
     }
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
 }
-cmd install-into help="Install a tool version to a specific path" {
+cmd install-into help="Install a tool version to a specific path" effect=write {
     long_help #"""
 Install a tool version to a specific path
 
@@ -1767,7 +1767,7 @@ Examples:
     arg <TOOL@VERSION> help="Tool to install e.g.: node@20"
     arg <PATH> help="Path to install the tool into"
 }
-cmd latest help="Gets the latest available version for a plugin" {
+cmd latest help="Gets the latest available version for a plugin" effect=read {
     long_help #"""
 Gets the latest available version for a plugin
 
@@ -1798,7 +1798,7 @@ Overrides per-tool `minimum_release_age` options and the global `minimum_release
     arg <TOOL@VERSION> help="Tool to get the latest version of"
     arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" required=#false hide=#true
 }
-cmd link help="Symlinks a tool version into mise" {
+cmd link help="Symlinks a tool version into mise" effect=write {
     alias ln
     long_help #"""
 Symlinks a tool version into mise
@@ -1825,7 +1825,7 @@ The local path to the tool version
 e.g.: ~/.nvm/versions/node/v20.0.0
 """#
 }
-cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mise.toml" {
+cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mise.toml" effect=write {
     alias l hide=#true
     long_help #"""
 Sets/gets tool version in local .tool-versions or mise.toml
@@ -1876,7 +1876,7 @@ if this is a single tool with no version,
 the current value of .tool-versions/mise.toml will be displayed
 """# required=#false var=#true
 }
-cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
+cmd lock help="Update lockfile checksums and URLs for all specified platforms" effect=write {
     long_help #"""
 Update lockfile checksums and URLs for all specified platforms
 
@@ -1961,7 +1961,7 @@ e.g.: node python
 If not specified, all tools in lockfile will be updated
 """# required=#false var=#true
 }
-cmd ls help="List installed and active tool versions" {
+cmd ls help="List installed and active tool versions" effect=read {
     alias list
     long_help #"""
 List installed and active tool versions
@@ -2031,7 +2031,7 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     flag --prunable help="List only tools that can be pruned with `mise prune`"
     arg "[INSTALLED_TOOL]…" help="Only show tool versions from [TOOL]" required=#false var=#true
 }
-cmd ls-remote help="List runtime versions available for install." {
+cmd ls-remote help="List runtime versions available for install." effect=read {
     alias list-all list-remote hide=#true
     long_help #"""
 List runtime versions available for install.
@@ -2154,7 +2154,7 @@ Examples:
 
 """#
 }
-cmd oci subcommand_required=#true help="[experimental] Build OCI container images from a mise.toml" {
+cmd oci subcommand_required=#true help="[experimental] Build OCI container images from a mise.toml" effect=read {
     long_help #"""
 [experimental] Build OCI container images from a mise.toml
 
@@ -2166,7 +2166,7 @@ This command is experimental and requires `mise settings experimental=true`
 (or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change
 in future releases.
 """#
-    cmd build help="[experimental] Build an OCI image from the current mise.toml" {
+    cmd build help="[experimental] Build an OCI image from the current mise.toml" effect=write {
         long_help #"""
 [experimental] Build an OCI image from the current mise.toml
 
@@ -2237,7 +2237,7 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
             arg "<UID[:GID]>"
         }
     }
-    cmd push help="[experimental] Build an OCI image and push it to a registry" {
+    cmd push help="[experimental] Build an OCI image and push it to a registry" effect=write {
         long_help #"""
 [experimental] Build an OCI image and push it to a registry
 
@@ -2409,7 +2409,7 @@ Note: unlike `docker run -v`, there's no `-v` short flag here because mise reser
         arg "[-- CMD]…" help="Command and arguments to run inside the container (after `--`)" required=#false var=#true
     }
 }
-cmd outdated help="Shows outdated tool versions" {
+cmd outdated help="Shows outdated tool versions" effect=read {
     long_help #"""
 Shows outdated tool versions
 
@@ -2469,7 +2469,7 @@ e.g.: node@20 python@3.10
 If not specified, all tools in global and local configs will be shown
 """# required=#false var=#true
 }
-cmd patrons help="Show the individuals supporting mise as Patron-tier members" {
+cmd patrons help="Show the individuals supporting mise as Patron-tier members" effect=read {
     long_help #"""
 Show the individuals supporting mise as Patron-tier members
 
@@ -2489,7 +2489,7 @@ Examples:
     flag "-J --json" help="Output in JSON format"
     flag --refresh help="Bypass the local cache and re-fetch"
 }
-cmd plugins help="Manage plugins" {
+cmd plugins help="Manage plugins" effect=read {
     alias p
     alias plugin plugin-list hide=#true
     flag "-a --all" help="list all available remote plugins" hide=#true {
@@ -2519,7 +2519,7 @@ This is the default behavior but can be used with --core
 to show core and user plugins
 """#
     }
-    cmd install help="Install a plugin" {
+    cmd install help="Install a plugin" effect=write {
         alias i a add
         long_help #"""
 Install a plugin
@@ -2564,7 +2564,7 @@ Can specify multiple plugins: `mise plugins install cmake poetry`
         arg "[GIT_URL]" help="The git url of the plugin" required=#false
         arg "[REST]…" required=#false var=#true hide=#true
     }
-    cmd link help="Symlinks a plugin into mise" {
+    cmd link help="Symlinks a plugin into mise" effect=write {
         alias ln
         long_help #"""
 Symlinks a plugin into mise
@@ -2591,7 +2591,7 @@ The local path to the plugin
 e.g.: ./vfox-cmake
 """# required=#false
     }
-    cmd ls help="List installed plugins" {
+    cmd ls help="List installed plugins" effect=read {
         alias list
         long_help #"""
 List installed plugins
@@ -2632,7 +2632,7 @@ e.g.: main 1234abc
 """# hide=#true
         flag --user help="List installed plugins" hide=#true
     }
-    cmd ls-remote help="List all available remote plugins" {
+    cmd ls-remote help="List all available remote plugins" effect=read {
         alias list-remote list-all
         long_help #"""
 
@@ -2648,7 +2648,7 @@ Examples:
         flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git"
         flag --only-names help="Only show the name of each plugin by default it will show a \"*\" next to installed plugins"
     }
-    cmd uninstall help="Removes a plugin" {
+    cmd uninstall help="Removes a plugin" effect=destructive {
         alias remove rm
         after_long_help #"""
 Examples:
@@ -2660,7 +2660,7 @@ Examples:
         flag "-p --purge" help="Also remove the plugin's installs, downloads, and cache"
         arg "[PLUGIN]…" help="Plugin(s) to remove" required=#false var=#true
     }
-    cmd update help="Updates a plugin to the latest version" {
+    cmd update help="Updates a plugin to the latest version" effect=write {
         alias up upgrade
         long_help #"""
 Updates a plugin to the latest version
@@ -2684,7 +2684,7 @@ Default: 4
         arg "[PLUGIN]…" help="Plugin(s) to update" required=#false var=#true
     }
 }
-cmd deps help="[experimental] Manage project dependencies" {
+cmd deps help="[experimental] Manage project dependencies" effect=write {
     alias dep
     alias prepare hide=#true
     long_help #"""
@@ -2748,7 +2748,7 @@ the monorepo root config. Providers are named like //apps/api:uv.
         arg <SKIP>
     }
     arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
-    cmd add help="Add a dependency" {
+    cmd add help="Add a dependency" effect=write {
         long_help #"""
 Add a dependency
 
@@ -2758,7 +2758,7 @@ Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@typ
         flag "-D --dev" help="Add as a development dependency"
         arg <PACKAGES>… help="Package(s) to add (e.g., npm:react, npm:@types/react@19)" var=#true
     }
-    cmd install help="Install all project dependencies" {
+    cmd install help="Install all project dependencies" effect=write {
         long_help #"""
 Install all project dependencies
 
@@ -2785,7 +2785,7 @@ the monorepo root config. Providers are named like //apps/api:uv.
         }
         arg "[PROVIDER]" help="Provider to operate on (runs only this provider, or use with --explain)" required=#false
     }
-    cmd remove help="Remove a dependency" {
+    cmd remove help="Remove a dependency" effect=destructive {
         long_help #"""
 Remove a dependency
 
@@ -2795,7 +2795,7 @@ Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
         arg <PACKAGES>… help="Package(s) to remove (e.g., npm:lodash)" var=#true
     }
 }
-cmd prune help="Delete unused versions of tools" {
+cmd prune help="Delete unused versions of tools" effect=destructive {
     long_help #"""
 Delete unused versions of tools
 
@@ -2830,7 +2830,7 @@ This is useful for scripts to check if tools need to be pruned.
     flag --tools help="Prune only unused versions of tools"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
-cmd registry help="List available tools to install" {
+cmd registry help="List available tools to install" effect=read {
     long_help #"""
 List available tools to install
 
@@ -2865,8 +2865,8 @@ Requires --json. Security info is de-duplicated across all of a tool's backends.
     }
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
 }
-cmd render-help hide=#true help="internal command to generate markdown from help"
-cmd reshim help="Creates new shims based on bin paths from currently installed tools." {
+cmd render-help hide=#true help="internal command to generate markdown from help" effect=write
+cmd reshim help="Creates new shims based on bin paths from currently installed tools." effect=write {
     long_help #"""
 Creates new shims based on bin paths from currently installed tools.
 
@@ -3050,7 +3050,7 @@ Default to always show with `MISE_TASK_TIMINGS=1`
     }
     mount run="mise tasks --usage"
 }
-cmd search help="Search for tools in the registry" {
+cmd search help="Search for tools in the registry" effect=read {
     long_help #"""
 Search for tools in the registry
 
@@ -3089,7 +3089,7 @@ Examples:
     flag --no-header help="Don't display headers"
     arg "[NAME]" help="The tool to search for" required=#false
 }
-cmd self-update help="Updates mise itself." {
+cmd self-update help="Updates mise itself." effect=write {
     long_help #"""
 Updates mise itself.
 
@@ -3104,7 +3104,7 @@ This command is not available if mise is installed via a package manager.
     flag --no-plugins help="Disable auto-updating plugins"
     arg "[VERSION]" help="Update to a specific version" required=#false
 }
-cmd set help="Set environment variables in mise.toml" {
+cmd set help="Set environment variables in mise.toml" effect=write {
     alias ev env-vars hide=#true
     long_help #"""
 Set environment variables in mise.toml
@@ -3210,7 +3210,7 @@ Environment variable(s) to set
 e.g.: NODE_ENV=production
 """# required=#false var=#true
 }
-cmd settings help="Manage settings" {
+cmd settings help="Manage settings" effect=write {
     long_help #"""
 Show current settings
 
@@ -3242,7 +3242,7 @@ Examples:
     flag --json-extended help="Output in JSON format with sources"
     arg "[SETTING]" help="Name of setting" required=#false
     arg "[VALUE]" help="Setting value to set" required=#false
-    cmd add help="Adds a setting to the configuration file" {
+    cmd add help="Adds a setting to the configuration file" effect=write {
         long_help #"""
 Adds a setting to the configuration file
 
@@ -3259,7 +3259,7 @@ Examples:
         arg <SETTING> help="The setting to set"
         arg "[VALUE]" help="The value to set (optional if provided as KEY=VALUE)" required=#false
     }
-    cmd get help="Show a current setting" {
+    cmd get help="Show a current setting" effect=read {
         long_help #"""
 Show a current setting
 
@@ -3278,7 +3278,7 @@ Examples:
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to show"
     }
-    cmd ls help="Show current settings" {
+    cmd ls help="Show current settings" effect=read {
         alias list
         long_help #"""
 Show current settings
@@ -3308,7 +3308,7 @@ Examples:
         flag --json-extended help="Output in JSON format with sources"
         arg "[SETTING]" help="Name of setting" required=#false
     }
-    cmd set help="Add/update a setting" {
+    cmd set help="Add/update a setting" effect=write {
         alias create
         long_help #"""
 Add/update a setting
@@ -3327,7 +3327,7 @@ Examples:
         arg <SETTING> help="The setting to set"
         arg "[VALUE]" help="The value to set (optional if provided as KEY=VALUE)" required=#false
     }
-    cmd unset help="Clears a setting" {
+    cmd unset help="Clears a setting" effect=write {
         alias rm remove delete del
         long_help #"""
 Clears a setting
@@ -3344,7 +3344,7 @@ Examples:
         arg <KEY> help="The setting to remove"
     }
 }
-cmd shell help="Sets a tool version for the current session." {
+cmd shell help="Sets a tool version for the current session." effect=read {
     alias sh
     long_help #"""
 Sets a tool version for the current session.
@@ -3372,9 +3372,9 @@ Number of jobs to run in parallel
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg <TOOL@VERSION>… help="Tool(s) to use" var=#true
 }
-cmd shell-alias help="Manage shell aliases." {
+cmd shell-alias help="Manage shell aliases." effect=read {
     flag --no-header help="Don't show table header"
-    cmd get help="Show the command for a shell alias" {
+    cmd get help="Show the command for a shell alias" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3384,7 +3384,7 @@ Examples:
 """#
         arg <shell_alias> help="The alias to show"
     }
-    cmd ls help="List shell aliases" {
+    cmd ls help="List shell aliases" effect=read {
         alias list
         long_help #"""
 List shell aliases
@@ -3403,7 +3403,7 @@ Examples:
 """#
         flag --no-header help="Don't show table header"
     }
-    cmd set help="Add/update a shell alias" {
+    cmd set help="Add/update a shell alias" effect=write {
         alias add create
         long_help #"""
 Add/update a shell alias
@@ -3420,7 +3420,7 @@ Examples:
         arg <shell_alias> help="The alias name"
         arg "[COMMAND]" help="The command to run (optional if provided as ALIAS=COMMAND)" required=#false
     }
-    cmd unset help="Removes a shell alias" {
+    cmd unset help="Removes a shell alias" effect=write {
         alias rm remove delete del
         long_help #"""
 Removes a shell alias
@@ -3436,9 +3436,9 @@ Examples:
         arg <shell_alias> help="The alias to remove"
     }
 }
-cmd sponsors help="Show the companies sponsoring mise and the jdx.dev open source tools"
-cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" {
-    cmd node help="Symlinks all tool versions from an external tool into mise" {
+cmd sponsors help="Show the companies sponsoring mise and the jdx.dev open source tools" effect=read
+cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" effect=read {
+    cmd node help="Symlinks all tool versions from an external tool into mise" effect=write {
         long_help #"""
 Symlinks all tool versions from an external tool into mise
 
@@ -3458,7 +3458,7 @@ Examples:
         flag --nodenv help="Get tool versions from nodenv"
         flag --nvm help="Get tool versions from nvm"
     }
-    cmd python help="Symlinks all tool versions from an external tool into mise" {
+    cmd python help="Symlinks all tool versions from an external tool into mise" effect=write {
         long_help #"""
 Symlinks all tool versions from an external tool into mise
 
@@ -3483,7 +3483,7 @@ Examples:
         flag --pyenv help="Get tool versions from pyenv"
         flag --uv help="Sync tool versions with uv (2-way sync)"
     }
-    cmd ruby help="Symlinks all ruby tool versions from an external tool into mise" {
+    cmd ruby help="Symlinks all ruby tool versions from an external tool into mise" effect=write {
         after_long_help #"""
 Examples:
 
@@ -3495,7 +3495,7 @@ Examples:
         flag --brew help="Get tool versions from Homebrew"
     }
 }
-cmd tasks help="Manage tasks" {
+cmd tasks help="Manage tasks" effect=read {
     alias t
     alias task hide=#true
     after_long_help #"""
@@ -3528,7 +3528,7 @@ By default, only tasks from the current directory hierarchy are loaded.
     }
     flag --usage hide=#true global=#true
     arg "[TASK]" help="Task name to get info of" required=#false
-    cmd add help="Create a new task" {
+    cmd add help="Create a new task" effect=write {
         long_help #"""
 Create a new task
 
@@ -3579,7 +3579,7 @@ Examples:
         arg <TASK> help="Tasks name to add"
         arg "[-- RUN]…" required=#false var=#true
     }
-    cmd deps help="Display a tree visualization of a dependency graph" {
+    cmd deps help="Display a tree visualization of a dependency graph" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3601,7 +3601,7 @@ Can specify multiple tasks by separating with spaces
 e.g.: mise tasks deps lint test check
 """# required=#false var=#true
     }
-    cmd edit help="Edit a task with $EDITOR" {
+    cmd edit help="Edit a task with $EDITOR" effect=write {
         long_help #"""
 Edit a task with $EDITOR
 
@@ -3617,7 +3617,7 @@ Examples:
         flag "-p --path" help="Display the path to the task instead of editing it"
         arg <TASK> help="Task to edit"
     }
-    cmd info help="Get information about a task" {
+    cmd info help="Get information about a task" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3656,7 +3656,7 @@ Examples:
 List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory
 mise will merge all tasks from all parent directories into this list.
-"""# {
+"""# effect=read {
         long_help #"""
 List available tasks to execute
 These may be included from the config file or from the project's .mise/tasks directory
@@ -3854,7 +3854,7 @@ e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
         arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true
         mount run="mise tasks --usage"
     }
-    cmd validate help="Validate tasks for common errors and issues" {
+    cmd validate help="Validate tasks for common errors and issues" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3913,8 +3913,8 @@ Number of tool tests to run in parallel
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[TOOLS]…" help="Tool(s) to test" required=#false var=#true
 }
-cmd token subcommand_required=#true help="Display git provider tokens mise will use" {
-    cmd forgejo help="Forgejo token" {
+cmd token subcommand_required=#true help="Display git provider tokens mise will use" effect=read {
+    cmd forgejo help="Forgejo token" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3931,7 +3931,7 @@ Examples:
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="Forgejo hostname" required=#false default=codeberg.org
     }
-    cmd github help="GitHub token" {
+    cmd github help="GitHub token" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3954,7 +3954,7 @@ Examples:
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
-    cmd gitlab help="GitLab token" {
+    cmd gitlab help="GitLab token" effect=read {
         after_long_help #"""
 Examples:
 
@@ -3972,7 +3972,7 @@ Examples:
         arg "[HOST]" help="GitLab hostname" required=#false default=gitlab.com
     }
 }
-cmd tool help="Gets information about a tool" {
+cmd tool help="Gets information about a tool" effect=read {
     after_long_help #"""
 Examples:
 
@@ -4022,7 +4022,7 @@ Arguments to pass to the tool
 All arguments after the stub file path will be forwarded to the underlying tool. Use '--' to separate mise arguments from tool arguments if needed.
 """# required=#false double_dash=automatic var=#true
 }
-cmd trust help="Marks a config file as trusted" {
+cmd trust help="Marks a config file as trusted" effect=write {
     long_help #"""
 Marks a config file as trusted
 
@@ -4070,7 +4070,7 @@ Does not trust or untrust any files.
     flag --untrust help="No longer trust this config, will prompt in the future"
     arg "[CONFIG_FILE]" help="The config file to trust" required=#false
 }
-cmd uninstall help="Removes installed tool versions" {
+cmd uninstall help="Removes installed tool versions" effect=destructive {
     long_help #"""
 Removes installed tool versions
 
@@ -4100,7 +4100,7 @@ This is useful for scripts to check if tools need to be uninstalled.
     }
     arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to remove" required=#false var=#true
 }
-cmd unset help="Remove environment variable(s) from the config file." {
+cmd unset help="Remove environment variable(s) from the config file." effect=write {
     long_help #"""
 Remove environment variable(s) from the config file.
 
@@ -4130,10 +4130,10 @@ Environment variable(s) to remove
 e.g.: NODE_ENV
 """# required=#false var=#true
 }
-cmd untrust help="No longer trust a config, will prompt in the future" {
+cmd untrust help="No longer trust a config, will prompt in the future" effect=write {
     arg "[CONFIG_FILE]" help="The config file to untrust" required=#false
 }
-cmd unuse help="Removes installed tool versions from mise.toml" {
+cmd unuse help="Removes installed tool versions from mise.toml" effect=destructive {
     alias rm remove
     long_help #"""
 Removes installed tool versions from mise.toml
@@ -4186,7 +4186,7 @@ If a directory is specified, it will look for a config file in that directory fo
     flag --no-prune help="Do not also prune the installed version"
     arg <INSTALLED_TOOL@VERSION>… help="Tool(s) to remove" var=#true
 }
-cmd upgrade help="Upgrades outdated tools" {
+cmd upgrade help="Upgrades outdated tools" effect=write {
     alias up
     long_help #"""
 Upgrades outdated tools
@@ -4289,14 +4289,14 @@ e.g.: node@20 python@3.10
 If not specified, all current tools will be upgraded
 """# required=#false var=#true
 }
-cmd usage hide=#true help="Generate a usage CLI spec" {
+cmd usage hide=#true help="Generate a usage CLI spec" effect=read {
     long_help #"""
 Generate a usage CLI spec
 
 See https://usage.jdx.dev for more information on this specification.
 """#
 }
-cmd use help="Installs a tool and adds the version to mise.toml." {
+cmd use help="Installs a tool and adds the version to mise.toml." effect=write {
     alias u
     long_help #"""
 Installs a tool and adds the version to mise.toml.
@@ -4412,7 +4412,7 @@ Tool options can be set with this syntax:
     mise use ubi:BurntSushi/ripgrep[exe=rg]
 """# required=#false var=#true
 }
-cmd version help="Display the version of mise" {
+cmd version help="Display the version of mise" effect=read {
     alias v
     long_help #"""
 Display the version of mise
@@ -5087,7 +5087,7 @@ e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
 """# required=#false
     arg "[ARGS]…" help="Task and arguments to run" required=#false double_dash=automatic var=#true
 }
-cmd where help="Display the installation path for a tool" {
+cmd where help="Display the installation path for a tool" effect=read {
     long_help #"""
 Display the installation path for a tool
 
@@ -5120,7 +5120,7 @@ same as the first argument after the "@"
 used for asdf compatibility
 """# required=#false hide=#true
 }
-cmd which help="Shows the path that a tool's bin points to." {
+cmd which help="Shows the path that a tool's bin points to." effect=read {
     long_help #"""
 Shows the path that a tool's bin points to.
 
@@ -5164,13 +5164,13 @@ source_code_link_template #"""
 {%- set path = "system/upgrade.rs" -%}
 {%- elif path == "bootstrap/packages/use" -%}
 {%- set path = "system/use.rs" -%}
-{%- elif path is starting_with("bootstrap/packages/brew") -%}
+{%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
 {%- set path = "system/brew/mod.rs" -%}
 {%- elif path == "bootstrap/dotfiles/apply" -%}
 {%- set path = "dotfiles/apply.rs" -%}
 {%- elif path == "bootstrap/dotfiles/status" -%}
 {%- set path = "dotfiles/status.rs" -%}
-{%- elif path is starting_with("bootstrap") -%}
+{%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}
 {%- set path = "run.rs" -%}

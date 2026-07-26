@@ -2,6 +2,7 @@
 # `mise tasks deps`
 
 - **Usage**: `mise tasks deps [--dot] [--hidden] [TASKS]…`
+- **Effect**: read-only
 - **Source code**: [`src/cli/tasks/deps.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/deps.rs)
 
 Display a tree visualization of a dependency graph

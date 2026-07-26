@@ -2,6 +2,7 @@
 # `mise edit`
 
 - **Usage**: `mise edit [FLAGS] [PATH]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/edit.rs`](https://github.com/jdx/mise/blob/main/src/cli/edit.rs)
 
 Edit mise.toml interactively

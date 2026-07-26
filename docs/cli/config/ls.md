@@ -3,6 +3,7 @@
 
 - **Usage**: `mise config ls [FLAGS]`
 - **Aliases**: `list`
+- **Effect**: read-only
 - **Source code**: [`src/cli/config/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/ls.rs)
 
 List config files currently in use

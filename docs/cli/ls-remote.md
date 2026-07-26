@@ -2,6 +2,7 @@
 # `mise ls-remote`
 
 - **Usage**: `mise ls-remote [FLAGS] [TOOL@VERSION] [PREFIX]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/ls_remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls_remote.rs)
 
 List runtime versions available for install.

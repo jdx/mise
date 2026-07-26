@@ -2,6 +2,7 @@
 # `mise implode`
 
 - **Usage**: `mise implode [-n --dry-run] [--config]`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/implode.rs`](https://github.com/jdx/mise/blob/main/src/cli/implode.rs)
 
 Removes mise CLI and all related data

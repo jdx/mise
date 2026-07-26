@@ -317,7 +317,7 @@ impl TaskScriptParser {
                     .unwrap_or_default();
 
                 let choices = Self::template_arg::<Vec<String>>(args, "choices")?
-                    .map(|choices| usage::SpecChoices { choices });
+                    .map(usage::SpecChoices::new);
 
                 let env = Self::template_arg::<String>(args, "env")?;
 
@@ -332,23 +332,20 @@ impl TaskScriptParser {
                     None => None,
                 };
 
-                let mut arg = usage::SpecArg {
-                    name: name.clone(),
-                    usage,
-                    help_first_line,
-                    help,
-                    help_long,
-                    help_md,
-                    required,
-                    var,
-                    var_min,
-                    var_max,
-                    hide,
-                    default,
-                    choices,
-                    env,
-                    ..Default::default()
-                };
+                let mut arg = usage::SpecArg::builder().name(name.clone()).build();
+                arg.usage = usage;
+                arg.help_first_line = help_first_line;
+                arg.help = help;
+                arg.help_long = help_long;
+                arg.help_md = help_md;
+                arg.required = required;
+                arg.var = var;
+                arg.var_min = var_min;
+                arg.var_max = var_max;
+                arg.hide = hide;
+                arg.default = default;
+                arg.choices = choices;
+                arg.env = env;
                 arg.usage = arg.usage();
 
                 input_args.lock().map_err(Self::lock_error)?.push(arg);
@@ -394,7 +391,7 @@ impl TaskScriptParser {
                 let negate = Self::template_arg::<String>(args, "negate")?;
 
                 let choices = Self::template_arg::<Vec<String>>(args, "choices")?
-                    .map(|choices| usage::SpecChoices { choices });
+                    .map(usage::SpecChoices::new);
 
                 let env = Self::template_arg::<String>(args, "env")?;
 
@@ -409,34 +406,30 @@ impl TaskScriptParser {
                     None => None,
                 };
 
-                let mut flag = usage::SpecFlag {
-                    name: name.clone(),
-                    short,
-                    long,
-                    default,
-                    var,
-                    var_min: None,
-                    var_max: None,
-                    hide,
-                    global,
-                    count,
-                    deprecated,
-                    help_first_line,
-                    help,
-                    usage,
-                    help_long,
-                    help_md,
-                    required,
-                    negate,
-                    env: env.clone(),
-                    arg: Some(usage::SpecArg {
-                        name: name.clone(),
-                        var,
-                        choices,
-                        env,
-                        ..Default::default()
-                    }),
-                };
+                let mut flag = usage::SpecFlag::builder().name(name.clone()).build();
+                flag.short = short;
+                flag.long = long;
+                flag.default = default;
+                flag.var = var;
+                flag.var_min = None;
+                flag.var_max = None;
+                flag.hide = hide;
+                flag.global = global;
+                flag.count = count;
+                flag.deprecated = deprecated;
+                flag.help_first_line = help_first_line;
+                flag.help = help;
+                flag.usage = usage;
+                flag.help_long = help_long;
+                flag.help_md = help_md;
+                flag.required = required;
+                flag.negate = negate;
+                flag.env = env.clone();
+                let mut value_arg = usage::SpecArg::builder().name(name.clone()).build();
+                value_arg.var = var;
+                value_arg.choices = choices;
+                value_arg.env = env;
+                flag.arg = Some(value_arg);
                 flag.usage = flag.usage();
 
                 input_flags.lock().map_err(Self::lock_error)?.push(flag);
@@ -483,7 +476,7 @@ impl TaskScriptParser {
                 let negate = Self::template_arg::<String>(args, "negate")?;
 
                 let choices = Self::template_arg::<Vec<String>>(args, "choices")?
-                    .map(|choices| usage::SpecChoices { choices });
+                    .map(usage::SpecChoices::new);
 
                 let env = Self::template_arg::<String>(args, "env")?;
 
@@ -501,39 +494,37 @@ impl TaskScriptParser {
                 // Create SpecArg when any arg-level properties are set (choices, env)
                 // This matches the behavior of option() which always creates SpecArg
                 let arg = if choices.is_some() || env.is_some() {
-                    Some(usage::SpecArg {
-                        name: name.clone(),
-                        var,
-                        choices,
-                        env: env.clone(),
-                        ..Default::default()
+                    Some({
+                        let mut a = usage::SpecArg::builder().name(name.clone()).build();
+                        a.var = var;
+                        a.choices = choices;
+                        a.env = env.clone();
+                        a
                     })
                 } else {
                     None
                 };
 
-                let mut flag = usage::SpecFlag {
-                    name: name.clone(),
-                    short,
-                    long,
-                    default,
-                    var,
-                    var_min: None,
-                    var_max: None,
-                    hide,
-                    global,
-                    count,
-                    deprecated,
-                    help_first_line,
-                    help,
-                    usage,
-                    help_long,
-                    help_md,
-                    required,
-                    negate,
-                    env,
-                    arg,
-                };
+                let mut flag = usage::SpecFlag::builder().name(name.clone()).build();
+                flag.short = short;
+                flag.long = long;
+                flag.default = default;
+                flag.var = var;
+                flag.var_min = None;
+                flag.var_max = None;
+                flag.hide = hide;
+                flag.global = global;
+                flag.count = count;
+                flag.deprecated = deprecated;
+                flag.help_first_line = help_first_line;
+                flag.help = help;
+                flag.usage = usage;
+                flag.help_long = help_long;
+                flag.help_md = help_md;
+                flag.required = required;
+                flag.negate = negate;
+                flag.env = env;
+                flag.arg = arg;
                 flag.usage = flag.usage();
 
                 input_flags.lock().map_err(Self::lock_error)?.push(flag);
@@ -1411,16 +1402,10 @@ mod tests {
         // Manually construct a spec with one arg ("foo") and one flag ("bar")
         // so this test does not rely on run-script parsing.
         let mut cmd = usage::SpecCommand::default();
-        cmd.args.push(usage::SpecArg {
-            name: "foo".to_string(),
-            ..Default::default()
-        });
-        cmd.flags.push(usage::SpecFlag {
-            name: "bar".to_string(),
-            // Ensure the flag is recognized as `--bar` by the usage parser
-            long: vec!["bar".to_string()],
-            ..Default::default()
-        });
+        cmd.args.push(usage::SpecArg::builder().name("foo").build());
+        // Ensure the flag is recognized as `--bar` by the usage parser
+        cmd.flags
+            .push(usage::SpecFlag::builder().name("bar").long("bar").build());
         let mut spec = usage::Spec::default();
         spec.cmd = cmd;
 
@@ -1487,11 +1472,8 @@ mod tests {
 
         // Manually construct a spec with a var=true arg so usage-lib will produce a MultiString value
         let mut cmd = usage::SpecCommand::default();
-        cmd.args.push(usage::SpecArg {
-            name: "tags".to_string(),
-            var: true,
-            ..Default::default()
-        });
+        cmd.args
+            .push(usage::SpecArg::builder().name("tags").var(true).build());
         let mut spec = usage::Spec::default();
         spec.cmd = cmd;
 

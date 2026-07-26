@@ -2,6 +2,7 @@
 # `mise token github`
 
 - **Usage**: `mise token github [FLAGS] [HOST]`
+- **Effect**: read-only
 - **Source code**: [`src/cli/token/github.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/github.rs)
 
 GitHub token

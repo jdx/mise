@@ -2,6 +2,7 @@
 # `mise where`
 
 - **Usage**: `mise where <TOOL@VERSION>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/where.rs`](https://github.com/jdx/mise/blob/main/src/cli/where.rs)
 
 Display the installation path for a tool

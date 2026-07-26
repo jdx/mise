@@ -2,6 +2,7 @@
 # `mise generate devcontainer`
 
 - **Usage**: `mise generate devcontainer [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/devcontainer.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/devcontainer.rs)
 
 Generate a devcontainer to execute mise

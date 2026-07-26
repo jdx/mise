@@ -2,6 +2,7 @@
 # `mise generate config`
 
 - **Usage**: `mise generate config [FLAGS] [PATH]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/generate/config.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/config.rs)
 
 Generate a mise.toml file

@@ -2,6 +2,7 @@
 # `mise bootstrap linux`
 
 - **Usage**: `mise bootstrap linux <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage Linux bootstrap config from `[bootstrap.linux]`

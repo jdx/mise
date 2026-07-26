@@ -2,6 +2,7 @@
 # `mise bootstrap packages import`
 
 - **Usage**: `mise bootstrap packages import [FLAGS]`
+- **Effect**: modifies state
 - **Source code**: [`src/cli/system/import.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/import.rs)
 
 Import installed system packages into `[bootstrap.packages]`
