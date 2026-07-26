@@ -88,10 +88,15 @@ impl TasksValidate {
         let mut issues = Vec::new();
         if let Err(err) = Deps::new(&config, tasks.clone()).await {
             let details = err.to_string();
+            let additional_issues = self.find_additional_graph_issues(&config, &tasks).await;
             if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                issues.push(cycle_issue(cycle, details));
+                if !additional_issues
+                    .iter()
+                    .any(|issue| issue.category == "circular-dependency")
+                {
+                    issues.push(cycle_issue(cycle, details));
+                }
             } else {
-                let additional_issues = self.find_additional_graph_issues(&config, &tasks).await;
                 let graph_error_is_represented = additional_issues.iter().any(|issue| {
                     issue.category == "dependency-graph-error"
                         && issue.details.as_deref() == Some(details.as_str())
@@ -99,8 +104,8 @@ impl TasksValidate {
                 if !graph_error_is_represented {
                     issues.push(graph_error_issue("task graph", details));
                 }
-                issues.extend(additional_issues);
             }
+            issues.extend(additional_issues);
         }
         for task in &tasks {
             issues.extend(self.validate_task(task, &all_tasks, &config).await);
