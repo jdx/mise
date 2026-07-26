@@ -43,8 +43,8 @@ defineProps(["setting", "level"]);
           >
             <code>{{ choice.value }}</code
             ><template v-if="choice.description">
-              – {{ choice.description }}</template
-            >
+              – <span v-html="choice.description"></span
+            ></template>
           </template>
           <template v-else>
             <code>{{ choice }}</code>
