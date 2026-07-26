@@ -18,7 +18,7 @@
       "!**/CHANGELOG.md"
     ],
     "files.exclude": {
-      "crates/aqua-registry/aqua-registry/**": true
+      "vendor/aqua-registry/**": true
     },
     "markdown.validate.enabled": true,
   },
