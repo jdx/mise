@@ -153,7 +153,10 @@ impl TaskArtifactCache {
     }
 
     pub fn is_current(&self) -> bool {
-        file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+        let (archive_path, manifest_path) = self.paths();
+        archive_path.is_file()
+            && manifest_path.is_file()
+            && file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
     }
 
     pub fn mark_current(&self) -> Result<()> {

@@ -35,28 +35,37 @@ assert "wc -l < runs.txt | tr -d ' '" "1"
 assert "cat dist/result.txt" "debug:one"
 assert_succeed "test -d dist/empty"
 
+# Clearing the artifact cache invalidates the fast freshness skip even when
+# outputs remain, so the task executes once to repopulate the cache.
+mise cache clear
+assert_not_contains "PROFILE=debug mise run build 2>&1" "sources up-to-date, skipping"
+assert "wc -l < runs.txt | tr -d ' '" "2"
+rm -rf dist
+assert_contains "PROFILE=debug mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
 # An allowlisted ambient environment change produces a cache miss.
 PROFILE=release mise run build
-assert "wc -l < runs.txt | tr -d ' '" "2"
+assert "wc -l < runs.txt | tr -d ' '" "3"
 assert "cat dist/result.txt" "release:one"
 
 # Source content changes also produce a miss and a distinct artifact.
 printf 'two\n' >input.txt
 PROFILE=release mise run build
-assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "wc -l < runs.txt | tr -d ' '" "4"
 assert "cat dist/result.txt" "release:two"
 
 # The new result is independently restorable.
 rm -rf dist
 assert_contains "PROFILE=release mise run build 2>&1" "restored outputs from cache"
-assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "wc -l < runs.txt | tr -d ' '" "4"
 assert "cat dist/result.txt" "release:two"
 
 # Dry runs must not restore outputs or mutate artifact cache state.
 rm -rf dist
 PROFILE=release mise run --dry-run build
 assert_fail "test -e dist"
-assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "wc -l < runs.txt | tr -d ' '" "4"
 
 # Usage-derived environment values participate in the cache key.
 cat <<'EOF' >>mise.toml
