@@ -15,6 +15,22 @@ set -e
 echo first-line
 echo second-line
 """
+
+[tasks.inline-one]
+run = "echo inline-one"
+
+[tasks.inline-multi]
+run = """
+echo inline-first
+echo inline-last
+"""
+
+[tasks.shebang-multi]
+run = """
+#!/usr/bin/env bash
+echo shebang-first
+echo shebang-last
+"""
 EOF
 
 # show_full_cmd ON: the echoed header includes the LATER command line. The literal
@@ -26,3 +42,25 @@ assert_contains "MISE_TASK_SHOW_FULL_CMD=1 mise run multi 2>&1" "echo second-lin
 # command, skipping the shebang/`set` boilerplate, and later lines are truncated.
 assert_contains "mise run multi 2>&1" "echo first-line"
 assert_not_contains "mise run multi 2>&1" "echo second-line"
+
+# Inline arguments are appended to the actual command text. The normal header
+# therefore shows them for a one-line command, but not on the representative
+# first command of a multiline script.
+assert_contains "mise run inline-one arg 2>&1" "echo inline-one arg"
+assert_contains "mise run inline-one 'a with space' 2>&1" "echo inline-one 'a with space'"
+assert_contains "mise run inline-multi arg 2>&1" "echo inline-first"
+assert_not_contains "mise run inline-multi arg 2>&1" "echo inline-first arg"
+
+# With the full command shown, inline arguments appear on the final command
+# where they are appended for execution.
+assert_contains \
+  "MISE_TASK_SHOW_FULL_CMD=1 mise run inline-multi arg 2>&1" \
+  "echo inline-last arg"
+
+# Shebang task arguments are script argv, not arguments to a command in the
+# script, so neither display mode attaches them to a displayed command.
+assert_contains "mise run shebang-multi arg 2>&1" "echo shebang-first"
+assert_not_contains "mise run shebang-multi arg 2>&1" "echo shebang-first arg"
+assert_not_contains \
+  "MISE_TASK_SHOW_FULL_CMD=1 mise run shebang-multi arg 2>&1" \
+  "echo shebang-last arg"

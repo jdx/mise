@@ -111,6 +111,49 @@ fn display_first_command(script: &str) -> String {
     cmd
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(windows), allow(dead_code))]
+enum InlineArgsStyle {
+    PosixCommandText,
+    CmdCommandText,
+    SeparateArgv,
+}
+
+fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
+    #[cfg(windows)]
+    {
+        let runs_command = shell_args
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
+        if crate::path::is_cmd_shell_program(Path::new(program)) && runs_command {
+            return InlineArgsStyle::CmdCommandText;
+        }
+        if !crate::path::is_posix_shell_program(Path::new(program)) {
+            return InlineArgsStyle::SeparateArgv;
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (program, shell_args);
+    InlineArgsStyle::PosixCommandText
+}
+
+fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> String {
+    let args = match style {
+        InlineArgsStyle::PosixCommandText => shell_words::join(args),
+        InlineArgsStyle::CmdCommandText => args
+            .iter()
+            .map(|arg| crate::path::quote_arg_for_cmd_body(arg))
+            .join(" "),
+        InlineArgsStyle::SeparateArgv => return script.to_string(),
+    };
+    match (script.is_empty(), args.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => args,
+        (false, true) => script.to_string(),
+        (false, false) => format!("{script} {args}"),
+    }
+}
+
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
     pub force: bool,
@@ -966,22 +1009,20 @@ impl TaskExecutor {
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
+        let display_script = self.display_script_with_args(script, args, task)?;
         // For display, skip leading shebang/blank/`set ...` boilerplate and join
         // backslash-continued lines so the header shows the first real command as a
         // single logical line (see display_first_command). When show_full_cmd is set,
         // keep the whole script instead — the reduction would otherwise discard every
         // line past the first command, making the setting a no-op (#10469, #9844).
         let display_script = if Settings::get().task.show_full_cmd {
-            script.to_string()
+            display_script
         } else {
-            display_first_command(script)
+            display_first_command(&display_script)
         };
-        let args_str = args.join(" ");
-        let cmd = match (display_script.is_empty(), args_str.is_empty()) {
-            (true, true) => "$".to_string(),
-            (true, false) => format!("$ {args_str}"),
-            (false, true) => format!("$ {display_script}"),
-            (false, false) => format!("$ {display_script} {args_str}"),
+        let cmd = match display_script.is_empty() {
+            true => "$".to_string(),
+            false => format!("$ {display_script}"),
         };
         if !self.quiet(Some(task)) {
             let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
@@ -1003,6 +1044,30 @@ impl TaskExecutor {
             self.exec_program(&program, &args, task, env, prefix, cmd_verbatim)
                 .await
         }
+    }
+
+    /// Build the script text represented by the task command header.
+    ///
+    /// Inline task arguments follow the same shell-specific strategy used for
+    /// execution before the first command is selected for display. Shebang tasks
+    /// receive arguments as script argv instead, so attaching them to a command in
+    /// the script would be misleading.
+    fn display_script_with_args(
+        &self,
+        script: &str,
+        args: &[String],
+        task: &Task,
+    ) -> Result<String> {
+        if script.starts_with("#!") || args.is_empty() {
+            return Ok(script.to_string());
+        }
+        let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
+        let (program, shell_args) = task_shell_parts(&shell, "inline shell")?;
+        Ok(append_inline_args(
+            script,
+            args,
+            inline_args_style(program, shell_args),
+        ))
     }
 
     fn get_file_program_and_args(
@@ -1058,21 +1123,20 @@ impl TaskExecutor {
             // in a single outer quote pair, and use `/s` so cmd strips exactly
             // that pair and runs the rest — inner quotes included — verbatim.
             // See discussion #9355.
-            let runs_command = _shell_args
-                .iter()
-                .any(|f| f.eq_ignore_ascii_case("/c") || f.eq_ignore_ascii_case("/k"));
-            if crate::path::is_cmd_shell_program(Path::new(program)) && runs_command {
-                let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
-                return Ok((program.to_string(), cmd_args, true));
-            }
-            // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a different
-            // quoting convention than `shell_words` (which is POSIX), so keep
-            // passing their forwarded args as separate argv. Only POSIX shells
-            // (`bash -c`, `sh -c`, …) fall through to the shared append below.
-            if !crate::path::is_posix_shell_program(Path::new(program)) {
-                full_args.push(script.to_string());
-                full_args.extend(args.iter().cloned());
-                return Ok((program.to_string(), full_args[1..].to_vec(), false));
+            match inline_args_style(program, _shell_args) {
+                InlineArgsStyle::CmdCommandText => {
+                    let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
+                    return Ok((program.to_string(), cmd_args, true));
+                }
+                InlineArgsStyle::SeparateArgv => {
+                    // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a
+                    // different quoting convention than `shell_words` (which is
+                    // POSIX), so keep passing forwarded args as separate argv.
+                    full_args.push(script.to_string());
+                    full_args.extend(args.iter().cloned());
+                    return Ok((program.to_string(), full_args[1..].to_vec(), false));
+                }
+                InlineArgsStyle::PosixCommandText => {}
             }
         }
 
@@ -1764,11 +1828,46 @@ mod tests {
     fn test_display_first_command_header_has_no_dangling_backslash_with_args() {
         // Reproduces #10083: the joined command plus extra args must not contain
         // the `\ ` sequence that confused the original output.
-        let display_script = display_first_command("echo long_command \\\n  --option1 value1");
-        let args_str = ["--extra", "args"].join(" ");
-        let header = format!("$ {display_script} {args_str}");
+        let args = ["--extra".to_string(), "args".to_string()];
+        let display_script = append_inline_args(
+            "echo long_command \\\n  --option1 value1",
+            &args,
+            InlineArgsStyle::PosixCommandText,
+        );
+        let header = format!("$ {}", display_first_command(&display_script));
         assert_eq!(header, "$ echo long_command --option1 value1 --extra args");
         assert!(!header.contains("\\ "));
+    }
+
+    #[test]
+    fn test_append_inline_args_uses_posix_quoting() {
+        let args = ["a with space".to_string(), "second".to_string()];
+        assert_eq!(
+            append_inline_args(
+                "echo first\necho last",
+                &args,
+                InlineArgsStyle::PosixCommandText
+            ),
+            "echo first\necho last 'a with space' second"
+        );
+    }
+
+    #[test]
+    fn test_append_inline_args_uses_cmd_quoting() {
+        let args = ["a with space".to_string(), "a&b".to_string()];
+        assert_eq!(
+            append_inline_args("echo", &args, InlineArgsStyle::CmdCommandText),
+            r#"echo "a with space" "a&b""#
+        );
+    }
+
+    #[test]
+    fn test_append_inline_args_keeps_separate_argv_off_command_text() {
+        let args = ["a with space".to_string()];
+        assert_eq!(
+            append_inline_args("Write-Output $args", &args, InlineArgsStyle::SeparateArgv),
+            "Write-Output $args"
+        );
     }
 
     #[test]
