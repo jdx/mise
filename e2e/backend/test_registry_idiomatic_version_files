@@ -48,11 +48,7 @@ build:
 EOF
 assert_contains "mise tool earthly" "0.8"
 
-cat >.golangci.json <<'EOF'
-{
-  "version": "2"
-}
-EOF
+echo '{"version":"2"}' >.golangci.json
 assert_contains "mise tool golangci-lint" "2"
 
 mkdir -p .config

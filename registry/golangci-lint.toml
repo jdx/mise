@@ -4,5 +4,5 @@ idiomatic_files = [
   { path = ".golangci.yml", version_regex = '''(?m)^\s*version\s*:\s*["']?v?([0-9]+)''' },
   { path = ".golangci.yaml", version_regex = '''(?m)^\s*version\s*:\s*["']?v?([0-9]+)''' },
   { path = ".golangci.toml", version_regex = '''(?m)^\s*version\s*=\s*["']?v?([0-9]+)''' },
-  { path = ".golangci.json", version_regex = '''(?m)^\s*"version"\s*:\s*"v?([0-9]+)''' },
+  { path = ".golangci.json", version_json_path = ".version" },
 ]
