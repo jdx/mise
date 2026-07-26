@@ -22,15 +22,59 @@ cat <<EOF >mise.toml
 EOF
 
 # Running a task should give a helpful error mentioning non-executable files
-assert_fail_contains "mise run build" "non-executable"
-assert_fail_contains "mise run build" "chmod +x"
+assert_fail_contains "MISE_YES=0 mise run build" "non-executable"
+assert_fail_contains "MISE_YES=0 mise run build" "chmod +x"
 
 # mise tasks ls should warn about non-executable files
 assert_contains "mise tasks 2>&1" "non-executable"
 assert_contains "mise tasks 2>&1" "chmod +x"
+
+# Auto-confirm should make the requested file executable and run it immediately
+assert "MISE_YES=1 mise run build" "building"
+[[ -x mise-tasks/build ]] || fail "MISE_YES did not make the task executable"
+
+assert "MISE_YES=0 mise --yes run test" "testing"
+[[ -x mise-tasks/test ]] || fail "--yes did not make the task executable"
+
+# The yes setting should behave the same way
+chmod 0644 mise-tasks/build
+cat <<EOF >mise.toml
+[tasks.existing]
+run = "true"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+yes = true
+EOF
+assert "env -u MISE_YES mise run build" "building"
+[[ -x mise-tasks/build ]] || fail "yes setting did not make the task executable"
 
 # After making files executable, tasks should work
 chmod +x mise-tasks/build mise-tasks/test
 assert_contains "mise tasks" "build"
 assert_contains "mise tasks" "test"
 assert "mise run build" "building"
+
+# Monorepo-qualified task names should resolve to the scoped task include directory
+mkdir -p monorepo/projects/frontend/mise-tasks
+cat <<EOF >monorepo/mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+EOF
+cat <<'EOF' >monorepo/projects/frontend/mise-tasks/build
+#!/usr/bin/env bash
+echo "frontend building"
+EOF
+chmod 0644 monorepo/projects/frontend/mise-tasks/build
+
+cd monorepo
+assert "MISE_EXPERIMENTAL=1 MISE_YES=1 mise run '//projects/frontend:build'" "frontend building"
+[[ -x projects/frontend/mise-tasks/build ]] ||
+  fail "//projects/frontend:build did not make the task executable"
+
+chmod 0644 projects/frontend/mise-tasks/build
+cd projects/frontend
+assert "MISE_EXPERIMENTAL=1 MISE_YES=1 mise run ':build'" "frontend building"
+[[ -x mise-tasks/build ]] || fail ":build did not make the task executable"

@@ -614,6 +614,15 @@ impl Config {
         Ok(tasks_arc)
     }
 
+    pub async fn reload_tasks_with_context(
+        &self,
+        ctx: Option<&crate::task::TaskLoadContext>,
+    ) -> Result<Arc<BTreeMap<String, Task>>> {
+        let cache_key = ctx.cloned().unwrap_or_default();
+        self.tasks_cache.remove(&cache_key);
+        self.tasks_with_context(ctx).await
+    }
+
     pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
         let tasks = self.tasks().await?;
         Ok(tasks
