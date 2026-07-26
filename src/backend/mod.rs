@@ -543,6 +543,21 @@ fn parse_registry_idiomatic_file(
     .map(Some)
 }
 
+fn parse_matching_registry_idiomatic_file(
+    path: &Path,
+    specs: &[RegistryIdiomaticFile],
+) -> Result<Option<Vec<String>>> {
+    match specs
+        .iter()
+        .filter(|spec| path.ends_with(spec.path))
+        .max_by_key(|spec| Path::new(spec.path).components().count())
+        .filter(|spec| spec.has_parser())
+    {
+        Some(spec) => parse_registry_idiomatic_file(path, spec),
+        None => Ok(None),
+    }
+}
+
 fn executable_names(bin: &str) -> Vec<String> {
     let mut names = vec![bin.to_string()];
     if cfg!(target_os = "windows") && Path::new(bin).extension().is_none() {
@@ -655,6 +670,43 @@ mod tests {
         assert_eq!(
             parse_registry_idiomatic_file(&path, &spec).unwrap(),
             Some(vec!["1.2.3".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_matching_registry_idiomatic_file_uses_relative_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("subdir/tool.json");
+        fs::create_dir(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"version":"1.2.3"}"#).unwrap();
+        let specs = [RegistryIdiomaticFile {
+            path: "subdir/tool.json",
+            version_regex: None,
+            version_json_path: Some(".version"),
+            version_expr: None,
+        }];
+
+        assert_eq!(
+            parse_matching_registry_idiomatic_file(&path, &specs).unwrap(),
+            Some(vec!["1.2.3".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_matching_registry_idiomatic_file_overrides_package_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(&path, r#"{"tool":{"version":"4.5.6"}}"#).unwrap();
+        let specs = [RegistryIdiomaticFile {
+            path: "package.json",
+            version_regex: None,
+            version_json_path: Some(".tool.version"),
+            version_expr: None,
+        }];
+
+        assert_eq!(
+            parse_matching_registry_idiomatic_file(&path, &specs).unwrap(),
+            Some(vec!["4.5.6".to_string()])
         );
     }
 
@@ -2119,19 +2171,19 @@ pub trait Backend: Debug + Send + Sync {
     /// every backend needing to implement `package.json` support. For other files, it
     /// delegates to `_parse_idiomatic_file`.
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+        if let Some(versions) = REGISTRY
+            .get(self.id())
+            .map(|rt| parse_matching_registry_idiomatic_file(path, rt.idiomatic_files))
+            .transpose()?
+            .flatten()
+        {
+            return Ok(versions);
+        }
         if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
             return crate::config::config_file::idiomatic_version::package_json::parse(
                 path,
                 self.id(),
             );
-        }
-        if let Some(spec) = REGISTRY.get(self.id()).and_then(|rt| {
-            let filename = path.file_name()?.to_str()?;
-            rt.idiomatic_files
-                .iter()
-                .find(|spec| spec.path == filename && spec.has_parser())
-        }) {
-            return Ok(parse_registry_idiomatic_file(path, spec)?.unwrap_or_default());
         }
         self._parse_idiomatic_file(path).await
     }
@@ -2142,15 +2194,25 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         path: &Path,
     ) -> eyre::Result<Vec<(String, ToolVersionOptions)>> {
-        let versions =
-            if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
-                crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
-                    .into_iter()
-                    .map(|version| (version, None))
-                    .collect()
-            } else {
-                self._parse_idiomatic_file_with_options(path).await?
-            };
+        let versions = if let Some(versions) = REGISTRY
+            .get(self.id())
+            .map(|rt| parse_matching_registry_idiomatic_file(path, rt.idiomatic_files))
+            .transpose()?
+            .flatten()
+        {
+            versions
+                .into_iter()
+                .map(|version| (version, None))
+                .collect()
+        } else if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
+        {
+            crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
+                .into_iter()
+                .map(|version| (version, None))
+                .collect()
+        } else {
+            self._parse_idiomatic_file_with_options(path).await?
+        };
         let options = self.ba().opts();
         Ok(versions
             .into_iter()
