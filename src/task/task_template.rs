@@ -1,7 +1,9 @@
 use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep, TaskOutput, TaskToolValue};
+use crate::task::{
+    RunEntry, Silent, Task, TaskCacheConfig, TaskConfirm, TaskDep, TaskOutput, TaskToolValue,
+};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -31,6 +33,8 @@ pub struct TaskTemplate {
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
+    #[serde(default)]
+    pub cache: Option<TaskCacheConfig>,
     #[serde(default)]
     pub output: Option<TaskOutput>,
     #[serde(default)]
@@ -162,6 +166,10 @@ impl Task {
         // outputs: local overrides completely if default
         if self.outputs == TaskOutputs::default() && template.outputs != TaskOutputs::default() {
             self.outputs = template.outputs.clone();
+        }
+
+        if self.cache.is_none() {
+            self.cache = template.cache.clone();
         }
 
         // output: use template only if local not set
@@ -326,6 +334,28 @@ mod tests {
         };
         overridden.merge_template(&template);
         assert_eq!(overridden.output, Some(TaskOutput::Interleave));
+    }
+
+    #[test]
+    fn test_merge_template_cache_can_be_disabled_locally() {
+        let template = TaskTemplate {
+            cache: Some(TaskCacheConfig {
+                enabled: true,
+                env: vec!["PROFILE".to_string()],
+            }),
+            ..Default::default()
+        };
+
+        let mut inherited = Task::default();
+        inherited.merge_template(&template);
+        assert!(inherited.cache.as_ref().is_some_and(|cache| cache.enabled));
+
+        let mut disabled = Task {
+            cache: Some(TaskCacheConfig::default()),
+            ..Default::default()
+        };
+        disabled.merge_template(&template);
+        assert_eq!(disabled.cache, Some(TaskCacheConfig::default()));
     }
 
     #[test]

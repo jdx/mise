@@ -444,6 +444,66 @@ sources = ["Cargo.toml", "src/**/*.rs"]
 outputs = { auto = true } # this is the default when sources is defined
 ```
 
+### `cache` <Badge type="warning" text="experimental" />
+
+- **Type**: `{ enabled = bool, env = string[] }`
+- **Default**: `{ enabled = false, env = [] }`
+
+Stores declared task outputs in a content-addressed local cache and restores them when the same task
+inputs are seen again. This differs from the normal `sources`/`outputs` freshness check: cached
+artifacts can restore outputs after they have been deleted.
+
+Artifact caching requires [`experimental`](/configuration/settings.html#experimental), at least one
+matching `source`, and explicit output paths. `outputs = { auto = true }`, absolute outputs, and
+outputs that escape the task directory are not supported.
+
+```mise-toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, env = ["NODE_ENV"] }
+```
+
+To enable caching by default for every eligible task in a config scope, set
+`task_config.cache`. Only tasks with at least one source and explicit output paths inherit this
+default; other tasks remain uncached. A task-local `cache` value overrides the scoped default.
+
+```mise-toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+env = ["NODE_ENV"]
+
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+
+[tasks.deploy]
+run = "./deploy.sh"
+cache = { enabled = false }
+```
+
+The cache key includes source contents, the task definition and arguments, resolved task environment,
+the values (or absence) of variables named in `cache.env`, resolved tool versions, and the operating
+system and architecture. Variables inherited from the ambient process are ignored unless listed in
+`cache.env`.
+
+Artifacts are stored under `MISE_CACHE_DIR/task-artifacts/v1` as zstd-compressed tar archives. They
+are included in the existing `mise cache clear` and `mise cache prune` behavior. Only successful task
+runs are cached. Cache read/write failures are treated as misses and never turn a successful task run
+into a failure.
+
+This initial implementation is local-only and does not cache or replay task logs. If a dependency
+executes or restores outputs during the current run, dependent tasks conservatively execute rather
+than restoring an artifact.
+
 ### `shell`
 
 - **Type**: `string`
@@ -684,6 +744,18 @@ Change the default directory tasks are run from.
 ```toml
 [task_config]
 dir = "{{cwd}}"
+```
+
+### `task_config.cache` <Badge type="warning" text="experimental" />
+
+Sets the default artifact-cache configuration for tasks in this config scope. The default is only
+inherited by cache-eligible tasks with sources and explicit output paths. Task-local and task-template
+cache configuration takes precedence, including `cache = { enabled = false }`.
+
+```toml
+[task_config.cache]
+enabled = true
+env = ["NODE_ENV", "CI"]
 ```
 
 ### `task_config.includes` {#task-config-includes}

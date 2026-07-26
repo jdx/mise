@@ -2265,6 +2265,25 @@
           "description": "default directory to run tasks in defined in this file",
           "type": "string"
         },
+        "cache": {
+          "description": "default experimental local artifact cache configuration for eligible tasks with sources and explicit outputs",
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "store and restore eligible task outputs from the local mise cache",
+              "type": "boolean"
+            },
+            "env": {
+              "description": "ambient environment variable names whose values affect eligible task cache keys",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        },
         "includes": {
           "description": "files/directories to include searching for tasks. Can be local paths or git repository URLs using git:: prefix (e.g., git::https://github.com/org/repo.git//path?ref=branch)",
           "items": {
@@ -2892,6 +2911,25 @@
               "type": "object"
             }
           ]
+        },
+        "cache": {
+          "description": "experimental local artifact cache for declared task outputs",
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "store and restore task outputs from the local mise cache",
+              "type": "boolean"
+            },
+            "env": {
+              "description": "ambient environment variable names whose values affect the cache key",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
         },
         "output": {
           "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
