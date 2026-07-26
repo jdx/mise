@@ -8,10 +8,6 @@ run = 'cargo clean'
 description = 'Release the project'
 run = 'cargo release --exclude-unchanged'
 
-[signal-test]
-description = 'Test signal handling in Node.js'
-run = 'node ./test/fixtures/signal-test.js'
-
 [ci]
 depends = ["format", "build", "test"]
 description = "Run all CI checks"
@@ -162,12 +158,6 @@ run = 'cargo +nightly test --all-features -- -Z unstable-options --shuffle'
 [install-dev]
 description = 'Install the current project in debug mode'
 run = 'cargo install --path . --debug'
-
-[xxx]
-hide = true
-tools = { gh = "2.60.0" }
-run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.4; echo 4; sleep 1"
-description = "a task for testing"
 
 [pre-commit]
 description = 'Run pre-commit hooks'
