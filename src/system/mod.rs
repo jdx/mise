@@ -15,7 +15,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use eyre::{Result, bail};
+#[cfg(unix)]
+use eyre::Result;
+use eyre::bail;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
