@@ -7,7 +7,6 @@
 *.lock
 .cliffignore
 *.kdl
-.agent-os/
 CHANGELOG.md
 crates/aqua-registry/aqua-registry/
 docs/.vitepress/cache
