@@ -34,6 +34,10 @@ tasks.bashshebang3 = """
 echo "{{arg(name='a')}}"
 echo "{{arg(name='b', var=true)}}"
 """
+tasks.bashshebangargs = """
+#!/usr/bin/env bash
+printf '<%s>\\n' "\$@"
+"""
 tasks.escapenode = """
 #!/usr/bin/env -S python3
 print("{{arg(name='a')}}")
@@ -49,6 +53,8 @@ assert "mise run bashshebang2 my_a hello 'world of mise'" "my_a
 hello 'world of mise'"
 assert "mise run bashshebang3 my_a hello 'world of mise'" "my_a
 hello 'world of mise'"
+assert "mise run bashshebangargs 'a with space' second" "<a with space>
+<second>"
 assert "mise run escapenode my_a hello 'world of mise'" "my_a
 hello 'world of mise'"
 assert "mise run escapenode 'a with space' hello 'world of mise'" "a with space

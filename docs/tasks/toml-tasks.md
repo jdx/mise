@@ -239,6 +239,23 @@ cargo clippy
 '''
 ```
 
+Shebang tasks are executed as script files. Extra arguments that are not defined by a
+[`usage` specification](/tasks/task-arguments#usage-field) are passed as normal script arguments,
+such as `$1` and `$@` in Bash:
+
+```mise-toml
+[tasks.greet]
+run = '''
+#!/usr/bin/env bash
+echo "hello $1"
+'''
+```
+
+```shell
+$ mise run greet world
+hello world
+```
+
 By using a `shebang` (or `shell`), you can run tasks in different languages (e.g., Python, Node.js, Ruby, etc.):
 
 ::: code-group
