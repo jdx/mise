@@ -167,13 +167,16 @@ impl TaskArtifactCache {
 
     pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
         let (archive_path, manifest_path) = self.paths();
-        if !archive_path.is_file()
-            || !manifest_path.is_file()
+        if !manifest_path.is_file()
             || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
         {
             return None;
         }
-        self.read_manifest().ok().map(|manifest| manifest.output)
+        let manifest = self.read_manifest().ok()?;
+        if !manifest.roots.is_empty() && !archive_path.is_file() {
+            return None;
+        }
+        Some(manifest.output)
     }
 
     pub fn mark_current(&self) -> Result<()> {
@@ -185,16 +188,9 @@ impl TaskArtifactCache {
 
     pub(crate) fn restore(&self, task: &Task) -> Result<Option<Vec<TaskCacheOutput>>> {
         let (archive_path, manifest_path) = self.paths();
-        if !archive_path.is_file() || !manifest_path.is_file() {
+        if !manifest_path.is_file() {
             return Ok(None);
         }
-        // Serialize restores targeting the same working directory across mise
-        // processes so ancestor validation and the following renames are one
-        // cooperative critical section.
-        let _output_lock =
-            crate::lock_file::LockFile::new(&self.root.join(".mise-task-artifact-cache-output"))
-                .lock()?;
-
         let restore = || -> Result<Vec<TaskCacheOutput>> {
             let manifest = self.read_manifest()?;
             for root in &manifest.roots {
@@ -202,6 +198,22 @@ impl TaskArtifactCache {
             }
             if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
                 bail!("task cache manifest contains duplicate or nested roots");
+            }
+            if manifest.roots.is_empty() {
+                if let Err(err) = file::touch_file(&manifest_path) {
+                    warn!("failed to update task cache manifest access time: {err}");
+                }
+                return Ok(manifest.output);
+            }
+            // Serialize restores targeting the same working directory across
+            // mise processes so validation and renames form one cooperative
+            // critical section. Result-only entries never mutate the task root.
+            let _output_lock = crate::lock_file::LockFile::new(
+                &self.root.join(".mise-task-artifact-cache-output"),
+            )
+            .lock()?;
+            if !archive_path.is_file() {
+                bail!("task cache archive is missing");
             }
 
             let staging = tempfile::Builder::new()
@@ -255,9 +267,6 @@ impl TaskArtifactCache {
     pub(crate) fn store(&self, task: &Task, output: &[TaskCacheOutput]) -> Result<()> {
         let roots = resolve_output_roots(task, &self.root, true)?;
         let roots = remove_nested_roots(roots);
-        if roots.is_empty() {
-            bail!("task {} produced no cacheable outputs", task.name);
-        }
         for root in &roots {
             ensure_no_symlink_ancestors(&self.root, root)?;
         }
@@ -269,15 +278,21 @@ impl TaskArtifactCache {
         let archive_partial = cache_dir.join(format!("{}.part-{nonce}.tar.zst", self.key));
         let manifest_partial = cache_dir.join(format!("{}.part-{nonce}.json", self.key));
 
-        write_archive(&archive_partial, &self.root, &roots)?;
         let manifest = CacheManifest {
             format: CACHE_FORMAT_VERSION,
             key: self.key.clone(),
             roots,
             output: output.to_vec(),
         };
+        if !manifest.roots.is_empty() {
+            write_archive(&archive_partial, &self.root, &manifest.roots)?;
+        }
         fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
-        file::rename(&archive_partial, &archive_path)?;
+        if !manifest.roots.is_empty() {
+            file::rename(&archive_partial, &archive_path)?;
+        } else {
+            let _ = file::remove_file(&archive_path);
+        }
         file::rename(&manifest_partial, &manifest_path)?;
         Ok(())
     }
@@ -304,9 +319,9 @@ fn validate_config(task: &Task, root: &Path) -> Result<()> {
     if task.sources.is_empty() {
         bail!("task {} cache requires at least one source", task.name);
     }
-    if task.outputs.is_auto() || task.outputs.patterns().is_empty() {
+    if task.outputs.is_auto() {
         bail!(
-            "task {} cache requires explicit output files or directories",
+            "task {} cache requires explicit outputs or outputs = []",
             task.name
         );
     }

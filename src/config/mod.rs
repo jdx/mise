@@ -2214,7 +2214,7 @@ fn resolve_task_template(
 fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConfig>) {
     if task.cache.is_none()
         && !task.sources.is_empty()
-        && !task.outputs.patterns().is_empty()
+        && !task.outputs.is_auto()
         && let Some(cache) = cache
     {
         task.cache = Some(cache.clone());
