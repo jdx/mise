@@ -5,7 +5,7 @@ backends = [
 ]
 description = "CMake is a tool to manage building of source code. Originally, CMake was designed as a generator for various dialects of Makefile, today CMake generates modern buildsystems such as Ninja as well as project files for IDEs such as Visual Studio and Xcode"
 idiomatic_files = [
-  { path = "CMakeLists.txt", version_regex = '''(?im)^\s*cmake_minimum_required\s*\(\s*VERSION\s+v?([0-9][0-9A-Za-z.+-]*)''' },
+  { path = "CMakeLists.txt", version_regex = '''(?im)^\s*cmake_minimum_required\s*\(\s*VERSION\s+v?([0-9]+(?:\.[0-9]+){0,3})''' },
 ]
 test = { cmd = "cmake --version", expected = """
 cmake version {{version}}

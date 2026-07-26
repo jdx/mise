@@ -22,14 +22,20 @@ EOF
 
 assert_contains "mise tool task" "3.17"
 
-mv Taskfile.yml taskfile.yaml
+mv Taskfile.yml Taskfile.yaml
+assert_contains "mise tool task" "3.17"
+
+mv Taskfile.yaml taskfile.yml
+assert_contains "mise tool task" "3.17"
+
+mv taskfile.yml taskfile.yaml
 assert_contains "mise tool task" "3.17"
 
 echo "v2.71.1" >.chezmoiversion
 assert_contains "mise tool chezmoi" "2.71.1"
 
 cat >CMakeLists.txt <<'EOF'
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.25...3.28)
 project(example)
 EOF
 assert_contains "mise tool cmake" "3.25"
