@@ -642,14 +642,6 @@ impl Backend for NodePlugin {
         Ok(aliases)
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![
-            ".node-version".into(),
-            ".nvmrc".into(),
-            "package.json".into(),
-        ])
-    }
-
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
         let body = normalize_idiomatic_contents(&contents);

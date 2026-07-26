@@ -1,2 +1,3 @@
 backends = ["core:java"]
 description = "jdk java"
+idiomatic_files = [".java-version", ".sdkmanrc"]

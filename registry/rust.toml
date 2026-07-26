@@ -1,2 +1,3 @@
 backends = ["core:rust", "asdf:code-lever/asdf-rust"]
 description = "Rust language"
+idiomatic_files = ["rust-toolchain.toml"]

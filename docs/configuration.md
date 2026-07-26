@@ -395,40 +395,46 @@ other developers to use a specific tool like mise or asdf.
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in mise and nvm. Here are some of the supported idiomatic version files:
 
-| Plugin        | Idiomatic Files                                                                                    |
-| ------------- | -------------------------------------------------------------------------------------------------- |
-| atmos         | `.atmos-version`                                                                                   |
-| bun           | `.bun-version`, `package.json`                                                                     |
-| chezmoi       | `.chezmoiversion`                                                                                  |
-| cmake         | `CMakeLists.txt`                                                                                   |
-| crystal       | `.crystal-version`                                                                                 |
-| dagger        | `dagger.json`                                                                                      |
-| deno          | `.deno-version`, `package.json`                                                                    |
-| dotnet        | `global.json`                                                                                      |
-| earthly       | `Earthfile`                                                                                        |
-| elixir        | `.exenv-version`                                                                                   |
-| go            | `.go-version`, `go.mod`                                                                            |
-| golangci-lint | `.golangci.yml`, `.golangci.yaml`, `.golangci.toml`, `.golangci.json`                              |
-| goreleaser    | `.goreleaser.yml`, `.goreleaser.yaml`, `goreleaser.yml`, `goreleaser.yaml`, `.config/goreleaser.*` |
-| java          | `.java-version`, `.sdkmanrc`                                                                       |
-| lefthook      | `lefthook.*`, `.lefthook.*`, `.config/lefthook.*`                                                  |
-| node          | `.nvmrc`, `.node-version`, `package.json`                                                          |
-| npm           | `package.json`                                                                                     |
-| opentofu      | `.opentofu-version`                                                                                |
-| packer        | `.packer-version`                                                                                  |
-| perl          | `.perl-version`                                                                                    |
-| pixi          | `pixi.toml`, `pyproject.toml`                                                                      |
-| pnpm          | `package.json`                                                                                     |
-| pre-commit    | `.pre-commit-config.yaml`                                                                          |
-| python        | `.python-version`, `.python-versions`                                                              |
-| ruby          | `.ruby-version`, `Gemfile`                                                                         |
-| ruff          | `ruff.toml`, `.ruff.toml`                                                                          |
-| rust          | `rust-toolchain.toml`                                                                              |
-| task          | `Taskfile.yml`, `Taskfile.yaml`, `taskfile.yml`, `taskfile.yaml`                                   |
-| terraform     | `.terraform-version`                                                                               |
-| terragrunt    | `.terragrunt-version`                                                                              |
-| terramate     | `.terramate-version`                                                                               |
-| yarn          | `.yvmrc`, `package.json`                                                                           |
+<!-- mise:idiomatic-version-files:start -->
+
+| Plugin        | Idiomatic Files                                                                                                                                                                                                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| atmos         | `.atmos-version`                                                                                                                                                                                                                                                                                           |
+| bun           | `.bun-version`, `package.json`                                                                                                                                                                                                                                                                             |
+| chezmoi       | `.chezmoiversion`                                                                                                                                                                                                                                                                                          |
+| cmake         | `CMakeLists.txt`                                                                                                                                                                                                                                                                                           |
+| crystal       | `.crystal-version`                                                                                                                                                                                                                                                                                         |
+| dagger        | `dagger.json`                                                                                                                                                                                                                                                                                              |
+| deno          | `.deno-version`, `package.json`                                                                                                                                                                                                                                                                            |
+| dotnet        | `global.json`                                                                                                                                                                                                                                                                                              |
+| earthly       | `Earthfile`                                                                                                                                                                                                                                                                                                |
+| elixir        | `.exenv-version`                                                                                                                                                                                                                                                                                           |
+| go            | `.go-version`, `go.mod`                                                                                                                                                                                                                                                                                    |
+| golangci-lint | `.golangci.yml`, `.golangci.yaml`, `.golangci.toml`, `.golangci.json`                                                                                                                                                                                                                                      |
+| goreleaser    | `.config/goreleaser.yml`, `.config/goreleaser.yaml`, `.goreleaser.yml`, `.goreleaser.yaml`, `goreleaser.yml`, `goreleaser.yaml`                                                                                                                                                                            |
+| java          | `.java-version`, `.sdkmanrc`                                                                                                                                                                                                                                                                               |
+| lefthook      | `lefthook.yml`, `lefthook.yaml`, `.lefthook.yml`, `.lefthook.yaml`, `lefthook.toml`, `.lefthook.toml`, `lefthook.json`, `.lefthook.json`, `lefthook.jsonc`, `.lefthook.jsonc`, `.config/lefthook.yml`, `.config/lefthook.yaml`, `.config/lefthook.toml`, `.config/lefthook.json`, `.config/lefthook.jsonc` |
+| node          | `.nvmrc`, `.node-version`, `package.json`                                                                                                                                                                                                                                                                  |
+| npm           | `package.json`                                                                                                                                                                                                                                                                                             |
+| opentofu      | `.opentofu-version`                                                                                                                                                                                                                                                                                        |
+| packer        | `.packer-version`                                                                                                                                                                                                                                                                                          |
+| perl          | `.perl-version`                                                                                                                                                                                                                                                                                            |
+| pixi          | `pixi.toml`, `pyproject.toml`                                                                                                                                                                                                                                                                              |
+| pnpm          | `package.json`                                                                                                                                                                                                                                                                                             |
+| pre-commit    | `.pre-commit-config.yaml`                                                                                                                                                                                                                                                                                  |
+| python        | `.python-version`, `.python-versions`                                                                                                                                                                                                                                                                      |
+| ruby          | `.ruby-version`, `Gemfile`                                                                                                                                                                                                                                                                                 |
+| ruff          | `ruff.toml`, `.ruff.toml`                                                                                                                                                                                                                                                                                  |
+| rust          | `rust-toolchain.toml`                                                                                                                                                                                                                                                                                      |
+| swift         | `.swift-version`                                                                                                                                                                                                                                                                                           |
+| task          | `Taskfile.yml`, `Taskfile.yaml`, `taskfile.yml`, `taskfile.yaml`                                                                                                                                                                                                                                           |
+| terraform     | `.terraform-version`                                                                                                                                                                                                                                                                                       |
+| terragrunt    | `.terragrunt-version`                                                                                                                                                                                                                                                                                      |
+| terramate     | `.terramate-version`                                                                                                                                                                                                                                                                                       |
+| yarn          | `.yvmrc`, `package.json`                                                                                                                                                                                                                                                                                   |
+| zig           | `.zig-version`                                                                                                                                                                                                                                                                                             |
+
+<!-- mise:idiomatic-version-files:end -->
 
 Registry-backed tools can also describe how mise should extract versions from structured
 idiomatic files. Registry entries may use the same `version_regex`, `version_json_path`, and

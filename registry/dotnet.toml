@@ -5,3 +5,4 @@ backends = [
   "asdf:mise-plugins/mise-dotnet",
 ]
 description = ".NET SDK"
+idiomatic_files = ["global.json"]

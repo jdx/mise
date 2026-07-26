@@ -298,10 +298,6 @@ impl Backend for SwiftPlugin {
         Ok(versions)
     }
 
-    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".swift-version".into()])
-    }
-
     async fn install_version_(
         &self,
         ctx: &InstallContext,

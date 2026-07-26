@@ -878,13 +878,6 @@ impl Backend for PythonPlugin {
         }
     }
 
-    async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        Ok(vec![
-            ".python-version".to_string(),
-            ".python-versions".to_string(),
-        ])
-    }
-
     /// Python versions follow PEP 440, so `3.15.0a8`-style separator-less
     /// alpha suffixes are pre-releases that the shared filter wouldn't catch
     /// on its own. See `fuzzy_match_versions_pep440`.

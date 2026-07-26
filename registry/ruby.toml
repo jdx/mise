@@ -1,3 +1,4 @@
 backends = ["core:ruby"]
 description = "Ruby language"
 detect = ["Gemfile", ".ruby-version", "Rakefile"]
+idiomatic_files = [".ruby-version", "Gemfile"]

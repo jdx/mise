@@ -24,6 +24,11 @@ use url::Url;
 
 // the registry is generated from registry/ in the project root
 static BAKED_REGISTRY: Registry = include!(concat!(env!("OUT_DIR"), "/registry.rs"));
+
+pub(crate) fn baked_registry() -> &'static Registry {
+    &BAKED_REGISTRY
+}
+
 pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     if !Settings::get().registry_floating {
         return &BAKED_REGISTRY;
