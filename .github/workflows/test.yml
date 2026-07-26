@@ -30,7 +30,7 @@ jobs:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -70,7 +70,7 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
@@ -94,7 +94,7 @@ jobs:
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
@@ -135,7 +135,7 @@ jobs:
     # Track rolling nightly for early rustc regressions without blocking PRs on upstream compiler ICEs.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
@@ -173,7 +173,7 @@ jobs:
     timeout-minutes: 20
     needs: [build-ubuntu]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
@@ -238,7 +238,7 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Fetch token from pool
@@ -281,7 +281,7 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
@@ -301,7 +301,7 @@ jobs:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-windows-latest
