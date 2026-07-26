@@ -31,7 +31,7 @@ cd child
 # This task runs its arguments with tools from the parent mise.toml.
 cat >mise.toml <<'EOF'
 [tasks.remote_lint]
-file = "git::https://github.com/jdx/mise.git//xtasks/show-output-on-failure?ref=main"
+file = "git::https://github.com/jdx/mise.git//xtasks/show-output-on-failure?ref=v2025.1.17"
 EOF
 
 # Trust and try to run the remote task
