@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# When a task declares a directory as a static output and hash_contents=true,
+# deleting files inside that directory must trigger a rebuild. Previously,
+# directory outputs were recorded as (path, 0) — detecting only whether the
+# directory itself existed, not its contents.
+#
+# Empty nested subdirectories are also tracked: their deletion is detected
+# because directory entries (not just file entries) are recorded in the hash.
+
+cat <<EOF >mise.toml
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.build]
+run = 'mkdir -p dist/subdir && echo hello > dist/a.txt && echo built'
+sources = ['src.txt']
+outputs = ['dist']
+EOF
+
+echo "hello" >src.txt
+
+# First run: no stored hash, no output directory → stale → runs
+assert "mise run -q build" "built"
+
+# Directory and contents unchanged → fresh
+assert_empty "mise run -q build"
+
+# Delete a file inside the output directory — directory still exists but is
+# incomplete; must trigger a rebuild
+rm dist/a.txt
+assert "mise run -q build" "built"
+
+# Directory restored → fresh again
+assert_empty "mise run -q build"
+
+# Delete an empty nested subdirectory — must also trigger a rebuild because
+# directory entries are included in the output hash
+rm -rf dist/subdir
+assert "mise run -q build" "built"
+
+# Everything restored → fresh again
+assert_empty "mise run -q build"
