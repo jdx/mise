@@ -311,7 +311,7 @@ fn points_into_cellar(link: &Path) -> bool {
 }
 
 /// Normalize `.` and `..` components without touching the filesystem.
-fn lexical_normalize(path: &Path) -> PathBuf {
+pub(super) fn lexical_normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
