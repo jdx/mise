@@ -18,7 +18,7 @@ pub struct PreUseResponse {
 
 impl Plugin {
     pub async fn pre_use(&self, _vfox: &Vfox, _legacy_file: &Path) -> Result<PreUseResponse> {
-        debug!("[vfox:{}] pre_use", &self.name);
+        debug!("[vfox:{}] pre_use", self.name);
         // let ctx = PreUseContext {
         //     installed_sdks: vfox.list_installed_versions(&self.name)?,
         // };

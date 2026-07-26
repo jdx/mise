@@ -9,7 +9,7 @@ use crate::runtime::Runtime;
 
 impl Plugin {
     pub async fn pre_install(&self, version: &str) -> Result<PreInstall> {
-        debug!("[vfox:{}] pre_install", &self.name);
+        debug!("[vfox:{}] pre_install", self.name);
         let ctx = self.context(Some(version.to_string()))?;
         let pre_install = self
             .eval_async(chunk! {
@@ -29,7 +29,7 @@ impl Plugin {
     ) -> Result<PreInstall> {
         debug!(
             "[vfox:{}] pre_install_for_platform os={} arch={}",
-            &self.name, os, arch
+            self.name, os, arch
         );
         let ctx = self.context(Some(version.to_string()))?;
         let target_os = os.to_string();

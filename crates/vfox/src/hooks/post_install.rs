@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 impl Plugin {
     pub async fn post_install(&self, ctx: PostInstallContext) -> Result<()> {
-        debug!("[vfox:{}] post_install", &self.name);
+        debug!("[vfox:{}] post_install", self.name);
         self.exec_async(chunk! {
             require "hooks/post_install"
             PLUGIN:PostInstall($ctx)

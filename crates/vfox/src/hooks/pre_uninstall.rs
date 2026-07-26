@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 impl Plugin {
     pub async fn pre_uninstall(&self, ctx: PreUninstallContext) -> Result<()> {
-        debug!("[vfox:{}] pre_uninstall", &self.name);
+        debug!("[vfox:{}] pre_uninstall", self.name);
         self.exec_async(chunk! {
             require "hooks/pre_uninstall"
             PLUGIN:PreUninstall($ctx)

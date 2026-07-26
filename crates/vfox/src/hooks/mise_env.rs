@@ -35,7 +35,7 @@ impl Plugin {
         &self,
         ctx: MiseEnvContext<T>,
     ) -> Result<MiseEnvResult> {
-        debug!("[vfox:{}] mise_env", &self.name);
+        debug!("[vfox:{}] mise_env", self.name);
         let result = self
             .eval_async(chunk! {
                 require "hooks/mise_env"

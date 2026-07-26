@@ -19,7 +19,7 @@ impl Plugin {
         &self,
         ctx: BackendListVersionsContext,
     ) -> Result<BackendListVersionsResponse> {
-        debug!("[vfox:{}] backend_list_versions", &self.name);
+        debug!("[vfox:{}] backend_list_versions", self.name);
         self.eval_async(chunk! {
             require "hooks/backend_list_versions"
             return PLUGIN:BackendListVersions($ctx)
