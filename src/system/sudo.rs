@@ -57,6 +57,7 @@ pub(crate) fn argv_with_env(
 /// - `"noninteractive"`: no TTY; the subprocess must use `sudo -n` so it
 ///   fails instead of hanging on a password prompt
 /// - `"deny"`: elevation is disabled or sudo is unavailable
+#[cfg(unix)]
 pub(crate) fn subprocess_mode() -> &'static str {
     if is_root() {
         "interactive"
