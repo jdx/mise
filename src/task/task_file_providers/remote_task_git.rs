@@ -108,6 +108,16 @@ impl RemoteTaskGit {
         Ok(destination)
     }
 
+    fn clone_to(repo_structure: &GitRepoStructure, destination: &PathBuf) -> Result<()> {
+        let git_repo = git::Git::new(destination);
+        let mut clone_options = CloneOptions::default();
+        if let Some(branch) = &repo_structure.branch {
+            trace!("Use specific branch {}", branch);
+            clone_options = clone_options.branch(branch);
+        }
+        git_repo.clone(repo_structure.url_without_path.as_str(), clone_options)
+    }
+
     fn fetch_to_destination(
         &self,
         repo_structure: &GitRepoStructure,
@@ -141,14 +151,7 @@ impl RemoteTaskGit {
             crate::file::remove_all(&tmp_destination)?;
         }
 
-        let git_repo = git::Git::new(&tmp_destination);
-        let mut clone_options = CloneOptions::default();
-        if let Some(branch) = &repo_structure.branch {
-            trace!("Use specific branch {}", branch);
-            clone_options = clone_options.branch(branch);
-        }
-
-        match git_repo.clone(repo_structure.url_without_path.as_str(), clone_options) {
+        match Self::clone_to(repo_structure, &tmp_destination) {
             Ok(()) => {
                 if destination.exists()
                     && let Err(e) = crate::file::remove_all(destination)
@@ -213,14 +216,11 @@ impl TaskFileProvider for RemoteTaskGit {
         let repo_structure = self.get_repo_structure(file);
         let cache_key = self.get_cache_key(&repo_structure);
         let destination = self.unique_destination(&cache_key)?;
-        let path = match self.fetch_to_destination(&repo_structure, &destination, false) {
-            Ok(path) => path,
-            Err(err) => {
-                let _ = crate::file::remove_all(&destination);
-                return Err(err);
-            }
-        };
-        Ok(TaskFileArtifact::temporary(path, destination))
+        let artifact = TaskFileArtifact::temporary(destination.clone(), destination.clone());
+        Self::clone_to(&repo_structure, &destination)?;
+        let path = destination.join(repo_structure.path);
+        Self::prepare_remote_path(&path)?;
+        Ok(artifact.with_path(path))
     }
 }
 

@@ -621,8 +621,7 @@ impl Config {
         // Default context (None) becomes TaskLoadContext::default()
         let cache_key = ctx.cloned().unwrap_or_default();
 
-        // Reuse one task snapshot throughout the command. The CLI explicitly
-        // clears this cache when the command finishes.
+        // Check if already cached
         if let Some(cached) = self.tasks_cache.get(&cache_key) {
             return Ok(cached.value().clone());
         }
@@ -633,6 +632,7 @@ impl Config {
         });
         let tasks_arc = Arc::new(tasks);
 
+        // Insert into cache
         self.tasks_cache.insert(cache_key, tasks_arc.clone());
 
         Ok(tasks_arc)
@@ -645,10 +645,6 @@ impl Config {
         let cache_key = ctx.cloned().unwrap_or_default();
         self.tasks_cache.remove(&cache_key);
         self.tasks_with_context(ctx).await
-    }
-
-    pub(crate) fn clear_tasks_cache(&self) {
-        self.tasks_cache.clear();
     }
 
     pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
@@ -4211,11 +4207,6 @@ async fn load_task_sources_from_configs(
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
                 task_config.environment.apply(task)?;
-            }
-            if let Some(cleanup) = artifact.cleanup {
-                for task in &mut loaded {
-                    task.remote_artifact_cleanups.push(cleanup.clone());
-                }
             }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);

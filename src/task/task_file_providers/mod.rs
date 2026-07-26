@@ -1,8 +1,7 @@
 use std::{
-    collections::HashSet,
     fmt::Debug,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock, Mutex},
+    sync::Arc,
 };
 
 mod local_task;
@@ -27,29 +26,12 @@ pub trait TaskFileProvider: Debug + Send + Sync {
 }
 
 #[derive(Debug)]
-pub(crate) struct TaskFileArtifactCleanup {
+struct TaskFileArtifactCleanup {
     path: PathBuf,
-}
-
-static TEMPORARY_TASK_ARTIFACTS: LazyLock<Mutex<HashSet<PathBuf>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
-
-impl TaskFileArtifactCleanup {
-    fn new(path: PathBuf) -> Self {
-        TEMPORARY_TASK_ARTIFACTS
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .insert(path.clone());
-        Self { path }
-    }
 }
 
 impl Drop for TaskFileArtifactCleanup {
     fn drop(&mut self) {
-        TEMPORARY_TASK_ARTIFACTS
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .remove(&self.path);
         if let Err(err) = crate::file::remove_all(&self.path) {
             warn!(
                 "failed to clean up remote task artifact {}: {err:#}",
@@ -62,7 +44,7 @@ impl Drop for TaskFileArtifactCleanup {
 #[derive(Debug, Clone)]
 pub struct TaskFileArtifact {
     pub path: PathBuf,
-    pub(crate) cleanup: Option<Arc<TaskFileArtifactCleanup>>,
+    cleanup: Option<Arc<TaskFileArtifactCleanup>>,
 }
 
 impl TaskFileArtifact {
@@ -76,7 +58,7 @@ impl TaskFileArtifact {
     pub(crate) fn temporary(path: PathBuf, cleanup_path: PathBuf) -> Self {
         Self {
             path,
-            cleanup: Some(Arc::new(TaskFileArtifactCleanup::new(cleanup_path))),
+            cleanup: Some(Arc::new(TaskFileArtifactCleanup { path: cleanup_path })),
         }
     }
 
@@ -88,22 +70,6 @@ impl TaskFileArtifact {
         Self {
             path,
             cleanup: self.cleanup.clone(),
-        }
-    }
-}
-
-pub(crate) fn cleanup_temporary_artifacts() {
-    let paths = TEMPORARY_TASK_ARTIFACTS
-        .lock()
-        .unwrap_or_else(|err| err.into_inner())
-        .drain()
-        .collect::<Vec<_>>();
-    for path in paths {
-        if let Err(err) = crate::file::remove_all(&path) {
-            warn!(
-                "failed to clean up remote task artifact {}: {err:#}",
-                crate::file::display_path(&path)
-            );
         }
     }
 }

@@ -109,12 +109,6 @@ impl TaskFetcher {
                 // intentionally not handled by merge_toml_overlay().
                 remote.global = original.global;
                 remote.remote_file_source = Some(source);
-                remote
-                    .remote_artifact_cleanups
-                    .extend(original.remote_artifact_cleanups);
-                if let Some(cleanup) = artifact.cleanup {
-                    remote.remote_artifact_cleanups.push(cleanup);
-                }
                 *t = remote;
             }
         }
