@@ -1,5 +1,87 @@
 # Changelog
 
+## [2026.7.14](https://github.com/jdx/mise/compare/v2026.7.13..v2026.7.14) - 2026-07-26
+
+### 🚀 Features
+
+- **(github)** support additional release assets by @jdx in [#11272](https://github.com/jdx/mise/pull/11272)
+- **(usage)** declare what each command does to the world by @jdx in [#11306](https://github.com/jdx/mise/pull/11306)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** preserve v prefix in HTTP lock URLs by @jdx in [#11267](https://github.com/jdx/mise/pull/11267)
+- **(backend)** strip platform suffix from single binary inside archives by @Marukome0743 in [#11232](https://github.com/jdx/mise/pull/11232)
+- **(brew)** support cask completion stanzas, system_command, and elevated artifact links by @jdx in [#11273](https://github.com/jdx/mise/pull/11273)
+- **(completions)** stop offering mise's own flags after a task name by @jdx in [#11284](https://github.com/jdx/mise/pull/11284)
+- **(env)** make env file expansion opt-in by @jdx in [#11269](https://github.com/jdx/mise/pull/11269)
+- **(env)** convert remaining std::env::vars() call sites to vars_safe() by @JamBalaya56562 in [#11309](https://github.com/jdx/mise/pull/11309)
+- **(github)** prefer .exe assets on Windows by @gologames in [#11257](https://github.com/jdx/mise/pull/11257)
+- **(github)** clearer error when a GitHub token is rejected with 401 by @Marukome0743 in [#11236](https://github.com/jdx/mise/pull/11236)
+- **(lockfile)** respect locked versions for prefix: tool requests by @JamBalaya56562 in [#11255](https://github.com/jdx/mise/pull/11255)
+- **(npm)** serialize aube allow_builds as map by @jdx in [#11262](https://github.com/jdx/mise/pull/11262)
+- **(npm)** sort large version components correctly by @jdx in [#11280](https://github.com/jdx/mise/pull/11280)
+- **(npm)** explain aube trust downgrade failures by @jdx in [#11292](https://github.com/jdx/mise/pull/11292)
+- **(npm)** add allow_low_downloads backend option by @jdx in [#11305](https://github.com/jdx/mise/pull/11305)
+- **(npm)** bump aube to 1.33.1, stop it rendering its own progress display by @jdx in [#11308](https://github.com/jdx/mise/pull/11308)
+- **(python)** make pip usable on Windows by @JamBalaya56562 in [#11278](https://github.com/jdx/mise/pull/11278)
+- **(swift)** record the target distro in lockfile entries by @jdx in [#11299](https://github.com/jdx/mise/pull/11299)
+- **(task)** don't load tasks from an enclosing monorepo root by @jdx in [#11283](https://github.com/jdx/mise/pull/11283)
+- **(task)** include run, sources, and outputs in task_state_key by @rabadin in [#11288](https://github.com/jdx/mise/pull/11288)
+- **(task)** only persist source hash after successful task run by @rabadin in [#11296](https://github.com/jdx/mise/pull/11296)
+- **(version)** make the update-check cache actually suppress retries by @jdx in [#11285](https://github.com/jdx/mise/pull/11285)
+
+### 📚 Documentation
+
+- **(backend)** correct bin_path/asset_pattern template variables by @jdx in [#11298](https://github.com/jdx/mise/pull/11298)
+- **(npm)** document Socket integrations by @jdx in [#11268](https://github.com/jdx/mise/pull/11268)
+- retarget dead clap.rs link to docs.rs/clap by @Bartok9 in [#11194](https://github.com/jdx/mise/pull/11194)
+- generate llms.txt index for AI agents by @jdx in [#11300](https://github.com/jdx/mise/pull/11300)
+
+### ⚡ Performance
+
+- **(cli)** stop rebuilding the clap tree twice on every invocation by @jdx in [#11297](https://github.com/jdx/mise/pull/11297)
+
+### 📦️ Dependency Updates
+
+- update docker/login-action digest to abd2ef4 by @renovate[bot] in [#11261](https://github.com/jdx/mise/pull/11261)
+- update actions/setup-node action to v7 by @renovate[bot] in [#11247](https://github.com/jdx/mise/pull/11247)
+- update ghcr.io/jdx/mise:alpine docker digest to 7a44a65 by @renovate[bot] in [#11264](https://github.com/jdx/mise/pull/11264)
+- update dependency toml to v5 by @renovate[bot] in [#11248](https://github.com/jdx/mise/pull/11248)
+- update rust crate age to 0.12 by @renovate[bot] in [#11246](https://github.com/jdx/mise/pull/11246)
+- update rust crate clx to v3 by @renovate[bot] in [#11270](https://github.com/jdx/mise/pull/11270)
+- update ghcr.io/jdx/mise:rpm docker digest to f26a306 by @renovate[bot] in [#11266](https://github.com/jdx/mise/pull/11266)
+- update ghcr.io/jdx/mise:deb docker digest to b1b88a5 by @renovate[bot] in [#11265](https://github.com/jdx/mise/pull/11265)
+- update rust crate path-absolutize to v4 by @renovate[bot] in [#11249](https://github.com/jdx/mise/pull/11249)
+- update aube crates to v1.33 by @jdx in [#11302](https://github.com/jdx/mise/pull/11302)
+- update actions/checkout digest to 3d3c42e by @renovate[bot] in [#11237](https://github.com/jdx/mise/pull/11237)
+
+### 📦 Registry
+
+- add checkstyle by @zeitlinger in [#11287](https://github.com/jdx/mise/pull/11287)
+- add grok by @jdx in [#11291](https://github.com/jdx/mise/pull/11291)
+- fix croc version test expectation by @jdx in [#11301](https://github.com/jdx/mise/pull/11301)
+- add tak by @jdx in [#11307](https://github.com/jdx/mise/pull/11307)
+
+### Chore
+
+- **(ci)** add cmake to ppa build dependencies by @jdx in [#11274](https://github.com/jdx/mise/pull/11274)
+
+### Security
+
+- **(config)** restrict default shell args to global config by @jdx in [#11293](https://github.com/jdx/mise/pull/11293)
+
+### New Contributors
+
+- @gologames made their first contribution in [#11257](https://github.com/jdx/mise/pull/11257)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`checkstyle/checkstyle`](https://github.com/checkstyle/checkstyle)
+- [`fbtransfer/ktfmt`](https://github.com/fbtransfer/ktfmt)
+- [`isksss/isksh`](https://github.com/isksss/isksh)
+
 ## [2026.7.13](https://github.com/jdx/mise/compare/v2026.7.12..v2026.7.13) - 2026-07-24
 
 ### 🚀 Features

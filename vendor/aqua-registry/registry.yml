@@ -25105,6 +25105,12 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: checkstyle
+    repo_name: checkstyle
+    description: A development tool for checking Java source code against a coding standard
+    version_prefix: checkstyle-
+    asset: checkstyle-{{.SemVer}}-all.jar
+  - type: github_release
     repo_owner: chenjiandongx
     repo_name: kubectl-images
     description: Show container images used in the cluster
@@ -37860,13 +37866,6 @@ packages:
           - goos: windows
             asset: buck2-{{.Arch}}-{{.OS}}.exe.{{.Format}}
   - type: github_release
-    repo_owner: facebook
-    repo_name: ktfmt
-    description: A program that reformats Kotlin source code to comply with the common community standard for Kotlin code conventions
-    asset: ktfmt-{{trimV .Version}}-with-dependencies.jar
-    format: raw
-    complete_windows_ext: false
-  - type: github_release
     repo_owner: fallow-rs
     repo_name: fallow
     description: "Codebase intelligence for TypeScript and JavaScript. Free static layer: unused code, duplication, circular deps, complexity hotspots, architecture boundaries. Optional paid runtime layer: hot-path review and cold-path deletion evidence from real production traffic. Rust-native, sub-second, zero-config framework support"
@@ -38392,6 +38391,15 @@ packages:
       type: github_release
       asset: frp_sha256_checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: fbtransfer
+    repo_name: ktfmt
+    aliases:
+      - name: facebook/ktfmt
+    description: A program that reformats Kotlin source code to comply with the common community standard for Kotlin code conventions
+    asset: ktfmt-{{trimV .Version}}-with-dependencies.jar
+    format: raw
+    complete_windows_ext: false
   - type: github_release
     repo_owner: fe3dback
     repo_name: go-arch-lint
@@ -50876,6 +50884,29 @@ packages:
       type: github_release
       asset: go-car_{{trimV .Version}}_checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: isksss
+    repo_name: isksh
+    description: A cross-platform POSIX-oriented shell written in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: isksh-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - windows/amd64
   - type: github_release
     repo_owner: ismaelgv
     repo_name: rnr
