@@ -737,6 +737,14 @@ The supported parser fields are:
 These parsers are evaluated in-process and cannot run shell commands. Plain string entries remain
 compatible with existing registry entries and backend-native parsers.
 
+Only extract a value that determines compatibility with the tool binary. Good candidates include
+an exact version, a minimum/required version, or a configuration-format major that is intentionally
+coupled to the CLI major. Do not extract unrelated project versions, dependency versions, lockfile
+schema revisions, or generic `version` fields that do not constrain the tool itself.
+
+Include all filenames that the tool officially searches, including documented nested paths such as
+`.config/tool.yml`. When suffixes overlap, mise uses the most specific matching path.
+
 Idiomatic files are disabled by default. Users enable them for a registry shorthand with:
 
 ```sh

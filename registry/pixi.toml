@@ -1,3 +1,7 @@
 backends = ["github:prefix-dev/pixi"]
 description = "Package management made easy"
+idiomatic_files = [
+  { path = "pixi.toml", version_regex = '''(?m)^\s*requires-pixi\s*=\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+  { path = "pyproject.toml", version_regex = '''(?m)^\s*requires-pixi\s*=\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
+]
 test = { cmd = "pixi -V", expected = "pixi {{version}}" }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mise settings set idiomatic_version_file_enable_tools "dagger,task"
+mise settings set idiomatic_version_file_enable_tools "chezmoi,cmake,dagger,earthly,golangci-lint,goreleaser,lefthook,pixi,pre-commit,ruff,task"
 
 cat >dagger.json <<'EOF'
 {
@@ -24,3 +24,60 @@ assert_contains "mise tool task" "3.17"
 
 mv Taskfile.yml taskfile.yaml
 assert_contains "mise tool task" "3.17"
+
+echo "v2.71.1" >.chezmoiversion
+assert_contains "mise tool chezmoi" "2.71.1"
+
+cat >CMakeLists.txt <<'EOF'
+cmake_minimum_required(VERSION 3.25)
+project(example)
+EOF
+assert_contains "mise tool cmake" "3.25"
+
+cat >Earthfile <<'EOF'
+VERSION --pass-args 0.8
+
+build:
+    FROM alpine
+EOF
+assert_contains "mise tool earthly" "0.8"
+
+cat >.golangci.json <<'EOF'
+{
+  "version": "2"
+}
+EOF
+assert_contains "mise tool golangci-lint" "2"
+
+mkdir -p .config
+cat >.config/goreleaser.yaml <<'EOF'
+version: 2
+builds:
+  - id: example
+EOF
+assert_contains "mise tool goreleaser" "2"
+
+cat >.config/lefthook.jsonc <<'EOF'
+{
+  "min_version": "2.1.0"
+}
+EOF
+assert_contains "mise tool lefthook" "2.1.0"
+
+cat >pyproject.toml <<'EOF'
+[tool.pixi.workspace]
+name = "example"
+requires-pixi = "0.58.0"
+EOF
+assert_contains "mise tool pixi" "0.58.0"
+
+cat >.pre-commit-config.yaml <<'EOF'
+minimum_pre_commit_version: "4.0.0"
+repos: []
+EOF
+assert_contains "mise tool pre-commit" "4.0.0"
+
+cat >.ruff.toml <<'EOF'
+required-version = "0.14.0"
+EOF
+assert_contains "mise tool ruff" "0.14.0"
