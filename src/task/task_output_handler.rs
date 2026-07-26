@@ -1,7 +1,7 @@
 use crate::config::Settings;
-use crate::task::Task;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_output::TaskOutput;
+use crate::task::{Task, TaskCacheOutput};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use indexmap::IndexMap;
@@ -322,6 +322,77 @@ impl OutputHandler {
             }
             _ => {
                 prefix_eprintln!(prefix, "{line}");
+            }
+        }
+    }
+
+    /// Replay cached task output through the currently selected output style.
+    pub(crate) fn replay_cached_output(
+        &self,
+        task: &Task,
+        prefix: &str,
+        output: &[TaskCacheOutput],
+    ) {
+        let mode = self.output(Some(task));
+        for line in output {
+            match line {
+                TaskCacheOutput::Stdout(_) if task.silent.suppresses_stdout() => continue,
+                TaskCacheOutput::Stderr(_) if task.silent.suppresses_stderr() => continue,
+                _ => {}
+            }
+            match (mode, line) {
+                (TaskOutput::Silent, _) => {}
+                (TaskOutput::Prefix, TaskCacheOutput::Stdout(line)) => {
+                    print_stdout(prefix, line);
+                }
+                (TaskOutput::Prefix, TaskCacheOutput::Stderr(line))
+                | (TaskOutput::Timed, TaskCacheOutput::Stderr(line)) => {
+                    print_stderr(prefix, line);
+                }
+                (TaskOutput::KeepOrder, TaskCacheOutput::Stdout(line)) => {
+                    self.keep_order_state.lock().unwrap().on_stdout(
+                        task,
+                        prefix.to_string(),
+                        line.clone(),
+                    );
+                }
+                (TaskOutput::KeepOrder, TaskCacheOutput::Stderr(line)) => {
+                    self.keep_order_state.lock().unwrap().on_stderr(
+                        task,
+                        prefix.to_string(),
+                        line.clone(),
+                    );
+                }
+                (TaskOutput::Replacing, TaskCacheOutput::Stdout(line)) => {
+                    if !line.trim().is_empty() {
+                        self.get_or_init_task_pr(task).set_message(line.clone());
+                    }
+                }
+                (TaskOutput::Replacing, TaskCacheOutput::Stderr(line)) => {
+                    if !line.trim().is_empty() {
+                        self.get_or_init_task_pr(task).println(line.clone());
+                    }
+                }
+                (TaskOutput::Timed, TaskCacheOutput::Stdout(line)) => {
+                    self.timed_outputs
+                        .lock()
+                        .unwrap()
+                        .insert(prefix.to_string(), (SystemTime::now(), line.clone()));
+                }
+                (TaskOutput::Interleave | TaskOutput::Quiet, TaskCacheOutput::Stdout(line)) => {
+                    if console::colors_enabled() {
+                        println!("{line}\x1b[0m");
+                    } else {
+                        println!("{line}");
+                    }
+                }
+                (TaskOutput::Interleave | TaskOutput::Quiet, TaskCacheOutput::Stderr(line)) => {
+                    if console::colors_enabled_stderr() {
+                        eprintln!("{line}\x1b[0m");
+                    } else {
+                        eprintln!("{line}");
+                    }
+                }
             }
         }
     }

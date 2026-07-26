@@ -63,8 +63,8 @@ pub mod task_sources;
 pub mod task_template;
 pub mod task_tool_installer;
 
-pub use task_cache::TaskArtifactCache;
-pub use task_cache::TaskCacheConfig;
+pub(crate) use task_cache::TaskCacheOutput;
+pub use task_cache::{TaskArtifactCache, TaskCacheConfig};
 pub use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};

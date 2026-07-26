@@ -16,7 +16,7 @@ use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
-use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::task::{Deps, FailedTasks, GetMatchingExt, Task, TaskCacheOutput};
 use crate::task::{TaskCompletionState, TaskDependencyState};
 use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
@@ -42,6 +42,7 @@ use xx::file;
 /// Global lock for interactive task exclusivity.
 /// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
 static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
+type TaskOutputCapture = Arc<StdMutex<Vec<TaskCacheOutput>>>;
 
 #[allow(dead_code)] // Guards are held for their Drop impl, not read
 enum RuntimeLockGuard<'a> {
@@ -492,6 +493,13 @@ impl TaskExecutor {
             .await?
             {
                 Some(_) if self.dry_run => None,
+                Some(_) if self.raw(Some(task)) => {
+                    warn!(
+                        "task {} artifact caching disabled for raw or interactive execution",
+                        task.name
+                    );
+                    None
+                }
                 Some(cache) => {
                     if !self.force
                         && !dependency_state.any_unkeyed_did_work
@@ -501,6 +509,15 @@ impl TaskExecutor {
                         if !self.quiet(Some(task)) {
                             self.eprint(task, &prefix, "sources up-to-date, skipping");
                         }
+                        match cache.current_output() {
+                            Ok(output) => {
+                                self.output_handler
+                                    .replay_cached_output(task, &prefix, &output);
+                            }
+                            Err(err) => {
+                                warn!("task {} cached output read failed: {err}", task.name);
+                            }
+                        }
                         return Ok(TaskRunOutcome {
                             did_work: false,
                             cache_key: Some(cache.key().to_string()),
@@ -508,7 +525,7 @@ impl TaskExecutor {
                     }
                     if !self.force
                         && !dependency_state.any_unkeyed_did_work
-                        && cache.restore(task)?
+                        && let Some(output) = cache.restore(task)?
                     {
                         if !self.quiet(Some(task)) {
                             self.eprint(
@@ -517,6 +534,8 @@ impl TaskExecutor {
                                 &format!("restored outputs from cache {}", cache.key()),
                             );
                         }
+                        self.output_handler
+                            .replay_cached_output(task, &prefix, &output);
                         if let Err(err) = save_checksum(task, config).await {
                             warn!(
                                 "task {} artifact cache checksum update failed: {err}",
@@ -541,14 +560,25 @@ impl TaskExecutor {
         } else {
             None
         };
+        let output_capture = artifact_cache
+            .as_ref()
+            .map(|_| Arc::new(StdMutex::new(Vec::new())));
 
         let timer = std::time::Instant::now();
 
         if let Some(file) = task_file {
             let exec_start = std::time::Instant::now();
             remove_auto_output(task, config).await?;
-            self.exec_file(config, &file, task, &env, &prefix, confirm_guard)
-                .await?;
+            self.exec_file(
+                config,
+                &file,
+                task,
+                &env,
+                &prefix,
+                confirm_guard,
+                output_capture.as_ref(),
+            )
+            .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -579,6 +609,7 @@ impl TaskExecutor {
                 &completion_state,
                 semaphore,
                 permit,
+                output_capture.as_ref(),
             )
             .await?;
             trace!(
@@ -601,7 +632,11 @@ impl TaskExecutor {
 
         save_checksum(task, config).await?;
         let cache_key = if let Some(cache) = artifact_cache {
-            match cache.store(task) {
+            let output = output_capture
+                .as_ref()
+                .map(|output| output.lock().unwrap().clone())
+                .unwrap_or_default();
+            match cache.store(task, &output) {
                 Ok(()) => {
                     if let Err(err) = cache.mark_current() {
                         warn!(
@@ -663,6 +698,7 @@ impl TaskExecutor {
         completion_state: &TaskCompletionState,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
+        output_capture: Option<&TaskOutputCapture>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -707,7 +743,8 @@ impl TaskExecutor {
                         if guard.is_none() {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
-                        self.exec_script(&script, &args, task, env, prefix).await?;
+                        self.exec_script(&script, &args, task, env, prefix, output_capture)
+                            .await?;
                     }
                 }
                 RunEntry::SingleTask {
@@ -963,6 +1000,7 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        output_capture: Option<&TaskOutputCapture>,
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
@@ -995,13 +1033,21 @@ impl TaskExecutor {
             let file = dir.path().join("script");
             tokio::fs::write(&file, script.as_bytes()).await?;
             file::make_executable(&file)?;
-            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix)
+            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix, output_capture)
                 .await
         } else {
             let (program, args, cmd_verbatim) =
                 self.get_cmd_program_and_args(script, task, args)?;
-            self.exec_program(&program, &args, task, env, prefix, cmd_verbatim)
-                .await
+            self.exec_program(
+                &program,
+                &args,
+                task,
+                env,
+                prefix,
+                cmd_verbatim,
+                output_capture,
+            )
+            .await
         }
     }
 
@@ -1108,6 +1154,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         guard: Option<RuntimeLockGuard<'static>>,
+        output_capture: Option<&TaskOutputCapture>,
     ) -> Result<()> {
         let args = task.args.iter().cloned().collect_vec();
 
@@ -1125,7 +1172,8 @@ impl TaskExecutor {
         } else {
             Some(acquire_runtime_lock(task.interactive).await)
         };
-        self.exec(file, &args, task, env, prefix).await
+        self.exec(file, &args, task, env, prefix, output_capture)
+            .await
     }
 
     async fn exec(
@@ -1135,9 +1183,10 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        output_capture: Option<&TaskOutputCapture>,
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(&program, &args, task, env, prefix, false)
+        self.exec_program(&program, &args, task, env, prefix, false, output_capture)
             .await
     }
 
@@ -1148,13 +1197,17 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        output_capture: Option<&TaskOutputCapture>,
     ) -> Result<()> {
         const ETXTBUSY_RETRIES: usize = 3;
         const ETXTBUSY_SLEEP_MS: u64 = 50;
 
         let mut attempt = 0;
         loop {
-            match self.exec(file, args, task, env, prefix).await {
+            match self
+                .exec(file, args, task, env, prefix, output_capture)
+                .await
+            {
                 Ok(()) => break Ok(()),
                 Err(err) if Self::is_text_file_busy(&err) && attempt < ETXTBUSY_RETRIES => {
                     attempt += 1;
@@ -1181,6 +1234,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         cmd_verbatim: bool,
+        output_capture: Option<&TaskOutputCapture>,
     ) -> Result<()> {
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1258,6 +1312,8 @@ impl TaskExecutor {
                             prefix_println!(prefix, "{line}");
                         }
                     });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stdout(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null());
                 }
@@ -1269,6 +1325,8 @@ impl TaskExecutor {
                             self.eprint(task, prefix, &line);
                         }
                     });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stderr(Stdio::null());
                 }
@@ -1284,6 +1342,8 @@ impl TaskExecutor {
                             .unwrap()
                             .on_stdout(&task_clone, prefix_str.clone(), line);
                     });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stdout(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null());
                 }
@@ -1297,6 +1357,8 @@ impl TaskExecutor {
                             .unwrap()
                             .on_stderr(&task_clone, prefix_str.clone(), line);
                     });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stderr(Stdio::null());
                 }
@@ -1304,10 +1366,18 @@ impl TaskExecutor {
             TaskOutput::Replacing => {
                 // Replacing mode shows a progress indicator unless both streams are suppressed
                 if task.silent.suppresses_stdout() {
-                    cmd = cmd.stdout(Stdio::null());
+                    if output_capture.is_some() {
+                        cmd = cmd.with_on_stdout(|_| {});
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
                 }
                 if task.silent.suppresses_stderr() {
-                    cmd = cmd.stderr(Stdio::null());
+                    if output_capture.is_some() {
+                        cmd = cmd.with_on_stderr(|_| {});
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
                 }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
@@ -1324,6 +1394,8 @@ impl TaskExecutor {
                             .unwrap()
                             .insert(prefix.to_string(), (SystemTime::now(), line));
                     });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stdout(|_| {});
                 } else {
                     cmd = cmd.stdout(Stdio::null());
                 }
@@ -1335,18 +1407,31 @@ impl TaskExecutor {
                             self.eprint(task, prefix, &line);
                         }
                     });
+                } else if output_capture.is_some() {
+                    cmd = cmd.with_on_stderr(|_| {});
                 } else {
                     cmd = cmd.stderr(Stdio::null());
                 }
             }
             TaskOutput::Silent => {
-                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
+                if output_capture.is_some() {
+                    cmd = cmd.with_on_stdout(|_| {}).with_on_stderr(|_| {});
+                } else {
+                    cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
+                }
             }
             // `Quiet` is no longer returned by `output()` (verbosity is decoupled
             // from style; it maps to `Interleave`), but the variant still exists as
             // a config value so it's kept here for match exhaustiveness.
             TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
+                if output_capture.is_some() {
+                    if task.silent.suppresses_stdout() {
+                        cmd = cmd.with_on_stdout(|_| {});
+                    }
+                    if task.silent.suppresses_stderr() {
+                        cmd = cmd.with_on_stderr(|_| {});
+                    }
+                } else if raw || redactions.is_empty() {
                     cmd = cmd.stdin(Stdio::inherit());
                     if !task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::inherit());
@@ -1360,6 +1445,23 @@ impl TaskExecutor {
                     }
                 }
             }
+        }
+        if let Some(output_capture) = output_capture {
+            let stdout = output_capture.clone();
+            let stderr = output_capture.clone();
+            cmd = cmd
+                .with_stdout_observer(move |line| {
+                    stdout
+                        .lock()
+                        .unwrap()
+                        .push(TaskCacheOutput::Stdout(line.to_string()));
+                })
+                .with_stderr_observer(move |line| {
+                    stderr
+                        .lock()
+                        .unwrap()
+                        .push(TaskCacheOutput::Stderr(line.to_string()));
+                });
         }
         let dir = task_cwd(task, &config).await?;
         if !dir.exists() {
