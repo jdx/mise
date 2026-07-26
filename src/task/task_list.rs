@@ -176,7 +176,60 @@ fn append_available_tasks(
 }
 
 /// Show an error when a task is not found, with helpful suggestions
-async fn err_no_task(config: &Config, name: &str) -> Result<()> {
+async fn make_task_executable(
+    config: &Arc<Config>,
+    name: &str,
+    task_context: Option<&TaskLoadContext>,
+) -> Result<Option<Task>> {
+    if cfg!(windows) {
+        return Ok(None);
+    }
+    let Some(cwd) = &*dirs::CWD else {
+        return Ok(None);
+    };
+    let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
+    let Some(path) = includes
+        .iter()
+        .map(|root| root.join(name))
+        .find(|path| path.is_file() && !file::is_executable(path))
+    else {
+        return Ok(None);
+    };
+
+    warn!(
+        "no task {} found, but a non-executable file exists at {}",
+        style::ered(name),
+        display_path(&path)
+    );
+    let confirmed = config::Settings::get().yes
+        || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
+    if !confirmed {
+        return Ok(None);
+    }
+
+    file::make_executable(&path)?;
+    info!("marked as executable");
+    let all_tasks = config.reload_tasks_with_context(task_context).await?;
+    let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
+    let task = tasks_with_aliases
+        .get_matching(name)?
+        .into_iter()
+        .next()
+        .map(|task| (*task).clone());
+    ensure!(
+        task.is_some(),
+        "task {} was not found after marking {} as executable",
+        style::ered(name),
+        display_path(&path)
+    );
+    Ok(task)
+}
+
+async fn err_no_task(
+    config: &Arc<Config>,
+    name: &str,
+    task_context: Option<&TaskLoadContext>,
+) -> Result<Option<Task>> {
     // Check early if the name looks like a mistyped CLI subcommand
     let similar_cmds = suggest_similar_commands(name);
     let (tasks_for_error, showing_all_tasks) = tasks_for_missing_task_error(config, name).await?;
@@ -227,6 +280,10 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             }
         }
 
+        if let Some(task) = make_task_executable(config, name, task_context).await? {
+            return Ok(Some(task));
+        }
+
         // Check if there are non-executable files in task include directories
         if !cfg!(windows)
             && let Some(cwd) = &*dirs::CWD
@@ -261,27 +318,8 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             display_path(dirs::CWD.clone().unwrap_or_default())
         );
     }
-    if let Some(cwd) = &*dirs::CWD {
-        let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
-        let path = includes
-            .iter()
-            .map(|d| d.join(name))
-            .find(|d| d.is_file() && !file::is_executable(d));
-        if let Some(path) = path
-            && !cfg!(windows)
-        {
-            warn!(
-                "no task {} found, but a non-executable file exists at {}",
-                style::ered(name),
-                display_path(&path)
-            );
-            let yn =
-                prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
-            if yn {
-                file::make_executable(&path)?;
-                info!("marked as executable, try running this task again");
-            }
-        }
+    if let Some(task) = make_task_executable(config, name, task_context).await? {
+        return Ok(Some(task));
     }
 
     // Suggest similar tasks using fuzzy matching for monorepo tasks
@@ -478,7 +516,10 @@ pub async fn get_task_lists(
                 t.starts_with("//") && t.ends_with(":default") && t[2..].matches(':').count() == 1
             };
             if !is_default_task || !prompt || !console::user_attended_stderr() {
-                err_no_task(config, &t).await?;
+                if let Some(task) = err_no_task(config, &t, effective_context.as_ref()).await? {
+                    tasks.push(task.with_args(args));
+                    continue;
+                }
             }
             tasks.push(prompt_for_task().await?);
         } else {
