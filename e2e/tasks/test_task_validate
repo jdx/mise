@@ -26,6 +26,51 @@ assert_contains "mise tasks validate 2>&1 || true" "Circular dependency detected
 assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
 assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
 
+# Test cycles involving wait_for are detected by validation and before execution
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+run = "echo b"
+wait_for = ["a"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+assert_contains "mise run a 2>&1 || true" "circular dependency detected: a -> b -> a"
+
+# Test cycles introduced by rendering a nested task's usage defaults
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+usage = 'flag "--enabled" default=#true'
+run = "echo b"
+depends = ["{% if usage.enabled %}a{% endif %}"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+assert_contains "mise run a 2>&1 || true" "circular dependency detected: a -> b -> a"
+
+# A depends_post reference reverses the scheduling edge, so this is acyclic:
+# a runs before b both because a schedules b afterward and b depends on a.
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo a"
+depends_post = ["b"]
+
+[tasks.b]
+run = "echo b"
+depends = ["a"]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
+assert "mise run a" "a
+b"
+
 # Test missing dependency
 cat <<EOF >mise.toml
 [tasks.valid]

@@ -3,9 +3,10 @@ use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
+use eyre::eyre;
 use itertools::Itertools;
 use petgraph::Direction;
-use petgraph::graph::DiGraph;
+use petgraph::graph::{DiGraph, NodeIndex};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -124,6 +125,13 @@ impl Deps {
                 stack.push(b.clone());
             }
             seen.insert(a);
+        }
+        if let Some(cycle) = find_cycle(&graph) {
+            let cycle = cycle
+                .iter()
+                .map(|&idx| task_cycle_label(&graph[idx]))
+                .join(" -> ");
+            return Err(eyre!("circular dependency detected: {cycle}"));
         }
         let (tx, _) = mpsc::unbounded_channel();
         let sent = HashSet::new();
@@ -331,4 +339,96 @@ fn leaves(graph: &DiGraph<Task, ()>) -> Vec<Task> {
         .externals(Direction::Outgoing)
         .map(|idx| graph[idx].clone())
         .collect()
+}
+
+fn task_cycle_label(task: &Task) -> String {
+    if task.args.is_empty() {
+        task.name.clone()
+    } else {
+        format!("{} {}", task.name, task.args.join(" "))
+    }
+}
+
+fn find_cycle(graph: &DiGraph<Task, ()>) -> Option<Vec<NodeIndex>> {
+    fn visit(
+        graph: &DiGraph<Task, ()>,
+        node: NodeIndex,
+        states: &mut HashMap<NodeIndex, u8>,
+        stack: &mut Vec<NodeIndex>,
+    ) -> Option<Vec<NodeIndex>> {
+        states.insert(node, 1);
+        stack.push(node);
+
+        for dependency in graph.neighbors_directed(node, Direction::Outgoing) {
+            match states.get(&dependency).copied().unwrap_or_default() {
+                0 => {
+                    if let Some(cycle) = visit(graph, dependency, states, stack) {
+                        return Some(cycle);
+                    }
+                }
+                1 => {
+                    let start = stack.iter().position(|&idx| idx == dependency)?;
+                    let mut cycle = stack[start..].to_vec();
+                    cycle.push(dependency);
+                    return Some(cycle);
+                }
+                _ => {}
+            }
+        }
+
+        stack.pop();
+        states.insert(node, 2);
+        None
+    }
+
+    let mut states = HashMap::new();
+    let mut stack = Vec::new();
+    for node in graph.node_indices() {
+        if !states.contains_key(&node)
+            && let Some(cycle) = visit(graph, node, &mut states, &mut stack)
+        {
+            return Some(cycle);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn finds_cycle_path() {
+        let mut graph = DiGraph::new();
+        let a = graph.add_node(task("a"));
+        let b = graph.add_node(task("b"));
+        let c = graph.add_node(task("c"));
+        graph.update_edge(a, b, ());
+        graph.update_edge(b, c, ());
+        graph.update_edge(c, a, ());
+
+        let cycle = find_cycle(&graph).unwrap();
+        let labels = cycle
+            .iter()
+            .map(|&idx| task_cycle_label(&graph[idx]))
+            .collect_vec();
+        assert_eq!(labels, ["a", "b", "c", "a"]);
+    }
+
+    #[test]
+    fn accepts_acyclic_graph() {
+        let mut graph = DiGraph::new();
+        let a = graph.add_node(task("a"));
+        let b = graph.add_node(task("b"));
+        graph.update_edge(b, a, ());
+
+        assert!(find_cycle(&graph).is_none());
+    }
 }

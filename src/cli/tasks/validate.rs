@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::duration;
 use crate::file;
 use crate::task::task_fetcher::TaskFetcher;
-use crate::task::{GetMatchingExt, Task, build_task_ref_map, resolve_task_pattern};
+use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map, resolve_task_pattern};
 use crate::tera::contains_template_syntax;
 use crate::ui::style;
 use console::style as console_style;
@@ -84,6 +84,23 @@ impl TasksValidate {
 
         // Run validation
         let mut issues = Vec::new();
+        if let Err(err) = Deps::new(&config, tasks.clone()).await {
+            let details = err.to_string();
+            if details.contains("circular dependency detected") {
+                let task = details
+                    .split_once(": ")
+                    .and_then(|(_, path)| path.split(" -> ").next())
+                    .unwrap_or("task graph")
+                    .to_string();
+                issues.push(ValidationIssue {
+                    task,
+                    severity: Severity::Error,
+                    category: "circular-dependency".to_string(),
+                    message: "Circular dependency detected".to_string(),
+                    details: Some(details),
+                });
+            }
+        }
         for task in &tasks {
             issues.extend(self.validate_task(task, &all_tasks, &config).await);
         }
@@ -164,64 +181,35 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        // 1. Validate circular dependencies
-        issues.extend(self.validate_circular_dependencies(task, all_tasks));
-
-        // 2. Validate missing task references
+        // 1. Validate missing task references
         issues.extend(self.validate_missing_references(task, all_tasks));
 
-        // 3. Validate usage spec parsing
+        // 2. Validate usage spec parsing
         issues.extend(self.validate_usage_spec(task, config).await);
 
-        // 4. Validate timeout format
+        // 3. Validate timeout format
         issues.extend(self.validate_timeout(task));
 
-        // 5. Validate alias conflicts
+        // 4. Validate alias conflicts
         issues.extend(self.validate_aliases(task, all_tasks));
 
-        // 6. Validate file existence
+        // 5. Validate file existence
         issues.extend(self.validate_file_existence(task));
 
-        // 7. Validate directory template
+        // 6. Validate directory template
         issues.extend(self.validate_directory(task, config).await);
 
-        // 8. Validate shell command
+        // 7. Validate shell command
         issues.extend(self.validate_shell(task));
 
-        // 9. Validate source globs
+        // 8. Validate source globs
         issues.extend(self.validate_source_patterns(task));
 
-        // 10. Validate output patterns
+        // 9. Validate output patterns
         issues.extend(self.validate_output_patterns(task));
 
-        // 11. Validate run entries
+        // 10. Validate run entries
         issues.extend(self.validate_run_entries(task, all_tasks));
-
-        issues
-    }
-
-    fn validate_circular_dependencies(
-        &self,
-        task: &Task,
-        all_tasks: &BTreeMap<String, Task>,
-    ) -> Vec<ValidationIssue> {
-        let mut issues = Vec::new();
-
-        match task.all_depends(all_tasks) {
-            Ok(_) => {}
-            Err(e) => {
-                let err_msg = e.to_string();
-                if err_msg.contains("circular dependency") {
-                    issues.push(ValidationIssue {
-                        task: task.name.clone(),
-                        severity: Severity::Error,
-                        category: "circular-dependency".to_string(),
-                        message: "Circular dependency detected".to_string(),
-                        details: Some(err_msg),
-                    });
-                }
-            }
-        }
 
         issues
     }

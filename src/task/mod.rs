@@ -1124,14 +1124,14 @@ impl Task {
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
         let tasks_ref = build_task_ref_map(tasks.iter());
-        let mut path = vec![self.name.clone()];
-        self.all_depends_recursive(&tasks_ref, &mut path)
+        let mut visited = HashSet::from([self.name.clone()]);
+        self.all_depends_recursive(&tasks_ref, &mut visited)
     }
 
     fn all_depends_recursive(
         &self,
         tasks: &BTreeMap<String, &Task>,
-        path: &mut Vec<String>,
+        visited: &mut HashSet<String>,
     ) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
             .depends
@@ -1143,20 +1143,14 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
 
-        // Collect transitive dependencies with cycle detection
+        // Collect transitive dependencies without following the same task twice.
+        // Cycle detection happens after the runtime graph has resolved wait_for,
+        // depends_post direction, usage templates, args, and environment variants.
         for dep in depends.clone() {
-            if path.contains(&dep.name) {
-                // Circular dependency detected - build path string for error message
-                let cycle_path = path
-                    .iter()
-                    .skip_while(|&name| name != &dep.name)
-                    .chain(std::iter::once(&dep.name))
-                    .join(" -> ");
-                return Err(eyre!("circular dependency detected: {}", cycle_path));
+            if !visited.insert(dep.name.clone()) {
+                continue;
             }
-            path.push(dep.name.clone());
-            let mut extra = dep.all_depends_recursive(tasks, path)?;
-            path.pop(); // Remove from path after processing this branch
+            let mut extra = dep.all_depends_recursive(tasks, visited)?;
             extra.retain(|t| t.name != self.name); // prevent depending on ourself
             depends.extend(extra);
         }
@@ -3633,7 +3627,7 @@ echo "hello world"
     }
 
     #[test]
-    fn test_circular_dependency_detection() {
+    fn test_circular_dependency_resolution_terminates() {
         use super::Task;
         use std::collections::BTreeMap;
 
@@ -3663,15 +3657,12 @@ echo "hello world"
         tasks.insert("task_a".to_string(), task_a.clone());
         tasks.insert("task_b".to_string(), task_b);
 
-        // Should detect circular dependency
-        let result = task_a.all_depends(&tasks);
-        assert!(result.is_err());
-        let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("circular dependency detected"));
+        let deps = task_a.all_depends(&tasks).unwrap();
+        assert_eq!(deps.iter().map(|t| &t.name).collect::<Vec<_>>(), ["task_b"]);
     }
 
     #[test]
-    fn test_transitive_circular_dependency_detection() {
+    fn test_transitive_circular_dependency_resolution_terminates() {
         use super::Task;
         use std::collections::BTreeMap;
 
@@ -3712,11 +3703,11 @@ echo "hello world"
         tasks.insert("task_b".to_string(), task_b);
         tasks.insert("task_c".to_string(), task_c);
 
-        // Should detect circular dependency
-        let result = task_a.all_depends(&tasks);
-        assert!(result.is_err());
-        let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("circular dependency detected"));
+        let deps = task_a.all_depends(&tasks).unwrap();
+        assert_eq!(
+            deps.iter().map(|t| &t.name).collect::<Vec<_>>(),
+            ["task_b", "task_c"]
+        );
     }
 
     #[test]
