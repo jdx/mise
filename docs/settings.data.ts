@@ -50,7 +50,14 @@ export default {
         default: default_,
         docs: md.render(props.docs ?? props.description),
         deprecated: props.deprecated,
-        enum: props.enum,
+        enum: props.enum?.map((choice) =>
+          typeof choice === "object" && choice !== null && choice.description
+            ? {
+                ...choice,
+                description: md.renderInline(choice.description),
+              }
+            : choice,
+        ),
         env: props.env,
         parseEnv: getParseEnv(props.parse_env),
         optional: !props.default_docs && props.optional,
