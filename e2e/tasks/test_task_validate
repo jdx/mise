@@ -26,6 +26,129 @@ assert_contains "mise tasks validate 2>&1 || true" "Circular dependency detected
 assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
 assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
 
+# Test cycles involving wait_for are detected by validation and before execution
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+run = "echo b"
+wait_for = ["a"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+assert_contains "mise run a 2>&1 || true" "circular dependency detected: a -> b -> a"
+
+# Test cycles introduced by rendering a nested task's usage defaults
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+usage = 'flag "--enabled" default=#true'
+run = "echo b"
+depends = ["{% if usage.enabled %}a{% endif %}"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+assert_contains "mise run a 2>&1 || true" "circular dependency detected: a -> b -> a"
+
+# Test non-cycle dependency graph failures are reported as validation errors
+cat <<'EOF' >mise.toml
+[tasks.root]
+run = "echo root"
+depends = ["child"]
+
+[tasks.child]
+usage = "not valid usage syntax"
+run = "echo child"
+depends = ["{{usage.target}}"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "Failed to build task dependency graph"
+assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"
+
+# Test an unrelated graph failure does not hide a cycle in another task graph
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = "echo a"
+depends = ["b"]
+
+[tasks.b]
+run = "echo b"
+depends = ["a"]
+
+[tasks.c]
+run = "echo c"
+depends = ["d"]
+
+[tasks.d]
+run = "echo d"
+depends = ["c"]
+
+[tasks.overlap]
+run = "echo overlap"
+depends = ["overlap-left", "overlap-right"]
+
+[tasks.overlap-left]
+run = "echo overlap-left"
+depends = ["overlap"]
+
+[tasks.overlap-right]
+run = "echo overlap-right"
+depends = ["overlap"]
+
+[tasks.wait-a]
+run = "echo wait-a"
+wait_for = ["wait-b"]
+
+[tasks.wait-b]
+run = "echo wait-b"
+wait_for = ["wait-a"]
+
+[tasks.wait-c]
+run = "echo wait-c"
+wait_for = ["wait-d"]
+
+[tasks.wait-d]
+run = "echo wait-d"
+wait_for = ["wait-c"]
+
+[tasks.invalid]
+run = "echo invalid"
+depends = ["nonexistent"]
+
+[tasks.also-invalid]
+run = "echo also-invalid"
+depends = ["nonexistent"]
+EOF
+
+assert_contains "mise tasks validate 2>&1 || true" "dependency-graph-error"
+assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
+graph_error_count=$(mise tasks validate --json 2>&1 | grep -c '"category": "dependency-graph-error"' || true)
+assert "echo $graph_error_count" "2"
+cycle_error_count=$(mise tasks validate --json 2>&1 | grep -c '"category": "circular-dependency"' || true)
+assert "echo $cycle_error_count" "6"
+
+# A depends_post reference reverses the scheduling edge, so this is acyclic:
+# a runs before b both because a schedules b afterward and b depends on a.
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo a"
+depends_post = ["b"]
+
+[tasks.b]
+run = "echo b"
+depends = ["a"]
+EOF
+
+assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
+assert "mise run a" "a
+b"
+
 # Test missing dependency
 cat <<EOF >mise.toml
 [tasks.valid]
@@ -133,7 +256,7 @@ depends = ["missing"]
 EOF
 
 assert_contains "mise tasks validate --json 2>&1 || true" '"tasks_validated": 2'
-assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 1'
+assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 2'
 assert_contains "mise tasks validate --json 2>&1 || true" '"category": "missing-dependency"'
 
 # Test errors-only flag
