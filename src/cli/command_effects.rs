@@ -111,7 +111,10 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("deps remove", Destructive),
     ("direnv", Read),
     ("direnv activate", Read),
-    ("direnv envrc", Read),
+    // Writing the file *is* the command — `File::create` under MISE_TMP_DIR.
+    // The temp location does not make it a read: unlike `env`, where an
+    // install is incidental to printing, producing a file is the whole job.
+    ("direnv envrc", Write),
     ("doctor", Read),
     ("doctor path", Read),
     ("dotfiles", Read),

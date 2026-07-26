@@ -958,7 +958,7 @@ Examples:
     cmd envrc hide=#true help=#"""
 [internal] This is an internal command that writes an envrc file
 for direnv to consume.
-"""# effect=read
+"""# effect=write
     cmd exec hide=#true help=#"""
 [internal] This is an internal command that writes an envrc file
 for direnv to consume.
