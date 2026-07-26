@@ -159,14 +159,12 @@ impl TasksValidate {
 
         // A wait_for relationship only applies when both tasks are selected, so
         // retry the tasks whose individual graphs built successfully together.
-        if valid_tasks.len() > 1 {
-            if let Err(err) = Deps::new(config, valid_tasks).await {
-                if let Some(cycle) = err.downcast_ref::<TaskCycleError>() {
-                    return Some(cycle_issue(cycle, err.to_string()));
-                }
-            }
+        if valid_tasks.len() <= 1 {
+            return None;
         }
-        None
+        let err = Deps::new(config, valid_tasks).await.err()?;
+        let cycle = err.downcast_ref::<TaskCycleError>()?;
+        Some(cycle_issue(cycle, err.to_string()))
     }
 
     fn get_all_tasks(&self, all_tasks: &BTreeMap<String, Task>) -> Vec<Task> {
