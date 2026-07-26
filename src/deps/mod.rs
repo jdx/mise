@@ -86,10 +86,6 @@ impl DepsProviderApplicability {
             None => Self::Inactive("missing run command".to_string()),
         }
     }
-
-    pub fn is_applicable(&self) -> bool {
-        matches!(self, Self::Applicable)
-    }
 }
 
 impl FreshnessResult {
@@ -206,11 +202,6 @@ pub trait DepsProvider: Debug + Send + Sync {
     /// Whether this provider is applicable, with an actionable reason if not.
     fn applicability(&self) -> DepsProviderApplicability;
 
-    /// Whether this provider is applicable (e.g., lockfile exists)
-    fn is_applicable(&self) -> bool {
-        self.applicability().is_applicable()
-    }
-
     /// Whether this provider should auto-run before mise x/run
     fn is_auto(&self) -> bool {
         self.base().is_auto()
@@ -306,6 +297,8 @@ pub fn clear_output_stale(path: &PathBuf) {
 ///
 /// This checks if the lockfiles/config files for each provider exist.
 pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
+    use DepsProviderApplicability::Applicable;
+
     use providers::*;
     use rule::DepsProviderConfig;
 
@@ -381,7 +374,7 @@ pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
     ];
 
     for (name, provider) in checks {
-        if provider.is_applicable() {
+        if matches!(provider.applicability(), Applicable) {
             applicable.push(name.to_string());
         }
     }

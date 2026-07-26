@@ -106,6 +106,7 @@ impl DepsProvider for ScopedDepsProvider {
     }
 }
 
+use super::DepsProviderApplicability::Applicable;
 use super::deps_ordering::DepsOrdering;
 use super::providers::{
     AubeDepsProvider, BunDepsProvider, BundlerDepsProvider, ComposerDepsProvider,
@@ -183,7 +184,10 @@ impl DepsEngine {
     pub fn new(config: &Config) -> Result<Self> {
         let providers = Self::discover_providers(config)?;
         // Inactive-only config is diagnostic state and cannot run.
-        if providers.iter().any(|provider| provider.is_applicable()) {
+        if providers
+            .iter()
+            .any(|provider| matches!(provider.applicability(), Applicable))
+        {
             Settings::get().ensure_experimental("deps")?;
         }
         Ok(Self { providers })
@@ -265,7 +269,9 @@ impl DepsEngine {
                         // Preserve that precedence while retaining the
                         // highest-precedence inactive definition only when no
                         // applicable definition exists.
-                        if !scoped_providers[index].0.is_applicable() && provider.is_applicable() {
+                        if !matches!(scoped_providers[index].0.applicability(), Applicable)
+                            && matches!(provider.applicability(), Applicable)
+                        {
                             scoped_providers[index] = (provider, scoped_id, scope.clone());
                         }
                     } else {
@@ -278,7 +284,7 @@ impl DepsEngine {
 
         let applicable_ids = scoped_providers
             .iter()
-            .filter(|(provider, _, _)| provider.is_applicable())
+            .filter(|(provider, _, _)| matches!(provider.applicability(), Applicable))
             .map(|(_, scoped_id, _)| scoped_id.clone())
             .collect();
         let providers: Vec<Box<dyn DepsProvider>> = scoped_providers
@@ -294,7 +300,10 @@ impl DepsEngine {
                 )) as Box<dyn DepsProvider>
             })
             .collect();
-        if providers.iter().any(|provider| provider.is_applicable()) {
+        if providers
+            .iter()
+            .any(|provider| matches!(provider.applicability(), Applicable))
+        {
             Settings::get().ensure_experimental("deps")?;
         }
         Ok(Self { providers })
@@ -309,7 +318,7 @@ impl DepsEngine {
         let mut providers = Self::discover_providers(config)?;
         let fallback_ids = providers
             .iter()
-            .filter(|provider| provider.is_applicable())
+            .filter(|provider| matches!(provider.applicability(), Applicable))
             .map(|provider| provider.id().to_string())
             .collect();
         let monorepo_root = config
@@ -323,7 +332,7 @@ impl DepsEngine {
                 Some(
                     providers
                         .iter()
-                        .filter(|provider| provider.is_applicable())
+                        .filter(|provider| matches!(provider.applicability(), Applicable))
                         .filter(|provider| provider.base().project_root.as_path() == project_root)
                         .map(|provider| {
                             (
@@ -342,7 +351,10 @@ impl DepsEngine {
             &qualified_fallback_ids,
         )?;
         providers.append(&mut engine.providers);
-        if providers.iter().any(|provider| provider.is_applicable()) {
+        if providers
+            .iter()
+            .any(|provider| matches!(provider.applicability(), Applicable))
+        {
             Settings::get().ensure_experimental("deps")?;
         }
         Ok(Self { providers })
@@ -495,7 +507,7 @@ impl DepsEngine {
         self.providers
             .iter()
             .filter(|p| p.is_auto())
-            .filter(|p| p.is_applicable())
+            .filter(|p| matches!(p.applicability(), Applicable))
             .filter_map(|p| {
                 let result = self.check_freshness(p.as_ref());
                 match result {
@@ -544,7 +556,7 @@ impl DepsEngine {
             .iter()
             .filter(|provider| is_selected(provider.as_ref()))
             .filter_map(|provider| match provider.applicability() {
-                DepsProviderApplicability::Applicable => None,
+                Applicable => None,
                 DepsProviderApplicability::Inactive(reason) => {
                     Some((provider.id().to_string(), reason))
                 }
