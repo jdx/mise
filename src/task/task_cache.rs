@@ -16,7 +16,8 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
-const CACHE_FORMAT_VERSION: u8 = 1;
+const CACHE_FORMAT_VERSION: u8 = 2;
+const CACHE_DIR_VERSION: &str = "v2";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -50,6 +51,14 @@ struct CacheManifest {
     format: u8,
     key: String,
     roots: Vec<PathBuf>,
+    output: Vec<TaskCacheOutput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "stream", content = "line")]
+pub(crate) enum TaskCacheOutput {
+    Stdout(String),
+    Stderr(String),
 }
 
 pub struct TaskArtifactCache {
@@ -156,11 +165,15 @@ impl TaskArtifactCache {
         &self.key
     }
 
-    pub fn is_current(&self) -> bool {
+    pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
         let (archive_path, manifest_path) = self.paths();
-        archive_path.is_file()
-            && manifest_path.is_file()
-            && file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+        if !archive_path.is_file()
+            || !manifest_path.is_file()
+            || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+        {
+            return None;
+        }
+        self.read_manifest().ok().map(|manifest| manifest.output)
     }
 
     pub fn mark_current(&self) -> Result<()> {
@@ -170,10 +183,10 @@ impl TaskArtifactCache {
         file::write(&self.state_path, &self.key)
     }
 
-    pub fn restore(&self, task: &Task) -> Result<bool> {
+    pub(crate) fn restore(&self, task: &Task) -> Result<Option<Vec<TaskCacheOutput>>> {
         let (archive_path, manifest_path) = self.paths();
         if !archive_path.is_file() || !manifest_path.is_file() {
-            return Ok(false);
+            return Ok(None);
         }
         // Serialize restores targeting the same working directory across mise
         // processes so ancestor validation and the following renames are one
@@ -182,11 +195,8 @@ impl TaskArtifactCache {
             crate::lock_file::LockFile::new(&self.root.join(".mise-task-artifact-cache-output"))
                 .lock()?;
 
-        let restore = || -> Result<()> {
-            let manifest: CacheManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
-            if manifest.format != CACHE_FORMAT_VERSION || manifest.key != self.key {
-                bail!("task cache manifest does not match cache key");
-            }
+        let restore = || -> Result<Vec<TaskCacheOutput>> {
+            let manifest = self.read_manifest()?;
             for root in &manifest.roots {
                 ensure_safe_relative(root)?;
             }
@@ -228,21 +238,21 @@ impl TaskArtifactCache {
             if let Err(err) = file::touch_file(&manifest_path) {
                 warn!("failed to update task cache manifest access time: {err}");
             }
-            Ok(())
+            Ok(manifest.output)
         };
 
         match restore() {
-            Ok(()) => Ok(true),
+            Ok(output) => Ok(Some(output)),
             Err(err) => {
                 warn!("ignoring corrupt task cache entry {}: {err}", self.key);
                 let _ = file::remove_file(&archive_path);
                 let _ = file::remove_file(&manifest_path);
-                Ok(false)
+                Ok(None)
             }
         }
     }
 
-    pub fn store(&self, task: &Task) -> Result<()> {
+    pub(crate) fn store(&self, task: &Task, output: &[TaskCacheOutput]) -> Result<()> {
         let roots = resolve_output_roots(task, &self.root, true)?;
         let roots = remove_nested_roots(roots);
         if roots.is_empty() {
@@ -252,7 +262,7 @@ impl TaskArtifactCache {
             ensure_no_symlink_ancestors(&self.root, root)?;
         }
 
-        let cache_dir = dirs::CACHE.join("task-artifacts").join("v1");
+        let cache_dir = dirs::CACHE.join("task-artifacts").join(CACHE_DIR_VERSION);
         file::create_dir_all(&cache_dir)?;
         let (archive_path, manifest_path) = self.paths();
         let nonce = crate::rand::random_string(8);
@@ -264,6 +274,7 @@ impl TaskArtifactCache {
             format: CACHE_FORMAT_VERSION,
             key: self.key.clone(),
             roots,
+            output: output.to_vec(),
         };
         fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
         file::rename(&archive_partial, &archive_path)?;
@@ -272,11 +283,20 @@ impl TaskArtifactCache {
     }
 
     fn paths(&self) -> (PathBuf, PathBuf) {
-        let base = dirs::CACHE.join("task-artifacts").join("v1");
+        let base = dirs::CACHE.join("task-artifacts").join(CACHE_DIR_VERSION);
         (
             base.join(format!("{}.tar.zst", self.key)),
             base.join(format!("{}.json", self.key)),
         )
+    }
+
+    fn read_manifest(&self) -> Result<CacheManifest> {
+        let (_, manifest_path) = self.paths();
+        let manifest: CacheManifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
+        if manifest.format != CACHE_FORMAT_VERSION || manifest.key != self.key {
+            bail!("task cache manifest does not match cache key");
+        }
+        Ok(manifest)
     }
 }
 

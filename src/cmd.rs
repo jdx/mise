@@ -103,6 +103,8 @@ where
     duct::cmd(program, args)
 }
 
+type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
+
 pub struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,
@@ -113,6 +115,8 @@ pub struct CmdLineRunner<'a> {
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
+    observe_stdout: Option<OutputObserver<'a>>,
+    observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
 }
@@ -328,6 +332,8 @@ impl<'a> CmdLineRunner<'a> {
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
+            observe_stdout: None,
+            observe_stderr: None,
             timeout: None,
             sandbox: None,
         }
@@ -411,6 +417,16 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn with_on_stderr<F: Fn(String) + Send + 'a>(mut self, on_stderr: F) -> Self {
         self.on_stderr = Some(Box::new(on_stderr));
+        self
+    }
+
+    pub(crate) fn with_stdout_observer<F: Fn(&str) + Send + 'a>(mut self, observer: F) -> Self {
+        self.observe_stdout = Some(Box::new(observer));
+        self
+    }
+
+    pub(crate) fn with_stderr_observer<F: Fn(&str) + Send + 'a>(mut self, observer: F) -> Self {
+        self.observe_stderr = Some(Box::new(observer));
         self
     }
 
@@ -1211,6 +1227,9 @@ impl<'a> CmdLineRunner<'a> {
 
     fn on_stdout(&self, line: String) {
         let _lock = OUTPUT_LOCK.lock().unwrap();
+        if let Some(observer) = &self.observe_stdout {
+            observer(&line);
+        }
         if let Some(on_stdout) = &self.on_stdout {
             on_stdout(line);
             return;
@@ -1234,6 +1253,9 @@ impl<'a> CmdLineRunner<'a> {
 
     fn on_stderr(&self, line: String) {
         let _lock = OUTPUT_LOCK.lock().unwrap();
+        if let Some(observer) = &self.observe_stderr {
+            observer(&line);
+        }
         if let Some(on_stderr) = &self.on_stderr {
             on_stderr(line);
             return;
@@ -1472,17 +1494,29 @@ mod tests {
     async fn test_cmd_line_runner_execute_async() {
         let stdout = Arc::new(Mutex::new(Vec::new()));
         let stderr = Arc::new(Mutex::new(Vec::new()));
+        let observed_stdout = Arc::new(Mutex::new(Vec::new()));
+        let observed_stderr = Arc::new(Mutex::new(Vec::new()));
         let stdout_clone = stdout.clone();
         let stderr_clone = stderr.clone();
+        let observed_stdout_clone = observed_stdout.clone();
+        let observed_stderr_clone = observed_stderr.clone();
         super::CmdLineRunner::new("sh")
             .args(["-c", "printf out; printf err >&2"])
             .with_on_stdout(move |line| stdout_clone.lock().unwrap().push(line))
             .with_on_stderr(move |line| stderr_clone.lock().unwrap().push(line))
+            .with_stdout_observer(move |line| {
+                observed_stdout_clone.lock().unwrap().push(line.to_string());
+            })
+            .with_stderr_observer(move |line| {
+                observed_stderr_clone.lock().unwrap().push(line.to_string());
+            })
             .execute_async()
             .await
             .unwrap();
         assert_eq!(stdout.lock().unwrap().as_slice(), ["out"]);
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
+        assert_eq!(observed_stdout.lock().unwrap().as_slice(), ["out"]);
+        assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
     }
 
     #[tokio::test]

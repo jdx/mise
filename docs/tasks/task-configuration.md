@@ -495,15 +495,19 @@ the values (or absence) of variables named in `cache.env`, resolved tool version
 artifact keys, and the operating system and architecture. Variables inherited from the ambient
 process are ignored unless listed in `cache.env`.
 
-Artifacts are stored under `MISE_CACHE_DIR/task-artifacts/v1` as zstd-compressed tar archives. They
+Artifacts are stored under `MISE_CACHE_DIR/task-artifacts/v2` as zstd-compressed tar archives. They
 are included in the existing `mise cache clear` and `mise cache prune` behavior. Only successful task
 runs are cached. Cache read/write failures are treated as misses and never turn a successful task run
 into a failure.
 
-This initial implementation is local-only and does not cache or replay task logs. Cacheable
-dependencies contribute their artifact keys to dependent task keys, so a dependent can restore the
-matching artifact after its dependencies execute, skip, or restore. If a dependency executes without
-a stable artifact key, its dependents conservatively execute.
+Stdout and stderr are stored as ordered, redacted streams and replayed using the output mode selected
+for the cache hit. Prefix, interleave, keep-order, timed, replacing, quiet, silent, and per-stream
+silence therefore apply to replayed output just as they do to live output. Raw and interactive tasks
+retain inherited terminal I/O and conservatively bypass artifact caching.
+
+Cacheable dependencies contribute their artifact keys to dependent task keys, so a dependent can
+restore the matching artifact after its dependencies execute, skip, or restore. If a dependency
+executes without a stable artifact key, its dependents conservatively execute.
 
 ### `shell`
 

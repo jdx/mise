@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+printf 'artifact\n' > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+
+[tasks.stdin]
+run = '''
+mkdir -p stdin-dist
+IFS= read -r line
+printf '%s\n' "$line" > stdin-dist/result.txt
+'''
+sources = ["stdin.txt"]
+outputs = ["stdin-dist"]
+output = "interleave"
+EOF
+
+printf 'input\n' >input.txt
+printf 'stdin\n' >stdin.txt
+
+# A corrupt current manifest is a cache miss, so the task executes instead of
+# reporting a successful no-work hit without replaying output.
+mise run build
+manifest="$(find "$MISE_CACHE_DIR/task-artifacts/v2" -type f -name '*.json' -print -quit)"
+printf 'invalid manifest\n' >"$manifest"
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# Capturing output for a cacheable interleave task must not disconnect stdin.
+printf 'from-stdin\n' | mise run stdin
+assert "cat stdin-dist/result.txt" "from-stdin"
