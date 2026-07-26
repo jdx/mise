@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::LazyLock as Lazy;
+use std::sync::{LazyLock as Lazy, Mutex};
 use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
 use xx::regex;
@@ -609,6 +609,36 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     }
 }
 
+/// Standard GitHub token env vars, in precedence order (applies to every host).
+const GITHUB_TOKEN_ENV_VARS: &[&str] = &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"];
+
+static TOKEN_SOURCES: Lazy<Mutex<HashMap<String, (String, TokenSource)>>> =
+    Lazy::new(Default::default);
+
+/// Remembers the source of the token used to build a request header.
+///
+/// The 401 error path must not call [`resolve_token`] again: OAuth resolution can
+/// synchronously refresh a token, which would block inside the async HTTP send path.
+pub(crate) fn remember_token_source(host: &str, token: &str, source: TokenSource) {
+    TOKEN_SOURCES
+        .lock()
+        .unwrap()
+        .insert(host.to_string(), (token.to_string(), source));
+}
+
+/// Returns the recorded source only when `token` is the token sent for `host`.
+///
+/// Matching both values prevents a netrc or caller-provided Authorization header
+/// from being attributed to an unrelated GitHub credential.
+pub(crate) fn token_source_for_token(host: &str, token: &str) -> Option<TokenSource> {
+    TOKEN_SOURCES
+        .lock()
+        .unwrap()
+        .get(host)
+        .filter(|(recorded, _)| recorded == token)
+        .map(|(_, source)| source.clone())
+}
+
 /// Resolve the GitHub token for the given hostname, returning the token and its source.
 ///
 /// Priority:
@@ -626,6 +656,11 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         return None;
     }
 
+    #[cfg(test)]
+    if let Some(token) = test_support::lookup_tokens_file_override(&token_lookup_hosts(host)) {
+        return Some((token, TokenSource::TokensFile));
+    }
+
     let is_ghcom = host == "github.com" || host == "api.github.com";
     let lookup_hosts = token_lookup_hosts(host);
 
@@ -638,7 +673,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 2. Standard env vars (checked individually for correct precedence and source reporting)
-    for var_name in &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"] {
+    for var_name in GITHUB_TOKEN_ENV_VARS {
         if let Some(token) = std::env::var(var_name)
             .ok()
             .map(|t| t.trim().to_string())
@@ -669,12 +704,6 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 5. github_tokens.toml
-    #[cfg(test)]
-    if let Some((token, source)) = test_support::lookup_tokens_file_override(&lookup_hosts)
-        .map(|t| (t, TokenSource::TokensFile))
-    {
-        return Some((token, source));
-    }
     for lookup_host in &lookup_hosts {
         if let Some(token) = MISE_GITHUB_TOKENS.get(*lookup_host) {
             return Some((token.clone(), TokenSource::TokensFile));
@@ -719,17 +748,21 @@ pub fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
         .into_url()
         .wrap_err("invalid request URL for GitHub auth headers")?;
 
-    if is_github_api_url(&url)
-        && let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("github.com"))
-    {
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
-        );
-        headers.insert(
-            "x-github-api-version",
-            HeaderValue::from_static("2022-11-28"),
-        );
+    if is_github_api_url(&url) {
+        let host = url.host_str().unwrap_or("github.com");
+        if let Some((token, source)) = resolve_token(host) {
+            remember_token_source(host, &token, source);
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+            );
+            headers.insert(
+                "x-github-api-version",
+                HeaderValue::from_static("2022-11-28"),
+            );
+        } else {
+            TOKEN_SOURCES.lock().unwrap().remove(host);
+        }
     }
 
     if is_github_api_url(&url) && url.path().contains("/releases/assets/") {
@@ -845,7 +878,7 @@ pub(crate) mod test_support {
     use std::collections::HashMap;
     use std::sync::RwLock;
 
-    /// Overrides the `github_tokens.toml` path (source #4 in [`super::resolve_token`]).
+    /// Overrides the `github_tokens.toml` source in [`super::resolve_token`].
     /// Keyed by the same lookup hosts `resolve_token` walks — e.g. `"github.com"`.
     /// Hold [`super::TEST_ENV_LOCK`] while mutating; always clear before returning.
     pub(crate) static TOKENS_FILE_OVERRIDE: RwLock<Option<HashMap<String, String>>> =
@@ -973,10 +1006,12 @@ mod tests {
         let orig_mise = std::env::var("MISE_GITHUB_TOKEN").ok();
         let orig_api = std::env::var("GITHUB_API_TOKEN").ok();
         let orig_gh = std::env::var("GITHUB_TOKEN").ok();
+        let orig_enterprise = std::env::var("MISE_GITHUB_ENTERPRISE_TOKEN").ok();
 
         env::remove_var("MISE_GITHUB_TOKEN");
         env::remove_var("GITHUB_API_TOKEN");
         env::set_var("GITHUB_TOKEN", "ghp_test");
+        env::remove_var("MISE_GITHUB_ENTERPRISE_TOKEN");
 
         let result = test_fn();
 
@@ -992,8 +1027,64 @@ mod tests {
             Some(v) => env::set_var("GITHUB_TOKEN", v),
             None => env::remove_var("GITHUB_TOKEN"),
         }
+        match orig_enterprise {
+            Some(v) => env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", v),
+            None => env::remove_var("MISE_GITHUB_ENTERPRISE_TOKEN"),
+        }
 
         result
+    }
+
+    struct TokensFileOverrideGuard;
+
+    impl TokensFileOverrideGuard {
+        fn set(host: &str, token: &str) -> Self {
+            let mut tokens = HashMap::new();
+            tokens.insert(host.to_string(), token.to_string());
+            *test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = Some(tokens);
+            Self
+        }
+    }
+
+    impl Drop for TokensFileOverrideGuard {
+        fn drop(&mut self) {
+            *test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = None;
+        }
+    }
+
+    #[test]
+    fn test_token_source_memo_matches_only_the_supplying_token_and_host() {
+        let host = "github-source-test.example.com";
+        remember_token_source(host, "ghp_test", TokenSource::EnvVar("GITHUB_TOKEN"));
+
+        assert_eq!(
+            token_source_for_token(host, "ghp_test"),
+            Some(TokenSource::EnvVar("GITHUB_TOKEN"))
+        );
+        assert_eq!(token_source_for_token(host, "from-netrc"), None);
+        assert_eq!(
+            token_source_for_token("another-github.example.com", "ghp_test"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_get_headers_remembers_tokens_file_source() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let host = "github-tokens-file-test.example.com";
+        let _tokens_file = TokensFileOverrideGuard::set(host, "ghp_from_tokens_file");
+
+        let headers =
+            get_headers(format!("https://{host}/api/v3/repos/owner/repo/releases")).unwrap();
+
+        assert_eq!(
+            headers.get(reqwest::header::AUTHORIZATION).unwrap(),
+            "Bearer ghp_from_tokens_file"
+        );
+        assert_eq!(
+            token_source_for_token(host, "ghp_from_tokens_file"),
+            Some(TokenSource::TokensFile)
+        );
     }
 
     #[test]
