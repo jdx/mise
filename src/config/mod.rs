@@ -2014,19 +2014,9 @@ fn matching_idiomatic_tools(
     path: &Path,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Vec<String> {
-    let matches = idiomatic_filenames
-        .iter()
-        .filter(|(filename, _)| path.ends_with(filename))
-        .collect_vec();
-    let max_components = matches
-        .iter()
-        .map(|(filename, _)| Path::new(filename).components().count())
-        .max()
-        .unwrap_or_default();
-    matches
+    config_file::matching_idiomatic_filenames(path, idiomatic_filenames.keys().map(String::as_str))
         .into_iter()
-        .filter(|(filename, _)| Path::new(filename).components().count() == max_components)
-        .flat_map(|(_, plugins)| plugins)
+        .flat_map(|filename| idiomatic_filenames.get(filename).into_iter().flatten())
         .unique()
         .cloned()
         .collect()
