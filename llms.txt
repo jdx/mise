@@ -539,7 +539,6 @@ Use `mise tasks` to see all available development tasks:
 - `mise run render:completions` - Generate shell completions
 
 #### Release Tasks
-- `mise run release` - Create a release
 - `mise run ci` - Run CI tasks (format, build, test)
 
 ### Project Structure
