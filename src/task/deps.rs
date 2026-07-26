@@ -365,21 +365,45 @@ fn leaves(graph: &DiGraph<Task, ()>) -> Vec<Task> {
 }
 
 fn task_cycle_label(task: &Task) -> String {
-    if task.args.is_empty() {
+    let label = if task.args.is_empty() {
         task.name.clone()
     } else {
         format!("{} {}", task.name, task.args.join(" "))
+    };
+    let env_keys = task
+        .env
+        .0
+        .iter()
+        .filter_map(|directive| match directive {
+            EnvDirective::Val(key, _, _) => Some(key),
+            _ => None,
+        })
+        .sorted()
+        .unique()
+        .join(", ");
+    if env_keys.is_empty() {
+        label
+    } else {
+        format!("{label} [env: {env_keys}]")
     }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum VisitState {
+    #[default]
+    Unvisited,
+    InProgress,
+    Complete,
 }
 
 fn find_cycle(graph: &DiGraph<Task, ()>) -> Option<Vec<NodeIndex>> {
     let mut states = HashMap::new();
     for root in graph.node_indices() {
-        if states.contains_key(&root) {
+        if states.get(&root).copied().unwrap_or_default() != VisitState::Unvisited {
             continue;
         }
 
-        states.insert(root, 1);
+        states.insert(root, VisitState::InProgress);
         let mut path = vec![root];
         let mut stack = vec![(
             root,
@@ -404,13 +428,13 @@ fn find_cycle(graph: &DiGraph<Task, ()>) -> Option<Vec<NodeIndex>> {
             let Some(dependency) = dependency else {
                 let (node, _, _) = stack.pop().unwrap();
                 path.pop();
-                states.insert(node, 2);
+                states.insert(node, VisitState::Complete);
                 continue;
             };
 
             match states.get(&dependency).copied().unwrap_or_default() {
-                0 => {
-                    states.insert(dependency, 1);
+                VisitState::Unvisited => {
+                    states.insert(dependency, VisitState::InProgress);
                     path.push(dependency);
                     stack.push((
                         dependency,
@@ -420,13 +444,13 @@ fn find_cycle(graph: &DiGraph<Task, ()>) -> Option<Vec<NodeIndex>> {
                         0,
                     ));
                 }
-                1 => {
+                VisitState::InProgress => {
                     let start = path.iter().position(|&idx| idx == dependency)?;
                     let mut cycle = path[start..].to_vec();
                     cycle.push(dependency);
                     return Some(cycle);
                 }
-                _ => {}
+                VisitState::Complete => {}
             }
         }
     }
@@ -483,5 +507,25 @@ mod tests {
         }
 
         assert!(find_cycle(&graph).is_none());
+    }
+
+    #[test]
+    fn cycle_label_disambiguates_environment_variants_without_values() {
+        let mut task = task("build");
+        task.args = vec!["linux".to_string()];
+        task.env.0 = vec![
+            EnvDirective::Val(
+                "TOKEN".to_string(),
+                "secret".to_string(),
+                Default::default(),
+            ),
+            EnvDirective::Val(
+                "TARGET".to_string(),
+                "linux".to_string(),
+                Default::default(),
+            ),
+        ];
+
+        assert_eq!(task_cycle_label(&task), "build linux [env: TARGET, TOKEN]");
     }
 }
