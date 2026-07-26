@@ -7,6 +7,7 @@ use eyre::{Result, bail};
 
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::file::display_filename;
 
 pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
 pub use rule::DepsConfig;
@@ -40,19 +41,12 @@ pub enum DepsProviderApplicability {
 }
 
 impl DepsProviderApplicability {
-    fn filename(path: &Path) -> String {
-        path.file_name()
-            .unwrap_or(path.as_os_str())
-            .to_string_lossy()
-            .into_owned()
-    }
-
     /// Require a provider-specific file to exist.
     pub fn require_file(path: &Path) -> Self {
         if path.is_file() {
             Self::Applicable
         } else {
-            let name = Self::filename(path);
+            let name = display_filename(path);
             Self::Inactive(format!("missing {name}"))
         }
     }
@@ -64,7 +58,7 @@ impl DepsProviderApplicability {
         } else {
             let names = paths
                 .iter()
-                .map(|path| Self::filename(path))
+                .map(display_filename)
                 .collect::<Vec<_>>()
                 .join(" or ");
             Self::Inactive(format!("missing {names}"))
@@ -73,7 +67,7 @@ impl DepsProviderApplicability {
 
     /// Require a file to exist and contain data.
     pub fn require_nonempty_file(path: &Path) -> Self {
-        let name = Self::filename(path);
+        let name = display_filename(path);
         if !path.is_file() {
             return Self::Inactive(format!("missing {name}"));
         }
