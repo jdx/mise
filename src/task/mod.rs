@@ -75,7 +75,6 @@ use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
-pub(crate) use deps::task_cycle_label;
 pub use deps::{Deps, TaskCycleError, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};

@@ -5,6 +5,7 @@ use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
+use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::{
     collections::{HashMap, HashSet},
@@ -18,12 +19,16 @@ pub type TaskKey = (String, Vec<String>, Vec<(String, String)>);
 
 #[derive(Debug)]
 pub struct TaskCycleError {
-    path: Vec<String>,
+    paths: Vec<Vec<String>>,
 }
 
 impl TaskCycleError {
     pub fn path(&self) -> &[String] {
-        &self.path
+        self.paths.first().map(Vec::as_slice).unwrap_or_default()
+    }
+
+    pub fn paths(&self) -> &[Vec<String>] {
+        &self.paths
     }
 }
 
@@ -32,7 +37,7 @@ impl fmt::Display for TaskCycleError {
         write!(
             f,
             "circular dependency detected: {}",
-            self.path.iter().join(" -> ")
+            self.path().iter().join(" -> ")
         )
     }
 }
@@ -72,6 +77,21 @@ pub fn task_key(task: &Task) -> TaskKey {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
+        Self::new_with_cycle_limit(config, tasks, Some(1)).await
+    }
+
+    pub(crate) async fn new_for_validation(
+        config: &Arc<Config>,
+        tasks: Vec<Task>,
+    ) -> eyre::Result<Self> {
+        Self::new_with_cycle_limit(config, tasks, None).await
+    }
+
+    async fn new_with_cycle_limit(
+        config: &Arc<Config>,
+        tasks: Vec<Task>,
+        cycle_limit: Option<usize>,
+    ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
@@ -149,12 +169,18 @@ impl Deps {
             }
             seen.insert(a);
         }
-        if let Some(cycle) = find_cycle(&graph) {
-            let path = cycle
+        let cycles = find_cycles(&graph, cycle_limit);
+        if !cycles.is_empty() {
+            let paths = cycles
                 .iter()
-                .map(|&idx| task_cycle_label(&graph[idx]))
+                .map(|cycle| {
+                    cycle
+                        .iter()
+                        .map(|&idx| task_cycle_label(&graph[idx]))
+                        .collect()
+                })
                 .collect();
-            return Err(eyre::Report::new(TaskCycleError { path }));
+            return Err(eyre::Report::new(TaskCycleError { paths }));
         }
         let (tx, _) = mpsc::unbounded_channel();
         let sent = HashSet::new();
@@ -388,73 +414,78 @@ pub(crate) fn task_cycle_label(task: &Task) -> String {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum VisitState {
-    #[default]
-    Unvisited,
-    InProgress,
-    Complete,
-}
-
-fn find_cycle(graph: &DiGraph<Task, ()>) -> Option<Vec<NodeIndex>> {
-    let mut states = HashMap::new();
-    for root in graph.node_indices() {
-        if states.get(&root).copied().unwrap_or_default() != VisitState::Unvisited {
+fn find_cycles(graph: &DiGraph<Task, ()>, limit: Option<usize>) -> Vec<Vec<NodeIndex>> {
+    let mut cycles = Vec::new();
+    for mut component in kosaraju_scc(graph) {
+        component.sort_by_key(|node| node.index());
+        let component: HashSet<_> = component.into_iter().collect();
+        if component.len() == 1 {
+            let node = *component.iter().next().unwrap();
+            if graph.find_edge(node, node).is_some() {
+                cycles.push(vec![node, node]);
+            }
+            if limit.is_some_and(|limit| cycles.len() >= limit) {
+                return cycles;
+            }
             continue;
         }
 
-        states.insert(root, VisitState::InProgress);
-        let mut path = vec![root];
-        let mut stack = vec![(
-            root,
-            graph
-                .neighbors_directed(root, Direction::Outgoing)
-                .collect_vec(),
-            0,
-        )];
+        let mut starts = component.iter().copied().collect_vec();
+        starts.sort_by_key(|node| node.index());
+        for start in starts {
+            let mut path = vec![start];
+            let mut in_path = HashSet::from([start]);
+            let mut stack = vec![(
+                start,
+                graph
+                    .neighbors_directed(start, Direction::Outgoing)
+                    .filter(|node| component.contains(node))
+                    .sorted_by_key(|node| node.index())
+                    .collect_vec(),
+                0,
+            )];
 
-        while !stack.is_empty() {
-            let dependency = {
-                let (_, dependencies, next) = stack.last_mut().unwrap();
-                if *next < dependencies.len() {
-                    let dependency = dependencies[*next];
-                    *next += 1;
-                    Some(dependency)
-                } else {
-                    None
-                }
-            };
+            while !stack.is_empty() {
+                let dependency = {
+                    let (_, dependencies, next) = stack.last_mut().unwrap();
+                    if *next < dependencies.len() {
+                        let dependency = dependencies[*next];
+                        *next += 1;
+                        Some(dependency)
+                    } else {
+                        None
+                    }
+                };
 
-            let Some(dependency) = dependency else {
-                let (node, _, _) = stack.pop().unwrap();
-                path.pop();
-                states.insert(node, VisitState::Complete);
-                continue;
-            };
-
-            match states.get(&dependency).copied().unwrap_or_default() {
-                VisitState::Unvisited => {
-                    states.insert(dependency, VisitState::InProgress);
+                let Some(dependency) = dependency else {
+                    let (node, _, _) = stack.pop().unwrap();
+                    path.pop();
+                    in_path.remove(&node);
+                    continue;
+                };
+                if dependency == start {
+                    let mut cycle = path.clone();
+                    cycle.push(start);
+                    cycles.push(cycle);
+                    if limit.is_some_and(|limit| cycles.len() >= limit) {
+                        return cycles;
+                    }
+                } else if dependency.index() >= start.index() && in_path.insert(dependency) {
                     path.push(dependency);
                     stack.push((
                         dependency,
                         graph
                             .neighbors_directed(dependency, Direction::Outgoing)
+                            .filter(|node| component.contains(node))
+                            .sorted_by_key(|node| node.index())
                             .collect_vec(),
                         0,
                     ));
                 }
-                VisitState::InProgress => {
-                    let start = path.iter().position(|&idx| idx == dependency)?;
-                    let mut cycle = path[start..].to_vec();
-                    cycle.push(dependency);
-                    return Some(cycle);
-                }
-                VisitState::Complete => {}
             }
         }
     }
-    None
+    cycles
 }
 
 #[cfg(test)]
@@ -478,7 +509,7 @@ mod tests {
         graph.update_edge(b, c, ());
         graph.update_edge(c, a, ());
 
-        let cycle = find_cycle(&graph).unwrap();
+        let cycle = find_cycles(&graph, Some(1)).pop().unwrap();
         let labels = cycle
             .iter()
             .map(|&idx| task_cycle_label(&graph[idx]))
@@ -493,7 +524,7 @@ mod tests {
         let b = graph.add_node(task("b"));
         graph.update_edge(b, a, ());
 
-        assert!(find_cycle(&graph).is_none());
+        assert!(find_cycles(&graph, None).is_empty());
     }
 
     #[test]
@@ -506,7 +537,34 @@ mod tests {
             graph.update_edge(pair[0], pair[1], ());
         }
 
-        assert!(find_cycle(&graph).is_none());
+        assert!(find_cycles(&graph, None).is_empty());
+    }
+
+    #[test]
+    fn finds_overlapping_cycles() {
+        let mut graph = DiGraph::new();
+        let root = graph.add_node(task("root"));
+        let left = graph.add_node(task("left"));
+        let right = graph.add_node(task("right"));
+        graph.update_edge(root, left, ());
+        graph.update_edge(left, root, ());
+        graph.update_edge(root, right, ());
+        graph.update_edge(right, root, ());
+
+        let cycles = find_cycles(&graph, None)
+            .into_iter()
+            .map(|cycle| {
+                cycle
+                    .iter()
+                    .map(|&idx| task_cycle_label(&graph[idx]))
+                    .collect_vec()
+            })
+            .collect_vec();
+
+        assert_eq!(
+            cycles,
+            [["root", "left", "root"], ["root", "right", "root"]]
+        );
     }
 
     #[test]
