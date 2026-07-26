@@ -491,18 +491,19 @@ cache = { enabled = false }
 ```
 
 The cache key includes source contents, the task definition and arguments, resolved task environment,
-the values (or absence) of variables named in `cache.env`, resolved tool versions, and the operating
-system and architecture. Variables inherited from the ambient process are ignored unless listed in
-`cache.env`.
+the values (or absence) of variables named in `cache.env`, resolved tool versions, dependency
+artifact keys, and the operating system and architecture. Variables inherited from the ambient
+process are ignored unless listed in `cache.env`.
 
 Artifacts are stored under `MISE_CACHE_DIR/task-artifacts/v1` as zstd-compressed tar archives. They
 are included in the existing `mise cache clear` and `mise cache prune` behavior. Only successful task
 runs are cached. Cache read/write failures are treated as misses and never turn a successful task run
 into a failure.
 
-This initial implementation is local-only and does not cache or replay task logs. If a dependency
-executes or restores outputs during the current run, dependent tasks conservatively execute rather
-than restoring an artifact.
+This initial implementation is local-only and does not cache or replay task logs. Cacheable
+dependencies contribute their artifact keys to dependent task keys, so a dependent can restore the
+matching artifact after its dependencies execute, skip, or restore. If a dependency executes without
+a stable artifact key, its dependents conservatively execute.
 
 ### `shell`
 

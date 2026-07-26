@@ -36,6 +36,8 @@ struct CacheKeyMaterial<'a> {
     outputs: Vec<String>,
     root: PathBuf,
     source_hash: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dependency_keys: Vec<String>,
     environment: BTreeMap<String, Option<String>>,
     vars: BTreeMap<String, String>,
     tools: Vec<String>,
@@ -63,6 +65,7 @@ impl TaskArtifactCache {
         toolset: &Toolset,
         resolved_env: &BTreeMap<String, String>,
         declared_env: &[(String, String)],
+        dependency_keys: &[String],
         persist_content_hash_cache: bool,
     ) -> Result<Option<Self>> {
         Settings::get().ensure_experimental("task artifact caching")?;
@@ -124,6 +127,7 @@ impl TaskArtifactCache {
             outputs: task.outputs.patterns(),
             root: inputs.root_identity,
             source_hash: inputs.source_hash,
+            dependency_keys: dependency_keys.to_vec(),
             environment,
             vars,
             tools,

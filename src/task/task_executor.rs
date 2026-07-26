@@ -8,7 +8,6 @@ use crate::file::is_executable;
 use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
-use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -18,6 +17,7 @@ use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::task::{TaskCompletionState, TaskDependencyState};
 use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
@@ -143,6 +143,12 @@ pub struct TaskExecutor {
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TaskRunOutcome {
+    pub did_work: bool,
+    pub cache_key: Option<String>,
+}
+
 impl TaskExecutor {
     pub fn new(
         context_builder: TaskContextBuilder,
@@ -253,37 +259,38 @@ impl TaskExecutor {
         self.timings || Settings::get().task.timings.unwrap_or(default)
     }
 
-    /// Run a task, returning true if the task actually executed (not skipped).
+    /// Run a task, returning whether it did work and any stable artifact identity
+    /// it produced or reused.
     #[allow(clippy::too_many_arguments)]
     pub async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-        completed_tasks: HashSet<TaskKey>,
-        dep_ran: bool,
+        completion_state: TaskCompletionState,
+        dependency_state: TaskDependencyState,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
-    ) -> Result<bool> {
+    ) -> Result<TaskRunOutcome> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
-            return Ok(false);
+            return Ok(TaskRunOutcome::default());
         }
-        // If any dependency actually ran, skip the source freshness check
-        // so that downstream tasks are invalidated by upstream changes
+        // If any dependency executed or restored, skip the source freshness check
+        // so that downstream tasks are invalidated by upstream changes.
         if !task.cache.as_ref().is_some_and(|cache| cache.enabled)
             && !self.force
-            && !dep_ran
+            && !dependency_state.any_did_work
             && sources_are_fresh(task, config).await?
         {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
-            return Ok(false);
+            return Ok(TaskRunOutcome::default());
         }
 
         let mut tools = self.tool.clone();
@@ -473,20 +480,36 @@ impl TaskExecutor {
         self.check_confirmation(config, task, &env).await?;
 
         let artifact_cache = if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
-            match TaskArtifactCache::new(task, config, &ts, &env, &task_env, !self.dry_run).await? {
+            match TaskArtifactCache::new(
+                task,
+                config,
+                &ts,
+                &env,
+                &task_env,
+                &dependency_state.cache_keys,
+                !self.dry_run,
+            )
+            .await?
+            {
                 Some(_) if self.dry_run => None,
                 Some(cache) => {
                     if !self.force
-                        && !dep_ran
+                        && !dependency_state.any_unkeyed_did_work
                         && cache.is_current()
                         && sources_are_fresh(task, config).await?
                     {
                         if !self.quiet(Some(task)) {
                             self.eprint(task, &prefix, "sources up-to-date, skipping");
                         }
-                        return Ok(false);
+                        return Ok(TaskRunOutcome {
+                            did_work: false,
+                            cache_key: Some(cache.key().to_string()),
+                        });
                     }
-                    if !self.force && !dep_ran && cache.restore(task)? {
+                    if !self.force
+                        && !dependency_state.any_unkeyed_did_work
+                        && cache.restore(task)?
+                    {
                         if !self.quiet(Some(task)) {
                             self.eprint(
                                 task,
@@ -506,7 +529,10 @@ impl TaskExecutor {
                                 task.name
                             );
                         }
-                        return Ok(true);
+                        return Ok(TaskRunOutcome {
+                            did_work: true,
+                            cache_key: Some(cache.key().to_string()),
+                        });
                     }
                     Some(cache)
                 }
@@ -550,7 +576,7 @@ impl TaskExecutor {
                 rendered_run_scripts,
                 sched_tx,
                 confirm_guard,
-                &completed_tasks,
+                &completion_state,
                 semaphore,
                 permit,
             )
@@ -574,14 +600,30 @@ impl TaskExecutor {
         }
 
         save_checksum(task, config).await?;
-        if let Some(cache) = artifact_cache {
-            match cache.store(task).and_then(|_| cache.mark_current()) {
-                Ok(()) => {}
-                Err(err) => warn!("task {} artifact cache write failed: {err}", task.name),
+        let cache_key = if let Some(cache) = artifact_cache {
+            match cache.store(task) {
+                Ok(()) => {
+                    if let Err(err) = cache.mark_current() {
+                        warn!(
+                            "task {} artifact cache state update failed: {err}",
+                            task.name
+                        );
+                    }
+                    Some(cache.key().to_string())
+                }
+                Err(err) => {
+                    warn!("task {} artifact cache write failed: {err}", task.name);
+                    None
+                }
             }
-        }
+        } else {
+            None
+        };
 
-        Ok(true)
+        Ok(TaskRunOutcome {
+            did_work: true,
+            cache_key,
+        })
     }
 
     fn insert_env_excluded_from_nested_mise_diff(
@@ -618,7 +660,7 @@ impl TaskExecutor {
         rendered_scripts: Vec<(String, Vec<String>)>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
-        completed_tasks: &HashSet<TaskKey>,
+        completion_state: &TaskCompletionState,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
     ) -> Result<()> {
@@ -700,7 +742,7 @@ impl TaskExecutor {
                         override_args.as_deref(),
                         override_env_ref,
                         sched_tx.clone(),
-                        completed_tasks,
+                        completion_state,
                     )
                     .await?;
                     if had_permit {
@@ -722,7 +764,7 @@ impl TaskExecutor {
                         None,
                         None,
                         sched_tx.clone(),
-                        completed_tasks,
+                        completion_state,
                     )
                     .await?;
                     if had_permit {
@@ -743,7 +785,7 @@ impl TaskExecutor {
         override_args: Option<&[String]>,
         override_env: Option<&[(String, String)]>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-        completed_tasks: &HashSet<TaskKey>,
+        completion_state: &TaskCompletionState,
     ) -> Result<()> {
         use crate::task::TaskLoadContext;
         trace!("inject start: {}", specs.join(", "));
@@ -805,7 +847,7 @@ impl TaskExecutor {
                 to_run.push(t);
             }
         }
-        let sub_deps = Deps::new_pruned(config, to_run, completed_tasks).await?;
+        let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done

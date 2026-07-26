@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.lib]
+run = '''
+mkdir -p lib-dist
+cat lib.txt > lib-dist/result.txt
+printf 'ran\n' >> lib-runs.txt
+'''
+sources = ["lib.txt"]
+outputs = ["lib-dist"]
+
+[tasks.app]
+depends = ["lib"]
+run = '''
+mkdir -p app-dist
+cat lib-dist/result.txt app.txt > app-dist/result.txt
+printf 'ran\n' >> app-runs.txt
+'''
+sources = ["app.txt"]
+outputs = ["app-dist"]
+
+[tasks.prepare]
+run = '''
+mkdir -p prepare-dist
+cat prepare.txt > prepare-dist/result.txt
+printf 'ran\n' >> prepare-runs.txt
+'''
+sources = ["prepare.txt"]
+outputs = ["prepare-dist"]
+cache = { enabled = false }
+
+[tasks.consume]
+depends = ["prepare"]
+run = '''
+mkdir -p consume-dist
+cat prepare-dist/result.txt consume.txt > consume-dist/result.txt
+printf 'ran\n' >> consume-runs.txt
+'''
+sources = ["consume.txt"]
+outputs = ["consume-dist"]
+EOF
+
+printf 'lib-one\n' >lib.txt
+printf 'app\n' >app.txt
+printf 'prepare-one\n' >prepare.txt
+printf 'consume\n' >consume.txt
+
+mise run app
+assert "wc -l < lib-runs.txt | tr -d ' '" "1"
+assert "wc -l < app-runs.txt | tr -d ' '" "1"
+assert "cat app-dist/result.txt" $'lib-one\napp'
+
+# A fresh dependency still publishes its identity when it skips, allowing a
+# missing downstream output to restore.
+rm -rf app-dist
+assert_contains "mise run app 2>&1" "restored outputs from cache"
+assert "wc -l < lib-runs.txt | tr -d ' '" "1"
+assert "wc -l < app-runs.txt | tr -d ' '" "1"
+
+# A restored dependency contributes the same identity to the downstream key,
+# so both tasks can restore without executing.
+rm -rf lib-dist app-dist
+assert_contains "mise run app 2>&1" "restored outputs from cache"
+assert "wc -l < lib-runs.txt | tr -d ' '" "1"
+assert "wc -l < app-runs.txt | tr -d ' '" "1"
+assert "cat app-dist/result.txt" $'lib-one\napp'
+
+# Changing the dependency changes its artifact identity and invalidates the
+# downstream artifact even though the downstream task's own sources are unchanged.
+printf 'lib-two\n' >lib.txt
+mise run app
+assert "wc -l < lib-runs.txt | tr -d ' '" "2"
+assert "wc -l < app-runs.txt | tr -d ' '" "2"
+assert "cat app-dist/result.txt" $'lib-two\napp'
+
+# Returning to a previously cached dependency identity restores both the
+# dependency and the matching downstream artifact.
+printf 'lib-one\n' >lib.txt
+rm -rf lib-dist app-dist
+assert_contains "mise run app 2>&1" "restored outputs from cache"
+assert "wc -l < lib-runs.txt | tr -d ' '" "2"
+assert "wc -l < app-runs.txt | tr -d ' '" "2"
+assert "cat app-dist/result.txt" $'lib-one\napp'
+
+# A dependency that executes without a stable cache identity still forces
+# conservative downstream execution.
+mise run consume
+assert "wc -l < prepare-runs.txt | tr -d ' '" "1"
+assert "wc -l < consume-runs.txt | tr -d ' '" "1"
+printf 'prepare-two\n' >prepare.txt
+mise run consume
+assert "wc -l < prepare-runs.txt | tr -d ' '" "2"
+assert "wc -l < consume-runs.txt | tr -d ' '" "2"
+assert "cat consume-dist/result.txt" $'prepare-two\nconsume'

@@ -77,8 +77,8 @@ outside this tracker.
 
 ## Local cache parity
 
-- [ ] Include dependency artifact keys in downstream task keys
-- [ ] Allow dependents to restore after dependencies execute or restore
+- [x] Include dependency artifact keys in downstream task keys
+- [x] Allow dependents to restore after dependencies execute or restore
 - [ ] Capture and replay stdout and stderr while respecting mise output modes
 - [ ] Cache useful results for tasks with no filesystem outputs
 - [ ] Support reusable and global input groups
