@@ -77,7 +77,7 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> =
 pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
     var_path("XDG_DATA_HOME")
         .or(var_path("LOCALAPPDATA"))
-        .unwrap_or_else(|| HOME.join("AppData/Local"))
+        .unwrap_or_else(|| HOME.join("AppData").join("Local"))
 });
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));

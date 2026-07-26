@@ -378,11 +378,35 @@ pub fn replace_paths_in_string<S: Display>(input: S) -> String {
 }
 
 /// replaces "~" with $HOME
+///
+/// The remainder is re-joined one component at a time rather than pushed as a
+/// single slice. `Path::strip_prefix` returns a raw subslice of the input — it
+/// trims the remainder's leading/trailing separators but leaves interior ones
+/// untouched — so `HOME.join(rest)` only prepends a separator. On Windows that
+/// made `~/.local/share/mise` expand to `C:\Users\me\.local/share/mise`, and
+/// since `MISE_DATA_DIR` flows into `dirs::DATA`/`INSTALLS`, that mixed-separator
+/// path surfaced verbatim in `mise where`, `mise which`, `mise ls --json`,
+/// `mise bin-paths`, shims, and error messages.
+///
+/// Rebuilding from `components()` also folds redundant separators and `.`
+/// segments; `..` is preserved. On unix the result is byte-identical to the old
+/// behavior for any ordinary input.
+///
+/// Paths without a `~/` prefix are returned unchanged: a user-supplied
+/// `C:/mise/data` stays exactly as typed. This is a tilde expander, not a path
+/// normalizer — one caller passes glob patterns through it
+/// (`config::expand_task_include`).
 pub fn replace_path<P: AsRef<Path>>(path: P) -> PathBuf {
     let path = path.as_ref();
-    match path.starts_with("~/") {
-        true => dirs::HOME.join(path.strip_prefix("~/").unwrap()),
-        false => path.to_path_buf(),
+    match path.strip_prefix("~/") {
+        Ok(rest) => {
+            let mut expanded = dirs::HOME.to_path_buf();
+            for component in rest.components() {
+                expanded.push(component.as_os_str());
+            }
+            expanded
+        }
+        Err(_) => path.to_path_buf(),
     }
 }
 
@@ -2173,6 +2197,62 @@ mod tests {
         let _config = Config::get().await.unwrap();
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
+    }
+
+    #[test]
+    fn test_replace_path_uses_platform_separators() {
+        // `strip_prefix("~/")` returns a raw subslice of the input, so the naive
+        // `HOME.join(rest)` only prepended a separator and left the interior ones
+        // alone: on Windows `MISE_DATA_DIR=~/.local/share/mise` used to expand to
+        // `C:\Users\me\.local/share/mise`, which then leaked out through
+        // `mise where`, `mise which`, `mise ls --json`, shims, and error messages.
+        //
+        // NOTE: comparing PathBufs is not enough here — `Path`'s `PartialEq` is
+        // component-based and treats `/` and `\` as equivalent on Windows, so the
+        // buggy value compares equal to the correct one. The string form is the
+        // assertion that matters.
+        let expanded = replace_path(Path::new("~/a/b"));
+        let expected = dirs::HOME.join("a").join("b");
+        assert_eq!(expanded, expected);
+        assert_eq!(expanded.to_string_lossy(), expected.to_string_lossy());
+
+        // independent of whatever HOME itself looks like
+        #[cfg(windows)]
+        {
+            let rest = expanded.strip_prefix(*dirs::HOME).unwrap();
+            assert!(
+                !rest.to_string_lossy().contains('/'),
+                "expanded remainder must use `\\`: {}",
+                expanded.display()
+            );
+        }
+
+        // a bare `~` expands to $HOME: `strip_prefix("~/")` is component-based,
+        // so `~` matches the prefix and the remainder is empty
+        assert_eq!(replace_path(Path::new("~")), *dirs::HOME);
+
+        // non-`~/` input is passed through untouched, separators and all
+        assert_eq!(
+            replace_path(Path::new("/cwd/x")).to_string_lossy(),
+            "/cwd/x"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_pathbuf_hashset_is_separator_insensitive() {
+        // `EnvDiff::path` is Vec<PathBuf> and `get_pristine_env` strips
+        // mise-added PATH entries via a HashSet<&PathBuf>. `Path`'s Hash/Eq are
+        // component-based and both `/` and `\` are separators on Windows, so a
+        // `__MISE_DIFF` written by an older mise (mixed separators) still matches
+        // after the expansion fix above — no migration is needed.
+        let mut set = std::collections::HashSet::new();
+        set.insert(PathBuf::from(
+            r"C:\Users\me\.local/share/mise/installs/go/1/bin",
+        ));
+        assert!(set.contains(&PathBuf::from(
+            r"C:\Users\me\.local\share\mise\installs\go\1\bin"
+        )));
     }
 
     #[test]

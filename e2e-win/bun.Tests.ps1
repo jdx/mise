@@ -8,6 +8,13 @@ Describe 'bun' {
         mise install bun@1.3.13 --force | Out-Null
 
         $installPath = (mise where bun@1.3.13).Trim()
+
+        # The windows CI jobs run with `MISE_DATA_DIR=~/.local/share/mise`
+        # (.github/workflows/test.yml). Expanding that must use the platform
+        # separator throughout - mise used to emit
+        # `C:\Users\runneradmin\.local/share/mise/installs/...`.
+        $installPath | Should -Not -Match '/'
+
         $binDir = Join-Path $installPath 'bin'
 
         # bun.exe should always be present.

@@ -43,11 +43,17 @@ Describe 'python' {
         $p.ExitCode | Should -Be 0
         (Get-Content $out -Raw) | Should -Match '^pip \d'
 
-        # normalize separators: `mise which` echoes the configured data dir
-        # verbatim (it can contain forward slashes), while `mise where` returns
-        # an absolutized path
-        $whichPip = (mise which pip --tool python@3.12.0).Trim().Replace('/', '\')
-        $whichPip | Should -Be (Join-Path $installPath 'pip.cmd').Replace('/', '\')
+        # No separator normalization here on purpose: this doubles as a
+        # regression test for `file::replace_path`. The windows-e2e job runs with
+        # `MISE_DATA_DIR=~/.local/share/mise`, which mise used to expand to
+        # `C:\Users\runneradmin\.local/share/mise` - mixed separators that then
+        # showed up verbatim in `mise which`/`mise where` output. (`$installPath`
+        # comes from `mise where`; PowerShell's `Join-Path` folds `/` to `\` in
+        # its parent argument, so the right-hand side is backslash-only either
+        # way - which is why only the `mise which` side ever looked wrong.)
+        $whichPip = (mise which pip --tool python@3.12.0).Trim()
+        $whichPip | Should -Not -Match '/'
+        $whichPip | Should -Be (Join-Path $installPath 'pip.cmd')
     }
 
     It 'puts Scripts on PATH so pip-installed console scripts run' {

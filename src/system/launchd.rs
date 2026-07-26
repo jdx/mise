@@ -608,11 +608,17 @@ mod tests {
                 crate::dirs::HOME.to_string_lossy().to_string()
             ))
         );
+        // joined component-by-component to match how `file::replace_path`
+        // expands the `~/...` request values: the rendered string uses the
+        // platform separator throughout, so `join("Library/Logs/sync.log")`
+        // would keep forward slashes and mismatch on Windows
         assert_eq!(
             dict.get("StandardOutPath"),
             Some(&Value::String(
                 crate::dirs::HOME
-                    .join("Library/Logs/sync.log")
+                    .join("Library")
+                    .join("Logs")
+                    .join("sync.log")
                     .to_string_lossy()
                     .to_string()
             ))
@@ -621,7 +627,9 @@ mod tests {
             dict.get("StandardErrorPath"),
             Some(&Value::String(
                 crate::dirs::HOME
-                    .join("Library/Logs/sync.err.log")
+                    .join("Library")
+                    .join("Logs")
+                    .join("sync.err.log")
                     .to_string_lossy()
                     .to_string()
             ))
