@@ -54,7 +54,7 @@ trap cleanup EXIT
 
 cat <<EOF >mise.toml
 [tasks.remote_lint]
-file = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep?ref=v2025.1.17"
+file = "git::${LOCAL_GIT_URL}//xtasks/lint/remote-task?ref=v2025.1.17"
 EOF
 
 # Run the remote task with extra arguments (-- triggers parse_usage_values_from_task

@@ -21,8 +21,8 @@ mise install
 
 # Verify tool is installed and accessible
 if ! mise where jq >/dev/null 2>&1; then
-	echo "ERROR: jq not installed"
-	exit 1
+  echo "ERROR: jq not installed"
+  exit 1
 fi
 
 cd child
@@ -52,22 +52,22 @@ mise trust
 echo "Testing local task with jq:"
 TEST_TOOL_OUTPUT="$TMPDIR/test_tool_output.txt"
 if mise run test_tool 2>&1 | tee "$TEST_TOOL_OUTPUT" | grep -q "jq-"; then
-	echo "✓ Local task can find jq"
+  echo "✓ Local task can find jq"
 else
-	echo "✗ Local task cannot find jq"
-	cat "$TEST_TOOL_OUTPUT"
-	exit 1
+  echo "✗ Local task cannot find jq"
+  cat "$TEST_TOOL_OUTPUT"
+  exit 1
 fi
 
 # Now run jq through the remote task.
 echo "Testing remote task with jq:"
 REMOTE_LINT_OUTPUT="$TMPDIR/remote_lint_output.txt"
 if mise run remote_lint -- jq --version >"$REMOTE_LINT_OUTPUT" 2>&1; then
-	echo "✓ PASS: Remote task successfully accessed jq from parent config"
-	echo "Remote task ran successfully"
+  echo "✓ PASS: Remote task successfully accessed jq from parent config"
+  echo "Remote task ran successfully"
 else
-	echo "✗ FAIL: Remote task could not find jq from parent config"
-	echo "Remote task output:"
-	cat "$REMOTE_LINT_OUTPUT"
-	exit 1
+  echo "✗ FAIL: Remote task could not find jq from parent config"
+  echo "Remote task output:"
+  cat "$REMOTE_LINT_OUTPUT"
+  exit 1
 fi

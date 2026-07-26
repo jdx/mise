@@ -9,7 +9,7 @@
 # the fixed behavior.
 
 #################################################################################
-# Setup: local git HTTP server serving repo.git with xtasks/lint/ripgrep
+# Setup: local git HTTP server serving repo.git with xtasks/lint/remote-task
 #################################################################################
 
 TMP_BASE="${TMPDIR:-/tmp}"
@@ -55,14 +55,14 @@ LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
 
 git init
 
-# The remote repo's ripgrep task prints "ripgrep task executed".
+# The remote repo's remote-task prints "remote task executed".
 # Create a local task of the same name that prints something distinct.
 mkdir -p .mise/tasks
-cat <<'EOF' >.mise/tasks/ripgrep
+cat <<'EOF' >.mise/tasks/remote-task
 #!/usr/bin/env bash
-echo "local ripgrep wins"
+echo "local task wins"
 EOF
-chmod +x .mise/tasks/ripgrep
+chmod +x .mise/tasks/remote-task
 
 #################################################################################
 # Local include listed LAST -> the local task wins over the remote one.
@@ -76,8 +76,8 @@ includes = [
 ]
 EOF
 
-assert "mise run ripgrep" "local ripgrep wins"
-assert_contains "mise tasks info ripgrep" ".mise/tasks/ripgrep"
+assert "mise run remote-task" "local task wins"
+assert_contains "mise tasks info remote-task" ".mise/tasks/remote-task"
 
 mise cache clear
 
@@ -93,7 +93,7 @@ includes = [
 ]
 EOF
 
-assert "mise run ripgrep" "ripgrep task executed"
+assert "mise run remote-task" "remote task executed"
 
 mise cache clear
 

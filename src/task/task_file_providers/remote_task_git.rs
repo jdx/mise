@@ -286,7 +286,7 @@ mod tests {
             "git::https://git.acme.com:8080/myorg/example.git//terraform/myfile?ref=master",
             "git::https://myserver.com/example.git//terraform/myfile",
             "git::https://myserver.com/example.git//myfile?ref=master",
-            "git::http://localhost:8080/repo.git//xtasks/lint/ripgrep", // HTTP support for local testing
+            "git::http://localhost:8080/repo.git//xtasks/lint/remote-task", // HTTP support for local testing
         ];
 
         for url in test_cases {
