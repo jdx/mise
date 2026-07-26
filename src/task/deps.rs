@@ -56,13 +56,42 @@ impl fmt::Display for TaskCycleError {
 
 impl std::error::Error for TaskCycleError {}
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// State contributed by a task's completed direct dependencies.
+pub struct TaskDependencyState {
+    /// Stable artifact identities to include in the task's cache key.
+    pub cache_keys: Vec<String>,
+    /// Whether any dependency executed or restored outputs.
+    pub any_did_work: bool,
+    /// Whether any dependency did work without publishing a stable artifact identity.
+    pub any_unkeyed_did_work: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+/// Completed task state that can be propagated into a nested task graph.
+pub struct TaskCompletionState {
+    completed: HashSet<TaskKey>,
+    did_work: HashSet<TaskKey>,
+    cache_keys: HashMap<TaskKey, String>,
+}
+
+impl TaskCompletionState {
+    /// Merge state returned by a completed nested task graph.
+    pub fn merge(&mut self, other: Self) {
+        self.completed.extend(other.completed);
+        self.did_work.extend(other.did_work);
+        self.cache_keys.extend(other.cache_keys);
+    }
+}
+
 #[derive(Debug)]
 pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinite loop
     executed: HashSet<TaskKey>, // tasks that actually began executing (not just scheduled)
-    ran: HashSet<TaskKey>, // tasks that actually ran their commands (not skipped due to fresh sources)
+    did_work: HashSet<TaskKey>, // tasks that executed or restored outputs (not freshness-skipped)
+    cache_keys: HashMap<TaskKey, String>, // stable artifact identities published by completed tasks
     dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys
     post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-dep to its parent tasks
     tx: mpsc::UnboundedSender<Option<Task>>,
@@ -202,14 +231,16 @@ impl Deps {
         let sent = HashSet::new();
         let removed = HashSet::new();
         let executed = HashSet::new();
-        let ran = HashSet::new();
+        let did_work = HashSet::new();
+        let cache_keys = HashMap::new();
         Ok(Self {
             graph,
             tx,
             sent,
             removed,
             executed,
-            ran,
+            did_work,
+            cache_keys,
             dep_edges,
             post_dep_parents,
         })
@@ -221,13 +252,15 @@ impl Deps {
     pub async fn new_pruned(
         config: &Arc<Config>,
         tasks: Vec<Task>,
-        completed: &HashSet<TaskKey>,
+        completed: &TaskCompletionState,
     ) -> eyre::Result<Self> {
         let mut deps = Self::new(config, tasks).await?;
+        deps.did_work.extend(completed.did_work.iter().cloned());
+        deps.cache_keys.extend(completed.cache_keys.clone());
         let mut to_remove = vec![];
         for idx in deps.graph.node_indices() {
             let key = task_key(&deps.graph[idx]);
-            if completed.contains(&key) {
+            if completed.completed.contains(&key) {
                 to_remove.push(idx);
             }
         }
@@ -284,12 +317,13 @@ impl Deps {
         self.graph.node_count() == 0
     }
 
-    /// Snapshot of task keys that have completed (removed from the graph).
-    /// Used by `new_pruned` so sub-graphs skip tasks the parent already ran.
-    /// Only includes confirmed-complete tasks, not in-flight ones, to
-    /// preserve dependency ordering in the sub-graph.
-    pub fn handled_task_keys(&self) -> HashSet<TaskKey> {
-        self.removed.clone()
+    /// Snapshot completed task state for nested task sub-graphs.
+    pub fn completion_state(&self) -> TaskCompletionState {
+        TaskCompletionState {
+            completed: self.removed.clone(),
+            did_work: self.did_work.clone(),
+            cache_keys: self.cache_keys.clone(),
+        }
     }
 
     /// Check if a post-dep task should actually run: it must be a post-dependency
@@ -310,18 +344,40 @@ impl Deps {
         self.executed.insert(task_key(task));
     }
 
-    /// Mark a task as having actually run its commands (not skipped due to fresh sources).
+    /// Mark a task as having executed or restored outputs.
     /// Used to invalidate dependent tasks' source freshness checks.
-    pub fn mark_ran(&mut self, task: &Task) {
-        self.ran.insert(task_key(task));
+    pub fn mark_did_work(&mut self, task: &Task) {
+        self.did_work.insert(task_key(task));
     }
 
-    /// Check if any direct dependency of the given task actually ran (not skipped).
-    pub fn any_dep_ran(&self, task: &Task) -> bool {
+    /// Record a stable artifact identity produced or reused by a completed task.
+    pub fn mark_cache_key(&mut self, task: &Task, cache_key: String) {
+        self.cache_keys.insert(task_key(task), cache_key);
+    }
+
+    /// Return the completed dependency state needed for freshness and artifact caching.
+    pub fn dependency_state(&self, task: &Task) -> TaskDependencyState {
         let key = task_key(task);
-        self.dep_edges
+        let deps = self
+            .dep_edges
             .get(&key)
-            .is_some_and(|deps| deps.iter().any(|dep_key| self.ran.contains(dep_key)))
+            .into_iter()
+            .flatten()
+            .chain(self.post_dep_parents.get(&key).into_iter().flatten())
+            .collect::<HashSet<_>>();
+        let mut cache_keys = deps
+            .iter()
+            .filter_map(|dep_key| self.cache_keys.get(dep_key).cloned())
+            .collect::<Vec<_>>();
+        cache_keys.sort();
+        cache_keys.dedup();
+        TaskDependencyState {
+            cache_keys,
+            any_did_work: deps.iter().any(|dep_key| self.did_work.contains(dep_key)),
+            any_unkeyed_did_work: deps.iter().any(|dep_key| {
+                self.did_work.contains(dep_key) && !self.cache_keys.contains_key(dep_key)
+            }),
+        }
     }
 
     /// Remove multiple tasks from the graph in a batch, emitting leaves only once at the end.
@@ -513,6 +569,101 @@ mod tests {
             name: name.to_string(),
             ..Default::default()
         }
+    }
+
+    fn deps_with_relationships(
+        dep_edges: HashMap<TaskKey, HashSet<TaskKey>>,
+        post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>,
+    ) -> Deps {
+        let (tx, _) = mpsc::unbounded_channel();
+        Deps {
+            graph: DiGraph::new(),
+            sent: HashSet::new(),
+            removed: HashSet::new(),
+            executed: HashSet::new(),
+            did_work: HashSet::new(),
+            cache_keys: HashMap::new(),
+            dep_edges,
+            post_dep_parents,
+            tx,
+        }
+    }
+
+    #[test]
+    fn dependency_state_tracks_direct_artifact_identity_and_unkeyed_work() {
+        let a = task("a");
+        let b = task("b");
+        let c = task("c");
+        let dep_edges = HashMap::from([
+            (task_key(&b), HashSet::from([task_key(&a)])),
+            (task_key(&c), HashSet::from([task_key(&b)])),
+        ]);
+        let mut deps = deps_with_relationships(dep_edges, HashMap::new());
+
+        deps.mark_did_work(&b);
+        assert_eq!(
+            deps.dependency_state(&c),
+            TaskDependencyState {
+                cache_keys: vec![],
+                any_did_work: true,
+                any_unkeyed_did_work: true,
+            }
+        );
+
+        deps.mark_cache_key(&b, "b-key".to_string());
+        assert_eq!(
+            deps.dependency_state(&c),
+            TaskDependencyState {
+                cache_keys: vec!["b-key".to_string()],
+                any_did_work: true,
+                any_unkeyed_did_work: false,
+            }
+        );
+    }
+
+    #[test]
+    fn dependency_state_includes_post_dependency_parents() {
+        let parent = task("parent");
+        let post = task("post");
+        let post_dep_parents =
+            HashMap::from([(task_key(&post), HashSet::from([task_key(&parent)]))]);
+        let mut deps = deps_with_relationships(HashMap::new(), post_dep_parents);
+
+        deps.mark_did_work(&parent);
+        deps.mark_cache_key(&parent, "parent-key".to_string());
+
+        assert_eq!(
+            deps.dependency_state(&post),
+            TaskDependencyState {
+                cache_keys: vec!["parent-key".to_string()],
+                any_did_work: true,
+                any_unkeyed_did_work: false,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn new_pruned_preserves_completed_artifact_state() {
+        let completed_task = task("completed");
+        let key = task_key(&completed_task);
+        let completion_state = TaskCompletionState {
+            completed: HashSet::from([key.clone()]),
+            did_work: HashSet::from([key.clone()]),
+            cache_keys: HashMap::from([(key.clone(), "completed-key".to_string())]),
+        };
+        let config = Config::get().await.unwrap();
+
+        let deps = Deps::new_pruned(&config, vec![completed_task], &completion_state)
+            .await
+            .unwrap();
+        let propagated = deps.completion_state();
+
+        assert!(deps.is_empty());
+        assert!(propagated.did_work.contains(&key));
+        assert_eq!(
+            propagated.cache_keys.get(&key).map(String::as_str),
+            Some("completed-key")
+        );
     }
 
     #[test]

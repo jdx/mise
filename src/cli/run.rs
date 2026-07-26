@@ -636,16 +636,16 @@ impl Run {
         let semaphore = ctx.semaphore.clone();
         ctx.jset.lock().await.spawn(async move {
             let mut permit = permit_opt;
-            let (completed, dep_ran) = {
+            let (completion_state, dependency_state) = {
                 let deps = deps_for_remove.lock().await;
-                (deps.handled_task_keys(), deps.any_dep_ran(&task))
+                (deps.completion_state(), deps.dependency_state(&task))
             };
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
                 &task,
                 &ctx.config,
                 ctx.sched_tx.clone(),
-                completed,
-                dep_ran,
+                completion_state,
+                dependency_state,
                 semaphore,
                 &mut permit,
             ))
@@ -658,13 +658,17 @@ impl Run {
                     true,
                 ),
             };
-            // If the task actually ran (not skipped) and has sources defined,
+            // If the task executed or restored outputs and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
-            if let Ok(true) = &result
-                && !task.sources.is_empty()
-            {
-                deps_for_remove.lock().await.mark_ran(&task);
+            if let Ok(outcome) = &result {
+                let mut deps = deps_for_remove.lock().await;
+                if outcome.did_work && !task.sources.is_empty() {
+                    deps.mark_did_work(&task);
+                }
+                if let Some(cache_key) = &outcome.cache_key {
+                    deps.mark_cache_key(&task, cache_key.clone());
+                }
             }
             if let Err(err) = &result {
                 let status = if panicked {
@@ -862,11 +866,11 @@ impl Run {
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-        completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
-        dep_ran: bool,
+        completion_state: crate::task::TaskCompletionState,
+        dependency_state: crate::task::TaskDependencyState,
         semaphore: Arc<tokio::sync::Semaphore>,
         permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
-    ) -> Result<bool> {
+    ) -> Result<crate::task::task_executor::TaskRunOutcome> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
@@ -874,8 +878,8 @@ impl Run {
                 task,
                 config,
                 sched_tx,
-                completed_tasks,
-                dep_ran,
+                completion_state,
+                dependency_state,
                 semaphore,
                 permit,
             )
