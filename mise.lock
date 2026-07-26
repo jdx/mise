@@ -375,55 +375,6 @@ url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186666"
 provenance = "github-attestations"
 
-[[tools.fd]]
-version = "10.4.2"
-backend = "aqua:sharkdp/fd"
-
-[tools.fd."platforms.linux-arm64"]
-checksum = "sha256:f32d3657473fba74e2600babc8db0b93420d51169223b7e8143b2ed55d8fd9e8"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370662859"
-
-[tools.fd."platforms.linux-arm64-musl"]
-checksum = "sha256:f32d3657473fba74e2600babc8db0b93420d51169223b7e8143b2ed55d8fd9e8"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370662859"
-
-[tools.fd."platforms.linux-x64"]
-checksum = "sha256:e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370662855"
-
-[tools.fd."platforms.linux-x64-baseline"]
-checksum = "sha256:e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370662855"
-
-[tools.fd."platforms.linux-x64-musl"]
-checksum = "sha256:e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370662855"
-
-[tools.fd."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:e3257d48e29a6be965187dbd24ce9af564e0fe67b3e73c9bdcd180f4ec11bdde"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370662855"
-
-[tools.fd."platforms.macos-arm64"]
-checksum = "sha256:623dc0afc81b92e4d4606b380d7bc91916ba7b97814263e554d50923a39e480a"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370661116"
-
-[tools.fd."platforms.windows-x64"]
-checksum = "sha256:b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c98c8"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370661516"
-
-[tools.fd."platforms.windows-x64-baseline"]
-checksum = "sha256:b2816e506390a89941c63c9187d58a3cc10e9a55f2ef0685f9ea0eccaf7c98c8"
-url = "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/sharkdp/fd/releases/assets/370661516"
-
 [[tools.gh]]
 version = "2.94.0"
 backend = "aqua:cli/cli"
@@ -836,54 +787,6 @@ url_api = "https://api.github.com/repos/apple/pkl/releases/assets/382243744"
 [[tools.prettier]]
 version = "3.9.5"
 backend = "npm:prettier"
-
-[[tools.ripgrep]]
-version = "15.1.0"
-backend = "aqua:BurntSushi/ripgrep"
-
-[tools.ripgrep."platforms.linux-arm64"]
-checksum = "sha256:2b661c6ef508e902f388e9098d9c4c5aca72c87b55922d94abdba830b4dc885e"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307306472"
-
-[tools.ripgrep."platforms.linux-arm64-musl"]
-checksum = "sha256:2b661c6ef508e902f388e9098d9c4c5aca72c87b55922d94abdba830b4dc885e"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz"
-
-[tools.ripgrep."platforms.linux-x64"]
-checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307306614"
-
-[tools.ripgrep."platforms.linux-x64-baseline"]
-checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307306614"
-
-[tools.ripgrep."platforms.linux-x64-musl"]
-checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307306614"
-
-[tools.ripgrep."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307306614"
-
-[tools.ripgrep."platforms.macos-arm64"]
-checksum = "sha256:378e973289176ca0c6054054ee7f631a065874a352bf43f0fa60ef079b6ba715"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307305438"
-
-[tools.ripgrep."platforms.windows-x64"]
-checksum = "sha256:124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d87493a"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307305871"
-
-[tools.ripgrep."platforms.windows-x64-baseline"]
-checksum = "sha256:124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d87493a"
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/307305871"
 
 [[tools.shellcheck]]
 version = "0.11.0"

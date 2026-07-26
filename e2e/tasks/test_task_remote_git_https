@@ -63,7 +63,7 @@ trap cleanup EXIT
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_https_latest]
-file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep"
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/remote-task"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_latest"
@@ -95,7 +95,7 @@ mise cache clear # Clear cache to force redownload
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_https_ref]
-file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep?ref=v2025.1.17"
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/remote-task?ref=v2025.1.17"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_ref"

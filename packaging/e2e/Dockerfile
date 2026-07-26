@@ -25,7 +25,6 @@ apt-get update && apt-get install -y --no-install-recommends \
     curl \
     default-jdk-headless \
     direnv \
-    fd-find \
     fish \
     git \
     jq \
@@ -54,8 +53,6 @@ apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     zlib1g-dev \
     zsh
-
-ln -sf /usr/bin/fdfind /usr/bin/fd
 
 # Install Node.js to /opt/node (not /usr/bin) so test_backend_missing_deps
 # can verify missing-npm behavior with its restricted PATH=/usr/bin:/bin

@@ -115,9 +115,9 @@ def create_test_repo(repo_path):
     xtasks_dir = Path(repo_path) / 'xtasks' / 'lint'
     xtasks_dir.mkdir(parents=True)
 
-    ripgrep_file = xtasks_dir / 'ripgrep'
-    ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
-    ripgrep_file.chmod(0o755)
+    remote_task_file = xtasks_dir / 'remote-task'
+    remote_task_file.write_text('#!/usr/bin/env bash\necho "remote task executed"\n')
+    remote_task_file.chmod(0o755)
 
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering

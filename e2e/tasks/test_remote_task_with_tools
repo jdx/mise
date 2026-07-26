@@ -13,61 +13,62 @@ cd parent
 # Parent mise.toml with the tool
 cat >mise.toml <<'EOF'
 [tools]
-ripgrep = "latest"
+jq = "latest"
 EOF
 
 # Install the tool
 mise install
 
 # Verify tool is installed and accessible
-if ! mise where ripgrep >/dev/null 2>&1; then
-  echo "ERROR: ripgrep not installed"
+if ! mise where jq >/dev/null 2>&1; then
+  echo "ERROR: jq not installed"
   exit 1
 fi
 
 cd child
 
 # Child mise.toml with remote task from mise repo (NO tools defined here)
-# This task uses ripgrep which should come from parent/mise.toml
+# This task runs its arguments with tools from the parent mise.toml.
 cat >mise.toml <<'EOF'
 [tasks.remote_lint]
-file = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep?ref=main"
+file = "git::https://github.com/jdx/mise.git//xtasks/show-output-on-failure?ref=v2025.1.17"
 EOF
 
 # Trust and try to run the remote task
 mise trust
 
-echo "=== Running remote task that needs ripgrep from parent config ==="
+echo "=== Running remote task that needs jq from parent config ==="
 
-# First, let's check what happens with a simple command task that uses rg
+# First, check a simple local task that uses jq.
 cat >>mise.toml <<'EOF'
 
 [tasks.test_tool]
-run = "rg --version"
+run = "jq --version"
 EOF
 
 mise trust
 
-# Run the simple local task to see if rg is available
-echo "Testing local task with rg:"
+# Run the simple local task to see if jq is available
+echo "Testing local task with jq:"
 TEST_TOOL_OUTPUT="$TMPDIR/test_tool_output.txt"
-if mise run test_tool 2>&1 | tee "$TEST_TOOL_OUTPUT" | grep -q "ripgrep"; then
-  echo "✓ Local task can find rg"
+if mise run test_tool >"$TEST_TOOL_OUTPUT" 2>&1 &&
+  grep -Fq "jq-" "$TEST_TOOL_OUTPUT"; then
+  echo "✓ Local task can find jq"
 else
-  echo "✗ Local task cannot find rg"
+  echo "✗ Local task cannot find jq"
   cat "$TEST_TOOL_OUTPUT"
+  exit 1
 fi
 
-# Now run the remote task
-echo "Testing remote task with rg:"
+# Now run jq through the remote task.
+echo "Testing remote task with jq:"
 REMOTE_LINT_OUTPUT="$TMPDIR/remote_lint_output.txt"
-if mise run remote_lint 2>&1 | tee "$REMOTE_LINT_OUTPUT" | grep -E "(command not found|rg: not found)"; then
-  echo "✗ FAIL: Remote task could not find ripgrep from parent config"
+if mise run remote_lint -- jq --version >"$REMOTE_LINT_OUTPUT" 2>&1; then
+  echo "✓ PASS: Remote task successfully accessed jq from parent config"
+  echo "Remote task ran successfully"
+else
+  echo "✗ FAIL: Remote task could not find jq from parent config"
   echo "Remote task output:"
   cat "$REMOTE_LINT_OUTPUT"
   exit 1
-else
-  echo "✓ PASS: Remote task successfully accessed ripgrep from parent config"
-  echo "Remote task ran successfully (may have linting errors but rg was found)"
-  exit 0
 fi

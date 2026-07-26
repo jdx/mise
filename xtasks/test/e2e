@@ -29,11 +29,22 @@ EOF
 	exit 0
 fi
 
+list_matching_tests() {
+	local pattern="$1"
+	local file
+
+	while IFS= read -r file; do
+		if [[ ${file##*/} =~ $pattern ]]; then
+			printf '%s\n' "${file#./}"
+		fi
+	done < <(find . -type f -name "test_*" | sort)
+}
+
 # List all available tests
 if [[ ${1:-} == --list ]]; then
 	echo "Available tests:" >&2
 	pushd e2e >/dev/null
-	fd -tf "^test_" | sort
+	find . -type f -name "test_*" | sed 's#^\./##' | sort
 	popd >/dev/null
 	exit 0
 fi
@@ -48,7 +59,7 @@ else
 		FILENAME="$(basename "$PATTERN")"
 
 		pushd e2e >/dev/null
-		FILES="$(fd -tf "$FILENAME" --and "^test_")"
+		FILES="$(list_matching_tests "$FILENAME")"
 		popd >/dev/null
 
 		if [[ -z $FILES ]]; then
