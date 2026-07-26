@@ -1,13 +1,20 @@
-# Task Cache Parity Tracker
+# Task Runner Parity Tracker
 
 > [!IMPORTANT]
 > This is a temporary implementation tracker. Delete this file in the same pull request that checks
 > off the final remaining item.
 
-This tracks the work required to bring mise's experimental task output cache close to Turborepo's
-caching functionality. Nx-specific project inference, affected-project analysis, and distributed
-task execution are outside this tracker because they are broader task-runner features rather than
-cache functionality.
+This tracks the work required to bring mise's experimental task output cache and monorepo task
+graph close to Turborepo's functionality, with selected Nx-style inference where it fits mise's
+language-agnostic model.
+
+Cache lookup, project selection, and task inference are separate layers: the cache decides whether a
+selected task executes or restores an artifact, affected analysis decides which project tasks are
+selected, and workspace providers turn ecosystem metadata into projects, dependencies, and inferred
+tasks. Keeping those layers separate should allow explicit mise tasks to coexist with inference.
+
+Distributed task execution, code generation, and a comprehensive Nx-style plugin ecosystem remain
+outside this tracker.
 
 ## Experimental local cache
 
@@ -22,6 +29,51 @@ cache functionality.
 - [x] Integrate artifacts with the existing cache clear and prune commands
 - [x] Document the experimental behavior and configuration schema
 - [x] Cover hits, misses, environment changes, source changes, and invalid configurations in tests
+
+## Workspace and project graph
+
+- [ ] Define a provider-neutral project model with stable project IDs, roots, metadata, and
+      dependency edges
+- [ ] Define a workspace provider interface that can discover projects and dependencies
+      deterministically
+- [ ] Merge graphs from multiple providers for polyglot repositories
+- [ ] Allow explicit configuration to add, remove, or override inferred projects and dependency
+      edges
+- [ ] Detect project graph cycles and report actionable diagnostics
+- [ ] Preserve dependency traversal through projects that do not implement the requested task
+- [ ] Add human-readable and machine-readable project graph inspection
+
+## Workspace providers and task inference
+
+- [ ] Add a Node workspace provider for npm, pnpm, Yarn, and Bun workspace definitions
+- [ ] Infer Node project dependency edges from declared internal package dependencies
+- [ ] Import package scripts as scoped mise tasks without requiring a `mise.toml` in every package
+- [ ] Add root task defaults that apply by task name across inferred and explicit projects
+- [ ] Add dependency-scoped task relationships equivalent to building the same task in upstream
+      projects first
+- [ ] Define deterministic precedence between provider inference, root task defaults, task
+      templates, and project-local configuration
+- [ ] Allow providers to suggest inputs, outputs, cacheability, and task dependencies when they can
+      derive them confidently
+- [ ] Explain which provider inferred each project, task, input, output, and dependency
+- [ ] Add Cargo workspace and path-dependency inference
+- [ ] Add uv workspace and local/path-dependency inference
+- [ ] Add Go workspace discovery, with explicit dependency overrides where module metadata is
+      insufficient
+
+## Affected project execution
+
+- [ ] Map changed files to their owning projects
+- [ ] Compute affected projects from changed projects and reverse project dependency edges
+- [ ] Add configurable Git base and head revisions with sensible local and CI defaults
+- [ ] Treat workspace-global files and explicitly declared global inputs as affecting the
+      appropriate project set
+- [ ] Account for lockfile changes at project granularity when a provider can determine the affected
+      external dependencies
+- [ ] Allow affected selection to feed existing task patterns, dependency expansion, scheduling, and
+      caching
+- [ ] Show why each project and task was considered affected
+- [ ] Add machine-readable affected-project and affected-task output
 
 ## Local cache parity
 
