@@ -286,6 +286,8 @@ jobs:
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
+      - name: cargo clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
       - name: cargo test
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
