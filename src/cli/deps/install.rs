@@ -1,7 +1,7 @@
 use eyre::{Result, bail};
 
 use crate::config::Config;
-use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
+use crate::deps::{DepsEngine, DepsOptions, DepsProviderApplicability, DepsStepResult};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 
 /// Install all project dependencies
@@ -73,6 +73,24 @@ impl DepsInstall {
             return self.explain_provider(&engine, provider_id);
         }
 
+        // If a provider is specified as a positional arg, treat it like --only.
+        let only = match (&self.provider, &self.only) {
+            (Some(p), None) => Some(vec![p.clone()]),
+            (Some(p), Some(list)) => {
+                let mut combined = list.clone();
+                if !combined.contains(p) {
+                    combined.push(p.clone());
+                }
+                Some(combined)
+            }
+            (None, only) => only.clone(),
+        };
+        let skip = self.skip.unwrap_or_default();
+
+        // Report an explicitly selected inactive provider before resolving or
+        // installing unrelated tools from the project toolset.
+        engine.validate_selection(only.as_deref(), &skip)?;
+
         // Build and install the effective toolset so package managers declared
         // in monorepo config roots are available to their deps providers.
         let mut install_config = match &monorepo_union {
@@ -104,24 +122,11 @@ impl DepsInstall {
         // Get toolset environment with PATH
         let env = ts.env_with_path(&install_config).await?;
 
-        // If a provider is specified as a positional arg, treat it like --only
-        let only = match (&self.provider, &self.only) {
-            (Some(p), None) => Some(vec![p.clone()]),
-            (Some(p), Some(list)) => {
-                let mut combined = list.clone();
-                if !combined.contains(p) {
-                    combined.push(p.clone());
-                }
-                Some(combined)
-            }
-            (None, only) => only.clone(),
-        };
-
         let opts = DepsOptions {
             dry_run: self.dry_run,
             force: self.force,
             only,
-            skip: self.skip.unwrap_or_default(),
+            skip,
             env,
             ..Default::default()
         };
@@ -167,7 +172,7 @@ impl DepsInstall {
             bail!("Provider '{provider_id}' not found.\n\nAvailable providers:\n{available}");
         };
 
-        let freshness = engine.check_provider_freshness(provider)?;
+        let applicability = provider.applicability();
 
         // Header
         miseprintln!("Provider: {}", provider.id());
@@ -209,6 +214,12 @@ impl DepsInstall {
 
         // Verdict
         miseprintln!("");
+        if let DepsProviderApplicability::Inactive(reason) = applicability {
+            miseprintln!("Status: inactive ({reason})");
+            bail!("provider '{}' is inactive: {reason}", provider.id());
+        }
+
+        let freshness = engine.check_provider_freshness(provider)?;
         if freshness.is_fresh() {
             miseprintln!("Status: fresh ({})", freshness.reason());
         } else {
@@ -247,6 +258,14 @@ impl DepsInstall {
                 .join(", ");
 
             miseprintln!("  {}", provider.id());
+            match provider.applicability() {
+                DepsProviderApplicability::Applicable => {
+                    miseprintln!("    status: active");
+                }
+                DepsProviderApplicability::Inactive(reason) => {
+                    miseprintln!("    status: inactive ({reason})");
+                }
+            }
             miseprintln!("    sources: {}", sources);
             miseprintln!("    outputs: {}", outputs);
         }

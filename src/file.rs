@@ -362,6 +362,14 @@ pub fn display_path<P: AsRef<Path>>(path: P) -> String {
     path.as_ref().display_user()
 }
 
+pub fn display_filename<P: AsRef<Path>>(path: P) -> String {
+    let path = path.as_ref();
+    path.file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy()
+        .into_owned()
+}
+
 pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
     let path = path.as_ref();
     match path.strip_prefix(dirs::CWD.as_ref().unwrap()) {
@@ -2190,6 +2198,12 @@ mod tests {
             .join(dirs::HOME.deref().strip_prefix("/").unwrap())
             .join("cwd");
         assert_eq!(display_path(&path), path.display().to_string());
+    }
+
+    #[test]
+    fn test_display_filename() {
+        assert_eq!(display_filename("/tmp/mise.toml"), "mise.toml");
+        assert_eq!(display_filename("/"), "/");
     }
 
     #[tokio::test]
