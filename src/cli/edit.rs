@@ -297,8 +297,8 @@ impl Edit {
 
             # [env]
             # NODE_ENV = "development"
-            # mise.file = ".env"                # load vars from a dotenv file
-            # mise.path = "./node_modules/.bin" # add a directory to PATH
+            # _.file = ".env"                # load vars from a dotenv file
+            # _.path = "./node_modules/.bin" # add a directory to PATH
 
             # [tools]
             # node = "22"
