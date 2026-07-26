@@ -448,43 +448,49 @@ impl TaskExecutor {
             env.insert("__MISE_DIFF".into(), serialized);
         }
 
-        let artifact_cache = if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
-            match TaskArtifactCache::new(task, config, &ts, &env, &task_env).await? {
-                Some(cache) => {
-                    if !self.force
-                        && !dep_ran
-                        && cache.is_current()
-                        && sources_are_fresh(task, config).await?
-                    {
-                        if !self.quiet(Some(task)) {
-                            self.eprint(task, &prefix, "sources up-to-date, skipping");
+        let artifact_cache =
+            if !self.dry_run && task.cache.as_ref().is_some_and(|cache| cache.enabled) {
+                match TaskArtifactCache::new(task, config, &ts, &env, &task_env).await? {
+                    Some(cache) => {
+                        if !self.force
+                            && !dep_ran
+                            && cache.is_current()
+                            && sources_are_fresh(task, config).await?
+                        {
+                            if !self.quiet(Some(task)) {
+                                self.eprint(task, &prefix, "sources up-to-date, skipping");
+                            }
+                            return Ok(false);
                         }
-                        return Ok(false);
+                        if !self.force && !dep_ran && cache.restore(task)? {
+                            if !self.quiet(Some(task)) {
+                                self.eprint(
+                                    task,
+                                    &prefix,
+                                    &format!("restored outputs from cache {}", cache.key()),
+                                );
+                            }
+                            if let Err(err) = save_checksum(task, config).await {
+                                warn!(
+                                    "task {} artifact cache checksum update failed: {err}",
+                                    task.name
+                                );
+                            }
+                            if let Err(err) = cache.mark_current() {
+                                warn!(
+                                    "task {} artifact cache state update failed: {err}",
+                                    task.name
+                                );
+                            }
+                            return Ok(true);
+                        }
+                        Some(cache)
                     }
-                    if !self.force && !dep_ran && cache.restore(task)? {
-                        if !self.quiet(Some(task)) {
-                            self.eprint(
-                                task,
-                                &prefix,
-                                &format!("restored outputs from cache {}", cache.key()),
-                            );
-                        }
-                        save_checksum(task, config).await?;
-                        if let Err(err) = cache.mark_current() {
-                            warn!(
-                                "task {} artifact cache state update failed: {err}",
-                                task.name
-                            );
-                        }
-                        return Ok(true);
-                    }
-                    Some(cache)
+                    None => None,
                 }
-                None => None,
-            }
-        } else {
-            None
-        };
+            } else {
+                None
+            };
 
         let timer = std::time::Instant::now();
 

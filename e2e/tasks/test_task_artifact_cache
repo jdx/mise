@@ -48,3 +48,9 @@ rm -rf dist
 assert_contains "PROFILE=release mise run build 2>&1" "restored outputs from cache"
 assert "wc -l < runs.txt | tr -d ' '" "3"
 assert "cat dist/result.txt" "release:two"
+
+# Dry runs must not restore outputs or mutate artifact cache state.
+rm -rf dist
+PROFILE=release mise run --dry-run build
+assert_fail "test -e dist"
+assert "wc -l < runs.txt | tr -d ' '" "3"
