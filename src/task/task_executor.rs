@@ -545,7 +545,7 @@ impl TaskExecutor {
                 &env,
                 &task_env,
                 &dependency_state.cache_keys,
-                !self.dry_run,
+                self.dry_run,
             )
             .await?
             {

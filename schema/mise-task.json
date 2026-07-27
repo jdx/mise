@@ -201,6 +201,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "runtime": {
+              "description": "commands whose stdout and stderr affect the cache key",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         },

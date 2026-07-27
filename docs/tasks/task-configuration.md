@@ -501,8 +501,8 @@ outputs = { auto = true } # this is the default when sources is defined
 
 ### `cache` <Badge type="warning" text="experimental" />
 
-- **Type**: `{ enabled = bool, env = string[] }`
-- **Default**: `{ enabled = false, env = [] }`
+- **Type**: `{ enabled = bool, env = string[], runtime = string[] }`
+- **Default**: `{ enabled = false, env = [], runtime = [] }`
 
 Stores successful task results in a content-addressed local cache and reuses them when the same task
 inputs are seen again. Declared filesystem outputs are restored after deletion. Tasks with
@@ -527,6 +527,23 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
+Commands listed in `cache.runtime` run before cache lookup. Their command text, stdout, and stderr
+are included in the cache key. Commands use the task's configured or default inline shell, resolved
+environment and tools, and working directory. This is useful when inputs such as compiler versions
+or generated configuration cannot be represented by source files alone.
+
+```mise-toml
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, runtime = ["node --version", "npm config get registry"] }
+```
+
+A runtime command must be non-empty and exit successfully. Its output is captured for the key rather
+than printed. Runtime commands should be fast, deterministic, and free of side effects because they
+run whenever mise computes the task's cache key.
+
 ```mise-toml
 [tasks.lint]
 run = "eslint ."
@@ -547,6 +564,7 @@ experimental = true
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV"]
+runtime = ["node --version"]
 
 [tasks.build]
 run = "npm run build"
@@ -559,9 +577,9 @@ cache = { enabled = false }
 ```
 
 The cache key includes source contents, the task definition and arguments, resolved task environment,
-the values (or absence) of variables named in `cache.env`, resolved tool versions, dependency
-artifact keys, and the operating system and architecture. Variables inherited from the ambient
-process are ignored unless listed in `cache.env`.
+the values (or absence) of variables named in `cache.env`, runtime-command output, resolved tool
+versions, dependency artifact keys, and the operating system and architecture. Variables inherited
+from the ambient process are ignored unless listed in `cache.env`.
 
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under
@@ -893,6 +911,7 @@ Task-local and task-template cache configuration takes precedence, including
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV", "CI"]
+runtime = ["node --version"]
 ```
 
 ### `task_config.global_env` <Badge type="warning" text="experimental" />

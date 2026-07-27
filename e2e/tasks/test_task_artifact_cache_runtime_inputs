@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+runtime = ["cat runtime-version"]
+
+[tasks.build]
+run = '''
+mkdir -p dist
+cp input.txt dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'input\n' >input.txt
+printf 'one\n' >runtime-version
+
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# An unchanged runtime input restores the existing artifact.
+rm -rf dist
+assert_contains "mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Runtime output changes the key even though no declared source changed.
+printf 'two\n' >runtime-version
+rm -rf dist
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# Commands are evaluated in the task directory.
+mkdir nested
+cat <<'EOF' >nested/mise.toml
+[settings]
+experimental = true
+
+[tasks.check]
+run = "printf 'ran\n' >> runs.txt"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, runtime = ["pwd"] }
+EOF
+touch nested/input.txt
+mise -C nested run check
+assert "wc -l < nested/runs.txt | tr -d ' '" "1"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.fail]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, runtime = ["exit 7"] }
+EOF
+
+assert_fail_contains \
+  "mise run fail" \
+  "task fail cache runtime input command failed"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.empty]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, runtime = [" "] }
+EOF
+
+assert_fail_contains \
+  "mise run empty" \
+  "cache runtime input command must not be empty"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.dry]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, runtime = ["touch runtime-command-ran"] }
+EOF
+
+mise run --dry-run dry
+assert "test ! -e runtime-command-ran && echo clean" "clean"
