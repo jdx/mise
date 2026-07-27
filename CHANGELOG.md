@@ -76,7 +76,9 @@
 > are now ignored. These settings were applied before trust evaluation and could change the
 > interpreter used by commands from trusted sources. To select a shell for project tasks, use
 > [`task_config.shell`](https://mise.en.dev/tasks/task-configuration.html#task-config-shell) on a
-> release that supports it, or set `shell` on each task.
+> release that supports it, or set `shell` on each task. Monorepos can set
+> `task_config.cascade = true` at the project root to share the task shell and other task defaults
+> with descendant config roots.
 
 ### New Contributors
 

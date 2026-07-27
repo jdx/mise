@@ -2261,6 +2261,11 @@
       "type": "object",
       "unevaluatedProperties": false,
       "properties": {
+        "cascade": {
+          "default": false,
+          "description": "cascade task configuration to descendant config roots",
+          "type": "boolean"
+        },
         "dir": {
           "description": "default directory to run tasks in defined in this file",
           "type": "string"

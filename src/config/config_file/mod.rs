@@ -746,6 +746,7 @@ impl Hash for dyn ConfigFile {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct TaskConfig {
+    pub cascade: Option<bool>,
     pub includes: Option<Vec<String>>,
     pub dir: Option<String>,
     pub shell: Option<String>,
