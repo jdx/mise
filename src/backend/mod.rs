@@ -1649,15 +1649,17 @@ pub trait Backend: Debug + Send + Sync {
             }
             Ok(versions)
         };
-        let versions = if refresh {
-            remote_versions.refresh_async(fetch).await?
-        } else if version_listing_failure(id).is_some() {
-            // An empty list is deliberately not written to the disk cache below,
-            // so nothing memoizes a failed listing. Without this short-circuit a
-            // single command re-runs the whole failing fetch — HTTP retries and
-            // backoff included — once per call site that resolves this tool.
+        // An empty list is deliberately not written to the disk cache below, so
+        // nothing memoizes a failed listing. Without this short-circuit a single
+        // command re-runs the whole failing fetch — HTTP retries and backoff
+        // included — once per call site that resolves this tool. This applies to
+        // `refresh` too: the record is process-local, so honoring it discards no
+        // cached data that `--refresh` is meant to bypass.
+        let versions = if version_listing_failure(id).is_some() {
             trace!("Skipping remote version listing for {id} after an earlier failure");
             vec![]
+        } else if refresh {
+            remote_versions.refresh_async(fetch).await?
         } else {
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
