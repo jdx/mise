@@ -148,16 +148,18 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
 
 /// Get the last modified time from a list of paths
 pub(crate) fn last_modified_path(root: &Path, paths: &[&String]) -> Result<Option<SystemTime>> {
-    let files = paths.iter().map(|p| {
-        let base = Path::new(p);
-        if base.is_relative() {
-            Path::new(&root).join(base)
-        } else {
-            base.to_path_buf()
-        }
-    });
+    let files = paths.iter().map(|p| resolve_task_path(root, p));
 
     last_modified_file(files)
+}
+
+fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
 }
 
 /// Get the last modified time from files matching glob patterns
@@ -172,12 +174,7 @@ pub(crate) fn last_modified_glob_match(
     let files = patterns
         .iter()
         .flat_map(|pattern| {
-            let pattern_path = Path::new(pattern.as_str());
-            let pattern = if pattern_path.is_absolute() {
-                pattern_path.to_path_buf()
-            } else {
-                root_ref.join(pattern_path)
-            };
+            let pattern = resolve_task_path(root_ref, pattern);
             glob(pattern.to_str().expect("Conversion to string path failed")).unwrap()
         })
         .filter_map(|e| e.ok())
@@ -717,12 +714,7 @@ fn get_file_metadatas(
 
     let mut metadatas = BTreeMap::new();
     for pattern in patterns {
-        let pattern_path = Path::new(pattern);
-        let pattern = if pattern_path.is_absolute() {
-            pattern_path.to_path_buf()
-        } else {
-            root.join(pattern_path)
-        };
+        let pattern = resolve_task_path(root, pattern);
         let files = glob(pattern.to_str().unwrap())?;
         for file in files.flatten() {
             if let Ok(metadata) = file.metadata() {
@@ -732,12 +724,7 @@ fn get_file_metadatas(
     }
 
     for path in paths {
-        let path = Path::new(path);
-        let file = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            root.join(path)
-        };
+        let file = resolve_task_path(root, path);
         if let Ok(metadata) = file.metadata() {
             metadatas.insert(file, metadata);
         }

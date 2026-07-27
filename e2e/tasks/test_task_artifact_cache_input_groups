@@ -7,11 +7,12 @@ cat <<'EOF' >mise.toml
 experimental = true
 
 [task_config]
-global_inputs = ["workspace.txt", "@group:toolchain"]
-
-[task_config.input_groups]
-toolchain = ["toolchain.txt"]
-app = ["packages/app/src/**/*", "@group:toolchain"]
+global_inputs = [
+  "workspace.txt",
+  "{{ config_root }}/templated.txt",
+  "\\!important.txt",
+  "@group:toolchain",
+]
 
 [task_config.cache]
 enabled = true
@@ -36,12 +37,27 @@ sources = ["@group:app"]
 outputs = []
 EOF
 
+cat <<'EOF' >mise.local.toml
+[task_config.input_groups]
+toolchain = ["toolchain.txt"]
+app = [
+  "packages/app/src/**/*",
+  "!packages/app/src/ignored/**/*",
+  "packages/app/src/**/*",
+  "@group:toolchain",
+]
+EOF
+
 printf 'source-one\n' >packages/app/src/input.txt
+mkdir -p packages/app/src/ignored
+printf 'reincluded-one\n' >packages/app/src/ignored/input.txt
 printf 'workspace-one\n' >workspace.txt
+printf 'templated-one\n' >templated.txt
+printf 'escaped-one\n' >'!important.txt'
 printf 'toolchain-one\n' >toolchain.txt
 
-# Named groups are reusable across tasks, and their paths are rooted at the
-# config rather than each task's working directory.
+# Named groups and global inputs resolve independently across layered configs,
+# and their paths are rooted at the config rather than each task's working directory.
 mise run build ::: check
 assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "1"
 assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "1"
@@ -72,3 +88,19 @@ mise run build ::: check
 assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "4"
 assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "4"
 assert "cat packages/app/dist/result.txt" "source-two-changed:workspace-two-changed:toolchain-two-changed"
+
+# Ordered patterns preserve a later repeated include after an exclusion.
+printf 'reincluded-two-changed\n' >packages/app/src/ignored/input.txt
+rm -rf packages/app/dist
+mise run build ::: check
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "5"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "5"
+
+# Templated and escaped-literal global inputs are rendered before config-root
+# anchoring and participate in invalidation.
+printf 'templated-two-changed\n' >templated.txt
+printf 'escaped-two-changed\n' >'!important.txt'
+rm -rf packages/app/dist
+mise run build ::: check
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "6"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "6"
