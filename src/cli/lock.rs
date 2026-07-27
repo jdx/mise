@@ -405,10 +405,14 @@ impl Lock {
     /// no longer configured (and will be pruned) are reported with an empty
     /// `new_versions`.
     ///
-    /// Versions are never sorted here: `new_versions` keeps resolution order
-    /// (which follows config declaration order) and `old_versions` keeps
-    /// lockfile entry order. mise does not impose orderings on version
-    /// strings — see "DO NOT ASSUME SEMVER" in the repo guide.
+    /// When pruning context is unavailable or a tool's resolution is incomplete
+    /// on this OS, `new_versions` projects the old lockfile versions followed by
+    /// newly resolved versions that are not already present. All existing versions
+    /// for that short name are preserved because lockfile entries cannot be
+    /// attributed to individual OS-restricted declarations. Otherwise,
+    /// `new_versions` keeps resolution order (which follows config declaration
+    /// order). Versions are never sorted here; mise does not impose orderings on
+    /// version strings — see "DO NOT ASSUME SEMVER" in the repo guide.
     fn compute_version_changes(
         &self,
         lockfile: &Lockfile,
@@ -507,6 +511,10 @@ impl Lock {
     /// Prune lockfile entries whose version no longer matches any resolved version
     /// of the tool. This prevents stale version entries from accumulating when a
     /// tool's resolved version changes.
+    ///
+    /// Tools whose version set is incomplete on the current OS are skipped
+    /// entirely because their lockfile versions cannot be attributed to individual
+    /// OS-restricted declarations.
     ///
     /// Note: This must be called AFTER process_tools() so that provenance checks
     /// can compare against the old version entries before they are removed.
@@ -630,11 +638,13 @@ impl Lock {
 
         for (path, cf) in effective_config_files {
             let source = cf.source();
-            let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
-                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
-            if !(config_paths.contains(path)
-                || source.is_idiomatic_version_file() && source_lockfile_matches)
-            {
+            if !Self::config_file_targets_lockfile(
+                config,
+                path,
+                &source,
+                &config_paths,
+                target_lockfile_path,
+            ) {
                 continue;
             }
             let trs = match cf.to_tool_request_set() {
@@ -661,6 +671,18 @@ impl Lock {
         }
 
         Some(context)
+    }
+
+    fn config_file_targets_lockfile(
+        config: &Config,
+        path: &PathBuf,
+        source: &ToolSource,
+        config_paths: &BTreeSet<&PathBuf>,
+        target_lockfile_path: &Path,
+    ) -> bool {
+        let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, source)
+            .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
+        config_paths.contains(path) || source.is_idiomatic_version_file() && source_lockfile_matches
     }
 
     fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
@@ -858,11 +880,13 @@ impl Lock {
         // tools that were overridden by a higher-priority config
         for (path, cf) in effective_config_files.iter() {
             let source = cf.source();
-            let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
-                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
-            if !(config_paths_set.contains(path)
-                || source.is_idiomatic_version_file() && source_lockfile_matches)
-            {
+            if !Self::config_file_targets_lockfile(
+                config,
+                path,
+                &source,
+                &config_paths_set,
+                target_lockfile_path,
+            ) {
                 continue;
             }
             if let Ok(trs) = cf.to_tool_request_set() {
