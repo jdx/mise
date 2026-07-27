@@ -102,8 +102,16 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 In this example, we use [`mise activate --shims`](/cli/activate.html#shims) in the non-interactive shell configuration file (like `.bash_profile` or `.zprofile`) and `mise activate` in the interactive shell configuration file (like `.bashrc` or `.zshrc`)
 
 ::: info
-[`mise activate`](/cli/activate.html) will remove the shims directory from the `PATH` so it's fine
-to call [`mise activate --shims`](/cli/activate.html#shims) in your shell profile file then later call `mise activate` in an interactive session.
+It's fine to call [`mise activate --shims`](/cli/activate.html#shims) in your shell profile file and then
+later call [`mise activate`](/cli/activate.html) in an interactive session — what happens to the shims
+directory depends on [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install):
+
+- **enabled (the default)**: `mise activate` keeps the shims directory in `PATH`, behind the tool paths it
+  manages. Tools resolved by the current toolset still win, and the shims stay available as a fallback so a
+  missing version of a tool that already has a shim can trigger an auto-install. `mise doctor` does not
+  report this combination as a problem.
+- **disabled**: `mise activate` removes the shims directory from `PATH`. The rest of `PATH` is left as it is.
+
 :::
 
 - You can also decide to use only `shims` if you prefer, though this comes with some [limitations](/dev-tools/shims.html#shims-vs-path).
@@ -211,8 +219,10 @@ though most users will not notice a few ms lag on their terminal caused by `mise
 See [Troubleshooting: Slow shell prompts](/troubleshooting.html#slow-shell-prompts) for how to diagnose performance issues.
 
 The only difference between these would be that using `hook-env` you will need to call
-it again if you change directories but with shims that won't be necessary. The shims directory will be
-removed by `mise activate` automatically so you won't need to worry about dealing with shims in your PATH.
+it again if you change directories but with shims that won't be necessary. If you use both, `mise activate`
+takes care of the shims directory for you: it is kept behind the tool paths as an auto-install fallback, or
+removed from `PATH` entirely when [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
+is disabled.
 
 ## Neither shims nor PATH {#neither-shims-nor-path}
 
