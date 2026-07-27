@@ -334,6 +334,10 @@ The exemption is scoped to the package you asked for, written to the aube instal
 `allowedUnpopularPackages=<package>`. Transitive dependencies stay gated, and the threshold itself
 is left alone — so this cannot silently admit an unpopular dependency you did not choose.
 
+An npm tool resolved from `mise.lock` is trusted automatically for this download-count check, so
+reproducing an existing lockfile does not require `allow_low_downloads`. The explicit option is
+still required to approve the first unlocked install.
+
 Download count is a popularity signal, not a safety one: a low count means few others have vetted
 the package, so prefer confirming you trust the publisher over reaching for this. It does not affect
 `npm`, `pnpm`, or `bun` installs.
