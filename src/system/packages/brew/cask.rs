@@ -202,6 +202,10 @@ impl BrewCaskManager {
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
         let appdir = cask_appdir(&artifacts.apps)?;
+        let current_completions = completion_target_paths(&cask, &artifacts)?;
+        for target in &current_completions {
+            ensure_completion_target_replaceable(&cask, &artifacts, target)?;
+        }
         execute_flight_steps(&cask, &artifacts.preflight_steps, &stage, "preflight_steps")?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         for app in &artifacts.apps {
@@ -231,11 +235,7 @@ impl BrewCaskManager {
         }
         write_receipt(&tmp_caskroom, &cask, &artifacts)?;
         let current_binaries = binary_targets(&artifacts)?;
-        let current_completions = completion_target_paths(&cask, &artifacts)?;
         let current_fonts = font_target_paths(&artifacts)?;
-        for target in &current_completions {
-            ensure_completion_target_replaceable(&cask, target)?;
-        }
         let mut current_targets = current_binaries.clone();
         current_targets.extend(current_completions.iter().cloned());
         current_targets.extend(current_fonts.iter().cloned());
@@ -245,7 +245,7 @@ impl BrewCaskManager {
                 link_binary(&caskroom, binary)?;
             }
             for target in &current_completions {
-                link_completion(&cask, &caskroom, target)?;
+                link_completion(&cask, &artifacts, &caskroom, target)?;
             }
             for font in &artifacts.fonts {
                 link_font(&caskroom, font)?;
@@ -1282,7 +1282,12 @@ fn stage_generated_completions(
     Ok(())
 }
 
-fn link_completion(cask: &Cask, caskroom: &Path, target: &Path) -> Result<()> {
+fn link_completion(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    caskroom: &Path,
+    target: &Path,
+) -> Result<()> {
     let caskroom_completion = caskroom_completion_path(caskroom, target)?;
     if !caskroom_completion.is_file() {
         bail!(
@@ -1293,12 +1298,16 @@ fn link_completion(cask: &Cask, caskroom: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         create_dir_all_elevating(parent)?;
     }
-    ensure_completion_target_replaceable(cask, target)?;
+    ensure_completion_target_replaceable(cask, artifacts, target)?;
     make_symlink_elevating(&caskroom_completion, target)?;
     Ok(())
 }
 
-fn ensure_completion_target_replaceable(cask: &Cask, target: &Path) -> Result<()> {
+fn ensure_completion_target_replaceable(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    target: &Path,
+) -> Result<()> {
     let Ok(metadata) = target.symlink_metadata() else {
         return Ok(());
     };
@@ -1314,6 +1323,16 @@ fn ensure_completion_target_replaceable(cask: &Cask, target: &Path) -> Result<()
     let token_dir = caskroom_token_dir(&cask.token);
     if path_starts_with_resolved_root(&resolved, &token_dir) {
         return Ok(());
+    }
+    for completion in &artifacts.completions {
+        if completion.target_path()? != target {
+            continue;
+        }
+        if let Some(source) = appdir_artifact_source(&completion.source, &artifacts.apps)?
+            && file::same_file(&resolved, &source)
+        {
+            return Ok(());
+        }
     }
     bail!(
         "brew-cask: completion target '{}' already points to '{}' and is not owned by cask '{}'",
@@ -3763,10 +3782,14 @@ end
             source: "completions/ghostty.bash".to_string(),
             target: None,
         };
+        let artifacts = CaskArtifacts {
+            completions: vec![completion.clone()],
+            ..Default::default()
+        };
         let target = completion.target_path()?;
 
         stage_completion(&stage, &caskroom, &cask, &[], &completion)?;
-        link_completion(&cask, &caskroom, &target)?;
+        link_completion(&cask, &artifacts, &caskroom, &target)?;
 
         assert_eq!(
             crate::file::read_to_string(caskroom.join("etc/bash_completion.d/ghostty"))?,
@@ -3834,6 +3857,87 @@ end
 
     #[cfg(unix)]
     #[test]
+    fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("docker-desktop", "2.0.0");
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        let app = AppArtifact {
+            source: "Docker.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Docker.app".to_string()),
+        };
+        let completion = CompletionArtifact {
+            shell: CompletionShell::Bash,
+            source: "$APPDIR/Docker.app/Contents/Resources/etc/docker.bash-completion".to_string(),
+            target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/docker".to_string()),
+        };
+        let artifacts = CaskArtifacts {
+            apps: vec![app.clone()],
+            completions: vec![completion.clone()],
+            ..Default::default()
+        };
+        let relative = Path::new("etc/bash_completion.d/docker");
+        let target = tmp.path().join(relative);
+        let caskroom_completion = caskroom.join(relative);
+        let app_completion = app_target_path(app.target_name())?
+            .join("Contents/Resources/etc/docker.bash-completion");
+        file::create_dir_all(caskroom_completion.parent().unwrap())?;
+        file::create_dir_all(app_completion.parent().unwrap())?;
+        file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(&caskroom_completion, "new")?;
+        crate::file::write(&app_completion, "homebrew")?;
+        file::make_symlink(&app_completion, &target)?;
+
+        link_completion(&cask, &artifacts, &caskroom, &target)?;
+
+        assert_eq!(std::fs::read_link(&target)?, caskroom_completion);
+        assert_eq!(crate::file::read_to_string(target)?, "new");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("foo", "2.0.0");
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let completion = CompletionArtifact {
+            shell: CompletionShell::Bash,
+            source: "$APPDIR/Example.app/Contents/Resources/etc/expected.bash".to_string(),
+            target: Some("$HOMEBREW_PREFIX/etc/bash_completion.d/foo".to_string()),
+        };
+        let artifacts = CaskArtifacts {
+            apps: vec![app.clone()],
+            completions: vec![completion.clone()],
+            ..Default::default()
+        };
+        let target = completion.target_path()?;
+        let app_resources = app_target_path(app.target_name())?.join("Contents/Resources/etc");
+        let expected = app_resources.join("expected.bash");
+        let other = app_resources.join("other.bash");
+        file::create_dir_all(&app_resources)?;
+        file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(expected, "expected")?;
+        crate::file::write(&other, "other")?;
+        file::make_symlink(&other, &target)?;
+
+        let err = ensure_completion_target_replaceable(&cask, &artifacts, &target)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("is not owned by cask 'foo'"));
+        assert_eq!(std::fs::read_link(&target)?, other);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn link_completion_rejects_target_owned_by_another_cask() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
@@ -3850,7 +3954,7 @@ end
         crate::file::write(other_caskroom.join(relative), "other")?;
         file::make_symlink(&other_caskroom.join(relative), &target)?;
 
-        let err = link_completion(&cask, &caskroom, &target)
+        let err = link_completion(&cask, &CaskArtifacts::default(), &caskroom, &target)
             .unwrap_err()
             .to_string();
 

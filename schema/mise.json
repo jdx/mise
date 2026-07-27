@@ -3585,6 +3585,13 @@
                   }
                 ]
               },
+              "exclude": {
+                "type": "array",
+                "description": "glob patterns to skip when the mode walks a source directory (symlink-each, or copy with a directory source); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the source root",
+                "items": {
+                  "type": "string"
+                }
+              },
               "block": {
                 "type": "string",
                 "description": "block content, maintained between marker comments"

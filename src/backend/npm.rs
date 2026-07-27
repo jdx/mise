@@ -925,7 +925,13 @@ impl NPMBackend {
         crate::file::create_dir_all(&install_path)?;
 
         let allow_builds = options.allow_builds()?;
-        self.write_aube_embed_project(&install_path, ctx.before_date, options, &allow_builds)?;
+        self.write_aube_embed_project(
+            &install_path,
+            ctx.before_date,
+            options,
+            &allow_builds,
+            tv.resolved_from_lockfile(),
+        )?;
 
         if let Some(args) = options.aube_args() {
             warn!(
@@ -992,7 +998,12 @@ impl NPMBackend {
             .dependency_path_for_install(&ctx.config, Some(&ctx.ts), AUBE_PROGRAM)
             .await
             .unwrap_or_else(|| AUBE_PROGRAM.into());
-        self.write_aube_cli_project(&tv.install_path(), ctx.before_date, options)?;
+        self.write_aube_cli_project(
+            &tv.install_path(),
+            ctx.before_date,
+            options,
+            tv.resolved_from_lockfile(),
+        )?;
         let mut cmd = CmdLineRunner::new(aube_program)
             .arg("add")
             .arg("--global")
@@ -1057,6 +1068,7 @@ impl NPMBackend {
         before_date: Option<Timestamp>,
         options: &NpmOptions,
         allow_builds: &AllowBuilds,
+        resolved_from_lockfile: bool,
     ) -> Result<()> {
         // Validate the fallible options before writing anything, so a malformed
         // value fails without leaving a half-written project dir behind.
@@ -1091,11 +1103,12 @@ impl NPMBackend {
         if let Some(excludes) = trust_policy_excludes {
             npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
         }
-        if allow_low_downloads {
+        if allow_low_downloads || resolved_from_lockfile {
             // Exempt only this tool's own package, not the whole install, so a
             // transitive dependency below the threshold still fails the gate.
             // aube gates the directly-requested packages, which for mise is
-            // always exactly this one.
+            // always exactly this one. A matching mise.lock pin is itself
+            // approval for the download-count check.
             npmrc.push_str(&format!("allowedUnpopularPackages={}\n", self.tool_name()));
         }
         crate::file::write(install_path.join(".npmrc"), npmrc)?;
@@ -1109,6 +1122,7 @@ impl NPMBackend {
         install_path: &Path,
         before_date: Option<Timestamp>,
         options: &NpmOptions<'_>,
+        resolved_from_lockfile: bool,
     ) -> Result<()> {
         let trust_policy_excludes = options.aube_trust_policy_excludes_npmrc_value()?;
         let allow_low_downloads = options.allow_low_downloads()?;
@@ -1130,7 +1144,7 @@ impl NPMBackend {
         if let Some(excludes) = trust_policy_excludes {
             npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
         }
-        if allow_low_downloads {
+        if allow_low_downloads || resolved_from_lockfile {
             npmrc.push_str(&format!("allowedUnpopularPackages={}\n", self.tool_name()));
         }
         crate::file::write(install_path.join(".npmrc"), npmrc)?;
@@ -2161,7 +2175,7 @@ mod tests {
         let allow_builds = options.allow_builds().unwrap();
 
         backend
-            .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
             .unwrap();
 
         // Trust-policy excludes go in .npmrc for the resolver to read.
@@ -2187,14 +2201,10 @@ mod tests {
             "trust_policy_excludes".to_string(),
             toml::Value::String("undici".into()),
         );
-        raw_options.opts.insert(
-            "allow_low_downloads".to_string(),
-            toml::Value::Boolean(true),
-        );
         let options = NpmOptions::new(&raw_options);
 
         backend
-            .write_aube_cli_project(&install_path, None, &options)
+            .write_aube_cli_project(&install_path, None, &options, true)
             .unwrap();
 
         let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
@@ -2227,7 +2237,7 @@ mod tests {
         let allow_builds = options.allow_builds().unwrap();
 
         backend
-            .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
             .unwrap();
 
         // Only the requested package is exempt — not a wildcard, so a
@@ -2254,7 +2264,7 @@ mod tests {
 
         assert!(
             backend
-                .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+                .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
                 .is_err()
         );
         // Options are validated up front, so the aborted call leaves no
@@ -2294,11 +2304,29 @@ mod tests {
         let allow_builds = options.allow_builds().unwrap();
 
         backend
-            .write_aube_embed_project(&install_path, None, &options, &allow_builds)
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
             .unwrap();
 
         let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
         assert!(!npmrc.contains("allowedUnpopularPackages"));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_trusts_mise_lockfile_pin() {
+        let backend = create_npm_backend("bibtex-tidy");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-bibtex-tidy").join("1.14.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let raw_options = ToolVersionOptions::default();
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, true)
+            .unwrap();
+
+        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
+        assert!(npmrc.contains("allowedUnpopularPackages=bibtex-tidy\n"));
     }
 
     #[test]

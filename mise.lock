@@ -137,7 +137,6 @@ checksum = "sha256:5419e7dbba887a4c1f7ae5675d86dd5d71fa3daa66053d16788e986c66078
 url = "https://github.com/jdx/aube/releases/download/v1.32.0/aube-v1.32.0-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/aube/releases/assets/485325644"
 provenance = "github-attestations"
-provenance_verified = true
 
 [tools.aube."platforms.linux-x64-baseline"]
 checksum = "sha256:5419e7dbba887a4c1f7ae5675d86dd5d71fa3daa66053d16788e986c66078126"
@@ -333,7 +332,6 @@ checksum = "sha256:180f970282986f27f7fa9ee216e4971e8dec3624869d4222f22f3e2535fcc
 url = "https://github.com/jdx/communique/releases/download/v1.2.3/communique-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/477186105"
 provenance = "github-attestations"
-provenance_verified = true
 
 [tools.communique."platforms.linux-x64-baseline"]
 checksum = "sha256:180f970282986f27f7fa9ee216e4971e8dec3624869d4222f22f3e2535fccc58"
@@ -477,6 +475,64 @@ url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/40585186
 checksum = "sha256:3ae3a5549e85c7ad5b20192ebcfee4371269deca51255f6f2f2e051c6541f5ca"
 url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405851866"
+
+[[tools."github:jdx/tak"]]
+version = "0.0.5"
+backend = "github:jdx/tak"
+
+[tools."github:jdx/tak"."platforms.linux-arm64"]
+checksum = "sha256:cadba79ad2b23f172aa90ba4835b8eba2cd11978f266ba48d42b6fd7634c2157"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688656"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.linux-arm64-musl"]
+checksum = "sha256:a0d5ad80eed1a92a61cad7c3dd23ec91cd05801ebaa7680b028b8a09040a781f"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688660"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.linux-x64"]
+checksum = "sha256:1430efa4e44f58921e27db931820187bbac297b33c0dd7c11ae5e382fa11b93e"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688672"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.linux-x64-baseline"]
+checksum = "sha256:1430efa4e44f58921e27db931820187bbac297b33c0dd7c11ae5e382fa11b93e"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688672"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.linux-x64-musl"]
+checksum = "sha256:30eb4cb03c50fa55d993c20a31d975d6a230fbdad296a3fc5cc6add769125a8f"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688673"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:30eb4cb03c50fa55d993c20a31d975d6a230fbdad296a3fc5cc6add769125a8f"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688673"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.macos-arm64"]
+checksum = "sha256:22403041e281365efd5efcd041ecf20dd364c21654f4745f26731d7b77e1d29d"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688659"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.windows-x64"]
+checksum = "sha256:990f674bc67dd6335f817f9c201cdb99f68d4560034c46d57f3c8794460479da"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688671"
+provenance = "github-attestations"
+
+[tools."github:jdx/tak"."platforms.windows-x64-baseline"]
+checksum = "sha256:990f674bc67dd6335f817f9c201cdb99f68d4560034c46d57f3c8794460479da"
+url = "https://github.com/jdx/tak/releases/download/v0.0.5/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688671"
+provenance = "github-attestations"
 
 [[tools.hk]]
 version = "1.48.0"

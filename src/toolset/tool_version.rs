@@ -41,6 +41,7 @@ pub struct ToolVersion {
     /// Effective install-before cutoff used to resolve this version.
     pub before_date: Option<Timestamp>,
     locked: bool,
+    resolved_from_lockfile: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
@@ -53,13 +54,17 @@ pub struct ToolVersion {
 
 impl ToolVersion {
     fn no_versions_found(backend: &ABackend, before_date: Option<Timestamp>) -> eyre::Report {
+        let id = backend.id();
+        // The version list is also empty when fetching it failed, in which case
+        // no filter was ever applied — blaming the date filter sends users
+        // looking for a cutoff that isn't the problem.
+        if let Some(cause) = crate::backend::version_listing_failure(backend.ba()) {
+            return eyre::eyre!("unable to fetch versions for {id}: {cause}");
+        }
         let msg = if before_date.is_some() {
-            format!(
-                "no versions found for {} matching date filter",
-                backend.id()
-            )
+            format!("no versions found for {id} matching date filter")
         } else {
-            format!("no versions found for {}", backend.id())
+            format!("no versions found for {id}")
         };
         eyre::eyre!(msg)
     }
@@ -70,6 +75,7 @@ impl ToolVersion {
             version,
             before_date: None,
             locked: false,
+            resolved_from_lockfile: false,
             lock_platforms: Default::default(),
             install_path: None,
             conda_packages: Default::default(),
@@ -154,8 +160,13 @@ impl ToolVersion {
         // the original request options so config/core install behavior survives.
         let mut tv = Self::new(request, lt.version);
         tv.locked = true;
+        tv.resolved_from_lockfile = true;
         tv.lock_platforms = lt.platforms;
         tv
+    }
+
+    pub(crate) fn resolved_from_lockfile(&self) -> bool {
+        self.resolved_from_lockfile
     }
 
     pub fn ba(&self) -> &BackendArg {
@@ -960,6 +971,7 @@ mod tests {
 
         assert_eq!(tv.version, "11.17.0");
         assert!(tv.locked);
+        assert!(tv.resolved_from_lockfile());
         assert_eq!(tv.ba().full_without_opts(), "npm:npm");
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
         assert_eq!(
@@ -1147,6 +1159,7 @@ mod tests {
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "3.14.6".into());
+        assert!(!tv.resolved_from_lockfile());
 
         // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
         // it does NOT resolve to the version just installed -- the bug behavior. (This
@@ -1157,6 +1170,7 @@ mod tests {
         // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).
         assert_eq!(tv.clone().with_locked().runtime_path(), install_path);
         assert_eq!(tv.clone().with_locked().runtime_path(), tv.install_path());
+        assert!(!tv.with_locked().resolved_from_lockfile());
 
         Ok(())
     }

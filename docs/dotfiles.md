@@ -60,14 +60,35 @@ matching wildcards so each source expands to a unique target:
 "~/.config/theme-[ab].toml" = "dotfiles/config/theme-[ab].toml"
 ```
 
+## Excluding files
+
+Modes that walk a source directory — `symlink-each`, and `copy` with a
+directory source — take an `exclude` list of glob patterns. This is the way
+to point an entry at a directory you don't fully own, such as the one holding
+`mise.toml` itself:
+
+```toml
+[dotfiles]
+"~" = { source = ".", mode = "symlink-each", exclude = ["mise.toml", "*.md", ".git"] }
+```
+
+A pattern without `/` matches any single path component, so `"mise.toml"`
+skips that file wherever it appears in the tree and `"*.md"` skips every
+markdown file. A pattern containing `/` is anchored to the source root:
+`"nvim/spell"` skips only that path. Either kind matching a directory skips
+everything under it.
+
+Excluding a file mise already applied removes what it left behind on the next
+apply, the same as deleting the source would.
+
 ## Modes
 
-| Mode           | Behavior                                                                                                                                                                                                                                               |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                     |
-| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage.                                                  |
-| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. |
-| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                   |
+| Mode           | Behavior                                                                                                                                                                                                                                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                    |
+| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file removes the link it left behind on the next apply; files and links mise didn't create are never touched. |
+| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.     |
+| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                  |
 
 Templates get the same context as other mise templates (`env`, `vars`,
 `exec()`, etc.), which is the main reason to use them: one source file,

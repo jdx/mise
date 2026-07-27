@@ -76,7 +76,7 @@ run = "cargo build"
 
 ### `depends`
 
-- **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
+- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string } })[]`
 
 Tasks that must be run before this task. This is a list of task names or aliases. Arguments can be
 passed to the task, e.g.: `depends = ["build --release"]`. If multiple tasks have the same dependency,
@@ -127,6 +127,17 @@ depends = [
 run = "./deploy.sh"
 ```
 
+String and structured dependencies can be mixed in the same array:
+
+```mise-toml
+[tasks.check]
+depends = [
+  "lint",
+  { task = "test", env = { CI = "true" } },
+]
+run = "echo checks complete"
+```
+
 Note: These environment variables are passed only to the specified dependency, not to the current task or other dependencies.
 
 #### Passing parent task arguments to dependencies
@@ -174,7 +185,7 @@ forward its resolved arguments to its own dependencies.
 
 ### `depends_post`
 
-- **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
+- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string } })[]`
 
 Like `depends` but these tasks run _after_ this task and its dependencies complete. For example, you
 may want a `postlint` task that you can run individually without also running `lint`:
@@ -191,7 +202,7 @@ Supports the same argument and environment variable syntax as `depends`.
 
 ### `wait_for`
 
-- **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
+- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string } })[]`
 
 Similar to `depends`, it will wait for these tasks to complete before running however they won't be
 added to the list of tasks to run. This is essentially optional dependencies.
