@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
@@ -55,10 +54,10 @@ struct CacheKeyMaterial<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct CommandInput {
-    command: String,
-    stdout_hash: String,
-    stderr_hash: String,
+pub(crate) struct CommandInput {
+    pub(crate) command: String,
+    pub(crate) stdout_hash: String,
+    pub(crate) stderr_hash: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,6 +89,7 @@ impl TaskArtifactCache {
         resolved_env: &BTreeMap<String, String>,
         declared_env: &[(String, String)],
         dependency_keys: &[String],
+        command_inputs: Vec<CommandInput>,
         dry_run: bool,
     ) -> Result<Option<Self>> {
         Settings::get().ensure_experimental("task artifact caching")?;
@@ -140,12 +140,6 @@ impl TaskArtifactCache {
             .map(|(_, tv)| tv.to_string())
             .collect::<Vec<_>>();
         tools.sort();
-        let command_inputs = if dry_run {
-            Vec::new()
-        } else {
-            resolve_command_inputs(task, &root, resolved_env).await?
-        };
-
         let material = CacheKeyMaterial {
             format: CACHE_FORMAT_VERSION,
             task: &task.name,
@@ -348,71 +342,7 @@ impl TaskArtifactCache {
     }
 }
 
-async fn resolve_command_inputs(
-    task: &Task,
-    root: &Path,
-    resolved_env: &BTreeMap<String, String>,
-) -> Result<Vec<CommandInput>> {
-    let cache = task.cache.as_ref().expect("cache must be configured");
-    if cache.command_inputs.is_empty() {
-        return Ok(Vec::new());
-    }
-    let shell = task
-        .shell()?
-        .unwrap_or(Settings::get().default_inline_shell()?);
-    let (program, shell_args) = shell
-        .split_first()
-        .ok_or_else(|| eyre!("task {} cache command input shell is empty", task.name))?;
-    let mut inputs = Vec::with_capacity(cache.command_inputs.len());
-    for command in &cache.command_inputs {
-        let mut process = tokio::process::Command::new(program);
-        #[cfg(windows)]
-        if crate::path::is_cmd_shell_program(Path::new(program))
-            && shell_args
-                .iter()
-                .any(|arg| arg.eq_ignore_ascii_case("/c") || arg.eq_ignore_ascii_case("/k"))
-        {
-            for arg in crate::path::cmd_verbatim_args(shell_args, command, &[]) {
-                process.raw_arg(arg);
-            }
-        } else {
-            process.args(shell_args).arg(command);
-        }
-        #[cfg(not(windows))]
-        process.args(shell_args).arg(command);
-        let output = process
-            .current_dir(root)
-            .env_clear()
-            .envs(resolved_env)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .output()
-            .await;
-        let output = output.wrap_err_with(|| {
-            format!(
-                "task {} failed to start cache command input: {command:?}",
-                task.name
-            )
-        })?;
-        if !output.status.success() {
-            bail!(
-                "task {} cache command input failed with {}: {command:?}",
-                task.name,
-                output.status
-            );
-        }
-        inputs.push(CommandInput {
-            command: command.clone(),
-            stdout_hash: blake3::hash(&output.stdout).to_hex().to_string(),
-            stderr_hash: blake3::hash(&output.stderr).to_hex().to_string(),
-        });
-    }
-    Ok(inputs)
-}
-
-fn validate_config(task: &Task, root: &Path) -> Result<()> {
+pub(crate) fn validate_config(task: &Task, root: &Path) -> Result<()> {
     if task.sources.is_empty() {
         bail!("task {} cache requires at least one source", task.name);
     }
@@ -817,35 +747,6 @@ mod tests {
         assert_eq!(config.env, ["PROFILE"]);
         assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
-    }
-
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn command_inputs_capture_stdout_and_stderr() {
-        let root = tempfile::tempdir().unwrap();
-        let task = Task {
-            name: "build".to_string(),
-            cache: Some(TaskCacheConfig {
-                enabled: true,
-                command_inputs: vec!["printf stdout; printf stderr >&2".to_string()],
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let inputs = resolve_command_inputs(&task, root.path(), &BTreeMap::new())
-            .await
-            .unwrap();
-        assert_eq!(inputs.len(), 1);
-        assert_eq!(inputs[0].command, "printf stdout; printf stderr >&2");
-        assert_eq!(
-            inputs[0].stdout_hash,
-            blake3::hash(b"stdout").to_hex().to_string()
-        );
-        assert_eq!(
-            inputs[0].stderr_hash,
-            blake3::hash(b"stderr").to_hex().to_string()
-        );
     }
 
     #[test]

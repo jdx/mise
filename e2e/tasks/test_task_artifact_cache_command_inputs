@@ -24,7 +24,7 @@ printf 'one\n' >runtime-version
 mise run build
 assert "wc -l < runs.txt | tr -d ' '" "1"
 
-# An unchanged runtime input restores the existing artifact.
+# An unchanged command input restores the existing artifact.
 rm -rf dist
 assert_contains "mise run build 2>&1" "restored outputs from cache"
 assert "wc -l < runs.txt | tr -d ' '" "1"
@@ -37,6 +37,7 @@ assert "wc -l < runs.txt | tr -d ' '" "2"
 
 # Commands are evaluated in the task directory.
 mkdir nested
+touch nested/nested-only-input.txt
 cat <<'EOF' >nested/mise.toml
 [settings]
 experimental = true
@@ -45,7 +46,7 @@ experimental = true
 run = "printf 'ran\n' >> runs.txt"
 sources = ["input.txt"]
 outputs = []
-cache = { enabled = true, command_inputs = ["pwd"] }
+cache = { enabled = true, command_inputs = ["test -f nested-only-input.txt"] }
 EOF
 touch nested/input.txt
 mise -C nested run check
@@ -94,3 +95,47 @@ EOF
 
 mise run --dry-run dry
 assert "test ! -e command-input-ran && echo clean" "clean"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.raw]
+run = "true"
+raw = true
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["touch command-input-ran"] }
+EOF
+
+mise run raw
+assert "test ! -e command-input-ran && echo clean" "clean"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.shell-override]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["true"] }
+EOF
+
+# Command inputs honor the same CLI shell override as the task body.
+MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS=false mise run --shell "sh -c" shell-override
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.sandboxed]
+run = "true"
+deny_env = true
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ['test -z "${BLOCKED_SECRET-}"'] }
+EOF
+
+# Command inputs receive the task's sandbox-filtered environment.
+BLOCKED_SECRET=secret mise run sandboxed

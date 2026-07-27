@@ -527,10 +527,11 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
-Commands listed in `cache.command_inputs` run before cache lookup. Their command text, stdout, and stderr
-are included in the cache key. Commands use the task's configured or default inline shell, resolved
-environment and tools, and working directory. This is useful when inputs such as compiler versions
-or generated configuration cannot be represented by source files alone.
+Commands listed in `cache.command_inputs` run before cache lookup. Their command text, stdout, and
+stderr are included in the cache key. Commands use the same inline shell (including a CLI `--shell`
+override), resolved environment and tools, working directory, and sandbox policy as the task. This
+is useful when inputs such as compiler versions or generated configuration cannot be represented by
+source files alone.
 
 ```mise-toml
 [tasks.build]
@@ -540,9 +541,11 @@ outputs = ["dist"]
 cache = { enabled = true, command_inputs = ["node --version", "npm config get registry"] }
 ```
 
-A runtime command must be non-empty and exit successfully. Its output is captured for the key rather
-than printed. Runtime commands should be fast, deterministic, and free of side effects because they
-run whenever mise computes the task's cache key.
+A command input must be non-empty and exit successfully. Its output is hashed without being printed
+or retained. Command inputs inherit the task timeout, or have a 30-second timeout when the task has
+none, and may emit at most 16 MiB across stdout and stderr. They should be fast, deterministic, and
+free of side effects because they run whenever mise computes the task's cache key. Command inputs
+are not run during dry runs or when caching is disabled for raw or interactive execution.
 
 ```mise-toml
 [tasks.lint]
