@@ -1,12 +1,5 @@
 description = "A modern and intuitive terminal-based text editor"
+backends = [
+  "aqua:micro-editor/micro",
+]
 test = { cmd = "micro -version", expected = "Version: {{version}}" }
-
-[[backends]]
-full = "aqua:micro-editor/micro"
-
-[[backends]]
-full = "github:micro-editor/micro"
-
-[backends.options]
-asset_pattern = "micro-{{ version }}-{% if os() == 'linux' %}{% if arch() == 'x64' %}linux64{% elif arch() == 'x86' %}linux32{% elif arch() == 'arm64' %}linux-arm64{% endif %}{% elif os() == 'macos' %}{% if arch() == 'x64' %}osx{% elif arch() == 'arm64' %}macos-arm64{% endif %}{% elif os() == 'windows' %}{% if arch() == 'x64' %}win64{% elif arch() == 'x86' %}win32{% elif arch() == 'arm64' %}win-arm64{% endif %}{% endif %}{% if os() == 'windows' %}.zip{% else %}.tar.gz{% endif %}"
-bin = "micro"
