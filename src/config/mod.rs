@@ -2232,6 +2232,14 @@ struct ResolvedTaskInputs {
     input_groups: Option<(IndexMap<String, Vec<String>>, PathBuf)>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct ResolvedTaskConfig {
+    inputs: ResolvedTaskInputs,
+    dir: Option<String>,
+    shell: Option<String>,
+    cache: Option<TaskCacheConfig>,
+}
+
 impl ResolvedTaskInputs {
     fn from_configs(configs: &[&Arc<dyn ConfigFile>]) -> Self {
         Self {
@@ -3179,10 +3187,7 @@ async fn load_config_tasks(
     config_root: &Path,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
-    task_inputs: &ResolvedTaskInputs,
-    task_config_dir: &Option<String>,
-    task_config_shell: &Option<String>,
-    task_config_cache: &Option<TaskCacheConfig>,
+    task_config: &ResolvedTaskConfig,
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
@@ -3203,15 +3208,15 @@ async fn load_config_tasks(
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
         if t.dir.is_none() {
-            t.dir = task_config_dir.clone();
+            t.dir = task_config.dir.clone();
         }
         if t.shell.is_none() {
-            t.shell = task_config_shell.clone();
+            t.shell = task_config.shell.clone();
         }
         match t.render(&config, &config_root).await {
             Ok(()) => {
-                apply_task_config_inputs(&mut t, &config, task_inputs).await?;
-                apply_task_config_cache_default(&mut t, task_config_cache);
+                apply_task_config_inputs(&mut t, &config, &task_config.inputs).await?;
+                apply_task_config_cache_default(&mut t, &task_config.cache);
                 tasks.push(t);
             }
             Err(e) => {
@@ -3234,8 +3239,7 @@ async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
     config_root: &Path,
-    task_config_dir: &Option<String>,
-    task_config_shell: &Option<String>,
+    task_config: &ResolvedTaskConfig,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     require_trust: bool,
@@ -3246,8 +3250,8 @@ async fn load_tasks_includes(
             config,
             root,
             config_root,
-            task_config_dir,
-            task_config_shell,
+            &task_config.dir,
+            &task_config.shell,
             templates,
             monorepo_cf,
         )
@@ -3286,8 +3290,8 @@ async fn load_tasks_includes(
                     config,
                     &path,
                     config_root,
-                    task_config_dir,
-                    task_config_shell,
+                    &task_config.dir,
+                    &task_config.shell,
                     templates,
                     monorepo_cf,
                 )
@@ -3308,7 +3312,7 @@ async fn load_tasks_includes(
                 monorepo_cf.cloned(),
             )?;
             if task.shell.is_none() {
-                task.shell = task_config_shell.clone();
+                task.shell = task_config.shell.clone();
             }
             if let Err(err) = task.render(&config, &config_root).await {
                 if monorepo_cf.is_some() {
@@ -3323,7 +3327,7 @@ async fn load_tasks_includes(
                 }
             }
             if task.dir.is_none()
-                && let Some(ref dir) = *task_config_dir
+                && let Some(ref dir) = task_config.dir
             {
                 task.dir = Some(if contains_template_syntax(dir) {
                     let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
@@ -3655,8 +3659,6 @@ async fn load_task_sources_from_configs(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-    let task_config_inputs = ResolvedTaskInputs::from_configs(&configs);
-
     let (includes, resolve_dir) = configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
@@ -3677,18 +3679,21 @@ async fn load_task_sources_from_configs(
 
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
-    let task_config_dir = configs
-        .iter()
-        .find_map(|cf| cf.task_config().dir.clone())
-        .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.dir.clone()));
-    let task_config_shell = configs
-        .iter()
-        .find_map(|cf| cf.task_config().shell.clone())
-        .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.shell.clone()));
-    let task_config_cache = configs
-        .iter()
-        .find_map(|cf| cf.task_config().cache.clone())
-        .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.cache.clone()));
+    let task_config = ResolvedTaskConfig {
+        inputs: ResolvedTaskInputs::from_configs(&configs),
+        dir: configs
+            .iter()
+            .find_map(|cf| cf.task_config().dir.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.dir.clone())),
+        shell: configs
+            .iter()
+            .find_map(|cf| cf.task_config().shell.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.shell.clone())),
+        cache: configs
+            .iter()
+            .find_map(|cf| cf.task_config().cache.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.cache.clone())),
+    };
 
     let mut config_tasks = vec![];
     for cf in &configs {
@@ -3701,10 +3706,7 @@ async fn load_task_sources_from_configs(
                 &dir,
                 templates,
                 monorepo_cf,
-                &task_config_inputs,
-                &task_config_dir,
-                &task_config_shell,
-                &task_config_cache,
+                &task_config,
             )
             .await?,
         );
@@ -3727,16 +3729,15 @@ async fn load_task_sources_from_configs(
                 config,
                 &p,
                 dir,
-                &task_config_dir,
-                &task_config_shell,
+                &task_config,
                 templates,
                 monorepo_cf,
                 require_task_include_trust,
             )
             .await?;
             for task in &mut loaded {
-                apply_task_config_inputs(task, config, &task_config_inputs).await?;
-                apply_task_config_cache_default(task, &task_config_cache);
+                apply_task_config_inputs(task, config, &task_config.inputs).await?;
+                apply_task_config_cache_default(task, &task_config.cache);
             }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
