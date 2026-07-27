@@ -639,6 +639,9 @@ pub struct Task {
     /// Allow specific env vars through
     #[serde(default)]
     pub allow_env: Vec<String>,
+    /// Preserve ambient env vars when env inheritance is denied without hashing their values
+    #[serde(default)]
+    pub pass_through_env: Vec<String>,
 
     /// Name of the task template to extend
     #[serde(default)]
@@ -983,6 +986,7 @@ impl Task {
         task.output = p
             .get_raw("output")
             .and_then(|v| TaskOutput::deserialize(v.clone()).ok());
+        task.pass_through_env = p.parse_array("pass_through_env").unwrap_or_default();
         task.tools = p
             .parse_table("tools")
             .map(|t| {
@@ -1894,6 +1898,7 @@ impl Task {
         self.allow_write.extend(other.allow_write);
         self.allow_net.extend(other.allow_net);
         self.allow_env.extend(other.allow_env);
+        self.pass_through_env.extend(other.pass_through_env);
     }
 
     fn has_render_templates(&self) -> bool {
@@ -2417,6 +2422,7 @@ impl Default for Task {
             allow_write: vec![],
             allow_net: vec![],
             allow_env: vec![],
+            pass_through_env: vec![],
             extends: None,
             show_args_in_prefix: false,
             depends_raw: None,
@@ -3940,6 +3946,7 @@ echo "hello world"
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
 #MISE cache={enabled=true,env=["PROFILE"]}
+#MISE pass_through_env=["DEPLOY_TOKEN"]
 #MISE shell="bash -c"
 #MISE quiet=true
 #MISE silent=true
@@ -3974,6 +3981,7 @@ echo "test"
                 env: vec!["PROFILE".to_string()],
             })
         );
+        assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
         assert_eq!(task.output, Some(TaskOutput::Prefix));

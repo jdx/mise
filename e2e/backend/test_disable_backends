@@ -22,3 +22,14 @@ assert_contains "MISE_DISABLE_BACKENDS=asdf mise doctor -J 2>&1 || true" '"age"'
 assert_contains "MISE_DISABLE_BACKENDS=asdf,vfox mise doctor 2>&1 || true" "asdf (disabled)"
 assert_contains "MISE_DISABLE_BACKENDS=asdf,vfox mise doctor 2>&1 || true" "vfox (disabled)"
 assert_not_contains "mise doctor 2>&1 || true" "(disabled)"
+
+# a leftover plugin must not route a registry shorthand to a disabled backend: with nothing
+# installed through it, resolution falls back to the registry instead of failing the install
+# https://github.com/jdx/mise/discussions/6021
+mise uninstall --all age
+ls "$MISE_DATA_DIR/plugins/age"
+assert "MISE_DISABLE_BACKENDS=asdf mise tool age --backend" "aqua:FiloSottile/age"
+
+# and the install that follows uses the registry backend rather than failing
+MISE_DISABLE_BACKENDS=asdf mise install age
+assert_contains "mise ls age" "1.3.1"

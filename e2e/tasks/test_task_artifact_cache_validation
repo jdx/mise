@@ -26,10 +26,10 @@ EOF
 
 assert_fail_contains \
   "mise run build" \
-  "cache requires explicit output files or directories"
+  "cache requires explicit outputs or outputs = []"
 assert_fail_contains \
   "mise run --dry-run build" \
-  "cache requires explicit output files or directories"
+  "cache requires explicit outputs or outputs = []"
 
 cat <<'EOF' >mise.toml
 [settings]
@@ -43,6 +43,32 @@ cache = { enabled = true }
 EOF
 
 assert_fail_contains "mise run build" "cache output must stay within"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "mkdir -p dist"
+sources = ["input"]
+outputs = ["dist", "!../out"]
+cache = { enabled = true }
+EOF
+
+assert_fail_contains "mise run build" "cache output must stay within"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "mkdir -p dist"
+sources = ["input"]
+outputs = ["!dist/**"]
+cache = { enabled = true }
+EOF
+
+assert_fail_contains "mise run build" "outputs require at least one non-excluded pattern"
 
 mkdir outside
 ln -s outside build

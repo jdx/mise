@@ -2,11 +2,14 @@ use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
-use crate::task::task_source_checker::{task_cache_inputs, task_cwd};
+use crate::task::task_source_checker::{
+    build_output_matcher, is_output, output_glob_patterns, task_cache_inputs, task_cwd,
+};
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
 use eyre::{Context, Report, Result, bail, eyre};
 use glob::glob;
+use ignore::overrides::Override;
 use jdx_tar::{Builder, EntryType, Header};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -167,13 +170,16 @@ impl TaskArtifactCache {
 
     pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
         let (archive_path, manifest_path) = self.paths();
-        if !archive_path.is_file()
-            || !manifest_path.is_file()
+        if !manifest_path.is_file()
             || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
         {
             return None;
         }
-        self.read_manifest().ok().map(|manifest| manifest.output)
+        let manifest = self.read_manifest().ok()?;
+        if !manifest.roots.is_empty() && !archive_path.is_file() {
+            return None;
+        }
+        Some(manifest.output)
     }
 
     pub fn mark_current(&self) -> Result<()> {
@@ -185,16 +191,9 @@ impl TaskArtifactCache {
 
     pub(crate) fn restore(&self, task: &Task) -> Result<Option<Vec<TaskCacheOutput>>> {
         let (archive_path, manifest_path) = self.paths();
-        if !archive_path.is_file() || !manifest_path.is_file() {
+        if !manifest_path.is_file() {
             return Ok(None);
         }
-        // Serialize restores targeting the same working directory across mise
-        // processes so ancestor validation and the following renames are one
-        // cooperative critical section.
-        let _output_lock =
-            crate::lock_file::LockFile::new(&self.root.join(".mise-task-artifact-cache-output"))
-                .lock()?;
-
         let restore = || -> Result<Vec<TaskCacheOutput>> {
             let manifest = self.read_manifest()?;
             for root in &manifest.roots {
@@ -202,6 +201,22 @@ impl TaskArtifactCache {
             }
             if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
                 bail!("task cache manifest contains duplicate or nested roots");
+            }
+            if manifest.roots.is_empty() {
+                if let Err(err) = file::touch_file(&manifest_path) {
+                    warn!("failed to update task cache manifest access time: {err}");
+                }
+                return Ok(manifest.output);
+            }
+            // Serialize restores targeting the same working directory across
+            // mise processes so validation and renames form one cooperative
+            // critical section. Result-only entries never mutate the task root.
+            let _output_lock = crate::lock_file::LockFile::new(
+                &self.root.join(".mise-task-artifact-cache-output"),
+            )
+            .lock()?;
+            if !archive_path.is_file() {
+                bail!("task cache archive is missing");
             }
 
             let staging = tempfile::Builder::new()
@@ -231,7 +246,14 @@ impl TaskArtifactCache {
             for rel in &remove {
                 ensure_no_symlink_ancestors(&self.root, rel)?;
             }
-            install_transactionally(&self.root, staging.path(), &manifest.roots, &remove)?;
+            let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
+            install_transactionally(
+                &self.root,
+                staging.path(),
+                &manifest.roots,
+                &remove,
+                Some(&output_matcher),
+            )?;
             if let Err(err) = file::touch_file(&archive_path) {
                 warn!("failed to update task cache archive access time: {err}");
             }
@@ -255,9 +277,6 @@ impl TaskArtifactCache {
     pub(crate) fn store(&self, task: &Task, output: &[TaskCacheOutput]) -> Result<()> {
         let roots = resolve_output_roots(task, &self.root, true)?;
         let roots = remove_nested_roots(roots);
-        if roots.is_empty() {
-            bail!("task {} produced no cacheable outputs", task.name);
-        }
         for root in &roots {
             ensure_no_symlink_ancestors(&self.root, root)?;
         }
@@ -269,15 +288,27 @@ impl TaskArtifactCache {
         let archive_partial = cache_dir.join(format!("{}.part-{nonce}.tar.zst", self.key));
         let manifest_partial = cache_dir.join(format!("{}.part-{nonce}.json", self.key));
 
-        write_archive(&archive_partial, &self.root, &roots)?;
         let manifest = CacheManifest {
             format: CACHE_FORMAT_VERSION,
             key: self.key.clone(),
             roots,
             output: output.to_vec(),
         };
+        if !manifest.roots.is_empty() {
+            let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
+            write_archive(
+                &archive_partial,
+                &self.root,
+                &manifest.roots,
+                &output_matcher,
+            )?;
+        }
         fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
-        file::rename(&archive_partial, &archive_path)?;
+        if !manifest.roots.is_empty() {
+            file::rename(&archive_partial, &archive_path)?;
+        } else {
+            let _ = file::remove_file(&archive_path);
+        }
         file::rename(&manifest_partial, &manifest_path)?;
         Ok(())
     }
@@ -304,15 +335,28 @@ fn validate_config(task: &Task, root: &Path) -> Result<()> {
     if task.sources.is_empty() {
         bail!("task {} cache requires at least one source", task.name);
     }
-    if task.outputs.is_auto() || task.outputs.patterns().is_empty() {
+    if task.outputs.is_auto() {
         bail!(
-            "task {} cache requires explicit output files or directories",
+            "task {} cache requires explicit outputs or outputs = []",
             task.name
         );
     }
-    for output in task.outputs.patterns() {
-        let path = Path::new(&output);
-        ensure_safe_relative(path).wrap_err_with(|| {
+    let patterns = task.outputs.patterns();
+    if !patterns.is_empty() && output_glob_patterns(&patterns).is_empty() {
+        bail!(
+            "task {} cache outputs require at least one non-excluded pattern",
+            task.name
+        );
+    }
+    for output in &patterns {
+        let path = if let Some(body) = output.strip_prefix('!') {
+            PathBuf::from(body)
+        } else if let Some(body) = output.strip_prefix("\\!") {
+            PathBuf::from(format!("!{body}"))
+        } else {
+            PathBuf::from(&output)
+        };
+        ensure_safe_relative(&path).wrap_err_with(|| {
             format!(
                 "task {} cache output must stay within {}: {output}",
                 task.name,
@@ -320,6 +364,8 @@ fn validate_config(task: &Task, root: &Path) -> Result<()> {
             )
         })?;
     }
+    build_output_matcher(root, &patterns)
+        .wrap_err_with(|| format!("task {} has an invalid cache output pattern", task.name))?;
     Ok(())
 }
 
@@ -343,26 +389,35 @@ fn ensure_safe_relative(path: &Path) -> Result<()> {
 
 fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Result<Vec<PathBuf>> {
     let mut resolved = BTreeSet::new();
-    for output in task.outputs.patterns() {
+    let patterns = task.outputs.patterns();
+    let matcher = build_output_matcher(root, &patterns)?;
+    for output in output_glob_patterns(&patterns) {
         ensure_safe_relative(Path::new(&output))?;
         if crate::task::task_source_checker::is_glob_pattern(&output) {
-            let mut matched = false;
+            let mut glob_matched = false;
             for entry in glob(root.join(&output).to_str().unwrap_or_default())? {
                 let path = entry?;
+                glob_matched = true;
                 let rel = path.strip_prefix(root)?.to_path_buf();
                 ensure_safe_relative(&rel)?;
-                resolved.insert(rel);
-                matched = true;
+                let is_dir = fs::symlink_metadata(&path)?.is_dir();
+                if is_output(&matcher, &path, is_dir) {
+                    resolved.insert(rel);
+                }
             }
-            if require_matches && !matched {
+            if require_matches && !glob_matched {
                 bail!("output pattern {output:?} matched no files");
             }
         } else {
             let rel = PathBuf::from(&output);
-            if require_matches
-                && !root.join(&rel).exists()
-                && fs::symlink_metadata(root.join(&rel)).is_err()
-            {
+            let abs = root.join(&rel);
+            let is_dir = fs::symlink_metadata(&abs)
+                .map(|metadata| metadata.is_dir())
+                .unwrap_or(false);
+            if !is_output(&matcher, &abs, is_dir) {
+                continue;
+            }
+            if require_matches && !abs.exists() && fs::symlink_metadata(&abs).is_err() {
                 bail!("output {} does not exist", rel.display());
             }
             resolved.insert(rel);
@@ -409,6 +464,7 @@ fn install_transactionally(
     staging: &Path,
     install_roots: &[PathBuf],
     remove_roots: &[PathBuf],
+    output_matcher: Option<&Override>,
 ) -> Result<()> {
     let backup = tempfile::Builder::new()
         .prefix(".mise-task-cache-backup-")
@@ -440,6 +496,12 @@ fn install_transactionally(
         backed_up.push(rel.clone());
     }
 
+    if let Some(matcher) = output_matcher
+        && let Err(err) = copy_excluded_outputs(backup.path(), staging, &backed_up, matcher)
+    {
+        return rollback_after_error(backup, root, &[], &backed_up, err);
+    }
+
     let mut installed = Vec::new();
     for rel in install_roots {
         let from = staging.join(rel);
@@ -456,6 +518,64 @@ fn install_transactionally(
             return rollback_after_error(backup, root, &installed, &backed_up, err);
         }
         installed.push(rel.clone());
+    }
+    Ok(())
+}
+
+/// Merge files excluded from the cache back into the staged artifact before
+/// replacing output roots. This keeps local-only output files intact on a
+/// cache hit while selected files still come entirely from the artifact.
+fn copy_excluded_outputs(
+    backup: &Path,
+    staging: &Path,
+    roots: &[PathBuf],
+    matcher: &Override,
+) -> Result<()> {
+    let mut directories = Vec::new();
+    for root in roots {
+        let backup_root = backup.join(root);
+        for entry in WalkDir::new(&backup_root).follow_links(false) {
+            let entry = entry?;
+            let from = entry.path();
+            let rel = from.strip_prefix(backup)?;
+            let metadata = fs::symlink_metadata(from)?;
+            if is_output(matcher, &matcher.path().join(rel), metadata.is_dir()) {
+                continue;
+            }
+            let to = staging.join(rel);
+            ensure_no_symlink_ancestors(staging, rel)?;
+            if metadata.is_dir() {
+                file::create_dir_all(&to)?;
+                directories.push((
+                    to,
+                    metadata.permissions(),
+                    filetime::FileTime::from_last_access_time(&metadata),
+                    filetime::FileTime::from_last_modification_time(&metadata),
+                ));
+            } else if metadata.file_type().is_symlink() {
+                if let Some(parent) = to.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                if fs::symlink_metadata(&to).is_err() {
+                    file::make_symlink(&fs::read_link(from)?, &to)?;
+                }
+            } else if metadata.is_file() {
+                if let Some(parent) = to.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                fs::copy(from, &to)?;
+                fs::set_permissions(&to, metadata.permissions())?;
+                filetime::set_file_times(
+                    &to,
+                    filetime::FileTime::from_last_access_time(&metadata),
+                    filetime::FileTime::from_last_modification_time(&metadata),
+                )?;
+            }
+        }
+    }
+    for (path, permissions, accessed, modified) in directories.into_iter().rev() {
+        fs::set_permissions(&path, permissions)?;
+        filetime::set_file_times(&path, accessed, modified)?;
     }
     Ok(())
 }
@@ -517,7 +637,12 @@ fn rollback_install(
     complete
 }
 
-fn write_archive(path: &Path, root: &Path, roots: &[PathBuf]) -> Result<()> {
+fn write_archive(
+    path: &Path,
+    root: &Path,
+    roots: &[PathBuf],
+    output_matcher: &Override,
+) -> Result<()> {
     let file = File::create(path)?;
     let encoder = zstd::Encoder::new(file, 0)?;
     let mut archive = Builder::new(encoder);
@@ -529,7 +654,9 @@ fn write_archive(path: &Path, root: &Path, roots: &[PathBuf]) -> Result<()> {
             let abs = entry.path().to_path_buf();
             let rel = abs.strip_prefix(root)?.to_path_buf();
             ensure_safe_relative(&rel)?;
-            entries.insert(rel, abs);
+            if is_output(output_matcher, &abs, entry.file_type().is_dir()) {
+                entries.insert(rel, abs);
+            }
         }
     }
 
@@ -618,6 +745,25 @@ mod tests {
     }
 
     #[test]
+    fn output_roots_allow_glob_matches_that_are_all_excluded() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/vendor.js"), "vendor").unwrap();
+        let task = Task {
+            outputs: crate::task::task_sources::TaskOutputs::Files(vec![
+                "dist/*.js".to_string(),
+                "!dist/vendor.js".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_output_roots(&task, root.path(), true).unwrap(),
+            Vec::<PathBuf>::new()
+        );
+    }
+
+    #[test]
     fn failed_install_restores_previous_outputs() {
         let root = tempfile::tempdir().unwrap();
         let staging = tempfile::tempdir_in(root.path()).unwrap();
@@ -632,12 +778,56 @@ mod tests {
                 staging.path(),
                 &[PathBuf::from("dist"), PathBuf::from("missing")],
                 &[PathBuf::from("dist")],
+                None,
             )
             .is_err()
         );
         assert_eq!(
             fs::read_to_string(root.path().join("dist/result.txt")).unwrap(),
             "old"
+        );
+    }
+
+    #[test]
+    fn install_preserves_outputs_excluded_from_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        fs::create_dir_all(root.path().join("dist/private")).unwrap();
+        fs::write(root.path().join("dist/result.txt"), "old").unwrap();
+        fs::write(root.path().join("dist/result.map"), "local map").unwrap();
+        fs::write(root.path().join("dist/private/token"), "local token").unwrap();
+        fs::create_dir(staging.path().join("dist")).unwrap();
+        fs::write(staging.path().join("dist/result.txt"), "cached").unwrap();
+        let matcher = build_output_matcher(
+            root.path(),
+            &[
+                "dist".to_string(),
+                "!dist/**/*.map".to_string(),
+                "!dist/private/**".to_string(),
+            ],
+        )
+        .unwrap();
+
+        install_transactionally(
+            root.path(),
+            staging.path(),
+            &[PathBuf::from("dist")],
+            &[PathBuf::from("dist")],
+            Some(&matcher),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(root.path().join("dist/result.txt")).unwrap(),
+            "cached"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("dist/result.map")).unwrap(),
+            "local map"
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("dist/private/token")).unwrap(),
+            "local token"
         );
     }
 

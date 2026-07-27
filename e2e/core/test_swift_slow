@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 export MISE_EXPERIMENTAL=1
-export MISE_NPM_SHELL_OUT=1
 export MISE_USE_VERSIONS_HOST=0
 
 MISE_DEBUG=1 mise use swift@6
@@ -13,47 +12,6 @@ assert_matches "mise x -- swift --version" 'Swift version 6\.'
 #assert "mise x spm:https://github.com/nicklockwood/SwiftFormat.git@0.53.10 -- swiftformat --version" "0.53.10"
 
 assert "mise x spm:nicklockwood/SwiftFormat@0.61.1 -- swiftformat --version" "0.61.1"
-
-if [[ $(uname -s) == Darwin ]]; then
-  # danger-swift invokes xcrun on macOS, so build its modules with the same
-  # Apple Swift toolchain rather than the separately packaged Swift toolchain.
-  mise unuse --no-prune swift
-fi
-mise install node@24 danger-swift@3.22.1 npm:danger@13.0.10
-danger_install_path="$(mise where danger-swift@3.22.1)"
-test -x "$danger_install_path/bin/danger-swift"
-test -f "$danger_install_path/lib/danger/libDanger.dylib" ||
-  test -f "$danger_install_path/lib/danger/libDanger.so"
-find "$danger_install_path/lib/danger" -name 'Danger.swiftmodule' -print -quit | grep -q .
-
-cat >Dangerfile.swift <<'EOF'
-import Danger
-import Foundation
-
-nonisolated(unsafe) let danger = Danger()
-danger.fail("mise Danger Swift integration test")
-EOF
-
-git init -q -b master
-git config user.email e2e@example.com
-git config user.name "mise e2e"
-git add Dangerfile.swift
-git commit -q -m initial
-git checkout -q -b test
-cp Dangerfile.swift Changed.swift
-git add Changed.swift
-git commit -q -m change
-
-if [[ $(uname -s) == Darwin ]]; then
-  export CFFIXED_USER_HOME="$HOME"
-fi
-
-danger_output="$(
-  mise x node@24 danger-swift@3.22.1 npm:danger@13.0.10 -- danger-swift local 2>&1
-)"
-assert_contains_text "$danger_output" "Danger: ⅹ Failing the build"
-assert_contains_text "$danger_output" "mise Danger Swift integration test"
-assert_not_contains_text "$danger_output" "Could not find a libDanger"
 
 # test package with resources (`templates list` command depends on resources being installed)
 #assert "mise x spm:SwiftGen/SwiftGen@6.6.2 --verbose -- swiftgen templates list --only colors" "colors:

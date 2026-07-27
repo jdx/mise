@@ -285,9 +285,9 @@ impl OutputHandler {
         // Resolve a STYLE only, in precedence order. `Quiet` values map to
         // `Interleave` (their historical stream behavior); the quiet-ness is kept
         // by the `quiet()` predicate independently.
-        // 1. CLI `--output` / `MISE_TASK_OUTPUT` (no raw downgrade, matching prior behavior)
+        // 1. CLI `--output` / `MISE_TASK_OUTPUT`
         if let Some(o) = self.output {
-            return o.style_only();
+            return o.style_with_raw(self.raw(task));
         }
         // 2. per-task `output` style field
         if let Some(o) = task.and_then(|t| t.output) {

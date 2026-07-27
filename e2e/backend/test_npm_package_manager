@@ -25,9 +25,7 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 
 # Test 1: npm.package_manager = "npm". Pin explicitly rather than relying
-# on the `auto` default — `auto` picks aube when aube is on PATH (including
-# system installs like Homebrew), which would emit `--minimum-release-age`
-# instead of npm's `--before` and break the assertion below on dev machines.
+# on the `auto` default, which uses mise's embedded aube.
 echo "Testing npm backend with npm package manager..."
 unset MISE_NPM_BUN
 export MISE_NPM_PACKAGE_MANAGER=npm
@@ -122,6 +120,35 @@ assert_succeed "find '$tiny_install_dir' -type d -name node_modules -print -quit
 # aube_args is not forwarded to any CLI; mise warns that it is ignored.
 assert_contains "cat '$AUBE_DEBUG_LOG'" "aube_args"
 echo "✓ npm backend successfully installs package using aube (package_manager=aube)"
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+
+# Test 5: npm.package_manager = "aube_cli" (standalone aube executable)
+echo "Testing npm.package_manager=aube_cli..."
+export MISE_NPM_PACKAGE_MANAGER=aube_cli
+
+# Always provision the version exercised by this test instead of accepting an
+# arbitrary ambient aube executable.
+AUBE_CLI_TEST_VERSION="1.33.1"
+assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@$AUBE_CLI_TEST_VERSION"
+
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", aube_args = "--reporter append-only", allow_builds = "tiny" }
+EOF
+AUBE_CLI_DEBUG_LOG="$TMPDIR/aube_cli_debug.log"
+if ! MISE_DEBUG=1 mise install >"$AUBE_CLI_DEBUG_LOG" 2>&1; then
+  echo "Command failed. Output:"
+  cat "$AUBE_CLI_DEBUG_LOG"
+  exit 1
+fi
+assert_contains "cat '$AUBE_CLI_DEBUG_LOG'" "aube"
+assert_contains "cat '$AUBE_CLI_DEBUG_LOG'" "add"
+assert_contains "cat '$AUBE_CLI_DEBUG_LOG'" "--global"
+assert_contains "cat '$AUBE_CLI_DEBUG_LOG'" "--reporter"
+assert_contains "cat '$AUBE_CLI_DEBUG_LOG'" "append-only"
+assert_contains "cat '$AUBE_CLI_DEBUG_LOG'" "--allow-build=tiny"
+assert_not_contains "cat '$AUBE_CLI_DEBUG_LOG'" "npm view"
+echo "✓ npm backend successfully installs package using standalone aube (package_manager=aube_cli)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 unset MISE_NPM_PACKAGE_MANAGER

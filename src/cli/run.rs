@@ -808,6 +808,8 @@ impl Run {
                     allow_write: self.allow_write.clone(),
                     allow_net: self.allow_net.clone(),
                     allow_env: self.allow_env.clone(),
+                    pass_through_env: vec![],
+                    cache_env: vec![],
                 },
             ),
         };
@@ -899,6 +901,9 @@ impl Run {
         use crate::ui;
         if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
             Settings::get().ensure_experimental("task artifact caching")?;
+        }
+        if !task.pass_through_env.is_empty() {
+            Settings::get().ensure_experimental("task environment pass-through")?;
         }
         if let Some(path) = &task.file
             && path.exists()

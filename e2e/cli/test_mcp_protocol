@@ -124,7 +124,7 @@ def test_initialize(proc):
     assert "tools" in caps, "tools capability missing"
     print("✓ Tools capability present")
 
-    assert result["serverInfo"]["name"] == "rmcp", "wrong server name"
+    assert result["serverInfo"]["name"] == "mise", "wrong server name"
     print("✓ Server info correct")
     return 0
 

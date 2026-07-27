@@ -31,7 +31,6 @@
               shellcheck
               shfmt
               nodejs
-              cargo-release
               cargo-insta
             ];
           };

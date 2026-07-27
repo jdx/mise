@@ -283,6 +283,20 @@ impl TaskExecutor {
                 .chain(self.sandbox.allow_env.iter())
                 .cloned()
                 .collect(),
+            pass_through_env: task
+                .pass_through_env
+                .iter()
+                .chain(self.sandbox.pass_through_env.iter())
+                .cloned()
+                .collect(),
+            cache_env: task
+                .cache
+                .iter()
+                .filter(|cache| cache.enabled)
+                .flat_map(|cache| &cache.env)
+                .chain(self.sandbox.cache_env.iter())
+                .cloned()
+                .collect(),
         };
         sandbox.resolve_paths();
         Ok(sandbox)
@@ -546,7 +560,7 @@ impl TaskExecutor {
                 Some(cache) => {
                     let current_output = if !self.force
                         && !dependency_state.any_unkeyed_did_work
-                        && sources_are_fresh(task, config).await?
+                        && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
                     {
                         cache.current_output()
                     } else {
@@ -568,10 +582,15 @@ impl TaskExecutor {
                         && let Some(output) = cache.restore(task)?
                     {
                         if !self.quiet(Some(task)) {
+                            let kind = if task.outputs.is_no_files() {
+                                "result"
+                            } else {
+                                "outputs"
+                            };
                             self.eprint(
                                 task,
                                 &prefix,
-                                &format!("restored outputs from cache {}", cache.key()),
+                                &format!("restored {kind} from cache {}", cache.key()),
                             );
                         }
                         self.output_handler
