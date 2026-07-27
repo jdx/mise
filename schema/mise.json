@@ -2969,7 +2969,7 @@
               },
               "type": "array"
             },
-            "runtime": {
+            "command_inputs": {
               "description": "commands whose stdout and stderr affect the cache key",
               "items": {
                 "type": "string"

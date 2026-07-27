@@ -30,7 +30,7 @@ pub struct TaskCacheConfig {
     /// Ambient environment variables whose resolved values affect the cache key.
     pub env: Vec<String>,
     /// Commands whose stdout and stderr affect the cache key.
-    pub runtime: Vec<String>,
+    pub command_inputs: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,7 +47,7 @@ struct CacheKeyMaterial<'a> {
     dependency_keys: Vec<String>,
     environment: BTreeMap<String, Option<String>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    runtime: Vec<RuntimeCommandInput>,
+    command_inputs: Vec<CommandInput>,
     vars: BTreeMap<String, String>,
     tools: Vec<String>,
     os: &'static str,
@@ -55,7 +55,7 @@ struct CacheKeyMaterial<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct RuntimeCommandInput {
+struct CommandInput {
     command: String,
     stdout_hash: String,
     stderr_hash: String,
@@ -140,10 +140,10 @@ impl TaskArtifactCache {
             .map(|(_, tv)| tv.to_string())
             .collect::<Vec<_>>();
         tools.sort();
-        let runtime = if dry_run {
+        let command_inputs = if dry_run {
             Vec::new()
         } else {
-            resolve_runtime_inputs(task, &root, resolved_env).await?
+            resolve_command_inputs(task, &root, resolved_env).await?
         };
 
         let material = CacheKeyMaterial {
@@ -157,7 +157,7 @@ impl TaskArtifactCache {
             source_hash: inputs.source_hash,
             dependency_keys: dependency_keys.to_vec(),
             environment,
-            runtime,
+            command_inputs,
             vars,
             tools,
             os: std::env::consts::OS,
@@ -348,13 +348,13 @@ impl TaskArtifactCache {
     }
 }
 
-async fn resolve_runtime_inputs(
+async fn resolve_command_inputs(
     task: &Task,
     root: &Path,
     resolved_env: &BTreeMap<String, String>,
-) -> Result<Vec<RuntimeCommandInput>> {
+) -> Result<Vec<CommandInput>> {
     let cache = task.cache.as_ref().expect("cache must be configured");
-    if cache.runtime.is_empty() {
+    if cache.command_inputs.is_empty() {
         return Ok(Vec::new());
     }
     let shell = task
@@ -362,9 +362,9 @@ async fn resolve_runtime_inputs(
         .unwrap_or(Settings::get().default_inline_shell()?);
     let (program, shell_args) = shell
         .split_first()
-        .ok_or_else(|| eyre!("task {} cache runtime input shell is empty", task.name))?;
-    let mut inputs = Vec::with_capacity(cache.runtime.len());
-    for command in &cache.runtime {
+        .ok_or_else(|| eyre!("task {} cache command input shell is empty", task.name))?;
+    let mut inputs = Vec::with_capacity(cache.command_inputs.len());
+    for command in &cache.command_inputs {
         let mut process = tokio::process::Command::new(program);
         #[cfg(windows)]
         if crate::path::is_cmd_shell_program(Path::new(program))
@@ -392,18 +392,18 @@ async fn resolve_runtime_inputs(
             .await;
         let output = output.wrap_err_with(|| {
             format!(
-                "task {} failed to start cache runtime input command: {command:?}",
+                "task {} failed to start cache command input: {command:?}",
                 task.name
             )
         })?;
         if !output.status.success() {
             bail!(
-                "task {} cache runtime input command failed with {}: {command:?}",
+                "task {} cache command input failed with {}: {command:?}",
                 task.name,
                 output.status
             );
         }
-        inputs.push(RuntimeCommandInput {
+        inputs.push(CommandInput {
             command: command.clone(),
             stdout_hash: blake3::hash(&output.stdout).to_hex().to_string(),
             stderr_hash: blake3::hash(&output.stderr).to_hex().to_string(),
@@ -424,12 +424,12 @@ fn validate_config(task: &Task, root: &Path) -> Result<()> {
     }
     if let Some(command) = task.cache.as_ref().and_then(|cache| {
         cache
-            .runtime
+            .command_inputs
             .iter()
             .find(|command| command.trim().is_empty())
     }) {
         bail!(
-            "task {} cache runtime input command must not be empty: {command:?}",
+            "task {} cache command input must not be empty: {command:?}",
             task.name
         );
     }
@@ -809,30 +809,31 @@ mod tests {
 
     #[test]
     fn config_deserializes_and_rejects_unknown_fields() {
-        let config: TaskCacheConfig =
-            toml::from_str("enabled = true\nenv = ['PROFILE']\nruntime = ['node --version']")
-                .unwrap();
+        let config: TaskCacheConfig = toml::from_str(
+            "enabled = true\nenv = ['PROFILE']\ncommand_inputs = ['node --version']",
+        )
+        .unwrap();
         assert!(config.enabled);
         assert_eq!(config.env, ["PROFILE"]);
-        assert_eq!(config.runtime, ["node --version"]);
+        assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
     }
 
     #[tokio::test]
     #[cfg(unix)]
-    async fn runtime_inputs_capture_stdout_and_stderr() {
+    async fn command_inputs_capture_stdout_and_stderr() {
         let root = tempfile::tempdir().unwrap();
         let task = Task {
             name: "build".to_string(),
             cache: Some(TaskCacheConfig {
                 enabled: true,
-                runtime: vec!["printf stdout; printf stderr >&2".to_string()],
+                command_inputs: vec!["printf stdout; printf stderr >&2".to_string()],
                 ..Default::default()
             }),
             ..Default::default()
         };
 
-        let inputs = resolve_runtime_inputs(&task, root.path(), &BTreeMap::new())
+        let inputs = resolve_command_inputs(&task, root.path(), &BTreeMap::new())
             .await
             .unwrap();
         assert_eq!(inputs.len(), 1);

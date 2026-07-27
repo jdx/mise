@@ -501,8 +501,8 @@ outputs = { auto = true } # this is the default when sources is defined
 
 ### `cache` <Badge type="warning" text="experimental" />
 
-- **Type**: `{ enabled = bool, env = string[], runtime = string[] }`
-- **Default**: `{ enabled = false, env = [], runtime = [] }`
+- **Type**: `{ enabled = bool, env = string[], command_inputs = string[] }`
+- **Default**: `{ enabled = false, env = [], command_inputs = [] }`
 
 Stores successful task results in a content-addressed local cache and reuses them when the same task
 inputs are seen again. Declared filesystem outputs are restored after deletion. Tasks with
@@ -527,7 +527,7 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
-Commands listed in `cache.runtime` run before cache lookup. Their command text, stdout, and stderr
+Commands listed in `cache.command_inputs` run before cache lookup. Their command text, stdout, and stderr
 are included in the cache key. Commands use the task's configured or default inline shell, resolved
 environment and tools, and working directory. This is useful when inputs such as compiler versions
 or generated configuration cannot be represented by source files alone.
@@ -537,7 +537,7 @@ or generated configuration cannot be represented by source files alone.
 run = "npm run build"
 sources = ["package.json", "src/**"]
 outputs = ["dist"]
-cache = { enabled = true, runtime = ["node --version", "npm config get registry"] }
+cache = { enabled = true, command_inputs = ["node --version", "npm config get registry"] }
 ```
 
 A runtime command must be non-empty and exit successfully. Its output is captured for the key rather
@@ -564,7 +564,7 @@ experimental = true
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV"]
-runtime = ["node --version"]
+command_inputs = ["node --version"]
 
 [tasks.build]
 run = "npm run build"
@@ -577,7 +577,7 @@ cache = { enabled = false }
 ```
 
 The cache key includes source contents, the task definition and arguments, resolved task environment,
-the values (or absence) of variables named in `cache.env`, runtime-command output, resolved tool
+the values (or absence) of variables named in `cache.env`, command-input output, resolved tool
 versions, dependency artifact keys, and the operating system and architecture. Variables inherited
 from the ambient process are ignored unless listed in `cache.env`.
 
@@ -911,7 +911,7 @@ Task-local and task-template cache configuration takes precedence, including
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV", "CI"]
-runtime = ["node --version"]
+command_inputs = ["node --version"]
 ```
 
 ### `task_config.global_env` <Badge type="warning" text="experimental" />

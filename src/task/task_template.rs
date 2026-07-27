@@ -347,7 +347,7 @@ mod tests {
             cache: Some(TaskCacheConfig {
                 enabled: true,
                 env: vec!["PROFILE".to_string()],
-                runtime: vec![],
+                command_inputs: vec![],
             }),
             ..Default::default()
         };

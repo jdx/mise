@@ -6,7 +6,7 @@ experimental = true
 
 [task_config.cache]
 enabled = true
-runtime = ["cat runtime-version"]
+command_inputs = ["cat runtime-version"]
 
 [tasks.build]
 run = '''
@@ -45,7 +45,7 @@ experimental = true
 run = "printf 'ran\n' >> runs.txt"
 sources = ["input.txt"]
 outputs = []
-cache = { enabled = true, runtime = ["pwd"] }
+cache = { enabled = true, command_inputs = ["pwd"] }
 EOF
 touch nested/input.txt
 mise -C nested run check
@@ -59,12 +59,12 @@ experimental = true
 run = "true"
 sources = ["input.txt"]
 outputs = []
-cache = { enabled = true, runtime = ["exit 7"] }
+cache = { enabled = true, command_inputs = ["exit 7"] }
 EOF
 
 assert_fail_contains \
   "mise run fail" \
-  "task fail cache runtime input command failed"
+  "task fail cache command input failed"
 
 cat <<'EOF' >mise.toml
 [settings]
@@ -74,12 +74,12 @@ experimental = true
 run = "true"
 sources = ["input.txt"]
 outputs = []
-cache = { enabled = true, runtime = [" "] }
+cache = { enabled = true, command_inputs = [" "] }
 EOF
 
 assert_fail_contains \
   "mise run empty" \
-  "cache runtime input command must not be empty"
+  "cache command input must not be empty"
 
 cat <<'EOF' >mise.toml
 [settings]
@@ -89,8 +89,8 @@ experimental = true
 run = "true"
 sources = ["input.txt"]
 outputs = []
-cache = { enabled = true, runtime = ["touch runtime-command-ran"] }
+cache = { enabled = true, command_inputs = ["touch command-input-ran"] }
 EOF
 
 mise run --dry-run dry
-assert "test ! -e runtime-command-ran && echo clean" "clean"
+assert "test ! -e command-input-ran && echo clean" "clean"
