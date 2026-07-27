@@ -128,3 +128,16 @@ rm -rf packages/app/dist
 mise run build ::: check
 assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "7"
 assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "7"
+
+# Group references are validated even when no input groups or global inputs
+# are configured, rather than being retained as literal source paths.
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.invalid]
+run = "echo invalid"
+sources = ["@group:missing"]
+EOF
+rm mise.local.toml
+assert_fail_contains "mise task info invalid" 'undefined input group "missing"'

@@ -2342,7 +2342,11 @@ async fn apply_task_config_inputs(
     config: &Arc<Config>,
     task_inputs: &ResolvedTaskInputs,
 ) -> Result<()> {
-    if task_inputs.is_empty() {
+    let has_group_references = task
+        .sources
+        .iter()
+        .any(|source| source.starts_with(TASK_INPUT_GROUP_PREFIX));
+    if task_inputs.is_empty() && !has_group_references {
         return Ok(());
     }
     Settings::get().ensure_experimental("task input groups")?;
