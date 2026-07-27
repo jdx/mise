@@ -74,7 +74,7 @@ impl FileMode {
 pub enum FileTomlEntry {
     /// `"~/.gitconfig" = "dotfiles/gitconfig"`
     Source(String),
-    /// `"~/.gitconfig" = { source = "...", mode = "..." }` — both fields are
+    /// `"~/.gitconfig" = { source = "...", mode = "..." }` — every field is
     /// optional so `{}` can mean implied source/default mode. Mode stays a
     /// string here so configs using modes from newer mise versions still
     /// parse (they warn and are skipped, like unknown package managers)
@@ -83,6 +83,8 @@ pub enum FileTomlEntry {
         source: Option<String>,
         #[serde(default)]
         mode: Option<String>,
+        #[serde(default)]
+        exclude: Option<Vec<String>>,
     },
 }
 
@@ -97,6 +99,9 @@ pub struct FileRequest {
     /// file's directory; omitted sources resolve under dotfiles.root)
     pub source: PathBuf,
     pub mode: FileMode,
+    /// glob patterns, matched against source-relative paths, for files a
+    /// directory-walking mode should skip (see [`is_excluded`])
+    pub exclude: Vec<glob::Pattern>,
     /// directory of the declaring config file — base dir for template
     /// functions like `exec` and `read_file`
     pub base: PathBuf,
@@ -147,6 +152,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
         toml::Value::Table(table)
             if table.is_empty()
                 || table.contains_key("mode")
+                || table.contains_key("exclude")
                 || (table.contains_key("source")
                     && !table.contains_key("block")
                     && !table.contains_key("line")
@@ -173,10 +179,27 @@ fn merge_file_entry(
     base: &Path,
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
-    let (source, mode) = match entry {
-        FileTomlEntry::Source(source) => (Some(source), None),
-        FileTomlEntry::Table { source, mode } => (source, mode),
+    let (source, mode, exclude) = match entry {
+        FileTomlEntry::Source(source) => (Some(source), None, None),
+        FileTomlEntry::Table {
+            source,
+            mode,
+            exclude,
+        } => (source, mode, exclude),
     };
+    // compile once here so a typo is reported against the entry that wrote
+    // it, not on every walk of the source
+    let exclude = exclude
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|pattern| match glob::Pattern::new(&pattern) {
+            Ok(pattern) => Some(pattern),
+            Err(err) => {
+                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
+                None
+            }
+        })
+        .collect::<Vec<_>>();
     let mode = match mode.as_deref() {
         None => default_mode(),
         Some(m) => match FileMode::parse(m) {
@@ -211,7 +234,14 @@ fn merge_file_entry(
             }
         },
     };
-    for req in expand_request(target_raw, target, source, mode, base.to_path_buf()) {
+    for req in expand_request(
+        target_raw,
+        target,
+        source,
+        mode,
+        exclude,
+        base.to_path_buf(),
+    ) {
         merged.insert(req.target.clone(), req);
     }
 }
@@ -291,6 +321,7 @@ fn expand_request(
     target: PathBuf,
     source: PathBuf,
     mode: FileMode,
+    exclude: Vec<glob::Pattern>,
     base: PathBuf,
 ) -> Vec<FileRequest> {
     if !is_glob_pattern(&source) {
@@ -299,6 +330,7 @@ fn expand_request(
             target,
             source,
             mode,
+            exclude,
             base,
         }];
     }
@@ -340,6 +372,7 @@ fn expand_request(
             target,
             source: matches[0].clone(),
             mode,
+            exclude,
             base,
         }];
     }
@@ -366,6 +399,7 @@ fn expand_request(
                 target: target_path,
                 source: matched_source,
                 mode,
+                exclude: exclude.clone(),
                 base: base.clone(),
             })
         })
@@ -521,6 +555,7 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
     match req.mode {
         FileMode::Symlink => check_symlink(&req.source, &req.target),
         FileMode::SymlinkEach => check_symlink_each(req),
+        FileMode::Copy if req.source.is_dir() => check_copy_dir(req),
         FileMode::Copy => check_copy(&req.source, &req.target),
         FileMode::Template => {
             let state = check_content(
@@ -627,28 +662,29 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
 }
 
 fn check_copy(source: &Path, target: &Path) -> Result<FileState> {
-    if source.is_dir() {
-        if !target.exists() {
-            return Ok(FileState::Missing);
-        }
-        if !target.is_dir() {
-            return Ok(FileState::Differs("exists but is not a directory".into()));
-        }
-        for entry in walkdir::WalkDir::new(source) {
-            let entry = entry?;
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let rel = entry.path().strip_prefix(source)?;
-            match check_content(&target.join(rel), &file::read(entry.path())?)? {
-                FileState::Applied => {}
-                _ => return Ok(FileState::Differs(format!("{} differs", rel.display()))),
-            }
-        }
-        Ok(FileState::Applied)
-    } else {
-        check_content(target, &file::read(source)?)
+    check_content(target, &file::read(source)?)
+}
+
+/// walks through [`walk_source_files`] rather than the source tree directly
+/// so `exclude` applies to a directory copy the same way it does to
+/// symlink-each
+fn check_copy_dir(req: &FileRequest) -> Result<FileState> {
+    if !req.target.exists() {
+        return Ok(FileState::Missing);
     }
+    if !req.target.is_dir() {
+        return Ok(FileState::Differs("exists but is not a directory".into()));
+    }
+    for (source, target) in walk_source_files(req)? {
+        match check_content(&target, &file::read(&source)?)? {
+            FileState::Applied => {}
+            _ => {
+                let rel = target.strip_prefix(&req.target).unwrap_or(&target);
+                return Ok(FileState::Differs(format!("{} differs", rel.display())));
+            }
+        }
+    }
+    Ok(FileState::Applied)
 }
 
 fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
@@ -702,9 +738,10 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
 }
 
 /// symlinks under a symlink-each target that mise created for this entry but
-/// whose source file is gone. These are the entry's own leftovers — deleting
-/// a source file has to un-manage its target, or the target keeps a dangling
-/// link forever.
+/// no longer manages, because the source file was deleted or is now covered
+/// by `exclude`. These are the entry's own leftovers — un-managing a source
+/// file has to un-manage its target, or the target keeps a link mise would
+/// never write again.
 ///
 /// Ownership is the exact link this entry would have written: `<target>/rel`
 /// pointing at `<source>/rel`. There is no record of who created a link, so
@@ -714,11 +751,13 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
 /// a leftover. A link to any other path, and anything that isn't a symlink,
 /// is left alone.
 ///
-/// On Windows file symlinks are applied as copies (see `link_path`), so
-/// there's nothing there to tell a leftover from a user's file — that
-/// platform prunes nothing.
+/// On Windows file symlinks are applied as copies (see `link_path`), so a
+/// leftover there is a regular file, indistinguishable from one the user
+/// wrote. `check_symlink` already treats those targets as copies on that
+/// platform; pruning nothing keeps this consistent with it rather than
+/// reporting links stale that the per-file check considers copies.
 fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    if !req.target.is_dir() || req.target.is_symlink() {
+    if cfg!(windows) || !req.target.is_dir() || req.target.is_symlink() {
         return Ok(vec![]);
     }
     let mut out = vec![];
@@ -748,22 +787,51 @@ fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         let expected = req.source.join(rel);
         // `dest` is compared as a path, so the `.` in a source like
         // `/dotfiles/.` doesn't have to match character for character
-        if dest == expected && !expected.exists() {
+        if dest == expected && (!expected.exists() || is_excluded(rel, &req.exclude)) {
             out.push(entry.path().to_path_buf());
         }
     }
     Ok(out)
 }
 
-/// every (source file, target path) pair of a symlink-each entry
+/// Whether a source-relative path is dropped by the entry's `exclude`
+/// patterns. A pattern without `/` matches any single path component, so
+/// `exclude = ["mise.toml"]` drops that file wherever it sits in the tree
+/// and `["*.md"]` drops every markdown file; a pattern containing `/` is
+/// anchored to the source root. Either kind matching a directory takes
+/// everything under it, which is why ancestors are tested too.
+fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+    patterns.iter().any(|pattern| {
+        if pattern.as_str().contains('/') {
+            rel.ancestors().any(|a| pattern.matches_path(a))
+        } else {
+            rel.components()
+                .any(|c| pattern.matches(&c.as_os_str().to_string_lossy()))
+        }
+    })
+}
+
+/// every (source file, target path) pair of a directory-walking entry —
+/// `symlink-each`, and `copy` with a directory source
 fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     let mut out = vec![];
-    for entry in walkdir::WalkDir::new(&req.source).sort_by_file_name() {
+    let mut walk = walkdir::WalkDir::new(&req.source)
+        .sort_by_file_name()
+        .into_iter();
+    while let Some(entry) = walk.next() {
         let entry = entry?;
+        let rel = entry.path().strip_prefix(&req.source)?;
+        if !rel.as_os_str().is_empty() && is_excluded(rel, &req.exclude) {
+            // don't descend into an excluded directory — its children are
+            // excluded by the same pattern, just more slowly
+            if entry.file_type().is_dir() {
+                walk.skip_current_dir();
+            }
+            continue;
+        }
         if entry.file_type().is_dir() {
             continue;
         }
-        let rel = entry.path().strip_prefix(&req.source)?;
         out.push((entry.path().to_path_buf(), req.target.join(rel)));
     }
     Ok(out)
@@ -1178,6 +1246,54 @@ mod tests {
         assert_eq!(FileMode::parse("copy"), Some(FileMode::Copy));
         assert_eq!(FileMode::parse("template"), Some(FileMode::Template));
         assert_eq!(FileMode::parse("hardlink"), None);
+    }
+
+    fn patterns(patterns: &[&str]) -> Vec<glob::Pattern> {
+        patterns
+            .iter()
+            .map(|p| glob::Pattern::new(p).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_exclude_bare_pattern_matches_any_component() {
+        let pats = patterns(&["mise.toml"]);
+        assert!(is_excluded(Path::new("mise.toml"), &pats));
+        assert!(is_excluded(Path::new("nested/mise.toml"), &pats));
+        assert!(!is_excluded(Path::new("mise.toml.bak"), &pats));
+        assert!(!is_excluded(Path::new("other.toml"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_wildcard_matches_by_component() {
+        let pats = patterns(&["*.md"]);
+        assert!(is_excluded(Path::new("README.md"), &pats));
+        assert!(is_excluded(Path::new("docs/guide.md"), &pats));
+        assert!(!is_excluded(Path::new("README.txt"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_slash_pattern_is_anchored() {
+        let pats = patterns(&["nvim/spell"]);
+        assert!(is_excluded(Path::new("nvim/spell"), &pats));
+        // matching a directory takes everything under it
+        assert!(is_excluded(Path::new("nvim/spell/en.add"), &pats));
+        // but the same name elsewhere in the tree is untouched
+        assert!(!is_excluded(Path::new("config/nvim/spell"), &pats));
+        assert!(!is_excluded(Path::new("spell"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_directory_component_takes_children() {
+        let pats = patterns(&[".git"]);
+        assert!(is_excluded(Path::new(".git"), &pats));
+        assert!(is_excluded(Path::new(".git/config"), &pats));
+        assert!(!is_excluded(Path::new("git/config"), &pats));
+    }
+
+    #[test]
+    fn test_exclude_empty_matches_nothing() {
+        assert!(!is_excluded(Path::new("mise.toml"), &[]));
     }
 
     #[test]

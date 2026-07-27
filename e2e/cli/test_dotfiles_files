@@ -199,6 +199,54 @@ assert "cat ~/.local/mybin" "blocker"
 assert_succeed "mise dotfiles apply --yes --force"
 assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
 
+# exclude keeps directory-walking modes off files the entry shouldn't own
+mkdir -p excl/keep excl/nvim/spell
+echo "linked" >excl/linked
+echo "notes" >excl/NOTES.md
+echo "nested notes" >excl/keep/nested.md
+echo "config" >excl/mise.toml
+echo "en" >excl/nvim/spell/en.add
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.local/excl" = { source = "excl", mode = "symlink-each" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.local/excl/mise.toml" "$PWD/excl/mise.toml"
+assert "readlink ~/.local/excl/NOTES.md" "$PWD/excl/NOTES.md"
+
+# adding exclude reclaims what those patterns already linked
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.local/excl" = { source = "excl", mode = "symlink-each", exclude = ["mise.toml", "*.md", "nvim/spell"] }
+EOF
+assert_contains "mise dotfiles status" "stale link"
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.local/excl/linked" "$PWD/excl/linked"
+assert_fail "test -e $HOME/.local/excl/mise.toml"
+assert_fail "test -e $HOME/.local/excl/NOTES.md"
+# a bare pattern matches at any depth, an anchored one only where it points
+assert_fail "test -e $HOME/.local/excl/keep/nested.md"
+assert_directory_not_exists "$HOME/.local/excl/nvim/spell"
+assert_succeed "mise dotfiles status --missing"
+
+# exclude applies to directory copies too
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.local/exclcopy" = { source = "excl", mode = "copy", exclude = ["*.md", "mise.toml"] }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/.local/exclcopy/linked" "linked"
+assert_fail "test -e $HOME/.local/exclcopy/NOTES.md"
+assert_succeed "mise dotfiles status --missing"
+
+# an invalid pattern warns and is dropped instead of failing the entry
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.local/excl" = { source = "excl", mode = "symlink-each", exclude = ["[bad"] }
+EOF
+assert_contains "mise dotfiles status 2>&1" "invalid exclude pattern"
+assert_succeed "mise dotfiles status"
+
 # a config skipped for trust reasons says so instead of reporting the
 # [dotfiles] table as empty
 cat <<EOF >mise.toml
@@ -208,6 +256,10 @@ EOF
 ignored_out="$(MISE_IGNORED_CONFIG_PATHS="$PWD/mise.toml" mise dotfiles apply --yes 2>&1)"
 assert_contains_text "$ignored_out" "are not trusted"
 assert_contains_text "$ignored_out" "mise trust"
+# --json gets the hint too: it goes to stderr, so stdout stays parseable
+json_out="$(MISE_IGNORED_CONFIG_PATHS="$PWD/mise.toml" mise dotfiles status --json 2>&1 >/dev/null)"
+assert_contains_text "$json_out" "are not trusted"
+assert_json "MISE_IGNORED_CONFIG_PATHS=\"$PWD/mise.toml\" mise dotfiles status --json 2>/dev/null" '{"files":[],"edits":[]}'
 # an ignored config with no [dotfiles] of its own doesn't produce the hint
 cat <<EOF >mise.toml
 [tools]

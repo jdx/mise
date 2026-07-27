@@ -120,6 +120,11 @@ impl DotfilesStatus {
             }
         }
 
+        // the hint goes to stderr, so an empty --json result explains itself
+        // too without anything landing in the parsed output
+        if files.is_empty() && edits.is_empty() {
+            super::warn_if_dotfiles_ignored();
+        }
         if self.json {
             miseprintln!(
                 "{}",
@@ -130,7 +135,6 @@ impl DotfilesStatus {
             );
         } else {
             if file_rows.is_empty() && edit_rows.is_empty() {
-                super::warn_if_dotfiles_ignored();
                 info!("nothing configured in [dotfiles]");
             }
             if !file_rows.is_empty() {
