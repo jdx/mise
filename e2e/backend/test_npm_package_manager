@@ -126,10 +126,10 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 echo "Testing npm.package_manager=aube_cli..."
 export MISE_NPM_PACKAGE_MANAGER=aube_cli
 
-if ! command -v aube >/dev/null 2>&1; then
-  echo "aube not available in test environment, installing..."
-  assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@latest"
-fi
+# Always provision the version exercised by this test instead of accepting an
+# arbitrary ambient aube executable.
+AUBE_CLI_TEST_VERSION="1.33.1"
+assert_succeed "env -u MISE_MINIMUM_RELEASE_AGE mise use aube@$AUBE_CLI_TEST_VERSION"
 
 cat >.mise.toml <<EOF
 [tools]

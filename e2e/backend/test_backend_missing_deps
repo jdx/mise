@@ -75,7 +75,7 @@ test_npm() {
 
   # Standalone aube mode keeps HTTP metadata but requires the aube executable.
   test_backend_warning "aube CLI" \
-    "MISE_NPM_PACKAGE_MANAGER=aube_cli mise install npm:test-package@latest" \
+    "PATH='' MISE_NPM_PACKAGE_MANAGER=aube_cli '$MISE_BIN' install npm:test-package@latest" \
     "aube may be required but was not found"
 
   # The default install path uses the embedded aube package manager, which

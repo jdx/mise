@@ -978,6 +978,7 @@ impl NPMBackend {
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
     ) -> Result<()> {
+        let bin_dir = tv.install_path().join("bin");
         let aube_program = self
             .dependency_path_for_install(&ctx.config, Some(&ctx.ts), AUBE_PROGRAM)
             .await
@@ -997,6 +998,7 @@ impl NPMBackend {
                     .list_paths(&ctx.config)
                     .await,
             )?
+            .prepend_path(vec![bin_dir])?
             .current_dir(tv.install_path());
         if let Some(args) = options.aube_args() {
             cmd = cmd.args(shell_words::split(args)?);
