@@ -62,7 +62,11 @@ impl BrewManager {
     ) -> Result<Vec<PackageRequest>> {
         let mut repaired = vec![];
         for request in pkgs {
-            if pour::repair_link_record(request_formula_name(&request.name), opts.dry_run)? {
+            let name = request_formula_name(&request.name);
+            let state = linked_package_state(&request.version, pour::linked_state(name));
+            if matches!(state, PackageState::NeedsRepair { .. })
+                && pour::repair_link_record(name, opts.dry_run)?
+            {
                 repaired.push(request.clone());
             }
         }

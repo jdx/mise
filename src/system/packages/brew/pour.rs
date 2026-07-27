@@ -989,6 +989,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // guards the process-global brew prefix for this test
     async fn test_manager_repairs_linked_record_without_repouring() -> Result<()> {
         use std::os::unix::fs::MetadataExt;
 
@@ -1013,6 +1014,17 @@ mod tests {
         let public_inode = public.symlink_metadata()?.ino();
 
         let manager = super::super::BrewManager::new();
+        let mismatched = PackageRequest {
+            version: Some("2.0".to_string()),
+            ..request.clone()
+        };
+        let err = manager
+            .install(std::slice::from_ref(&mismatched), &InstallOpts::default())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("pin via the formula name"));
+        assert!(prefix::linked_keg_record("foo").symlink_metadata().is_err());
+
         let status = manager.installed(std::slice::from_ref(&request)).await?;
         assert_eq!(
             status[0].state,
