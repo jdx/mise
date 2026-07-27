@@ -472,6 +472,21 @@ otherwise `sources` on the dependent task would be effectively useless.
 The counterpart to `sources`, these are the files or directories that the task will create/modify after
 it executes.
 
+Entries prefixed with `!` exclude matching outputs. As with `sources`, entries
+are evaluated in order, a later entry can re-include a path, and `\!` escapes a
+literal leading bang.
+
+```mise-toml
+[tasks.build]
+run = "npm run build"
+sources = ["src/**"]
+outputs = ["dist", "!dist/**/*.map", "!dist/.vite/**"]
+```
+
+Excluded files do not participate in output freshness checks and are not
+stored in task-cache artifacts. If excluded files already exist beneath an
+output directory when a cached artifact is restored, mise preserves them.
+
 `auto = true` is an alternative to specifying output files manually. In that case, mise will touch
 an internally tracked file based on the hash of the task definition (stored in `~/.local/state/mise/task-outputs/<hash>` if you're curious).
 This is useful if you want `mise run` to execute when sources change but don't want to have to manually `touch`
@@ -498,8 +513,8 @@ to reproduce.
 
 Artifact caching requires [`experimental`](/configuration/settings.html#experimental), at least one
 matching `source`, and either explicit output paths or `outputs = []`.
-`outputs = { auto = true }`, absolute outputs, and outputs that escape the task directory are not
-supported.
+`outputs = { auto = true }`, absolute outputs, and output patterns (including
+the body of an exclusion) that escape the task directory are not supported.
 
 ```mise-toml
 [settings]
