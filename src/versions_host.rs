@@ -261,11 +261,15 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
                 return Ok(None);
             }
             status => {
+                // fallback=true: the sole caller
+                // (`Backend::list_remote_versions_with_refresh`) logs this error
+                // at debug and then lists versions from the backend's upstream
+                // source anyway, so a failure here is not the end of the road.
                 log_versions_host_warn(
                     ctx,
                     "failed",
                     &format!(
-                        "status={status} fallback=false error={}",
+                        "status={status} fallback=true error={}",
                         log_value(&err.to_string())
                     ),
                 );

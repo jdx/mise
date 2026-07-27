@@ -138,7 +138,9 @@ impl Toolset {
             .collect::<Vec<_>>();
         let tvls = parallel::parallel(versions, |(config, ba, mut tvl, opts)| async move {
             if let Err(err) = tvl.resolve(&config, &opts).await {
-                warn!("Failed to resolve tool version list for {ba}: {err}");
+                // warn_once: a command may resolve the same toolset more than
+                // once, and repeating an identical failure adds no information.
+                warn_once!("Failed to resolve tool version list for {ba}: {err}");
             }
             Ok((ba, tvl))
         })
