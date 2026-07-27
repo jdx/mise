@@ -1,3 +1,3 @@
-description = "A very fast implementation of tldr in Rust."
 backends = ["aqua:tealdeer-rs/tealdeer", "github:tealdeer-rs/tealdeer"]
+description = "A very fast implementation of tldr in Rust."
 test = { cmd = "tealdeer -v", expected = "tealdeer {{version}}" }
