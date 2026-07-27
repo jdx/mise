@@ -13,6 +13,9 @@ self-hosted-runner:
     - namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
     - namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-release-plz-rust-linux
     - namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
+  # perf.yml pushes refs/notes/tak, so it must not share a cache volume with
+  # perf-pr.yml, which builds pull-request code.
+  - namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-perf-main
     - namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-release-rust-linux
     - buildjet-32vcpu-ubuntu-2204-arm
     - buildjet-16vcpu-ubuntu-2204-arm
