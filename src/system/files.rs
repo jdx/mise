@@ -704,8 +704,15 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
 /// symlinks under a symlink-each target that mise created for this entry but
 /// whose source file is gone. These are the entry's own leftovers — deleting
 /// a source file has to un-manage its target, or the target keeps a dangling
-/// link forever. Links pointing anywhere but into this entry's source (and
-/// anything that isn't a symlink) belong to the user and are left alone.
+/// link forever.
+///
+/// Ownership is the exact link this entry would have written: `<target>/rel`
+/// pointing at `<source>/rel`. There is no record of who created a link, so
+/// mirroring [`walk_source_files`] is what makes the claim checkable — a
+/// user's own link is only ever pruned if it sits at the same path *and*
+/// points at the same place mise would have, which is indistinguishable from
+/// a leftover. A link to any other path, and anything that isn't a symlink,
+/// is left alone.
 ///
 /// On Windows file symlinks are applied as copies (see `link_path`), so
 /// there's nothing there to tell a leftover from a user's file — that
@@ -716,8 +723,8 @@ fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
     }
     let mut out = vec![];
     for entry in walkdir::WalkDir::new(&req.target).sort_by_file_name() {
-        // an unreadable subdirectory shouldn't fail the whole entry — the
-        // links we can see are still worth pruning
+        // a path we can't read shouldn't fail the whole entry — the links we
+        // can see are still worth pruning
         let entry = match entry {
             Ok(entry) => entry,
             Err(err) => {
@@ -728,12 +735,20 @@ fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         if !entry.file_type().is_symlink() {
             continue;
         }
-        let dest = std::fs::read_link(entry.path())?;
-        let dest = match entry.path().parent() {
-            Some(parent) if dest.is_relative() => parent.join(dest),
-            _ => dest,
+        let dest = match std::fs::read_link(entry.path()) {
+            Ok(dest) => dest,
+            Err(err) => {
+                debug!("files: reading {}: {err}", entry.path().display_user());
+                continue;
+            }
         };
-        if dest.starts_with(&req.source) && !dest.exists() {
+        let Ok(rel) = entry.path().strip_prefix(&req.target) else {
+            continue;
+        };
+        let expected = req.source.join(rel);
+        // `dest` is compared as a path, so the `.` in a source like
+        // `/dotfiles/.` doesn't have to match character for character
+        if dest == expected && !expected.exists() {
             out.push(entry.path().to_path_buf());
         }
     }
