@@ -684,6 +684,17 @@ fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
         .collect()
 }
 
+fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Result<Vec<TaskDep>> {
+    parser
+        .get_raw(key)
+        .map(|value| {
+            deserialize_arr::<_, Vec<TaskDep>, TaskDep>(value.clone())
+                .map_err(|e| eyre!("failed to parse {key} field in task header: {e}"))
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
 /// Whether a task include file contains Tera template syntax only after TOML
 /// decoding (e.g. `{{` written as `{{`). Such escapes pass a
 /// raw-text scan but decode to real templates that render — and can `exec()` —
@@ -958,9 +969,9 @@ impl Task {
                     .map_err(|e| eyre!("failed to parse confirm field in task header: {e}"))
             })
             .transpose()?;
-        task.depends = p.parse_array("depends").unwrap_or_default();
-        task.depends_post = p.parse_array("depends_post").unwrap_or_default();
-        task.wait_for = p.parse_array("wait_for").unwrap_or_default();
+        task.depends = parse_task_dependencies(&mut p, "depends")?;
+        task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
+        task.wait_for = parse_task_dependencies(&mut p, "wait_for")?;
         task.env = p.parse_env("env")?.unwrap_or_default();
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
@@ -4018,6 +4029,50 @@ echo "test"
             script_lines,
             parsed_fields
         );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_parses_structured_file_task_dependencies() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("structured-dependencies");
+        fs::write(
+            &task_file,
+            r#"#!/usr/bin/env bash
+#MISE depends=["simple", {task="structured", args=["--flag"], env={MODE="test"}}]
+#MISE depends_post=[["cleanup", "--all"], {task="notify"}]
+#MISE wait_for=["setup", {task="service", env={PORT="3000"}}]
+echo "test"
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+
+        assert_eq!(task.depends.len(), 2);
+        assert_eq!(task.depends[0].task, "simple");
+        assert_eq!(task.depends[1].task, "structured");
+        assert_eq!(task.depends[1].args, ["--flag"]);
+        assert_eq!(task.depends[1].env.get("MODE").unwrap(), "test");
+
+        assert_eq!(task.depends_post.len(), 2);
+        assert_eq!(task.depends_post[0].task, "cleanup");
+        assert_eq!(task.depends_post[0].args, ["--all"]);
+        assert_eq!(task.depends_post[1].task, "notify");
+
+        assert_eq!(task.wait_for.len(), 2);
+        assert_eq!(task.wait_for[0].task, "setup");
+        assert_eq!(task.wait_for[1].task, "service");
+        assert_eq!(task.wait_for[1].env.get("PORT").unwrap(), "3000");
     }
 
     #[tokio::test]
