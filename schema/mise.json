@@ -2293,6 +2293,20 @@
             }
           }
         },
+        "global_env": {
+          "description": "experimental ambient environment variable names added to every enabled task cache key in this config scope",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "global_pass_through_env": {
+          "description": "experimental ambient environment variable names preserved under environment denial without affecting task cache keys",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "global_inputs": {
           "description": "experimental config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>",
           "items": {
@@ -3109,6 +3123,13 @@
         },
         "allow_env": {
           "description": "allow specific env vars through",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pass_through_env": {
+          "description": "experimental ambient env vars preserved under environment denial without affecting the task cache key",
           "items": {
             "type": "string"
           },

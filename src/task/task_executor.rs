@@ -251,6 +251,9 @@ impl TaskExecutor {
         task: &Task,
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
+        if !task.pass_through_env.is_empty() {
+            Settings::get().ensure_experimental("task environment pass-through")?;
+        }
         let task_base = task.dir(config).await?;
         let resolve_task_path =
             |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };
@@ -281,6 +284,20 @@ impl TaskExecutor {
                 .allow_env
                 .iter()
                 .chain(self.sandbox.allow_env.iter())
+                .cloned()
+                .collect(),
+            pass_through_env: task
+                .pass_through_env
+                .iter()
+                .chain(self.sandbox.pass_through_env.iter())
+                .cloned()
+                .collect(),
+            cache_env: task
+                .cache
+                .iter()
+                .filter(|cache| cache.enabled)
+                .flat_map(|cache| &cache.env)
+                .chain(self.sandbox.cache_env.iter())
                 .cloned()
                 .collect(),
         };

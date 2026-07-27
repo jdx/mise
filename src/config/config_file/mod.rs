@@ -751,6 +751,8 @@ pub struct TaskConfig {
     pub dir: Option<String>,
     pub shell: Option<String>,
     pub cache: Option<crate::task::TaskCacheConfig>,
+    pub global_env: Vec<String>,
+    pub global_pass_through_env: Vec<String>,
     pub global_inputs: Vec<String>,
     pub input_groups: IndexMap<String, Vec<String>>,
 }

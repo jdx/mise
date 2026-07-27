@@ -548,6 +548,35 @@ the values (or absence) of variables named in `cache.env`, resolved tool version
 artifact keys, and the operating system and architecture. Variables inherited from the ambient
 process are ignored unless listed in `cache.env`.
 
+`task_config.global_env` adds ambient variable names to every enabled task cache in the config
+scope, including tasks with a task-local `cache` value. Unlike the default values under
+`task_config.cache`, these names always compose with task-local `cache.env`.
+
+```mise-toml
+[task_config]
+global_env = ["CI", "NODE_ENV"]
+```
+
+Variables named in `cache.env` or `task_config.global_env` remain available when environment
+inheritance is denied. Use `pass_through_env` for variables that a task needs at runtime but which
+must not affect its cache key, such as short-lived credentials. The scoped
+`task_config.global_pass_through_env` equivalent applies to every task. In mise's default,
+non-sandboxed environment mode, ambient variables already pass through; these options matter when
+`deny_env`, `deny_all`, or the corresponding CLI option is active.
+
+```mise-toml
+[task_config]
+global_pass_through_env = ["CI_JOB_TOKEN"]
+
+[tasks.build]
+pass_through_env = ["NPM_TOKEN"]
+```
+
+Pass-through variables can change task behavior without invalidating cached results. Tasks should
+not use them for values that affect generated outputs. Their values are not added to the key or
+persisted as cache metadata, but a task can still expose them by writing them to cached output files
+or logs.
+
 Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2`. Filesystem outputs use
 zstd-compressed tar archives; result-only tasks store just their manifest and captured logs. Entries
 are included in the existing `mise cache clear` and `mise cache prune` behavior. Only successful task
@@ -848,6 +877,26 @@ Task-local and task-template cache configuration takes precedence, including
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV", "CI"]
+```
+
+### `task_config.global_env` <Badge type="warning" text="experimental" />
+
+Adds ambient environment variable names to the cache key of every cache-enabled task in the config
+scope. These values compose with task-local `cache.env` rather than acting as defaults.
+
+```toml
+[task_config]
+global_env = ["CI", "NODE_ENV"]
+```
+
+### `task_config.global_pass_through_env` <Badge type="warning" text="experimental" />
+
+Preserves ambient environment variables when environment inheritance is denied, without adding
+their values to task cache keys.
+
+```toml
+[task_config]
+global_pass_through_env = ["CI_JOB_TOKEN"]
 ```
 
 ### `task_config.global_inputs` <Badge type="warning" text="experimental" />

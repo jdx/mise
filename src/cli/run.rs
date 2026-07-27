@@ -808,6 +808,8 @@ impl Run {
                     allow_write: self.allow_write.clone(),
                     allow_net: self.allow_net.clone(),
                     allow_env: self.allow_env.clone(),
+                    pass_through_env: vec![],
+                    cache_env: vec![],
                 },
             ),
         };
