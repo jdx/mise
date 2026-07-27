@@ -34,7 +34,11 @@ jobs:
     # Pinned to one runner class on purpose. Absolute instruction counts shift
     # between machine types by more than a real regression does, so a series
     # that wanders between runners is unreadable.
-    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
+    # A cache tag of its own. Namespace shares a volume across jobs in a
+    # repository by default, so this job — which holds a write token and pushes
+    # notes — must not read a cache that perf-pr.yml, running pull-request
+    # code, can write to.
+    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-perf-main
     timeout-minutes: 30
     permissions:
       contents: write # pushing refs/notes/tak is a write to this repository

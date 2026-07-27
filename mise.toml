@@ -48,6 +48,10 @@ includes = ["tasks.toml", "xtasks"]
 # on runner class so a change of build profile would start a fresh one anyway.
 [tasks.perf]
 dir = "{{config_root}}"
+# MISE_OFFLINE keeps `ls`, `env` and `hook-env` off the network. Without it they
+# log HTTP warnings and their instruction counts move with whatever the registry
+# happened to answer.
+env = { MISE_OFFLINE = "1" }
 run = ["cargo build --release", "tak run"]
 
 # Same measurement, appended to refs/notes/tak for this commit. Run by the
@@ -55,4 +59,5 @@ run = ["cargo build --release", "tak run"]
 # locally — nothing leaves the machine until `tak push`.
 [tasks."perf:record"]
 dir = "{{config_root}}"
+env = { MISE_OFFLINE = "1" }
 run = ["cargo build --release", "tak run --record"]
