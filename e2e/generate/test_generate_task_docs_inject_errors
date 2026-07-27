@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# `mise generate task-docs --inject` must not touch the output file when the
+# mise-tasks markers are missing. It used to assume the block started at byte 0,
+# which truncated marker-less files and panicked on short ones.
+# Discussion: https://github.com/jdx/mise/discussions/4676
+
+cat <<EOF >mise.toml
+[tasks.test]
+run = "echo 'running test task'"
+description = "This is a test task"
+EOF
+
+# --inject must fail, name the marker it could not find, and leave the file
+# byte-identical. cmp rather than command substitution, so a stripped trailing
+# newline cannot hide a rewrite.
+assert_inject_leaves_file_alone() {
+  local file="$1" expected="$2" out
+  cp "$file" "$file.orig"
+  out="$(quiet_assert_fail "mise generate task-docs --inject --output $file")"
+  assert_contains_text "$out" "$expected"
+  assert_not_contains_text "$out" "panicked"
+  if cmp -s "$file" "$file.orig"; then
+    ok "[$file] left unchanged"
+  else
+    fail "[$file] was modified by a failed --inject"
+  fi
+}
+
+# no markers at all: the file used to be truncated to its first 19 bytes
+cat <<EOF >no_markers.md
+# My Project
+
+Important paragraph that must survive.
+
+Another line.
+EOF
+assert_inject_leaves_file_alone no_markers.md "<!-- mise-tasks -->"
+
+# shorter than the marker: this used to panic with
+# "range start index 19 out of range for slice of length 3"
+echo "hi" >short.md
+assert_inject_leaves_file_alone short.md "<!-- mise-tasks -->"
+
+# multibyte content, where byte 19 is not a char boundary
+echo "日本語のドキュメント" >multibyte.md
+assert_inject_leaves_file_alone multibyte.md "<!-- mise-tasks -->"
+
+# start marker but no end marker: everything after it used to be replaced
+cat <<EOF >start_only.md
+# Title
+
+<!-- mise-tasks -->
+
+trailer
+EOF
+assert_inject_leaves_file_alone start_only.md "<!-- /mise-tasks -->"
+
+# markers in the wrong order
+cat <<EOF >reversed.md
+<!-- /mise-tasks -->
+
+body
+
+<!-- mise-tasks -->
+EOF
+assert_inject_leaves_file_alone reversed.md "<!-- /mise-tasks -->"
