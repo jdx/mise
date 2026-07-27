@@ -1,0 +1,11 @@
+description = "A very fast implementation of tldr in Rust."
+test = { cmd = "tldr -v", expected = "tealdeer {{version}}" }
+
+[[backends]]
+full = "aqua:tealdeer-rs/tealdeer"
+
+[[backends]]
+full = "github:tealdeer-rs/tealdeer"
+
+[backends.options]
+bin = "tldr"
