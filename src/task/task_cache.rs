@@ -3,7 +3,8 @@ use crate::dirs;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::task::task_source_checker::{
-    build_output_matcher, is_output, output_glob_patterns, task_cache_inputs, task_cwd,
+    TaskCacheInputs, build_output_matcher, is_output, output_glob_patterns, task_cache_inputs,
+    task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -81,17 +82,17 @@ pub struct TaskArtifactCache {
     state_path: PathBuf,
 }
 
+pub(crate) struct TaskArtifactCacheBuilder {
+    root: PathBuf,
+    inputs: TaskCacheInputs,
+}
+
 impl TaskArtifactCache {
-    pub async fn new(
+    pub(crate) async fn prepare(
         task: &Task,
         config: &Arc<Config>,
-        toolset: &Toolset,
-        resolved_env: &BTreeMap<String, String>,
-        declared_env: &[(String, String)],
-        dependency_keys: &[String],
-        command_inputs: Vec<CommandInput>,
         dry_run: bool,
-    ) -> Result<Option<Self>> {
+    ) -> Result<Option<TaskArtifactCacheBuilder>> {
         Settings::get().ensure_experimental("task artifact caching")?;
         let root = task_cwd(task, config).await?;
         validate_config(task, &root)?;
@@ -118,7 +119,22 @@ impl TaskArtifactCache {
                 );
             }
         }
+        Ok(Some(TaskArtifactCacheBuilder { root, inputs }))
+    }
+}
 
+impl TaskArtifactCacheBuilder {
+    pub(crate) async fn finish(
+        self,
+        task: &Task,
+        config: &Arc<Config>,
+        toolset: &Toolset,
+        resolved_env: &BTreeMap<String, String>,
+        declared_env: &[(String, String)],
+        dependency_keys: &[String],
+        command_inputs: Vec<CommandInput>,
+    ) -> Result<TaskArtifactCache> {
+        let Self { root, inputs } = self;
         let mut environment = declared_env
             .iter()
             .map(|(key, _)| (key.clone(), resolved_env.get(key).cloned()))
@@ -168,13 +184,15 @@ impl TaskArtifactCache {
         let state_path = dirs::STATE
             .join("task-artifacts")
             .join(format!("{state_identity}.key"));
-        Ok(Some(Self {
+        Ok(TaskArtifactCache {
             root,
             key,
             state_path,
-        }))
+        })
     }
+}
 
+impl TaskArtifactCache {
     pub fn key(&self) -> &str {
         &self.key
     }

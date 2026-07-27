@@ -8,7 +8,7 @@ use crate::file::is_executable;
 use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
-use crate::task::task_cache::{CommandInput, validate_config as validate_cache_config};
+use crate::task::task_cache::CommandInput;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -541,26 +541,7 @@ impl TaskExecutor {
         self.check_confirmation(config, task, &env).await?;
 
         let artifact_cache = if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
-            Settings::get().ensure_experimental("task artifact caching")?;
-            validate_cache_config(task, &task_cwd(task, config).await?)?;
-            let command_inputs = if self.dry_run || self.raw(Some(task)) {
-                Vec::new()
-            } else {
-                self.resolve_cache_command_inputs(task, config, &env)
-                    .await?
-            };
-            match TaskArtifactCache::new(
-                task,
-                config,
-                &ts,
-                &env,
-                &task_env,
-                &dependency_state.cache_keys,
-                command_inputs,
-                self.dry_run,
-            )
-            .await?
-            {
+            match TaskArtifactCache::prepare(task, config, self.dry_run).await? {
                 Some(_) if self.dry_run => None,
                 Some(_) if self.raw(Some(task)) => {
                     warn!(
@@ -569,7 +550,21 @@ impl TaskExecutor {
                     );
                     None
                 }
-                Some(cache) => {
+                Some(prepared) => {
+                    let command_inputs = self
+                        .resolve_cache_command_inputs(task, config, &env)
+                        .await?;
+                    let cache = prepared
+                        .finish(
+                            task,
+                            config,
+                            &ts,
+                            &env,
+                            &task_env,
+                            &dependency_state.cache_keys,
+                            command_inputs,
+                        )
+                        .await?;
                     let current_output = if !self.force
                         && !dependency_state.any_unkeyed_did_work
                         && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
