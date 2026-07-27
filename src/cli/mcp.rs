@@ -5,7 +5,7 @@ use rmcp::{
     RoleServer, ServiceExt,
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData,
+        CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation,
         ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
         ServerCapabilities, ServerInfo,
@@ -176,6 +176,7 @@ impl ServerHandler for MiseServer {
             .build();
         ServerInfo::new(capabilities)
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
+            .with_server_info(Implementation::new("mise", env!("CARGO_PKG_VERSION")))
             .with_instructions("Mise MCP server provides access to tools, tasks, environment variables, and configuration")
     }
 
@@ -442,6 +443,20 @@ impl Mcp {
             .map_err(|e| eyre::eyre!("Service error: {}", e))?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_info_identifies_mise() {
+        // rmcp defaults server_info to its own crate name/version, which would
+        // make every MCP client see the server as "rmcp".
+        let info = MiseServer::new().get_info();
+        assert_eq!(info.server_info.name, "mise");
+        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
     }
 }
 
