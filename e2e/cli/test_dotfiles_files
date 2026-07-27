@@ -84,6 +84,27 @@ assert_contains "mise dotfiles status" "applied"
 assert_contains "mise dotfiles apply --yes 2>&1" "all files are applied"
 assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 
+# symlink-each cleans up after itself: deleting a source file removes the
+# link it left behind (and any directory that emptied out), while files and
+# links mise didn't create stay put
+mkdir -p dotfiles/bin/nested
+echo "three" >dotfiles/bin/nested/three
+ln -s /nonexistent-elsewhere ~/.local/mybin/user-link
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.local/mybin/nested/three" "$PWD/dotfiles/bin/nested/three"
+rm dotfiles/bin/two dotfiles/bin/nested/three
+assert_contains "mise dotfiles status" "stale link"
+assert_contains "mise dotfiles apply --dry-run" "stale link(s)"
+assert_succeed "test -L $HOME/.local/mybin/two"
+assert_succeed "mise dotfiles apply --yes"
+assert_fail "test -L $HOME/.local/mybin/two"
+assert_directory_not_exists "$HOME/.local/mybin/nested"
+assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
+assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
+assert "readlink ~/.local/mybin/user-link" "/nonexistent-elsewhere"
+assert_succeed "mise dotfiles status --missing"
+rm ~/.local/mybin/user-link
+
 # copy entries pick up source changes on reapply
 echo "starship v2" >dotfiles/starship.toml
 assert_contains "mise dotfiles status" "differs"
@@ -172,6 +193,19 @@ assert_fail "mise dotfiles apply --yes"
 assert "cat ~/.local/mybin" "blocker"
 assert_succeed "mise dotfiles apply --yes --force"
 assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
+
+# a config skipped for trust reasons says so instead of reporting the
+# [dotfiles] table as empty
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.gitconfig" = "dotfiles/gitconfig"
+EOF
+ignored_out="$(MISE_IGNORED_CONFIG_PATHS="$PWD/mise.toml" mise dotfiles apply --yes 2>&1)"
+assert_contains_text "$ignored_out" "are not trusted"
+assert_contains_text "$ignored_out" "mise trust"
+# and an unrelated ignored config doesn't produce the hint
+echo "" >unrelated.toml
+assert_not_contains "MISE_IGNORED_CONFIG_PATHS=\"$PWD/unrelated.toml\" mise dotfiles status 2>&1" "are not trusted"
 
 # unknown modes warn but don't fail (forward compatibility)
 cat <<EOF >mise.toml

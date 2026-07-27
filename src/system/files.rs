@@ -580,12 +580,18 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
             req.source.display_user()
         );
     }
+    let stale = stale_links(req)?;
+    let stale_reason = || format!("{} stale link(s)", stale.len());
     let files = walk_source_files(req)?;
     // with no files to link the desired state is just the target directory —
     // a blocking non-directory must still surface (and be --force-able)
     if files.is_empty() {
         return if req.target.is_dir() {
-            Ok(FileState::Applied)
+            if stale.is_empty() {
+                Ok(FileState::Applied)
+            } else {
+                Ok(FileState::Differs(stale_reason()))
+            }
         } else if req.target.exists() || req.target.is_symlink() {
             Ok(FileState::Differs("exists but is not a directory".into()))
         } else {
@@ -607,14 +613,16 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
     }
     if let Some(reason) = differs {
         Ok(FileState::Differs(reason))
-    } else if missing == 0 {
-        Ok(FileState::Applied)
-    } else if applied == 0 {
-        Ok(FileState::Missing)
-    } else {
+    } else if missing > 0 && applied > 0 {
         Ok(FileState::Differs(format!(
             "{applied} file(s) linked, {missing} missing"
         )))
+    } else if missing > 0 {
+        Ok(FileState::Missing)
+    } else if !stale.is_empty() {
+        Ok(FileState::Differs(stale_reason()))
+    } else {
+        Ok(FileState::Applied)
     }
 }
 
@@ -691,6 +699,45 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(out.into_iter().collect())
+}
+
+/// symlinks under a symlink-each target that mise created for this entry but
+/// whose source file is gone. These are the entry's own leftovers — deleting
+/// a source file has to un-manage its target, or the target keeps a dangling
+/// link forever. Links pointing anywhere but into this entry's source (and
+/// anything that isn't a symlink) belong to the user and are left alone.
+///
+/// On Windows file symlinks are applied as copies (see `link_path`), so
+/// there's nothing there to tell a leftover from a user's file — that
+/// platform prunes nothing.
+fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    if !req.target.is_dir() || req.target.is_symlink() {
+        return Ok(vec![]);
+    }
+    let mut out = vec![];
+    for entry in walkdir::WalkDir::new(&req.target).sort_by_file_name() {
+        // an unreadable subdirectory shouldn't fail the whole entry — the
+        // links we can see are still worth pruning
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                debug!("files: walking {}: {err}", req.target.display_user());
+                continue;
+            }
+        };
+        if !entry.file_type().is_symlink() {
+            continue;
+        }
+        let dest = std::fs::read_link(entry.path())?;
+        let dest = match entry.path().parent() {
+            Some(parent) if dest.is_relative() => parent.join(dest),
+            _ => dest,
+        };
+        if dest.starts_with(&req.source) && !dest.exists() {
+            out.push(entry.path().to_path_buf());
+        }
+    }
+    Ok(out)
 }
 
 /// every (source file, target path) pair of a symlink-each entry
@@ -900,8 +947,13 @@ fn describe(req: &FileRequest) -> Result<String> {
     Ok(match req.mode {
         FileMode::Symlink => format!("ln -sf {src} {tgt}"),
         FileMode::SymlinkEach => {
+            let stale = stale_links(req)?.len();
+            let removals = match stale {
+                0 => String::new(),
+                n => format!(", rm {n} stale link(s)"),
+            };
             format!(
-                "ln -sf {src}/* into {tgt}/ ({} files)",
+                "ln -sf {src}/* into {tgt}/ ({} files){removals}",
                 walk_source_files(req)?.len()
             )
         }
@@ -938,6 +990,9 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 walk_source_files(req)?.len(),
                 req.source.display_user()
             );
+            for path in stale_links(req)? {
+                miseprintln!("  stale link to remove: {}", path.display_user());
+            }
         }
         FileMode::Copy | FileMode::Template if req.source.is_file() => {
             let desired = match req.mode {
@@ -999,6 +1054,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 remove_existing(&target)?;
                 link_path(&source, &target)?;
             }
+            prune_stale_links(req)?;
         }
         FileMode::Copy => {
             if req.source.is_dir() {
@@ -1033,6 +1089,42 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             file::write(&req.target, rendered)?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+        }
+    }
+    Ok(())
+}
+
+/// delete this entry's leftover links (see [`stale_links`]) and any directory
+/// they emptied out. A directory only goes when the links we just removed were
+/// all that was in it and the entry has no source file left that needs it, so
+/// user content — and the target directory itself — always survives.
+fn prune_stale_links(req: &FileRequest) -> Result<()> {
+    let stale = stale_links(req)?;
+    if stale.is_empty() {
+        return Ok(());
+    }
+    for path in &stale {
+        debug!("files: removing stale link {}", path.display_user());
+        file::remove_file(path)?;
+    }
+    let needed: std::collections::HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
+    // deepest first, so emptying a nested directory can empty its parent too
+    for dir in stale
+        .iter()
+        .filter_map(|p| p.parent())
+        .sorted_by_key(|d| std::cmp::Reverse(d.components().count()))
+        .unique()
+    {
+        let mut dir = dir;
+        while dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir) {
+            if dir.read_dir()?.next().is_some() {
+                break;
+            }
+            file::remove_dir(dir)?;
+            match dir.parent() {
+                Some(parent) => dir = parent,
+                None => break,
+            }
         }
     }
     Ok(())

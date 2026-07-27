@@ -130,6 +130,7 @@ impl DotfilesStatus {
             );
         } else {
             if file_rows.is_empty() && edit_rows.is_empty() {
+                super::warn_if_dotfiles_ignored();
                 info!("nothing configured in [dotfiles]");
             }
             if !file_rows.is_empty() {

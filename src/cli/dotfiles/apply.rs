@@ -57,6 +57,7 @@ impl DotfilesApply {
             );
         }
         if files.is_empty() && edits.is_empty() {
+            super::warn_if_dotfiles_ignored();
             info!("no dotfiles configured in [dotfiles]");
             return Ok(());
         }
