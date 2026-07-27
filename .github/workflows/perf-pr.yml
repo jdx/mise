@@ -119,7 +119,10 @@ jobs:
           else
             echo "The comparison never ran — an earlier step failed." > /tmp/tak-out/report.md
           fi
-          cat /tmp/tak-gate-status 2>/dev/null > /tmp/tak-out/status || echo 1 > /tmp/tak-out/status
+          # 2, not 1: a missing status means the comparison never ran, which is
+          # a different failure from a regression and must not be reported as
+          # one. The gate below maps them to different messages.
+          cp /tmp/tak-gate-status /tmp/tak-out/status 2>/dev/null || echo 2 > /tmp/tak-out/status
           printf '%s %s\n' "${HEAD_SHA:0:12}" "${BASE_SHA:0:12}" > /tmp/tak-out/shas
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -189,7 +192,14 @@ jobs:
         if: always()
         run: |
           status=$(cat /tmp/tak-out/status)
-          if [ "$status" -ne 0 ]; then
-            echo "::error::an instruction count rose beyond the gate — see the comment or the job summary"
-            exit "$status"
-          fi
+          case "$status" in
+            0) ;;
+            2)
+              echo "::error::the comparison never ran — an earlier step failed, so nothing was gated"
+              exit 1
+              ;;
+            *)
+              echo "::error::an instruction count rose beyond the gate — see the comment or the job summary"
+              exit "$status"
+              ;;
+          esac
