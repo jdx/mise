@@ -61,6 +61,58 @@ Provides information about mise configuration:
 
 The following tools are available for AI assistants to call:
 
+### `list_commands`
+
+Every mise command, with what running it does to the world.
+
+Each command carries an `effect`: `read` only inspects state, `write` changes
+it, and `destructive` removes something that is work to get back. The effect of
+an invocation is the highest of the command's and those of the flags and
+arguments given, so a `read` command can be raised to `write` by a flag.
+
+A command with no effect listed is **unclassified, not safe**. That is
+deliberate for the handful of commands that run code you supply — `mise run`,
+`mise exec`, `mise watch`, `mise tool-stub` — where the effect is whatever that
+code does, and any label would be wrong in one direction or the other.
+
+**Parameters:**
+
+- `include_hidden` (optional, boolean, default `false`): include commands hidden
+  from help. They are still runnable.
+
+**Example response:**
+
+```json
+{
+  "bin": "mise",
+  "commands": [
+    {
+      "command": "ls",
+      "help": "List installed and active tools",
+      "effect": "read",
+      "hidden": false
+    },
+    {
+      "command": "install",
+      "help": "Install a tool version",
+      "effect": "write",
+      "hidden": false
+    },
+    {
+      "command": "prune",
+      "help": "Delete unused versions of tools",
+      "effect": "destructive",
+      "hidden": false
+    },
+    { "command": "run", "help": "Run task(s)", "effect": null, "hidden": false }
+  ]
+}
+```
+
+The classification lives in
+[`src/cli/command_effects.rs`](https://github.com/jdx/mise/blob/main/src/cli/command_effects.rs)
+and is applied to mise's usage spec, so `mise usage` and this tool always agree.
+
 ### `install_tool`
 
 Install a specific tool version (not yet implemented)
@@ -112,6 +164,7 @@ To use mise with Claude Desktop, add the following to your Claude configuration 
 After adding this configuration and restarting Claude Desktop, the assistant will be able to:
 
 - Query your installed tools and versions
+- Check what a mise command does before running it
 - List available tasks in your project
 - Execute tasks directly (e.g., "run the build task")
 - Access environment variables from your mise configuration
@@ -126,6 +179,7 @@ The MCP server uses standard JSON-RPC 2.0 over stdio, making it compatible with 
 When integrated with an AI assistant, you can ask questions like:
 
 - "What version of Node.js is this project using?"
+- "Is `mise prune` safe to run here?"
 - "List all the tasks available in this project"
 - "Run the build task"
 - "Execute the test task with verbose output"
@@ -139,7 +193,7 @@ The AI assistant will query the MCP server to provide accurate, up-to-date infor
 The MCP server implementation can be found in [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs). It implements the ServerHandler trait from the rmcp crate to handle:
 
 - Resource listing and reading
-- Tool invocation (task execution)
+- Tool invocation (task execution, command lookup)
 - JSON-RPC communication over stdio
 
 For more information about the Model Context Protocol, visit the [official MCP documentation](https://modelcontextprotocol.io/docs/getting-started/intro).
