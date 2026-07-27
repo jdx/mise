@@ -124,6 +124,7 @@ impl TaskArtifactCache {
 }
 
 impl TaskArtifactCacheBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn finish(
         self,
         task: &Task,

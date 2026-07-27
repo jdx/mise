@@ -1010,18 +1010,23 @@ impl<'a> CmdLineRunner<'a> {
         let _read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
+        // These commands are non-interactive probes: nothing reads stdin and
+        // both output streams are piped. Detaching stdin from the terminal
+        // means the child can never need the controlling TTY, so unlike
+        // `execute()` we can always create a dedicated process group without
+        // risking SIGTTIN. That guarantee matters here — cleanup on timeout,
+        // an output-limit breach, or a stuck pipe relies on `killpg` reaching
+        // descendants, not just the direct child.
+        self.cmd.stdin(Stdio::null());
         #[cfg(unix)]
         if should_use_pgroup() {
             self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
             unsafe {
                 self.cmd.as_std_mut().pre_exec(|| {
-                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
-                    if !std::io::IsTerminal::is_terminal(&stdin) {
-                        let _ = nix::unistd::setpgid(
-                            nix::unistd::Pid::from_raw(0),
-                            nix::unistd::Pid::from_raw(0),
-                        );
-                    }
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
                     Ok(())
                 });
             }
@@ -1796,6 +1801,41 @@ mod tests {
             err.to_string()
                 .contains("command output pipes did not close")
         );
+    }
+
+    /// A descendant that outlives the shell must not survive the drain
+    /// deadline — cleanup goes through the process group, so it reaches the
+    /// leaves even though only the shell is a direct child.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_cmd_line_runner_execute_hashes_async_kills_descendants() {
+        if !super::should_use_pgroup() {
+            // No pgroup of our own to killpg; an ancestor owns cleanup.
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("descendant.pid");
+        let err = super::CmdLineRunner::new("sh")
+            .args([
+                "-c",
+                &format!("sleep 60 & printf %s \"$!\" >{}", pid_file.display()),
+            ])
+            .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("command output pipes did not close")
+        );
+        let pid: i32 = std::fs::read_to_string(&pid_file).unwrap().parse().unwrap();
+        let pid = nix::unistd::Pid::from_raw(pid);
+        for _ in 0..100 {
+            if nix::sys::signal::kill(pid, None).is_err() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("descendant {pid} survived cleanup");
     }
 
     #[test]
