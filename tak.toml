@@ -1,0 +1,28 @@
+# Instruction-counted benchmarks, measured by tak (https://github.com/jdx/tak).
+#
+# Both subjects are pure CPU over data compiled into the binary: no network, no
+# tool installs, no version lookups. Hermeticity was checked by running each
+# with the proxy pointed at a dead port, and both outputs are byte-identical
+# run to run.
+#
+# What is deliberately *not* here is as important. `mise ls`, `mise env` and
+# `mise --version` — three of the four commands the hyperfine job measured —
+# all reach the network. Against a dead proxy they take 2.9s, 4.5s and 3.7s
+# respectively and log HTTP warnings, where `mise registry` takes 15ms. A
+# subject that talks to the network retires a different number of instructions
+# depending on conditions that have nothing to do with the code under test, and
+# no threshold can rescue a measurement like that.
+
+# The fixed cost every invocation pays: process start, dynamic linking, and
+# building the clap command tree. Reading `registry` against this separates
+# "mise got slower to start" from "the registry path got slower".
+[bench.startup]
+cmd = ["./target/release/mise", "--help"]
+
+# The compiled-in tool registry — 983 tools, ~75KB of output — walked and
+# rendered. It is the largest pure-CPU path mise has that needs no network and
+# no installed tools, and it grows every time a tool is added, which makes it a
+# good early warning for anything that scales with registry size.
+[bench.registry]
+cmd = ["./target/release/mise", "registry"]
+runs = 10

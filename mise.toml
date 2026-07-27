@@ -6,6 +6,11 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
+# Pinned rather than "latest" because tak is the measuring instrument: an
+# upgrade that changes how it samples would land in the series as a step change
+# in mise's numbers, indistinguishable from a real regression. Bump
+# deliberately, on a commit that does nothing else.
+"github:jdx/tak" = "0.0.5"
 age = "latest"
 aube = "latest"
 bun = "latest"
@@ -32,3 +37,22 @@ node = "24"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]
+
+# Instruction-counted benchmarks (see tak.toml). Needs valgrind for the counts;
+# without it tak reports wall clock only and says so, so this still works on
+# macOS where there is no usable cachegrind.
+#
+# `--release`, not `--profile serious`: LTO roughly triples the build for a
+# number whose absolute value does not matter. What matters is that every
+# measurement in a series is built the same way, and the series is partitioned
+# on runner class so a change of build profile would start a fresh one anyway.
+[tasks.perf]
+dir = "{{config_root}}"
+run = ["cargo build --release", "tak run"]
+
+# Same measurement, appended to refs/notes/tak for this commit. Run by the
+# `perf` workflow on every push to main; the notes are the history. Safe to run
+# locally — nothing leaves the machine until `tak push`.
+[tasks."perf:record"]
+dir = "{{config_root}}"
+run = ["cargo build --release", "tak run --record"]

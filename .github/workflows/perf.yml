@@ -1,0 +1,91 @@
+name: perf
+
+# Records mise's startup cost for every commit that lands on main, into the
+# git-notes ref `refs/notes/tak`. The data lives in this repository — there is
+# no external service holding it, and `git fetch origin refs/notes/tak:refs/notes/tak`
+# gets you the whole history.
+#
+# Only runs post-merge. A PR-time gate is the eventual goal, but a gate needs a
+# baseline series to compare against, and right now there is none. This builds
+# that baseline.
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions: {}
+
+# Never two at once. Concurrent runs race the notes push; tak retries with a
+# cat_sort_uniq merge so nothing is lost, but serialising avoids the churn.
+# cancel-in-progress is off deliberately: every commit gets a measurement, and
+# a cancelled run is a hole in the series.
+concurrency:
+  group: perf
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  measure:
+    name: Measure
+    # Pinned to one runner class on purpose. Absolute instruction counts shift
+    # between machine types by more than a real regression does, so a series
+    # that wanders between runners is unreadable.
+    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 30
+    permissions:
+      contents: write # pushing refs/notes/tak is a write to this repository
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1.6.1
+        with:
+          cache: rust
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          cache: false
+        env:
+          MISE_LOCKED: "1"
+
+      # cachegrind is the whole point: it counts instructions, which reproduce
+      # to ~0.02% run-to-run where wall clock on this same hardware moves by
+      # 4-20%. Without it tak still records timing, but the series stops being
+      # precise enough to detect anything.
+      - name: Install valgrind
+        run: |
+          command -v valgrind || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends valgrind
+          }
+          valgrind --version
+
+      - name: Measure and record
+        run: mise run perf:record
+
+      # persist-credentials: false means the push needs its own auth. Same
+      # pattern as bench-refresh.yml: re-point origin rather than pushing to a
+      # one-shot URL, so tak's retry path has a remote to fetch from when it
+      # loses a race.
+      #
+      # Only main publishes. workflow_dispatch can be pointed at any branch or
+      # tag, and refs/notes/tak is a shared baseline that should hold main's
+      # history and nothing else. Gating the push rather than the whole job
+      # means a dispatch on a branch still measures and still prints its
+      # numbers in the summary — it just keeps them local.
+      - name: Push measurements
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
+          tak push
+
+      - name: Summary
+        run: tak history >> "$GITHUB_STEP_SUMMARY"
