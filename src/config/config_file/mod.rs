@@ -744,10 +744,13 @@ impl Hash for dyn ConfigFile {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct TaskConfig {
     pub includes: Option<Vec<String>>,
     pub dir: Option<String>,
     pub cache: Option<crate::task::TaskCacheConfig>,
+    pub global_inputs: Vec<String>,
+    pub input_groups: IndexMap<String, Vec<String>>,
 }
 
 #[cfg(test)]

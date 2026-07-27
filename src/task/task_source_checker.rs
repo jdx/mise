@@ -97,6 +97,11 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
         if let Ok(rel) = body_path.strip_prefix(match_root)
             && let Some(rel_str) = rel.to_str()
         {
+            let rel_str = if rel_str.starts_with('!') {
+                format!("\\{rel_str}")
+            } else {
+                rel_str.to_string()
+            };
             return format!("{prefix}{rel_str}");
         }
         return pattern.to_string();
@@ -148,16 +153,18 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
 
 /// Get the last modified time from a list of paths
 pub(crate) fn last_modified_path(root: &Path, paths: &[&String]) -> Result<Option<SystemTime>> {
-    let files = paths.iter().map(|p| {
-        let base = Path::new(p);
-        if base.is_relative() {
-            Path::new(&root).join(base)
-        } else {
-            base.to_path_buf()
-        }
-    });
+    let files = paths.iter().map(|p| resolve_task_path(root, p));
 
     last_modified_file(files)
+}
+
+fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
 }
 
 /// Get the last modified time from files matching glob patterns
@@ -172,13 +179,8 @@ pub(crate) fn last_modified_glob_match(
     let files = patterns
         .iter()
         .flat_map(|pattern| {
-            glob(
-                root_ref
-                    .join(pattern)
-                    .to_str()
-                    .expect("Conversion to string path failed"),
-            )
-            .unwrap()
+            let pattern = resolve_task_path(root_ref, pattern);
+            glob(pattern.to_str().expect("Conversion to string path failed")).unwrap()
         })
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -717,7 +719,8 @@ fn get_file_metadatas(
 
     let mut metadatas = BTreeMap::new();
     for pattern in patterns {
-        let files = glob(root.join(pattern).to_str().unwrap())?;
+        let pattern = resolve_task_path(root, pattern);
+        let files = glob(pattern.to_str().unwrap())?;
         for file in files.flatten() {
             if let Ok(metadata) = file.metadata() {
                 metadatas.insert(file, metadata);
@@ -726,7 +729,7 @@ fn get_file_metadatas(
     }
 
     for path in paths {
-        let file = root.join(path);
+        let file = resolve_task_path(root, path);
         if let Ok(metadata) = file.metadata() {
             metadatas.insert(file, metadata);
         }
@@ -977,6 +980,16 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    fn matcher_absolute_literal_bang_under_root() {
+        let root = Path::new("/project");
+        let sources = vec!["/project/!important.txt".to_string()];
+        let matcher = build_source_matcher(root, root, &sources);
+        assert!(is_source(&matcher, Path::new("/project/!important.txt")));
+        assert!(!is_source(&matcher, Path::new("/project/other.txt")));
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn matcher_absolute_pattern_under_root() {
         // Patterns that resolve to absolute paths under the matcher root
         // (e.g. from `{{cwd}}/input` after templating) are normalized to
@@ -1032,6 +1045,33 @@ mod tests {
         ));
         assert!(is_source(&matcher, Path::new("/workspace/lib/shared.go")));
         assert!(!is_source(&matcher, Path::new("/workspace/other/file.go")));
+    }
+
+    #[test]
+    fn absolute_source_patterns_are_enumerated_from_a_subproject() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let workspace = temp.path();
+        let task_cwd = workspace.join("packages/app");
+        let source = task_cwd.join("src/input.txt");
+        let global = workspace.join("workspace.txt");
+        fs::create_dir_all(source.parent().unwrap())?;
+        fs::write(&source, "source")?;
+        fs::write(&global, "global")?;
+
+        let sources = vec![
+            format!("{}/packages/app/src/**/*", workspace.display()),
+            global.to_string_lossy().to_string(),
+        ];
+        let matcher = build_source_matcher(workspace, &task_cwd, &sources);
+        let metadatas = get_file_metadatas(&task_cwd, &source_glob_patterns(&sources), &matcher)?;
+        let paths = metadatas
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&source), "{paths:?}");
+        assert!(paths.contains(&global), "{paths:?}");
+        Ok(())
     }
 
     /// Relative pattern in a subproject task must be anchored at the task CWD,

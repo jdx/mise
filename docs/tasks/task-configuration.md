@@ -398,6 +398,46 @@ non-negated entry can re-include a file an earlier `!` excluded — for example,
 To include a literal path that begins with `!`, escape the prefix as `\!`
 (e.g. `"\\!important.txt"` in TOML).
 
+#### Reusable and global inputs <Badge type="warning" text="experimental" />
+
+Use `[task_config.input_groups]` to define source patterns once and reuse them across tasks. Reference
+a group from `sources` with `@group:<name>`. Groups can reference other groups; undefined references
+and cycles are configuration errors.
+
+Group entries are resolved relative to the config file that defines them, even when a task uses a
+different `dir`. Ordinary entries written directly in `sources` remain relative to the task directory.
+
+```mise-toml
+[settings]
+experimental = true
+
+[task_config.input_groups]
+toolchain = ["rust-toolchain.toml", "Cargo.lock"]
+rust = ["Cargo.toml", "src/**/*.rs", "@group:toolchain"]
+
+[tasks.build]
+run = "cargo build"
+sources = ["@group:rust"]
+outputs = ["target/debug/mycli"]
+
+[tasks.test]
+run = "cargo test"
+sources = ["@group:rust"]
+outputs = []
+```
+
+`task_config.global_inputs` adds source patterns to every task in the config scope. This is useful
+for repository-wide configuration and lockfiles that should invalidate all cacheable tasks without
+being repeated in each task's `sources`. Global inputs may also reference named groups.
+
+```mise-toml
+[task_config]
+global_inputs = ["mise.toml", ".github/tool-versions", "@group:lockfiles"]
+
+[task_config.input_groups]
+lockfiles = ["Cargo.lock", "pnpm-lock.yaml"]
+```
+
 #### Dependency invalidation
 
 When a task depends on another task that also has `sources` defined, and the dependency runs because
@@ -776,6 +816,27 @@ Task-local and task-template cache configuration takes precedence, including
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV", "CI"]
+```
+
+### `task_config.global_inputs` <Badge type="warning" text="experimental" />
+
+Adds config-root-relative source paths and glob patterns to every task in this config scope. Entries
+may reference a named input group with `@group:<name>`.
+
+```toml
+[task_config]
+global_inputs = ["mise.toml", "@group:lockfiles"]
+```
+
+### `task_config.input_groups` <Badge type="warning" text="experimental" />
+
+Defines reusable, config-root-relative source groups. Tasks reference them from `sources` with
+`@group:<name>`. Groups may reference other groups.
+
+```toml
+[task_config.input_groups]
+lockfiles = ["Cargo.lock", "pnpm-lock.yaml"]
+rust = ["Cargo.toml", "src/**/*.rs", "@group:lockfiles"]
 ```
 
 ### `task_config.includes` {#task-config-includes}
