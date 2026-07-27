@@ -1346,7 +1346,10 @@ impl Pusher {
                     .wrap_err("PATCH blob chunk")?;
                 check_upload_err(&err_slot, path)?;
                 let status = resp.status();
-                if status != StatusCode::ACCEPTED {
+                // Per the OCI dist-spec a chunk PATCH returns 202 Accepted, but
+                // AWS ECR answers with 201 Created. Accept both, as the
+                // finalizing PUT below already does.
+                if status != StatusCode::ACCEPTED && status != StatusCode::CREATED {
                     resp.error_for_status_ref()?;
                     let body = resp.text().await.unwrap_or_default();
                     bail!(
