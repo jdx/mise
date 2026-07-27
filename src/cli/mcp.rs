@@ -446,20 +446,6 @@ impl Mcp {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn server_info_identifies_mise() {
-        // rmcp defaults server_info to its own crate name/version, which would
-        // make every MCP client see the server as "rmcp".
-        let info = MiseServer::new().get_info();
-        assert_eq!(info.server_info.name, "mise");
-        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
-    }
-}
-
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -493,3 +479,17 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
       Example: {"task": "build", "args": ["--verbose"]}
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_info_identifies_mise() {
+        // rmcp defaults server_info to its own crate name/version, which would
+        // make every MCP client see the server as "rmcp".
+        let info = MiseServer::new().get_info();
+        assert_eq!(info.server_info.name, "mise");
+        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
+    }
+}
