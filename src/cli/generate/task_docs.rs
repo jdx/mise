@@ -1,6 +1,10 @@
 use crate::config::{self, Config};
 use crate::{dirs, file};
-use std::path::PathBuf;
+use color_eyre::eyre::bail;
+use std::path::{Path, PathBuf};
+
+const TASK_PLACEHOLDER_START: &str = "<!-- mise-tasks -->";
+const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 
 /// Generate documentation for tasks in a project
 #[derive(Debug, clap::Args)]
@@ -11,6 +15,7 @@ pub struct TaskDocs {
     /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
     /// It will replace everything between the comment and the next comment, `<!-- /mise-tasks -->` so it can be
     /// run multiple times on the same file to update the documentation.
+    /// The file must already contain both comments; mise errors instead of modifying the file if they are missing.
     #[clap(long, short, verbatim_doc_comment)]
     inject: bool,
     /// write only an index of tasks, intended for use with `--multi`
@@ -100,15 +105,8 @@ impl TaskDocs {
                 }
                 if self.inject {
                     doc = format!("\n{}\n", doc.trim());
-                    let mut contents = file::read_to_string(output)?;
-                    let task_placeholder_start = "<!-- mise-tasks -->";
-                    let task_placeholder_end = "<!-- /mise-tasks -->";
-                    let start = contents.find(task_placeholder_start).unwrap_or(0);
-                    let end = contents[start..]
-                        .find(task_placeholder_end)
-                        .map(|e| e + start)
-                        .unwrap_or(contents.len());
-                    contents.replace_range((start + task_placeholder_start.len())..end, &doc);
+                    let contents = file::read_to_string(output)?;
+                    let contents = inject_task_docs(&contents, &doc, output)?;
                     file::write(output, &contents)?;
                 } else {
                     doc = format!("{}\n", doc.trim());
@@ -126,9 +124,92 @@ impl TaskDocs {
     }
 }
 
+/// Replace everything between the mise-tasks markers in `contents` with `doc`.
+///
+/// Both markers must be present, with the end marker after the start marker. When
+/// a marker is missing this errors instead of writing anything: falling back to
+/// "the block starts at byte 0" truncated files that had no markers at all, and
+/// panicked outright on files shorter than the marker (discussions/4676).
+fn inject_task_docs(contents: &str, doc: &str, output: &Path) -> eyre::Result<String> {
+    let Some(start) = contents.find(TASK_PLACEHOLDER_START) else {
+        bail!(
+            "{} does not contain the `{TASK_PLACEHOLDER_START}` marker required by --inject, add:\n\n{TASK_PLACEHOLDER_START}\n{TASK_PLACEHOLDER_END}",
+            file::display_path(output)
+        );
+    };
+    let body_start = start + TASK_PLACEHOLDER_START.len();
+    let Some(end) = contents[body_start..]
+        .find(TASK_PLACEHOLDER_END)
+        .map(|e| e + body_start)
+    else {
+        bail!(
+            "{} contains `{TASK_PLACEHOLDER_START}` but no `{TASK_PLACEHOLDER_END}` after it, --inject requires both markers",
+            file::display_path(output)
+        );
+    };
+    let mut contents = contents.to_string();
+    contents.replace_range(body_start..end, doc);
+    Ok(contents)
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise generate task-docs</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::{TASK_PLACEHOLDER_END, TASK_PLACEHOLDER_START, inject_task_docs};
+    use std::path::Path;
+
+    fn inject(contents: &str) -> eyre::Result<String> {
+        inject_task_docs(contents, "\n## `task`\n", Path::new("README.md"))
+    }
+
+    #[test]
+    fn injects_between_markers() {
+        let contents = format!(
+            "# Title\n\n{TASK_PLACEHOLDER_START}\nold\n{TASK_PLACEHOLDER_END}\n\ntrailer\n"
+        );
+        assert_eq!(
+            inject(&contents).unwrap(),
+            format!(
+                "# Title\n\n{TASK_PLACEHOLDER_START}\n## `task`\n{TASK_PLACEHOLDER_END}\n\ntrailer\n"
+            )
+        );
+    }
+
+    #[test]
+    fn errors_without_start_marker() {
+        // used to keep the first 19 bytes and replace the rest of the file
+        let err = inject("# My Project\n\nImportant paragraph that must survive.\n").unwrap_err();
+        assert!(err.to_string().contains(TASK_PLACEHOLDER_START));
+    }
+
+    #[test]
+    fn errors_on_file_shorter_than_marker() {
+        // used to panic: range start index 19 out of range for slice of length 3
+        assert!(inject("hi\n").is_err());
+    }
+
+    #[test]
+    fn errors_when_byte_offset_is_not_a_char_boundary() {
+        // multibyte content: the old code sliced at byte 19 regardless
+        assert!(inject("日本語のドキュメント\n").is_err());
+    }
+
+    #[test]
+    fn errors_without_end_marker() {
+        let contents = format!("# Title\n\n{TASK_PLACEHOLDER_START}\nold\n");
+        let err = inject(&contents).unwrap_err();
+        assert!(err.to_string().contains(TASK_PLACEHOLDER_END));
+    }
+
+    #[test]
+    fn errors_when_end_marker_precedes_start_marker() {
+        let contents = format!("{TASK_PLACEHOLDER_END}\nold\n{TASK_PLACEHOLDER_START}\n");
+        assert!(inject(&contents).is_err());
+    }
+}
