@@ -42,6 +42,10 @@ EOF
 cat <<'EOF' >tasks.toml
 [included]
 run = "echo INCLUDED"
+
+[included-templated]
+extends = "override"
+run = "echo INCLUDED_TEMPLATED"
 EOF
 
 mkdir child
@@ -58,4 +62,6 @@ assert "mise run explicit" "OVERRIDE_SHELL
 EXPLICIT"
 assert "mise run templated" "OVERRIDE_SHELL
 TEMPLATED"
+assert "mise run included-templated" "OVERRIDE_SHELL
+INCLUDED_TEMPLATED"
 assert "mise -C child run child" "CHILD"

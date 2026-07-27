@@ -3634,12 +3634,6 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
-        if task.dir.is_none() {
-            task.dir = task_config_dir.clone();
-        }
-        if task.shell.is_none() {
-            task.shell = task_config_shell.clone();
-        }
         if let Some(monorepo_cf) = monorepo_cf {
             task.cf = Some(monorepo_cf.clone());
         }
@@ -3648,6 +3642,12 @@ async fn load_task_file(
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
         resolve_task_template(&mut task, templates)?;
+        if task.dir.is_none() {
+            task.dir = task_config_dir.clone();
+        }
+        if task.shell.is_none() {
+            task.shell = task_config_shell.clone();
+        }
         match task.render(config, &config_root).await {
             Ok(()) => {
                 out.push(task);
@@ -4739,6 +4739,7 @@ vars = { target = "linux" }
             &config,
             &tasks_toml,
             temp_dir.path(),
+            &None,
             &None,
             &IndexMap::new(),
             None,
