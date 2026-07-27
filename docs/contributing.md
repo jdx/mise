@@ -364,7 +364,7 @@ Use `mise tasks` to see all available development tasks:
 
 ### Release Tasks
 
-- `mise run release` - Create a release
+- `mise run release-plz` - Create a release
 - `mise run ci` - Run CI tasks (format, build, test)
 
 ## Setup
@@ -459,8 +459,8 @@ eval "$(@mise activate zsh)"
 
 ## Releasing
 
-Run `mise run release -x [minor|patch]`. (minor if it is the first release in a
-month)
+Releases are cut automatically by the `release-plz` GitHub Actions workflow
+(`mise run release-plz` in CI). Do not run that task locally.
 
 ## Linting
 
