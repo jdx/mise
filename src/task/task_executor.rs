@@ -546,7 +546,7 @@ impl TaskExecutor {
                 Some(cache) => {
                     let current_output = if !self.force
                         && !dependency_state.any_unkeyed_did_work
-                        && sources_are_fresh(task, config).await?
+                        && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
                     {
                         cache.current_output()
                     } else {
@@ -568,10 +568,15 @@ impl TaskExecutor {
                         && let Some(output) = cache.restore(task)?
                     {
                         if !self.quiet(Some(task)) {
+                            let kind = if task.outputs.is_no_files() {
+                                "result"
+                            } else {
+                                "outputs"
+                            };
                             self.eprint(
                                 task,
                                 &prefix,
-                                &format!("restored outputs from cache {}", cache.key()),
+                                &format!("restored {kind} from cache {}", cache.key()),
                             );
                         }
                         self.output_handler

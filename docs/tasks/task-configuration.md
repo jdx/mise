@@ -449,13 +449,17 @@ outputs = { auto = true } # this is the default when sources is defined
 - **Type**: `{ enabled = bool, env = string[] }`
 - **Default**: `{ enabled = false, env = [] }`
 
-Stores declared task outputs in a content-addressed local cache and restores them when the same task
-inputs are seen again. This differs from the normal `sources`/`outputs` freshness check: cached
-artifacts can restore outputs after they have been deleted.
+Stores successful task results in a content-addressed local cache and reuses them when the same task
+inputs are seen again. Declared filesystem outputs are restored after deletion. Tasks with
+`outputs = []` cache their successful result and logs without storing filesystem artifacts, which is
+useful for checks such as linting, testing, and type checking.
+Declaring `outputs = []` asserts that the task has no filesystem side effects that a cache hit needs
+to reproduce.
 
 Artifact caching requires [`experimental`](/configuration/settings.html#experimental), at least one
-matching `source`, and explicit output paths. `outputs = { auto = true }`, absolute outputs, and
-outputs that escape the task directory are not supported.
+matching `source`, and either explicit output paths or `outputs = []`.
+`outputs = { auto = true }`, absolute outputs, and outputs that escape the task directory are not
+supported.
 
 ```mise-toml
 [settings]
@@ -468,9 +472,18 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
+```mise-toml
+[tasks.lint]
+run = "eslint ."
+sources = ["package.json", "src/**"]
+outputs = []
+cache = { enabled = true }
+```
+
 To enable caching by default for every eligible task in a config scope, set
-`task_config.cache`. Only tasks with at least one source and explicit output paths inherit this
-default; other tasks remain uncached. A task-local `cache` value overrides the scoped default.
+`task_config.cache`. Only tasks with at least one source and either explicit output paths or
+`outputs = []` inherit this default; other tasks remain uncached. A task-local `cache` value
+overrides the scoped default.
 
 ```mise-toml
 [settings]
@@ -495,7 +508,8 @@ the values (or absence) of variables named in `cache.env`, resolved tool version
 artifact keys, and the operating system and architecture. Variables inherited from the ambient
 process are ignored unless listed in `cache.env`.
 
-Artifacts are stored under `MISE_CACHE_DIR/task-artifacts/v2` as zstd-compressed tar archives. They
+Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2`. Filesystem outputs use
+zstd-compressed tar archives; result-only tasks store just their manifest and captured logs. Entries
 are included in the existing `mise cache clear` and `mise cache prune` behavior. Only successful task
 runs are cached. Cache read/write failures are treated as misses and never turn a successful task run
 into a failure.
@@ -754,8 +768,9 @@ dir = "{{cwd}}"
 ### `task_config.cache` <Badge type="warning" text="experimental" />
 
 Sets the default artifact-cache configuration for tasks in this config scope. The default is only
-inherited by cache-eligible tasks with sources and explicit output paths. Task-local and task-template
-cache configuration takes precedence, including `cache = { enabled = false }`.
+inherited by cache-eligible tasks with sources and either explicit output paths or `outputs = []`.
+Task-local and task-template cache configuration takes precedence, including
+`cache = { enabled = false }`.
 
 ```toml
 [task_config.cache]

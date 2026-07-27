@@ -81,7 +81,7 @@ outside this tracker.
 - [x] Allow dependents to restore when dependencies publish stable artifact keys;
       unkeyed dependency work still forces execution
 - [x] Capture and replay stdout and stderr while respecting mise output modes
-- [ ] Cache useful results for tasks with no filesystem outputs
+- [x] Cache useful results for tasks with no filesystem outputs
 - [ ] Support reusable and global input groups
 - [ ] Support global environment inputs and pass-through environment variables
 - [ ] Support negative input and output patterns
