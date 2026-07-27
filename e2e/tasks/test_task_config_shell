@@ -53,6 +53,11 @@ extends = "override"
 run = "echo TEMPLATED"
 EOF
 
+cat <<'EOF' >mise.local.toml
+[tasks.overlay]
+run = "echo OVERLAY"
+EOF
+
 cat <<'EOF' >tasks.toml
 [included]
 run = "echo INCLUDED"
@@ -118,6 +123,8 @@ assert "mise run templated" "OVERRIDE_SHELL
 TEMPLATED"
 assert "mise run included-templated" "OVERRIDE_SHELL
 INCLUDED_TEMPLATED"
+assert "mise run overlay" "TASK_CONFIG_SHELL
+OVERLAY"
 assert "mise -C child run child" "TASK_CONFIG_SHELL
 CHILD"
 assert "mise -C child run included" "TASK_CONFIG_SHELL
