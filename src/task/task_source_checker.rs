@@ -903,10 +903,7 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             }
         }
     }
-    let last_mod = file_modified
-        .into_iter()
-        .max()
-        .or_else(|| directory_modified.into_iter().max());
+    let last_mod = file_modified.into_iter().chain(directory_modified).max();
 
     trace!(
         "last_modified of {}: {last_mod:?}",
@@ -952,6 +949,25 @@ mod tests {
             ]),
             ["dist", "!important"]
         );
+    }
+
+    #[test]
+    fn output_mtime_includes_selected_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let dist = root.path().join("dist");
+        let output = dist.join("result.txt");
+        fs::create_dir(&dist).unwrap();
+        fs::write(&output, "result").unwrap();
+        let file_mtime = filetime::FileTime::from_unix_time(100, 0);
+        let directory_mtime = filetime::FileTime::from_unix_time(200, 0);
+        filetime::set_file_mtime(&output, file_mtime).unwrap();
+        filetime::set_file_mtime(&dist, directory_mtime).unwrap();
+
+        let modified = get_last_modified(root.path(), &["dist".to_string()])
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(modified, SystemTime::from(directory_mtime));
     }
 
     #[test]
