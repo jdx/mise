@@ -24,7 +24,13 @@ cat <<'EOF' >mise.toml
 monorepo_root = true
 
 [monorepo]
-config_roots = ["child", "child-override", "child-no-cascade"]
+config_roots = [
+    "child",
+    "child-override",
+    "child-middle/nested",
+    "child-no-cascade",
+    "child-no-cascade/nested",
+]
 
 [task_config]
 cascade = true
@@ -57,9 +63,12 @@ run = "echo INCLUDED_TEMPLATED"
 EOF
 
 mkdir -p task-cwd "child/shell wrappers" child/task-cwd \
-  "child-override/shell wrappers" child-override/task-cwd child-no-cascade
+  "child-override/shell wrappers" child-override/task-cwd \
+  "child-middle/nested/shell wrappers" child-middle/nested/middle-cwd \
+  child-no-cascade/nested
 cp "shell wrappers/default" "child/shell wrappers/default"
 cp "shell wrappers/override" "child-override/shell wrappers/override"
+cp "shell wrappers/default" "child-middle/nested/shell wrappers/default"
 cat <<'EOF' >child/mise.toml
 [tasks.child]
 run = "echo CHILD"
@@ -82,6 +91,21 @@ cascade = false
 
 [tasks.child]
 run = "echo CHILD_NO_CASCADE"
+EOF
+
+cat <<'EOF' >child-no-cascade/nested/mise.toml
+[tasks.child]
+run = "echo NESTED_NO_CASCADE"
+EOF
+
+cat <<'EOF' >child-middle/mise.toml
+[task_config]
+dir = "{{config_root}}/middle-cwd"
+EOF
+
+cat <<'EOF' >child-middle/nested/mise.toml
+[tasks.child]
+run = 'echo NESTED_MERGED; basename "$PWD"'
 EOF
 
 assert "mise run inline" "TASK_CONFIG_SHELL
@@ -109,3 +133,7 @@ INCLUDED"
 assert "mise run //child-override:child" "OVERRIDE_SHELL
 CHILD_OVERRIDE"
 assert "mise run //child-no-cascade:child" "CHILD_NO_CASCADE"
+assert "mise run //child-no-cascade/nested:child" "NESTED_NO_CASCADE"
+assert "mise run //child-middle/nested:child" "TASK_CONFIG_SHELL
+NESTED_MERGED
+middle-cwd"

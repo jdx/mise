@@ -2597,10 +2597,6 @@ async fn load_local_tasks_with_context(
             .and_then(|cf| cf.monorepo())
             .map(|m| &m.config_roots);
         let subdirs = discover_monorepo_subdirs(monorepo_root, config_roots, ctx)?;
-        let cascaded_task_config = monorepo_config
-            .map(cascaded_task_config)
-            .transpose()?
-            .flatten();
 
         // Load tasks from subdirectories in parallel
         let subdir_tasks_futures: Vec<_> = subdirs
@@ -2610,35 +2606,56 @@ async fn load_local_tasks_with_context(
                 let config = config.clone();
                 let monorepo_root = monorepo_root.clone();
                 let templates = templates.clone();
-                let cascaded_task_config = cascaded_task_config.clone();
                 async move {
-                    let config_paths = config_paths_in_dir(&subdir);
-                    let found_config = !config_paths.is_empty();
-                    let mut parsed_configs = ConfigMap::new();
-                    for config_path in config_paths {
-                        match config_file::parse(&config_path).await {
-                            Ok(cf) => {
-                                parsed_configs.insert(config_path, cf);
+                    let exact_config_paths = config_paths_in_dir(&subdir);
+                    let found_config = !exact_config_paths.is_empty();
+                    let mut hierarchy_configs = config
+                        .config_files
+                        .iter()
+                        .filter(|(_, cf)| {
+                            let root = cf.config_root();
+                            path_starts_with_resolved(&root, &monorepo_root)
+                                && path_starts_with_resolved(&subdir, &root)
+                        })
+                        .map(|(path, cf)| (path.clone(), cf.clone()))
+                        .collect::<ConfigMap>();
+                    let mut hierarchy_dirs = subdir
+                        .ancestors()
+                        .take_while(|dir| path_starts_with_resolved(dir, &monorepo_root))
+                        .map(Path::to_path_buf)
+                        .collect::<Vec<_>>();
+                    hierarchy_dirs.reverse();
+                    for hierarchy_dir in hierarchy_dirs {
+                        for config_path in config_paths_in_dir(&hierarchy_dir) {
+                            if hierarchy_configs.contains_key(&config_path) {
+                                continue;
                             }
-                            Err(err) => {
-                                let rel_path = subdir
-                                    .strip_prefix(&monorepo_root)
-                                    .unwrap_or(&subdir);
-                                warn!(
-                                    "Failed to parse config file {} in monorepo subdirectory {}: {}. Tasks from this directory will not be loaded.",
-                                    config_path.display(),
-                                    rel_path.display(),
-                                    err
-                                );
+                            match config_file::parse(&config_path).await {
+                                Ok(cf) => {
+                                    hierarchy_configs.insert(config_path, cf);
+                                }
+                                Err(err) => {
+                                    let rel_path = hierarchy_dir
+                                        .strip_prefix(&monorepo_root)
+                                        .unwrap_or(&hierarchy_dir);
+                                    warn!(
+                                        "Failed to parse config file {} in monorepo directory {}: {}. Cascaded task configuration from this directory will be ignored.",
+                                        config_path.display(),
+                                        rel_path.display(),
+                                        err
+                                    );
+                                }
                             }
                         }
                     }
+                    let configs = configs_at_root(&subdir, &hierarchy_configs);
+                    let cascaded_task_config =
+                        cascaded_task_config_for_dir(&subdir, &hierarchy_configs)?;
 
                     if found_config {
-                        if parsed_configs.is_empty() {
+                        if configs.is_empty() {
                             return Ok(vec![]);
                         }
-                        let configs = parsed_configs.values().collect();
                         let mut tasks = load_tasks_from_configs(
                             &config,
                             &subdir,
@@ -3501,34 +3518,68 @@ struct CascadedTaskConfig {
     includes_root: PathBuf,
 }
 
-fn cascaded_task_config(cf: &Arc<dyn ConfigFile>) -> Result<Option<CascadedTaskConfig>> {
-    if cf.task_config().cascade != Some(true) {
-        return Ok(None);
+fn merge_cascaded_task_config(
+    cascaded: &mut CascadedTaskConfig,
+    configs: &[&Arc<dyn ConfigFile>],
+) -> Result<()> {
+    if let Some(dir) = configs.iter().find_map(|cf| cf.task_config().dir.clone()) {
+        cascaded.task_config.dir = Some(dir);
     }
-    let mut task_config = cf.task_config().clone();
-    task_config.includes = cf.task_config_includes()?;
-    Ok(Some(CascadedTaskConfig {
-        task_config,
-        includes_root: cf.config_root(),
-    }))
+    if let Some(shell) = configs.iter().find_map(|cf| cf.task_config().shell.clone()) {
+        cascaded.task_config.shell = Some(shell);
+    }
+    if let Some(cache) = configs.iter().find_map(|cf| cf.task_config().cache.clone()) {
+        cascaded.task_config.cache = Some(cache);
+    }
+    if let Some((includes, root)) = configs
+        .iter()
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .transpose()?
+    {
+        cascaded.task_config.includes = Some(includes);
+        cascaded.includes_root = root;
+    }
+    Ok(())
 }
 
 fn cascaded_task_config_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Result<Option<CascadedTaskConfig>> {
-    config_files
+    let mut roots = config_files
         .values()
         .filter(|cf| !is_global_config(cf.get_path()))
-        .filter(|cf| {
-            let root = cf.config_root();
-            !paths_equal_resolved(&root, dir) && path_starts_with_resolved(dir, &root)
-        })
-        .filter(|cf| cf.task_config().cascade == Some(true))
-        .max_by_key(|cf| cf.config_root().components().count())
-        .map(cascaded_task_config)
-        .transpose()
-        .map(Option::flatten)
+        .map(|cf| cf.config_root())
+        .filter(|root| !paths_equal_resolved(root, dir) && path_starts_with_resolved(dir, root))
+        .unique()
+        .collect::<Vec<_>>();
+    roots.sort_by_key(|root| root.components().count());
+
+    let mut cascaded = None;
+    for root in roots {
+        let configs = configs_at_root(&root, config_files);
+        match configs.iter().find_map(|cf| cf.task_config().cascade) {
+            Some(false) => {
+                cascaded = None;
+                continue;
+            }
+            Some(true) if cascaded.is_none() => {
+                cascaded = Some(CascadedTaskConfig {
+                    task_config: TaskConfig::default(),
+                    includes_root: root,
+                });
+            }
+            _ => {}
+        }
+        if let Some(cascaded) = &mut cascaded {
+            merge_cascaded_task_config(cascaded, &configs)?;
+        }
+    }
+    Ok(cascaded)
 }
 
 impl TaskSources {
