@@ -51,6 +51,11 @@ pub enum PackageState {
         version: String,
     },
     Missing,
+    /// installed, but a manager-owned record needs local repair
+    #[cfg_attr(windows, allow(dead_code))]
+    NeedsRepair {
+        installed: String,
+    },
     /// installed, but the version pinned in config doesn't match
     VersionMismatch {
         installed: String,
@@ -100,7 +105,7 @@ pub trait SystemPackageManager: Send + Sync {
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
 
-    /// Install the given packages (already filtered to missing/mismatched).
+    /// Install the given packages (already filtered to missing, mismatched, or repairable).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
 
     /// Upgrade the given packages (already filtered to installed ones).

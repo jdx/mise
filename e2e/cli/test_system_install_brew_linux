@@ -23,9 +23,31 @@ assert_contains "mise bootstrap packages status" "missing"
 
 mise bootstrap packages apply --yes
 assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "test -L /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz"
+assert_succeed "test \"$(readlink -f /home/linuxbrew/.linuxbrew/opt/xz)\" = \"$(readlink -f /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz)\""
 
 # the poured binary runs at the canonical prefix (relocation + linking worked)
 assert_contains "/home/linuxbrew/.linuxbrew/bin/xz --version" "xz"
+
+# repair either active-keg record without repouring or relinking the keg
+keg="$(readlink -f /home/linuxbrew/.linuxbrew/opt/xz)"
+receipt_mtime="$(stat -c %y "$keg/INSTALL_RECEIPT.json")"
+keg_inode="$(stat -c %i "$keg")"
+public_link_inode="$(stat -c %i /home/linuxbrew/.linuxbrew/bin/xz)"
+rm /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz
+assert_contains "mise bootstrap packages status" "needs repair"
+mise bootstrap packages apply --yes
+assert_succeed "test \"$(readlink -f /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz)\" = \"$keg\""
+assert_succeed "test \"$(stat -c %y "$keg/INSTALL_RECEIPT.json")\" = \"$receipt_mtime\""
+assert_succeed "test \"$(stat -c %i "$keg")\" = \"$keg_inode\""
+assert_succeed "test \"$(stat -c %i /home/linuxbrew/.linuxbrew/bin/xz)\" = \"$public_link_inode\""
+
+rm /home/linuxbrew/.linuxbrew/opt/xz
+assert_contains "mise bootstrap packages status" "needs repair"
+mise bootstrap packages apply --yes
+assert_succeed "test \"$(readlink -f /home/linuxbrew/.linuxbrew/opt/xz)\" = \"$keg\""
+assert_succeed "test \"$(stat -c %i "$keg")\" = \"$keg_inode\""
+assert_succeed "test \"$(stat -c %i /home/linuxbrew/.linuxbrew/bin/xz)\" = \"$public_link_inode\""
 
 # idempotent
 assert_contains "mise bootstrap packages apply --yes 2>&1" "already"
@@ -45,3 +67,4 @@ EOF
 assert_contains "mise bootstrap packages prune --manager brew --dry-run" "remove brew:xz"
 mise bootstrap packages prune --manager brew --yes
 assert_fail "test -e /home/linuxbrew/.linuxbrew/opt/xz"
+assert_fail "test -L /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz"

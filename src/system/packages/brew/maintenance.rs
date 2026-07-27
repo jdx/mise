@@ -225,10 +225,20 @@ fn linked_keg(opt_link: &Path) -> Option<(String, PathBuf)> {
 
 fn unlink_and_remove_keg(candidate: &PruneCandidate) -> Result<()> {
     let links = links_into_keg(&candidate.name, &candidate.keg)?;
+    let prefix_path = prefix::prefix();
     for link in links {
         std::fs::remove_file(&link)
             .wrap_err_with(|| format!("failed rm: {}", file::display_path(&link)))?;
-        remove_empty_parents(&link, &prefix::prefix())?;
+        let linked_dir = prefix::linked_keg_record(&candidate.name)
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let stop = if link.parent() == Some(linked_dir.as_path()) {
+            &linked_dir
+        } else {
+            &prefix_path
+        };
+        remove_empty_parents(&link, stop)?;
     }
     file::remove_all(&candidate.keg)?;
     let rack = prefix::cellar().join(&candidate.name);
@@ -242,6 +252,10 @@ fn links_into_keg(name: &str, keg: &Path) -> Result<Vec<PathBuf>> {
     let opt = prefix_path.join("opt").join(name);
     if symlink_points_into(&opt, keg) {
         links.insert(opt);
+    }
+    let linked = prefix::linked_keg_record(name);
+    if symlink_points_into(&linked, keg) {
+        links.insert(linked);
     }
     for dir in pour::LINK_DIRS {
         let root = prefix_path.join(dir);
@@ -348,6 +362,16 @@ mod tests {
         let bin_link = bin.join(name);
         file::make_symlink(&bin_target, &bin_link)?;
         Ok(file::desymlink_path(&keg))
+    }
+
+    fn write_linked_record(prefix: &Path, name: &str, version: &str) -> Result<()> {
+        let linked = prefix.join("var/homebrew/linked");
+        file::create_dir_all(&linked)?;
+        file::make_symlink(
+            &Path::new("../../../Cellar").join(name).join(version),
+            &linked.join(name),
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -558,11 +582,18 @@ mod tests {
             version: "1.7".to_string(),
             keg: keg.clone(),
         };
+        write_linked_record(tmp.path(), "jq", "1.7")?;
 
         unlink_and_remove_keg(&candidate)?;
 
         assert!(!tmp.path().join("bin").join("jq").exists());
         assert!(!tmp.path().join("opt").join("jq").exists());
+        assert!(
+            tmp.path()
+                .join("var/homebrew/linked/jq")
+                .symlink_metadata()
+                .is_err()
+        );
         assert!(tmp.path().join("bin").exists());
         assert!(tmp.path().join("opt").exists());
         assert!(!keg.exists());
@@ -629,11 +660,13 @@ mod tests {
                 keg: keg.clone(),
             }],
         };
+        write_linked_record(tmp.path(), "jq", "1.7")?;
 
         apply_prune_plan(&plan, true)?;
 
         assert!(tmp.path().join("bin").join("jq").exists());
         assert!(tmp.path().join("opt").join("jq").exists());
+        assert!(tmp.path().join("var/homebrew/linked/jq").is_symlink());
         assert!(keg.exists());
         Ok(())
     }
