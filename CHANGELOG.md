@@ -1,5 +1,92 @@
 # Changelog
 
+## [2026.7.15](https://github.com/jdx/mise/compare/v2026.7.14..v2026.7.15) - 2026-07-27
+
+### 🚀 Features
+
+- **(config)** parse registry idiomatic version files by @jdx in [#11341](https://github.com/jdx/mise/pull/11341)
+- **(deps)** explain inactive providers by @risu729 in [#11182](https://github.com/jdx/mise/pull/11182)
+- **(npm)** add standalone aube installer mode by @jdx in [#11357](https://github.com/jdx/mise/pull/11357)
+- **(task)** add local output artifact caching by @jdx in [#11328](https://github.com/jdx/mise/pull/11328)
+- **(task)** include dependency artifacts in cache keys by @jdx in [#11340](https://github.com/jdx/mise/pull/11340)
+- **(task)** replay cached task output by @jdx in [#11347](https://github.com/jdx/mise/pull/11347)
+- **(task)** cache tasks without file outputs by @jdx in [#11351](https://github.com/jdx/mise/pull/11351)
+- **(task)** add reusable and global cache inputs by @jdx in [#11356](https://github.com/jdx/mise/pull/11356)
+- **(task)** add config-scoped default shell by @jdx in [#11354](https://github.com/jdx/mise/pull/11354)
+- **(task)** add global and pass-through cache env by @jdx in [#11363](https://github.com/jdx/mise/pull/11363)
+- **(task)** support negative output patterns by @jdx in [#11367](https://github.com/jdx/mise/pull/11367)
+
+### 🐛 Bug Fixes
+
+- **(backend)** don't let a disabled backend's plugin shadow the registry by @JamBalaya56562 in [#11362](https://github.com/jdx/mise/pull/11362)
+- **(brew)** recognize existing brew links when linking kegs by @mjun0812 in [#11320](https://github.com/jdx/mise/pull/11320)
+- **(brew)** resolve link targets one hop when collecting a keg's links for prune by @mjun0812 in [#11330](https://github.com/jdx/mise/pull/11330)
+- **(env)** expand ~/ with platform path separators by @JamBalaya56562 in [#11312](https://github.com/jdx/mise/pull/11312)
+- **(generate)** error instead of clobbering when task-docs markers are missing by @JamBalaya56562 in [#11359](https://github.com/jdx/mise/pull/11359)
+- **(mcp)** report mise as the server name in initialize by @jdx in [#11361](https://github.com/jdx/mise/pull/11361)
+- **(shell)** make pwsh activation work under Set-StrictMode by @JamBalaya56562 in [#11314](https://github.com/jdx/mise/pull/11314)
+- **(task)** make source_freshness_hash_contents skip mtime entirely by @rabadin in [#11319](https://github.com/jdx/mise/pull/11319)
+- **(task)** run newly executable file tasks by @jdx in [#11337](https://github.com/jdx/mise/pull/11337)
+- **(task)** detect cycles in resolved task graph by @jdx in [#11329](https://github.com/jdx/mise/pull/11329)
+- **(task)** display forwarded arguments accurately by @jdx in [#11344](https://github.com/jdx/mise/pull/11344)
+- **(task)** preserve raw output with cli overrides by @jdx in [#11355](https://github.com/jdx/mise/pull/11355)
+- **(vfox)** remove redundant debug argument borrows by @jdx in [#11352](https://github.com/jdx/mise/pull/11352)
+
+### 🚜 Refactor
+
+- **(e2e)** remove fd and ripgrep dependencies by @risu729 in [#11303](https://github.com/jdx/mise/pull/11303)
+
+### 📚 Documentation
+
+- **(contributing)** standardize AI disclosures by @jdx in [#11368](https://github.com/jdx/mise/pull/11368)
+- **(settings)** render markdown in choice descriptions by @jdx in [#11335](https://github.com/jdx/mise/pull/11335)
+- **(shims)** describe how activate treats the shims dir with auto-install by @JamBalaya56562 in [#11366](https://github.com/jdx/mise/pull/11366)
+- **(tasks)** clarify shebang argument behavior by @jdx in [#11336](https://github.com/jdx/mise/pull/11336)
+
+### 🧪 Testing
+
+- **(task)** isolate nested cache input coverage by @jdx in [#11360](https://github.com/jdx/mise/pull/11360)
+
+### 📦️ Dependency Updates
+
+- update clx and demand by @jdx in [#11358](https://github.com/jdx/mise/pull/11358)
+- update aube crates to v1.34.0 by @jdx in [#11364](https://github.com/jdx/mise/pull/11364)
+- bump aube to 1.34.0 by @jdx in [#11365](https://github.com/jdx/mise/pull/11365)
+
+### 📦 Registry
+
+- add oh-my-pi by @slbls in [#11324](https://github.com/jdx/mise/pull/11324)
+- add missing tool descriptions by @risu729 in [#11322](https://github.com/jdx/mise/pull/11322)
+- fix danger-swift installation by @Marukome0743 in [#11286](https://github.com/jdx/mise/pull/11286)
+- revert danger-swift installation fix by @jdx in [4c32d0f](https://github.com/jdx/mise/commit/4c32d0fac60f83a07c3284f08d7e750c9f049b81)
+
+### Chore
+
+- **(ci)** reject Windows unused-code warnings by @risu729 in [#11332](https://github.com/jdx/mise/pull/11332)
+- **(ci)** configure cursor cloud environment by @risu729 in [#11294](https://github.com/jdx/mise/pull/11294)
+- **(registry)** remove stale description updater by @risu729 in [#11321](https://github.com/jdx/mise/pull/11321)
+- **(registry)** remove stale registry symlink by @risu729 in [#11345](https://github.com/jdx/mise/pull/11345)
+- **(release)** replace cargo version tooling by @risu729 in [#11323](https://github.com/jdx/mise/pull/11323)
+- **(release)** remove broken cargo-release task by @risu729 in [#11342](https://github.com/jdx/mise/pull/11342)
+- **(task)** remove stale project tasks by @risu729 in [#11338](https://github.com/jdx/mise/pull/11338)
+- remove stale plugin ranking script by @risu729 in [#11346](https://github.com/jdx/mise/pull/11346)
+- remove agent os remnants by @risu729 in [#11348](https://github.com/jdx/mise/pull/11348)
+
+### New Contributors
+
+- @mjun0812 made their first contribution in [#11330](https://github.com/jdx/mise/pull/11330)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`borghei/ink`](https://github.com/borghei/ink)
+
+#### Updated Packages (2)
+
+- [`UpCloudLtd/upcloud-cli`](https://github.com/UpCloudLtd/upcloud-cli)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+
 ## [2026.7.14](https://github.com/jdx/mise/compare/v2026.7.13..v2026.7.14) - 2026-07-26
 
 ### 🚀 Features
