@@ -1,5 +1,4 @@
 description = "A modern and intuitive terminal-based text editor"
-os = ["linux", "macos", "windows"]
 test = { cmd = "micro -version", expected = "Version: {{version}}" }
 
 [[backends]]
