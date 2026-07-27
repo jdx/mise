@@ -902,6 +902,9 @@ impl Run {
         if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
             Settings::get().ensure_experimental("task artifact caching")?;
         }
+        if !task.pass_through_env.is_empty() {
+            Settings::get().ensure_experimental("task environment pass-through")?;
+        }
         if let Some(path) = &task.file
             && path.exists()
             && !file::is_executable(path)

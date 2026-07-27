@@ -251,9 +251,6 @@ impl TaskExecutor {
         task: &Task,
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
-        if !task.pass_through_env.is_empty() {
-            Settings::get().ensure_experimental("task environment pass-through")?;
-        }
         let task_base = task.dir(config).await?;
         let resolve_task_path =
             |p: &PathBuf| -> PathBuf { resolve_task_sandbox_path(p, task_base.as_deref()) };

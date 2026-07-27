@@ -557,9 +557,10 @@ scope, including tasks with a task-local `cache` value. Unlike the default value
 global_env = ["CI", "NODE_ENV"]
 ```
 
-Variables named in `cache.env` or `task_config.global_env` remain available when environment
-inheritance is denied. Use `pass_through_env` for variables that a task needs at runtime but which
-must not affect its cache key, such as short-lived credentials. The scoped
+For cache-enabled tasks, variables named in `cache.env` or `task_config.global_env` remain available
+when environment inheritance is denied. Disabled and non-cache tasks do not inherit variables
+through cache configuration. Use `pass_through_env` for variables that a task needs at runtime but
+which must not affect its cache key, such as short-lived credentials. The scoped
 `task_config.global_pass_through_env` equivalent applies to every task. In mise's default,
 non-sandboxed environment mode, ambient variables already pass through; these options matter when
 `deny_env`, `deny_all`, or the corresponding CLI option is active.
