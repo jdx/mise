@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+task.source_freshness_hash_contents = true
+
+[tasks.build]
+run = '''
+mkdir -p dist/private
+cp src/input.txt dist/result.txt
+printf 'generated map\n' >dist/result.map
+printf 'generated token\n' >dist/private/token
+printf 'ran\n' >>runs.txt
+'''
+sources = ["src/**/*", "!src/ignored.txt"]
+outputs = ["dist", "!dist/**/*.map", "!dist/private/**"]
+cache = { enabled = true }
+EOF
+
+mkdir -p src
+printf 'one\n' >src/input.txt
+printf 'ignored one\n' >src/ignored.txt
+mise cache clear
+
+mise run build
+assert "wc -l <runs.txt | tr -d ' '" "1"
+
+# Excluded inputs do not invalidate the key. Excluded outputs remain local
+# when a selected sibling is restored into the same output directory.
+printf 'ignored two\n' >src/ignored.txt
+printf 'local map\n' >dist/result.map
+printf 'local token\n' >dist/private/token
+rm dist/result.txt
+assert_contains "mise run build 2>&1" "restored outputs from cache"
+assert "wc -l <runs.txt | tr -d ' '" "1"
+assert "cat dist/result.txt" "one"
+assert "cat dist/result.map" "local map"
+assert "cat dist/private/token" "local token"
+
+# Excluded outputs are not stored in the artifact.
+rm -rf dist
+assert_contains "mise run build 2>&1" "restored outputs from cache"
+assert "cat dist/result.txt" "one"
+assert_fail "test -e dist/result.map"
+assert_fail "test -e dist/private/token"
+
+# Included inputs still invalidate the cache.
+printf 'two changed\n' >src/input.txt
+rm -rf dist
+mise run build
+assert "wc -l <runs.txt | tr -d ' '" "2"
+assert "cat dist/result.txt" "two changed"

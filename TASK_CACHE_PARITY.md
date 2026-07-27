@@ -84,7 +84,7 @@ outside this tracker.
 - [x] Cache useful results for tasks with no filesystem outputs
 - [x] Support reusable and global input groups
 - [x] Support global environment inputs and pass-through environment variables
-- [ ] Support negative input and output patterns
+- [x] Support negative input and output patterns
 - [ ] Support runtime-command inputs
 - [ ] Include external dependency and lockfile state through explicit input configuration
 - [ ] Add per-run cache read/write controls, including local-only and cache-disabled modes

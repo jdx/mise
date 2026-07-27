@@ -160,15 +160,15 @@
         "outputs": {
           "oneOf": [
             {
-              "description": "files created by this task",
+              "description": "files created by this task (entries starting with `!` are excluded; use `\\!` to escape a literal `!` prefix)",
               "items": {
-                "description": "glob pattern or path to files created by this task",
+                "description": "glob pattern or path to files created by this task (entries starting with `!` are excluded)",
                 "type": "string"
               },
               "type": "array"
             },
             {
-              "description": "glob pattern or path to files created by this task",
+              "description": "glob pattern or path to files created by this task (entries starting with `!` are excluded)",
               "type": "string"
             },
             {
