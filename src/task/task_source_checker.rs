@@ -97,6 +97,11 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
         if let Ok(rel) = body_path.strip_prefix(match_root)
             && let Some(rel_str) = rel.to_str()
         {
+            let rel_str = if rel_str.starts_with('!') {
+                format!("\\{rel_str}")
+            } else {
+                rel_str.to_string()
+            };
             return format!("{prefix}{rel_str}");
         }
         return pattern.to_string();
@@ -971,6 +976,16 @@ mod tests {
         let pats = &["\\!important.txt", "!ignored.txt"];
         assert!(matches(pats, "!important.txt"));
         assert!(!matches(pats, "ignored.txt"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn matcher_absolute_literal_bang_under_root() {
+        let root = Path::new("/project");
+        let sources = vec!["/project/!important.txt".to_string()];
+        let matcher = build_source_matcher(root, root, &sources);
+        assert!(is_source(&matcher, Path::new("/project/!important.txt")));
+        assert!(!is_source(&matcher, Path::new("/project/other.txt")));
     }
 
     #[test]
