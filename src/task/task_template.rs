@@ -80,6 +80,9 @@ pub struct TaskTemplate {
     /// Allow specific env vars through
     #[serde(default)]
     pub allow_env: Vec<String>,
+    /// Preserve ambient env vars when env inheritance is denied without hashing their values
+    #[serde(default)]
+    pub pass_through_env: Vec<String>,
 }
 
 impl Task {
@@ -225,6 +228,8 @@ impl Task {
         self.allow_write.splice(0..0, template.allow_write.clone());
         self.allow_net.splice(0..0, template.allow_net.clone());
         self.allow_env.splice(0..0, template.allow_env.clone());
+        self.pass_through_env
+            .splice(0..0, template.pass_through_env.clone());
     }
 }
 
@@ -460,6 +465,7 @@ mod tests {
             deny_net: true,
             allow_read: vec!["task-read".into()],
             allow_env: vec!["TASK_*".to_string()],
+            pass_through_env: vec!["TASK_SECRET".to_string()],
             ..Default::default()
         };
         let template = TaskTemplate {
@@ -471,6 +477,7 @@ mod tests {
             allow_write: vec!["template-write".into()],
             allow_net: vec!["example.com".to_string()],
             allow_env: vec!["TEMPLATE_*".to_string()],
+            pass_through_env: vec!["TEMPLATE_SECRET".to_string()],
             ..Default::default()
         };
 
@@ -496,6 +503,10 @@ mod tests {
         assert_eq!(
             task.allow_env,
             vec!["TEMPLATE_*".to_string(), "TASK_*".to_string()]
+        );
+        assert_eq!(
+            task.pass_through_env,
+            vec!["TEMPLATE_SECRET".to_string(), "TASK_SECRET".to_string()]
         );
     }
 }

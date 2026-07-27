@@ -247,6 +247,8 @@ impl Exec {
                 allow_write: self.allow_write,
                 allow_net: self.allow_net,
                 allow_env: self.allow_env,
+                pass_through_env: vec![],
+                cache_env: vec![],
             },
         );
         sandbox.resolve_paths();

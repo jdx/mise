@@ -283,6 +283,20 @@ impl TaskExecutor {
                 .chain(self.sandbox.allow_env.iter())
                 .cloned()
                 .collect(),
+            pass_through_env: task
+                .pass_through_env
+                .iter()
+                .chain(self.sandbox.pass_through_env.iter())
+                .cloned()
+                .collect(),
+            cache_env: task
+                .cache
+                .iter()
+                .filter(|cache| cache.enabled)
+                .flat_map(|cache| &cache.env)
+                .chain(self.sandbox.cache_env.iter())
+                .cloned()
+                .collect(),
         };
         sandbox.resolve_paths();
         Ok(sandbox)

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config]
+global_env = ["GLOBAL_PROFILE"]
+global_pass_through_env = ["GLOBAL_SECRET"]
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+test "$GLOBAL_SECRET" = "global-secret"
+test "$TASK_SECRET" = "task-secret"
+mkdir -p dist
+printf '%s:%s\n' "$GLOBAL_PROFILE" "$LOCAL_PROFILE" > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+deny_env = true
+pass_through_env = ["TASK_SECRET"]
+cache = { enabled = true, env = ["LOCAL_PROFILE"] }
+EOF
+
+printf 'input\n' >input.txt
+
+GLOBAL_PROFILE=debug LOCAL_PROFILE=one GLOBAL_SECRET=global-secret TASK_SECRET=task-secret mise run build
+assert "cat dist/result.txt" "debug:one"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# A task-local cache config still composes with the scoped global env input.
+rm -rf dist
+GLOBAL_PROFILE=release LOCAL_PROFILE=one GLOBAL_SECRET=global-secret TASK_SECRET=task-secret mise run build
+assert "cat dist/result.txt" "release:one"
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# Task-local hashed env inputs also remain available under deny_env.
+rm -rf dist
+GLOBAL_PROFILE=release LOCAL_PROFILE=two GLOBAL_SECRET=global-secret TASK_SECRET=task-secret mise run build
+assert "cat dist/result.txt" "release:two"
+assert "wc -l < runs.txt | tr -d ' '" "3"
+
+# Pass-through env values are available to the task but do not affect its key.
+rm -rf dist
+assert_contains "GLOBAL_PROFILE=release LOCAL_PROFILE=two GLOBAL_SECRET=rotated TASK_SECRET=rotated mise run build 2>&1" "restored outputs from cache"
+assert "cat dist/result.txt" "release:two"
+assert "wc -l < runs.txt | tr -d ' '" "3"

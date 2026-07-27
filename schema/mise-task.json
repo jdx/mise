@@ -360,6 +360,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "pass_through_env": {
+          "description": "experimental ambient env vars preserved under environment denial without affecting the task cache key",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

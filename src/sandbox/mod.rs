@@ -24,6 +24,10 @@ pub struct SandboxConfig {
     pub allow_write: Vec<PathBuf>,
     pub allow_net: Vec<String>,
     pub allow_env: Vec<String>,
+    /// Environment patterns that survive an active env sandbox without enabling it themselves.
+    pub pass_through_env: Vec<String>,
+    /// Exact hashed environment names that survive an active env sandbox.
+    pub cache_env: Vec<String>,
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -128,7 +132,13 @@ impl SandboxConfig {
         if !self.effective_deny_env() {
             return env.clone();
         }
-        let env_matches = |k: &str| self.allow_env.iter().any(|pat| env_pattern_matches(pat, k));
+        let env_patterns = self.allow_env.iter().chain(&self.pass_through_env);
+        let env_matches = |k: &str| {
+            self.cache_env.iter().any(|name| name == k)
+                || env_patterns
+                    .clone()
+                    .any(|pattern| env_pattern_matches(pattern, k))
+        };
         let mut filtered: std::collections::BTreeMap<String, String> = env
             .iter()
             .filter(|(k, _)| DEFAULT_ENV_KEYS.contains(&k.as_str()) || env_matches(k))
@@ -136,7 +146,7 @@ impl SandboxConfig {
             .collect();
         // Pull in allowed vars from parent env that might not be in mise's env map.
         // For wildcard patterns, check all parent env vars; for exact names, check directly.
-        for pattern in &self.allow_env {
+        for pattern in self.allow_env.iter().chain(&self.pass_through_env) {
             if pattern.contains('*') {
                 for (key, val) in crate::env::vars_safe() {
                     if !filtered.contains_key(&key) && env_pattern_matches(pattern, &key) {
@@ -147,6 +157,13 @@ impl SandboxConfig {
                 && let Ok(val) = std::env::var(pattern)
             {
                 filtered.insert(pattern.clone(), val);
+            }
+        }
+        for key in &self.cache_env {
+            if !filtered.contains_key(key)
+                && let Ok(val) = std::env::var(key)
+            {
+                filtered.insert(key.clone(), val);
             }
         }
         // Also ensure essential vars from parent env are present
@@ -322,6 +339,48 @@ mod tests {
         assert!(filtered.contains_key("MYAPP_BAR"));
         assert!(!filtered.contains_key("OTHER_VAR"));
         assert!(filtered.contains_key("PATH")); // default key
+    }
+
+    #[test]
+    fn test_pass_through_env_only_filters_when_env_is_denied() {
+        let mut env = BTreeMap::new();
+        env.insert("PASSED_SECRET".to_string(), "secret".to_string());
+        env.insert("OTHER_VAR".to_string(), "other".to_string());
+        let loose = SandboxConfig {
+            pass_through_env: vec!["PASSED_*".to_string()],
+            ..Default::default()
+        };
+
+        assert!(!loose.effective_deny_env());
+        assert_eq!(loose.filter_env(&env), env);
+
+        let strict = SandboxConfig {
+            deny_env: true,
+            ..loose
+        };
+        let filtered = strict.filter_env(&env);
+        assert_eq!(
+            filtered.get("PASSED_SECRET").map(String::as_str),
+            Some("secret")
+        );
+        assert!(!filtered.contains_key("OTHER_VAR"));
+    }
+
+    #[test]
+    fn test_cache_env_uses_exact_names() {
+        let config = SandboxConfig {
+            deny_env: true,
+            cache_env: vec!["HASHED_*".to_string(), "EXACT".to_string()],
+            ..Default::default()
+        };
+        let env = BTreeMap::from([
+            ("HASHED_VALUE".to_string(), "not-selected".to_string()),
+            ("EXACT".to_string(), "selected".to_string()),
+        ]);
+
+        let filtered = config.filter_env(&env);
+        assert!(!filtered.contains_key("HASHED_VALUE"));
+        assert_eq!(filtered.get("EXACT").map(String::as_str), Some("selected"));
     }
 
     /// filter_env() walks the parent environment for wildcard allow_env

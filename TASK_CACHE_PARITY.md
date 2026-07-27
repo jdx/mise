@@ -83,7 +83,7 @@ outside this tracker.
 - [x] Capture and replay stdout and stderr while respecting mise output modes
 - [x] Cache useful results for tasks with no filesystem outputs
 - [x] Support reusable and global input groups
-- [ ] Support global environment inputs and pass-through environment variables
+- [x] Support global environment inputs and pass-through environment variables
 - [ ] Support negative input and output patterns
 - [ ] Support runtime-command inputs
 - [ ] Include external dependency and lockfile state through explicit input configuration

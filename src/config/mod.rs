@@ -2224,6 +2224,61 @@ fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConf
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct ResolvedTaskEnvironment {
+    global_env: Vec<String>,
+    global_pass_through_env: Vec<String>,
+}
+
+impl ResolvedTaskEnvironment {
+    fn from_configs(configs: &[&Arc<dyn ConfigFile>], cascaded: Option<&TaskConfig>) -> Self {
+        Self {
+            global_env: configs
+                .iter()
+                .find_map(|cf| {
+                    let env = &cf.task_config().global_env;
+                    (!env.is_empty()).then(|| env.clone())
+                })
+                .or_else(|| {
+                    cascaded
+                        .map(|tc| tc.global_env.clone())
+                        .filter(|env| !env.is_empty())
+                })
+                .unwrap_or_default(),
+            global_pass_through_env: configs
+                .iter()
+                .find_map(|cf| {
+                    let env = &cf.task_config().global_pass_through_env;
+                    (!env.is_empty()).then(|| env.clone())
+                })
+                .or_else(|| {
+                    cascaded
+                        .map(|tc| tc.global_pass_through_env.clone())
+                        .filter(|env| !env.is_empty())
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    fn apply(&self, task: &mut Task) -> Result<()> {
+        if self.global_env.is_empty() && self.global_pass_through_env.is_empty() {
+            return Ok(());
+        }
+        Settings::get().ensure_experimental("global task environment configuration")?;
+
+        if let Some(cache) = &mut task.cache {
+            cache.env.extend(self.global_env.iter().cloned());
+            cache.env.sort();
+            cache.env.dedup();
+        }
+        task.pass_through_env
+            .extend(self.global_pass_through_env.iter().cloned());
+        task.pass_through_env.sort();
+        task.pass_through_env.dedup();
+        Ok(())
+    }
+}
+
 const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 
 #[derive(Clone, Debug, Default)]
@@ -2235,6 +2290,7 @@ struct ResolvedTaskInputs {
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskConfig {
     inputs: ResolvedTaskInputs,
+    environment: ResolvedTaskEnvironment,
     dir: Option<String>,
     shell: Option<String>,
     cache: Option<TaskCacheConfig>,
@@ -3217,6 +3273,7 @@ async fn load_config_tasks(
             Ok(()) => {
                 apply_task_config_inputs(&mut t, &config, &task_config.inputs).await?;
                 apply_task_config_cache_default(&mut t, &task_config.cache);
+                task_config.environment.apply(&mut t)?;
                 tasks.push(t);
             }
             Err(e) => {
@@ -3542,6 +3599,18 @@ fn merge_cascaded_task_config(
     if let Some(cache) = configs.iter().find_map(|cf| cf.task_config().cache.clone()) {
         cascaded.task_config.cache = Some(cache);
     }
+    if let Some(global_env) = configs.iter().find_map(|cf| {
+        let env = &cf.task_config().global_env;
+        (!env.is_empty()).then(|| env.clone())
+    }) {
+        cascaded.task_config.global_env = global_env;
+    }
+    if let Some(global_pass_through_env) = configs.iter().find_map(|cf| {
+        let env = &cf.task_config().global_pass_through_env;
+        (!env.is_empty()).then(|| env.clone())
+    }) {
+        cascaded.task_config.global_pass_through_env = global_pass_through_env;
+    }
     if let Some((includes, root)) = configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
@@ -3681,6 +3750,10 @@ async fn load_task_sources_from_configs(
     // lower-precedence overlay files use the same defaults as file tasks.
     let task_config = ResolvedTaskConfig {
         inputs: ResolvedTaskInputs::from_configs(&configs),
+        environment: ResolvedTaskEnvironment::from_configs(
+            &configs,
+            cascaded_task_config.map(|tc| &tc.task_config),
+        ),
         dir: configs
             .iter()
             .find_map(|cf| cf.task_config().dir.clone())
@@ -3738,6 +3811,7 @@ async fn load_task_sources_from_configs(
             for task in &mut loaded {
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
+                task_config.environment.apply(task)?;
             }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
