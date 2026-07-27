@@ -3946,6 +3946,7 @@ echo "hello world"
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
 #MISE cache={enabled=true,env=["PROFILE"]}
+#MISE pass_through_env=["DEPLOY_TOKEN"]
 #MISE shell="bash -c"
 #MISE quiet=true
 #MISE silent=true
@@ -3980,6 +3981,7 @@ echo "test"
                 env: vec!["PROFILE".to_string()],
             })
         );
+        assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
         assert_eq!(task.output, Some(TaskOutput::Prefix));
