@@ -85,7 +85,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     # set the value of the setting "always_keep_download" to "true"
     $ <bold>mise settings always_keep_download=true</bold>
 
-    # set the value of the setting "node.mirror_url" to "https://npm.taobao.org/mirrors/node"
-    $ <bold>mise settings node.mirror_url https://npm.taobao.org/mirrors/node</bold>
+    # set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node"
+    $ <bold>mise settings node.mirror_url https://npmmirror.com/mirrors/node</bold>
 "#
 );
