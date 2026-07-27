@@ -45,6 +45,10 @@ pub fn cellar() -> PathBuf {
     prefix().join("Cellar")
 }
 
+pub fn linked_keg_record(name: &str) -> PathBuf {
+    prefix().join("var/homebrew/linked").join(name)
+}
+
 /// where brew would keep its own repository — referenced by the
 /// @@HOMEBREW_REPOSITORY@@ placeholder (== prefix on arm64 macOS, a
 /// subdirectory on Linux)

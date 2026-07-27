@@ -54,6 +54,20 @@ impl BrewManager {
         pkgs.iter().partition(|p| is_tapped_formula(&p.name))
     }
 
+    fn repair_records(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+    ) -> Result<Vec<PackageRequest>> {
+        let mut repaired = vec![];
+        for request in pkgs {
+            if pour::repair_link_record(request_formula_name(&request.name), opts.dry_run)? {
+                repaired.push(request.clone());
+            }
+        }
+        Ok(repaired)
+    }
+
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // bottles only exist for a formula's current version — versioning is
         // expressed in the formula name itself (postgresql@17); the CLI
@@ -221,16 +235,13 @@ impl SystemPackageManager for BrewManager {
         // remnant of a failed install and must not mask a retry
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
-            let linked_name = if is_tapped_formula(&req.name) {
-                tapped_formula_name(&req.name)
-            } else {
-                core_formula_name(&req.name)
-            };
-            let version = pour::linked_version(linked_name);
-            let state = match version {
+            let linked_name = request_formula_name(&req.name);
+            let linked = pour::linked_state(linked_name);
+            let state = match linked {
                 // a pin matches the keg version exactly or up to its
                 // revision suffix ("17.5" matches keg "17.5_1")
-                Some(version) => match &req.version {
+                Some((version, true)) => PackageState::NeedsRepair { installed: version },
+                Some((version, false)) => match &req.version {
                     Some(requested)
                         if version != *requested
                             && !version.starts_with(&format!("{requested}_")) =>
@@ -250,7 +261,13 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let (tapped, core) = self.split_tapped(pkgs);
+        let repaired = self.repair_records(pkgs, opts)?;
+        let remaining = pkgs
+            .iter()
+            .filter(|request| !repaired.contains(request))
+            .cloned()
+            .collect::<Vec<_>>();
+        let (tapped, core) = self.split_tapped(&remaining);
         if !core.is_empty() {
             let core = core
                 .into_iter()
@@ -266,7 +283,13 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let (tapped, core) = self.split_tapped(pkgs);
+        let repaired = self.repair_records(pkgs, opts)?;
+        let remaining = pkgs
+            .iter()
+            .filter(|request| request.version.is_none() || !repaired.contains(request))
+            .cloned()
+            .collect::<Vec<_>>();
+        let (tapped, core) = self.split_tapped(&remaining);
         if !core.is_empty() {
             let core = core
                 .into_iter()
@@ -294,6 +317,14 @@ fn core_formula_name(name: &str) -> &str {
     match split_formula_name(name) {
         Some(("homebrew", "core", formula)) => formula,
         _ => name,
+    }
+}
+
+fn request_formula_name(name: &str) -> &str {
+    if is_tapped_formula(name) {
+        tapped_formula_name(name)
+    } else {
+        core_formula_name(name)
     }
 }
 

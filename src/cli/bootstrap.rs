@@ -1316,6 +1316,9 @@ impl BootstrapStatus {
                 let (installed_version, state, missing) = match &s.state {
                     PackageState::Installed { version } => (version.clone(), "installed", false),
                     PackageState::Missing => ("".to_string(), "missing", true),
+                    PackageState::NeedsRepair { installed } => {
+                        (installed.clone(), "needs repair", true)
+                    }
                     PackageState::VersionMismatch { installed } => {
                         (installed.clone(), "version mismatch", true)
                     }

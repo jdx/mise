@@ -29,6 +29,7 @@ assert_contains "mise bootstrap packages status" "installed"
 # the built binary runs from the prefix and the keg carries a receipt
 assert_contains "$MISE_SYSTEM_BREW_PREFIX/bin/hello --greeting=mise" "mise"
 assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json" '"poured_from_bottle":false'
+assert_succeed "test -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello"
 
 # idempotent
 assert_contains "mise bootstrap packages apply --yes 2>&1" "already"

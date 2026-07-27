@@ -121,6 +121,13 @@ Homebrew installation, mise-poured kegs look like its own: `brew list`,
 status checks read the Cellar directly, so formulae installed by brew count
 as installed.
 
+For non-keg-only formulae, mise maintains Homebrew's
+`<prefix>/var/homebrew/linked/<name>` record alongside the `opt` record. For a
+configured formula, if either record is missing, `mise bootstrap packages
+apply` restores it without repouring the keg or replacing its public links.
+Older mise installs are recognised as linked only when their existing public
+links match the keg's layout. Dependency-closure migration is not performed.
+
 mise reads the Homebrew prefix directly, whether formulae were poured by mise
 or by a real Homebrew. It never overwrites files in the prefix that it didn't
 create — link conflicts fail with a list of the offending files rather than
@@ -158,8 +165,9 @@ trusted, loadable tracked configs as the source of truth. It removes linked
 Homebrew formulae that are not in the resolved dependency closure of those
 configured `brew:` entries, including formulae installed by a real Homebrew.
 
-Prune removes the active keg, the `opt` link, and prefix symlinks pointing into
-that keg. Use `--dry-run` to preview and `--yes` to skip the confirmation prompt.
+Prune removes the active keg, its `opt` and linked-keg records, and prefix
+symlinks pointing into that keg. Use `--dry-run` to preview and `--yes` to skip
+the confirmation prompt.
 
 This command is mise's declarative cleanup for bootstrap packages, similar to
 [`brew bundle cleanup`](https://docs.brew.sh/Manpage). It is not upstream
@@ -187,7 +195,8 @@ For each formula in the dependency closure (dependencies first):
    signature doesn't match.
 5. **Receipt**: a brew-compatible `INSTALL_RECEIPT.json` is written.
 6. **Link**: `<prefix>/opt/<name>` is created and the keg's `bin`, `lib`,
-   `include`, `share`, etc. are symlinked into the prefix —
+   `include`, `share`, etc. are symlinked into the prefix. The Homebrew
+   linked-keg record is created for non-keg-only formulae.
    [keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae get
    the `opt` link but are not linked into the prefix, same as brew.
 
