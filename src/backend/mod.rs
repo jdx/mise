@@ -91,31 +91,41 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
-/// Why a backend's remote version listing came back empty, keyed by backend id.
+/// Why a backend's remote version listing failed.
 ///
 /// Backends that degrade a failed fetch into an empty list (so a flaky network
 /// doesn't hard-fail every command) record the cause here. `no versions found`
 /// errors then cite the real reason instead of blaming whatever filter happened
 /// to be applied to the empty list.
+///
+/// Keyed by `BackendArg::full()`, the same key `get_remote_version_cache` uses,
+/// so two backends that share a short name but differ in backend or in
+/// listing-relevant tool options (`foo` vs `foo[api_url=...]`) can't inherit
+/// each other's failures.
+///
+/// An entry is never removed: it makes `list_remote_versions_with_refresh`
+/// stop fetching for that key, so no later fetch can succeed and contradict it.
+/// That is only sound while every recorder returns an empty list alongside the
+/// record — a backend that recorded a failure but still returned some versions
+/// would suppress its own later listings.
 static VERSION_LISTING_FAILURES: Lazy<std::sync::Mutex<HashMap<String, String>>> =
     Lazy::new(Default::default);
 
-/// Remember that listing remote versions for `id` failed.
-pub fn record_version_listing_failure(id: &str, err: &eyre::Report) {
+/// Remember that listing remote versions for `ba` failed.
+pub fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
-        .insert(id.to_string(), format!("{err:#}"));
+        .insert(ba.full(), format!("{err:#}"));
 }
 
-/// Forget a previously recorded failure for `id` after a successful listing.
-pub fn clear_version_listing_failure(id: &str) {
-    VERSION_LISTING_FAILURES.lock().unwrap().remove(id);
-}
-
-/// The cause of the most recent failed remote version listing for `id`.
-pub fn version_listing_failure(id: &str) -> Option<String> {
-    VERSION_LISTING_FAILURES.lock().unwrap().get(id).cloned()
+/// The cause of the failed remote version listing for `ba`, if one was recorded.
+pub fn version_listing_failure(ba: &BackendArg) -> Option<String> {
+    VERSION_LISTING_FAILURES
+        .lock()
+        .unwrap()
+        .get(&ba.full())
+        .cloned()
 }
 
 pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
@@ -1635,17 +1645,18 @@ pub trait Backend: Debug + Send + Sync {
                     }
                 })
                 .collect_vec();
-            if versions.is_empty() {
-                if self.get_type() != BackendType::Http
-                    && self.unresolved_latest_version().is_none()
-                {
-                    // warn_once: a single command resolves the same tool from
-                    // several call sites, and repeating this for each one buries
-                    // the actual error (usually a network failure) in spam.
-                    warn_once!("No versions found for {id}");
-                }
-            } else {
-                clear_version_listing_failure(id);
+            if versions.is_empty()
+                && self.get_type() != BackendType::Http
+                && self.unresolved_latest_version().is_none()
+                // A backend that just recorded a fetch failure already warned
+                // with the actual cause; "No versions found" on top of it reads
+                // like a second, unrelated problem.
+                && version_listing_failure(&ba).is_none()
+            {
+                // warn_once: a single command resolves the same tool from
+                // several call sites, and repeating this for each one buries
+                // the actual error (usually a network failure) in spam.
+                warn_once!("No versions found for {id}");
             }
             Ok(versions)
         };
@@ -1655,7 +1666,7 @@ pub trait Backend: Debug + Send + Sync {
         // included — once per call site that resolves this tool. This applies to
         // `refresh` too: the record is process-local, so honoring it discards no
         // cached data that `--refresh` is meant to bypass.
-        let versions = if version_listing_failure(id).is_some() {
+        let versions = if version_listing_failure(&ba).is_some() {
             trace!("Skipping remote version listing for {id} after an earlier failure");
             vec![]
         } else if refresh {

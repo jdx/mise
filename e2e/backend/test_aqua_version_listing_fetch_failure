@@ -14,13 +14,23 @@ export MISE_HTTP_RETRIES=0
 export MISE_MINIMUM_RELEASE_AGE=7d
 export RUST_BACKTRACE=0
 
-out="$(mise install "aqua:suzuki-shunsuke/tfcmt@latest" 2>&1 || true)"
+status=0
+out="$(mise install "aqua:suzuki-shunsuke/tfcmt@latest" 2>&1)" || status=$?
+
+if [[ $status -eq 0 ]]; then
+  fail "expected the install to fail, but it exited 0"
+fi
+ok "install failed with status $status"
 
 assert_contains_text "$out" "unable to fetch versions for aqua:suzuki-shunsuke/tfcmt"
 assert_not_contains_text "$out" "matching date filter"
+# The specific cause is warned instead of the generic "no versions" message.
+assert_not_contains_text "$out" "No versions found for"
 
+# Exactly one: zero would mean the warning was dropped and the regression this
+# test guards (one warning per call site that resolved the tool) went unnoticed.
 warns="$(grep -c "Remote versions cannot be fetched" <<<"$out" || true)"
-if [[ $warns -gt 1 ]]; then
-  fail "expected at most 1 fetch-failure warning, got $warns"
+if [[ $warns -ne 1 ]]; then
+  fail "expected exactly 1 fetch-failure warning, got $warns"
 fi
-ok "fetch failure warned $warns time(s)"
+ok "fetch failure warned exactly once"

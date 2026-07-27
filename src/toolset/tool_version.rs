@@ -58,7 +58,7 @@ impl ToolVersion {
         // The version list is also empty when fetching it failed, in which case
         // no filter was ever applied — blaming the date filter sends users
         // looking for a cutoff that isn't the problem.
-        if let Some(cause) = crate::backend::version_listing_failure(id) {
+        if let Some(cause) = crate::backend::version_listing_failure(backend.ba()) {
             return eyre::eyre!("unable to fetch versions for {id}: {cause}");
         }
         let msg = if before_date.is_some() {

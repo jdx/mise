@@ -321,7 +321,7 @@ impl Backend for AquaBackend {
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(e) => {
-                backend::record_version_listing_failure(self.ba.short.as_str(), &e);
+                backend::record_version_listing_failure(&self.ba, &e);
                 warn_once!("Remote versions cannot be fetched for {}: {e:#}", self.id);
                 return Ok(vec![]);
             }
@@ -346,7 +346,7 @@ impl Backend for AquaBackend {
                         format!("failed to fetch aqua release metadata for {}", self.id)
                     });
                 }
-                backend::record_version_listing_failure(self.ba.short.as_str(), &e);
+                backend::record_version_listing_failure(&self.ba, &e);
                 warn_once!("Remote versions cannot be fetched for {}: {e:#}", self.id);
                 return Ok(vec![]);
             }
