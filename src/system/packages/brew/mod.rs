@@ -54,6 +54,7 @@ impl BrewManager {
         pkgs.iter().partition(|p| is_tapped_formula(&p.name))
     }
 
+    /// Repair requested roots before resolving formula metadata or pouring kegs.
     fn repair_records(
         &self,
         pkgs: &[PackageRequest],
@@ -237,21 +238,7 @@ impl SystemPackageManager for BrewManager {
         for req in pkgs {
             let linked_name = request_formula_name(&req.name);
             let linked = pour::linked_state(linked_name);
-            let state = match linked {
-                // a pin matches the keg version exactly or up to its
-                // revision suffix ("17.5" matches keg "17.5_1")
-                Some((version, true)) => PackageState::NeedsRepair { installed: version },
-                Some((version, false)) => match &req.version {
-                    Some(requested)
-                        if version != *requested
-                            && !version.starts_with(&format!("{requested}_")) =>
-                    {
-                        PackageState::VersionMismatch { installed: version }
-                    }
-                    _ => PackageState::Installed { version },
-                },
-                None => PackageState::Missing,
-            };
+            let state = linked_package_state(&req.version, linked);
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state,
@@ -320,11 +307,33 @@ fn core_formula_name(name: &str) -> &str {
     }
 }
 
+/// Return the formula name used by active records for core and tapped requests.
 fn request_formula_name(name: &str) -> &str {
     if is_tapped_formula(name) {
         tapped_formula_name(name)
     } else {
         core_formula_name(name)
+    }
+}
+
+/// Classify the active keg while preserving version mismatch precedence over repair.
+fn linked_package_state(
+    requested: &Option<String>,
+    linked: Option<(String, bool)>,
+) -> PackageState {
+    match linked {
+        // a pin matches the keg version exactly or up to its revision suffix
+        // ("17.5" matches keg "17.5_1")
+        Some((version, _))
+            if requested.as_ref().is_some_and(|requested| {
+                version != *requested && !version.starts_with(&format!("{requested}_"))
+            }) =>
+        {
+            PackageState::VersionMismatch { installed: version }
+        }
+        Some((version, true)) => PackageState::NeedsRepair { installed: version },
+        Some((version, false)) => PackageState::Installed { version },
+        None => PackageState::Missing,
     }
 }
 
@@ -361,6 +370,22 @@ mod tests {
         assert_eq!(
             tapped_formula_name("railwaycat/emacsmacport/emacs-mac"),
             "emacs-mac"
+        );
+    }
+
+    #[test]
+    fn version_mismatch_takes_precedence_over_record_repair() {
+        assert_eq!(
+            linked_package_state(&Some("2.0".to_string()), Some(("1.0".to_string(), true))),
+            PackageState::VersionMismatch {
+                installed: "1.0".to_string()
+            }
+        );
+        assert_eq!(
+            linked_package_state(&Some("1.0".to_string()), Some(("1.0_1".to_string(), true))),
+            PackageState::NeedsRepair {
+                installed: "1.0_1".to_string()
+            }
         );
     }
 }

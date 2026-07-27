@@ -52,6 +52,7 @@ pub enum PackageState {
     },
     Missing,
     /// installed, but a manager-owned record needs local repair
+    #[cfg_attr(windows, allow(dead_code))]
     NeedsRepair {
         installed: String,
     },

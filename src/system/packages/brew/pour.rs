@@ -16,6 +16,7 @@ use crate::ui::progress_report::SingleReport;
 /// directories linked from a keg into the prefix (brew's Keg::KEG_LINK_DIRECTORIES,
 /// minus etc/var which brew handles specially and we defer)
 pub(super) const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share", "Frameworks"];
+const KEG_ONLY_MARKER: &str = ".mise-keg-only";
 
 struct RecordRepair {
     version: String,
@@ -41,14 +42,17 @@ pub fn linked_version(name: &str) -> Option<String> {
     record_keg(name, &opt).map(|(version, _)| version)
 }
 
+/// Return the active keg version and whether one of its active records can be repaired locally.
 pub(super) fn linked_state(name: &str) -> Option<(String, bool)> {
     let opt = prefix::prefix().join("opt").join(name);
     let active = record_keg(name, &opt).or_else(|| {
-        path_missing(&opt).then(|| record_keg(name, &prefix::linked_keg_record(name)))?
+        record_needs_replacement(name, &opt)
+            .then(|| record_keg(name, &prefix::linked_keg_record(name)))?
     })?;
     Some((active.0, pending_record_repair(name).is_some()))
 }
 
+/// Restore one missing or dangling mise-owned active-keg record without relinking the keg.
 pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
     let Some(repair) = pending_record_repair(name) else {
         return Ok(false);
@@ -63,8 +67,8 @@ pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
         return Ok(true);
     }
     crate::file::create_dir_all(repair.destination.parent().unwrap())?;
-    std::os::unix::fs::symlink(
-        relative_target(&repair.keg, &repair.destination),
+    crate::file::make_symlink(
+        &relative_target(&repair.keg, &repair.destination),
         &repair.destination,
     )
     .wrap_err_with(|| {
@@ -76,11 +80,15 @@ pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
     Ok(true)
 }
 
+/// Find a single active record that can be reconstructed from its valid counterpart.
 fn pending_record_repair(name: &str) -> Option<RecordRepair> {
     let opt = prefix::prefix().join("opt").join(name);
     let linked = prefix::linked_keg_record(name);
     if let Some((version, keg)) = record_keg(name, &opt) {
-        if path_missing(&linked) && has_public_link_into(&keg) {
+        if keg.join(KEG_ONLY_MARKER).is_file() {
+            return None;
+        }
+        if record_needs_replacement(name, &linked) && has_public_link_into(&keg) {
             return Some(RecordRepair {
                 version,
                 keg,
@@ -89,7 +97,7 @@ fn pending_record_repair(name: &str) -> Option<RecordRepair> {
         }
         return None;
     }
-    if path_missing(&opt)
+    if record_needs_replacement(name, &opt)
         && let Some((version, keg)) = record_keg(name, &linked)
     {
         return Some(RecordRepair {
@@ -101,8 +109,9 @@ fn pending_record_repair(name: &str) -> Option<RecordRepair> {
     None
 }
 
+/// Resolve a record only when it targets an existing direct child of the formula rack.
 fn record_keg(name: &str, record: &Path) -> Option<(String, PathBuf)> {
-    let target = resolved_symlink_target(record)?.canonicalize().ok()?;
+    let target = record_target(name, record)?.canonicalize().ok()?;
     let rack = prefix::cellar().join(name).canonicalize().ok()?;
     if target.parent()? != rack || !target.is_dir() {
         return None;
@@ -111,11 +120,25 @@ fn record_keg(name: &str, record: &Path) -> Option<(String, PathBuf)> {
     Some((version.clone(), keg_path(name, &version)))
 }
 
-fn path_missing(path: &Path) -> bool {
-    path.symlink_metadata()
-        .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+/// Resolve a record target within the formula rack without requiring the keg to exist.
+fn record_target(name: &str, record: &Path) -> Option<PathBuf> {
+    let target = resolved_symlink_target(record)?;
+    let rack = prefix::cellar().join(name).canonicalize().ok()?;
+    (target.parent()? == rack).then_some(target)
 }
 
+/// Return true only for an absent path or a dangling symlink owned by this formula rack.
+fn record_needs_replacement(name: &str, path: &Path) -> bool {
+    match path.symlink_metadata() {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            record_target(name, path).is_some() && record_keg(name, path).is_none()
+        }
+        Err(_) | Ok(_) => false,
+    }
+}
+
+/// Check for the standard public-link shape created from a non-keg-only keg.
 fn has_public_link_into(keg: &Path) -> bool {
     LINK_DIRS.iter().any(|dir| {
         let root = keg.join(dir);
@@ -135,6 +158,7 @@ fn has_public_link_into(keg: &Path) -> bool {
     })
 }
 
+/// Compare a symlink's one-hop target with a destination using resolved parent paths.
 fn symlink_points_to(link: &Path, target: &Path) -> bool {
     resolved_symlink_target(link).as_ref() == Some(&resolved_path(target))
 }
@@ -411,6 +435,7 @@ fn points_into_cellar(link: &Path) -> bool {
     target.starts_with(cellar) || target.starts_with(opt)
 }
 
+/// Resolve one symlink hop relative to its parent without chasing the final component.
 fn resolved_symlink_target(link: &Path) -> Option<PathBuf> {
     let target = std::fs::read_link(link).ok()?;
     let target = if target.is_absolute() {
@@ -421,6 +446,7 @@ fn resolved_symlink_target(link: &Path) -> Option<PathBuf> {
     Some(resolved_path(&target))
 }
 
+/// Canonicalize the parent of a lexically normalized path while preserving its final component.
 fn resolved_path(path: &Path) -> PathBuf {
     let target = lexical_normalize(path);
     match (target.parent(), target.file_name()) {
@@ -527,6 +553,9 @@ fn materialize_brew_dirs(dest: &Path) -> Result<()> {
 pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
     let prefix_path = prefix::prefix();
     let keg = keg_path(name, pkg_version);
+    if keg_only {
+        crate::file::write(keg.join(KEG_ONLY_MARKER), "")?;
+    }
     // <prefix>/opt/<name> -> ../Cellar/<name>/<version> (always, even keg-only)
     let opt_link = prefix_path.join("opt").join(name);
 
@@ -868,10 +897,28 @@ mod tests {
             PathBuf::from("../../../Cellar/foo/2.0")
         );
 
-        write_lib_keg(&prefix, "bar", "1.0")?;
+        let bar_keg = write_lib_keg(&prefix, "bar", "1.0")?;
         link_keg("bar", "1.0", true)?;
         assert!(prefix.join("opt/bar").is_symlink());
         assert!(prefix::linked_keg_record("bar").symlink_metadata().is_err());
+        assert_eq!(linked_state("bar"), Some(("1.0".to_string(), false)));
+        crate::file::make_symlink(
+            &bar_keg.join("lib/libbar.1.dylib"),
+            &prefix.join("lib/libbar.1.dylib"),
+        )?;
+        assert!(!repair_link_record("bar", false)?);
+        assert!(prefix::linked_keg_record("bar").symlink_metadata().is_err());
+
+        let linked = prefix::linked_keg_record("bar");
+        crate::file::create_dir_all(linked.parent().unwrap())?;
+        crate::file::make_symlink(Path::new("../../../Cellar/bar/1.0"), &linked)?;
+        std::fs::remove_file(prefix.join("opt/bar"))?;
+        assert_eq!(linked_state("bar"), Some(("1.0".to_string(), true)));
+        assert!(repair_link_record("bar", false)?);
+        assert_eq!(
+            std::fs::read_link(prefix.join("opt/bar"))?,
+            PathBuf::from("../Cellar/bar/1.0")
+        );
         Ok(())
     }
 
@@ -901,6 +948,43 @@ mod tests {
             PathBuf::from("../Cellar/foo/1.0")
         );
         assert_eq!(std::fs::read_link(&public)?, public_target);
+        Ok(())
+    }
+
+    #[test]
+    fn test_repairs_dangling_owned_records_but_not_foreign_records() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        write_lib_keg(&prefix, "foo", "1.0")?;
+        brew_style_link(&prefix, "foo", "1.0")?;
+        let linked = prefix::linked_keg_record("foo");
+        crate::file::create_dir_all(linked.parent().unwrap())?;
+        crate::file::make_symlink(Path::new("../../../Cellar/foo/0.9"), &linked)?;
+
+        assert_eq!(linked_state("foo"), Some(("1.0".to_string(), true)));
+        assert!(repair_link_record("foo", false)?);
+        assert_eq!(
+            std::fs::read_link(&linked)?,
+            PathBuf::from("../../../Cellar/foo/1.0")
+        );
+
+        let opt = prefix.join("opt/foo");
+        crate::file::make_symlink(Path::new("../Cellar/foo/0.9"), &opt)?;
+        assert_eq!(linked_state("foo"), Some(("1.0".to_string(), true)));
+        assert!(repair_link_record("foo", false)?);
+        assert_eq!(
+            std::fs::read_link(&opt)?,
+            PathBuf::from("../Cellar/foo/1.0")
+        );
+
+        crate::file::make_symlink(Path::new("/custom/missing-foo"), &linked)?;
+        assert_eq!(linked_state("foo"), Some(("1.0".to_string(), false)));
+        assert!(!repair_link_record("foo", false)?);
+        assert_eq!(
+            std::fs::read_link(&linked)?,
+            PathBuf::from("/custom/missing-foo")
+        );
         Ok(())
     }
 
