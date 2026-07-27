@@ -24,7 +24,9 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{
-    backend::{Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata},
+    backend::{
+        self, Backend, MISE_BINS_DIR, backend_arg_matches_registry_backend, strict_metadata,
+    },
     config::Config,
 };
 use crate::{file, github, minisign};
@@ -319,7 +321,8 @@ impl Backend for AquaBackend {
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(e) => {
-                warn!("Remote versions cannot be fetched: {}", e);
+                backend::record_version_listing_failure(self.ba.short.as_str(), &e);
+                warn_once!("Remote versions cannot be fetched for {}: {e:#}", self.id);
                 return Ok(vec![]);
             }
         };
@@ -343,7 +346,8 @@ impl Backend for AquaBackend {
                         format!("failed to fetch aqua release metadata for {}", self.id)
                     });
                 }
-                warn!("Remote versions cannot be fetched: {}", e);
+                backend::record_version_listing_failure(self.ba.short.as_str(), &e);
+                warn_once!("Remote versions cannot be fetched for {}: {e:#}", self.id);
                 return Ok(vec![]);
             }
         };

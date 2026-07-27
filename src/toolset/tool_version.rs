@@ -54,13 +54,17 @@ pub struct ToolVersion {
 
 impl ToolVersion {
     fn no_versions_found(backend: &ABackend, before_date: Option<Timestamp>) -> eyre::Report {
+        let id = backend.id();
+        // The version list is also empty when fetching it failed, in which case
+        // no filter was ever applied — blaming the date filter sends users
+        // looking for a cutoff that isn't the problem.
+        if let Some(cause) = crate::backend::version_listing_failure(id) {
+            return eyre::eyre!("unable to fetch versions for {id}: {cause}");
+        }
         let msg = if before_date.is_some() {
-            format!(
-                "no versions found for {} matching date filter",
-                backend.id()
-            )
+            format!("no versions found for {id} matching date filter")
         } else {
-            format!("no versions found for {}", backend.id())
+            format!("no versions found for {id}")
         };
         eyre::eyre!(msg)
     }

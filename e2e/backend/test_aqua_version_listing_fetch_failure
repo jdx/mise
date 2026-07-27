@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# When a remote version listing fails, say so. Previously the failure degraded
+# into an empty version list and the generic "no versions found" path blamed
+# whatever filter happened to be configured -- e.g. "no versions found for X
+# matching date filter" -- even though no filter ever ran. The same fetch was
+# also retried, and warned about, once per call site that resolved the tool.
+
+# Point every host the aqua backend lists versions from at a closed port so the
+# listing fails for a reason that has nothing to do with a date filter.
+export MISE_URL_REPLACEMENTS='{"https://api.github.com":"http://127.0.0.1:1","https://github.com":"http://127.0.0.1:1","https://mise-versions.jdx.dev":"http://127.0.0.1:1"}'
+export MISE_USE_VERSIONS_HOST=0
+export MISE_HTTP_RETRIES=0
+# A date cutoff is what made the old message misleading, so keep one active.
+export MISE_MINIMUM_RELEASE_AGE=7d
+export RUST_BACKTRACE=0
+
+out="$(mise install "aqua:suzuki-shunsuke/tfcmt@latest" 2>&1 || true)"
+
+assert_contains_text "$out" "unable to fetch versions for aqua:suzuki-shunsuke/tfcmt"
+assert_not_contains_text "$out" "matching date filter"
+
+warns="$(grep -c "Remote versions cannot be fetched" <<<"$out" || true)"
+if [[ $warns -gt 1 ]]; then
+  fail "expected at most 1 fetch-failure warning, got $warns"
+fi
+ok "fetch failure warned $warns time(s)"

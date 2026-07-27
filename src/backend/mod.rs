@@ -91,6 +91,33 @@ pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
+/// Why a backend's remote version listing came back empty, keyed by backend id.
+///
+/// Backends that degrade a failed fetch into an empty list (so a flaky network
+/// doesn't hard-fail every command) record the cause here. `no versions found`
+/// errors then cite the real reason instead of blaming whatever filter happened
+/// to be applied to the empty list.
+static VERSION_LISTING_FAILURES: Lazy<std::sync::Mutex<HashMap<String, String>>> =
+    Lazy::new(Default::default);
+
+/// Remember that listing remote versions for `id` failed.
+pub fn record_version_listing_failure(id: &str, err: &eyre::Report) {
+    VERSION_LISTING_FAILURES
+        .lock()
+        .unwrap()
+        .insert(id.to_string(), format!("{err:#}"));
+}
+
+/// Forget a previously recorded failure for `id` after a successful listing.
+pub fn clear_version_listing_failure(id: &str) {
+    VERSION_LISTING_FAILURES.lock().unwrap().remove(id);
+}
+
+/// The cause of the most recent failed remote version listing for `id`.
+pub fn version_listing_failure(id: &str) -> Option<String> {
+    VERSION_LISTING_FAILURES.lock().unwrap().get(id).cloned()
+}
+
 pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
     let full = ba.full_without_opts();
     REGISTRY
@@ -1608,16 +1635,29 @@ pub trait Backend: Debug + Send + Sync {
                     }
                 })
                 .collect_vec();
-            if versions.is_empty()
-                && self.get_type() != BackendType::Http
-                && self.unresolved_latest_version().is_none()
-            {
-                warn!("No versions found for {id}");
+            if versions.is_empty() {
+                if self.get_type() != BackendType::Http
+                    && self.unresolved_latest_version().is_none()
+                {
+                    // warn_once: a single command resolves the same tool from
+                    // several call sites, and repeating this for each one buries
+                    // the actual error (usually a network failure) in spam.
+                    warn_once!("No versions found for {id}");
+                }
+            } else {
+                clear_version_listing_failure(id);
             }
             Ok(versions)
         };
         let versions = if refresh {
             remote_versions.refresh_async(fetch).await?
+        } else if version_listing_failure(id).is_some() {
+            // An empty list is deliberately not written to the disk cache below,
+            // so nothing memoizes a failed listing. Without this short-circuit a
+            // single command re-runs the whole failing fetch — HTTP retries and
+            // backoff included — once per call site that resolves this tool.
+            trace!("Skipping remote version listing for {id} after an earlier failure");
+            vec![]
         } else {
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
