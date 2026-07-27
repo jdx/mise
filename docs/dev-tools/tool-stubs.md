@@ -97,7 +97,7 @@ When using platform-specific URLs, the tool stub generator will append new platf
 Generate a tool stub for a tool distributed via HTTP:
 
 ```bash
-mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz"
+mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
 ```
 
 This will:
@@ -176,7 +176,7 @@ Running the generation command produces an executable stub like:
 
 version = "latest"
 bin = "bin/gh"
-url = "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz"
+url = "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
 checksum = "blake3:a1b2c3d4e5f6..."
 size = 12345678
 ```

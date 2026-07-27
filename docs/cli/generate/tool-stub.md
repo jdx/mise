@@ -97,7 +97,7 @@ Examples:
 
 ```
 Generate a tool stub for a single URL:
-$ mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz"
+$ mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
 
 Generate a tool stub with platform-specific URLs:
 $ mise generate tool-stub ./bin/rg \
