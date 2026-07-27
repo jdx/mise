@@ -3423,6 +3423,12 @@ fn task_include_patterns_for_dir(
     config_files: &ConfigMap,
 ) -> Result<(Vec<String>, PathBuf, bool)> {
     let configs = configs_at_root(dir, config_files);
+    let cascaded_task_config =
+        if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
+            None
+        } else {
+            cascaded_task_config_for_dir(dir, config_files)?
+        };
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
@@ -3437,6 +3443,13 @@ fn task_include_patterns_for_dir(
             Err(err) => Some(Err(err)),
         })
         .transpose()?
+        .or_else(|| {
+            cascaded_task_config.and_then(|tc| {
+                tc.task_config
+                    .includes
+                    .map(|includes| (includes, tc.includes_root, false))
+            })
+        })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
             (default_task_includes(), dir.to_path_buf(), true)

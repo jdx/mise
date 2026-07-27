@@ -34,7 +34,7 @@ config_roots = [
 
 [task_config]
 cascade = true
-includes = ["tasks.toml"]
+includes = ["tasks.toml", "shared-tasks"]
 dir = "{{config_root}}/task-cwd"
 shell = '"{{config_root}}/shell wrappers/default" -c'
 
@@ -62,7 +62,7 @@ extends = "override"
 run = "echo INCLUDED_TEMPLATED"
 EOF
 
-mkdir -p task-cwd "child/shell wrappers" child/task-cwd \
+mkdir -p task-cwd shared-tasks "child/shell wrappers" child/task-cwd \
   "child-override/shell wrappers" child-override/task-cwd \
   "child-middle/nested/shell wrappers" child-middle/nested/middle-cwd \
   child-no-cascade/nested
@@ -137,3 +137,9 @@ assert "mise run //child-no-cascade/nested:child" "NESTED_NO_CASCADE"
 assert "mise run //child-middle/nested:child" "TASK_CONFIG_SHELL
 NESTED_MERGED
 middle-cwd"
+
+mise -C child tasks add --file generated -- echo GENERATED
+assert "test -f shared-tasks/generated && echo CREATED" "CREATED"
+
+mise -C child-no-cascade tasks add --file generated -- echo GENERATED
+assert "test -f child-no-cascade/mise-tasks/generated && echo CREATED" "CREATED"
