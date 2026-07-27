@@ -20,7 +20,7 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, Tool
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use jiff::Timestamp;
@@ -286,7 +286,8 @@ impl Backend for PIPXBackend {
         let options = PipxOptions::new(&request_options);
 
         // Check if pipx is available (unless uvx is being used)
-        let uv_program = if Settings::get().pipx.uvx != Some(false) && !options.uvx_disabled() {
+        let uvx_allowed = Settings::get().pipx.uvx != Some(false) && !options.uvx_disabled();
+        let uv_program = if uvx_allowed {
             self.dependency_path_for_install(&ctx.config, Some(&ctx.ts), "uv")
                 .await
         } else {
@@ -294,16 +295,47 @@ impl Backend for PIPXBackend {
         };
 
         if uv_program.is_none() {
-            self.warn_if_dependency_missing(
-                &ctx.config,
-                "pipx",
-                &["pipx"],
-                "To use pipx packages with mise, you need to install pipx first:\n\
-                  mise use pipx@latest\n\n\
-                Alternatively, you can use uv/uvx by installing uv:\n\
-                  mise use uv@latest",
-            )
-            .await;
+            // Only offer uv as an alternative when this package can actually use it.
+            // Packages that set `uvx = false` (or a `pipx.uvx = false` setting) always go
+            // through pipx, so pointing at uv there just sends people down a dead end.
+            let instructions = if uvx_allowed {
+                "To use pipx packages with mise, you need to install pipx first:\n  \
+                   mise use pipx@latest\n\n\
+                 Alternatively, you can use uv/uvx by installing uv:\n  \
+                   mise use uv@latest"
+                    .to_string()
+            } else {
+                let reason = if options.uvx_disabled() {
+                    "this package sets `uvx = false`"
+                } else {
+                    "uvx is disabled by the `pipx.uvx` setting"
+                };
+                format!(
+                    "This package is installed with pipx because {reason}, so uv/uvx cannot be \
+                     used for it.\n\nInstall pipx first:\n  mise use pipx@latest"
+                )
+            };
+            self.warn_if_dependency_missing(&ctx.config, "pipx", &["pipx"], &instructions)
+                .await;
+
+            // Fail with the instructions above rather than letting `pipx install` die with a
+            // bare "No such file or directory (os error 2)". Skipped when a configured tool
+            // provides pipx, since mise installs that first — same rule as the warning.
+            let pipx_configured = match self.dependency_toolset(&ctx.config).await {
+                Ok(ts) => ts.versions.keys().any(|ba| ba.short == "pipx"),
+                Err(_) => false,
+            };
+            if !pipx_configured
+                && self
+                    .dependency_path_for_install(&ctx.config, Some(&ctx.ts), "pipx")
+                    .await
+                    .is_none()
+            {
+                bail!(
+                    "pipx is required to install {} but was not found.\n\n{instructions}",
+                    self.ba()
+                );
+            }
         }
 
         let pipx_request = self

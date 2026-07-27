@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# When a pipx package cannot use uvx, the missing-dependency message must not point at uv,
+# and mise must fail with those instructions rather than a bare ENOENT from `pipx install`.
+# Discussion: https://github.com/jdx/mise/discussions/6803
+
+MISE_BIN=$(command -v mise)
+EMPTY_BIN="$PWD/empty-bin"
+mkdir -p "$EMPTY_BIN"
+
+# PATH with neither pipx nor uv on it, so the dependency really is missing
+install_cmd() {
+  echo "env PATH=$EMPTY_BIN $* $MISE_BIN install"
+}
+
+# uvx disabled by the pipx.uvx setting: uv is not an alternative here
+out="$(quiet_assert_fail "$(install_cmd MISE_PIPX_UVX=0) pipx:cowsay@6.1")"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_contains_text "$out" "pipx.uvx"
+assert_not_contains_text "$out" "mise use uv@latest"
+assert_not_contains_text "$out" "os error 2"
+
+# uvx disabled by the package itself
+out="$(quiet_assert_fail "$(install_cmd) 'pipx:cowsay[uvx=false]@6.1'")"
+assert_contains_text "$out" "uvx = false"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_not_contains_text "$out" "mise use uv@latest"
+assert_not_contains_text "$out" "os error 2"
+
+# uvx allowed: uv is still offered, since installing it does solve the problem there
+out="$(quiet_assert_fail "$(install_cmd) pipx:cowsay@6.1")"
+assert_contains_text "$out" "mise use uv@latest"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_not_contains_text "$out" "os error 2"
