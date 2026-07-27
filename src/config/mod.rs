@@ -20,7 +20,9 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root, is_path_trusted, trust_check};
+use crate::config::config_file::{
+    ConfigFile, TaskConfig, config_trust_root, is_path_trusted, trust_check,
+};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -2230,6 +2232,14 @@ struct ResolvedTaskInputs {
     input_groups: Option<(IndexMap<String, Vec<String>>, PathBuf)>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct ResolvedTaskConfig {
+    inputs: ResolvedTaskInputs,
+    dir: Option<String>,
+    shell: Option<String>,
+    cache: Option<TaskCacheConfig>,
+}
+
 impl ResolvedTaskInputs {
     fn from_configs(configs: &[&Arc<dyn ConfigFile>]) -> Self {
         Self {
@@ -2605,63 +2615,81 @@ async fn load_local_tasks_with_context(
                 let monorepo_root = monorepo_root.clone();
                 let templates = templates.clone();
                 async move {
-                    let config_paths = config_paths_in_dir(&subdir);
-                    let found_config = !config_paths.is_empty();
-                    let mut parsed_configs = ConfigMap::new();
-                    for config_path in config_paths {
-                        match config_file::parse(&config_path).await {
-                            Ok(cf) => {
-                                parsed_configs.insert(config_path, cf);
+                    let exact_config_paths = config_paths_in_dir(&subdir);
+                    let found_config = !exact_config_paths.is_empty();
+                    let mut hierarchy_configs = config
+                        .config_files
+                        .iter()
+                        .filter(|(_, cf)| {
+                            let root = cf.config_root();
+                            path_starts_with_resolved(&root, &monorepo_root)
+                                && path_starts_with_resolved(&subdir, &root)
+                        })
+                        .map(|(path, cf)| (path.clone(), cf.clone()))
+                        .collect::<ConfigMap>();
+                    let mut hierarchy_dirs = subdir
+                        .ancestors()
+                        .take_while(|dir| path_starts_with_resolved(dir, &monorepo_root))
+                        .map(Path::to_path_buf)
+                        .collect::<Vec<_>>();
+                    hierarchy_dirs.reverse();
+                    for hierarchy_dir in hierarchy_dirs {
+                        for config_path in config_paths_in_dir(&hierarchy_dir) {
+                            if hierarchy_configs.contains_key(&config_path) {
+                                continue;
                             }
-                            Err(err) => {
-                                let rel_path = subdir
-                                    .strip_prefix(&monorepo_root)
-                                    .unwrap_or(&subdir);
-                                warn!(
-                                    "Failed to parse config file {} in monorepo subdirectory {}: {}. Tasks from this directory will not be loaded.",
-                                    config_path.display(),
-                                    rel_path.display(),
-                                    err
-                                );
+                            match config_file::parse(&config_path).await {
+                                Ok(cf) => {
+                                    hierarchy_configs.insert(config_path, cf);
+                                }
+                                Err(err) => {
+                                    let rel_path = hierarchy_dir
+                                        .strip_prefix(&monorepo_root)
+                                        .unwrap_or(&hierarchy_dir);
+                                    warn!(
+                                        "Failed to parse config file {} in monorepo directory {}: {}. Cascaded task configuration from this directory will be ignored.",
+                                        config_path.display(),
+                                        rel_path.display(),
+                                        err
+                                    );
+                                }
                             }
                         }
                     }
+                    let configs = configs_at_root(&subdir, &hierarchy_configs);
+                    let cascaded_task_config =
+                        cascaded_task_config_for_dir(&subdir, &hierarchy_configs)?;
 
                     if found_config {
-                        if parsed_configs.is_empty() {
+                        if configs.is_empty() {
                             return Ok(vec![]);
                         }
-                        let configs = parsed_configs.values().collect();
                         let mut tasks = load_tasks_from_configs(
                             &config,
                             &subdir,
                             configs,
                             &templates,
                             true,
+                            cascaded_task_config.as_ref(),
                         )
                         .await?;
                         prefix_monorepo_task_names(&mut tasks, &subdir, &monorepo_root);
                         return Ok(tasks);
                     }
 
-                    // If no config file exists, still load default task include dirs.
-                    let mut task_map: IndexMap<String, Task> = IndexMap::new();
-                    let includes = task_includes_for_dir(&subdir, &config.config_files)?;
-                    for include in includes {
-                        let mut subdir_tasks = load_tasks_includes(
-                            &config, &include, &subdir, &None, &templates, None, true,
-                        )
-                        .await?;
-                        if is_global_task_include_path(&include) {
-                            mark_tasks_as_global(&mut subdir_tasks);
-                        }
-                        prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
-                        for task in subdir_tasks {
-                            task_map.insert(task.name.clone(), task);
-                        }
-                    }
-
-                    Ok::<Vec<Task>, eyre::Report>(task_map.into_values().collect())
+                    // If no config file exists, load file tasks with any task
+                    // configuration cascaded from the monorepo root.
+                    let mut tasks = load_tasks_from_configs(
+                        &config,
+                        &subdir,
+                        vec![],
+                        &templates,
+                        true,
+                        cascaded_task_config.as_ref(),
+                    )
+                    .await?;
+                    prefix_monorepo_task_names(&mut tasks, &subdir, &monorepo_root);
+                    Ok::<Vec<Task>, eyre::Report>(tasks)
                 }
             })
             .collect();
@@ -2996,9 +3024,15 @@ async fn load_global_tasks(
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     for cf in configs {
-        let sources =
-            load_task_sources_from_configs(config, &cf.config_root(), vec![cf], templates, false)
-                .await?;
+        let sources = load_task_sources_from_configs(
+            config,
+            &cf.config_root(),
+            vec![cf],
+            templates,
+            false,
+            None,
+        )
+        .await?;
         let mut inline_tasks = IndexMap::new();
         for task in &sources.config_tasks {
             inline_tasks
@@ -3153,7 +3187,7 @@ async fn load_config_tasks(
     config_root: &Path,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
-    task_inputs: &ResolvedTaskInputs,
+    task_config: &ResolvedTaskConfig,
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
@@ -3173,10 +3207,16 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        if t.dir.is_none() {
+            t.dir = task_config.dir.clone();
+        }
+        if t.shell.is_none() {
+            t.shell = task_config.shell.clone();
+        }
         match t.render(&config, &config_root).await {
             Ok(()) => {
-                apply_task_config_inputs(&mut t, &config, task_inputs).await?;
-                apply_task_config_cache_default(&mut t, &cf.task_config().cache);
+                apply_task_config_inputs(&mut t, &config, &task_config.inputs).await?;
+                apply_task_config_cache_default(&mut t, &task_config.cache);
                 tasks.push(t);
             }
             Err(e) => {
@@ -3199,7 +3239,7 @@ async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
     config_root: &Path,
-    task_config_dir: &Option<String>,
+    task_config: &ResolvedTaskConfig,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     require_trust: bool,
@@ -3210,7 +3250,8 @@ async fn load_tasks_includes(
             config,
             root,
             config_root,
-            task_config_dir,
+            &task_config.dir,
+            &task_config.shell,
             templates,
             monorepo_cf,
         )
@@ -3249,7 +3290,8 @@ async fn load_tasks_includes(
                     config,
                     &path,
                     config_root,
-                    task_config_dir,
+                    &task_config.dir,
+                    &task_config.shell,
                     templates,
                     monorepo_cf,
                 )
@@ -3269,6 +3311,9 @@ async fn load_tasks_includes(
                 &config_root,
                 monorepo_cf.cloned(),
             )?;
+            if task.shell.is_none() {
+                task.shell = task_config.shell.clone();
+            }
             if let Err(err) = task.render(&config, &config_root).await {
                 if monorepo_cf.is_some() {
                     warn!(
@@ -3282,7 +3327,7 @@ async fn load_tasks_includes(
                 }
             }
             if task.dir.is_none()
-                && let Some(ref dir) = *task_config_dir
+                && let Some(ref dir) = task_config.dir
             {
                 task.dir = Some(if contains_template_syntax(dir) {
                     let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
@@ -3376,6 +3421,12 @@ fn task_include_patterns_for_dir(
     config_files: &ConfigMap,
 ) -> Result<(Vec<String>, PathBuf, bool)> {
     let configs = configs_at_root(dir, config_files);
+    let cascaded_task_config =
+        if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
+            None
+        } else {
+            cascaded_task_config_for_dir(dir, config_files)?
+        };
 
     // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
@@ -3390,6 +3441,13 @@ fn task_include_patterns_for_dir(
             Err(err) => Some(Err(err)),
         })
         .transpose()?
+        .or_else(|| {
+            cascaded_task_config.and_then(|tc| {
+                tc.task_config
+                    .includes
+                    .map(|includes| (includes, tc.includes_root, false))
+            })
+        })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
             (default_task_includes(), dir.to_path_buf(), true)
@@ -3448,12 +3506,91 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    load_tasks_from_configs(config, dir, configs, templates, false).await
+    let cascaded_task_config = cascaded_task_config_for_dir(dir, config_files)?;
+    load_tasks_from_configs(
+        config,
+        dir,
+        configs,
+        templates,
+        false,
+        cascaded_task_config.as_ref(),
+    )
+    .await
 }
 
 struct TaskSources {
     file_tasks: Vec<Task>,
     config_tasks: Vec<Task>,
+}
+
+#[derive(Clone)]
+struct CascadedTaskConfig {
+    task_config: TaskConfig,
+    includes_root: PathBuf,
+}
+
+fn merge_cascaded_task_config(
+    cascaded: &mut CascadedTaskConfig,
+    configs: &[&Arc<dyn ConfigFile>],
+) -> Result<()> {
+    if let Some(dir) = configs.iter().find_map(|cf| cf.task_config().dir.clone()) {
+        cascaded.task_config.dir = Some(dir);
+    }
+    if let Some(shell) = configs.iter().find_map(|cf| cf.task_config().shell.clone()) {
+        cascaded.task_config.shell = Some(shell);
+    }
+    if let Some(cache) = configs.iter().find_map(|cf| cf.task_config().cache.clone()) {
+        cascaded.task_config.cache = Some(cache);
+    }
+    if let Some((includes, root)) = configs
+        .iter()
+        .find_map(|cf| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .transpose()?
+    {
+        cascaded.task_config.includes = Some(includes);
+        cascaded.includes_root = root;
+    }
+    Ok(())
+}
+
+fn cascaded_task_config_for_dir(
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Result<Option<CascadedTaskConfig>> {
+    let mut roots = config_files
+        .values()
+        .filter(|cf| !is_global_config(cf.get_path()))
+        .map(|cf| cf.config_root())
+        .filter(|root| !paths_equal_resolved(root, dir) && path_starts_with_resolved(dir, root))
+        .unique()
+        .collect::<Vec<_>>();
+    roots.sort_by_key(|root| root.components().count());
+
+    let mut cascaded = None;
+    for root in roots {
+        let configs = configs_at_root(&root, config_files);
+        match configs.iter().find_map(|cf| cf.task_config().cascade) {
+            Some(false) => {
+                cascaded = None;
+                continue;
+            }
+            Some(true) if cascaded.is_none() => {
+                cascaded = Some(CascadedTaskConfig {
+                    task_config: TaskConfig::default(),
+                    includes_root: root,
+                });
+            }
+            _ => {}
+        }
+        if let Some(cascaded) = &mut cascaded {
+            merge_cascaded_task_config(cascaded, &configs)?;
+        }
+    }
+    Ok(cascaded)
 }
 
 impl TaskSources {
@@ -3485,12 +3622,18 @@ async fn load_tasks_from_configs(
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_context: bool,
+    cascaded_task_config: Option<&CascadedTaskConfig>,
 ) -> Result<Vec<Task>> {
-    Ok(
-        load_task_sources_from_configs(config, dir, configs, templates, monorepo_context)
-            .await?
-            .into_tasks(),
+    Ok(load_task_sources_from_configs(
+        config,
+        dir,
+        configs,
+        templates,
+        monorepo_context,
+        cascaded_task_config,
     )
+    .await?
+    .into_tasks())
 }
 
 /// Load file and inline task sources without merging them.
@@ -3504,13 +3647,18 @@ async fn load_task_sources_from_configs(
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_context: bool,
+    cascaded_task_config: Option<&CascadedTaskConfig>,
 ) -> Result<TaskSources> {
+    let cascaded_task_config =
+        if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
+            None
+        } else {
+            cascaded_task_config
+        };
     let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-    let task_config_inputs = ResolvedTaskInputs::from_configs(&configs);
-
     let (includes, resolve_dir) = configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
@@ -3519,7 +3667,33 @@ async fn load_task_sources_from_configs(
             Err(err) => Some(Err(err)),
         })
         .transpose()?
+        .or_else(|| {
+            cascaded_task_config.and_then(|tc| {
+                tc.task_config
+                    .includes
+                    .clone()
+                    .map(|includes| (includes, tc.includes_root.clone()))
+            })
+        })
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
+
+    // Resolve task defaults once for the config root so inline tasks from
+    // lower-precedence overlay files use the same defaults as file tasks.
+    let task_config = ResolvedTaskConfig {
+        inputs: ResolvedTaskInputs::from_configs(&configs),
+        dir: configs
+            .iter()
+            .find_map(|cf| cf.task_config().dir.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.dir.clone())),
+        shell: configs
+            .iter()
+            .find_map(|cf| cf.task_config().shell.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.shell.clone())),
+        cache: configs
+            .iter()
+            .find_map(|cf| cf.task_config().cache.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.cache.clone())),
+    };
 
     let mut config_tasks = vec![];
     for cf in &configs {
@@ -3532,14 +3706,11 @@ async fn load_task_sources_from_configs(
                 &dir,
                 templates,
                 monorepo_cf,
-                &task_config_inputs,
+                &task_config,
             )
             .await?,
         );
     }
-    // Find task_config.dir from the highest-precedence config that defines it
-    let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
-    let task_config_cache = configs.iter().find_map(|cf| cf.task_config().cache.clone());
 
     let mut file_tasks = vec![];
     let monorepo_cf = if monorepo_context {
@@ -3558,15 +3729,15 @@ async fn load_task_sources_from_configs(
                 config,
                 &p,
                 dir,
-                &task_config_dir,
+                &task_config,
                 templates,
                 monorepo_cf,
                 require_task_include_trust,
             )
             .await?;
             for task in &mut loaded {
-                apply_task_config_inputs(task, config, &task_config_inputs).await?;
-                apply_task_config_cache_default(task, &task_config_cache);
+                apply_task_config_inputs(task, config, &task_config.inputs).await?;
+                apply_task_config_cache_default(task, &task_config.cache);
             }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);
@@ -3611,6 +3782,7 @@ async fn load_task_file(
     path: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    task_config_shell: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
@@ -3622,9 +3794,6 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
-        if task.dir.is_none() {
-            task.dir = task_config_dir.clone();
-        }
         if let Some(monorepo_cf) = monorepo_cf {
             task.cf = Some(monorepo_cf.clone());
         }
@@ -3633,6 +3802,12 @@ async fn load_task_file(
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
         resolve_task_template(&mut task, templates)?;
+        if task.dir.is_none() {
+            task.dir = task_config_dir.clone();
+        }
+        if task.shell.is_none() {
+            task.shell = task_config_shell.clone();
+        }
         match task.render(config, &config_root).await {
             Ok(()) => {
                 out.push(task);
@@ -4724,6 +4899,7 @@ vars = { target = "linux" }
             &config,
             &tasks_toml,
             temp_dir.path(),
+            &None,
             &None,
             &IndexMap::new(),
             None,

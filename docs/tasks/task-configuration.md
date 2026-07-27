@@ -794,7 +794,22 @@ I don't want to turn all file tasks into tera templates just for this feature.
 
 Options available in the top-level `mise.toml` `[task_config]` section. These apply to all tasks which
 are included by that config file or use the same root directory, e.g.: `~/src/myproject/mise.toml`'s `[task_config]`
-applies to file tasks like `~/src/myproject/mise-tasks/mytask` but not to tasks in `~/src/myproject/subproj/mise.toml`.
+applies to file tasks like `~/src/myproject/mise-tasks/mytask`. Set `cascade = true` to also apply the
+section to tasks owned by descendant config roots.
+
+### `task_config.cascade`
+
+Cascade this config's `[task_config]` values to descendant config roots. Descendant values override
+individual inherited fields. A descendant can set `cascade = false` to stop inheriting the section.
+
+```toml
+[task_config]
+cascade = true
+shell = "bash -c"
+```
+
+This applies to `dir`, `shell`, `cache`, and `includes`. Inherited include paths remain relative to
+the config root where they were defined, allowing a monorepo root to provide one shared task set.
 
 ### `task_config.dir`
 
@@ -804,6 +819,23 @@ Change the default directory tasks are run from.
 [task_config]
 dir = "{{cwd}}"
 ```
+
+### `task_config.shell`
+
+Set the default shell for tasks in this config scope. A task's explicit `shell` setting takes
+precedence, including a `shell` inherited from a task template. With `task_config.cascade = true`,
+descendant config roots inherit this default and may override it with their own `task_config.shell`.
+
+```toml
+[task_config]
+shell = "bash -c"
+```
+
+Unlike the global-only
+[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) and
+[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+settings, this default is scoped to project tasks and cannot change the interpreter used by hooks,
+tool installation, or tasks from another config root.
 
 ### `task_config.cache` <Badge type="warning" text="experimental" />
 
@@ -878,8 +910,10 @@ includes = [
 ]
 ```
 
-For local and monorepo task discovery, mise uses the nearest config file that defines `task_config.includes`.
-That means a child config's `includes` replaces both the defaults and any `includes` defined by parent configs for that directory.
+For local and monorepo task discovery, mise uses the nearest config file that defines
+`task_config.includes`. When the parent has `task_config.cascade = true`, its includes are inherited
+until a child defines its own. A child config's `includes` replaces both the defaults and any
+inherited `includes` for that directory.
 Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
 
 Entries are evaluated in order, and when more than one include defines a task with the same name the **last** entry in the list wins.
