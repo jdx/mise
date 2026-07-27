@@ -135,11 +135,27 @@ experimental = true
 run = "true"
 sources = ["input.txt"]
 outputs = []
-cache = { enabled = true, command_inputs = ["true"] }
+cache = { enabled = true, command_inputs = ["printf overridden > shell-override-marker"] }
 EOF
 
 # Command inputs honor the same CLI shell override as the task body.
 MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS=false mise run --shell "sh -c" shell-override
+assert "cat shell-override-marker" "overridden"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.invalid-timeout]
+run = "true"
+timeout = "invalid"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["printf fallback > invalid-timeout-marker"] }
+EOF
+
+mise run invalid-timeout
+assert "cat invalid-timeout-marker" "fallback"
 
 cat <<'EOF' >mise.toml
 [settings]

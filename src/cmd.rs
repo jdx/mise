@@ -1775,7 +1775,9 @@ mod tests {
     #[tokio::test]
     async fn test_cmd_line_runner_execute_hashes_async_times_out() {
         let err = super::CmdLineRunner::new("sh")
-            .args(["-c", "sleep 60"])
+            // Replace the shell so there is no descendant holding the pipes
+            // after the timed-out process is terminated.
+            .args(["-c", "exec sleep 60"])
             .with_timeout(std::time::Duration::from_millis(10))
             .execute_hashes_async(1024)
             .await

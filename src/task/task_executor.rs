@@ -1253,9 +1253,13 @@ impl TaskExecutor {
         let timeout = task
             .timeout
             .as_ref()
-            .map(|value| duration::parse_duration(value))
-            .transpose()
-            .wrap_err_with(|| format!("invalid timeout for task {}", task.name))?
+            .and_then(|value| match duration::parse_duration(value) {
+                Ok(timeout) => Some(timeout),
+                Err(err) => {
+                    warn!("invalid timeout {:?} for task {}: {err}", value, task.name);
+                    None
+                }
+            })
             .unwrap_or(COMMAND_INPUT_TIMEOUT);
         let mut inputs = Vec::with_capacity(cache.command_inputs.len());
         for command in &cache.command_inputs {
