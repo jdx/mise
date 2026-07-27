@@ -152,6 +152,15 @@ impl<'a> NpmOptions<'a> {
         })
     }
 
+    fn aube_cli_lifecycle_script_args(&self) -> eyre::Result<Vec<OsString>> {
+        let args = self.allow_build_args()?;
+        Ok(if args.is_empty() {
+            vec![OsString::from("--ignore-scripts")]
+        } else {
+            args
+        })
+    }
+
     fn npm_lifecycle_script_args(
         allow_builds: AllowBuilds,
         supports_allow_scripts: bool,
@@ -1003,7 +1012,8 @@ impl NPMBackend {
         if let Some(args) = options.aube_args() {
             cmd = cmd.args(shell_words::split(args)?);
         }
-        cmd.args(options.allow_build_args()?).execute()?;
+        cmd.args(options.aube_cli_lifecycle_script_args()?)
+            .execute()?;
         Ok(())
     }
 
@@ -2338,6 +2348,29 @@ mod tests {
                 .allow_build_args()
                 .unwrap(),
             vec![OsString::from("--dangerously-allow-all-builds")]
+        );
+    }
+
+    #[test]
+    fn test_aube_cli_lifecycle_script_args_ignore_scripts_by_default() {
+        let default_options = ToolVersionOptions::default();
+        assert_eq!(
+            NpmOptions::new(&default_options)
+                .aube_cli_lifecycle_script_args()
+                .unwrap(),
+            vec![OsString::from("--ignore-scripts")]
+        );
+
+        let mut allow_options = ToolVersionOptions::default();
+        allow_options.opts.insert(
+            "allow_builds".to_string(),
+            toml::Value::String("esbuild".into()),
+        );
+        assert_eq!(
+            NpmOptions::new(&allow_options)
+                .aube_cli_lifecycle_script_args()
+                .unwrap(),
+            vec![OsString::from("--allow-build=esbuild")]
         );
     }
 
