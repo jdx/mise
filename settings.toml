@@ -1772,11 +1772,11 @@ default = "auto"
 description = "Package manager to use for installing npm packages."
 docs = """
 Package manager to use for installing npm packages. The default, `auto`, uses
-`aube` when it is installed and falls back to `npm`, similar to how the pipx
-backend uses `uv` when available. Set this to `npm`, `aube`, `bun`, or `pnpm`
-to force a specific package manager.
+mise's embedded `aube` package manager. Set this to `aube_cli` to invoke a
+standalone aube executable, or to `npm`, `bun`, or `pnpm` to invoke that
+package manager instead.
 """
-enum = ["auto", "npm", "aube", "bun", "pnpm"]
+enum = ["auto", "npm", "aube", "aube_cli", "bun", "pnpm"]
 env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
@@ -1799,8 +1799,9 @@ as `cafile`, client certificates, or an auth token helper). When enabled, npm
 must be installed.
 
 This applies to the default/`auto` package manager. Explicitly selecting a
-package manager with [`npm.package_manager`](#npm-package-manager) (`bun`,
-`pnpm`, or `npm`) always shells out to that tool regardless of this setting.
+package manager with [`npm.package_manager`](#npm-package-manager) (`aube_cli`,
+`bun`, `pnpm`, or `npm`) always shells out to that tool regardless of this
+setting.
 """
 env = "MISE_NPM_SHELL_OUT"
 type = "Bool"

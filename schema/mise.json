@@ -1330,7 +1330,7 @@
               "default": "auto",
               "description": "Package manager to use for installing npm packages.",
               "type": "string",
-              "enum": ["auto", "npm", "aube", "bun", "pnpm"]
+              "enum": ["auto", "npm", "aube", "aube_cli", "bun", "pnpm"]
             },
             "shell_out": {
               "default": false,

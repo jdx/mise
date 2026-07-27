@@ -99,6 +99,7 @@ pub enum NpmPackageManager {
     Auto,
     Npm,
     Aube,
+    AubeCli,
     Bun,
     Pnpm,
 }
