@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Test that task_config.shell is inherited by inline and included TOML tasks,
+# while task-local and task-template shells take precedence.
+
+mkdir -p "shell wrappers"
+
+cat <<'SCRIPT' >"shell wrappers/default"
+#!/usr/bin/env bash
+echo TASK_CONFIG_SHELL
+exec bash "$@"
+SCRIPT
+chmod +x "shell wrappers/default"
+
+cat <<'SCRIPT' >"shell wrappers/override"
+#!/usr/bin/env bash
+echo OVERRIDE_SHELL
+exec bash "$@"
+SCRIPT
+chmod +x "shell wrappers/override"
+
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks.toml"]
+shell = '"{{config_root}}/shell wrappers/default" -c'
+
+[task_templates.override]
+shell = '"{{config_root}}/shell wrappers/override" -c'
+
+[tasks.inline]
+run = "echo INLINE"
+
+[tasks.explicit]
+run = "echo EXPLICIT"
+shell = '"{{config_root}}/shell wrappers/override" -c'
+
+[tasks.templated]
+extends = "override"
+run = "echo TEMPLATED"
+EOF
+
+cat <<'EOF' >tasks.toml
+[included]
+run = "echo INCLUDED"
+EOF
+
+mkdir child
+cat <<'EOF' >child/mise.toml
+[tasks.child]
+run = "echo CHILD"
+EOF
+
+assert "mise run inline" "TASK_CONFIG_SHELL
+INLINE"
+assert "mise run included" "TASK_CONFIG_SHELL
+INCLUDED"
+assert "mise run explicit" "OVERRIDE_SHELL
+EXPLICIT"
+assert "mise run templated" "OVERRIDE_SHELL
+TEMPLATED"
+assert "mise -C child run child" "CHILD"

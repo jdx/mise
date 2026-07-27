@@ -805,6 +805,22 @@ Change the default directory tasks are run from.
 dir = "{{cwd}}"
 ```
 
+### `task_config.shell`
+
+Set the default shell for tasks in this config scope. A task's explicit `shell` setting takes
+precedence, including a `shell` inherited from a task template.
+
+```toml
+[task_config]
+shell = "bash -c"
+```
+
+Unlike the global-only
+[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) and
+[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+settings, this default is scoped to project tasks and cannot change the interpreter used by hooks,
+tool installation, or tasks from another config root.
+
 ### `task_config.cache` <Badge type="warning" text="experimental" />
 
 Sets the default artifact-cache configuration for tasks in this config scope. The default is only

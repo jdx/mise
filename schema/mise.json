@@ -2265,6 +2265,10 @@
           "description": "default directory to run tasks in defined in this file",
           "type": "string"
         },
+        "shell": {
+          "description": "default shell to run tasks with in this config scope",
+          "type": "string"
+        },
         "cache": {
           "description": "default experimental local artifact cache configuration for eligible tasks with sources and explicit outputs",
           "type": "object",

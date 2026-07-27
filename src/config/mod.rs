@@ -2649,7 +2649,7 @@ async fn load_local_tasks_with_context(
                     let includes = task_includes_for_dir(&subdir, &config.config_files)?;
                     for include in includes {
                         let mut subdir_tasks = load_tasks_includes(
-                            &config, &include, &subdir, &None, &templates, None, true,
+                            &config, &include, &subdir, &None, &None, &templates, None, true,
                         )
                         .await?;
                         if is_global_task_include_path(&include) {
@@ -3173,6 +3173,9 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        if t.shell.is_none() {
+            t.shell = cf.task_config().shell.clone();
+        }
         match t.render(&config, &config_root).await {
             Ok(()) => {
                 apply_task_config_inputs(&mut t, &config, task_inputs).await?;
@@ -3200,6 +3203,7 @@ async fn load_tasks_includes(
     root: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    task_config_shell: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     require_trust: bool,
@@ -3211,6 +3215,7 @@ async fn load_tasks_includes(
             root,
             config_root,
             task_config_dir,
+            task_config_shell,
             templates,
             monorepo_cf,
         )
@@ -3250,6 +3255,7 @@ async fn load_tasks_includes(
                     &path,
                     config_root,
                     task_config_dir,
+                    task_config_shell,
                     templates,
                     monorepo_cf,
                 )
@@ -3269,6 +3275,9 @@ async fn load_tasks_includes(
                 &config_root,
                 monorepo_cf.cloned(),
             )?;
+            if task.shell.is_none() {
+                task.shell = task_config_shell.clone();
+            }
             if let Err(err) = task.render(&config, &config_root).await {
                 if monorepo_cf.is_some() {
                     warn!(
@@ -3539,6 +3548,7 @@ async fn load_task_sources_from_configs(
     }
     // Find task_config.dir from the highest-precedence config that defines it
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
+    let task_config_shell = configs.iter().find_map(|cf| cf.task_config().shell.clone());
     let task_config_cache = configs.iter().find_map(|cf| cf.task_config().cache.clone());
 
     let mut file_tasks = vec![];
@@ -3559,6 +3569,7 @@ async fn load_task_sources_from_configs(
                 &p,
                 dir,
                 &task_config_dir,
+                &task_config_shell,
                 templates,
                 monorepo_cf,
                 require_task_include_trust,
@@ -3611,6 +3622,7 @@ async fn load_task_file(
     path: &Path,
     config_root: &Path,
     task_config_dir: &Option<String>,
+    task_config_shell: &Option<String>,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
 ) -> Result<Vec<Task>> {
@@ -3624,6 +3636,9 @@ async fn load_task_file(
         task.config_root = Some(config_root.to_path_buf());
         if task.dir.is_none() {
             task.dir = task_config_dir.clone();
+        }
+        if task.shell.is_none() {
+            task.shell = task_config_shell.clone();
         }
         if let Some(monorepo_cf) = monorepo_cf {
             task.cf = Some(monorepo_cf.clone());

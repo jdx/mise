@@ -70,6 +70,14 @@
 
 - **(config)** restrict default shell args to global config by @jdx in [#11293](https://github.com/jdx/mise/pull/11293)
 
+> [!WARNING]
+> `unix_default_file_shell_args`, `unix_default_inline_shell_args`,
+> `windows_default_file_shell_args`, and `windows_default_inline_shell_args` in project config files
+> are now ignored. These settings were applied before trust evaluation and could change the
+> interpreter used by commands from trusted sources. To select a shell for project tasks, use
+> [`task_config.shell`](https://mise.en.dev/tasks/task-configuration.html#task-config-shell) on a
+> release that supports it, or set `shell` on each task.
+
 ### New Contributors
 
 - @gologames made their first contribution in [#11257](https://github.com/jdx/mise/pull/11257)
