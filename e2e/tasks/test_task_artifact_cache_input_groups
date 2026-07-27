@@ -11,7 +11,7 @@ global_inputs = [
   "workspace.txt",
   "{{ config_root }}/templated.txt",
   "\\!important.txt",
-  "@group:toolchain",
+  "@group:global-toolchain",
 ]
 
 [task_config.cache]
@@ -42,6 +42,7 @@ EOF
 
 cat <<'EOF' >mise.local.toml
 [task_config.input_groups]
+global-toolchain = ["global-toolchain.txt"]
 toolchain = ["toolchain.txt"]
 app = [
   "packages/app/src/**/*",
@@ -59,6 +60,7 @@ printf 'reincluded-one\n' >packages/app/src/ignored/reincluded.rs
 printf 'workspace-one\n' >workspace.txt
 printf 'templated-one\n' >templated.txt
 printf 'escaped-one\n' >'!important.txt'
+printf 'global-toolchain-one\n' >global-toolchain.txt
 printf 'toolchain-one\n' >toolchain.txt
 
 # Named groups and global inputs resolve independently across layered configs,
@@ -94,40 +96,49 @@ assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "3"
 assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "3"
 assert "wc -l < global-only-runs.txt | tr -d ' '" "2"
 
+# A group referenced only from global inputs independently invalidates every task.
+printf 'global-toolchain-two-changed\n' >global-toolchain.txt
+rm -rf packages/app/dist
+mise run build ::: check ::: global-only
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "4"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "4"
+assert "wc -l < global-only-runs.txt | tr -d ' '" "3"
+
 # Nested groups participate in the cache key as normal source inputs.
 printf 'toolchain-two-changed\n' >toolchain.txt
 rm -rf packages/app/dist
-mise run build ::: check
-assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "4"
-assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "4"
+mise run build ::: check ::: global-only
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "5"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "5"
+assert "wc -l < global-only-runs.txt | tr -d ' '" "3"
 assert "cat packages/app/dist/result.txt" "source-two-changed:workspace-two-changed:toolchain-two-changed"
 
 # Ordered patterns preserve a later repeated include after an exclusion.
 printf 'reincluded-two-changed\n' >packages/app/src/ignored/reincluded.rs
 rm -rf packages/app/dist
 mise run build ::: check
-assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "5"
-assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "5"
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "6"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "6"
 
 # A file left excluded by the ordered patterns does not invalidate either task.
 printf 'excluded-two-changed\n' >packages/app/src/ignored/excluded.txt
 mise run build ::: check
-assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "5"
-assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "5"
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "6"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "6"
 
 # Templated global inputs are rendered before config-root anchoring.
 printf 'templated-two-changed\n' >templated.txt
 rm -rf packages/app/dist
 mise run build ::: check
-assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "6"
-assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "6"
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "7"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "7"
 
 # Escaped-literal global inputs independently participate in invalidation.
 printf 'escaped-two-changed\n' >'!important.txt'
 rm -rf packages/app/dist
 mise run build ::: check
-assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "7"
-assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "7"
+assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "8"
+assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "8"
 
 # Group references are validated even when no input groups or global inputs
 # are configured, rather than being retained as literal source paths.
