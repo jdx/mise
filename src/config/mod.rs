@@ -3374,8 +3374,7 @@ async fn load_tasks_includes(
             config,
             root,
             config_root,
-            &task_config.dir,
-            &task_config.shell,
+            task_config,
             templates,
             monorepo_cf,
             rendered_file_tasks,
@@ -3415,8 +3414,7 @@ async fn load_tasks_includes(
                     config,
                     &path,
                     config_root,
-                    &task_config.dir,
-                    &task_config.shell,
+                    task_config,
                     templates,
                     monorepo_cf,
                     rendered_file_tasks.as_deref_mut(),
@@ -3966,8 +3964,7 @@ async fn load_task_file(
     config: &Arc<Config>,
     path: &Path,
     config_root: &Path,
-    task_config_dir: &Option<String>,
-    task_config_shell: &Option<String>,
+    task_config: &ResolvedTaskConfig,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
@@ -3997,10 +3994,10 @@ async fn load_task_file(
             continue;
         }
         if task.dir.is_none() {
-            task.dir = task_config_dir.clone();
+            task.dir = task_config.dir.clone();
         }
         if task.shell.is_none() {
-            task.shell = task_config_shell.clone();
+            task.shell = task_config.shell.clone();
         }
         match task.render(config, &config_root).await {
             Ok(()) => {
@@ -5099,8 +5096,7 @@ vars = { target = "linux" }
             &config,
             &tasks_toml,
             temp_dir.path(),
-            &None,
-            &None,
+            &ResolvedTaskConfig::default(),
             &IndexMap::new(),
             None,
             None,
