@@ -73,6 +73,11 @@ test_npm() {
   test_backend_warning "npm" "mise install npm:test-package@latest" "npm may be required but was not found"
   unset MISE_NPM_SHELL_OUT
 
+  # Standalone aube mode keeps HTTP metadata but requires the aube executable.
+  test_backend_warning "aube CLI" \
+    "PATH='' MISE_NPM_PACKAGE_MANAGER=aube_cli '$MISE_BIN' install npm:test-package@latest" \
+    "aube may be required but was not found"
+
   # The default install path uses the embedded aube package manager, which
   # does not require an npm binary (only node, to run installed tools).
 }

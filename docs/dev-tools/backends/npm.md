@@ -25,8 +25,11 @@ auth token helper.
 
 You can also pick a specific installer with
 [`npm.package_manager`](/configuration/settings.html#npm-package-manager). The
-default `auto` uses the embedded aube; setting it to `bun`, `pnpm`, or `npm`
-shells out to that tool, which must then be installed.
+default `auto` uses the embedded aube; setting it to `aube_cli`, `bun`, `pnpm`,
+or `npm` shells out to that tool, which must then be installed. The standalone
+`aube_cli` mode uses mise's built-in HTTP client for version metadata when
+`npm.shell_out` remains at its default `false`, and invokes `aube` directly for
+installation; it does not rely on aube's `npm` compatibility shim.
 
 The npm backend forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
 to transitive dependency resolution during install. The embedded aube installer
@@ -146,14 +149,17 @@ allowing them means allowing code from the selected package and its dependencies
 installation.
 
 With the default `npm.package_manager = "auto"` setting, mise installs through its embedded `aube`
-package manager. Setting `npm.package_manager = "aube"`, `"pnpm"`, `"bun"`, or `"npm"` chooses a
-package manager explicitly (`aube` also uses the embedded one; the others shell out).
-[`npm.shell_out`](/configuration/settings.html#npm-shell-out) forces the npm CLI. The `allow_builds`,
-`trust_policy_excludes`, `pnpm_args`, `bun_args`, and `npm_args` options only affect the package
-manager that is actually used; an approval option for one does not change the behavior of another.
+package manager. Setting `npm.package_manager = "aube"`, `"aube_cli"`, `"pnpm"`, `"bun"`, or
+`"npm"` chooses a package manager explicitly (`aube` also uses the embedded one; the others shell
+out).
+With the default `auto` package manager, [`npm.shell_out`](/configuration/settings.html#npm-shell-out)
+forces the npm CLI. An explicitly selected installer still takes precedence for installation.
+The `allow_builds`, `trust_policy_excludes`, `pnpm_args`, `bun_args`, and `npm_args` options only
+affect the package manager that is actually used; an approval option for one does not change the
+behavior of another.
 
 For tools that need reviewed dependency build scripts, use `allow_builds` with `aube` (default),
-`pnpm`, or npm 11.16.0+.
+`aube_cli`, `pnpm`, or npm 11.16.0+.
 
 ### `aube` (default)
 
@@ -170,6 +176,20 @@ Use `allow_builds` for reviewed dependency builds:
 Use `trust_policy_excludes` for reviewed aube trust-policy exceptions.
 Set `allow_builds = true` to allow every dependency build script when you explicitly accept the risk.
 (The `aube_args` option is ignored now that installs run in-process rather than via the `aube` CLI.)
+
+### `aube_cli`
+
+Set `npm.package_manager = "aube_cli"` to install through a standalone `aube`
+executable while retaining mise's built-in HTTP metadata lookup:
+
+```toml
+[settings.npm]
+package_manager = "aube_cli"
+```
+
+This mode invokes `aube add --global` directly. It forwards `aube_args` and
+`allow_builds`, and does not require `aube activate` or depend on the behavior
+of aube's npm compatibility shim.
 
 ### `pnpm`
 
@@ -245,8 +265,8 @@ go in `[tools]` in `mise.toml`.
 ### `allow_builds`
 
 Packages whose dependency lifecycle build scripts should be approved when
-`settings.npm.package_manager = "aube"`, `"pnpm"`, or npm 11.16.0+. Use this instead of spelling out
-package-manager-specific approval flags in `aube_args`, `pnpm_args`, or `npm_args`.
+`settings.npm.package_manager = "aube"`, `"aube_cli"`, `"pnpm"`, or npm 11.16.0+. Use this instead
+of spelling out package-manager-specific approval flags in `aube_args`, `pnpm_args`, or `npm_args`.
 
 For example, to allow one verified dependency build script:
 
@@ -276,8 +296,8 @@ requires npm 11.16.0+.
 ### `trust_policy_excludes`
 
 Packages or package version ranges that should be exempt from aube's `trustPolicy=no-downgrade`
-check when `settings.npm.package_manager = "aube"`. Use this for reviewed dependency provenance
-metadata churn without disabling the trust policy for the whole install.
+check when `settings.npm.package_manager = "aube"` or `"aube_cli"`. Use this for reviewed dependency
+provenance metadata churn without disabling the trust policy for the whole install.
 
 For example, to exempt every version of a dependency:
 
@@ -336,8 +356,10 @@ Before adding an exception:
 4. Prefer a version-scoped `"<package>@<version>"` exception after review. A bare package name
    exempts every future version.
 
-Using `mise settings npm.shell_out=true` switches to the npm CLI and bypasses this aube check
-entirely, so it should be a last resort rather than the first workaround.
+With the default `auto` package manager, using `mise settings npm.shell_out=true` switches to the npm
+CLI and bypasses this aube check entirely, so it should be a last resort rather than the first
+workaround. An explicit `npm.package_manager = "aube_cli"` selection still uses standalone aube for
+installation.
 
 See aube's [trust-policy documentation](https://aube.jdx.dev/security#trust-policy) for more
 detail.
@@ -345,7 +367,7 @@ detail.
 ### `aube_args`
 
 Additional arguments to pass to `aube add --global` when
-`settings.npm.package_manager = "aube"`.
+`settings.npm.package_manager = "aube_cli"`.
 These are raw user-supplied arguments.
 
 For example, to install `npm` with aube's append-only reporter mode:
