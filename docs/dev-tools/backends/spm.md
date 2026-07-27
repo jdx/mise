@@ -143,6 +143,30 @@ product in the package, installation fails with a clear error.
 "spm:swiftlang/swiftly" = { version = "latest", filter_bins = "swiftly" }
 ```
 
+### `install_command`
+
+Run an explicit command from the checked-out package directory instead of discovering executable
+products and running `swift build --product`. The command uses mise's default inline shell and
+inherits [`install_env`](#install_env) plus the `PATH` for the Swift dependency. `PREFIX` and
+`MISE_TOOL_INSTALL_PATH` are both set to the tool's installation directory.
+
+This option only applies to source installs and cannot be combined with `filter_bins`. Mise never
+automatically runs a package's Makefile or other installation scripts; the command must be
+configured explicitly.
+
+Useful for packages whose executable is not the only artifact that has to be installed — for
+example a package that also ships a dynamic library or Swift modules that its own `make install`
+target places next to the binary:
+
+```toml
+[tools]
+"spm:owner/repo" = { version = "1.2.3", artifactbundle = false, install_command = "make install PREFIX=\"$MISE_TOOL_INSTALL_PATH\"" }
+```
+
+Some install scripts exit successfully even when the underlying `swift build` failed, so mise
+verifies that the command installed at least one executable into `bin/` and fails the install
+otherwise.
+
 ## Settings
 
 ### `spm.artifactbundle_only`
