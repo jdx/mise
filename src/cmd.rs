@@ -997,9 +997,15 @@ impl<'a> CmdLineRunner<'a> {
     /// Unlike `read`, this never buffers the complete output in memory. The
     /// combined byte limit also prevents commands that emit indefinitely from
     /// consuming unbounded resources.
-    pub async fn execute_hashes_async(
+    pub async fn execute_hashes_async(self, max_output_bytes: usize) -> Result<(String, String)> {
+        self.execute_hashes_async_with_drain_timeout(max_output_bytes, PIPE_DRAIN_TIMEOUT)
+            .await
+    }
+
+    async fn execute_hashes_async_with_drain_timeout(
         mut self,
         max_output_bytes: usize,
+        pipe_drain_timeout: Duration,
     ) -> Result<(String, String)> {
         let _read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
@@ -1129,19 +1135,25 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
-        let drain_deadline = Instant::now() + PIPE_DRAIN_TIMEOUT;
+        let drain_deadline = Instant::now() + pipe_drain_timeout;
         loop {
             let remaining = drain_deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                debug!("pipe drain timeout for {id}, abandoning hash readers");
-                break;
+                #[cfg(unix)]
+                signal_process_tree(id, nix::sys::signal::Signal::SIGKILL);
+                #[cfg(windows)]
+                kill_process_tree(id);
+                bail!("command output pipes did not close within {pipe_drain_timeout:?}");
             }
             let output = match tokio::time::timeout(remaining, rx.recv()).await {
                 Ok(Some(output)) => output,
                 Ok(None) => break,
                 Err(_) => {
-                    debug!("pipe drain timeout for {id}, abandoning hash readers");
-                    break;
+                    #[cfg(unix)]
+                    signal_process_tree(id, nix::sys::signal::Signal::SIGKILL);
+                    #[cfg(windows)]
+                    kill_process_tree(id);
+                    bail!("command output pipes did not close within {pipe_drain_timeout:?}");
                 }
             };
             if let Err(err) = consume(output) {
@@ -1769,6 +1781,19 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn test_cmd_line_runner_execute_hashes_async_rejects_undrained_pipes() {
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "sleep 60 &"])
+            .execute_hashes_async_with_drain_timeout(1024, std::time::Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("command output pipes did not close")
+        );
     }
 
     #[test]
