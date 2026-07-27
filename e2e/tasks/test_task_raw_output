@@ -13,6 +13,10 @@ run = 'echo normal task'
 [tasks.raw_task]
 raw = true
 run = 'echo raw task output'
+
+[tasks.interactive_task]
+interactive = true
+run = 'echo interactive task output'
 EOF
 
 # Normal task should use prefix output (from settings)
@@ -29,3 +33,15 @@ if [[ $stdout_output == *"[raw_task]"* ]]; then
   exit 1
 fi
 echo "SUCCESS: raw task stdout has no prefix"
+
+# CLI and environment output overrides must not disable the inherited stdio
+# required by raw and interactive tasks. They should resolve the same way as
+# the equivalent task.output setting, including during a dry run.
+for task in raw_task interactive_task; do
+  assert_contains "mise run --output keep-order $task 2>&1" '$ echo'
+  assert_not_contains "mise run --output keep-order $task 2>&1" "Finished in"
+  assert_contains "MISE_TASK_OUTPUT=keep-order mise run $task 2>&1" '$ echo'
+  assert_not_contains "MISE_TASK_OUTPUT=keep-order mise run $task 2>&1" "Finished in"
+  assert_contains "mise run --output keep-order --dry-run $task 2>&1" '$ echo'
+  assert_not_contains "mise run --output keep-order --dry-run $task 2>&1" "Finished in"
+done
