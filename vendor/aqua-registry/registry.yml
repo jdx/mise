@@ -8561,6 +8561,20 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 3.34.0")
+        asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: UpCloudLtd/workflows/.github/workflows/build-provenance.yaml
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: upcloud-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -8572,6 +8586,15 @@ packages:
           algorithm: sha256
         github_artifact_attestations:
           signer_workflow: UpCloudLtd/workflows/.github/workflows/build-provenance.yaml
+        cosign:
+          bundle:
+            type: github_release
+            asset: upcloud-cli.sigstore.json
+          opts:
+            - --certificate-identity
+            - https://github.com/UpCloudLtd/workflows/.github/workflows/build-provenance.yaml@refs/heads/main
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -21007,6 +21030,28 @@ packages:
         github_artifact_attestations:
           signer_workflow: borgbackup/borg/.github/workflows/ci.yml
   - type: github_release
+    repo_owner: borghei
+    repo_name: ink
+    description: Terminal markdown reader with syntax highlighting, inline images, and themes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.2")
+        asset: ink-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+      - version_constraint: "true"
+        asset: ink-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+  - type: github_release
     repo_owner: boyter
     repo_name: scc
     description: "Sloc, Cloc and Code: scc is a very fast accurate code counter with complexity calculations and COCOMO estimates written in pure Go"
@@ -33349,6 +33394,13 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: semver("<= 2.14.0")
+        asset: tf-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: tf-{{.OS}}-{{.Arch}}
         format: raw
@@ -33356,6 +33408,8 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: dex4er/tf/\.github/workflows/release\.yaml
   - type: github_release
     repo_owner: dhall-lang
     repo_name: dhall-haskell
