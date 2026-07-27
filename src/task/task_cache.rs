@@ -394,18 +394,18 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
     for output in output_glob_patterns(&patterns) {
         ensure_safe_relative(Path::new(&output))?;
         if crate::task::task_source_checker::is_glob_pattern(&output) {
-            let mut matched = false;
+            let mut glob_matched = false;
             for entry in glob(root.join(&output).to_str().unwrap_or_default())? {
                 let path = entry?;
+                glob_matched = true;
                 let rel = path.strip_prefix(root)?.to_path_buf();
                 ensure_safe_relative(&rel)?;
                 let is_dir = fs::symlink_metadata(&path)?.is_dir();
                 if is_output(&matcher, &path, is_dir) {
                     resolved.insert(rel);
-                    matched = true;
                 }
             }
-            if require_matches && !matched {
+            if require_matches && !glob_matched {
                 bail!("output pattern {output:?} matched no files");
             }
         } else {
@@ -741,6 +741,25 @@ mod tests {
                 PathBuf::from("coverage"),
             ]),
             vec![PathBuf::from("coverage"), PathBuf::from("dist")]
+        );
+    }
+
+    #[test]
+    fn output_roots_allow_glob_matches_that_are_all_excluded() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/vendor.js"), "vendor").unwrap();
+        let task = Task {
+            outputs: crate::task::task_sources::TaskOutputs::Files(vec![
+                "dist/*.js".to_string(),
+                "!dist/vendor.js".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_output_roots(&task, root.path(), true).unwrap(),
+            Vec::<PathBuf>::new()
         );
     }
 

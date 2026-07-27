@@ -160,7 +160,8 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
 pub(crate) fn build_output_matcher(root: &Path, outputs: &[String]) -> Result<Override> {
     let mut builder = OverrideBuilder::new(root);
     for output in outputs {
-        builder.add(output)?;
+        let output = normalize_pattern(root, root, output);
+        builder.add(&output)?;
         let descendant = if let Some(body) = output.strip_prefix('!') {
             format!("!{body}/**")
         } else if let Some(body) = output.strip_prefix("\\!") {
@@ -665,50 +666,54 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
                     entries.push((path, "other".to_string()));
                 }
             }
-            Err(_) => return Ok(None), // missing → outputs incomplete
+            Err(_) => {
+                if is_output(&matcher, &path, false) || is_output(&matcher, &path, true) {
+                    return Ok(None); // selected and missing → outputs incomplete
+                }
+            }
         }
     }
 
     for pattern_str in glob_pats {
         let full = root.join(pattern_str.as_str());
-        let mut matched = false;
+        let mut glob_matched = false;
         for entry in glob(full.to_str().unwrap_or_default())? {
             // Propagate glob resolution errors (OS errors during directory
             // reads) rather than silently skipping them — a partial result
             // could produce the same hash as a complete one.
             let path = entry?;
-            match path.metadata() {
-                Ok(m) if m.is_file() => {
-                    if is_output(&matcher, &path, false) {
-                        entries.push(hash_file(&path)?);
-                        matched = true;
+            glob_matched = true;
+            let metadata = match path.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    if !is_output(&matcher, &path, false) && !is_output(&matcher, &path, true) {
+                        continue;
                     }
+                    return Ok(None); // selected and unreadable → outputs incomplete
                 }
-                Ok(m) if m.is_dir() => {
+            };
+            if !is_output(&matcher, &path, metadata.is_dir()) {
+                continue;
+            }
+            match metadata {
+                m if m.is_file() => {
+                    entries.push(hash_file(&path)?);
+                }
+                m if m.is_dir() => {
                     let found = push_dir_entries(&path, &mut entries, &matcher)?;
-                    let root_selected = is_output(&matcher, &path, true);
-                    if !found && root_selected {
+                    if !found {
                         entries.push((path, "empty-dir".to_string()));
                     }
-                    matched = found || root_selected;
                 }
-                Ok(_) => {
-                    if is_output(&matcher, &path, false) {
-                        entries.push((path, "other".to_string()));
-                        matched = true;
-                    }
+                _ => {
+                    entries.push((path, "other".to_string()));
                 }
-                Err(_) => return Ok(None), // unreadable entry → treat as incomplete
             }
         }
         // A glob that matches nothing means expected outputs are missing.
-        if !matched {
+        if !glob_matched {
             return Ok(None);
         }
-    }
-
-    if entries.is_empty() {
-        return Ok(None);
     }
 
     entries.sort_by(|(a, _), (b, _)| a.cmp(b));
@@ -940,6 +945,16 @@ mod tests {
     }
 
     #[test]
+    fn output_matcher_normalizes_absolute_patterns_under_root() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("dist/result.txt");
+        let patterns = vec![format!("{}/dist/**/*", root.path().display())];
+        let matcher = build_output_matcher(root.path(), &patterns).unwrap();
+
+        assert!(is_output(&matcher, &output, false));
+    }
+
+    #[test]
     fn output_globs_ignore_excludes_and_unescape_literal_bangs() {
         assert_eq!(
             output_glob_patterns(&[
@@ -968,6 +983,36 @@ mod tests {
             .unwrap();
 
         assert_eq!(modified, SystemTime::from(directory_mtime));
+    }
+
+    #[test]
+    fn output_hash_allows_missing_excluded_static_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let task = Task {
+            outputs: crate::task::task_sources::TaskOutputs::Files(vec![
+                "missing.txt".to_string(),
+                "!missing.txt".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        assert!(compute_output_hash(&task, root.path()).unwrap().is_some());
+    }
+
+    #[test]
+    fn output_hash_allows_glob_matches_that_are_all_excluded() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/vendor.js"), "vendor").unwrap();
+        let task = Task {
+            outputs: crate::task::task_sources::TaskOutputs::Files(vec![
+                "dist/*.js".to_string(),
+                "!dist/vendor.js".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        assert!(compute_output_hash(&task, root.path()).unwrap().is_some());
     }
 
     #[test]
