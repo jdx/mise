@@ -82,7 +82,7 @@ outside this tracker.
       unkeyed dependency work still forces execution
 - [x] Capture and replay stdout and stderr while respecting mise output modes
 - [x] Cache useful results for tasks with no filesystem outputs
-- [ ] Support reusable and global input groups
+- [x] Support reusable and global input groups
 - [ ] Support global environment inputs and pass-through environment variables
 - [ ] Support negative input and output patterns
 - [ ] Support runtime-command inputs

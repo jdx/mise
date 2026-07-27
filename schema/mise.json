@@ -2284,6 +2284,23 @@
             }
           }
         },
+        "global_inputs": {
+          "description": "experimental config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "input_groups": {
+          "description": "experimental reusable config-root-relative source groups referenced with @group:<name>",
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
         "includes": {
           "description": "files/directories to include searching for tasks. Can be local paths or git repository URLs using git:: prefix (e.g., git::https://github.com/org/repo.git//path?ref=branch)",
           "items": {

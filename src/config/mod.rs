@@ -20,13 +20,16 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root, is_path_trusted, trust_check};
+use crate::config::config_file::{
+    ConfigFile, TaskConfig, config_trust_root, is_path_trusted, trust_check,
+};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::task_sources::TaskOutputs;
 use crate::task::{Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
 use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
@@ -2221,6 +2224,121 @@ fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConf
     }
 }
 
+const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
+
+fn anchor_task_input(root: &Path, input: &str) -> String {
+    let (exclude, input) = input
+        .strip_prefix('!')
+        .map(|input| (true, input))
+        .unwrap_or((false, input));
+    let input = input
+        .strip_prefix("\\!")
+        .map(|input| format!("!{input}"))
+        .unwrap_or_else(|| input.to_string());
+    let path = Path::new(&input);
+    let anchored = if path.is_absolute() {
+        input
+    } else {
+        root.join(path).to_string_lossy().to_string()
+    };
+    if exclude {
+        format!("!{anchored}")
+    } else {
+        anchored
+    }
+}
+
+fn expand_task_inputs(
+    entries: &[String],
+    groups: &IndexMap<String, Vec<String>>,
+    root: &Path,
+    task_name: &str,
+    stack: &mut Vec<String>,
+    anchor_literals: bool,
+) -> Result<Vec<String>> {
+    let mut expanded = vec![];
+    for entry in entries {
+        let Some(group) = entry.strip_prefix(TASK_INPUT_GROUP_PREFIX) else {
+            expanded.push(if anchor_literals {
+                anchor_task_input(root, entry)
+            } else {
+                entry.clone()
+            });
+            continue;
+        };
+        let inputs = groups.get(group).ok_or_else(|| {
+            eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
+        })?;
+        if let Some(cycle_start) = stack.iter().position(|name| name == group) {
+            let mut cycle = stack[cycle_start..].to_vec();
+            cycle.push(group.to_string());
+            bail!(
+                "task {task_name} input group cycle: {}",
+                cycle.iter().join(" -> ")
+            );
+        }
+        stack.push(group.to_string());
+        expanded.extend(expand_task_inputs(
+            inputs, groups, root, task_name, stack, true,
+        )?);
+        stack.pop();
+    }
+    Ok(expanded)
+}
+
+async fn apply_task_config_inputs(
+    task: &mut Task,
+    config: &Arc<Config>,
+    task_config: &TaskConfig,
+    config_root: &Path,
+) -> Result<()> {
+    if task_config.global_inputs.is_empty() && task_config.input_groups.is_empty() {
+        return Ok(());
+    }
+    Settings::get().ensure_experimental("task input groups")?;
+
+    let had_sources = !task.sources.is_empty();
+    let mut sources = expand_task_inputs(
+        &task.sources,
+        &task_config.input_groups,
+        config_root,
+        &task.name,
+        &mut vec![],
+        false,
+    )?;
+    sources.extend(expand_task_inputs(
+        &task_config.global_inputs,
+        &task_config.input_groups,
+        config_root,
+        &task.name,
+        &mut vec![],
+        true,
+    )?);
+
+    if sources
+        .iter()
+        .any(|source| contains_template_syntax(source))
+    {
+        let mut tera = crate::tera::get_tera(Some(config_root));
+        let tera_ctx = task.tera_ctx(config).await?;
+        for source in &mut sources {
+            if contains_template_syntax(source) {
+                *source = render_str(&mut tera, source, &tera_ctx)?;
+            }
+        }
+    }
+
+    task.sources = sources
+        .into_iter()
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .collect();
+    if !had_sources && !task.sources.is_empty() && task.outputs.is_empty() {
+        task.outputs = TaskOutputs::Auto;
+    }
+    Ok(())
+}
+
 fn default_task_includes() -> Vec<String> {
     vec![
         "mise-tasks".to_string(),
@@ -2990,6 +3108,8 @@ async fn load_config_tasks(
         resolve_task_template(&mut t, templates)?;
         match t.render(&config, &config_root).await {
             Ok(()) => {
+                apply_task_config_inputs(&mut t, &config, cf.task_config(), &cf.config_root())
+                    .await?;
                 apply_task_config_cache_default(&mut t, &cf.task_config().cache);
                 tasks.push(t);
             }
@@ -3344,6 +3464,11 @@ async fn load_task_sources_from_configs(
     // Find task_config.dir from the highest-precedence config that defines it
     let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
     let task_config_cache = configs.iter().find_map(|cf| cf.task_config().cache.clone());
+    let task_config_inputs = configs.iter().find_map(|cf| {
+        let task_config = cf.task_config();
+        (!task_config.global_inputs.is_empty() || !task_config.input_groups.is_empty())
+            .then(|| (task_config.clone(), cf.config_root()))
+    });
 
     let mut file_tasks = vec![];
     let monorepo_cf = if monorepo_context {
@@ -3369,6 +3494,9 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
+                if let Some((task_config, config_root)) = &task_config_inputs {
+                    apply_task_config_inputs(task, config, task_config, config_root).await?;
+                }
                 apply_task_config_cache_default(task, &task_config_cache);
             }
             if is_global || is_global_task_include_path(&p) {
@@ -3487,6 +3615,73 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&before, &after));
         Settings::reset(None);
+    }
+
+    #[test]
+    fn test_expand_task_inputs_supports_nested_groups() -> Result<()> {
+        let groups = IndexMap::from([
+            (
+                "shared".to_string(),
+                vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()],
+            ),
+            (
+                "production".to_string(),
+                vec!["@group:shared".to_string(), "!src/**/*_test.rs".to_string()],
+            ),
+        ]);
+        let root = Path::new("/workspace");
+
+        assert_eq!(
+            expand_task_inputs(
+                &["local.txt".to_string(), "@group:production".to_string()],
+                &groups,
+                root,
+                "build",
+                &mut vec![],
+                false,
+            )?,
+            vec![
+                "local.txt",
+                "/workspace/Cargo.toml",
+                "/workspace/src/**/*.rs",
+                "!/workspace/src/**/*_test.rs",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_expand_task_inputs_rejects_unknown_and_cyclic_groups() {
+        let groups = IndexMap::from([
+            ("a".to_string(), vec!["@group:b".to_string()]),
+            ("b".to_string(), vec!["@group:a".to_string()]),
+        ]);
+
+        let unknown = expand_task_inputs(
+            &["@group:missing".to_string()],
+            &groups,
+            Path::new("/workspace"),
+            "build",
+            &mut vec![],
+            false,
+        )
+        .unwrap_err();
+        assert!(
+            unknown
+                .to_string()
+                .contains("undefined input group \"missing\"")
+        );
+
+        let cycle = expand_task_inputs(
+            &["@group:a".to_string()],
+            &groups,
+            Path::new("/workspace"),
+            "build",
+            &mut vec![],
+            false,
+        )
+        .unwrap_err();
+        assert!(cycle.to_string().contains("a -> b -> a"));
     }
 
     #[test]
