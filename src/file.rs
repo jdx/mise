@@ -1558,7 +1558,13 @@ pub fn split_file_name(path: &Path) -> (String, String) {
 }
 
 pub fn same_file(a: &Path, b: &Path) -> bool {
-    desymlink_path(a) == desymlink_path(b)
+    a == b || desymlink_path(a) == desymlink_path(b)
+}
+
+/// Returns whether `path` starts with `prefix` either lexically or after
+/// resolving symlinks and the existing path prefix.
+pub fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
+    path.starts_with(prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
 }
 
 fn resolve_path_with_existing_prefix(path: &Path) -> PathBuf {
