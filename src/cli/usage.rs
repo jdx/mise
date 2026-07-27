@@ -10,8 +10,13 @@ use eyre::Result;
 #[clap(verbatim_doc_comment, hide = true)]
 pub struct Usage {}
 
-impl Usage {
-    pub fn run(self) -> Result<()> {
+/// mise's own usage spec, with everything clap cannot express applied.
+///
+/// Shared with `mise mcp`, which answers "what does this command do" from the
+/// same `effect=` data this prints. Two constructions would drift, and the one
+/// an agent reads is the one that must not.
+pub fn spec() -> usage::Spec {
+    {
         let cli = Cli::command().version(Resettable::Reset);
         let mut spec: usage::Spec = cli.into();
 
@@ -56,13 +61,19 @@ impl Usage {
         // so it is applied to the derived spec; see command_effects.
         crate::cli::command_effects::apply(&mut spec);
 
+        spec
+    }
+}
+
+impl Usage {
+    pub fn run(self) -> Result<()> {
         // 3.6 added `effect=` (jdx/usage#739) and 4.0 added it on flags and args
         // (jdx/usage#742); older `usage` CLIs reject the spec outright with
         // "unsupported cmd prop effect", so this moves in lockstep with the
         // fields the spec actually carries.
         let min_version = r#"min_usage_version "4.0""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
-        println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
+        println!("{min_version}\n{}\n{extra}", spec().to_string().trim());
         Ok(())
     }
 }

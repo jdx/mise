@@ -23,6 +23,7 @@ Resources available:
 - mise://config - Show configuration files and project root
 
 Tools available:
+- list_commands - Every mise command, with its declared effect on the world
 - install_tool - Install a tool with an optional version (not yet implemented)
 - run_task - Execute a mise task with optional arguments
 
@@ -57,6 +58,8 @@ $ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion
 - mise://config - Show configuration info
 
 # Tools available:
+- list_commands - Every mise command and what running it does
+  Example: {"include_hidden": false}
 - install_tool - Install a tool (not yet implemented)
 - run_task - Execute a mise task with optional arguments
   Example: {"task": "build", "args": ["--verbose"]}
