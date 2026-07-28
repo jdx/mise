@@ -211,18 +211,25 @@ fn parse_backend_components_fallible(
 
 impl BackendArg {
     pub fn matches_bin_name(&self, bin_name: &str) -> bool {
-        let bin_name = bin_name
-            .strip_suffix(std::env::consts::EXE_SUFFIX)
-            .unwrap_or(bin_name);
-        self.short
-            .rsplit([':', '/'])
-            .next()
-            .is_some_and(|name| name == bin_name)
-            || self
-                .tool_name
-                .rsplit('/')
-                .next()
-                .is_some_and(|name| name == bin_name)
+        let exe_suffix = std::env::consts::EXE_SUFFIX;
+        let bin_name = if exe_suffix.is_empty() {
+            bin_name
+        } else {
+            let suffix_start = bin_name.len().saturating_sub(exe_suffix.len());
+            match (bin_name.get(..suffix_start), bin_name.get(suffix_start..)) {
+                (Some(name), Some(suffix)) if suffix.eq_ignore_ascii_case(exe_suffix) => name,
+                _ => bin_name,
+            }
+        };
+        let matches = |name: &str| {
+            if cfg!(windows) {
+                name.eq_ignore_ascii_case(bin_name)
+            } else {
+                name == bin_name
+            }
+        };
+        self.short.rsplit([':', '/']).next().is_some_and(matches)
+            || self.tool_name.rsplit('/').next().is_some_and(matches)
     }
 
     #[requires(!short.is_empty())]
@@ -762,6 +769,12 @@ mod tests {
         assert!(explicit_codex.matches_bin_name("codex"));
         assert!(!node.matches_bin_name("codex"));
         assert!(!codex.matches_bin_name("node"));
+        if cfg!(windows) {
+            assert!(codex.matches_bin_name("CODEX.EXE"));
+            assert!(explicit_codex.matches_bin_name("Codex.Exe"));
+        } else {
+            assert!(!codex.matches_bin_name("CODEX"));
+        }
     }
 
     #[tokio::test]
