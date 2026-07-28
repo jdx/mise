@@ -78,7 +78,7 @@ impl DotfilesUnapply {
         // Validate and plan both domains before either mutates the filesystem.
         // Apply writes whole files before edits, so execute the inverse order.
         let edit_plan = system::edits::plan_unapply(&edits, &edit_opts)?;
-        let file_plan = system::files::plan_unapply(&config, &files, &file_opts)?;
+        let mut file_plan = system::files::plan_unapply(&files, &file_opts)?;
         if !self.dry_run
             && !self.yes
             && console::user_attended_stderr()
@@ -92,6 +92,7 @@ impl DotfilesUnapply {
             info!("dotfiles: skipped");
             return Ok(());
         }
+        system::files::resolve_unapply(&config, &mut file_plan, &file_opts)?;
         // Confirmation covers the complete validated plan. Suppress the
         // per-domain prompts so declining cannot leave a partial unapply.
         edit_opts.yes = true;

@@ -992,14 +992,13 @@ pub struct UnapplyPlan<'a> {
 /// ownership evidence. Copies and templates must still match their source
 /// unless `--force` was given.
 pub fn plan_unapply<'a>(
-    config: &Config,
     requests: &'a [FileRequest],
     opts: &UnapplyOpts,
 ) -> Result<Vec<UnapplyPlan<'a>>> {
     let mut todo = vec![];
     let mut problems = vec![];
     for req in requests {
-        match plan_unapply_one(config, req, opts) {
+        match plan_unapply_one(req, opts) {
             Ok(Some(plan)) => todo.push(plan),
             Ok(None) => {}
             Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw)),
@@ -1012,6 +1011,39 @@ pub fn plan_unapply<'a>(
         );
     }
     Ok(todo)
+}
+
+/// Resolve checks that may execute user-authored template functions. This runs
+/// only after interactive confirmation, but still before any mutation.
+pub fn resolve_unapply(
+    config: &Config,
+    plans: &mut [UnapplyPlan<'_>],
+    opts: &UnapplyOpts,
+) -> Result<()> {
+    if opts.dry_run {
+        return Ok(());
+    }
+    let mut problems = vec![];
+    for plan in plans.iter_mut().filter(|plan| plan.conditional) {
+        let result = (|| {
+            let rendered = render_template(config, plan.req)?;
+            let mut paths = IndexMap::new();
+            plan_expected_content(rendered.as_bytes(), &plan.req.target, false, &mut paths)?;
+            plan.paths = paths.into_keys().collect();
+            plan.conditional = false;
+            Ok::<_, eyre::Report>(())
+        })();
+        if let Err(err) = result {
+            problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    Ok(())
 }
 
 pub fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
@@ -1065,7 +1097,6 @@ pub fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<
 }
 
 fn plan_unapply_one<'a>(
-    config: &Config,
     req: &'a FileRequest,
     opts: &UnapplyOpts,
 ) -> Result<Option<UnapplyPlan<'a>>> {
@@ -1149,12 +1180,13 @@ fn plan_unapply_one<'a>(
                 if !req.source.exists() {
                     bail!("source is missing; use --force to remove the target");
                 }
-                let rendered = render_template(config, req)?;
-                plan_expected_content(rendered.as_bytes(), &req.target, false, &mut paths)?;
+                // Rendering may execute user-authored commands. Defer it until
+                // after the complete unapply plan has been confirmed.
+                conditional = true;
             }
         }
     }
-    if paths.is_empty() && !cleanup_empty_dirs {
+    if paths.is_empty() && !cleanup_empty_dirs && !conditional {
         Ok(None)
     } else {
         Ok(Some(UnapplyPlan {

@@ -31,6 +31,13 @@ assert_contains "cat ~/.managed-rc" "managed block"
 # Template dry-runs stay inert even though verifying the rendered content
 # during a real unapply can execute template functions.
 rm ~/unapply-rendered
+if [[ $(uname) == "Darwin" ]]; then
+  assert_contains "script -q /dev/null env -u MISE_YES __USAGE=1 mise bootstrap dotfiles unapply ~/.managed-rendered" "dotfiles: skipped"
+else
+  assert_contains "script -qec 'env -u MISE_YES __USAGE=1 mise bootstrap dotfiles unapply ~/.managed-rendered' /dev/null" "dotfiles: skipped"
+fi
+assert_fail "test -e $HOME/unapply-rendered"
+assert_succeed "test -e $HOME/.managed-rendered"
 assert_contains "mise bootstrap dotfiles unapply ~/.managed-rendered --dry-run" "if unchanged"
 # The hidden top-level command remains a compatibility path while it is deprecated.
 assert_contains "mise dotfiles unapply ~/.managed-rendered --dry-run" "if unchanged"
