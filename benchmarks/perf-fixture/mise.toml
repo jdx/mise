@@ -6,7 +6,7 @@
 # measurement depend on what the registry said that day, which is the opposite
 # of what a deterministic benchmark needs.
 [tools]
-node = "24.15.0"
+node = "24.18.0"
 python = "3.13.1"
 go = "1.24.0"
 
