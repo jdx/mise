@@ -62,6 +62,9 @@ pub mod task_source_checker;
 pub mod task_sources;
 pub mod task_template;
 pub mod task_tool_installer;
+// Consumed by workspace providers introduced in follow-up changes.
+#[allow(dead_code)]
+pub mod workspace;
 
 pub(crate) use task_cache::TaskCacheOutput;
 pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};

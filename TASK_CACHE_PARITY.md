@@ -32,9 +32,9 @@ outside this tracker.
 
 ## Workspace and project graph
 
-- [ ] Define a provider-neutral project model with stable project IDs, roots, metadata, and
+- [x] Define a provider-neutral project model with stable project IDs, roots, metadata, and
       dependency edges
-- [ ] Define a workspace provider interface that can discover projects and dependencies
+- [x] Define a workspace provider interface that can discover projects and dependencies
       deterministically
 - [ ] Merge graphs from multiple providers for polyglot repositories
 - [ ] Allow explicit configuration to add, remove, or override inferred projects and dependency
