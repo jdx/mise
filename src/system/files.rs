@@ -851,8 +851,9 @@ pub struct ApplyOpts {
 /// Apply all entries that aren't already in the desired state. Conflicting
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
-/// copy/template entries are not conflicts, overwriting is their job.
-pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<()> {
+/// copy/template entries are not conflicts, overwriting is their job. Returns
+/// `false` when the user declines the confirmation prompt.
+pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
@@ -925,7 +926,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     }
     if todo.is_empty() {
         info!("files: all files are applied");
-        return Ok(());
+        return Ok(true);
     }
     if opts.dry_run {
         for (req, rendered) in &todo {
@@ -938,7 +939,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
                 print_diff(req, rendered.as_deref())?;
             }
         }
-        return Ok(());
+        return Ok(true);
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = todo
@@ -948,7 +949,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             .join(", ");
         if !prompt::confirm(format!("files: apply {list}?"))? {
             info!("files: skipped");
-            return Ok(());
+            return Ok(false);
         }
     }
     for (req, rendered) in &todo {
@@ -961,7 +962,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             .collect::<Vec<_>>()
             .join(", ")
     );
-    Ok(())
+    Ok(true)
 }
 
 /// existing paths this entry would have to delete or replace — not counting

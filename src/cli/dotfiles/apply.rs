@@ -68,13 +68,13 @@ impl DotfilesApply {
         Ok((files, edits))
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<bool> {
         let config = Config::get().await?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
             info!("no dotfiles configured in [dotfiles]");
-            return Ok(());
+            return Ok(true);
         }
         if !files.is_empty() {
             let opts = system::files::ApplyOpts {
@@ -84,7 +84,9 @@ impl DotfilesApply {
                 force_hint: "use --force",
                 yes: self.yes,
             };
-            system::files::apply(&config, &files, &opts)?;
+            if !system::files::apply(&config, &files, &opts)? {
+                return Ok(false);
+            }
         }
         if !edits.is_empty() {
             let opts = system::edits::ApplyOpts {
@@ -92,9 +94,11 @@ impl DotfilesApply {
                 verbose: Settings::get().verbose,
                 yes: self.yes,
             };
-            system::edits::apply(&config, &edits, &opts)?;
+            if !system::edits::apply(&config, &edits, &opts)? {
+                return Ok(false);
+            }
         }
-        Ok(())
+        Ok(true)
     }
 }
 

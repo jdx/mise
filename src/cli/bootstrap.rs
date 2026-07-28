@@ -1876,7 +1876,9 @@ impl BootstrapDotfilesApply {
         let dry_run = self.cmd.dry_run();
         let hooks = system::hooks_from_config(&config);
         hooks::run_phase(&hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
-        self.cmd.run().await?;
+        if !self.cmd.run().await? {
+            return Ok(());
+        }
         let hooks = if dry_run {
             let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
             system::hooks_from_config_files(&config_files)

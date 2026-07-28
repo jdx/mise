@@ -215,7 +215,7 @@ pub(crate) fn apply_shell_activation(
         verbose: Settings::get().verbose,
         yes,
     };
-    system::edits::apply(config, &edits, &opts)
+    system::edits::apply(config, &edits, &opts).map(|_| ())
 }
 
 /// Apply `[bootstrap.repos]` entries that are missing or differ.

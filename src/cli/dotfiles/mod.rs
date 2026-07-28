@@ -44,7 +44,7 @@ impl Dotfiles {
         );
         match self.command {
             Commands::Add(cmd) => cmd.run().await,
-            Commands::Apply(cmd) => cmd.run().await,
+            Commands::Apply(cmd) => cmd.run().await.map(|_| ()),
             Commands::Edit(cmd) => cmd.run().await,
             Commands::Status(cmd) => cmd.run().await,
         }
