@@ -235,7 +235,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1daa54020e05aa0b163ee10434fff35a0f18d28a1cafa142bd1290e1abe630e"
 dependencies = [
  "astral-reqwest-middleware",
- "reqwest 0.13.4",
+ "reqwest",
  "secrecy",
  "serde",
  "serde_json",
@@ -423,7 +423,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "http 1.4.2",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "thiserror 2.0.19",
  "tower-service",
@@ -456,7 +456,7 @@ dependencies = [
  "http-content-range",
  "itertools 0.14.0",
  "memmap2",
- "reqwest 0.13.4",
+ "reqwest",
  "thiserror 2.0.19",
  "tokio",
  "tokio-stream",
@@ -606,7 +606,7 @@ dependencies = [
  "pathdiff",
  "pluralizer",
  "rayon",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "sha1 0.11.0",
@@ -722,7 +722,7 @@ dependencies = [
  "bytes",
  "miette",
  "node-semver",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -776,7 +776,7 @@ dependencies = [
  "flate2",
  "hex",
  "node-semver",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -861,7 +861,7 @@ dependencies = [
  "foldhash 0.2.0",
  "libc",
  "reflink-copy",
- "reqwest 0.13.4",
+ "reqwest",
  "rustc-hash 2.1.3",
  "serde",
  "serde_json",
@@ -1596,7 +1596,7 @@ dependencies = [
  "arrayvec",
  "cc",
  "cfg-if",
- "constant_time_eq 0.4.2",
+ "constant_time_eq",
  "cpufeatures 0.3.0",
  "memmap2",
  "rayon-core",
@@ -1764,30 +1764,11 @@ checksum = "3d7c8918969267b2932ffd5655509bbbea0833823058c378876953217f5fc50e"
 
 [[package]]
 name = "bzip2"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49ecfb22d906f800d4fe833b6282cf4dc1c298f5057ca0b5445e5c209735ca47"
-dependencies = [
- "bzip2-sys",
-]
-
-[[package]]
-name = "bzip2"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
 dependencies = [
  "libbz2-rs-sys",
-]
-
-[[package]]
-name = "bzip2-sys"
-version = "0.1.13+1.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14"
-dependencies = [
- "cc",
- "pkg-config",
 ]
 
 [[package]]
@@ -2246,7 +2227,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce2548391e9c1929c21bf6aa2680af86fe4c1b33e6cea9ac1cfeec0bd11218cf"
 dependencies = [
  "brotli",
- "bzip2 0.6.1",
+ "bzip2",
  "compression-core",
  "flate2",
  "memchr",
@@ -2311,12 +2292,6 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
-
-[[package]]
-name = "constant_time_eq"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "constant_time_eq"
@@ -3858,11 +3833,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -4699,7 +4672,7 @@ dependencies = [
  "gix-sec",
  "gix-url",
  "parking_lot",
- "reqwest 0.13.4",
+ "reqwest",
  "thiserror 2.0.19",
 ]
 
@@ -5105,7 +5078,7 @@ checksum = "0603b99309a1e404c2c0945650c0f775b50bb72ac90ae570cb93f9ff05d9efe7"
 dependencies = [
  "http 1.4.2",
  "http-serde",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "time",
 ]
@@ -5213,7 +5186,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -6188,16 +6160,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lzma-rs"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
-dependencies = [
- "byteorder",
- "crc",
-]
-
-[[package]]
 name = "lzma-rust2"
 version = "0.16.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6367,7 +6329,7 @@ dependencies = [
  "blake3",
  "built",
  "bytesize",
- "bzip2 0.6.1",
+ "bzip2",
  "calm_io",
  "cfg_aliases",
  "chacha20poly1305 0.11.0",
@@ -6440,7 +6402,7 @@ dependencies = [
  "rattler_solve",
  "rattler_virtual_packages",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "rmcp",
  "rmp-serde",
  "rops",
@@ -6516,7 +6478,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "hex",
- "reqwest 0.13.4",
+ "reqwest",
  "rustls-pki-types",
  "rustls-webpki",
  "serde",
@@ -7278,7 +7240,7 @@ dependencies = [
  "buffer-redux",
  "byteorder",
  "bytes",
- "bzip2 0.6.1",
+ "bzip2",
  "camellia",
  "cast5",
  "cfb-mode",
@@ -7468,9 +7430,9 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "platforms"
-version = "3.12.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9245c6e7c5a6bcdd7977fdf6d1e1c67f4cc2d0d58c041df0ea5940953033e6ca"
+checksum = "acff5dfd42135d89cd7ad74a8c52813bbec91bf62c018ddd89390127767caab5"
 
 [[package]]
 name = "plist"
@@ -7962,7 +7924,7 @@ dependencies = [
  "rayon",
  "reflink-copy",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "simple_spawn_blocking",
@@ -7999,7 +7961,7 @@ dependencies = [
  "rattler_package_streaming",
  "rattler_redaction",
  "rayon",
- "reqwest 0.13.4",
+ "reqwest",
  "serde_json",
  "simple_spawn_blocking",
  "tempfile",
@@ -8130,7 +8092,7 @@ dependencies = [
  "http 1.4.2",
  "http-auth",
  "itertools 0.15.0",
- "reqwest 0.13.4",
+ "reqwest",
  "retry-policies",
  "serde",
  "serde_json",
@@ -8152,7 +8114,7 @@ dependencies = [
  "astral_async_zip",
  "async-compression",
  "async-spooled-tempfile",
- "bzip2 0.6.1",
+ "bzip2",
  "filetime",
  "fs-err",
  "futures",
@@ -8167,7 +8129,7 @@ dependencies = [
  "rattler_digest",
  "rattler_networking",
  "rattler_redaction",
- "reqwest 0.13.4",
+ "reqwest",
  "serde_json",
  "simple_spawn_blocking",
  "tar",
@@ -8200,7 +8162,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "068b9b88444342b01133c4eb1af90f44e3bc04463d738ac3fa3813df0096c177"
 dependencies = [
  "astral-reqwest-middleware",
- "reqwest 0.13.4",
+ "reqwest",
  "url",
 ]
 
@@ -8246,7 +8208,7 @@ dependencies = [
  "rattler_networking",
  "rattler_package_streaming",
  "rattler_redaction",
- "reqwest 0.13.4",
+ "reqwest",
  "retry-policies",
  "rmp-serde",
  "self_cell 1.3.0",
@@ -8452,48 +8414,6 @@ name = "replace_with"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51743d3e274e2b18df81c4dc6caf8a5b8e15dbe799e0dca05c7617380094e884"
-
-[[package]]
-name = "reqwest"
-version = "0.12.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "futures-core",
- "http 1.4.2",
- "http-body 1.1.0",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-tls",
- "hyper-util",
- "js-sys",
- "log",
- "native-tls",
- "percent-encoding",
- "pin-project-lite",
- "quinn",
- "rustls",
- "rustls-native-certs",
- "rustls-pki-types",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tokio-native-tls",
- "tokio-rustls",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "webpki-roots",
-]
 
 [[package]]
 name = "reqwest"
@@ -8829,7 +8749,7 @@ dependencies = [
  "errno 0.3.14",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9135,7 +9055,7 @@ dependencies = [
  "log",
  "quick-xml 0.38.4",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "self-replace",
  "semver",
  "serde",
@@ -9407,7 +9327,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29225600349ef74beda5a9fffb36ac660a24613c0bde9315d0c49be1d51e9c24"
 dependencies = [
  "aes 0.8.4",
- "bzip2 0.6.1",
+ "bzip2",
  "cbc",
  "crc32fast",
  "getrandom 0.4.3",
@@ -9644,7 +9564,7 @@ checksum = "9b97c5a866f849a9445ae657bef0caa2db053a82827e6dae3a2b3de9c15a6a1a"
 dependencies = [
  "base64 0.22.1",
  "hex",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "sigstore-crypto",
@@ -9691,7 +9611,7 @@ dependencies = [
  "hex",
  "jiff",
  "rand 0.9.5",
- "reqwest 0.13.4",
+ "reqwest",
  "rustls-pki-types",
  "rustls-webpki",
  "sigstore-crypto",
@@ -9711,7 +9631,7 @@ dependencies = [
  "globset",
  "hex",
  "jiff",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -10241,7 +10161,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -10896,35 +10816,36 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "ubi"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb72e0fb81c47ba1a6adcb248084193109710f482786856ff5e820605ac52546"
+checksum = "2a9b94e51ea832e8eee7c3b7c7958efd43b127e435bb95bb6fd5e0539a4ffd3a"
 dependencies = [
  "anyhow",
  "async-trait",
  "binstall-tar",
- "bzip2 0.6.1",
+ "bzip2",
  "chrono",
  "document-features",
  "flate2",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "lazy-regex",
  "log",
  "platforms",
  "regex",
- "reqwest 0.12.28",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "serial_test",
  "sevenz-rust2",
- "strum 0.27.2",
+ "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.19",
  "url",
  "walkdir",
  "which",
  "xz2",
- "zip 3.0.0",
+ "zip 8.6.0",
  "zstd",
 ]
 
@@ -11234,7 +11155,7 @@ dependencies = [
  "mise-sigstore",
  "mlua",
  "once_cell",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -12063,7 +11984,7 @@ version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8aff208388ac09afbb2bd20c3db8f7d253c9fbed7076e3618d598bb3deef2c5"
 dependencies = [
- "bzip2 0.6.1",
+ "bzip2",
  "duct",
  "filetime",
  "flate2",
@@ -12076,7 +11997,7 @@ dependencies = [
  "miette",
  "rand 0.10.2",
  "regex",
- "reqwest 0.13.4",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -12267,31 +12188,6 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12598812502ed0105f607f941c386f43d441e00148fce9dec3ca5ffb0bde9308"
-dependencies = [
- "aes 0.8.4",
- "arbitrary",
- "bzip2 0.5.2",
- "constant_time_eq 0.3.1",
- "crc32fast",
- "deflate64",
- "flate2",
- "getrandom 0.3.4",
- "hmac 0.12.1",
- "indexmap 2.14.0",
- "lzma-rs",
- "memchr",
- "pbkdf2 0.12.2",
- "sha1 0.10.7",
- "zeroize",
- "zopfli",
- "zstd",
-]
-
-[[package]]
-name = "zip"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb2a05c7c36fde6c09b08576c9f7fb4cda705990f73b58fe011abf7dfb24168b"
@@ -12324,8 +12220,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
 dependencies = [
  "aes 0.9.2",
- "bzip2 0.6.1",
- "constant_time_eq 0.4.2",
+ "bzip2",
+ "constant_time_eq",
  "crc32fast",
  "deflate64",
  "flate2",
