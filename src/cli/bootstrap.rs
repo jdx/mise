@@ -1027,12 +1027,14 @@ fn config_files_after_dotfiles_dry_run(
 ) -> Result<config::ConfigMap> {
     let mut config_files = config.config_files.clone();
     let mut bodies = indexmap::IndexMap::new();
+    let mut unavailable_bodies = HashSet::new();
     for file in files {
         if !is_mise_config_target(&file.target) || !file.source.is_file() {
             continue;
         }
         if file.mode == FileMode::Template {
             config_files.shift_remove(&file.target);
+            unavailable_bodies.insert(file.target.clone());
             debug!(
                 "bootstrap: template config target {} skipped in dry-run config simulation \
                  because template rendering may execute commands",
@@ -1065,6 +1067,14 @@ fn config_files_after_dotfiles_dry_run(
     }
     for edit in edits {
         if !is_mise_config_target(&edit.path) {
+            continue;
+        }
+        if unavailable_bodies.contains(&edit.path) {
+            debug!(
+                "bootstrap: edit for config target {} skipped in dry-run config simulation \
+                 because the preceding file template was not rendered",
+                edit.path.display()
+            );
             continue;
         }
         let body = match bodies.get(&edit.path) {

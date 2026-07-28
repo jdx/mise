@@ -324,6 +324,7 @@ EOF
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.config/mise/config.local.toml" = { source = "dotfiles/mise/config.local.toml.tmpl", mode = "template" }
+"~/.config/mise/config.local.toml/bootstrap-test" = { line = "# bootstrap test" }
 EOF
 rm -f templated_config_exec_ran
 assert_not_contains "mise bootstrap --dry-run --force-dotfiles" "echo stale-template-config"
