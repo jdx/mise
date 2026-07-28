@@ -695,8 +695,8 @@ Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Se
 [`task.cache_dir`](/configuration/settings.html#task-cache-dir) setting or
 `MISE_TASK_CACHE_DIR` to choose a different parent directory; mise keeps the artifact format in its
 `v2` child directory. Default and custom locations are included in `mise cache clear` and
-`mise cache prune`. Only successful task runs are cached. Cache read/write failures are treated as
-misses and never turn a successful task run into a failure.
+manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
+are treated as misses and never turn a successful task run into a failure.
 
 Stdout and stderr are stored as ordered, redacted streams and replayed using the output mode selected
 for the cache hit. Prefix, interleave, keep-order, timed, replacing, quiet, silent, and per-stream

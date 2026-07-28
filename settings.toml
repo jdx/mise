@@ -2609,7 +2609,7 @@ docs = """
 Store task output cache artifacts in this directory instead of
 `MISE_CACHE_DIR/task-artifacts`. mise stores the current artifact format in a
 versioned subdirectory and includes custom locations in `mise cache clear` and
-`mise cache prune`.
+manual and automatic cache pruning.
 """
 env = "MISE_TASK_CACHE_DIR"
 optional = true

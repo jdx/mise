@@ -314,6 +314,18 @@ pub(crate) struct PruneOptions {
     pub(crate) age: Duration,
 }
 
+pub(crate) fn cache_dirs() -> Vec<PathBuf> {
+    cache_dirs_with_task_cache(crate::task::task_cache::task_cache_dir())
+}
+
+fn cache_dirs_with_task_cache(task_cache_dir: PathBuf) -> Vec<PathBuf> {
+    let mut cache_dirs = vec![dirs::CACHE.to_path_buf()];
+    if !task_cache_dir.starts_with(*dirs::CACHE) {
+        cache_dirs.push(task_cache_dir);
+    }
+    cache_dirs
+}
+
 pub(crate) fn auto_prune() -> Result<()> {
     if !rand::random::<u8>().is_multiple_of(100) {
         return Ok(()); // only prune 1% of the time
@@ -331,7 +343,10 @@ pub(crate) fn auto_prune() -> Result<()> {
     {
         return Ok(());
     }
-    let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
+    let cache_dirs = cache_dirs();
+    let empty = cache_dirs
+        .iter()
+        .all(|dir| file::ls(dir).unwrap_or_default().is_empty());
     xx::file::touch_dir(&auto_prune_file)?;
     if empty {
         return Ok(());
@@ -344,7 +359,11 @@ pub(crate) fn auto_prune() -> Result<()> {
         verbose: false,
         age,
     };
-    prune(*dirs::CACHE, &opts)?;
+    for cache_dir in cache_dirs {
+        if cache_dir.exists() {
+            prune(&cache_dir, &opts)?;
+        }
+    }
     // Also prune env cache using env_cache_ttl
     let env_cache_dir = CachedEnv::cache_dir();
     if env_cache_dir.exists() {
@@ -466,5 +485,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(val, 2);
+    }
+
+    #[test]
+    fn cache_dirs_adds_only_external_task_cache() {
+        let external = tempfile::tempdir().unwrap();
+        assert_eq!(
+            cache_dirs_with_task_cache(external.path().to_path_buf()),
+            vec![dirs::CACHE.to_path_buf(), external.path().to_path_buf()]
+        );
+
+        let nested = dirs::CACHE.join("task-artifacts").join("v2");
+        assert_eq!(
+            cache_dirs_with_task_cache(nested),
+            vec![dirs::CACHE.to_path_buf()]
+        );
     }
 }

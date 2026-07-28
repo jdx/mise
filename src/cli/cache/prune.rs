@@ -2,7 +2,6 @@ use crate::cache;
 use crate::cache::{PruneOptions, PruneResults};
 use crate::config::Settings;
 use crate::dirs::CACHE;
-use crate::task::task_cache::task_cache_dir;
 use crate::toolset::env_cache::CachedEnv;
 use bytesize::ByteSize;
 use eyre::Result;
@@ -54,14 +53,7 @@ impl CachePrune {
                     }
                 })
                 .collect(),
-            None => {
-                let mut dirs = vec![CACHE.to_path_buf()];
-                let task_cache_dir = task_cache_dir();
-                if !task_cache_dir.starts_with(*CACHE) {
-                    dirs.push(task_cache_dir);
-                }
-                dirs
-            }
+            None => cache::cache_dirs(),
         };
 
         for p in cache_dirs {
