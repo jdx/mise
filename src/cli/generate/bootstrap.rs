@@ -61,6 +61,10 @@ impl Bootstrap {
             .unwrap()
             .as_str();
 
+        // install.sh honors MISE_VERSION and MISE_INSTALL_PATH, so the wrapper must not clobber
+        // them. The install path is keyed by the requested version rather than the version this
+        // script was generated with: `test -f "$MISE_INSTALL_PATH"` skips install.sh entirely, so
+        // a fixed path would make a changed MISE_VERSION silently reuse the cached binary.
         let vars = if self.localize {
             // TODO: this will only work right if it is in the base directory, not an absolute path or has a subdirectory
             let localized_dir = self.localized_dir.to_string_lossy();
@@ -72,7 +76,9 @@ export MISE_DATA_DIR="$localized_dir"
 export MISE_CONFIG_DIR="$localized_dir"
 export MISE_CACHE_DIR="$localized_dir/cache"
 export MISE_STATE_DIR="$localized_dir/state"
-export MISE_INSTALL_PATH="$localized_dir/mise-{version}"
+local mise_version="${{MISE_VERSION:-{version}}}"
+mise_version="${{mise_version#v}}"
+export MISE_INSTALL_PATH="${{MISE_INSTALL_PATH:-$localized_dir/mise-$mise_version}}"
 export MISE_TRUSTED_CONFIG_PATHS="$project_dir${{MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}}"
 export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise${{MISE_IGNORED_CONFIG_PATHS:+:$MISE_IGNORED_CONFIG_PATHS}}"
 "#
@@ -81,7 +87,9 @@ export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise${{MISE_IGNORED_CONFIG_PATHS
             format!(
                 r#"
 local cache_home="${{XDG_CACHE_HOME:-$HOME/.cache}}/mise"
-export MISE_INSTALL_PATH="$cache_home/mise-{version}"
+local mise_version="${{MISE_VERSION:-{version}}}"
+mise_version="${{mise_version#v}}"
+export MISE_INSTALL_PATH="${{MISE_INSTALL_PATH:-$cache_home/mise-$mise_version}}"
 "#
             )
         };

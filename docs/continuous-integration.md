@@ -38,6 +38,12 @@ script: |
   ./bin/mise x -- npm test
 ```
 
+By default the generated script installs the version it was generated with, but it honors the same
+`MISE_VERSION` and `MISE_INSTALL_PATH` variables as [the install script](/installing-mise.html).
+An explicit `MISE_INSTALL_PATH` is always used as-is; otherwise `MISE_VERSION` also selects the
+default cache path, so bumping it in CI installs the requested version instead of reusing the one
+that was cached first.
+
 ## Running against untrusted config (safe mode)
 
 When a job resolves tool versions from configuration it does not control — most commonly a bot
