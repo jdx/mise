@@ -690,7 +690,10 @@ async fn native_binstall_file_available(url: &str) -> bool {
             }
         };
     }
-    match HTTP.head(url).await {
+    if HTTP.head(url).await.is_ok() {
+        return true;
+    }
+    match HTTP.get_async(url).await {
         Ok(_) => true,
         Err(err) => {
             debug!("native cargo binary artifact is unavailable at {url}: {err:#}");
@@ -1159,18 +1162,39 @@ mod tests {
             .with_status(200)
             .create_async()
             .await;
-        let unavailable = server
+        let head_rejected = server
+            .mock("HEAD", "/head-rejected.tgz")
+            .with_status(405)
+            .create_async()
+            .await;
+        let get_available = server
+            .mock("GET", "/head-rejected.tgz")
+            .with_status(200)
+            .create_async()
+            .await;
+        let unavailable_head = server
             .mock("HEAD", "/unavailable.tgz")
+            .with_status(404)
+            .create_async()
+            .await;
+        let unavailable_get = server
+            .mock("GET", "/unavailable.tgz")
             .with_status(404)
             .create_async()
             .await;
 
         assert!(native_binstall_file_available(&format!("{}/available.tgz", server.url())).await);
         assert!(
+            native_binstall_file_available(&format!("{}/head-rejected.tgz", server.url())).await
+        );
+        assert!(
             !native_binstall_file_available(&format!("{}/unavailable.tgz", server.url())).await
         );
         available.assert_async().await;
-        unavailable.assert_async().await;
+        head_rejected.assert_async().await;
+        get_available.assert_async().await;
+        unavailable_head.assert_async().await;
+        unavailable_get.assert_async().await;
     }
 
     #[test]
