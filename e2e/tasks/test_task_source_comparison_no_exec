@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+mkdir -p "$HOME/.config/mise/conf.d" "$HOME/.config/mise/tasks"
+
+marker="$MISE_TMP_DIR/source-comparison-exec-marker"
+script="$HOME/.config/mise/tasks/same"
+
+cat <<'EOF' >"$script"
+#!/usr/bin/env bash
+echo same-script
+EOF
+chmod +x "$script"
+cat <<'EOF' >"$HOME/.config/mise/tasks/same-hash"
+#!/usr/bin/env bash
+echo same-hash-script
+EOF
+chmod +x "$HOME/.config/mise/tasks/same-hash"
+cat <<'EOF' >"$HOME/.config/mise/tasks/same-vars"
+#!/usr/bin/env bash
+echo "LOWER_OVERLAY=${LOWER_OVERLAY:-<unset>}"
+EOF
+chmod +x "$HOME/.config/mise/tasks/same-vars"
+cat <<'EOF' >"$HOME/other-vars-script"
+#!/usr/bin/env bash
+echo other-vars-script
+EOF
+chmod +x "$HOME/other-vars-script"
+
+cat >"$HOME/.config/mise/config.toml" <<EOF
+[task_config]
+includes = [".config/mise/tasks"]
+
+[vars]
+comparison_path = "$HOME/.config/mise/tasks/same-vars"
+EOF
+
+cat >"$HOME/.config/mise/conf.d/lower.toml" <<EOF
+[task_config]
+includes = ["empty-global-tasks"]
+
+[tasks.same]
+file = "{{ exec(command='printf $script; printf x >> $marker') }}"
+env = { LOWER_OVERLAY = "must-not-render-for-comparison" }
+vars = { SIDE_EFFECT = "{{ exec(command='printf y >> $marker') }}" }
+
+[tasks.same-hash]
+file = "{{ '/definitely/missing' | hash_file }}"
+
+[tasks.same-vars]
+file = "{{ vars.comparison_path }}"
+vars = { comparison_path = "$HOME/other-vars-script" }
+env = { LOWER_OVERLAY = "must-not-apply" }
+EOF
+
+if ! mise tasks >/dev/null; then
+  fail "task listing failed during source-comparison test"
+fi
+if [[ -e $marker ]]; then
+  fail "task source comparison executed a deferred file template"
+fi
+
+# The active config's vars must not resolve a different task's deferred file
+# path. The task-local value points elsewhere, so treating this as the same
+# source would incorrectly apply the lower overlay to the discovered script.
+assert "mise run same-vars" "LOWER_OVERLAY=<unset>"

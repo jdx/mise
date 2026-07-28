@@ -13,6 +13,29 @@ cat <<'EOF' >~/.config/mise/tasks/myglobalfile
 echo myglobalfile
 EOF
 chmod +x ~/.config/mise/tasks/myglobalfile
+mkdir -p ~/.config/mise/conf.d
+cat <<'TOML' >~/.config/mise/conf.d/relative-overlay.toml
+[task_config]
+includes = ["empty-global-tasks"]
+
+[tasks.relative-meta]
+file = ".config/mise/tasks/relative-meta"
+env = { RELATIVE_OVERLAY = "applied" }
+
+[tasks.templated-meta]
+file = "{{config_root}}/.config/mise/tasks/templated-meta"
+env = { TEMPLATED_OVERLAY = "applied" }
+TOML
+cat <<'EOF' >~/.config/mise/tasks/relative-meta
+#!/usr/bin/env bash
+echo "RELATIVE_OVERLAY=${RELATIVE_OVERLAY:-<unset>}"
+EOF
+chmod +x ~/.config/mise/tasks/relative-meta
+cat <<'EOF' >~/.config/mise/tasks/templated-meta
+#!/usr/bin/env bash
+echo "TEMPLATED_OVERLAY=${TEMPLATED_OVERLAY:-<unset>}"
+EOF
+chmod +x ~/.config/mise/tasks/templated-meta
 mkdir -p ~/dotfiles/tasks
 cat <<'EOF' >~/dotfiles/tasks/customglobalfile
 #!/usr/bin/env bash
@@ -35,11 +58,17 @@ assert "mise tasks" "customglobalfile
 myglobal
 myglobalfile
 mylocal
-systemglobalfile"
+relative-meta
+systemglobalfile
+templated-meta"
 assert "mise tasks --local" "mylocal"
 assert "mise tasks --global" "customglobalfile
 myglobal
 myglobalfile
-systemglobalfile"
+relative-meta
+systemglobalfile
+templated-meta"
 assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
+assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"
+assert "mise run templated-meta" "TEMPLATED_OVERLAY=applied"

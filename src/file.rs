@@ -1558,18 +1558,83 @@ pub fn split_file_name(path: &Path) -> (String, String) {
 }
 
 pub fn same_file(a: &Path, b: &Path) -> bool {
-    desymlink_path(a) == desymlink_path(b)
+    a == b || desymlink_path(a) == desymlink_path(b)
+}
+
+/// Returns whether `path` starts with `prefix` either lexically or after
+/// resolving symlinks and the existing path prefix.
+pub fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
+    path.starts_with(prefix) || desymlink_path(path).starts_with(desymlink_path(prefix))
+}
+
+fn resolve_path_with_existing_prefix(path: &Path) -> PathBuf {
+    let mut resolved = if path.is_relative() {
+        env::current_dir().unwrap_or_default()
+    } else {
+        PathBuf::new()
+    };
+    let mut components = path.components();
+    while let Some(component) = components.next() {
+        if matches!(component, std::path::Component::CurDir) {
+            continue;
+        }
+        #[cfg(windows)]
+        if matches!(
+            component,
+            std::path::Component::Prefix(_) | std::path::Component::RootDir
+        ) {
+            // A drive prefix such as `C:` is drive-relative until its root is
+            // present, so do not canonicalize the two components separately.
+            resolved.push(component.as_os_str());
+            continue;
+        }
+        let candidate = resolved.join(component.as_os_str());
+        match candidate.canonicalize() {
+            Ok(candidate) => resolved = candidate,
+            Err(_) => {
+                #[cfg(windows)]
+                {
+                    // PathBuf::push lexically resolves `..` after a verbatim
+                    // (`\\?\`) prefix, but the unresolved suffix must remain
+                    // opaque so two potentially different files stay distinct.
+                    let mut raw = resolved.into_os_string();
+                    if Path::new(&raw).file_name().is_some() {
+                        raw.push("\\");
+                    }
+                    raw.push(component.as_os_str());
+                    for component in components {
+                        raw.push("\\");
+                        raw.push(component.as_os_str());
+                    }
+                    resolved = raw.into();
+                }
+                #[cfg(not(windows))]
+                {
+                    resolved.push(component.as_os_str());
+                    resolved.extend(components.map(|component| component.as_os_str()));
+                }
+                break;
+            }
+        }
+    }
+    resolved
 }
 
 pub fn desymlink_path(p: &Path) -> PathBuf {
     if p.is_symlink()
         && let Ok(target) = fs::read_link(p)
     {
+        let target = if target.is_absolute() {
+            target
+        } else {
+            p.parent().unwrap_or_else(|| Path::new("")).join(target)
+        };
         return target
             .canonicalize()
-            .unwrap_or_else(|_| target.to_path_buf());
+            .unwrap_or_else(|_| resolve_path_with_existing_prefix(&target));
     }
-    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    p.canonicalize()
+        .unwrap_or_else(|_| resolve_path_with_existing_prefix(p))
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
@@ -1950,6 +2015,108 @@ mod tests {
         // matches mise's actual runtime (see main.rs) — takes the real
         // tokio::task::block_in_place path
         assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_resolves_relative_target_from_link_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target_dir = root.path().join("target");
+        let link_dir = root.path().join("links");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::create_dir_all(&link_dir).unwrap();
+        let target = target_dir.join("file");
+        fs::write(&target, "test").unwrap();
+        let link = link_dir.join("file");
+        symlink("../target/file", &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_normalizes_broken_relative_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let link_dir = root.path().join("links");
+        let nested_dir = root.path().join("nested");
+        fs::create_dir_all(&link_dir).unwrap();
+        fs::create_dir_all(&nested_dir).unwrap();
+        let link = link_dir.join("missing");
+        symlink("../nested/../missing", &link).unwrap();
+        let expected = root.path().canonicalize().unwrap().join("missing");
+
+        assert_eq!(desymlink_path(&link), expected);
+        assert_eq!(
+            desymlink_path(&link),
+            desymlink_path(&root.path().join("missing"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_resolves_existing_symlink_prefix_before_parent() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_nested = outside.path().join("nested");
+        fs::create_dir_all(&outside_nested).unwrap();
+        let link = root.path().join("link");
+        symlink(&outside_nested, &link).unwrap();
+
+        let through_link = link.join("../.config/mise/tasks/same");
+        let expected = outside
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join(".config/mise/tasks/same");
+        let false_match = root
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join(".config/mise/tasks/same");
+
+        assert_eq!(desymlink_path(&through_link), expected);
+        assert_ne!(desymlink_path(&through_link), desymlink_path(&false_match));
+    }
+
+    #[test]
+    fn test_desymlink_path_preserves_parent_after_missing_component() {
+        let root = tempfile::tempdir().unwrap();
+        let unresolved = root.path().join("missing/../target");
+        let canonical_root = root.path().canonicalize().unwrap();
+        #[cfg(windows)]
+        let expected = {
+            let mut expected = canonical_root.as_os_str().to_os_string();
+            expected.push("\\missing\\..\\target");
+            PathBuf::from(expected)
+        };
+        #[cfg(not(windows))]
+        let expected = canonical_root.join("missing/../target");
+
+        assert_eq!(desymlink_path(&unresolved), expected);
+        assert_ne!(
+            desymlink_path(&unresolved),
+            desymlink_path(&canonical_root.join("target"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_desymlink_path_preserves_absolute_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        fs::write(&target, "test").unwrap();
+        let link = root.path().join("link");
+        symlink(&target, &link).unwrap();
+
+        assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
     }
 
     #[test]

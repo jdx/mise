@@ -1234,6 +1234,16 @@ pub fn get_miserc_tera() -> TeraEngine {
     TeraEngine::V2(Box::new(TERA.clone()))
 }
 
+/// Returns a renderer without mise's custom template functions or filters.
+/// Unlike [`get_miserc_tera`], this respects the configured Tera version.
+pub fn get_empty_tera() -> TeraEngine {
+    if use_tera_v1() {
+        TeraEngine::V1(Box::default())
+    } else {
+        TeraEngine::V2(Box::default())
+    }
+}
+
 pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {
         TeraEngine::V1(Box::new(get_tera_v1(dir)))

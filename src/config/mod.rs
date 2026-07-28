@@ -31,7 +31,7 @@ use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
-use crate::tera::{contains_template_syntax, render_str, take_tera_accessed_files};
+use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
@@ -696,8 +696,13 @@ impl Config {
 
         let templates = collect_task_templates(&config.config_files);
 
-        let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
+        let mut local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
         let global_tasks = load_global_tasks(&config, &templates).await?;
+        local_tasks.retain(|local| {
+            !global_tasks
+                .iter()
+                .any(|global| tasks_have_same_source(local, global))
+        });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
@@ -1701,12 +1706,61 @@ fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
     set.iter().any(|p| file::desymlink_path(p) == target)
 }
 
-fn paths_equal_resolved(left: &Path, right: &Path) -> bool {
-    left == right || file::desymlink_path(left) == file::desymlink_path(right)
+fn resolved_task_file(task: &Task) -> Option<PathBuf> {
+    let file = task.file.as_ref()?;
+    let file_str = file.to_string_lossy().to_string();
+    let rendered = if contains_template_syntax(&file_str) {
+        let mut tera = get_empty_tera();
+        // Only config_root has source-stable semantics here. Task env/vars may
+        // themselves be effectful templates, while the active Config context
+        // may belong to a different config hierarchy and produce a false
+        // source match.
+        let mut tera_ctx = ::tera::Context::new();
+        tera_ctx.insert("config_root", &task.config_root.clone().unwrap_or_default());
+        match render_str(&mut tera, &file_str, &tera_ctx) {
+            Ok(rendered) => rendered,
+            Err(err) => {
+                // Deferred file templates may intentionally use exec() or
+                // read_file(), which are evaluated later when the task's file
+                // path is needed. Source comparison must never invoke those
+                // functions merely to list tasks; conservatively treat an
+                // unsupported dynamic path as a distinct source.
+                debug!(
+                    "failed to resolve task file for source comparison ({}): {err:#}",
+                    task.name
+                );
+                return None;
+            }
+        }
+    } else {
+        file_str
+    };
+    let path = file::replace_path(&rendered);
+    let path = if path.is_absolute() {
+        path
+    } else if let Some(root) = &task.config_root {
+        root.join(path)
+    } else {
+        path
+    };
+    Some(file::desymlink_path(&path))
 }
 
-fn path_starts_with_resolved(path: &Path, prefix: &Path) -> bool {
-    path.starts_with(prefix) || file::desymlink_path(path).starts_with(file::desymlink_path(prefix))
+fn resolved_task_source(task: &Task) -> Option<PathBuf> {
+    if task.file.is_some() {
+        resolved_task_file(task)
+    } else if task.config_source.as_os_str().is_empty() {
+        None
+    } else {
+        Some(file::desymlink_path(&task.config_source))
+    }
+}
+
+fn tasks_have_same_source(left: &Task, right: &Task) -> bool {
+    left.name == right.name
+        && resolved_task_source(left)
+            .zip(resolved_task_source(right))
+            .is_some_and(|(left, right)| file::same_file(&left, &right))
 }
 
 /// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
@@ -2487,7 +2541,7 @@ fn is_global_task_include_path(path: &Path) -> bool {
         dirs::SYSTEM_CONFIG.join("tasks"),
     ]
     .iter()
-    .any(|prefix| path_starts_with_resolved(path, prefix))
+    .any(|prefix| file::path_starts_with_resolved(path, prefix))
 }
 
 #[async_backtrace::framed]
@@ -2557,8 +2611,8 @@ fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> V
         .filter(|cf| cf.monorepo_root() == Some(true))
         .filter_map(|cf| cf.project_root())
         .filter(|root| {
-            !paths_equal_resolved(root, selected_root)
-                && path_starts_with_resolved(selected_root, root)
+            !file::same_file(root, selected_root)
+                && file::path_starts_with_resolved(selected_root, root)
         })
         .collect()
 }
@@ -2572,7 +2626,7 @@ fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> V
 /// Directories above the enclosing root (`$HOME`, global config) are unaffected and
 /// keep inheriting normally.
 ///
-/// Prefix checks go through [`path_starts_with_resolved`] because `dir` comes from the
+/// Prefix checks go through [`file::path_starts_with_resolved`] because `dir` comes from the
 /// cwd walk while the roots come from a config's `project_root`, and those can be
 /// different symlink spellings of the same path (e.g. Fedora Atomic's `/home` ->
 /// `/var/home`) when a task's config hierarchy was loaded from another directory.
@@ -2588,8 +2642,8 @@ fn dir_is_in_enclosing_monorepo(
     }
     enclosing_roots
         .iter()
-        .any(|enclosing| path_starts_with_resolved(dir, enclosing))
-        && !path_starts_with_resolved(dir, selected_root)
+        .any(|enclosing| file::path_starts_with_resolved(dir, enclosing))
+        && !file::path_starts_with_resolved(dir, selected_root)
 }
 
 async fn load_local_tasks_with_context(
@@ -2628,11 +2682,6 @@ async fn load_local_tasks_with_context(
             continue;
         }
         let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
-        if paths_equal_resolved(&d, env::MISE_GLOBAL_CONFIG_ROOT.as_path()) {
-            // Walking ancestors can reach the global task directory under HOME.
-            // Global tasks are loaded with their config overlays in a separate pass.
-            dir_tasks.retain(|task| !task.global);
-        }
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -2673,25 +2722,31 @@ async fn load_local_tasks_with_context(
                 async move {
                     let exact_config_paths = config_paths_in_dir(&subdir);
                     let found_config = !exact_config_paths.is_empty();
+                    let mut seen_config_paths = std::collections::HashSet::new();
                     let mut hierarchy_configs = config
                         .config_files
                         .iter()
                         .filter(|(_, cf)| {
                             let root = cf.config_root();
-                            path_starts_with_resolved(&root, &monorepo_root)
-                                && path_starts_with_resolved(&subdir, &root)
+                            file::path_starts_with_resolved(&root, &monorepo_root)
+                                && file::path_starts_with_resolved(&subdir, &root)
+                        })
+                        .filter(|(path, _)| {
+                            seen_config_paths.insert(file::desymlink_path(path))
                         })
                         .map(|(path, cf)| (path.clone(), cf.clone()))
                         .collect::<ConfigMap>();
                     let mut hierarchy_dirs = subdir
                         .ancestors()
-                        .take_while(|dir| path_starts_with_resolved(dir, &monorepo_root))
+                        .take_while(|dir| {
+                            file::path_starts_with_resolved(dir, &monorepo_root)
+                        })
                         .map(Path::to_path_buf)
                         .collect::<Vec<_>>();
                     hierarchy_dirs.reverse();
                     for hierarchy_dir in hierarchy_dirs {
                         for config_path in config_paths_in_dir(&hierarchy_dir) {
-                            if hierarchy_configs.contains_key(&config_path) {
+                            if !seen_config_paths.insert(file::desymlink_path(&config_path)) {
                                 continue;
                             }
                             match config_file::parse(&config_path).await {
@@ -3070,6 +3125,7 @@ async fn load_global_tasks(
                     .map(|(_, cf)| cf)
             })
         })
+        .unique_by(|cf| file::desymlink_path(cf.get_path()))
         .collect::<Vec<_>>();
 
     // Global config files keep independent task include sets. Aggregate their
@@ -3079,6 +3135,7 @@ async fn load_global_tasks(
     // preserved.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
+    let mut rendered_file_tasks = RenderedTaskCache::default();
     for cf in configs {
         let sources = load_task_sources_from_configs(
             config,
@@ -3087,8 +3144,10 @@ async fn load_global_tasks(
             templates,
             false,
             None,
+            Some(&mut rendered_file_tasks),
         )
         .await?;
+        rendered_file_tasks.finish_config();
         let mut inline_tasks = IndexMap::new();
         for task in &sources.config_tasks {
             inline_tasks
@@ -3100,11 +3159,9 @@ async fn load_global_tasks(
             if let Some(inline_task) = inline_tasks.get(&task.name) {
                 if seen_config_task_names.insert(task.name.clone()) {
                     if let Some(existing) = tasks.get_mut(&task.name) {
-                        let rediscovered_file = existing
-                            .file
-                            .as_deref()
-                            .zip(task.file.as_deref())
-                            .is_some_and(|(left, right)| paths_equal_resolved(left, right));
+                        let rediscovered_file = resolved_task_file(existing)
+                            .zip(resolved_task_file(&task))
+                            .is_some_and(|(left, right)| file::same_file(&left, &right));
                         if rediscovered_file {
                             existing.merge_toml_overlay(inline_task.clone());
                         }
@@ -3292,25 +3349,35 @@ async fn load_config_tasks(
     Ok(tasks)
 }
 
+struct LoadTaskIncludesOptions<'a> {
+    monorepo_cf: Option<&'a Arc<dyn ConfigFile>>,
+    require_trust: bool,
+    rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
+}
+
 async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
     config_root: &Path,
     task_config: &ResolvedTaskConfig,
     templates: &IndexMap<String, TaskTemplate>,
-    monorepo_cf: Option<&Arc<dyn ConfigFile>>,
-    require_trust: bool,
+    options: LoadTaskIncludesOptions<'_>,
 ) -> Result<Vec<Task>> {
+    let LoadTaskIncludesOptions {
+        monorepo_cf,
+        require_trust,
+        mut rendered_file_tasks,
+    } = options;
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         trust_check_task_include(root, require_trust)?;
         load_task_file(
             config,
             root,
             config_root,
-            &task_config.dir,
-            &task_config.shell,
+            task_config,
             templates,
             monorepo_cf,
+            rendered_file_tasks,
         )
         .await
     } else if root.is_dir() {
@@ -3347,10 +3414,10 @@ async fn load_tasks_includes(
                     config,
                     &path,
                     config_root,
-                    &task_config.dir,
-                    &task_config.shell,
+                    task_config,
                     templates,
                     monorepo_cf,
+                    rendered_file_tasks.as_deref_mut(),
                 )
                 .await?,
             );
@@ -3368,6 +3435,14 @@ async fn load_tasks_includes(
                 &config_root,
                 monorepo_cf.cloned(),
             )?;
+            let cache_key = rendered_task_cache_key(&task);
+            if let Some(cached) = rendered_file_tasks
+                .as_deref()
+                .and_then(|cache| cache.get(&cache_key))
+            {
+                tasks.push(cached.clone());
+                continue;
+            }
             if task.shell.is_none() {
                 task.shell = task_config.shell.clone();
             }
@@ -3393,6 +3468,9 @@ async fn load_tasks_includes(
                 } else {
                     dir.clone()
                 });
+            }
+            if let Some(cache) = rendered_file_tasks.as_deref_mut() {
+                cache.insert(cache_key, task.clone());
             }
             tasks.push(task);
         }
@@ -3634,7 +3712,7 @@ fn cascaded_task_config_for_dir(
         .values()
         .filter(|cf| !is_global_config(cf.get_path()))
         .map(|cf| cf.config_root())
-        .filter(|root| !paths_equal_resolved(root, dir) && path_starts_with_resolved(dir, root))
+        .filter(|root| !file::same_file(root, dir) && file::path_starts_with_resolved(dir, root))
         .unique()
         .collect::<Vec<_>>();
     roots.sort_by_key(|root| root.components().count());
@@ -3660,6 +3738,32 @@ fn cascaded_task_config_for_dir(
         }
     }
     Ok(cascaded)
+}
+
+#[derive(Default)]
+struct RenderedTaskCache {
+    previous_configs: HashMap<(PathBuf, String), Task>,
+    current_config: HashMap<(PathBuf, String), Task>,
+}
+
+fn rendered_task_cache_key(task: &Task) -> (PathBuf, String) {
+    (file::desymlink_path(&task.config_source), task.name.clone())
+}
+
+impl RenderedTaskCache {
+    fn get(&self, key: &(PathBuf, String)) -> Option<&Task> {
+        self.previous_configs.get(key)
+    }
+
+    fn insert(&mut self, key: (PathBuf, String), task: Task) {
+        self.current_config.insert(key, task);
+    }
+
+    fn finish_config(&mut self) {
+        for (key, task) in self.current_config.drain() {
+            self.previous_configs.entry(key).or_insert(task);
+        }
+    }
 }
 
 impl TaskSources {
@@ -3700,6 +3804,7 @@ async fn load_tasks_from_configs(
         templates,
         monorepo_context,
         cascaded_task_config,
+        None,
     )
     .await?
     .into_tasks())
@@ -3717,6 +3822,7 @@ async fn load_task_sources_from_configs(
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
+    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<TaskSources> {
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
@@ -3804,8 +3910,11 @@ async fn load_task_sources_from_configs(
                 dir,
                 &task_config,
                 templates,
-                monorepo_cf,
-                require_task_include_trust,
+                LoadTaskIncludesOptions {
+                    monorepo_cf,
+                    require_trust: require_task_include_trust,
+                    rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
+                },
             )
             .await?;
             for task in &mut loaded {
@@ -3855,10 +3964,10 @@ async fn load_task_file(
     config: &Arc<Config>,
     path: &Path,
     config_root: &Path,
-    task_config_dir: &Option<String>,
-    task_config_shell: &Option<String>,
+    task_config: &ResolvedTaskConfig,
     templates: &IndexMap<String, TaskTemplate>,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
+    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -3876,14 +3985,25 @@ async fn load_task_file(
     for (_, mut task) in tasks {
         let config_root = config_root.to_path_buf();
         resolve_task_template(&mut task, templates)?;
+        let cache_key = rendered_task_cache_key(&task);
+        if let Some(cached) = rendered_file_tasks
+            .as_deref()
+            .and_then(|cache| cache.get(&cache_key))
+        {
+            out.push(cached.clone());
+            continue;
+        }
         if task.dir.is_none() {
-            task.dir = task_config_dir.clone();
+            task.dir = task_config.dir.clone();
         }
         if task.shell.is_none() {
-            task.shell = task_config_shell.clone();
+            task.shell = task_config.shell.clone();
         }
         match task.render(config, &config_root).await {
             Ok(()) => {
+                if let Some(cache) = rendered_file_tasks.as_deref_mut() {
+                    cache.insert(cache_key, task.clone());
+                }
                 out.push(task);
             }
             Err(err) => {
@@ -3895,6 +4015,9 @@ async fn load_task_file(
                     );
                 } else {
                     warn!("rendering task: {err:?}");
+                    if let Some(cache) = rendered_file_tasks.as_deref_mut() {
+                        cache.insert(cache_key, task.clone());
+                    }
                     out.push(task);
                 }
             }
@@ -4973,9 +5096,9 @@ vars = { target = "linux" }
             &config,
             &tasks_toml,
             temp_dir.path(),
-            &None,
-            &None,
+            &ResolvedTaskConfig::default(),
             &IndexMap::new(),
+            None,
             None,
         )
         .await?;
