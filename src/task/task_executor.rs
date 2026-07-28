@@ -298,7 +298,7 @@ impl TaskExecutor {
             cache_env: task
                 .cache
                 .iter()
-                .filter(|cache| self.task_cache.enabled() && cache.enabled)
+                .filter(|cache| cache.enabled)
                 .flat_map(|cache| &cache.env)
                 .chain(self.sandbox.cache_env.iter())
                 .cloned()

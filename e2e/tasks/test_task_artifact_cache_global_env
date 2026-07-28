@@ -44,8 +44,14 @@ GLOBAL_PROFILE=release LOCAL_PROFILE=two GLOBAL_SECRET=global-secret TASK_SECRET
 assert "cat dist/result.txt" "release:two"
 assert "wc -l < runs.txt | tr -d ' '" "3"
 
+# Disabling artifact caching does not change the task's sandbox environment.
+rm -rf dist
+GLOBAL_PROFILE=off LOCAL_PROFILE=off GLOBAL_SECRET=global-secret TASK_SECRET=task-secret mise run --task-cache off build
+assert "cat dist/result.txt" "off:off"
+assert "wc -l < runs.txt | tr -d ' '" "4"
+
 # Pass-through env values are available to the task but do not affect its key.
 rm -rf dist
 assert_contains "GLOBAL_PROFILE=release LOCAL_PROFILE=two GLOBAL_SECRET=rotated TASK_SECRET=rotated mise run build 2>&1" "restored outputs from cache"
 assert "cat dist/result.txt" "release:two"
-assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "wc -l < runs.txt | tr -d ' '" "4"
