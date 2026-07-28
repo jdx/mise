@@ -1031,7 +1031,15 @@ fn config_files_after_dotfiles_dry_run(
         if !is_mise_config_target(&file.target) || !file.source.is_file() {
             continue;
         }
-        match dotfile_mise_config_body(config, file) {
+        if file.mode == FileMode::Template {
+            debug!(
+                "bootstrap: template config target {} skipped in dry-run config simulation \
+                 because template rendering may execute commands",
+                file.target.display()
+            );
+            continue;
+        }
+        match crate::file::read_to_string(&file.source) {
             Ok(body) => match parse_mise_config_body(&file.target, &body) {
                 Ok(cf) => {
                     bodies.insert(file.target.clone(), body);
@@ -1104,13 +1112,6 @@ fn config_files_after_dotfiles_dry_run(
         }
     }
     Ok(config_files)
-}
-
-fn dotfile_mise_config_body(config: &Config, file: &FileRequest) -> Result<String> {
-    match file.mode {
-        FileMode::Template => system::files::render_template(config, file),
-        _ => crate::file::read_to_string(&file.source),
-    }
 }
 
 fn parse_mise_config_body(

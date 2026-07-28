@@ -312,21 +312,20 @@ assert "cat ~/.bootstrap-force-dotfiles" "local content"
 assert_succeed "mise bootstrap --yes --force-dotfiles"
 assert "readlink ~/.bootstrap-force-dotfiles" "$PWD/dotfiles/bootstrap-force"
 
-# dry-run previews hooks from templated config dotfiles
+# dry-run does not render templated config dotfiles while discovering hooks
 cat <<'EOF' >dotfiles/mise/config.local.toml.tmpl
 [bootstrap.hooks.final]
-run = "echo {{ vars.templated_hook_value }} > templated_hook_ran"
+run = "{{ exec(command='touch templated_config_exec_ran') }}"
 EOF
 cat <<EOF >mise.toml
-[vars]
-templated_hook_value = "template-final"
-
 [dotfiles]
 "~/.config/mise/config.local.toml" = { source = "dotfiles/mise/config.local.toml.tmpl", mode = "template" }
 EOF
-rm -f templated_hook_ran
-assert_contains "mise bootstrap --dry-run" "echo template-final > templated_hook_ran"
-assert_fail "cat templated_hook_ran"
+rm -f templated_config_exec_ran
+assert_succeed "mise bootstrap --dry-run"
+assert_fail "test -f templated_config_exec_ran"
+assert_succeed "mise bootstrap dotfiles apply --dry-run"
+assert_fail "test -f templated_config_exec_ran"
 
 # dry-run recognizes local config targets such as ~/.mise/config.toml
 cat <<'EOF' >dotfiles/mise/local-config.toml
