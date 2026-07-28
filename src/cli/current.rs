@@ -75,13 +75,10 @@ impl Current {
                 continue;
             }
             for tv in versions {
-                if !plugin
-                    .is_install_satisfied_or_false(&config, tv, true)
-                    .await
-                {
+                if !plugin.is_version_installed(&config, tv, true) {
                     let source = ts.versions.get(tv.ba()).unwrap().source.clone();
                     warn!(
-                        "{}@{} is specified in {}, but not installed or has an invalid installation",
+                        "{}@{} is specified in {}, but not installed",
                         &tv.ba(),
                         &tv.version,
                         &source

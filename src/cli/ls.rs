@@ -121,7 +121,7 @@ impl Ls {
         if self.installed {
             let mut installed_runtimes = vec![];
             for (ls, p, tv, source) in runtimes {
-                if p.is_install_satisfied_or_false(&config, &tv, true).await {
+                if p.is_version_installed(&config, &tv, true) {
                     installed_runtimes.push((ls, p, tv, source));
                 }
             }
@@ -130,7 +130,7 @@ impl Ls {
         if self.missing {
             let mut missing_runtimes = vec![];
             for (ls, p, tv, source) in runtimes {
-                if !p.is_install_satisfied_or_false(&config, &tv, true).await {
+                if !p.is_version_installed(&config, &tv, true) {
                     missing_runtimes.push((ls, p, tv, source));
                 }
             }
@@ -601,7 +601,7 @@ async fn resolve_version_status(
     let install_path = tv.install_path();
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
         VersionStatus::Symlink(tv.version.clone(), active)
-    } else if !p.is_install_satisfied_or_false(config, tv, true).await {
+    } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
     } else {
         let category = env::install_path_category(&install_path);

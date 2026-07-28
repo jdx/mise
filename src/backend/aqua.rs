@@ -139,17 +139,6 @@ struct AquaFileLink {
     explicit_link: bool,
 }
 
-fn has_installed_bin_path(paths: &[PathBuf]) -> bool {
-    paths.iter().any(|path| path.is_dir())
-}
-
-fn bin_layout_is_satisfied(paths: &Result<Vec<PathBuf>>) -> bool {
-    match paths {
-        Ok(paths) => has_installed_bin_path(paths),
-        Err(_) => true,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GithubAttestationStatus {
     Verified,
@@ -160,32 +149,6 @@ enum GithubAttestationStatus {
 impl Backend for AquaBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
-    }
-
-    async fn is_install_satisfied(
-        &self,
-        config: &Arc<Config>,
-        tv: &ToolVersion,
-        check_symlink: bool,
-    ) -> Result<bool> {
-        if !self.is_version_installed(config, tv, check_symlink) {
-            return Ok(false);
-        }
-
-        // Aqua registry entries may change their archive layout between mise
-        // releases. An install directory alone is therefore not enough to show
-        // that the version still matches the current package definition.
-        let paths = self.list_bin_paths(config, tv).await;
-        if let Err(err) = &paths {
-            // A transient registry or cache lookup failure must not turn an
-            // existing installation into a reinstall candidate. Preserve the
-            // directory-based result and retry validation later.
-            debug!(
-                "unable to validate Aqua bin paths for {}: {err:#}; treating the existing installation as satisfied",
-                tv.style()
-            );
-        }
-        Ok(bin_layout_is_satisfied(&paths))
     }
 
     async fn description(&self) -> Option<String> {
@@ -692,7 +655,7 @@ impl Backend for AquaBackend {
                 .with_cache_key(format!("{cache_key:?}"))
                 .build();
 
-        let candidates = cache
+        let candidates = match cache
             .get_or_try_init_async(async || {
                 let pkg = self.package_with_version_candidates(tv).await?;
                 // Pure: no filesystem reads, so a mid-install call can never
@@ -705,9 +668,20 @@ impl Backend for AquaBackend {
                     arch(),
                 )
             })
-            .await?;
+            .await
+        {
+            Ok(candidates) => candidates,
+            Err(err) if Self::has_legacy_root_bin(&self.ba, &install_path) => {
+                debug!(
+                    "unable to resolve current Aqua bin paths for {}: {err:#}; using compatible root-level binary layout",
+                    tv.style()
+                );
+                return Ok(vec![runtime_path]);
+            }
+            Err(err) => return Err(err),
+        };
 
-        let paths = candidates
+        let mut paths: Vec<_> = candidates
             .iter()
             // Existence checked LIVE, on the install_path basis (matches the
             // original pre-`strip_prefix` filter). Returned paths are
@@ -715,6 +689,9 @@ impl Backend for AquaBackend {
             .filter(|rel| install_path.join(rel).exists())
             .map(|rel| rel.mount(&runtime_path))
             .collect();
+        if paths.is_empty() && Self::has_legacy_root_bin(&self.ba, &install_path) {
+            paths.push(runtime_path);
+        }
         Ok(paths)
     }
 
@@ -2933,6 +2910,15 @@ impl AquaBackend {
             .collect())
     }
 
+    fn has_legacy_root_bin(ba: &BackendArg, install_path: &Path) -> bool {
+        [&ba.short, &ba.tool_name]
+            .into_iter()
+            .filter_map(|name| name.rsplit([':', '/']).next())
+            .unique()
+            .map(|name| install_path.join(format!("{name}{}", std::env::consts::EXE_SUFFIX)))
+            .any(|path| path.is_file() && file::is_executable(&path))
+    }
+
     fn srcs_for_platform(
         pkg: &AquaPackage,
         version: &str,
@@ -3341,21 +3327,22 @@ mod tests {
     }
 
     #[test]
-    fn install_requires_a_current_bin_directory() {
+    fn detects_legacy_root_binary_layout() {
         let temp = tempfile::tempdir().unwrap();
-        let old_layout = temp.path().join("codex");
-        file::write(&old_layout, "old binary").unwrap();
+        let ba = BackendArg::from("codex");
+        let unrelated = temp
+            .path()
+            .join(format!("node{}", std::env::consts::EXE_SUFFIX));
+        file::write(&unrelated, "unrelated binary").unwrap();
+        file::make_executable(&unrelated).unwrap();
+        assert!(!AquaBackend::has_legacy_root_bin(&ba, temp.path()));
 
-        assert!(!has_installed_bin_path(&[]));
-        assert!(!has_installed_bin_path(&[temp.path().join("bin")]));
-        assert!(!has_installed_bin_path(&[old_layout]));
-        assert!(bin_layout_is_satisfied(&Err(eyre::eyre!(
-            "registry unavailable"
-        ))));
-
-        let current_layout = temp.path().join("bin");
-        file::create_dir_all(&current_layout).unwrap();
-        assert!(bin_layout_is_satisfied(&Ok(vec![current_layout])));
+        let codex = temp
+            .path()
+            .join(format!("codex{}", std::env::consts::EXE_SUFFIX));
+        file::write(&codex, "codex binary").unwrap();
+        file::make_executable(&codex).unwrap();
+        assert!(AquaBackend::has_legacy_root_bin(&ba, temp.path()));
     }
 
     #[test]
