@@ -251,6 +251,7 @@
 - [mise tasks add](https://mise.jdx.dev/cli/tasks/add.html): Create a new task
 - [mise tasks deps](https://mise.jdx.dev/cli/tasks/deps.html): Display a tree visualization of a dependency graph
 - [mise tasks edit](https://mise.jdx.dev/cli/tasks/edit.html): Edit a task with $EDITOR
+- [mise tasks graph](https://mise.jdx.dev/cli/tasks/graph.html): [experimental] Inspect the workspace project graph
 - [mise tasks info](https://mise.jdx.dev/cli/tasks/info.html): Get information about a task
 - [mise tasks ls](https://mise.jdx.dev/cli/tasks/ls.html): List available tasks to execute These may be included from the config file or from the project's .mise/tasks directory mise will merge all tasks from all parent directories into this list.
 - [mise tasks run](https://mise.jdx.dev/cli/tasks/run.html): Run task(s)

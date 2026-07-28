@@ -6,6 +6,7 @@ use crate::cli::run;
 mod add;
 mod deps;
 mod edit;
+mod graph;
 mod info;
 mod ls;
 mod validate;
@@ -29,6 +30,7 @@ enum Commands {
     Add(Box<add::TasksAdd>),
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
+    Graph(graph::TasksGraph),
     Info(info::TasksInfo),
     Ls(ls::TasksLs),
     Run(Box<run::Run>),
@@ -41,6 +43,7 @@ impl Commands {
             Self::Add(cmd) => (*cmd).run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Edit(cmd) => cmd.run().await,
+            Self::Graph(cmd) => cmd.run().await,
             Self::Info(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo.projects."node:app"]
+root = "apps/app"
+metadata = { kind = "application" }
+depends = ["cargo:core", "node:lib"]
+
+[monorepo.projects."node:lib"]
+root = "packages/lib"
+metadata = { kind = "library" }
+
+[monorepo.projects."cargo:core"]
+root = "crates/core"
+EOF
+
+assert_contains "mise tasks graph" "node:app"
+assert_contains "mise tasks graph" "apps/app"
+assert_contains "mise tasks graph" "cargo:core, node:lib"
+assert_contains "mise tasks graph" '{"kind":"application"}'
+
+assert_json "mise tasks graph --json" '{
+  "projects": [
+    {
+      "id": "cargo:core",
+      "root": "crates/core",
+      "metadata": {},
+      "dependencies": []
+    },
+    {
+      "id": "node:app",
+      "root": "apps/app",
+      "metadata": {
+        "kind": "application"
+      },
+      "dependencies": [
+        "cargo:core",
+        "node:lib"
+      ]
+    },
+    {
+      "id": "node:lib",
+      "root": "packages/lib",
+      "metadata": {
+        "kind": "library"
+      },
+      "dependencies": []
+    }
+  ]
+}'
+
+mkdir -p apps/app
+(
+  cd apps/app
+  assert_contains "mise tasks graph" "node:app"
+)
+
+assert_fail_contains "MISE_EXPERIMENTAL=0 mise tasks graph" "experimental"

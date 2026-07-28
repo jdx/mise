@@ -3635,6 +3635,20 @@ Examples:
         flag "-p --path" help="Display the path to the task instead of editing it"
         arg <TASK> help="Task to edit"
     }
+    cmd graph help="[experimental] Inspect the workspace project graph" effect=read {
+        after_long_help #"""
+Examples:
+
+    # Inspect projects and their dependency edges
+    $ mise tasks graph
+
+    # Emit the project graph as JSON
+    $ mise tasks graph --json
+
+"""#
+        flag "-J --json" help="Output the project graph as JSON"
+        flag --no-header help="Do not print table headers"
+    }
     cmd info help="Get information about a task" effect=read {
         after_long_help #"""
 Examples:

@@ -521,6 +521,9 @@ export const commands: { [key: string]: Command } = {
       edit: {
         hide: false,
       },
+      graph: {
+        hide: false,
+      },
       info: {
         hide: false,
       },
