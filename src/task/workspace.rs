@@ -157,7 +157,11 @@ fn normalize_project_root(id: &ProjectId, root: &Path) -> Result<PathBuf> {
             Component::CurDir => {}
             Component::Normal(component) => normalized.push(component),
             Component::ParentDir => {
-                bail!("workspace project {id:?} has root {root:?} that escapes the workspace root");
+                if !normalized.pop() {
+                    bail!(
+                        "workspace project {id:?} has root {root:?} that escapes the workspace root"
+                    );
+                }
             }
             Component::RootDir | Component::Prefix(_) => {
                 bail!(
@@ -250,6 +254,20 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("escapes the workspace root")
+        );
+    }
+
+    #[test]
+    fn discovery_normalizes_internal_parent_components() {
+        let provider = TestProvider {
+            projects: vec![project("app", "packages/tmp/../app")],
+        };
+
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        assert_eq!(
+            graph.projects().next().unwrap().root,
+            Path::new("packages/app")
         );
     }
 
