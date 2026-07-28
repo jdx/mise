@@ -424,8 +424,8 @@ impl Client {
         let bytes_received = Arc::new(AtomicU64::new(0));
 
         // Retry the whole download so a mid-stream chunk failure restarts from
-        // byte 0 instead of failing the install. send_once_with_https_fallback
-        // (not send_with_https_fallback) is used inside to avoid retry-on-retry.
+        // byte 0 instead of failing the install. The download-specific send
+        // helper skips both inner retries and the fetch metadata deadline.
         let download = retry_async("GET", &url, || {
             let attempt = attempt.clone();
             let bytes_received = bytes_received.clone();
@@ -675,7 +675,9 @@ impl Client {
 
         let request_timeout = self.request_timeout();
         let mut req = self.reqwest.request(method.clone(), url.clone());
-        if matches!(self.kind, ClientKind::Fetch) && options.enforce_request_timeout {
+        let request_timeout_applied =
+            matches!(self.kind, ClientKind::Fetch) && options.enforce_request_timeout;
+        if request_timeout_applied {
             req = req.timeout(request_timeout);
         }
         req = req.headers(final_headers.clone());
@@ -692,7 +694,9 @@ impl Client {
                         .unwrap()
                         .insert(host, err.to_string());
                 }
-                if err.is_timeout() {
+                if err.is_timeout()
+                    && (matches!(self.kind, ClientKind::Http) || request_timeout_applied)
+                {
                     let (setting, env_var) = match self.kind {
                         ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
                         ClientKind::Fetch => (
@@ -1701,6 +1705,22 @@ mod tests {
         port
     }
 
+    async fn spawn_stalled_response_server() -> u16 {
+        use tokio::io::AsyncReadExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        port
+    }
+
     fn ok_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
     }
@@ -2364,6 +2384,50 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         .unwrap();
 
         assert_eq!(std::fs::read(path).unwrap(), b"orbstk");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_fetch_timeout_hint_only_when_request_deadline_applied() {
+        let client = Client::new(Duration::from_millis(50), ClientKind::Fetch).unwrap();
+
+        let metadata_port = spawn_stalled_response_server().await;
+        let metadata_url: Url = format!("http://127.0.0.1:{metadata_port}/versions")
+            .parse()
+            .unwrap();
+        let metadata_err = client
+            .send_once_inner(
+                Method::GET,
+                metadata_url,
+                &HeaderMap::new(),
+                "GET",
+                SendOnceOptions::new(None, true),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{metadata_err:#}").contains("fetch_remote_versions_timeout"),
+            "metadata deadline should identify its setting: {metadata_err:#}"
+        );
+
+        let download_port = spawn_stalled_response_server().await;
+        let download_url: Url = format!("http://127.0.0.1:{download_port}/artifact.dmg")
+            .parse()
+            .unwrap();
+        let download_err = client
+            .send_once_inner(
+                Method::GET,
+                download_url,
+                &HeaderMap::new(),
+                "GET",
+                SendOnceOptions::new(None, true).without_request_timeout(),
+            )
+            .await
+            .unwrap_err();
+        assert!(is_transient(&download_err));
+        assert!(
+            !format!("{download_err:#}").contains("fetch_remote_versions_timeout"),
+            "idle timeout must not claim the metadata deadline: {download_err:#}"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
