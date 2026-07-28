@@ -34,6 +34,7 @@ use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
+use crate::task::workspace::WorkspaceProjectOverride;
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -256,7 +257,7 @@ pub struct MiseToml {
     /// Legacy name for monorepo_root, retained during its deprecation period
     #[serde(default)]
     experimental_monorepo_root: Option<bool>,
-    /// Configuration for monorepo task discovery
+    /// Configuration for monorepo and workspace discovery
     #[serde(default)]
     monorepo: Option<MonorepoConfig>,
 }
@@ -294,7 +295,7 @@ pub struct TaskTemplates(pub IndexMap<String, TaskTemplate>);
 #[derive(Debug, Default, Clone)]
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
 
-/// Configuration for [monorepo] section in mise.toml
+/// Configuration for the [monorepo] section in mise.toml.
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct MonorepoConfig {
     /// Explicit list of config roots for monorepo task discovery.
@@ -304,6 +305,11 @@ pub struct MonorepoConfig {
     /// Use a single lockfile at the monorepo root for descendant config roots.
     /// None follows the rollout default; true opts in, false keeps colocated locks.
     pub lockfile: Option<bool>,
+    /// Explicit additions, removals, and overrides for provider-inferred projects.
+    // Consumed when workspace providers are connected to task loading.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub projects: BTreeMap<String, WorkspaceProjectOverride>,
 }
 
 impl EnvList {
@@ -2453,6 +2459,7 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::sync::Arc;
 
     use indoc::{formatdoc, indoc};
@@ -2466,6 +2473,41 @@ mod tests {
     use crate::{config::Config, dirs::CWD};
 
     use super::*;
+
+    #[test]
+    fn test_parse_monorepo_project_overrides() {
+        let config = toml::from_str::<MiseToml>(indoc! {r#"
+            [monorepo.projects."node:app"]
+            root = "apps/app"
+            metadata = { kind = "frontend" }
+            depends = ["node:lib"]
+            depends_add = ["cargo:core"]
+            depends_remove = ["node:legacy"]
+
+            [monorepo.projects."node:legacy"]
+            remove = true
+        "#})
+        .unwrap();
+        let projects = &config.monorepo.unwrap().projects;
+        let app = projects.get("node:app").unwrap();
+
+        assert_eq!(app.root.as_deref(), Some(Path::new("apps/app")));
+        assert_eq!(
+            app.metadata
+                .as_ref()
+                .unwrap()
+                .get("kind")
+                .map(String::as_str),
+            Some("frontend")
+        );
+        assert_eq!(app.depends, Some(BTreeSet::from(["node:lib".to_string()])));
+        assert_eq!(app.depends_add, BTreeSet::from(["cargo:core".to_string()]));
+        assert_eq!(
+            app.depends_remove,
+            BTreeSet::from(["node:legacy".to_string()])
+        );
+        assert!(projects.get("node:legacy").unwrap().remove);
+    }
 
     #[tokio::test]
     async fn test_fixture() {
