@@ -8,6 +8,7 @@ use crate::file::is_executable;
 use crate::file::{display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
+use crate::task::task_cache::CommandInput;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -22,7 +23,7 @@ use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
-use eyre::{Report, Result, ensure, eyre};
+use eyre::{Context, Report, Result, ensure, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
@@ -43,6 +44,8 @@ use xx::file;
 /// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
 static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 type TaskOutputCapture = Arc<StdMutex<Vec<TaskCacheOutput>>>;
+const COMMAND_INPUT_TIMEOUT: Duration = Duration::from_secs(30);
+const COMMAND_INPUT_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 #[allow(dead_code)] // Guards are held for their Drop impl, not read
 enum RuntimeLockGuard<'a> {
@@ -538,17 +541,7 @@ impl TaskExecutor {
         self.check_confirmation(config, task, &env).await?;
 
         let artifact_cache = if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
-            match TaskArtifactCache::new(
-                task,
-                config,
-                &ts,
-                &env,
-                &task_env,
-                &dependency_state.cache_keys,
-                !self.dry_run,
-            )
-            .await?
-            {
+            match TaskArtifactCache::prepare(task, config, self.dry_run).await? {
                 Some(_) if self.dry_run => None,
                 Some(_) if self.raw(Some(task)) => {
                     warn!(
@@ -557,7 +550,21 @@ impl TaskExecutor {
                     );
                     None
                 }
-                Some(cache) => {
+                Some(prepared) => {
+                    let command_inputs = self
+                        .resolve_cache_command_inputs(task, config, &env)
+                        .await?;
+                    let cache = prepared
+                        .finish(
+                            task,
+                            config,
+                            &ts,
+                            &env,
+                            &task_env,
+                            &dependency_state.cache_keys,
+                            command_inputs,
+                        )
+                        .await?;
                     let current_output = if !self.force
                         && !dependency_state.any_unkeyed_did_work
                         && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
@@ -1224,6 +1231,82 @@ impl TaskExecutor {
         } else {
             Settings::get().default_inline_shell()
         }
+    }
+
+    async fn resolve_cache_command_inputs(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+        resolved_env: &BTreeMap<String, String>,
+    ) -> Result<Vec<CommandInput>> {
+        let cache = task.cache.as_ref().expect("cache must be configured");
+        if cache.command_inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let root = task_cwd(task, config).await?;
+        let sandbox = self.build_sandbox_for_task(task, config).await?;
+        let filtered_env = if sandbox.is_active() {
+            sandbox.filter_env(resolved_env)
+        } else {
+            resolved_env.clone()
+        };
+        let timeout = task
+            .timeout
+            .as_ref()
+            .and_then(|value| match duration::parse_duration(value) {
+                Ok(timeout) => Some(timeout),
+                Err(err) => {
+                    warn!("invalid timeout {:?} for task {}: {err}", value, task.name);
+                    None
+                }
+            })
+            .unwrap_or(COMMAND_INPUT_TIMEOUT);
+        let mut inputs = Vec::with_capacity(cache.command_inputs.len());
+        for command in &cache.command_inputs {
+            if command.trim().is_empty() {
+                eyre::bail!(
+                    "task {} cache command input must not be empty: {command:?}",
+                    task.name
+                );
+            }
+            let (program, args, cmd_verbatim) =
+                self.get_cmd_program_and_args(command, task, &[])?;
+            #[cfg(not(windows))]
+            let _ = cmd_verbatim;
+            let program = program.to_executable();
+            #[cfg(windows)]
+            let program = crate::path::resolve_posix_shell_program_path(&program, &filtered_env)
+                .unwrap_or(program);
+            let env = maybe_convert_env_for_msys_shell(Path::new(&program), &filtered_env);
+            let runner = CmdLineRunner::new(program);
+            #[cfg(windows)]
+            let runner = if cmd_verbatim {
+                args.iter().fold(runner, |runner, arg| runner.raw_arg(arg))
+            } else {
+                runner.args(&args)
+            };
+            #[cfg(not(windows))]
+            let runner = runner.args(&args);
+            let mut runner = runner
+                .current_dir(&root)
+                .env_clear()
+                .envs(env.as_ref())
+                .with_timeout(timeout)
+                .with_sandbox(sandbox.clone());
+            runner.apply_sandbox().await?;
+            let (stdout_hash, stderr_hash) = runner
+                .execute_hashes_async(COMMAND_INPUT_MAX_OUTPUT_BYTES)
+                .await
+                .wrap_err_with(|| {
+                    format!("task {} cache command input failed: {command:?}", task.name)
+                })?;
+            inputs.push(CommandInput {
+                command: command.clone(),
+                stdout_hash,
+                stderr_hash,
+            });
+        }
+        Ok(inputs)
     }
 
     #[allow(clippy::too_many_arguments)]

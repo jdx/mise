@@ -3990,6 +3990,7 @@ echo "test"
             Some(TaskCacheConfig {
                 enabled: true,
                 env: vec!["PROFILE".to_string()],
+                command_inputs: vec![],
             })
         );
         assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);

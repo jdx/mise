@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+command_inputs = ["cat runtime-version"]
+
+[tasks.build]
+run = '''
+mkdir -p dist
+cp input.txt dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'input\n' >input.txt
+printf 'one\n' >runtime-version
+
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# An unchanged command input restores the existing artifact.
+rm -rf dist
+assert_contains "mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Runtime output changes the key even though no declared source changed.
+printf 'two\n' >runtime-version
+rm -rf dist
+mise run build
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# Commands are evaluated in the task directory.
+mkdir nested
+touch nested/nested-only-input.txt
+cat <<'EOF' >nested/mise.toml
+[settings]
+experimental = true
+
+[tasks.check]
+run = "printf 'ran\n' >> runs.txt"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["test -f nested-only-input.txt"] }
+EOF
+touch nested/input.txt
+mise -C nested run check
+assert "wc -l < nested/runs.txt | tr -d ' '" "1"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.fail]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["exit 7"] }
+EOF
+
+assert_fail_contains \
+  "mise run fail" \
+  "task fail cache command input failed"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.empty]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = [" "] }
+EOF
+
+assert_fail_contains \
+  "mise run empty" \
+  "cache command input must not be empty"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.dry]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["touch command-input-ran"] }
+EOF
+
+mise run --dry-run dry
+assert "test ! -e command-input-ran && echo clean" "clean"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.invalid-overlap]
+run = "true"
+sources = ["input.txt"]
+outputs = ["input.txt"]
+cache = { enabled = true, command_inputs = ["touch command-input-ran"] }
+EOF
+
+assert_fail_contains \
+  "mise run invalid-overlap" \
+  "cache outputs must not contain source"
+assert "test ! -e command-input-ran && echo clean" "clean"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.raw]
+run = "true"
+raw = true
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["touch command-input-ran"] }
+EOF
+
+mise run raw
+assert "test ! -e command-input-ran && echo clean" "clean"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.shell-override]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["printf overridden > shell-override-marker"] }
+EOF
+
+# Command inputs honor the same CLI shell override as the task body.
+MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS=false mise run --shell "sh -c" shell-override
+assert "cat shell-override-marker" "overridden"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.invalid-timeout]
+run = "true"
+timeout = "invalid"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ["printf fallback > invalid-timeout-marker"] }
+EOF
+
+mise run invalid-timeout
+assert "cat invalid-timeout-marker" "fallback"
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.sandboxed]
+run = "true"
+deny_env = true
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, command_inputs = ['test -z "${BLOCKED_SECRET-}"'] }
+EOF
+
+# Command inputs receive the task's sandbox-filtered environment.
+BLOCKED_SECRET=secret mise run sandboxed

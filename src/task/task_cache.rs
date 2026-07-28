@@ -3,7 +3,8 @@ use crate::dirs;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::task::task_source_checker::{
-    build_output_matcher, is_output, output_glob_patterns, task_cache_inputs, task_cwd,
+    TaskCacheInputs, build_output_matcher, is_output, output_glob_patterns, task_cache_inputs,
+    task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -28,6 +29,8 @@ pub struct TaskCacheConfig {
     pub enabled: bool,
     /// Ambient environment variables whose resolved values affect the cache key.
     pub env: Vec<String>,
+    /// Commands whose stdout and stderr affect the cache key.
+    pub command_inputs: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -43,10 +46,19 @@ struct CacheKeyMaterial<'a> {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     dependency_keys: Vec<String>,
     environment: BTreeMap<String, Option<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    command_inputs: Vec<CommandInput>,
     vars: BTreeMap<String, String>,
     tools: Vec<String>,
     os: &'static str,
     arch: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct CommandInput {
+    pub(crate) command: String,
+    pub(crate) stdout_hash: String,
+    pub(crate) stderr_hash: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,16 +82,17 @@ pub struct TaskArtifactCache {
     state_path: PathBuf,
 }
 
+pub(crate) struct TaskArtifactCacheBuilder {
+    root: PathBuf,
+    inputs: TaskCacheInputs,
+}
+
 impl TaskArtifactCache {
-    pub async fn new(
+    pub(crate) async fn prepare(
         task: &Task,
         config: &Arc<Config>,
-        toolset: &Toolset,
-        resolved_env: &BTreeMap<String, String>,
-        declared_env: &[(String, String)],
-        dependency_keys: &[String],
-        persist_content_hash_cache: bool,
-    ) -> Result<Option<Self>> {
+        dry_run: bool,
+    ) -> Result<Option<TaskArtifactCacheBuilder>> {
         Settings::get().ensure_experimental("task artifact caching")?;
         let root = task_cwd(task, config).await?;
         validate_config(task, &root)?;
@@ -87,8 +100,7 @@ impl TaskArtifactCache {
         for output in &output_roots {
             ensure_no_symlink_ancestors(&root, output)?;
         }
-        let Some(inputs) = task_cache_inputs(task, config, persist_content_hash_cache).await?
-        else {
+        let Some(inputs) = task_cache_inputs(task, config, !dry_run).await? else {
             warn!(
                 "task {} has sources defined but no matching files found; artifact caching disabled",
                 task.name
@@ -107,7 +119,23 @@ impl TaskArtifactCache {
                 );
             }
         }
+        Ok(Some(TaskArtifactCacheBuilder { root, inputs }))
+    }
+}
 
+impl TaskArtifactCacheBuilder {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn finish(
+        self,
+        task: &Task,
+        config: &Arc<Config>,
+        toolset: &Toolset,
+        resolved_env: &BTreeMap<String, String>,
+        declared_env: &[(String, String)],
+        dependency_keys: &[String],
+        command_inputs: Vec<CommandInput>,
+    ) -> Result<TaskArtifactCache> {
+        let Self { root, inputs } = self;
         let mut environment = declared_env
             .iter()
             .map(|(key, _)| (key.clone(), resolved_env.get(key).cloned()))
@@ -129,7 +157,6 @@ impl TaskArtifactCache {
             .map(|(_, tv)| tv.to_string())
             .collect::<Vec<_>>();
         tools.sort();
-
         let material = CacheKeyMaterial {
             format: CACHE_FORMAT_VERSION,
             task: &task.name,
@@ -141,6 +168,7 @@ impl TaskArtifactCache {
             source_hash: inputs.source_hash,
             dependency_keys: dependency_keys.to_vec(),
             environment,
+            command_inputs,
             vars,
             tools,
             os: std::env::consts::OS,
@@ -157,13 +185,15 @@ impl TaskArtifactCache {
         let state_path = dirs::STATE
             .join("task-artifacts")
             .join(format!("{state_identity}.key"));
-        Ok(Some(Self {
+        Ok(TaskArtifactCache {
             root,
             key,
             state_path,
-        }))
+        })
     }
+}
 
+impl TaskArtifactCache {
     pub fn key(&self) -> &str {
         &self.key
     }
@@ -331,13 +361,24 @@ impl TaskArtifactCache {
     }
 }
 
-fn validate_config(task: &Task, root: &Path) -> Result<()> {
+pub(crate) fn validate_config(task: &Task, root: &Path) -> Result<()> {
     if task.sources.is_empty() {
         bail!("task {} cache requires at least one source", task.name);
     }
     if task.outputs.is_auto() {
         bail!(
             "task {} cache requires explicit outputs or outputs = []",
+            task.name
+        );
+    }
+    if let Some(command) = task.cache.as_ref().and_then(|cache| {
+        cache
+            .command_inputs
+            .iter()
+            .find(|command| command.trim().is_empty())
+    }) {
+        bail!(
+            "task {} cache command input must not be empty: {command:?}",
             task.name
         );
     }
@@ -717,9 +758,13 @@ mod tests {
 
     #[test]
     fn config_deserializes_and_rejects_unknown_fields() {
-        let config: TaskCacheConfig = toml::from_str("enabled = true\nenv = ['PROFILE']").unwrap();
+        let config: TaskCacheConfig = toml::from_str(
+            "enabled = true\nenv = ['PROFILE']\ncommand_inputs = ['node --version']",
+        )
+        .unwrap();
         assert!(config.enabled);
         assert_eq!(config.env, ["PROFILE"]);
+        assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
     }
 

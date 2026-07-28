@@ -2290,6 +2290,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "command_inputs": {
+              "description": "commands whose stdout and stderr affect eligible task cache keys",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         },
@@ -2964,6 +2971,13 @@
             },
             "env": {
               "description": "ambient environment variable names whose values affect the cache key",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "command_inputs": {
+              "description": "commands whose stdout and stderr affect the cache key",
               "items": {
                 "type": "string"
               },

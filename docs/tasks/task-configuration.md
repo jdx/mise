@@ -512,8 +512,8 @@ outputs = { auto = true } # this is the default when sources is defined
 
 ### `cache` <Badge type="warning" text="experimental" />
 
-- **Type**: `{ enabled = bool, env = string[] }`
-- **Default**: `{ enabled = false, env = [] }`
+- **Type**: `{ enabled = bool, env = string[], command_inputs = string[] }`
+- **Default**: `{ enabled = false, env = [], command_inputs = [] }`
 
 Stores successful task results in a content-addressed local cache and reuses them when the same task
 inputs are seen again. Declared filesystem outputs are restored after deletion. Tasks with
@@ -538,6 +538,26 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
+Commands listed in `cache.command_inputs` run before cache lookup. Their command text, stdout, and
+stderr are included in the cache key. Commands use the same inline shell (including a CLI `--shell`
+override), resolved environment and tools, working directory, and sandbox policy as the task. This
+is useful when inputs such as compiler versions or generated configuration cannot be represented by
+source files alone.
+
+```mise-toml
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, command_inputs = ["node --version", "npm config get registry"] }
+```
+
+A command input must be non-empty and exit successfully. Its output is hashed without being printed
+or retained. Command inputs inherit the task timeout, or have a 30-second timeout when the task has
+none, and may emit at most 16 MiB across stdout and stderr. They should be fast, deterministic, and
+free of side effects because they run whenever mise computes the task's cache key. Command inputs
+are not run during dry runs or when caching is disabled for raw or interactive execution.
+
 ```mise-toml
 [tasks.lint]
 run = "eslint ."
@@ -558,6 +578,7 @@ experimental = true
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV"]
+command_inputs = ["node --version"]
 
 [tasks.build]
 run = "npm run build"
@@ -570,9 +591,9 @@ cache = { enabled = false }
 ```
 
 The cache key includes source contents, the task definition and arguments, resolved task environment,
-the values (or absence) of variables named in `cache.env`, resolved tool versions, dependency
-artifact keys, and the operating system and architecture. Variables inherited from the ambient
-process are ignored unless listed in `cache.env`.
+the values (or absence) of variables named in `cache.env`, command-input output, resolved tool
+versions, dependency artifact keys, and the operating system and architecture. Variables inherited
+from the ambient process are ignored unless listed in `cache.env`.
 
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under
@@ -904,6 +925,7 @@ Task-local and task-template cache configuration takes precedence, including
 [task_config.cache]
 enabled = true
 env = ["NODE_ENV", "CI"]
+command_inputs = ["node --version"]
 ```
 
 ### `task_config.global_env` <Badge type="warning" text="experimental" />
