@@ -1032,6 +1032,7 @@ fn config_files_after_dotfiles_dry_run(
             continue;
         }
         if file.mode == FileMode::Template {
+            config_files.shift_remove(&file.target);
             debug!(
                 "bootstrap: template config target {} skipped in dry-run config simulation \
                  because template rendering may execute commands",
