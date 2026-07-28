@@ -2364,6 +2364,55 @@
         "lockfile": {
           "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.",
           "type": "boolean"
+        },
+        "projects": {
+          "description": "Experimental explicit additions, removals, and overrides applied to provider-inferred workspace projects",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "unevaluatedProperties": false,
+            "properties": {
+              "remove": {
+                "description": "Remove this project and every dependency edge connected to it",
+                "type": "boolean"
+              },
+              "root": {
+                "description": "Add the project at this workspace-relative root or replace its inferred root",
+                "type": "string"
+              },
+              "metadata": {
+                "description": "Replace provider-inferred project metadata",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "depends": {
+                "description": "Replace the complete provider-inferred dependency set",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              },
+              "depends_add": {
+                "description": "Add dependency edges after an optional depends replacement",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              },
+              "depends_remove": {
+                "description": "Remove dependency edges after an optional depends replacement",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              }
+            }
+          }
         }
       }
     },

@@ -37,7 +37,7 @@ outside this tracker.
 - [x] Define a workspace provider interface that can discover projects and dependencies
       deterministically
 - [x] Merge graphs from multiple providers for polyglot repositories
-- [ ] Allow explicit configuration to add, remove, or override inferred projects and dependency
+- [x] Allow explicit configuration to add, remove, or override inferred projects and dependency
       edges
 - [ ] Detect project graph cycles and report actionable diagnostics
 - [ ] Preserve dependency traversal through projects that do not implement the requested task
