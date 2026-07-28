@@ -1,3 +1,4 @@
+use crate::cache;
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all_with_retry};
 use crate::toolset::env_cache::CachedEnv;
@@ -34,7 +35,7 @@ impl CacheClear {
                     }
                 })
                 .collect(),
-            None => vec![CACHE.to_path_buf()],
+            None => cache::cache_dirs()?,
         };
         if self.outdate {
             for p in cache_dirs {

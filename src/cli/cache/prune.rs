@@ -53,7 +53,7 @@ impl CachePrune {
                     }
                 })
                 .collect(),
-            None => vec![CACHE.to_path_buf()],
+            None => cache::cache_dirs()?,
         };
 
         for p in cache_dirs {

@@ -691,11 +691,12 @@ not use them for values that affect generated outputs. Their values are not adde
 persisted as cache metadata, but a task can still expose them by writing them to cached output files
 or logs.
 
-Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2`. Filesystem outputs use
-zstd-compressed tar archives; result-only tasks store just their manifest and captured logs. Entries
-are included in the existing `mise cache clear` and `mise cache prune` behavior. Only successful task
-runs are cached. Cache read/write failures are treated as misses and never turn a successful task run
-into a failure.
+Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Set the experimental
+[`task.cache_dir`](/configuration/settings.html#task-cache-dir) setting or
+`MISE_TASK_CACHE_DIR` to choose a different parent directory; mise keeps the artifact format in its
+`v2` child directory. Default and custom locations are included in `mise cache clear` and
+manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
+are treated as misses and never turn a successful task run into a failure.
 
 Stdout and stderr are stored as ordered, redacted streams and replayed using the output mode selected
 for the cache hit. Prefix, interleave, keep-order, timed, replacing, quiet, silent, and per-stream

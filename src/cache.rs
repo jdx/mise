@@ -10,6 +10,7 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+use path_absolutize::Absolutize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::LazyLock as Lazy;
@@ -314,6 +315,27 @@ pub(crate) struct PruneOptions {
     pub(crate) age: Duration,
 }
 
+/// Returns every cache root maintained by whole-cache clear and prune operations.
+pub(crate) fn cache_dirs() -> Result<Vec<PathBuf>> {
+    cache_dirs_with_task_cache(crate::task::task_cache::task_cache_dir())
+}
+
+/// Adds an external task cache to the global cache roots without double-scanning
+/// task caches already stored beneath `MISE_CACHE_DIR`.
+fn cache_dirs_with_task_cache(task_cache_dir: PathBuf) -> Result<Vec<PathBuf>> {
+    let cache_root = dirs::CACHE.absolutize()?.to_path_buf();
+    let task_cache_dir = task_cache_dir.absolutize()?.to_path_buf();
+    let mut cache_dirs = vec![cache_root.clone()];
+    if !task_cache_dir.starts_with(cache_root) {
+        cache_dirs.push(task_cache_dir);
+    }
+    Ok(cache_dirs)
+}
+
+/// Opportunistically removes stale files from each active cache root.
+///
+/// Each external root keeps its own marker so one project's task cache cannot
+/// suppress automatic pruning for another project that shares `MISE_CACHE_DIR`.
 pub(crate) fn auto_prune() -> Result<()> {
     if !rand::random::<u8>().is_multiple_of(100) {
         return Ok(()); // only prune 1% of the time
@@ -325,29 +347,27 @@ pub(crate) fn auto_prune() -> Result<()> {
             return Ok(());
         }
     };
-    let auto_prune_file = dirs::CACHE.join(".auto_prune");
-    if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified())
-        && modified.elapsed().unwrap_or_default() < age
-    {
-        return Ok(());
-    }
-    let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
-    xx::file::touch_dir(&auto_prune_file)?;
-    if empty {
-        return Ok(());
-    }
-    debug!(
-        "pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting"
-    );
+    let cache_dirs = cache_dirs()?;
     let opts = PruneOptions {
         dry_run: false,
         verbose: false,
         age,
     };
-    prune(*dirs::CACHE, &opts)?;
+    let mut prune_env_cache = false;
+    for (index, cache_dir) in cache_dirs.into_iter().enumerate() {
+        if prepare_auto_prune_root(&cache_dir, age)? {
+            debug!(
+                "pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting"
+            );
+            prune(&cache_dir, &opts)?;
+            if index == 0 {
+                prune_env_cache = true;
+            }
+        }
+    }
     // Also prune env cache using env_cache_ttl
     let env_cache_dir = CachedEnv::cache_dir();
-    if env_cache_dir.exists() {
+    if prune_env_cache && env_cache_dir.exists() {
         let env_opts = PruneOptions {
             dry_run: false,
             verbose: false,
@@ -356,6 +376,23 @@ pub(crate) fn auto_prune() -> Result<()> {
         prune(&env_cache_dir, &env_opts)?;
     }
     Ok(())
+}
+
+/// Refreshes a cache root's private auto-prune marker and reports whether the
+/// root contains entries eligible for a pruning pass.
+fn prepare_auto_prune_root(cache_dir: &Path, age: Duration) -> Result<bool> {
+    if !cache_dir.exists() {
+        return Ok(false);
+    }
+    let auto_prune_file = cache_dir.join(".auto_prune");
+    if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified())
+        && modified.elapsed().unwrap_or_default() < age
+    {
+        return Ok(false);
+    }
+    let empty = file::ls(cache_dir)?.is_empty();
+    xx::file::touch_dir(&auto_prune_file)?;
+    Ok(!empty)
 }
 
 pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
@@ -401,6 +438,7 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
+    use std::fs;
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -466,5 +504,49 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(val, 2);
+    }
+
+    #[test]
+    fn cache_dirs_adds_only_external_task_cache() {
+        let external = tempfile::tempdir().unwrap();
+        assert_eq!(
+            cache_dirs_with_task_cache(external.path().to_path_buf()).unwrap(),
+            vec![dirs::CACHE.to_path_buf(), external.path().to_path_buf()]
+        );
+
+        let nested = dirs::CACHE.join("task-artifacts").join("v2");
+        assert_eq!(
+            cache_dirs_with_task_cache(nested).unwrap(),
+            vec![dirs::CACHE.to_path_buf()]
+        );
+
+        let external = dirs::CACHE
+            .parent()
+            .unwrap()
+            .join("external-task-cache")
+            .join("v2");
+        let escaping = dirs::CACHE
+            .join("..")
+            .join("external-task-cache")
+            .join("v2");
+        assert_eq!(
+            cache_dirs_with_task_cache(escaping).unwrap(),
+            vec![dirs::CACHE.to_path_buf(), external]
+        );
+    }
+
+    #[test]
+    fn auto_prune_markers_are_scoped_per_cache_root() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        fs::write(first.path().join("artifact"), "first").unwrap();
+        fs::write(second.path().join("artifact"), "second").unwrap();
+        let age = Duration::from_secs(60);
+
+        assert!(prepare_auto_prune_root(first.path(), age).unwrap());
+        assert!(prepare_auto_prune_root(second.path(), age).unwrap());
+        assert!(!prepare_auto_prune_root(first.path(), age).unwrap());
+        assert!(first.path().join(".auto_prune").exists());
+        assert!(second.path().join(".auto_prune").exists());
     }
 }

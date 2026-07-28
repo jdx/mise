@@ -1776,6 +1776,10 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "cache_dir": {
+              "description": "[experimental] Directory for task output cache artifacts.",
+              "type": "string"
+            },
             "disable_paths": {
               "default": [],
               "description": "Paths that mise will not look for tasks in.",
