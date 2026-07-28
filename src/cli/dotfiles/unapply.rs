@@ -93,6 +93,7 @@ impl DotfilesUnapply {
             return Ok(());
         }
         system::files::resolve_unapply(&config, &mut file_plan, &file_opts)?;
+        system::edits::validate_unapply(&edit_plan)?;
         // Confirmation covers the complete validated plan. Suppress the
         // per-domain prompts so declining cannot leave a partial unapply.
         edit_opts.yes = true;

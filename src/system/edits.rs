@@ -660,13 +660,20 @@ pub struct UnapplyOpts {
     pub yes: bool,
 }
 
+pub struct UnapplyPlan<'a> {
+    req: &'a EditRequest,
+    /// Exact target contents observed during planning. Template functions run
+    /// before execution, so selected edits must still have this same state.
+    text: String,
+}
+
 /// Remove marker-delimited blocks and, with `--force`, exact line edits.
 /// Block markers are their ownership record. A plain line may have existed
 /// before apply, so stateless unapply refuses to guess without `--force`.
 pub fn plan_unapply<'a>(
     requests: &'a [EditRequest],
     opts: &UnapplyOpts,
-) -> Result<Vec<&'a EditRequest>> {
+) -> Result<Vec<UnapplyPlan<'a>>> {
     let mut todo = vec![];
     let mut problems = vec![];
     let mut seen_lines = indexmap::IndexSet::new();
@@ -696,7 +703,7 @@ pub fn plan_unapply<'a>(
         let lines = text.lines().collect::<Vec<_>>();
         match &req.op {
             EditOp::Block { comment, .. } => match find_block(&lines, &req.id, comment) {
-                Ok(Some(_)) => todo.push(req),
+                Ok(Some(_)) => todo.push(UnapplyPlan { req, text }),
                 Ok(None) => {}
                 Err(reason) => problems.push(format!(
                     "  \"{}\" ({}): {reason}, fix the file manually",
@@ -714,7 +721,7 @@ pub fn plan_unapply<'a>(
                 } else if seen_lines.insert((req.path.clone(), line.clone())) {
                     // Two ids with the same line converge to one applied line
                     // and therefore produce one unapply action.
-                    todo.push(req);
+                    todo.push(UnapplyPlan { req, text });
                 }
             }
             EditOp::Line { .. } => {}
@@ -729,17 +736,54 @@ pub fn plan_unapply<'a>(
     Ok(todo)
 }
 
-pub fn execute_unapply(todo: &[&EditRequest], opts: &UnapplyOpts) -> Result<()> {
+/// Ensure template functions or another concurrent actor did not invalidate
+/// any edit ownership checks performed during planning.
+pub fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
+    let mut checked = indexmap::IndexSet::new();
+    let mut problems = vec![];
+    for plan in todo {
+        if !checked.insert(plan.req.path.clone()) {
+            continue;
+        }
+        let result = if plan.req.path.is_symlink() {
+            Err(eyre::eyre!("{SYMLINK_REASON}"))
+        } else {
+            file::read_to_string(&plan.req.path).and_then(|text| {
+                if text == plan.text {
+                    Ok(())
+                } else {
+                    bail!("target changed after unapply planning")
+                }
+            })
+        };
+        if let Err(err) = result {
+            problems.push(format!(
+                "  \"{}\" ({}): {err}",
+                plan.req.path_raw,
+                plan.req.describe_op()
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "edits: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    Ok(())
+}
+
+pub fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
     if todo.is_empty() {
         info!("edits: all edits are unapplied");
         return Ok(());
     }
     if opts.dry_run {
-        for req in todo {
+        for plan in todo {
             miseprintln!(
                 "remove edit {} ({})",
-                req.path.display_user(),
-                req.describe_op()
+                plan.req.path.display_user(),
+                plan.req.describe_op()
             );
             if opts.verbose {
                 miseprintln!("  preserve all content outside the managed edit");
@@ -750,7 +794,7 @@ pub fn execute_unapply(todo: &[&EditRequest], opts: &UnapplyOpts) -> Result<()> 
     if !opts.yes && console::user_attended_stderr() {
         let list = todo
             .iter()
-            .map(|r| format!("{} ({})", r.path_raw, r.describe_op()))
+            .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
             .collect::<Vec<_>>()
             .join(", ");
         if !prompt::confirm(format!("edits: unapply {list}?"))? {
@@ -758,13 +802,13 @@ pub fn execute_unapply(todo: &[&EditRequest], opts: &UnapplyOpts) -> Result<()> 
             return Ok(());
         }
     }
-    for req in todo {
-        unapply_one(req)?;
+    for plan in todo {
+        unapply_one(plan.req)?;
     }
     info!(
         "edits: unapplied {}",
         todo.iter()
-            .map(|r| format!("{} ({})", r.path_raw, r.describe_op()))
+            .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
             .collect::<Vec<_>>()
             .join(", ")
     );

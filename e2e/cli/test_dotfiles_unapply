@@ -10,7 +10,7 @@ cat <<'EOF' >dotfiles/rendered.tmpl
 {{ exec(command="touch $HOME/unapply-rendered") }}rendered
 EOF
 cat <<'EOF' >dotfiles/mutating.tmpl
-{{ exec(command="printf tampered > $HOME/.managed-copy") }}mutating
+{{ exec(command="printf tampered > $HOME/.managed-copy; if [ -e $HOME/mutate-edit ]; then rm -f $HOME/.managed-rc; ln -s $HOME/edit-victim $HOME/.managed-rc; fi") }}mutating
 EOF
 
 cat <<EOF >mise.toml
@@ -59,6 +59,16 @@ cp dotfiles/copied ~/.managed-copy
 assert_fail "mise bootstrap dotfiles unapply ~/.managed-copy ~/.managed-mutating --yes" "use --force"
 assert "cat ~/.managed-copy" "tampered"
 assert_succeed "test -e $HOME/.managed-mutating"
+
+# The same post-render validation protects edits, including against a template
+# replacing an edit target with a symlink to another file.
+cp ~/.managed-rc ~/.managed-rc.saved
+echo "do not edit" >~/edit-victim
+touch ~/mutate-edit
+assert_fail "mise bootstrap dotfiles unapply ~/.managed-rc/block ~/.managed-mutating --yes" "target is a symlink"
+assert "cat ~/edit-victim" "do not edit"
+rm ~/mutate-edit ~/.managed-rc
+mv ~/.managed-rc.saved ~/.managed-rc
 
 # File and edit entries are all validated before either kind is removed.
 echo "locally modified" >~/.managed-copy

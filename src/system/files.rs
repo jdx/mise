@@ -1143,9 +1143,8 @@ fn plan_unapply_one<'a>(
         FileMode::Symlink if !(cfg!(windows) && req.source.is_file()) => {
             if req.target.is_symlink() {
                 let dest = std::fs::read_link(&req.target)?;
-                if dest == req.source || points_at_same_file(&req.target, &req.source) {
-                    paths.insert(req.target.clone(), ());
-                } else if opts.force {
+                if opts.force || dest == req.source || points_at_same_file(&req.target, &req.source)
+                {
                     paths.insert(req.target.clone(), ());
                 } else {
                     bail!(
@@ -1278,10 +1277,7 @@ fn plan_expected_content(
     force: bool,
     paths: &mut IndexMap<PathBuf, ()>,
 ) -> Result<()> {
-    if target.is_file() && !target.is_symlink() && file::read(target)? == expected {
-        paths.insert(target.to_path_buf(), ());
-        Ok(())
-    } else if force {
+    if force || (target.is_file() && !target.is_symlink() && file::read(target)? == expected) {
         paths.insert(target.to_path_buf(), ());
         Ok(())
     } else {
