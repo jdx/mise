@@ -298,6 +298,9 @@ export const commands: { [key: string]: Command } = {
       status: {
         hide: true,
       },
+      unapply: {
+        hide: false,
+      },
     },
   },
   edit: {

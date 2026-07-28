@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+mkdir -p dotfiles/links dotfiles/copydir
+echo "linked" >dotfiles/linked
+echo "copied" >dotfiles/copied
+echo "one" >dotfiles/links/one
+echo "managed" >dotfiles/copydir/managed
+cat <<'EOF' >dotfiles/rendered.tmpl
+{{ exec(command="touch $HOME/unapply-rendered") }}rendered
+EOF
+
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.managed-link" = "dotfiles/linked"
+"~/.managed-copy" = { source = "dotfiles/copied", mode = "copy" }
+"~/.managed-rendered" = { source = "dotfiles/rendered.tmpl", mode = "template" }
+"~/.managed-links" = { source = "dotfiles/links", mode = "symlink-each" }
+"~/.managed-copydir" = { source = "dotfiles/copydir", mode = "copy" }
+"~/.managed-rc/block" = { block = "managed block" }
+"~/.managed-lines/line" = { line = "possibly preexisting" }
+EOF
+
+# A line edit cannot prove it created an already-present line.
+echo "possibly preexisting" >~/.managed-lines
+assert_succeed "mise dotfiles apply --yes"
+assert_succeed "test -L $HOME/.managed-link"
+assert_contains "cat ~/.managed-rc" "managed block"
+
+# Template dry-runs stay inert even though verifying the rendered content
+# during a real unapply can execute template functions.
+rm ~/unapply-rendered
+assert_contains "mise dotfiles unapply ~/.managed-rendered --dry-run" "if unchanged"
+assert_fail "test -e $HOME/unapply-rendered"
+assert_succeed "test -e $HOME/.managed-rendered"
+
+# Default unapply refuses ambiguous line edits before changing any edit.
+assert_fail "mise dotfiles unapply --yes" "line edits have no ownership marker"
+assert_contains "cat ~/.managed-rc" "managed block"
+assert_succeed "test -L $HOME/.managed-link"
+
+# Exact symlinks and marker-owned blocks can be removed safely.
+assert_succeed "mise dotfiles unapply ~/.managed-link --yes"
+assert_fail "test -e $HOME/.managed-link"
+assert_succeed "mise dotfiles unapply ~/.managed-rc/block --yes"
+assert_not_contains "cat ~/.managed-rc" "mise:block"
+
+# symlink-each removes current and stale exact mappings, but preserves an
+# unrelated user-created link and its containing directory.
+ln -s "$PWD/dotfiles/links/one" ~/.managed-links/alias
+rm dotfiles/links/one
+assert_succeed "mise dotfiles unapply ~/.managed-links --yes"
+assert_fail "test -e $HOME/.managed-links/one"
+assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
+
+# Modified copies are refused unless forced.
+echo "locally modified" >~/.managed-copy
+assert_fail "mise dotfiles unapply ~/.managed-copy --yes" "use --force"
+assert "cat ~/.managed-copy" "locally modified"
+assert_succeed "mise dotfiles unapply ~/.managed-copy --force --yes"
+assert_fail "test -e $HOME/.managed-copy"
+
+# Directory copies are removed file-by-file. Modified managed files need
+# --force, and unmanaged neighbors always survive.
+echo "locally modified" >~/.managed-copydir/managed
+echo "keep me" >~/.managed-copydir/unmanaged
+assert_fail "mise dotfiles unapply ~/.managed-copydir --yes" "use --force"
+assert_succeed "mise dotfiles unapply ~/.managed-copydir --force --yes"
+assert_fail "test -e $HOME/.managed-copydir/managed"
+assert "cat ~/.managed-copydir/unmanaged" "keep me"
+
+# A real template unapply verifies content, then removes it.
+assert_succeed "mise dotfiles unapply ~/.managed-rendered --yes"
+assert_succeed "test -e $HOME/unapply-rendered"
+assert_fail "test -e $HOME/.managed-rendered"
+
+# Plain lines require explicit force because they carry no marker.
+assert_fail "mise dotfiles unapply ~/.managed-lines/line --yes"
+assert_succeed "mise dotfiles unapply ~/.managed-lines/line --force --yes"
+assert_not_contains "cat ~/.managed-lines" "possibly preexisting"
+
+# A repointed declared symlink is left alone unless forced.
+ln -s /somewhere-else ~/.managed-link
+assert_fail "mise dotfiles unapply ~/.managed-link --yes" "use --force"
+assert "readlink ~/.managed-link" "/somewhere-else"
+assert_succeed "mise dotfiles unapply ~/.managed-link --force --yes"
+assert_fail "test -L $HOME/.managed-link"
+
+assert_fail "mise dotfiles unapply ~/.not-managed --yes" "no dotfiles matched"

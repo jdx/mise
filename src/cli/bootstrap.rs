@@ -4,7 +4,9 @@ use std::sync::Arc;
 use eyre::Result;
 use serde_json::{Value, json};
 
-use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus};
+use super::dotfiles::{
+    DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply,
+};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -187,6 +189,7 @@ enum BootstrapDotfilesCommands {
     Apply(BootstrapDotfilesApply),
     Edit(DotfilesEdit),
     Status(BootstrapDotfilesStatus),
+    Unapply(DotfilesUnapply),
 }
 
 /// Apply dotfiles from `[dotfiles]`
@@ -1865,6 +1868,7 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
         }
     }
 }
