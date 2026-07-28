@@ -171,7 +171,7 @@ Set task output cache access for this run
 - `read-only` - Read cached results without writing new results
 - `write-only` - Write new results without reading cached results
 - `off` - Disable task output caching
-- `local-only` - Read and write only the local cache
+- `local-only` - Read and write only the local cache; currently equivalent to `read-write`
 
 **Choices:**
 

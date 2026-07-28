@@ -346,7 +346,9 @@ impl TaskExecutor {
         }
         // If any dependency executed or restored, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes.
-        if !(self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled))
+        let artifact_cache_enabled =
+            self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled);
+        if !artifact_cache_enabled
             && !self.force
             && !dependency_state.any_did_work
             && sources_are_fresh(task, config).await?
