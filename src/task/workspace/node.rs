@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
@@ -78,18 +78,37 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             }
         }
 
-        roots
+        let manifests = roots
             .into_iter()
             .map(|root| {
                 let manifest_path = workspace_root.join(&root).join(PACKAGE_JSON);
                 let manifest = read_package_json(&manifest_path)?;
-                let name = manifest.name.ok_or_else(|| {
+                let name = manifest.name.clone().ok_or_else(|| {
                     eyre::eyre!(
                         "Node workspace package at {} is missing the package.json \"name\" field",
                         root.display()
                     )
                 })?;
-                let mut project = WorkspaceProject::new(ProjectId::new(self.id(), &name)?, root);
+                let id = ProjectId::new(self.id(), &name)?;
+                Ok((root, manifest, name, id))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let project_ids = manifests
+            .iter()
+            .map(|(_, _, name, id)| (name.clone(), id.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        manifests
+            .into_iter()
+            .map(|(root, manifest, _, id)| {
+                let mut project = WorkspaceProject::new(id, root);
+                project.dependencies = manifest
+                    .all_dependencies()
+                    .map(|(name, _)| name)
+                    .chain(manifest.optional_dependencies.keys().map(String::as_str))
+                    .chain(manifest.peer_dependencies.keys().map(String::as_str))
+                    .filter_map(|name| project_ids.get(name).cloned())
+                    .collect();
                 project.metadata.insert(
                     "workspace_source".to_string(),
                     definition.source.to_string(),
@@ -499,6 +518,47 @@ mod tests {
         assert_eq!(
             project_summary(&projects),
             vec![("node:app", Path::new("packages/app"), Some("pnpm"))]
+        );
+    }
+
+    #[test]
+    fn infers_edges_for_declared_internal_dependencies() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{
+                "name":"app",
+                "dependencies":{"runtime":"workspace:*","external":"^1.0.0"},
+                "devDependencies":{"build":"*"},
+                "optionalDependencies":{"optional":"catalog:"},
+                "peerDependencies":{"peer":"^2.0.0"}
+            }"#,
+        );
+        for name in ["runtime", "build", "optional", "peer"] {
+            write(
+                &temp.path().join(format!("packages/{name}/package.json")),
+                &format!(r#"{{"name":"{name}"}}"#),
+            );
+        }
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+        let app = projects
+            .iter()
+            .find(|project| project.id.as_str() == "node:app")
+            .unwrap();
+
+        assert_eq!(
+            app.dependencies,
+            BTreeSet::from([
+                ProjectId::new("node", "build").unwrap(),
+                ProjectId::new("node", "optional").unwrap(),
+                ProjectId::new("node", "peer").unwrap(),
+                ProjectId::new("node", "runtime").unwrap(),
+            ])
         );
     }
 
