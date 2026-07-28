@@ -35,3 +35,29 @@ run = ["{{mise_bin}} run other_task"]
 assert_contains "./bin/mise run my_task" "running other_task"
 
 PATH="$OLD_PATH"
+
+# ./bin/mise is the localized script at this point, so generate a plain one too
+assert "mise generate bootstrap -w ./bin/mise-plain"
+
+# a stub at the resolved install path proves which path the script picked: it finds
+# a binary there, skips the install, and execs it. Nothing is downloaded.
+stub() {
+  mkdir -p "$(dirname "$1")"
+  echo '#!/usr/bin/env bash' >"$1"
+  echo "echo \"$2 \$*\"" >>"$1"
+  chmod +x "$1"
+}
+
+# a caller-provided MISE_INSTALL_PATH wins over the path baked into the script
+stub "$PWD/custom/mise" custom-stub
+assert "MISE_INSTALL_PATH=$PWD/custom/mise ./bin/mise-plain hello" "custom-stub hello"
+assert "MISE_INSTALL_PATH=$PWD/custom/mise ./bin/mise hello" "custom-stub hello"
+
+# MISE_VERSION keys the install path, otherwise changing it silently reuses the
+# binary cached for the version the script was generated with. 9999.1.2 never exists.
+stub "$HOME/.cache/mise/mise-9999.1.2" version-stub
+assert "MISE_VERSION=v9999.1.2 ./bin/mise-plain hello" "version-stub hello"
+assert "MISE_VERSION=9999.1.2 ./bin/mise-plain hello" "version-stub hello"
+
+stub "$PWD/.mise/mise-9999.1.2" localized-version-stub
+assert "MISE_VERSION=v9999.1.2 ./bin/mise hello" "localized-version-stub hello"
