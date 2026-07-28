@@ -143,6 +143,13 @@ fn has_installed_bin_path(paths: &[PathBuf]) -> bool {
     paths.iter().any(|path| path.is_dir())
 }
 
+fn bin_layout_is_satisfied(paths: &Result<Vec<PathBuf>>) -> bool {
+    match paths {
+        Ok(paths) => has_installed_bin_path(paths),
+        Err(_) => true,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GithubAttestationStatus {
     Verified,
@@ -168,9 +175,17 @@ impl Backend for AquaBackend {
         // Aqua registry entries may change their archive layout between mise
         // releases. An install directory alone is therefore not enough to show
         // that the version still matches the current package definition.
-        Ok(has_installed_bin_path(
-            &self.list_bin_paths(config, tv).await?,
-        ))
+        let paths = self.list_bin_paths(config, tv).await;
+        if let Err(err) = &paths {
+            // A transient registry or cache lookup failure must not turn an
+            // existing installation into a reinstall candidate. Preserve the
+            // directory-based result and retry validation later.
+            debug!(
+                "unable to validate Aqua bin paths for {}: {err:#}; treating the existing installation as satisfied",
+                tv.style()
+            );
+        }
+        Ok(bin_layout_is_satisfied(&paths))
     }
 
     async fn description(&self) -> Option<String> {
@@ -3334,10 +3349,13 @@ mod tests {
         assert!(!has_installed_bin_path(&[]));
         assert!(!has_installed_bin_path(&[temp.path().join("bin")]));
         assert!(!has_installed_bin_path(&[old_layout]));
+        assert!(bin_layout_is_satisfied(&Err(eyre::eyre!(
+            "registry unavailable"
+        ))));
 
         let current_layout = temp.path().join("bin");
         file::create_dir_all(&current_layout).unwrap();
-        assert!(has_installed_bin_path(&[current_layout]));
+        assert!(bin_layout_is_satisfied(&Ok(vec![current_layout])));
     }
 
     #[test]
