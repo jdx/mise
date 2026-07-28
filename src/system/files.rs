@@ -975,7 +975,7 @@ pub struct UnapplyOpts {
 }
 
 #[derive(Debug)]
-struct UnapplyPlan<'a> {
+pub struct UnapplyPlan<'a> {
     req: &'a FileRequest,
     paths: Vec<PathBuf>,
     /// directory-walking modes share their target with unmanaged files, so
@@ -990,11 +990,15 @@ struct UnapplyPlan<'a> {
 /// directories that may contain unmanaged files. Symlinks carry their own
 /// ownership evidence. Copies and templates must still match their source
 /// unless `--force` was given.
-pub fn unapply(config: &Config, requests: &[FileRequest], opts: &UnapplyOpts) -> Result<()> {
+pub fn plan_unapply<'a>(
+    config: &Config,
+    requests: &'a [FileRequest],
+    opts: &UnapplyOpts,
+) -> Result<Vec<UnapplyPlan<'a>>> {
     let mut todo = vec![];
     let mut problems = vec![];
     for req in requests {
-        match plan_unapply(config, req, opts) {
+        match plan_unapply_one(config, req, opts) {
             Ok(Some(plan)) => todo.push(plan),
             Ok(None) => {}
             Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw)),
@@ -1006,12 +1010,17 @@ pub fn unapply(config: &Config, requests: &[FileRequest], opts: &UnapplyOpts) ->
             problems.join("\n")
         );
     }
+    Ok(todo)
+}
+
+pub fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+    let todo = plans;
     if todo.is_empty() {
         info!("files: all files are unapplied");
         return Ok(());
     }
     if opts.dry_run {
-        for plan in &todo {
+        for plan in todo {
             for path in &plan.paths {
                 let suffix = if plan.conditional {
                     " (if unchanged)"
@@ -1042,7 +1051,7 @@ pub fn unapply(config: &Config, requests: &[FileRequest], opts: &UnapplyOpts) ->
             return Ok(());
         }
     }
-    for plan in &todo {
+    for plan in todo {
         unapply_one(plan)?;
     }
     info!(
@@ -1054,7 +1063,7 @@ pub fn unapply(config: &Config, requests: &[FileRequest], opts: &UnapplyOpts) ->
     Ok(())
 }
 
-fn plan_unapply<'a>(
+fn plan_unapply_one<'a>(
     config: &Config,
     req: &'a FileRequest,
     opts: &UnapplyOpts,
@@ -1235,7 +1244,15 @@ fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         let Ok(rel) = entry.path().strip_prefix(&req.target) else {
             continue;
         };
-        if std::fs::read_link(entry.path())? == req.source.join(rel) {
+        let dest = match std::fs::read_link(entry.path()) {
+            Ok(dest) => dest,
+            Err(err) => {
+                debug!("files: reading {}: {err}", entry.path().display_user());
+                continue;
+            }
+        };
+        let expected = req.source.join(rel);
+        if dest == expected || points_at_same_file(entry.path(), &expected) {
             out.push(entry.path().to_path_buf());
         }
     }

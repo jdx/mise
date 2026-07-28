@@ -61,24 +61,28 @@ impl DotfilesUnapply {
             return Ok(());
         }
 
-        // Apply writes whole files before edits, so undo them in reverse.
+        let edit_opts = system::edits::UnapplyOpts {
+            dry_run: self.dry_run,
+            verbose: Settings::get().verbose,
+            force: self.force,
+            yes: self.yes,
+        };
+        let file_opts = system::files::UnapplyOpts {
+            dry_run: self.dry_run,
+            verbose: Settings::get().verbose,
+            force: self.force,
+            yes: self.yes,
+        };
+
+        // Validate and plan both domains before either mutates the filesystem.
+        // Apply writes whole files before edits, so execute the inverse order.
+        let edit_plan = system::edits::plan_unapply(&edits, &edit_opts)?;
+        let file_plan = system::files::plan_unapply(&config, &files, &file_opts)?;
         if !edits.is_empty() {
-            let opts = system::edits::UnapplyOpts {
-                dry_run: self.dry_run,
-                verbose: Settings::get().verbose,
-                force: self.force,
-                yes: self.yes,
-            };
-            system::edits::unapply(&edits, &opts)?;
+            system::edits::execute_unapply(&edit_plan, &edit_opts)?;
         }
         if !files.is_empty() {
-            let opts = system::files::UnapplyOpts {
-                dry_run: self.dry_run,
-                verbose: Settings::get().verbose,
-                force: self.force,
-                yes: self.yes,
-            };
-            system::files::unapply(&config, &files, &opts)?;
+            system::files::execute_unapply(&file_plan, &file_opts)?;
         }
         Ok(())
     }

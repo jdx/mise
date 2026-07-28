@@ -4,6 +4,7 @@ mkdir -p dotfiles/links dotfiles/copydir
 echo "linked" >dotfiles/linked
 echo "copied" >dotfiles/copied
 echo "one" >dotfiles/links/one
+echo "stale" >dotfiles/links/stale
 echo "managed" >dotfiles/copydir/managed
 cat <<'EOF' >dotfiles/rendered.tmpl
 {{ exec(command="touch $HOME/unapply-rendered") }}rendered
@@ -22,6 +23,7 @@ EOF
 
 # A line edit cannot prove it created an already-present line.
 echo "possibly preexisting" >~/.managed-lines
+printf 'before\n\n' >~/.managed-rc
 assert_succeed "mise dotfiles apply --yes"
 assert_succeed "test -L $HOME/.managed-link"
 assert_contains "cat ~/.managed-rc" "managed block"
@@ -38,22 +40,36 @@ assert_fail "mise dotfiles unapply --yes" "line edits have no ownership marker"
 assert_contains "cat ~/.managed-rc" "managed block"
 assert_succeed "test -L $HOME/.managed-link"
 
+# File and edit entries are all validated before either kind is removed.
+echo "locally modified" >~/.managed-copy
+assert_fail "mise dotfiles unapply ~/.managed-rc/block ~/.managed-copy --yes" "use --force"
+assert_contains "cat ~/.managed-rc" "managed block"
+
 # Exact symlinks and marker-owned blocks can be removed safely.
 assert_succeed "mise dotfiles unapply ~/.managed-link --yes"
 assert_fail "test -e $HOME/.managed-link"
+
+# Removing a block preserves byte-for-byte CRLF, blank lines, and a missing
+# final newline in all surrounding content.
+perl -0pi -e 's/\n/\r\n/g' ~/.managed-rc
+printf 'after-no-newline' >>~/.managed-rc
 assert_succeed "mise dotfiles unapply ~/.managed-rc/block --yes"
 assert_not_contains "cat ~/.managed-rc" "mise:block"
+assert "od -An -tx1 ~/.managed-rc | tr -d ' \n'" "6265666f72650d0a0d0a61667465722d6e6f2d6e65776c696e65"
 
-# symlink-each removes current and stale exact mappings, but preserves an
-# unrelated user-created link and its containing directory.
+# symlink-each removes path-equivalent and stale exact mappings, but preserves
+# an unrelated user-created link and its containing directory.
 ln -s "$PWD/dotfiles/links/one" ~/.managed-links/alias
-rm dotfiles/links/one
+rm ~/.managed-links/one
+relative_one="$(realpath --relative-to="$HOME/.managed-links" "$PWD/dotfiles/links/one")"
+ln -s "$relative_one" ~/.managed-links/one
+rm dotfiles/links/stale
 assert_succeed "mise dotfiles unapply ~/.managed-links --yes"
 assert_fail "test -e $HOME/.managed-links/one"
+assert_fail "test -e $HOME/.managed-links/stale"
 assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
 
 # Modified copies are refused unless forced.
-echo "locally modified" >~/.managed-copy
 assert_fail "mise dotfiles unapply ~/.managed-copy --yes" "use --force"
 assert "cat ~/.managed-copy" "locally modified"
 assert_succeed "mise dotfiles unapply ~/.managed-copy --force --yes"

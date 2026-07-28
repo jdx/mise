@@ -662,7 +662,10 @@ pub struct UnapplyOpts {
 /// Remove marker-delimited blocks and, with `--force`, exact line edits.
 /// Block markers are their ownership record. A plain line may have existed
 /// before apply, so stateless unapply refuses to guess without `--force`.
-pub fn unapply(requests: &[EditRequest], opts: &UnapplyOpts) -> Result<()> {
+pub fn plan_unapply<'a>(
+    requests: &'a [EditRequest],
+    opts: &UnapplyOpts,
+) -> Result<Vec<&'a EditRequest>> {
     let mut todo = vec![];
     let mut problems = vec![];
     let mut seen_lines = indexmap::IndexSet::new();
@@ -722,12 +725,16 @@ pub fn unapply(requests: &[EditRequest], opts: &UnapplyOpts) -> Result<()> {
             problems.join("\n")
         );
     }
+    Ok(todo)
+}
+
+pub fn execute_unapply(todo: &[&EditRequest], opts: &UnapplyOpts) -> Result<()> {
     if todo.is_empty() {
         info!("edits: all edits are unapplied");
         return Ok(());
     }
     if opts.dry_run {
-        for req in &todo {
+        for req in todo {
             miseprintln!(
                 "remove edit {} ({})",
                 req.path.display_user(),
@@ -750,7 +757,7 @@ pub fn unapply(requests: &[EditRequest], opts: &UnapplyOpts) -> Result<()> {
             return Ok(());
         }
     }
-    for req in &todo {
+    for req in todo {
         unapply_one(req)?;
     }
     info!(
@@ -765,14 +772,12 @@ pub fn unapply(requests: &[EditRequest], opts: &UnapplyOpts) -> Result<()> {
 
 fn unapply_one(req: &EditRequest) -> Result<()> {
     let text = file::read_to_string(&req.path)?;
-    let mut lines = text.lines().map(str::to_string).collect::<Vec<_>>();
-    match &req.op {
+    let lines = text_lines(&text);
+    let remove = match &req.op {
         EditOp::Block { comment, .. } => {
-            let refs = lines.iter().map(String::as_str).collect::<Vec<_>>();
+            let refs = lines.iter().map(|line| line.content).collect::<Vec<_>>();
             match find_block(&refs, &req.id, comment) {
-                Ok(Some((begin, end))) => {
-                    lines.drain(begin..=end);
-                }
+                Ok(Some((begin, end))) => lines[begin].start..lines[end].end,
                 Ok(None) => return Ok(()),
                 Err(reason) => bail!(
                     "edits: \"{}\": {reason}, fix the file manually",
@@ -783,20 +788,42 @@ fn unapply_one(req: &EditRequest) -> Result<()> {
         EditOp::Line { line } => {
             // Apply appends a missing line, so the last matching occurrence is
             // the best stateless approximation of the one it added.
-            if let Some(idx) = lines.iter().rposition(|candidate| candidate == line) {
-                lines.remove(idx);
+            if let Some(found) = lines.iter().rfind(|candidate| candidate.content == line) {
+                found.start..found.end
             } else {
                 return Ok(());
             }
         }
-    }
-    let out = if lines.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n", lines.join("\n"))
     };
+    let mut out = text;
+    out.replace_range(remove, "");
     file::write(&req.path, out)?;
     Ok(())
+}
+
+struct TextLine<'a> {
+    content: &'a str,
+    start: usize,
+    end: usize,
+}
+
+/// Logical lines plus their exact byte spans, including CRLF/LF terminators.
+/// Edit removal uses the spans so bytes outside the removed edit are preserved.
+fn text_lines(text: &str) -> Vec<TextLine<'_>> {
+    let mut offset = 0;
+    text.split_inclusive('\n')
+        .map(|raw| {
+            let start = offset;
+            offset += raw.len();
+            let content = raw.strip_suffix('\n').unwrap_or(raw);
+            let content = content.strip_suffix('\r').unwrap_or(content);
+            TextLine {
+                content,
+                start,
+                end: offset,
+            }
+        })
+        .collect()
 }
 
 /// Simulate applying an edit to in-memory text for bootstrap dry-run config
