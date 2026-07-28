@@ -315,6 +315,62 @@ Tasks from the **enclosing** monorepo are not loaded. They belong to a different
 
 The enclosing config is still an ancestor config for **tools, environment variables, and vars**, which inherit the same way any parent config's would. If you don't want that either, keep worktrees outside the main checkout (e.g. `myproject-worktrees/feature-x`).
 
+## Workspace Project Graph (Experimental)
+
+mise can infer a provider-neutral project graph from ecosystem workspace metadata. This graph is separate from config-root task discovery: a project does not need its own `mise.toml` to appear in the graph.
+
+Enable experimental features and mark the repository root:
+
+```toml
+# /myproject/mise.toml
+experimental = true
+monorepo_root = true
+```
+
+Inspect the inferred projects with:
+
+```bash
+mise tasks graph
+mise tasks graph --json
+```
+
+### Node Workspace Discovery
+
+The Node provider discovers npm, pnpm, Yarn, and Bun workspace packages from:
+
+- `pnpm-workspace.yaml`
+- the `workspaces` array in the root `package.json`
+- the Yarn Classic object form, `workspaces.packages`
+
+When both files exist, `pnpm-workspace.yaml` defines membership. Its named root package is always included, matching pnpm workspace behavior. Positive and negative workspace glob patterns are supported. The scanner skips `.git` and `node_modules`, but does not apply Git ignore files or `.ignore` files.
+
+Each discovered package must have a `name` in its `package.json`. mise uses that stable ecosystem identity to create an ID such as `node:@acme/web`; moving the package to another directory does not change its ID. `mise tasks graph` also reports the package root, workspace-definition source, and detected package manager.
+
+### Project Overrides
+
+Use `[monorepo.projects]` in the root `mise.toml` to correct or extend provider inference. Project IDs containing `:` or scoped package names must be quoted:
+
+```toml
+[monorepo.projects."node:@acme/web"]
+root = "apps/web"
+depends_add = ["custom:docs"]
+depends_remove = ["node:@acme/legacy"]
+
+[monorepo.projects."custom:docs"]
+root = "docs"
+metadata = { kind = "documentation" }
+```
+
+An override can:
+
+- set `remove = true` to remove an inferred project and its connected edges
+- set `root` or `metadata` to replace inferred values
+- set `depends` to replace the complete inferred dependency set
+- use `depends_add` and `depends_remove` to adjust individual edges
+- add a provider-independent project by giving a new namespaced ID an explicit `root`
+
+The final graph must reference existing project IDs and must not contain dependency cycles. Diagnostics identify the affected projects and the override fields that can repair the graph.
+
 ## Listing Tasks
 
 The difference between `mise tasks` and `mise tasks --all`:
