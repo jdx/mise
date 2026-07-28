@@ -86,7 +86,7 @@ outside this tracker.
 - [x] Support global environment inputs and pass-through environment variables
 - [x] Support negative input and output patterns
 - [x] Support command-output inputs
-- [ ] Include external dependency and lockfile state through explicit input configuration
+- [x] Include external dependency and lockfile state through explicit input configuration
 - [ ] Add per-run cache read/write controls, including local-only and cache-disabled modes
 - [ ] Add a configurable local task-cache directory
 
