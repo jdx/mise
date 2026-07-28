@@ -6,6 +6,8 @@ use std::str::FromStr;
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 
+pub mod node;
+
 /// A stable, provider-namespaced identifier for a workspace project.
 ///
 /// Providers should derive the local part from ecosystem metadata, such as a
