@@ -139,6 +139,27 @@ impl WorkspaceProjectGraph {
         providers: &[&dyn WorkspaceProvider],
         workspace_root: &Path,
     ) -> Result<WorkspaceProjectGraph> {
+        let graph = Self::collect_provider_projects(providers, workspace_root)?;
+        graph.validate_dependencies()?;
+        Ok(graph)
+    }
+
+    /// Discovers projects, applies explicit overrides, and validates the result.
+    ///
+    /// Provider edges are intentionally not validated until after overrides so
+    /// explicit configuration can repair incomplete or incorrect inference.
+    pub fn discover_all_with_overrides(
+        providers: &[&dyn WorkspaceProvider],
+        workspace_root: &Path,
+        overrides: &BTreeMap<String, WorkspaceProjectOverride>,
+    ) -> Result<WorkspaceProjectGraph> {
+        Self::collect_provider_projects(providers, workspace_root)?.with_overrides(overrides)
+    }
+
+    fn collect_provider_projects(
+        providers: &[&dyn WorkspaceProvider],
+        workspace_root: &Path,
+    ) -> Result<WorkspaceProjectGraph> {
         let mut providers = providers
             .iter()
             .map(|provider| (provider.id().to_string(), *provider))
@@ -173,9 +194,7 @@ impl WorkspaceProjectGraph {
             }
         }
 
-        let graph = Self { projects };
-        graph.validate_dependencies()?;
-        Ok(graph)
+        Ok(Self { projects })
     }
 
     /// Applies explicit project and dependency changes after provider discovery.
@@ -671,6 +690,45 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("depends on unknown project")
+        );
+    }
+
+    #[test]
+    fn configured_discovery_can_repair_dangling_inferred_edges() {
+        let missing = ProjectId::new("node", "missing").unwrap();
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(missing);
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app],
+        };
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            WorkspaceProjectOverride {
+                depends_remove: BTreeSet::from(["node:missing".to_string()]),
+                ..Default::default()
+            },
+        )]);
+
+        assert!(
+            WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+                .unwrap_err()
+                .to_string()
+                .contains("depends on unknown project")
+        );
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides(
+            &[&provider],
+            Path::new("/workspace"),
+            &overrides,
+        )
+        .unwrap();
+
+        assert!(
+            graph
+                .get(&ProjectId::new("node", "app").unwrap())
+                .unwrap()
+                .dependencies
+                .is_empty()
         );
     }
 }
