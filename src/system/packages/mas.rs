@@ -206,7 +206,7 @@ impl SystemPackageManager for MasManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "macos") && crate::file::which("mas").is_some()
+        cfg!(target_os = "macos") && crate::file::which_non_pristine("mas").is_some()
     }
 
     fn unavailable_reason(&self) -> String {
