@@ -7,9 +7,9 @@ use eyre::bail;
 use path_absolutize::Absolutize;
 
 use crate::file::{make_symlink, remove_all};
-use crate::toolset::{ToolVersion, install_state};
+use crate::toolset::{ToolRequest, ToolVersion, install_state};
+use crate::{backend, config, file};
 use crate::{cli::args::ToolArg, config::Config};
-use crate::{config, file};
 
 /// Symlinks a tool version into mise
 ///
@@ -33,12 +33,32 @@ pub struct Link {
 
 impl Link {
     pub async fn run(self) -> Result<()> {
-        let version_pathname = match self.tool.tvr {
-            Some(ref tvr) => {
-                let version = tvr.version();
-                ToolVersion::new(tvr.clone(), version).tv_pathname()
-            }
+        let tvr = match self.tool.tvr.as_ref() {
+            Some(tvr @ (ToolRequest::Version { .. } | ToolRequest::Ref { .. })) => tvr,
+            Some(tvr) => bail!(
+                "mise link only supports concrete versions and refs, not {}",
+                tvr.version()
+            ),
             None => bail!("must provide a version for {}", self.tool.style()),
+        };
+        let config = Config::get().await?;
+        let version_pathname = match tvr {
+            ToolRequest::Version { version, .. } => {
+                let backend = tvr.backend()?;
+                let resolved_alias = config.resolve_alias(&backend, version).await?;
+                if version == "latest"
+                    || resolved_alias != *version
+                    || backend.is_rolling_channel(version)
+                {
+                    bail!(
+                        "mise link only supports concrete versions and refs, not {}",
+                        tvr.version()
+                    );
+                }
+                ToolVersion::new(tvr.clone(), version.clone()).tv_pathname()
+            }
+            ToolRequest::Ref { .. } => ToolVersion::new(tvr.clone(), tvr.version()).tv_pathname(),
+            _ => unreachable!(),
         };
         let path = self.path.absolutize()?;
         if !path.exists() {
@@ -75,7 +95,7 @@ impl Link {
             }
         }
 
-        let config = Config::reset().await?;
+        backend::reset().await?;
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(
             &config,

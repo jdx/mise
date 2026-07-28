@@ -55,6 +55,42 @@ assert "test ! -f \"$MISE_CACHE_DIR/tiny/ref-feature-foo/incomplete\""
 assert "mise where tiny@ref:feature/foo" "$MISE_DATA_DIR/installs/tiny/ref-feature-foo"
 assert "readlink \"$MISE_DATA_DIR/installs/tiny/ref-feature-foo\"" "$PWD/tmp/tiny-ref"
 
+# Selector-style requests do not identify a stable install pathname and must be
+# rejected instead of creating an unreachable link.
+#
+# Snapshot link names because `tiny/latest` is already a valid runtime symlink;
+# every rejection below must leave the complete install-link set unchanged.
+find "$MISE_DATA_DIR/installs" -type l -print | sort >tmp/install-links-before
+assert_fail_contains "mise link tiny@prefix:9 tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@path:tmp/tiny2 tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@sub-0:9 tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@system tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@latest tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link zig@master tmp/tiny2" "only supports concrete versions and refs"
+assert "test ! -e \"$MISE_DATA_DIR/installs/zig/master\" && test ! -L \"$MISE_DATA_DIR/installs/zig/master\""
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+
+cat >mise.toml <<'EOF'
+[tool_alias]
+linked-tiny = "asdf:mise-plugins/mise-tiny"
+
+[tool_alias.tiny.versions]
+lts = "3.1.0"
+EOF
+assert_fail_contains "mise link tiny@lts tmp/tiny2" "only supports concrete versions and refs"
+assert "test ! -e \"$MISE_DATA_DIR/installs/tiny/lts\" && test ! -L \"$MISE_DATA_DIR/installs/tiny/lts\""
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+
+# Backend aliases must be loaded before validating whether their versions are
+# concrete.
+mise link linked-tiny@9.9.6 tmp/tiny2
+assert "readlink \"$MISE_DATA_DIR/installs/linked-tiny/9.9.6\"" "$PWD/tmp/tiny2"
+
 # Marker removal errors remain strict, while the marker itself is preserved.
 mkdir -p tmp/tiny3
 mkdir -p "$MISE_CACHE_DIR/tiny/9.9.7/incomplete"
