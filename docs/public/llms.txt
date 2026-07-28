@@ -75,7 +75,7 @@
 - [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): Mac App Store apps via the mas CLI.
 - [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [bootstrap.packages] without adding a manager to mise core. They are useful for machine-global state owned by another tool, such as VS Code extensions, Helm plugins,…
 - [Repos](https://mise.jdx.dev/bootstrap/repos.html): mise can declare git repositories in [bootstrap.repos] and apply them with mise bootstrap repos apply or as part of mise bootstrap.
-- [Dotfiles](https://mise.jdx.dev/dotfiles.html): mise can manage dotfiles from the [dotfiles] section of mise.toml. Entries can either own a whole file or directory, or manage one small piece of a file something else owns.
+- [Dotfiles](https://mise.jdx.dev/dotfiles.html): [!WARNING] The top-level mise dotfiles command is deprecated and hidden from help. It will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use mise bootstrap dotfiles instead.
 - [Shell Activation](https://mise.jdx.dev/bootstrap/shell.html): mise can declaratively add shell activation snippets for bash, zsh, and fish with [bootstrap.miseshellactivate], applied by mise bootstrap mise-shell-activate apply or as part of mise bootstrap.
 - [macOS Defaults](https://mise.jdx.dev/bootstrap/macos-defaults.html): mise can declare macOS user defaults (preferences) in the [bootstrap.macos.defaults] section of mise.toml and apply them with mise bootstrap macos defaults apply or as part of mise bootstrap.
 - [launchd](https://mise.jdx.dev/bootstrap/launchd.html): mise can declare macOS user LaunchAgents in [bootstrap.macos.launchd.agents] and apply them with mise bootstrap macos launchd-agents apply or as part of mise bootstrap.
@@ -182,11 +182,6 @@
 - [mise deps remove](https://mise.jdx.dev/cli/deps/remove.html): Remove a dependency
 - [mise doctor](https://mise.jdx.dev/cli/doctor.html): Check mise installation for possible problems
 - [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the current PATH entries mise is providing
-- [mise dotfiles](https://mise.jdx.dev/cli/dotfiles.html): Manage dotfiles from [dotfiles]
-- [mise dotfiles add](https://mise.jdx.dev/cli/dotfiles/add.html): Add or update dotfiles in [dotfiles]
-- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Apply dotfiles from [dotfiles]
-- [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Edit a managed dotfile source
-- [mise dotfiles status](https://mise.jdx.dev/cli/dotfiles/status.html): Show the status of dotfiles from [dotfiles]
 - [mise edit](https://mise.jdx.dev/cli/edit.html): Edit mise.toml interactively
 - [mise en](https://mise.jdx.dev/cli/en.html): Starts a new shell with the mise environment built from the current configuration
 - [mise env](https://mise.jdx.dev/cli/env.html): Exports env vars to activate mise a single time

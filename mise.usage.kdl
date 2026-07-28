@@ -366,6 +366,38 @@ Can be passed multiple times or as a comma-separated list.
     }
     flag --update help="Refresh package manager metadata and update configured repos"
     cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
+        cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
+            long_help #"""
+Add or update dotfiles in `[dotfiles]`
+
+If the target is already managed, this updates its source from the live
+target. Otherwise it creates a `[dotfiles]` entry and seeds the source
+under `dotfiles.root` unless `--source` is provided.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap dotfiles add ~/.zshrc
+    $ mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
+    $ mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+
+"""#
+            flag "-f --force" help="Overwrite existing sources without prompting"
+            flag "-g --global" help="Write to the global config"
+            flag "-l --local" help="Write to the local config instead of the global config"
+            flag "-m --mode" help="Dotfile mode to write" {
+                arg <MODE>
+            }
+            flag "-n --dry-run" help="Print the config/source updates without writing anything"
+            flag "-p --path" help="Write to this config file or directory" {
+                arg <PATH>
+            }
+            flag "-s --source" help="Source path to use for a single target" {
+                arg <PATH>
+            }
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg <TARGET>… help="Targets to add or update" var=#true
+        }
         cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
             long_help #"""
 Apply dotfiles from `[dotfiles]`
@@ -387,6 +419,24 @@ Examples:
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+        }
+        cmd edit help="Edit a managed dotfile source" effect=write {
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap dotfiles edit ~/.zshrc
+    $ mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+
+"""#
+            flag --apply help="Apply this target after the editor exits"
+            flag "-m --mode" help="Dotfile mode to use if the target is not yet managed" {
+                arg <MODE>
+            }
+            flag "-s --source" help="Source path to use if the target is not yet managed" {
+                arg <PATH>
+            }
+            flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+            arg <TARGET> help="Target to edit"
         }
         cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
             alias ls
@@ -964,16 +1014,13 @@ for direnv to consume.
 for direnv to consume.
 """#
 }
-cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
+cmd dotfiles hide=#true subcommand_required=#true help="Manage dotfiles from `[dotfiles]` (deprecated)" effect=read {
     long_help #"""
-Manage dotfiles from `[dotfiles]`
+Manage dotfiles from `[dotfiles]` (deprecated)
 
-Dotfiles are config files symlinked, copied, or rendered to target paths,
-plus marker-delimited blocks or single lines in files mise doesn't own.
-Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
-`mise dotfiles apply`, `mise bootstrap dotfiles apply`, or `mise bootstrap`.
+Use `mise bootstrap dotfiles` instead.
 """#
-    cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
+    cmd add hide=#true help="Add or update dotfiles in `[dotfiles]`" effect=write {
         long_help #"""
 Add or update dotfiles in `[dotfiles]`
 
@@ -984,9 +1031,9 @@ under `dotfiles.root` unless `--source` is provided.
         after_long_help #"""
 Examples:
 
-    $ mise dotfiles add ~/.zshrc
-    $ mise dotfiles add --mode copy ~/.config/starship.toml
-    $ mise dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+    $ mise bootstrap dotfiles add ~/.zshrc
+    $ mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
+    $ mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
 
 """#
         flag "-f --force" help="Overwrite existing sources without prompting"
@@ -1005,7 +1052,7 @@ Examples:
         flag "-y --yes" help="Skip the confirmation prompt"
         arg <TARGET>… help="Targets to add or update" var=#true
     }
-    cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
+    cmd apply hide=#true help="Apply dotfiles from `[dotfiles]`" effect=write {
         long_help #"""
 Apply dotfiles from `[dotfiles]`
 
@@ -1017,10 +1064,9 @@ mise doesn't otherwise own.
         after_long_help #"""
 Examples:
 
-    $ mise dotfiles apply
     $ mise bootstrap dotfiles apply
-    $ mise dotfiles apply --dry-run
-    $ mise dotfiles apply --force --yes
+    $ mise bootstrap dotfiles apply --dry-run
+    $ mise bootstrap dotfiles apply --force --yes
 
 """#
         flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
@@ -1028,12 +1074,12 @@ Examples:
         flag "-y --yes" help="Skip the confirmation prompt"
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
     }
-    cmd edit help="Edit a managed dotfile source" effect=write {
+    cmd edit hide=#true help="Edit a managed dotfile source" effect=write {
         after_long_help #"""
 Examples:
 
-    $ mise dotfiles edit ~/.zshrc
-    $ mise dotfiles edit --apply ~/.config/starship.toml
+    $ mise bootstrap dotfiles edit ~/.zshrc
+    $ mise bootstrap dotfiles edit --apply ~/.config/starship.toml
 
 """#
         flag --apply help="Apply this target after the editor exits"
@@ -1046,16 +1092,15 @@ Examples:
         flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
         arg <TARGET> help="Target to edit"
     }
-    cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
+    cmd status hide=#true help="Show the status of dotfiles from `[dotfiles]`" effect=read {
         alias ls
         after_long_help #"""
 Examples:
 
-    $ mise dotfiles status
     $ mise bootstrap dotfiles status
-    $ mise dotfiles status ~/.zshrc
-    $ mise dotfiles status --json
-    $ mise dotfiles status --missing # exit 1 if anything is out of sync
+    $ mise bootstrap dotfiles status ~/.zshrc
+    $ mise bootstrap dotfiles status --json
+    $ mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 
 """#
         flag "-J --json" help="Output in JSON format"
@@ -5212,8 +5257,12 @@ source_code_link_template #"""
 {%- set path = "system/use.rs" -%}
 {%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
 {%- set path = "system/brew/mod.rs" -%}
+{%- elif path == "bootstrap/dotfiles/add" -%}
+{%- set path = "dotfiles/add.rs" -%}
 {%- elif path == "bootstrap/dotfiles/apply" -%}
 {%- set path = "dotfiles/apply.rs" -%}
+{%- elif path == "bootstrap/dotfiles/edit" -%}
+{%- set path = "dotfiles/edit.rs" -%}
 {%- elif path == "bootstrap/dotfiles/status" -%}
 {%- set path = "dotfiles/status.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}

@@ -1,5 +1,5 @@
 //! `[dotfiles]` — declarative edits to files mise doesn't own,
-//! applied by `mise dotfiles apply` or `mise bootstrap`.
+//! applied by `mise bootstrap dotfiles apply` or `mise bootstrap`.
 //!
 //! Where whole-file dotfile entries manage whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,
@@ -424,7 +424,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 ///
 /// Note: comparing a template block against existing markers requires
 /// rendering it, so this can run the template engine — including `exec()` —
-/// from `mise dotfiles status`. That's the same trust model as `[env]`
+/// from `mise bootstrap dotfiles status`. That's the same trust model as `[env]`
 /// templates. Rendering only happens once every render-free outcome (symlink
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).
@@ -517,8 +517,9 @@ pub struct ApplyOpts {
 
 /// Apply all edits that aren't already in the desired state. Edits never
 /// replace files, so there is no --force here — but corrupted markers and
-/// symlink targets are reported as errors rather than guessed at.
-pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Result<()> {
+/// symlink targets are reported as errors rather than guessed at. Returns
+/// `false` when the user declines the confirmation prompt.
+pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
     for req in requests {
@@ -605,7 +606,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
     }
     if todo.is_empty() {
         info!("edits: all edits are applied");
-        return Ok(());
+        return Ok(true);
     }
     if opts.dry_run {
         for (req, desired) in &todo {
@@ -623,7 +624,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
                 miseprintln!("  desired {}", req.describe_op());
             }
         }
-        return Ok(());
+        return Ok(true);
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = todo
@@ -633,7 +634,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
             .join(", ");
         if !prompt::confirm(format!("edits: apply {list}?"))? {
             info!("edits: skipped");
-            return Ok(());
+            return Ok(false);
         }
     }
     for (req, desired) in &todo {
@@ -646,7 +647,7 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
             .collect::<Vec<_>>()
             .join(", ")
     );
-    Ok(())
+    Ok(true)
 }
 
 /// Simulate applying an edit to in-memory text for bootstrap dry-run config

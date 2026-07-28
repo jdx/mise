@@ -277,8 +277,8 @@ fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise dotfiles add ~/.zshrc</bold>
-    $ <bold>mise dotfiles add --mode copy ~/.config/starship.toml</bold>
-    $ <bold>mise dotfiles add --source dotfiles/gitconfig ~/.gitconfig</bold>
+    $ <bold>mise bootstrap dotfiles add ~/.zshrc</bold>
+    $ <bold>mise bootstrap dotfiles add --mode copy ~/.config/starship.toml</bold>
+    $ <bold>mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig</bold>
 "#
 );

@@ -148,8 +148,14 @@ Set up a machine for the current config in one command
 \fBbootstrap dotfiles\fR
 Manage dotfiles from `[dotfiles]`
 .TP
+\fBbootstrap dotfiles add\fR
+Add or update dotfiles in `[dotfiles]`
+.TP
 \fBbootstrap dotfiles apply\fR
 Apply dotfiles from `[dotfiles]`
+.TP
+\fBbootstrap dotfiles edit\fR
+Edit a managed dotfile source
 .TP
 \fBbootstrap dotfiles status\fR
 Show the status of dotfiles from `[dotfiles]`
@@ -311,24 +317,6 @@ Set the value of a setting in a mise.toml file
 .TP
 \fBdeactivate\fR
 Disable mise for current shell session
-.TP
-\fBdotfiles\fR
-Manage dotfiles from `[dotfiles]`
-.TP
-\fBdotfiles add\fR
-Add or update dotfiles in `[dotfiles]`
-.TP
-\fBdotfiles apply\fR
-Apply dotfiles from `[dotfiles]`
-.TP
-\fBdotfiles edit\fR
-Edit a managed dotfile source
-.TP
-\fBdotfiles status\fR
-Show the status of dotfiles from `[dotfiles]`
-.RS
-\fIAliases: \fRls
-.RE
 .TP
 \fBdoctor\fR
 Check mise installation for possible problems
@@ -920,6 +908,46 @@ Can be passed multiple times or as a comma\-separated list.
 .TP
 \fB\-\-update\fR
 Refresh package manager metadata and update configured repos
+.SH "MISE BOOTSTRAP DOTFILES ADD"
+Add or update dotfiles in `[dotfiles]`
+
+If the target is already managed, this updates its source from the live
+target. Otherwise it creates a `[dotfiles]` entry and seeds the source
+under `dotfiles.root` unless `\-\-source` is provided.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles add [OPTIONS] <TARGET> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Overwrite existing sources without prompting
+.TP
+\fB\-g, \-\-global\fR
+Write to the global config
+.TP
+\fB\-l, \-\-local\fR
+Write to the local config instead of the global config
+.TP
+\fB\-m, \-\-mode\fR \fI<MODE>\fR
+Dotfile mode to write
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the config/source updates without writing anything
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Write to this config file or directory
+.TP
+\fB\-s, \-\-source\fR \fI<PATH>\fR
+Source path to use for a single target
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Targets to add or update
 .SH "MISE BOOTSTRAP DOTFILES APPLY"
 Apply dotfiles from `[dotfiles]`
 
@@ -946,6 +974,30 @@ Skip the confirmation prompt
 .TP
 \fB<TARGET>\fR
 Only apply these targets
+.SH "MISE BOOTSTRAP DOTFILES EDIT"
+Edit a managed dotfile source
+.PP
+\fBUsage:\fR mise bootstrap dotfiles edit [OPTIONS] <TARGET>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-apply\fR
+Apply this target after the editor exits
+.TP
+\fB\-m, \-\-mode\fR \fI<MODE>\fR
+Dotfile mode to use if the target is not yet managed
+.TP
+\fB\-s, \-\-source\fR \fI<PATH>\fR
+Source path to use if the target is not yet managed
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt when adding an unmanaged target
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Target to edit
 .SH "MISE BOOTSTRAP DOTFILES STATUS"
 Show the status of dotfiles from `[dotfiles]`
 .PP
@@ -1514,115 +1566,6 @@ The path of the config to display
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
-.SH "MISE DOTFILES ADD"
-Add or update dotfiles in `[dotfiles]`
-
-If the target is already managed, this updates its source from the live
-target. Otherwise it creates a `[dotfiles]` entry and seeds the source
-under `dotfiles.root` unless `\-\-source` is provided.
-.PP
-\fBUsage:\fR mise dotfiles add [OPTIONS] <TARGET> ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-f, \-\-force\fR
-Overwrite existing sources without prompting
-.TP
-\fB\-g, \-\-global\fR
-Write to the global config
-.TP
-\fB\-l, \-\-local\fR
-Write to the local config instead of the global config
-.TP
-\fB\-m, \-\-mode\fR \fI<MODE>\fR
-Dotfile mode to write
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the config/source updates without writing anything
-.TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
-Write to this config file or directory
-.TP
-\fB\-s, \-\-source\fR \fI<PATH>\fR
-Source path to use for a single target
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-\fBArguments:\fR
-.PP
-.TP
-\fB<TARGET>\fR
-Targets to add or update
-.SH "MISE DOTFILES APPLY"
-Apply dotfiles from `[dotfiles]`
-
-Applies configured whole\-file entries and edits that aren't in their
-desired state. Whole\-file entries may symlink, copy, or render templates.
-Edit entries manage a marker\-delimited block or a single line in a file
-mise doesn't otherwise own.
-.PP
-\fBUsage:\fR mise dotfiles apply [OPTIONS] [<TARGET>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-f, \-\-force\fR
-Overwrite existing files that conflict with whole\-file dotfile entries
-.TP
-\fB\-n, \-\-dry\-run\fR
-Print the actions that would run without writing anything
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt
-\fBArguments:\fR
-.PP
-.TP
-\fB<TARGET>\fR
-Only apply these targets
-.SH "MISE DOTFILES EDIT"
-Edit a managed dotfile source
-.PP
-\fBUsage:\fR mise dotfiles edit [OPTIONS] <TARGET>
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-apply\fR
-Apply this target after the editor exits
-.TP
-\fB\-m, \-\-mode\fR \fI<MODE>\fR
-Dotfile mode to use if the target is not yet managed
-.TP
-\fB\-s, \-\-source\fR \fI<PATH>\fR
-Source path to use if the target is not yet managed
-.TP
-\fB\-y, \-\-yes\fR
-Skip the confirmation prompt when adding an unmanaged target
-\fBArguments:\fR
-.PP
-.TP
-\fB<TARGET>\fR
-Target to edit
-.SH "MISE DOTFILES STATUS"
-Show the status of dotfiles from `[dotfiles]`
-.PP
-\fBUsage:\fR mise dotfiles status [OPTIONS] [<TARGET>] ...
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-\-missing\fR
-Exit with code 1 if any configured dotfiles are not in their desired
-state (missing, source missing, differs)
-\fBArguments:\fR
-.PP
-.TP
-\fB<TARGET>\fR
-Only show these targets
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP

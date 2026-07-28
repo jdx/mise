@@ -232,6 +232,8 @@ post-defaults = "killall Dock || true"
 
 Hooks merge across the config hierarchy from global to local, so shared config
 can define broad machine setup while a project adds its own phase commands.
+The `pre-dotfiles` and `post-dotfiles` phases also wrap
+`mise bootstrap dotfiles apply`.
 
 ## Common workflows
 
@@ -254,17 +256,17 @@ This writes `[bootstrap.packages]` and installs what is missing.
 
 ```sh
 $EDITOR ~/.zshrc
-mise dotfiles add ~/.zshrc
+mise bootstrap dotfiles add ~/.zshrc
 ```
 
-`mise dotfiles add` stores the live file under `dotfiles.root` and writes an
+`mise bootstrap dotfiles add` stores the live file under `dotfiles.root` and writes an
 explicit `[dotfiles]` entry with `mode`.
 
 ### Edit a managed dotfile
 
 ```sh
-mise dotfiles edit ~/.zshrc
-mise dotfiles apply ~/.zshrc
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles apply ~/.zshrc
 ```
 
 For symlinked dotfiles, `edit` opens the managed source, so it works with the

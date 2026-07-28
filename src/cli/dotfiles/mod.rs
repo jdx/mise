@@ -7,17 +7,16 @@ mod apply;
 mod edit;
 mod status;
 
+pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
+pub(crate) use edit::DotfilesEdit;
 pub(crate) use status::DotfilesStatus;
 
-/// Manage dotfiles from `[dotfiles]`
+/// Manage dotfiles from `[dotfiles]` (deprecated)
 ///
-/// Dotfiles are config files symlinked, copied, or rendered to target paths,
-/// plus marker-delimited blocks or single lines in files mise doesn't own.
-/// Unlike `[tools]`, dotfiles are only acted on when explicitly requested with
-/// `mise dotfiles apply`, `mise bootstrap dotfiles apply`, or `mise bootstrap`.
+/// Use `mise bootstrap dotfiles` instead.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[clap(verbatim_doc_comment, hide = true)]
 pub struct Dotfiles {
     #[clap(subcommand)]
     command: Commands,
@@ -25,17 +24,27 @@ pub struct Dotfiles {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[clap(hide = true)]
     Add(add::DotfilesAdd),
+    #[clap(hide = true)]
     Apply(apply::DotfilesApply),
+    #[clap(hide = true)]
     Edit(edit::DotfilesEdit),
+    #[clap(hide = true)]
     Status(status::DotfilesStatus),
 }
 
 impl Dotfiles {
     pub async fn run(self) -> Result<()> {
+        deprecated_at!(
+            "2027.2.0",
+            "2028.2.0",
+            "cli.dotfiles",
+            "`mise dotfiles ...` is deprecated. Use `mise bootstrap dotfiles ...` instead."
+        );
         match self.command {
             Commands::Add(cmd) => cmd.run().await,
-            Commands::Apply(cmd) => cmd.run().await,
+            Commands::Apply(cmd) => cmd.run().await.map(|_| ()),
             Commands::Edit(cmd) => cmd.run().await,
             Commands::Status(cmd) => cmd.run().await,
         }

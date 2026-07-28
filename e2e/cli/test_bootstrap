@@ -266,6 +266,29 @@ else
   assert_not_contains "mise bootstrap --dry-run" 'killall Dock'
 fi
 
+# declining a standalone dotfiles apply skips its post hook
+mkdir -p dotfiles
+echo "declined apply" >dotfiles/declined-apply
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.declined-bootstrap-dotfile" = "dotfiles/declined-apply"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "echo pre-declined > pre_declined_hook_ran"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo post-declined > post_declined_hook_ran"
+EOF
+rm -f ~/.declined-bootstrap-dotfile pre_declined_hook_ran post_declined_hook_ran
+if [[ $(uname) == "Darwin" ]]; then
+  assert_succeed "script -q /dev/null env -u MISE_YES __USAGE=1 mise bootstrap dotfiles apply"
+else
+  assert_succeed "script -qec 'env -u MISE_YES __USAGE=1 mise bootstrap dotfiles apply' /dev/null"
+fi
+assert "cat pre_declined_hook_ran" "pre-declined"
+assert_fail "test -e ~/.declined-bootstrap-dotfile"
+assert_fail "test -e post_declined_hook_ran"
+
 # dotfiles can add config that contributes hooks to later phases in the same run
 mkdir -p dotfiles/mise
 cat <<'EOF' >dotfiles/mise/config.toml
@@ -278,8 +301,20 @@ EOF
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "echo pre-dotfiles > pre_dotfiles_hook_ran"
 EOF
-rm -f post_dotfiles_hook_ran final_hook_ran
+rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran final_hook_ran
+assert_contains "mise bootstrap dotfiles apply --dry-run" "echo pre-dotfiles > pre_dotfiles_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
+assert_fail "cat pre_dotfiles_hook_ran"
+assert_fail "cat post_dotfiles_hook_ran"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "cat pre_dotfiles_hook_ran" "pre-dotfiles"
+assert "cat post_dotfiles_hook_ran" "post-dotfiles"
+assert_fail "cat final_hook_ran"
+rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
 assert_contains "mise bootstrap --dry-run" "echo final > final_hook_ran"
 assert_fail "cat post_dotfiles_hook_ran"
@@ -300,21 +335,25 @@ assert "cat ~/.bootstrap-force-dotfiles" "local content"
 assert_succeed "mise bootstrap --yes --force-dotfiles"
 assert "readlink ~/.bootstrap-force-dotfiles" "$PWD/dotfiles/bootstrap-force"
 
-# dry-run previews hooks from templated config dotfiles
+# dry-run does not render templated config dotfiles or retain their stale hooks
+cat <<'EOF' >~/.config/mise/config.local.toml
+[bootstrap.hooks.post-dotfiles]
+run = "echo stale-template-config > stale_template_config_hook_ran"
+EOF
 cat <<'EOF' >dotfiles/mise/config.local.toml.tmpl
 [bootstrap.hooks.final]
-run = "echo {{ vars.templated_hook_value }} > templated_hook_ran"
+run = "{{ exec(command='touch templated_config_exec_ran') }}"
 EOF
 cat <<EOF >mise.toml
-[vars]
-templated_hook_value = "template-final"
-
 [dotfiles]
 "~/.config/mise/config.local.toml" = { source = "dotfiles/mise/config.local.toml.tmpl", mode = "template" }
+"~/.config/mise/config.local.toml/bootstrap-test" = { line = "# bootstrap test" }
 EOF
-rm -f templated_hook_ran
-assert_contains "mise bootstrap --dry-run" "echo template-final > templated_hook_ran"
-assert_fail "cat templated_hook_ran"
+rm -f templated_config_exec_ran
+assert_not_contains "mise bootstrap --dry-run --force-dotfiles" "echo stale-template-config"
+assert_fail "test -f templated_config_exec_ran"
+assert_not_contains "mise bootstrap dotfiles apply --dry-run --force" "echo stale-template-config"
+assert_fail "test -f templated_config_exec_ran"
 
 # dry-run recognizes local config targets such as ~/.mise/config.toml
 cat <<'EOF' >dotfiles/mise/local-config.toml

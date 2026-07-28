@@ -1,5 +1,5 @@
 //! `[dotfiles]` — declarative config files (dotfiles) applied by
-//! `mise dotfiles apply` or `mise bootstrap`.
+//! `mise bootstrap dotfiles apply` or `mise bootstrap`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
@@ -532,8 +532,9 @@ where
 /// Current state of one entry on this machine.
 ///
 /// Note: computing a template entry's state requires rendering it, so this
-/// runs the template engine — including `exec()` — from `mise dotfiles
-/// status`. That's the same trust model as `[env]` templates (which run on
+/// runs the template engine — including `exec()` — from
+/// `mise bootstrap dotfiles status`. That's the same trust model as `[env]`
+/// templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
 pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
@@ -850,8 +851,9 @@ pub struct ApplyOpts {
 /// Apply all entries that aren't already in the desired state. Conflicting
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
-/// copy/template entries are not conflicts, overwriting is their job.
-pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<()> {
+/// copy/template entries are not conflicts, overwriting is their job. Returns
+/// `false` when the user declines the confirmation prompt.
+pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
@@ -924,7 +926,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     }
     if todo.is_empty() {
         info!("files: all files are applied");
-        return Ok(());
+        return Ok(true);
     }
     if opts.dry_run {
         for (req, rendered) in &todo {
@@ -937,7 +939,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
                 print_diff(req, rendered.as_deref())?;
             }
         }
-        return Ok(());
+        return Ok(true);
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = todo
@@ -947,7 +949,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             .join(", ");
         if !prompt::confirm(format!("files: apply {list}?"))? {
             info!("files: skipped");
-            return Ok(());
+            return Ok(false);
         }
     }
     for (req, rendered) in &todo {
@@ -960,7 +962,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             .collect::<Vec<_>>()
             .join(", ")
     );
-    Ok(())
+    Ok(true)
 }
 
 /// existing paths this entry would have to delete or replace — not counting
