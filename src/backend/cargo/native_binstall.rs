@@ -131,15 +131,21 @@ pub async fn install(
     }
 
     if matches!(action, NativeBinstallAction::WarnOnly) {
-        let archive_url = expand_binstall_template(
-            pkg_url,
-            &template_ctx.vars(
-                bins.first()
-                    .map(|bin| bin.name.as_str())
-                    .unwrap_or(&crate_name),
-            ),
-        );
-        if !native_binstall_file_available(&archive_url).await {
+        let archive_urls = if template_contains_var(pkg_url, "bin") {
+            bins.iter()
+                .map(|bin| expand_binstall_template(pkg_url, &template_ctx.vars(&bin.name)))
+                .collect()
+        } else {
+            vec![expand_binstall_template(
+                pkg_url,
+                &template_ctx.vars(
+                    bins.first()
+                        .map(|bin| bin.name.as_str())
+                        .unwrap_or(&crate_name),
+                ),
+            )]
+        };
+        if !native_binstall_files_available(&archive_urls).await {
             return Ok(false);
         }
         warn_native_binstall_rollout();
@@ -702,6 +708,15 @@ async fn native_binstall_file_available(url: &str) -> bool {
     }
 }
 
+async fn native_binstall_files_available(urls: &[String]) -> bool {
+    for url in urls {
+        if !native_binstall_file_available(url).await {
+            return false;
+        }
+    }
+    true
+}
+
 async fn resolve_native_binstall_download_url(url: &str) -> String {
     let Some((repo, tag, asset_name)) = github_release_asset_from_url(url) else {
         return url.to_string();
@@ -1195,6 +1210,35 @@ mod tests {
         get_available.assert_async().await;
         unavailable_head.assert_async().await;
         unavailable_get.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn warn_only_artifact_probe_checks_every_archive() {
+        let mut server = mockito::Server::new_async().await;
+        let first = server
+            .mock("HEAD", "/first.tar.gz")
+            .with_status(200)
+            .create_async()
+            .await;
+        let second_head = server
+            .mock("HEAD", "/second.tar.gz")
+            .with_status(404)
+            .create_async()
+            .await;
+        let second_get = server
+            .mock("GET", "/second.tar.gz")
+            .with_status(404)
+            .create_async()
+            .await;
+        let urls = [
+            format!("{}/first.tar.gz", server.url()),
+            format!("{}/second.tar.gz", server.url()),
+        ];
+
+        assert!(!native_binstall_files_available(&urls).await);
+        first.assert_async().await;
+        second_head.assert_async().await;
+        second_get.assert_async().await;
     }
 
     #[test]
