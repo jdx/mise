@@ -205,6 +205,7 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("tasks add", Write),
     ("tasks deps", Read),
     ("tasks edit", Write),
+    ("tasks graph", Read),
     ("tasks info", Read),
     ("tasks ls", Read),
     ("tasks validate", Read),

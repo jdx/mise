@@ -451,6 +451,27 @@ impl Config {
         find_monorepo_root(&self.config_files)
     }
 
+    /// Discovers the provider-neutral workspace project graph and applies the
+    /// explicit overrides from the active monorepo root.
+    pub fn workspace_project_graph(&self) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
+        let monorepo_config = find_monorepo_config(&self.config_files)
+            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+        let monorepo_root = monorepo_config
+            .project_root()
+            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
+        let overrides = monorepo_config
+            .monorepo()
+            .map(|config| &config.projects)
+            .cloned()
+            .unwrap_or_default();
+
+        crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides(
+            &[],
+            &monorepo_root,
+            &overrides,
+        )
+    }
+
     /// Returns the root lockfile directory when unified monorepo lockfiles are active.
     ///
     /// Lockfile discovery is intentionally lenient: it only requires

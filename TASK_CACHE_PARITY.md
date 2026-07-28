@@ -41,7 +41,7 @@ outside this tracker.
       edges
 - [x] Detect project graph cycles and report actionable diagnostics
 - [x] Preserve dependency traversal through projects that do not implement the requested task
-- [ ] Add human-readable and machine-readable project graph inspection
+- [x] Add human-readable and machine-readable project graph inspection
 
 ## Workspace providers and task inference
 
