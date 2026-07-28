@@ -598,6 +598,32 @@ Only declare deterministic external state that can affect task outputs. Secrets 
 should use pass-through environment variables instead so their values are not included in cache
 keys.
 
+#### Per-run cache access
+
+Use `mise run --task-cache <mode>` or `MISE_TASK_CACHE` to control task output cache reads and writes
+for one run:
+
+- `read-write` uses cached results and publishes new results. This is the default.
+- `read-only` uses cached results but does not publish misses.
+- `write-only` publishes results but always executes instead of restoring.
+- `off` disables task output caching and uses ordinary source/output freshness checks.
+- `local-only` reads and writes only the local cache. It currently behaves like `read-write` because
+  remote caching is not yet available.
+
+```bash
+# Prevent an untrusted pull request from publishing cache entries
+mise run --task-cache read-only test
+
+# Warm the local cache without consuming existing entries
+mise run --task-cache write-only build
+
+# Diagnose a task without reading or writing task output artifacts
+mise run --task-cache off build
+```
+
+These modes only affect the experimental task output cache configured by a task's `cache` property.
+The existing `--no-cache` option controls fetching remote task definitions instead.
+
 ```mise-toml
 [tasks.lint]
 run = "eslint ."

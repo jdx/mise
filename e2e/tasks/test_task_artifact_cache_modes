@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+printf '%s:%s\n' "$PROFILE" "$(cat input.txt)" > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+cache = { enabled = true, env = ["PROFILE"] }
+EOF
+
+printf 'one\n' >input.txt
+
+# Populate an artifact using the default read-write mode.
+PROFILE=seed mise run build
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Read-only mode restores existing artifacts.
+rm -rf dist
+assert_contains \
+  "PROFILE=seed mise run --task-cache read-only build 2>&1" \
+  "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Read-only misses execute without publishing a new artifact.
+PROFILE=read-only mise run --task-cache read-only build
+assert "wc -l < runs.txt | tr -d ' '" "2"
+rm -rf dist
+MISE_TASK_CACHE=read-only PROFILE=read-only mise run build
+assert "wc -l < runs.txt | tr -d ' '" "3"
+
+# Write-only mode publishes artifacts but never restores them.
+PROFILE=write-only mise run --task-cache write-only build
+assert "wc -l < runs.txt | tr -d ' '" "4"
+rm -rf dist
+assert_not_contains \
+  "PROFILE=write-only mise run --task-cache write-only build 2>&1" \
+  "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "5"
+
+# Local-only mode can restore the artifact published by write-only mode.
+rm -rf dist
+assert_contains \
+  "PROFILE=write-only mise run --task-cache local-only build 2>&1" \
+  "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "5"
+
+# Off mode neither reads nor writes task output artifacts.
+rm -rf dist
+PROFILE=off mise run --task-cache off build
+assert "wc -l < runs.txt | tr -d ' '" "6"
+rm -rf dist
+PROFILE=off mise run --task-cache off build
+assert "wc -l < runs.txt | tr -d ' '" "7"
+
+assert_fail_contains \
+  "mise run --task-cache invalid build 2>&1" \
+  "invalid value 'invalid'"

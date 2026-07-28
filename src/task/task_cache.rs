@@ -33,6 +33,35 @@ pub struct TaskCacheConfig {
     pub command_inputs: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum TaskCacheMode {
+    /// Read cached results and write new results.
+    #[default]
+    ReadWrite,
+    /// Read cached results without writing new results.
+    ReadOnly,
+    /// Write new results without reading cached results.
+    WriteOnly,
+    /// Disable task output caching for this run.
+    Off,
+    /// Read and write only the local cache.
+    LocalOnly,
+}
+
+impl TaskCacheMode {
+    pub(crate) fn enabled(self) -> bool {
+        self != Self::Off
+    }
+
+    pub(crate) fn reads(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::ReadOnly | Self::LocalOnly)
+    }
+
+    pub(crate) fn writes(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::WriteOnly | Self::LocalOnly)
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct CacheKeyMaterial<'a> {
     format: u8,

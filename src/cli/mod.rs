@@ -792,6 +792,7 @@ impl Cli {
                         context_builder: Default::default(),
                         executor: None,
                         no_cache: Default::default(),
+                        task_cache: Default::default(),
                         timeout: None,
                         skip_deps: false,
                         skip_tools: false,
