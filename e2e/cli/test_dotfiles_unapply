@@ -9,12 +9,16 @@ echo "managed" >dotfiles/copydir/managed
 cat <<'EOF' >dotfiles/rendered.tmpl
 {{ exec(command="touch $HOME/unapply-rendered") }}rendered
 EOF
+cat <<'EOF' >dotfiles/mutating.tmpl
+{{ exec(command="printf tampered > $HOME/.managed-copy") }}mutating
+EOF
 
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.managed-link" = "dotfiles/linked"
 "~/.managed-copy" = { source = "dotfiles/copied", mode = "copy" }
 "~/.managed-rendered" = { source = "dotfiles/rendered.tmpl", mode = "template" }
+"~/.managed-mutating" = { source = "dotfiles/mutating.tmpl", mode = "template" }
 "~/.managed-links" = { source = "dotfiles/links", mode = "symlink-each" }
 "~/.managed-copydir" = { source = "dotfiles/copydir", mode = "copy" }
 "~/.managed-rc/block" = { block = "managed block" }
@@ -48,6 +52,13 @@ assert_succeed "test -e $HOME/.managed-rendered"
 assert_fail "mise bootstrap dotfiles unapply --yes" "line edits have no ownership marker"
 assert_contains "cat ~/.managed-rc" "managed block"
 assert_succeed "test -L $HOME/.managed-link"
+
+# Template functions can change another selected target. Revalidate every file
+# after all templates render instead of deleting from a stale plan.
+cp dotfiles/copied ~/.managed-copy
+assert_fail "mise bootstrap dotfiles unapply ~/.managed-copy ~/.managed-mutating --yes" "use --force"
+assert "cat ~/.managed-copy" "tampered"
+assert_succeed "test -e $HOME/.managed-mutating"
 
 # File and edit entries are all validated before either kind is removed.
 echo "locally modified" >~/.managed-copy

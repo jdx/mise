@@ -1017,24 +1017,59 @@ pub fn plan_unapply<'a>(
 /// only after interactive confirmation, but still before any mutation.
 pub fn resolve_unapply(
     config: &Config,
-    plans: &mut [UnapplyPlan<'_>],
+    plans: &mut Vec<UnapplyPlan<'_>>,
     opts: &UnapplyOpts,
 ) -> Result<()> {
     if opts.dry_run {
         return Ok(());
     }
     let mut problems = vec![];
-    for plan in plans.iter_mut().filter(|plan| plan.conditional) {
-        let result = (|| {
-            let rendered = render_template(config, plan.req)?;
+    let rendered = plans
+        .iter()
+        .map(|plan| {
+            if plan.conditional {
+                match render_template(config, plan.req) {
+                    Ok(rendered) => Some(rendered),
+                    Err(err) => {
+                        problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+
+    // Template functions can change any selected target. Refresh every plan
+    // only after all templates have rendered so no stale validation is used.
+    let mut refreshed = Vec::with_capacity(plans.len());
+    for (plan, rendered) in std::mem::take(plans).into_iter().zip(rendered) {
+        let result = if let Some(rendered) = rendered {
             let mut paths = IndexMap::new();
-            plan_expected_content(rendered.as_bytes(), &plan.req.target, false, &mut paths)?;
-            plan.paths = paths.into_keys().collect();
-            plan.conditional = false;
-            Ok::<_, eyre::Report>(())
-        })();
-        if let Err(err) = result {
-            problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
+            plan_expected_content(rendered.as_bytes(), &plan.req.target, false, &mut paths).map(
+                |_| {
+                    Some(UnapplyPlan {
+                        req: plan.req,
+                        paths: paths.into_keys().collect(),
+                        cleanup_empty_dirs: false,
+                        conditional: false,
+                    })
+                },
+            )
+        } else {
+            plan_unapply_one(plan.req, opts)
+        };
+        match result {
+            Ok(Some(plan)) => refreshed.push(plan),
+            Ok(None) => {}
+            Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw)),
         }
     }
     if !problems.is_empty() {
@@ -1043,6 +1078,7 @@ pub fn resolve_unapply(
             problems.join("\n")
         );
     }
+    *plans = refreshed;
     Ok(())
 }
 
