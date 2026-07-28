@@ -17,7 +17,7 @@ use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
-use crate::task::{Deps, FailedTasks, GetMatchingExt, Task, TaskCacheOutput};
+use crate::task::{Deps, FailedTasks, GetMatchingExt, Task, TaskCacheMode, TaskCacheOutput};
 use crate::task::{TaskCompletionState, TaskDependencyState};
 use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
@@ -168,6 +168,7 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub task_cache: TaskCacheMode,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
@@ -187,6 +188,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub task_cache: TaskCacheMode,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -214,6 +216,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            task_cache: config.task_cache,
             sandbox: config.sandbox,
         }
     }
@@ -343,7 +346,9 @@ impl TaskExecutor {
         }
         // If any dependency executed or restored, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes.
-        if !task.cache.as_ref().is_some_and(|cache| cache.enabled)
+        let artifact_cache_enabled =
+            self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled);
+        if !artifact_cache_enabled
             && !self.force
             && !dependency_state.any_did_work
             && sources_are_fresh(task, config).await?
@@ -540,7 +545,9 @@ impl TaskExecutor {
         };
         self.check_confirmation(config, task, &env).await?;
 
-        let artifact_cache = if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
+        let artifact_cache = if self.task_cache.enabled()
+            && task.cache.as_ref().is_some_and(|cache| cache.enabled)
+        {
             match TaskArtifactCache::prepare(task, config, self.dry_run).await? {
                 Some(_) if self.dry_run => None,
                 Some(_) if self.raw(Some(task)) => {
@@ -565,7 +572,8 @@ impl TaskExecutor {
                             command_inputs,
                         )
                         .await?;
-                    let current_output = if !self.force
+                    let current_output = if self.task_cache.reads()
+                        && !self.force
                         && !dependency_state.any_unkeyed_did_work
                         && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
                     {
@@ -584,7 +592,8 @@ impl TaskExecutor {
                             cache_key: Some(cache.key().to_string()),
                         });
                     }
-                    if !self.force
+                    if self.task_cache.reads()
+                        && !self.force
                         && !dependency_state.any_unkeyed_did_work
                         && let Some(output) = cache.restore(task)?
                     {
@@ -608,7 +617,9 @@ impl TaskExecutor {
                                 task.name
                             );
                         }
-                        if let Err(err) = cache.mark_current() {
+                        if self.task_cache.writes()
+                            && let Err(err) = cache.mark_current()
+                        {
                             warn!(
                                 "task {} artifact cache state update failed: {err}",
                                 task.name
@@ -628,6 +639,7 @@ impl TaskExecutor {
         };
         let output_capture = artifact_cache
             .as_ref()
+            .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
 
         let timer = std::time::Instant::now();
@@ -697,7 +709,9 @@ impl TaskExecutor {
         }
 
         save_checksum(task, config).await?;
-        let cache_key = if let Some(cache) = artifact_cache {
+        let cache_key = if self.task_cache.writes()
+            && let Some(cache) = artifact_cache
+        {
             let output = output_capture
                 .as_ref()
                 .map(|output| output.lock().unwrap().clone())

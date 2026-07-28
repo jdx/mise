@@ -995,6 +995,7 @@ impl Bootstrap {
             context_builder: Default::default(),
             executor: None,
             no_cache: Default::default(),
+            task_cache: crate::task::TaskCacheMode::from_env()?,
             timeout: None,
             skip_deps: false,
             // a dry run must not auto-install tools before the (not actually

@@ -87,7 +87,7 @@ outside this tracker.
 - [x] Support negative input and output patterns
 - [x] Support command-output inputs
 - [x] Include external dependency and lockfile state through explicit input configuration
-- [ ] Add per-run cache read/write controls, including local-only and cache-disabled modes
+- [x] Add per-run cache read/write controls, including local-only and cache-disabled modes
 - [ ] Add a configurable local task-cache directory
 
 ## Inspection and diagnostics

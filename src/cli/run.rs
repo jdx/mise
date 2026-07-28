@@ -17,7 +17,7 @@ use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
-use crate::task::{Deps, Task};
+use crate::task::{Deps, Task, TaskCacheMode};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
@@ -202,6 +202,22 @@ pub struct Run {
     /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
     #[clap(long, verbatim_doc_comment)]
     pub skip_tools: bool,
+
+    /// Set task output cache access for this run
+    ///
+    /// - `read-write` - Read cached results and write new results
+    /// - `read-only` - Read cached results without writing new results
+    /// - `write-only` - Write new results without reading cached results
+    /// - `off` - Disable task output caching
+    /// - `local-only` - Read and write only the local cache; currently equivalent to `read-write`
+    #[clap(
+        long,
+        value_enum,
+        default_value = "read-write",
+        env = "MISE_TASK_CACHE",
+        verbatim_doc_comment
+    )]
+    pub task_cache: TaskCacheMode,
 
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
@@ -796,6 +812,7 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            task_cache: self.task_cache,
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,
@@ -899,7 +916,7 @@ impl Run {
     fn validate_task(&self, task: &Task) -> Result<()> {
         use crate::file;
         use crate::ui;
-        if task.cache.as_ref().is_some_and(|cache| cache.enabled) {
+        if self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled) {
             Settings::get().ensure_experimental("task artifact caching")?;
         }
         if !task.pass_through_env.is_empty() {

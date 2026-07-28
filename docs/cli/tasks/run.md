@@ -177,6 +177,26 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 
+### `--task-cache <TASK_CACHE>`
+
+Set task output cache access for this run
+
+- `read-write` - Read cached results and write new results
+- `read-only` - Read cached results without writing new results
+- `write-only` - Write new results without reading cached results
+- `off` - Disable task output caching
+- `local-only` - Read and write only the local cache; currently equivalent to `read-write`
+
+**Choices:**
+
+- `read-write`
+- `read-only`
+- `write-only`
+- `off`
+- `local-only`
+
+**Default:** `read-write`
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete

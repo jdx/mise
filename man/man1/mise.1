@@ -3145,6 +3145,18 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 .TP
+\fB\-\-task\-cache\fR \fI<TASK_CACHE>\fR
+Set task output cache access for this run
+
+\- `read\-write` \- Read cached results and write new results
+\- `read\-only` \- Read cached results without writing new results
+\- `write\-only` \- Write new results without reading cached results
+\- `off` \- Disable task output caching
+\- `local\-only` \- Read and write only the local cache; currently equivalent to `read\-write`
+.RS
+\fIDefault: \fRread\-write
+.RE
+.TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
 e.g.: 30s, 5m
@@ -3906,6 +3918,18 @@ Skip installing tools before running tasks
 
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
+.TP
+\fB\-\-task\-cache\fR \fI<TASK_CACHE>\fR
+Set task output cache access for this run
+
+\- `read\-write` \- Read cached results and write new results
+\- `read\-only` \- Read cached results without writing new results
+\- `write\-only` \- Write new results without reading cached results
+\- `off` \- Disable task output caching
+\- `local\-only` \- Read and write only the local cache; currently equivalent to `read\-write`
+.RS
+\fIDefault: \fRread\-write
+.RE
 .TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
