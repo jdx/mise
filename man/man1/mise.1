@@ -163,6 +163,9 @@ Show the status of dotfiles from `[dotfiles]`
 \fIAliases: \fRls
 .RE
 .TP
+\fBbootstrap dotfiles unapply\fR
+Remove dotfiles applied from `[dotfiles]`
+.TP
 \fBbootstrap linux\fR
 Manage Linux bootstrap config from `[bootstrap.linux]`
 .TP
@@ -1017,6 +1020,31 @@ state (missing, source missing, differs)
 .TP
 \fB<TARGET>\fR
 Only show these targets
+.SH "MISE BOOTSTRAP DOTFILES UNAPPLY"
+Remove dotfiles applied from `[dotfiles]`
+
+Removes configured whole\-file entries and edits while preserving files
+mise cannot identify as managed. Modified copies, templates, and plain\-line
+edits require `\-\-force`.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles unapply [OPTIONS] [<TARGET>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Remove modified or otherwise ambiguous managed files and lines
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the actions that would run without writing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only unapply these targets
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
 \fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP

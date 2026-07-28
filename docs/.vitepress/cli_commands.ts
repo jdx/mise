@@ -43,6 +43,9 @@ export const commands: { [key: string]: Command } = {
           status: {
             hide: false,
           },
+          unapply: {
+            hide: false,
+          },
         },
       },
       launchd: {
@@ -299,7 +302,7 @@ export const commands: { [key: string]: Command } = {
         hide: true,
       },
       unapply: {
-        hide: false,
+        hide: true,
       },
     },
   },

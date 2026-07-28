@@ -4,9 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 use serde_json::{Value, json};
 
-use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply,
-};
+use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;

@@ -94,6 +94,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.md)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.md)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.md)
+- [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.md)
 - [`mise bootstrap launchd apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/launchd/apply.md)
 - [`mise bootstrap launchd status [-J --json] [--missing]`](/cli/bootstrap/launchd/status.md)
 - [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
