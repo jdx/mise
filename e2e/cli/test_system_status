@@ -27,24 +27,23 @@ else
   assert_fail "mise bootstrap packages apply --manager mas --dry-run --yes"
 fi
 
-# mise-managed tools are removed from the pristine PATH, but package managers
-# must see the actual PATH inherited by their subprocesses.
+# A configured mise tool does not need to be activated in the parent shell.
 if [[ "$(uname)" == "Darwin" ]]; then
-  mkdir -p bin
-  cat <<'EOF' >bin/mas
+  mkdir -p mas-tool/bin
+  cat <<'EOF' >mas-tool/bin/mas
 #!/bin/sh
 printf '[]\n'
 EOF
-  chmod +x bin/mas
+  chmod +x mas-tool/bin/mas
   cat <<EOF >mise.toml
-[env]
-_.path = "./bin"
+[tools]
+mas = "path:./mas-tool"
 
 [bootstrap.packages]
 "mas:497799835" = "latest"
 EOF
   assert_contains \
-    "mise exec -- mise bootstrap packages apply --manager mas --dry-run --yes" \
+    "mise bootstrap packages apply --manager mas --dry-run --yes" \
     "mas install 497799835"
 fi
 

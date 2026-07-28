@@ -1,19 +1,41 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use async_trait::async_trait;
 use eyre::{Result as EyreResult, bail, eyre};
 use serde_json::Value;
+use tokio::sync::OnceCell;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
+use crate::backend::configured_toolset_or_path_which;
+use crate::config::Config;
 use crate::result::Result;
 
 /// Mac App Store apps via the `mas` CLI.
-pub struct MasManager {}
+pub struct MasManager {
+    bin: OnceCell<PathBuf>,
+}
 
 impl MasManager {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            bin: OnceCell::new(),
+        }
+    }
+
+    async fn bin(&self) -> Result<&PathBuf> {
+        if !cfg!(target_os = "macos") {
+            bail!("only available on macos");
+        }
+        self.bin
+            .get_or_try_init(|| async {
+                let config = Config::get().await?;
+                configured_toolset_or_path_which(&config, ["mas".to_string()], "mas")
+                    .await?
+                    .ok_or_else(|| eyre!("mas not found"))
+            })
+            .await
     }
 }
 
@@ -153,9 +175,9 @@ fn statuses_from_apps(apps: &[InstalledApp], requests: &[PackageRequest]) -> Vec
         .collect()
 }
 
-async fn mas_list() -> Result<Vec<InstalledApp>> {
+async fn mas_list(mas: &Path) -> Result<Vec<InstalledApp>> {
     debug!("$ mas list --json");
-    let json_output = tokio::process::Command::new("mas")
+    let json_output = tokio::process::Command::new(mas)
         .args(["list", "--json"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -176,7 +198,7 @@ async fn mas_list() -> Result<Vec<InstalledApp>> {
     };
 
     debug!("$ mas list");
-    let text_output = tokio::process::Command::new("mas")
+    let text_output = tokio::process::Command::new(mas)
         .arg("list")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -217,12 +239,16 @@ impl SystemPackageManager for MasManager {
         }
     }
 
+    async fn unavailable_reason_async(&self) -> Option<String> {
+        self.bin().await.err().map(|err| format!("{err:#}"))
+    }
+
     fn supports_version_pins(&self) -> bool {
         false
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
-        let apps = mas_list().await?;
+        let apps = mas_list(self.bin().await?).await?;
         Ok(statuses_from_apps(&apps, pkgs))
     }
 
@@ -240,7 +266,7 @@ impl SystemPackageManager for MasManager {
             return Ok(());
         }
         debug!("$ mas {}", args.join(" "));
-        let output = tokio::process::Command::new("mas")
+        let output = tokio::process::Command::new(self.bin().await?)
             .args(&args)
             .stdin(Stdio::null())
             .output()
@@ -263,7 +289,7 @@ impl SystemPackageManager for MasManager {
             return Ok(());
         }
         debug!("$ mas {}", args.join(" "));
-        let output = tokio::process::Command::new("mas")
+        let output = tokio::process::Command::new(self.bin().await?)
             .args(&args)
             .stdin(Stdio::null())
             .output()
