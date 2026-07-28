@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# The canonical command is visible while the deprecated top-level alias is hidden.
+assert_not_contains "mise --help" "  dotfiles "
+assert_contains "mise bootstrap dotfiles --help" "add"
+assert_contains "mise bootstrap dotfiles --help" "edit"
+
 mkdir -p dotfiles/nvim dotfiles/bin
 echo "gitconfig content" >dotfiles/gitconfig
 echo "starship config" >dotfiles/starship.toml
@@ -18,7 +23,7 @@ cat <<EOF >mise.toml
 EOF
 
 # everything is missing before applying
-assert_contains "mise dotfiles status" "missing"
+assert_contains "mise bootstrap dotfiles status" "missing"
 assert_contains "MISE_EXPERIMENTAL=0 mise dotfiles status" "missing"
 assert_fail "mise dotfiles status --missing"
 
@@ -27,10 +32,10 @@ assert_succeed "mise bootstrap packages apply --yes"
 assert_fail "cat ~/.gitconfig"
 
 # dry-run prints actions without writing anything
-assert_contains "mise dotfiles apply --dry-run" "ln -sf"
+assert_contains "mise bootstrap dotfiles apply --dry-run" "ln -sf"
 assert_fail "cat ~/.gitconfig"
 
-assert_succeed "mise dotfiles apply --yes"
+assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
 assert "cat ~/.config/starship.toml" "starship config"
 assert "cat ~/.ssh/config" "sum = 2"

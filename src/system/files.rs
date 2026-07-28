@@ -1,5 +1,5 @@
 //! `[dotfiles]` — declarative config files (dotfiles) applied by
-//! `mise dotfiles apply` or `mise bootstrap`.
+//! `mise bootstrap dotfiles apply` or `mise bootstrap`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
@@ -532,8 +532,9 @@ where
 /// Current state of one entry on this machine.
 ///
 /// Note: computing a template entry's state requires rendering it, so this
-/// runs the template engine — including `exec()` — from `mise dotfiles
-/// status`. That's the same trust model as `[env]` templates (which run on
+/// runs the template engine — including `exec()` — from
+/// `mise bootstrap dotfiles status`. That's the same trust model as `[env]`
+/// templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
 pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {

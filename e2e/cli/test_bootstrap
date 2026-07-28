@@ -278,8 +278,20 @@ EOF
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "echo pre-dotfiles > pre_dotfiles_hook_ran"
 EOF
-rm -f post_dotfiles_hook_ran final_hook_ran
+rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran final_hook_ran
+assert_contains "mise bootstrap dotfiles apply --dry-run" "echo pre-dotfiles > pre_dotfiles_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
+assert_fail "cat pre_dotfiles_hook_ran"
+assert_fail "cat post_dotfiles_hook_ran"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "cat pre_dotfiles_hook_ran" "pre-dotfiles"
+assert "cat post_dotfiles_hook_ran" "post-dotfiles"
+assert_fail "cat final_hook_ran"
+rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
 assert_contains "mise bootstrap --dry-run" "echo final > final_hook_ran"
 assert_fail "cat post_dotfiles_hook_ran"

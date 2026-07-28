@@ -1,5 +1,10 @@
 # Dotfiles
 
+> [!WARNING]
+> The top-level `mise dotfiles` command is deprecated and hidden from help. It
+> will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use
+> `mise bootstrap dotfiles` instead.
+
 mise can manage dotfiles from the `[dotfiles]` section of `mise.toml`.
 Entries can either own a whole file or directory, or manage one small piece
 of a file something else owns.
@@ -21,8 +26,10 @@ dotfiles.default_mode = "symlink"
 ```
 
 Dotfiles are only applied when explicitly requested with
-`mise dotfiles apply` or as part of [`mise bootstrap`](/bootstrap.html). They
+`mise bootstrap dotfiles apply` or as part of [`mise bootstrap`](/bootstrap.html). They
 are never applied implicitly by `mise install` or `mise bootstrap packages`.
+The nested apply command runs the configured `pre-dotfiles` and
+`post-dotfiles` bootstrap hooks.
 
 ## Whole-file entries
 
@@ -95,7 +102,7 @@ Templates get the same context as other mise templates (`env`, `vars`,
 per-machine output.
 
 Detecting whether a template's output has drifted requires rendering it, so
-`mise dotfiles status` and a real apply evaluate templates — including any
+`mise bootstrap dotfiles status` and a real apply evaluate templates — including any
 `exec()` calls — from your trusted config, just like `[env]` templates.
 `--dry-run` is the exception: it promises to execute nothing, so it skips
 template rendering and lists those entries as `(if changed)`.
@@ -152,7 +159,7 @@ multi-line content.
   [config hierarchy](/configuration.html) (global → project). Whole-file
   entries merge by target path; edit entries merge by `(path, id)`.
 - **Manual application only** — nothing is written implicitly. Only
-  `mise dotfiles apply` or [`mise bootstrap`](/bootstrap.html) applies
+  `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html) applies
   dotfiles.
 - **Idempotent** — entries already in their desired state are skipped;
   re-running is always safe.
@@ -164,7 +171,7 @@ multi-line content.
 mise refuses to _replace_ existing files it doesn't manage: a real file or
 directory where a symlink should go, or a directory where a file should go,
 is an error listing the conflicting paths. Pass
-`mise dotfiles apply --force` to replace them.
+`mise bootstrap dotfiles apply --force` to replace them.
 
 For symlink entries, an existing regular file with identical content to the
 source is converged without `--force` by replacing it with the requested
@@ -186,31 +193,31 @@ because mise keeps no state database. Delete unmanaged leftovers by hand.
 ## Commands
 
 ```sh
-mise dotfiles status            # shows applied/missing/differs/source missing
-mise dotfiles status --missing  # exit 1 if anything is out of sync
+mise bootstrap dotfiles status            # shows applied/missing/differs/source missing
+mise bootstrap dotfiles status --missing  # exit 1 if anything is out of sync
 
-mise dotfiles apply                     # apply files and edits
-mise dotfiles apply --dry-run           # print what would be done
-mise dotfiles apply --dry-run --verbose # include diff-like details
-mise dotfiles apply --yes               # skip the confirmation prompt
-mise dotfiles apply --force             # also replace conflicting files
+mise bootstrap dotfiles apply                     # apply files and edits
+mise bootstrap dotfiles apply --dry-run           # print what would be done
+mise bootstrap dotfiles apply --dry-run --verbose # include diff-like details
+mise bootstrap dotfiles apply --yes               # skip the confirmation prompt
+mise bootstrap dotfiles apply --force             # also replace conflicting files
 
-mise dotfiles add ~/.zshrc       # capture a live file into dotfiles.root
-mise dotfiles edit ~/.zshrc      # edit the managed source or owning config
-mise dotfiles edit --apply ~/.zshrc
+mise bootstrap dotfiles add ~/.zshrc       # capture a live file into dotfiles.root
+mise bootstrap dotfiles edit ~/.zshrc      # edit the managed source or owning config
+mise bootstrap dotfiles edit --apply ~/.zshrc
 ```
 
-`mise dotfiles status` reports each entry as `applied`, `missing`,
+`mise bootstrap dotfiles status` reports each entry as `applied`, `missing`,
 `differs` with a reason, or `source missing`.
 
 ## Capturing changes
 
 If you edit a copied dotfile in place and want to store those changes back
-in your dotfiles, run `mise dotfiles add` again:
+in your dotfiles, run `mise bootstrap dotfiles add` again:
 
 ```sh
 $EDITOR ~/.config/starship.toml
-mise dotfiles add ~/.config/starship.toml
+mise bootstrap dotfiles add ~/.config/starship.toml
 ```
 
 For an unmanaged target, `add` creates a `[dotfiles]` entry and seeds the
@@ -231,7 +238,8 @@ dotfiles.root = "~/.dotfiles"
 ```
 
 This is a bootstrap pattern: clone the real repo (for example
-`~/src/dotfiles`) before the first `mise dotfiles apply` or `mise bootstrap`.
+`~/src/dotfiles`) before the first `mise bootstrap dotfiles apply` or
+`mise bootstrap`.
 Use the real repo path for sources needed during the first run; `~/.dotfiles`
 does not exist until mise creates that symlink.
 Replacing `~/.config/mise/config.toml` affects future mise invocations, so

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 use serde_json::{Value, json};
 
-use super::dotfiles::{DotfilesApply, DotfilesStatus};
+use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -183,7 +183,9 @@ struct BootstrapDotfiles {
 
 #[derive(Debug, Subcommand)]
 enum BootstrapDotfilesCommands {
+    Add(DotfilesAdd),
     Apply(BootstrapDotfilesApply),
+    Edit(DotfilesEdit),
     Status(BootstrapDotfilesStatus),
 }
 
@@ -653,7 +655,7 @@ impl Bootstrap {
                     dry_run: self.dry_run,
                     verbose: false,
                     force: self.force_dotfiles,
-                    force_hint: "use --force-dotfiles or run `mise dotfiles apply --force`",
+                    force_hint: "use --force-dotfiles or run `mise bootstrap dotfiles apply --force`",
                     yes: self.yes,
                 };
                 system::files::apply(&config, &files, &opts)?;
@@ -672,8 +674,7 @@ impl Bootstrap {
                 system::edits::apply(&config, &edits, &opts)?;
             }
             if self.dry_run {
-                let config_files =
-                    self.config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+                let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
                 hooks = system::hooks_from_config_files(&config_files);
                 dry_run_config_files = Some(config_files);
             } else {
@@ -884,93 +885,6 @@ impl Bootstrap {
         }
     }
 
-    fn config_files_after_dotfiles_dry_run(
-        &self,
-        config: &Config,
-        files: &[FileRequest],
-        edits: &[system::edits::EditRequest],
-    ) -> Result<config::ConfigMap> {
-        let mut config_files = config.config_files.clone();
-        let mut bodies = indexmap::IndexMap::new();
-        for file in files {
-            if !is_mise_config_target(&file.target) || !file.source.is_file() {
-                continue;
-            }
-            match dotfile_mise_config_body(config, file) {
-                Ok(body) => match parse_mise_config_body(&file.target, &body) {
-                    Ok(cf) => {
-                        bodies.insert(file.target.clone(), body);
-                        config_files.insert(file.target.clone(), cf);
-                    }
-                    Err(err) => {
-                        warn!(
-                            "[dotfiles].\"{}\": failed to parse config source {}: {err}",
-                            file.target_raw,
-                            file.source.display()
-                        );
-                    }
-                },
-                Err(err) => {
-                    warn!(
-                        "[dotfiles].\"{}\": failed to read config source {}: {err}",
-                        file.target_raw,
-                        file.source.display()
-                    );
-                }
-            }
-        }
-        for edit in edits {
-            if !is_mise_config_target(&edit.path) {
-                continue;
-            }
-            let body = match bodies.get(&edit.path) {
-                Some(body) => body.clone(),
-                None if edit.path.exists() => match crate::file::read_to_string(&edit.path) {
-                    Ok(body) => body,
-                    Err(err) => {
-                        warn!(
-                            "[dotfiles].\"{}\": failed to read config target {}: {err}",
-                            edit.config_key(),
-                            edit.path.display()
-                        );
-                        continue;
-                    }
-                },
-                None => String::new(),
-            };
-            match system::edits::apply_dry_run_to_string(config, edit, &body) {
-                Ok(Some(body)) => match parse_mise_config_body(&edit.path, &body) {
-                    Ok(cf) => {
-                        bodies.insert(edit.path.clone(), body);
-                        config_files.insert(edit.path.clone(), cf);
-                    }
-                    Err(err) => {
-                        warn!(
-                            "[dotfiles].\"{}\": failed to parse edited config target {}: {err}",
-                            edit.config_key(),
-                            edit.path.display()
-                        );
-                    }
-                },
-                Ok(None) => {
-                    debug!(
-                        "bootstrap: edited config target {} skipped in dry-run config simulation \
-                         because the edit requires template rendering",
-                        edit.path.display()
-                    );
-                }
-                Err(err) => {
-                    warn!(
-                        "[dotfiles].\"{}\": failed to simulate config edit for {}: {err}",
-                        edit.config_key(),
-                        edit.path.display()
-                    );
-                }
-            }
-        }
-        Ok(config_files)
-    }
-
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
         run::Run {
             task: task.into(),
@@ -1104,6 +1018,92 @@ impl Drop for BootstrapFollowUp {
     fn drop(&mut self) {
         self.print_best_effort();
     }
+}
+
+fn config_files_after_dotfiles_dry_run(
+    config: &Config,
+    files: &[FileRequest],
+    edits: &[system::edits::EditRequest],
+) -> Result<config::ConfigMap> {
+    let mut config_files = config.config_files.clone();
+    let mut bodies = indexmap::IndexMap::new();
+    for file in files {
+        if !is_mise_config_target(&file.target) || !file.source.is_file() {
+            continue;
+        }
+        match dotfile_mise_config_body(config, file) {
+            Ok(body) => match parse_mise_config_body(&file.target, &body) {
+                Ok(cf) => {
+                    bodies.insert(file.target.clone(), body);
+                    config_files.insert(file.target.clone(), cf);
+                }
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to parse config source {}: {err}",
+                        file.target_raw,
+                        file.source.display()
+                    );
+                }
+            },
+            Err(err) => {
+                warn!(
+                    "[dotfiles].\"{}\": failed to read config source {}: {err}",
+                    file.target_raw,
+                    file.source.display()
+                );
+            }
+        }
+    }
+    for edit in edits {
+        if !is_mise_config_target(&edit.path) {
+            continue;
+        }
+        let body = match bodies.get(&edit.path) {
+            Some(body) => body.clone(),
+            None if edit.path.exists() => match crate::file::read_to_string(&edit.path) {
+                Ok(body) => body,
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to read config target {}: {err}",
+                        edit.config_key(),
+                        edit.path.display()
+                    );
+                    continue;
+                }
+            },
+            None => String::new(),
+        };
+        match system::edits::apply_dry_run_to_string(config, edit, &body) {
+            Ok(Some(body)) => match parse_mise_config_body(&edit.path, &body) {
+                Ok(cf) => {
+                    bodies.insert(edit.path.clone(), body);
+                    config_files.insert(edit.path.clone(), cf);
+                }
+                Err(err) => {
+                    warn!(
+                        "[dotfiles].\"{}\": failed to parse edited config target {}: {err}",
+                        edit.config_key(),
+                        edit.path.display()
+                    );
+                }
+            },
+            Ok(None) => {
+                debug!(
+                    "bootstrap: edited config target {} skipped in dry-run config simulation \
+                     because the edit requires template rendering",
+                    edit.path.display()
+                );
+            }
+            Err(err) => {
+                warn!(
+                    "[dotfiles].\"{}\": failed to simulate config edit for {}: {err}",
+                    edit.config_key(),
+                    edit.path.display()
+                );
+            }
+        }
+    }
+    Ok(config_files)
 }
 
 fn dotfile_mise_config_body(config: &Config, file: &FileRequest) -> Result<String> {
@@ -1849,7 +1849,9 @@ impl BootstrapStatus {
 impl BootstrapDotfiles {
     async fn run(self) -> Result<()> {
         match self.command {
+            BootstrapDotfilesCommands::Add(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
         }
     }
@@ -1857,7 +1859,20 @@ impl BootstrapDotfiles {
 
 impl BootstrapDotfilesApply {
     async fn run(self) -> Result<()> {
-        self.cmd.run().await
+        let config = Config::get().await?;
+        let (files, edits) = self.cmd.requests(&config)?;
+        let dry_run = self.cmd.dry_run();
+        let hooks = system::hooks_from_config(&config);
+        hooks::run_phase(&hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
+        self.cmd.run().await?;
+        let hooks = if dry_run {
+            let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
+            system::hooks_from_config_files(&config_files)
+        } else {
+            let config = Config::reset().await?;
+            system::hooks_from_config(&config)
+        };
+        hooks::run_phase(&hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
     }
 }
 

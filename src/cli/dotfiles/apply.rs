@@ -30,9 +30,18 @@ pub struct DotfilesApply {
 }
 
 impl DotfilesApply {
-    pub async fn run(self) -> Result<()> {
-        let config = Config::get().await?;
-        let all_files = system::files::files_from_config(&config);
+    pub(crate) fn dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    pub(crate) fn requests(
+        &self,
+        config: &Config,
+    ) -> Result<(
+        Vec<system::files::FileRequest>,
+        Vec<system::edits::EditRequest>,
+    )> {
+        let all_files = system::files::files_from_config(config);
         let files = all_files
             .iter()
             .filter(|req| {
@@ -40,7 +49,7 @@ impl DotfilesApply {
             })
             .cloned()
             .collect::<Vec<_>>();
-        let all_edits = system::edits::edits_from_config(&config);
+        let all_edits = system::edits::edits_from_config(config);
         let edits = all_edits
             .iter()
             .filter(|req| system::edits::matches_target(req, &self.targets))
@@ -56,6 +65,12 @@ impl DotfilesApply {
                 self.targets.join(", ")
             );
         }
+        Ok((files, edits))
+    }
+
+    pub async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
             info!("no dotfiles configured in [dotfiles]");
@@ -86,9 +101,8 @@ impl DotfilesApply {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise dotfiles apply</bold>
     $ <bold>mise bootstrap dotfiles apply</bold>
-    $ <bold>mise dotfiles apply --dry-run</bold>
-    $ <bold>mise dotfiles apply --force --yes</bold>
+    $ <bold>mise bootstrap dotfiles apply --dry-run</bold>
+    $ <bold>mise bootstrap dotfiles apply --force --yes</bold>
 "#
 );
