@@ -14,7 +14,7 @@ use super::source;
 use crate::cmd::CmdLineRunner;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
-use crate::http::HTTP_FETCH;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::result::Result;
 use crate::system::packages::{
     InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
@@ -487,7 +487,7 @@ async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<Pat
         cask.token, cask.version
     ));
     if !archive.exists() {
-        HTTP_FETCH.download_file(&cask.url, &archive, pr).await?;
+        HTTP.download_file(&cask.url, &archive, pr).await?;
         // Strip macOS quarantine so it doesn't propagate into extracted/copied artifacts.
         let _ = std::process::Command::new("xattr")
             .args(["-d", "com.apple.quarantine"])

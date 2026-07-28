@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
 use super::api::BottleFile;
-use crate::http::HTTP_FETCH;
+use crate::http::HTTP;
 use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
@@ -29,8 +29,7 @@ pub async fn fetch_bottle(
     // ghcr.io allows anonymous pulls with this static bearer token
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer QQ=="));
-    HTTP_FETCH
-        .download_file_with_headers(&bottle.url, &path, &headers, pr)
+    HTTP.download_file_with_headers(&bottle.url, &path, &headers, pr)
         .await?;
     if let Some(pr) = pr {
         pr.set_message("checksum".to_string());
