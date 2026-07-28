@@ -52,7 +52,9 @@ vars = { comparison_path = "$HOME/other-vars-script" }
 env = { LOWER_OVERLAY = "must-not-apply" }
 EOF
 
-mise tasks >/dev/null
+if ! mise tasks >/dev/null; then
+  fail "task listing failed during source-comparison test"
+fi
 if [[ -e $marker ]]; then
   fail "task source comparison executed a deferred file template"
 fi
