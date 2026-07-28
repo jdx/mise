@@ -1,0 +1,4 @@
+aliases = ["ovhcloud"]
+backends = ["github:ovh/ovhcloud-cli"]
+description = "Official command line interface to manage OVHcloud services"
+test = { cmd = "ovhcloud version -o json", expected = '"version": "v{{version}}"' }
