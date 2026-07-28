@@ -615,7 +615,9 @@ impl TaskExecutor {
                                 task.name
                             );
                         }
-                        if let Err(err) = cache.mark_current() {
+                        if self.task_cache.writes()
+                            && let Err(err) = cache.mark_current()
+                        {
                             warn!(
                                 "task {} artifact cache state update failed: {err}",
                                 task.name

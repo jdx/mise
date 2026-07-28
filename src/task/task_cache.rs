@@ -49,6 +49,21 @@ pub enum TaskCacheMode {
 }
 
 impl TaskCacheMode {
+    pub(crate) fn from_env() -> Result<Self> {
+        let Some(value) = std::env::var_os("MISE_TASK_CACHE") else {
+            return Ok(Self::default());
+        };
+        let value = value
+            .into_string()
+            .map_err(|_| eyre!("MISE_TASK_CACHE must be valid UTF-8"))?;
+        <Self as clap::ValueEnum>::from_str(&value, false).map_err(|_| {
+            eyre!(
+                "invalid MISE_TASK_CACHE value {value:?}; expected read-write, read-only, \
+                 write-only, off, or local-only"
+            )
+        })
+    }
+
     pub(crate) fn enabled(self) -> bool {
         self != Self::Off
     }
