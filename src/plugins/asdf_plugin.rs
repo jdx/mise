@@ -13,7 +13,7 @@ use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{backend, dirs, env, exit, file, lock_file, registry};
+use crate::{backend, dirs, env, file, lock_file, registry};
 use async_trait::async_trait;
 use clap::Command;
 use console::style;
@@ -459,7 +459,7 @@ Plugins could support local directories in the future but for now a symlink is r
         );
         Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let result = self.script_man.cmd(&script).unchecked().run()?;
-        exit(result.status.code().unwrap_or(-1));
+        Err(crate::request_exit(result.status.code().unwrap_or(-1)))
     }
 }
 

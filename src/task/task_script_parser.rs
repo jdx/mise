@@ -1,6 +1,6 @@
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
-use crate::exit::exit;
+use crate::request_exit;
 use crate::shell::ShellType;
 use crate::task::Task;
 use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
@@ -704,7 +704,7 @@ impl TaskScriptParser {
                 // just print exactly what usage returns so the error output isn't double-wrapped
                 // this could be displaying help or a parse error
                 eprintln!("{}", format!("{e}").trim_end());
-                exit(1);
+                return Err(request_exit(1));
             }
         };
 

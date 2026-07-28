@@ -326,7 +326,7 @@ impl Use {
                     );
                 }
                 if self.dry_run_code {
-                    exit::exit(1);
+                    return Err(exit::request(1));
                 }
             }
         } else if !quiet {

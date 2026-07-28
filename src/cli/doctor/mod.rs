@@ -1,6 +1,6 @@
 mod path;
 
-use crate::{exit, plugins::PluginEnum};
+use crate::plugins::PluginEnum;
 use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -252,7 +252,7 @@ impl Doctor {
         println!("{out}");
 
         if !self.errors.is_empty() {
-            exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -343,7 +343,7 @@ impl Doctor {
                 let num = style::nred(format!("{}.", i + 1));
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
-            exit(1);
+            return Err(crate::request_exit(1));
         }
 
         Ok(())

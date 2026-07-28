@@ -579,7 +579,7 @@ impl Run {
             this.continue_on_error,
             this.timings(),
         );
-        results_display.display_results(num_tasks, timer);
+        results_display.display_results(num_tasks, timer)?;
         time!("parallelize_tasks done");
 
         Ok(())

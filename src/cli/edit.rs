@@ -263,7 +263,7 @@ impl Edit {
                 info!("cancelled");
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                std::process::exit(130);
+                return Err(crate::request_exit(130));
             }
             Err(e) => return Err(eyre!(e)),
         }

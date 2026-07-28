@@ -82,7 +82,7 @@ impl Uninstall {
 
         if self.is_dry_run() {
             if self.dry_run_code && has_work {
-                exit::exit(1);
+                return Err(exit::request(1));
             }
             return Ok(());
         }

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+assert_exit_code() {
+  local expected="$1"
+  shift
+
+  local output status=0
+  output="$("$@" 2>&1)" || status=$?
+  if [[ $status -ne $expected ]]; then
+    fail "[$*] expected exit code $expected, got $status: $output"
+  fi
+  assert_not_contains_text "$output" "exit with status"
+}
+
+# Clap help and errors should keep their conventional statuses without exposing
+# the internal exit request used to unwind the command.
+assert_exit_code 0 mise --help
+assert_exit_code 2 mise --definitely-not-a-real-option
+
+# Wrapper commands must preserve the exact child status.
+assert_exit_code 42 mise exec -- bash -c "exit 42"
+
+# Task failures also propagate the task's status after result reporting.
+cat <<'EOF' >mise.toml
+[tasks.fail]
+run = "exit 23"
+
+[tasks.wait]
+run = """
+touch "$READY_FILE"
+trap '' INT TERM
+while true; do sleep 1; done
+"""
+EOF
+assert_exit_code 23 mise run fail
+
+# Task execution handles the first Ctrl-C gracefully and force-exits on the
+# second. The forced path should still unwind command-scoped destructors.
+ready_file="$TMPDIR/exit-status-child-ready"
+output_file="$TMPDIR/exit-status-child-output"
+# Isolate the process tree so the failure fallback can reap a child that
+# deliberately ignores INT and TERM.
+READY_FILE="$ready_file" setsid mise run wait >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "task child" 30 "$mise_pid"
+kill -INT "$mise_pid"
+sleep 0.2
+kill -INT "$mise_pid"
+
+for _ in {1..50}; do
+  if ! kill -0 "$mise_pid" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+if kill -0 "$mise_pid" 2>/dev/null; then
+  kill -KILL -- "-$mise_pid" 2>/dev/null || true
+  wait "$mise_pid" 2>/dev/null || true
+  fail "mise run did not exit after repeated Ctrl-C"
+fi
+
+status=0
+wait "$mise_pid" || status=$?
+output="$(cat "$output_file")"
+if [[ $status -ne 1 ]]; then
+  fail "mise run expected exit code 1 after repeated Ctrl-C, got $status: $output"
+fi
+assert_not_contains_text "$output" "exit with status"
