@@ -659,7 +659,9 @@ impl Bootstrap {
                     force_hint: "use --force-dotfiles or run `mise bootstrap dotfiles apply --force`",
                     yes: self.yes,
                 };
-                system::files::apply(&config, &files, &opts)?;
+                if !system::files::apply(&config, &files, &opts)? {
+                    return Ok(());
+                }
             }
 
             let edits = system::edits::edits_from_config(&config);
@@ -672,7 +674,9 @@ impl Bootstrap {
                     verbose: false,
                     yes: self.yes,
                 };
-                system::edits::apply(&config, &edits, &opts)?;
+                if !system::edits::apply(&config, &edits, &opts)? {
+                    return Ok(());
+                }
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;

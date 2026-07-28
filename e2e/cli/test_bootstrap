@@ -289,6 +289,34 @@ assert "cat pre_declined_hook_ran" "pre-declined"
 assert_fail "test -e ~/.declined-bootstrap-dotfile"
 assert_fail "test -e post_declined_hook_ran"
 
+# declining dotfiles during aggregate bootstrap stops later phases and hooks
+rm -f pre_declined_hook_ran post_declined_hook_ran
+if [[ $(uname) == "Darwin" ]]; then
+  assert_succeed "script -q /dev/null env -u MISE_YES __USAGE=1 mise bootstrap --skip tools"
+else
+  assert_succeed "script -qec 'env -u MISE_YES __USAGE=1 mise bootstrap --skip tools' /dev/null"
+fi
+assert "cat pre_declined_hook_ran" "pre-declined"
+assert_fail "test -e ~/.declined-bootstrap-dotfile"
+assert_fail "test -e post_declined_hook_ran"
+
+# an edit-only decline follows the same aggregate short-circuit
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.declined-bootstrap-edit/block" = { block = "declined edit" }
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo post-declined > post_declined_hook_ran"
+EOF
+rm -f ~/.declined-bootstrap-edit post_declined_hook_ran
+if [[ $(uname) == "Darwin" ]]; then
+  assert_succeed "script -q /dev/null env -u MISE_YES __USAGE=1 mise bootstrap --skip tools"
+else
+  assert_succeed "script -qec 'env -u MISE_YES __USAGE=1 mise bootstrap --skip tools' /dev/null"
+fi
+assert_fail "test -e ~/.declined-bootstrap-edit"
+assert_fail "test -e post_declined_hook_ran"
+
 # dotfiles can add config that contributes hooks to later phases in the same run
 mkdir -p dotfiles/mise
 cat <<'EOF' >dotfiles/mise/config.toml
