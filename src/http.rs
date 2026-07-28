@@ -77,6 +77,7 @@ struct SendOnceOptions {
     use_netrc: bool,
     retry_github_oauth_401: bool,
     error_for_status: bool,
+    enforce_request_timeout: bool,
     retry_state: Option<RetryStateHandle>,
 }
 
@@ -86,6 +87,7 @@ impl SendOnceOptions {
             use_netrc,
             retry_github_oauth_401: true,
             error_for_status: true,
+            enforce_request_timeout: true,
             retry_state,
         }
     }
@@ -95,11 +97,17 @@ impl SendOnceOptions {
         self
     }
 
+    fn without_request_timeout(mut self) -> Self {
+        self.enforce_request_timeout = false;
+        self
+    }
+
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
             retry_github_oauth_401: false,
             error_for_status: self.error_for_status,
+            enforce_request_timeout: self.enforce_request_timeout,
             retry_state: self.retry_state.clone(),
         }
     }
@@ -426,7 +434,12 @@ impl Client {
                 attempt.fetch_add(1, Ordering::Relaxed);
                 bytes_received.store(0, Ordering::Relaxed);
                 let mut resp = self
-                    .send_once_with_https_fallback(Method::GET, request_url, headers, "GET")
+                    .send_once_with_https_fallback_for_download(
+                        Method::GET,
+                        request_url,
+                        headers,
+                        "GET",
+                    )
                     .await?;
                 if let Some(pr) = pr {
                     if let Some(length) = resp.content_length() {
@@ -553,14 +566,12 @@ impl Client {
         .await
     }
 
-    /// One attempt with http→https fallback, no retry. Used as the inner step
-    /// for both `send_with_https_fallback` (which adds retry) and
-    /// `download_file_with_headers` (which has its own outer retry covering the
-    /// chunk stream). Splitting this out avoids retry × retry blowup.
-    /// The fallback only fires on connection-level errors (corporate proxy
-    /// blocking plain http), not on HTTP status errors — falling back to https
-    /// after the server already returned a 4xx/5xx makes no sense.
-    async fn send_once_with_https_fallback(
+    /// One streaming download attempt with http→https fallback and no retry.
+    /// Downloads use the client's idle read timeout and the separate
+    /// `http_download_timeout` budget. A fetch client's request-wide timeout is
+    /// intended for metadata lookups and must not cap the complete body stream.
+    /// The caller adds an outer retry covering the full chunk stream.
+    async fn send_once_with_https_fallback_for_download(
         &self,
         method: Method,
         url: Url,
@@ -572,7 +583,7 @@ impl Client {
             url,
             headers,
             verb_label,
-            SendOnceOptions::new(None, true),
+            SendOnceOptions::new(None, true).without_request_timeout(),
         )
         .await
     }
@@ -664,7 +675,7 @@ impl Client {
 
         let request_timeout = self.request_timeout();
         let mut req = self.reqwest.request(method.clone(), url.clone());
-        if matches!(self.kind, ClientKind::Fetch) {
+        if matches!(self.kind, ClientKind::Fetch) && options.enforce_request_timeout {
             req = req.timeout(request_timeout);
         }
         req = req.headers(final_headers.clone());
@@ -1662,6 +1673,34 @@ mod tests {
         port
     }
 
+    async fn spawn_slow_finite_server() -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            if socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\n")
+                .await
+                .is_err()
+            {
+                return;
+            }
+            for byte in b"orbstk" {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                if socket.write_all(&[*byte]).await.is_err() {
+                    return;
+                }
+            }
+        });
+        port
+    }
+
     fn ok_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
     }
@@ -2296,6 +2335,35 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert!(message.contains("http_download_timeout"));
         assert!(message.contains("MISE_HTTP_DOWNLOAD_TIMEOUT"));
         assert!(!path.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_fetch_client_download_outlives_request_timeout() {
+        let _guard = set_test_http_retries(0);
+        let port = spawn_slow_finite_server().await;
+        let url = format!("http://127.0.0.1:{port}/artifact.dmg");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("artifact.dmg");
+        // Each body read arrives before the 200ms idle timeout, but the complete
+        // response takes longer. Fetch metadata requests retain their total
+        // deadline; streaming downloads instead use http_download_timeout.
+        let client = Client::new(Duration::from_millis(200), ClientKind::Fetch).unwrap();
+
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            client.download_file_with_headers_timeout(
+                &url,
+                &path,
+                &HeaderMap::new(),
+                None,
+                Duration::from_secs(2),
+            ),
+        )
+        .await
+        .expect("slow finite download exceeded its independent deadline")
+        .unwrap();
+
+        assert_eq!(std::fs::read(path).unwrap(), b"orbstk");
     }
 
     #[tokio::test(flavor = "current_thread")]
