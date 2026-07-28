@@ -102,6 +102,14 @@ Automatically fix lint issues
 
 Lint HK files
 
+## `perf`
+
+- **Usage**: `perf`
+
+## `perf:record`
+
+- **Usage**: `perf:record`
+
 ## `pre-commit`
 
 - **Usage**: `pre-commit`

@@ -1,0 +1,205 @@
+name: perf-pr
+
+# Measures this pull request and compares it against the commit it branched
+# from, then says so in a comment and fails if an instruction count rose beyond
+# the gate.
+#
+# The gate is the point. A chart on a dashboard is something nobody opens; a
+# failing check on the pull request that caused the regression is read by the
+# person who can still do something about it.
+#
+# Nothing here writes to refs/notes/tak. A pull request's measurements are
+# recorded locally, used for the comparison, and discarded with the runner. Only
+# main contributes to the history — a branch's numbers are not the trunk's, and
+# a series that mixes them cannot be read.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  measure:
+    name: Compare instruction counts
+    # Same runner class as perf.yml and perf-backfill.yml. Absolute counts shift
+    # between machine types by more than a real regression does, so a comparison
+    # across runner classes is not a comparison — tak refuses to make one, and
+    # the report would say "nothing was compared" instead of anything useful.
+    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 40
+    permissions:
+      # Read only. This job builds and runs code from the pull request, so it
+      # must not hold a token that can write anything — see the `report` job.
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # The branch commit, not the merge commit actions/checkout defaults to
+          # for a pull_request event. That default is synthetic: it exists only
+          # for the run, changes whenever main advances, and measuring it would
+          # attribute a number to a commit nobody can check out. It would also
+          # make the footer below name a commit the measurement is not of.
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Needed twice over: to find the merge base, and for the sparkline,
+          # which walks twenty commits of trunk history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1.6.1
+        with:
+          cache: rust
+
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
+        with:
+          cache: false
+        env:
+          MISE_LOCKED: "1"
+
+      - name: Install valgrind
+        run: |
+          command -v valgrind || {
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends valgrind
+          }
+          valgrind --version
+
+      # `--record` writes a git note locally and nothing more. There is no
+      # `tak push` in this workflow and there should never be one.
+      - name: Measure this pull request
+        run: mise run perf:record
+
+      - name: Find the base commit
+        id: base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --quiet origin "$BASE_REF"
+          # The merge base, not the branch tip: comparing against a moving
+          # target attributes other people's commits to this pull request.
+          base=$(git merge-base "origin/$BASE_REF" HEAD)
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "comparing against $base on $BASE_REF"
+
+      # Deliberately not `continue-on-error`. That would hide a compare that
+      # died for an unrelated reason behind a green check. The exit code is
+      # captured, the comment is posted either way, and a later step re-raises
+      # it — so a regression always arrives with the table that explains it.
+      - name: Compare against the base
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          set +e
+          tak compare "$BASE_SHA" > /tmp/tak-report.md
+          echo $? > /tmp/tak-gate-status
+          set -e
+          cat /tmp/tak-report.md
+          cat /tmp/tak-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package the report
+        if: always()
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p /tmp/tak-out
+          # A missing report means an earlier step died. Say so, rather than
+          # letting the reporting job find nothing and infer a pass.
+          if [ -f /tmp/tak-report.md ]; then
+            cp /tmp/tak-report.md /tmp/tak-out/report.md
+          else
+            echo "The comparison never ran — an earlier step failed." > /tmp/tak-out/report.md
+          fi
+          # 2, not 1: a missing status means the comparison never ran, which is
+          # a different failure from a regression and must not be reported as
+          # one. The gate below maps them to different messages.
+          cp /tmp/tak-gate-status /tmp/tak-out/status 2>/dev/null || echo 2 > /tmp/tak-out/status
+          printf '%s %s\n' "${HEAD_SHA:0:12}" "${BASE_SHA:0:12}" > /tmp/tak-out/shas
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: tak-report
+          path: /tmp/tak-out
+          retention-days: 1
+          if-no-files-found: error
+
+  # A separate job so the write token is never in scope while code from the
+  # pull request is executing. This one checks out nothing and runs no project
+  # code: it reads an artifact and talks to the API.
+  report:
+    name: Report and gate
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write # the sticky comment, and nothing else
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tak-report
+          path: /tmp/tak-out
+
+      # Skipped for pull requests from forks, which get a read-only token. The
+      # comparison and the gate still run there; only the comment is missing.
+      - name: Comment on the pull request
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_mise: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          marker='<!-- mise-perf-pr -->'
+          read -r head_sha base_sha < /tmp/tak-out/shas
+          # The backticks below are markdown, not command substitution, and
+          # single quotes are what keeps them literal.
+          # shellcheck disable=SC2016
+          {
+            printf '%s\n' "$marker"
+            printf '### Instruction counts\n\n'
+            cat /tmp/tak-out/report.md
+            printf '\n<sub>`%s` vs `%s` · measured on the runner, not pushed to the history.</sub>\n' \
+              "$head_sha" "$base_sha"
+          } > /tmp/tak-comment.md
+
+          # One comment per pull request, edited in place. A new comment on
+          # every push buries the conversation under numbers.
+          existing="$(gh api "repos/$GH_mise/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.body | contains(\"$marker\")) | .id" | tail -n1)"
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$GH_mise/issues/comments/$existing" \
+              --field body="$(cat /tmp/tak-comment.md)"
+          else
+            gh api --method POST "repos/$GH_mise/issues/$PR_NUMBER/comments" \
+              --field body="$(cat /tmp/tak-comment.md)"
+          fi
+
+      # `always()` on both this step and the job: a failed step stops the ones
+      # after it, and the gate is the reason this workflow exists. Without it a
+      # `gh api` hiccup would skip the gate — red for the wrong reason, and with
+      # no regression error to read.
+      - name: Fail on a regression
+        if: always()
+        run: |
+          status=$(cat /tmp/tak-out/status)
+          case "$status" in
+            0) ;;
+            2)
+              echo "::error::the comparison never ran — an earlier step failed, so nothing was gated"
+              exit 1
+              ;;
+            *)
+              echo "::error::an instruction count rose beyond the gate — see the comment or the job summary"
+              exit "$status"
+              ;;
+          esac

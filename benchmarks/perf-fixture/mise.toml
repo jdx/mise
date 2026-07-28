@@ -1,0 +1,14 @@
+# Fixed input for the tak benchmarks. Nothing here is ever installed: the
+# benchmarks run with MISE_OFFLINE=1, so `ls` and `env` resolve against the
+# config and the local store without reaching the network.
+#
+# Pinned exact versions, never "latest": a floating version would make the
+# measurement depend on what the registry said that day, which is the opposite
+# of what a deterministic benchmark needs.
+[tools]
+node = "24.15.0"
+python = "3.13.1"
+go = "1.24.0"
+
+[env]
+BENCH_FIXTURE = "1"
