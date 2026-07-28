@@ -43,6 +43,12 @@
       "matchPackageNames": ["phf", "phf_codegen"],
       "matchManagers": ["cargo"],
       "groupName": "phf"
+    },
+    {
+      "description": "decmpfs 0.1.2 fails to compile for musl targets because its FICLONE ioctl request type does not match musl libc. Hold at 0.1.0 until upstream fixes it.",
+      "matchPackageNames": ["decmpfs"],
+      "matchManagers": ["cargo"],
+      "allowedVersions": "<=0.1.0"
     }
   ]
 }

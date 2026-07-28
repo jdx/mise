@@ -2781,9 +2781,9 @@ checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
 
 [[package]]
 name = "decmpfs"
-version = "0.1.2"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a32fcc951ae53a24a3138b63f54bbb7a9b27e1da6d1578144e397732dd2c530c"
+checksum = "651715809b4119e14ba1ba88650756d8a7012686473a32ec14c0e602e90fc47f"
 dependencies = [
  "libc",
  "sha2 0.10.9",
@@ -8829,7 +8829,7 @@ dependencies = [
  "errno 0.3.14",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10241,7 +10241,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
