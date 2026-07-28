@@ -22,7 +22,7 @@ use super::tag;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
-use crate::http::HTTP_FETCH;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::result::Result;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
@@ -263,7 +263,7 @@ async fn fetch_source(formula: &Formula, pr: &dyn SingleReport) -> Result<PathBu
         return Ok(dest);
     }
     pr.set_message(format!("download {basename}"));
-    HTTP_FETCH.download_file(&src.url, &dest, Some(pr)).await?;
+    HTTP.download_file(&src.url, &dest, Some(pr)).await?;
     crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
     Ok(dest)
 }
