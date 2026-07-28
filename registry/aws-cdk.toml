@@ -1,0 +1,7 @@
+aliases = ["cdk"]
+description = "AWS CDK CLI, the command line tool for CDK apps"
+detect = ["cdk.json"]
+test = { cmd = "cdk --version", expected = "{{version}}" }
+
+[[backends]]
+full = "npm:aws-cdk"
