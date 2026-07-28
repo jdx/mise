@@ -133,6 +133,28 @@ impl<'a> SpmOptions<'a> {
         };
         if bins.is_empty() { None } else { Some(bins) }
     }
+
+    fn install_command(&self) -> eyre::Result<Option<String>> {
+        let Some(value) = self.values.raw().opts.get("install_command") else {
+            return Ok(None);
+        };
+        let Some(command) = value.as_str() else {
+            bail!("install_command must be a non-empty string");
+        };
+        let command = command.trim();
+        if command.is_empty() {
+            bail!("install_command must be a non-empty string");
+        }
+        Ok(Some(command.to_string()))
+    }
+
+    fn source_install_command(&self) -> eyre::Result<Option<String>> {
+        let command = self.install_command()?;
+        if command.is_some() && self.filter_bins().is_some() {
+            bail!("install_command cannot be used with filter_bins");
+        }
+        Ok(command)
+    }
 }
 
 #[async_trait]
@@ -217,6 +239,7 @@ impl Backend for SPMBackend {
         let mut tv = tv;
         let raw_opts = tv.request.options();
         let opts = SpmOptions::new(&raw_opts);
+        let install_command = opts.source_install_command()?;
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = if tv.version == "latest" {
@@ -263,7 +286,8 @@ impl Backend for SPMBackend {
             }
         }
 
-        self.install_from_source(ctx, &tv, &repo, &revision).await?;
+        self.install_from_source(ctx, &tv, &repo, &revision, install_command.as_deref())
+            .await?;
 
         Ok(tv)
     }
@@ -276,6 +300,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "artifactbundle".into(),
         "artifactbundle_asset".into(),
         "filter_bins".into(),
+        "install_command".into(),
     ]
 }
 
@@ -290,21 +315,27 @@ impl SPMBackend {
         tv: &ToolVersion,
         repo: &SwiftPackageRepo,
         revision: &str,
+        install_command: Option<&str>,
     ) -> eyre::Result<()> {
         let repo_dir = self.clone_package_repo(ctx, tv, repo, revision)?;
 
-        let executables = self.get_executable_names(ctx, &repo_dir, tv).await?;
-        if executables.is_empty() {
-            return Err(eyre::eyre!("No executables found in the package"));
-        }
-        let executables = self.apply_filter_bins(tv, executables)?;
-        let bin_path = tv.install_path().join("bin");
-        file::create_dir_all(&bin_path)?;
-        for executable in executables {
-            let exe_path = self
-                .build_executable(&executable, &repo_dir, ctx, tv)
+        if let Some(install_command) = install_command {
+            self.run_install_command(ctx, tv, &repo_dir, install_command)
                 .await?;
-            file::make_symlink(&exe_path, &bin_path.join(executable))?;
+        } else {
+            let executables = self.get_executable_names(ctx, &repo_dir, tv).await?;
+            if executables.is_empty() {
+                return Err(eyre::eyre!("No executables found in the package"));
+            }
+            let executables = self.apply_filter_bins(tv, executables)?;
+            let bin_path = tv.install_path().join("bin");
+            file::create_dir_all(&bin_path)?;
+            for executable in executables {
+                let exe_path = self
+                    .build_executable(&executable, &repo_dir, ctx, tv)
+                    .await?;
+                file::make_symlink(&exe_path, &bin_path.join(executable))?;
+            }
         }
 
         // delete (huge) intermediate artifacts
@@ -312,6 +343,38 @@ impl SPMBackend {
         file::remove_all(tv.cache_path())?;
 
         Ok(())
+    }
+
+    async fn run_install_command(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        repo_dir: &Path,
+        install_command: &str,
+    ) -> eyre::Result<()> {
+        let shell = Settings::get().default_inline_shell()?;
+        let (program, shell_args) = shell.split_first().ok_or_else(|| {
+            eyre::eyre!(
+                "default inline shell is empty; check unix_default_inline_shell_args / windows_default_inline_shell_args"
+            )
+        })?;
+
+        CmdLineRunner::new(program)
+            .current_dir(repo_dir)
+            .with_pr(ctx.pr.as_ref())
+            .cmd_body_args(shell_args, install_command)
+            .env_values(tv.install_env())
+            .env("PREFIX", tv.install_path())
+            .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
+            .prepend_path(
+                self.dependency_toolset(&ctx.config)
+                    .await?
+                    .list_paths(&ctx.config)
+                    .await,
+            )?
+            .execute()?;
+
+        verify_install_command_output(install_command, &tv.install_path().join("bin"))
     }
 
     fn clone_package_repo(
@@ -545,6 +608,25 @@ fn filter_executables(
         .into_iter()
         .filter(|e| filter.contains(e))
         .collect())
+}
+
+/// Verifies that `install_command` actually installed an executable into `bin/`.
+///
+/// A package's install script may exit 0 even when the underlying `swift build`
+/// failed (for example when the script does not use `set -e`), which would
+/// otherwise leave mise reporting a successful install for a directory that has
+/// no runnable tool in it.
+fn verify_install_command_output(install_command: &str, bin_path: &Path) -> eyre::Result<()> {
+    if !file::ls(bin_path)?
+        .iter()
+        .any(|entry| entry.is_file() && file::is_executable(entry))
+    {
+        bail!(
+            "install_command `{install_command}` exited successfully but installed no executable into {}; check that it installs into $MISE_TOOL_INSTALL_PATH and that it fails when the build fails",
+            bin_path.display()
+        );
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1233,8 +1315,97 @@ mod tests {
                 "artifactbundle".to_string(),
                 "artifactbundle_asset".to_string(),
                 "filter_bins".to_string(),
+                "install_command".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_install_command() {
+        let opts = ToolVersionOptions::default();
+        assert_eq!(SpmOptions::new(&opts).install_command().unwrap(), None);
+
+        let opts = opts_with(
+            "install_command",
+            toml::Value::String("  make install  ".to_string()),
+        );
+        assert_eq!(
+            SpmOptions::new(&opts).install_command().unwrap(),
+            Some("make install".to_string())
+        );
+    }
+
+    #[test]
+    fn test_install_command_rejects_empty_or_invalid_values() {
+        for value in [
+            toml::Value::String(" \t ".to_string()),
+            toml::Value::Boolean(true),
+            toml::Value::Array(vec![toml::Value::String("make install".to_string())]),
+        ] {
+            let opts = opts_with("install_command", value);
+            assert_str_eq!(
+                SpmOptions::new(&opts)
+                    .install_command()
+                    .unwrap_err()
+                    .to_string(),
+                "install_command must be a non-empty string"
+            );
+        }
+    }
+
+    #[test]
+    fn test_install_command_conflicts_with_filter_bins() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "install_command".to_string(),
+            toml::Value::String("make install".to_string()),
+        );
+        opts.opts.insert(
+            "filter_bins".to_string(),
+            toml::Value::String("danger-swift".to_string()),
+        );
+
+        assert_str_eq!(
+            SpmOptions::new(&opts)
+                .source_install_command()
+                .unwrap_err()
+                .to_string(),
+            "install_command cannot be used with filter_bins"
+        );
+    }
+
+    #[test]
+    fn test_verify_install_command_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin_path = temp.path().join("bin");
+
+        // missing bin/ or an empty bin/ means the command installed nothing
+        let err = verify_install_command_output("make install", &bin_path)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("installed no executable into"), "{err}");
+        std::fs::create_dir_all(&bin_path).unwrap();
+        assert!(verify_install_command_output("make install", &bin_path).is_err());
+
+        // a directory alone is not an installed executable
+        std::fs::create_dir(bin_path.join("placeholder")).unwrap();
+        assert!(verify_install_command_output("make install", &bin_path).is_err());
+
+        let executable = bin_path.join(if cfg!(windows) {
+            "danger-swift.exe"
+        } else {
+            "danger-swift"
+        });
+        std::fs::write(&executable, "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            // a regular file that cannot be run is not an installed executable
+            assert!(verify_install_command_output("make install", &bin_path).is_err());
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert!(verify_install_command_output("make install", &bin_path).is_ok());
     }
 
     fn release_asset(name: &str) -> ArtifactBundleReleaseAsset {
