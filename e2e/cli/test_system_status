@@ -27,6 +27,26 @@ else
   assert_fail "mise bootstrap packages apply --manager mas --dry-run --yes"
 fi
 
+# A configured mise tool does not need to be activated in the parent shell.
+if [[ "$(uname)" == "Darwin" ]]; then
+  mkdir -p mas-tool/bin
+  cat <<'EOF' >mas-tool/bin/mas
+#!/bin/sh
+printf '[]\n'
+EOF
+  chmod +x mas-tool/bin/mas
+  cat <<EOF >mise.toml
+[tools]
+mas = "path:./mas-tool"
+
+[bootstrap.packages]
+"mas:497799835" = "latest"
+EOF
+  assert_contains \
+    "mise bootstrap packages apply --manager mas --dry-run --yes" \
+    "mas install 497799835"
+fi
+
 # unknown managers warn but don't fail
 cat <<EOF >mise.toml
 [bootstrap.packages]
