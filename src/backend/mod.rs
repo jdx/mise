@@ -2324,7 +2324,11 @@ pub trait Backend: Debug + Send + Sync {
     ///
     /// Backends use the explicit legacy path until they migrate preparation
     /// and execution together.
-    fn prepare_install(&self, _ctx: &InstallContext, _tv: &ToolVersion) -> Result<PreparedInstall> {
+    async fn prepare_install(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> Result<PreparedInstall> {
         Ok(PreparedInstall::legacy())
     }
 
@@ -2360,14 +2364,6 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
         }
-
-        // Locked dry-runs validate the prepared backend inputs too. Normal
-        // dry-runs retain their existing no-install behavior.
-        let prepared = if ctx.locked {
-            Some(self.prepare_install(&ctx, &tv)?)
-        } else {
-            None
-        };
 
         // A rolling release (e.g. a `nightly` tag) keeps the same version string,
         // so its install dir already existing does NOT mean it's up-to-date.
@@ -2418,14 +2414,6 @@ pub trait Backend: Debug + Send + Sync {
         let will_uninstall =
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
-        // Forced and rolling reinstalls must prepare before removing the old
-        // installation. New installs can defer preparation until after the
-        // already-installed fast path below.
-        let mut prepared = prepared;
-        if will_uninstall && prepared.is_none() {
-            prepared = Some(self.prepare_install(&ctx, &tv)?);
-        }
-
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
         let total_ops = if will_uninstall {
@@ -2435,23 +2423,25 @@ pub trait Backend: Debug + Send + Sync {
         };
         ctx.pr.start_operations(total_ops);
 
-        if will_uninstall {
-            self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
-                .await?;
-            ctx.pr.next_operation();
-        } else if self
-            .is_install_satisfied_or_false(&ctx.config, &tv, true)
-            .await
+        if !will_uninstall
+            && self
+                .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                .await
             && !rolling_reinstall
         {
             return Ok(tv);
         }
 
-        // Resolve every remaining backend input before creating install dirs.
-        let prepared = match prepared {
-            Some(prepared) => prepared,
-            None => self.prepare_install(&ctx, &tv)?,
-        };
+        // Stage every fallible backend input exactly once while a replacement
+        // install is still available. Migrated backends can download and verify
+        // artifacts here; legacy backends retain their existing behavior.
+        let prepared = self.prepare_install(&ctx, &tv).await?;
+
+        if will_uninstall {
+            self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
+                .await?;
+            ctx.pr.next_operation();
+        }
 
         // Track the installation asynchronously (fire-and-forget)
         // Do this before install so the request has time to complete during installation
@@ -2461,16 +2451,14 @@ pub trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let successful = match prepared.execute(self, &ctx, tv).await {
-            Ok(successful) => successful,
+        let tv = match prepared.execute(self, &ctx, tv).await {
+            Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
                 // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
         };
-        let tv = successful.into_tool_version();
-
         let install_path = tv.install_path();
         let mut update_install_state = false;
         if install_path.starts_with(*dirs::INSTALLS) {
