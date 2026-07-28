@@ -300,6 +300,54 @@ impl WorkspaceProjectGraph {
         self.projects.get(id)
     }
 
+    /// Returns matching projects in the transitive dependency closure.
+    ///
+    /// Dependencies are returned in deterministic post-order, with upstream
+    /// projects before the projects that depend on them. The predicate only
+    /// controls which projects are returned; traversal continues through
+    /// non-matching projects so they can connect matching projects farther
+    /// upstream.
+    pub fn matching_dependency_projects(
+        &self,
+        id: &ProjectId,
+        mut matches: impl FnMut(&WorkspaceProject) -> bool,
+    ) -> Result<Vec<&WorkspaceProject>> {
+        if !self.projects.contains_key(id) {
+            bail!("unknown workspace project {id:?}");
+        }
+
+        let mut visited = BTreeSet::new();
+        let mut matching = Vec::new();
+        self.collect_matching_dependencies(id, &mut visited, &mut matches, &mut matching);
+        Ok(matching)
+    }
+
+    fn collect_matching_dependencies<'a>(
+        &'a self,
+        id: &ProjectId,
+        visited: &mut BTreeSet<ProjectId>,
+        matches: &mut impl FnMut(&WorkspaceProject) -> bool,
+        matching: &mut Vec<&'a WorkspaceProject>,
+    ) {
+        let project = self
+            .projects
+            .get(id)
+            .expect("workspace project graph is validated");
+        for dependency_id in &project.dependencies {
+            if !visited.insert(dependency_id.clone()) {
+                continue;
+            }
+            self.collect_matching_dependencies(dependency_id, visited, matches, matching);
+            let dependency = self
+                .projects
+                .get(dependency_id)
+                .expect("workspace project graph is validated");
+            if matches(dependency) {
+                matching.push(dependency);
+            }
+        }
+    }
+
     fn validate(&self) -> Result<()> {
         for project in self.projects() {
             for dependency in &project.dependencies {
@@ -933,5 +981,81 @@ mod tests {
             .unwrap_err();
 
         assert!(err.downcast_ref::<WorkspaceProjectCycleError>().is_some());
+    }
+
+    #[test]
+    fn matching_dependencies_traverse_projects_without_the_requested_task() {
+        let core_id = ProjectId::new("node", "core").unwrap();
+        let bridge_id = ProjectId::new("node", "bridge").unwrap();
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let core = project("node", "core", "core");
+        let mut bridge = project("node", "bridge", "bridge");
+        bridge.dependencies.insert(core_id.clone());
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(bridge_id);
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, bridge, core],
+        };
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let projects = graph
+            .matching_dependency_projects(&app_id, |project| project.id == core_id)
+            .unwrap();
+
+        assert_eq!(
+            projects
+                .iter()
+                .map(|project| project.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["node:core"]
+        );
+    }
+
+    #[test]
+    fn matching_dependencies_are_deduplicated_in_deterministic_post_order() {
+        let core_id = ProjectId::new("node", "core").unwrap();
+        let left_id = ProjectId::new("node", "left").unwrap();
+        let right_id = ProjectId::new("node", "right").unwrap();
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let core = project("node", "core", "core");
+        let mut left = project("node", "left", "left");
+        left.dependencies.insert(core_id.clone());
+        let mut right = project("node", "right", "right");
+        right.dependencies.insert(core_id);
+        let mut app = project("node", "app", "app");
+        app.dependencies = BTreeSet::from([right_id, left_id]);
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![right, app, core, left],
+        };
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let projects = graph
+            .matching_dependency_projects(&app_id, |_| true)
+            .unwrap();
+
+        assert_eq!(
+            projects
+                .iter()
+                .map(|project| project.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["node:core", "node:left", "node:right"]
+        );
+    }
+
+    #[test]
+    fn matching_dependencies_reject_an_unknown_starting_project() {
+        let graph = WorkspaceProjectGraph::default();
+        let missing = ProjectId::new("node", "missing").unwrap();
+
+        let err = graph
+            .matching_dependency_projects(&missing, |_| true)
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "unknown workspace project ProjectId(\"node:missing\")"
+        );
     }
 }
