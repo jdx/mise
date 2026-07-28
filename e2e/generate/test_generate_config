@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+assert_contains "mise generate config -n" '_.file = ".env"'
+assert_contains "mise generate config -n" '_.path = "./node_modules/.bin"'
+assert_not_contains "mise generate config -n" 'mise.file = ".env"'
+assert_not_contains "mise generate config -n" 'mise.path = "./node_modules/.bin"'
+
 cat <<EOF >.tool-versions
 node 22
 python 3.9 3.10 3.11
