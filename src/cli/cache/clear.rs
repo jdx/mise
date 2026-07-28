@@ -1,5 +1,6 @@
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all_with_retry};
+use crate::task::task_cache::task_cache_dir;
 use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
@@ -34,7 +35,14 @@ impl CacheClear {
                     }
                 })
                 .collect(),
-            None => vec![CACHE.to_path_buf()],
+            None => {
+                let mut dirs = vec![CACHE.to_path_buf()];
+                let task_cache_dir = task_cache_dir();
+                if !task_cache_dir.starts_with(*CACHE) {
+                    dirs.push(task_cache_dir);
+                }
+                dirs
+            }
         };
         if self.outdate {
             for p in cache_dirs {

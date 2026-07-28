@@ -122,6 +122,7 @@ pub(crate) enum TaskCacheOutput {
 
 pub struct TaskArtifactCache {
     root: PathBuf,
+    cache_dir: PathBuf,
     key: String,
     state_path: PathBuf,
 }
@@ -231,6 +232,7 @@ impl TaskArtifactCacheBuilder {
             .join(format!("{state_identity}.key"));
         Ok(TaskArtifactCache {
             root,
+            cache_dir: task_cache_dir(),
             key,
             state_path,
         })
@@ -355,12 +357,15 @@ impl TaskArtifactCache {
             ensure_no_symlink_ancestors(&self.root, root)?;
         }
 
-        let cache_dir = dirs::CACHE.join("task-artifacts").join(CACHE_DIR_VERSION);
-        file::create_dir_all(&cache_dir)?;
+        file::create_dir_all(&self.cache_dir)?;
         let (archive_path, manifest_path) = self.paths();
         let nonce = crate::rand::random_string(8);
-        let archive_partial = cache_dir.join(format!("{}.part-{nonce}.tar.zst", self.key));
-        let manifest_partial = cache_dir.join(format!("{}.part-{nonce}.json", self.key));
+        let archive_partial = self
+            .cache_dir
+            .join(format!("{}.part-{nonce}.tar.zst", self.key));
+        let manifest_partial = self
+            .cache_dir
+            .join(format!("{}.part-{nonce}.json", self.key));
 
         let manifest = CacheManifest {
             format: CACHE_FORMAT_VERSION,
@@ -388,10 +393,9 @@ impl TaskArtifactCache {
     }
 
     fn paths(&self) -> (PathBuf, PathBuf) {
-        let base = dirs::CACHE.join("task-artifacts").join(CACHE_DIR_VERSION);
         (
-            base.join(format!("{}.tar.zst", self.key)),
-            base.join(format!("{}.json", self.key)),
+            self.cache_dir.join(format!("{}.tar.zst", self.key)),
+            self.cache_dir.join(format!("{}.json", self.key)),
         )
     }
 
@@ -403,6 +407,15 @@ impl TaskArtifactCache {
         }
         Ok(manifest)
     }
+}
+
+pub(crate) fn task_cache_dir() -> PathBuf {
+    Settings::get()
+        .task
+        .cache_dir
+        .clone()
+        .unwrap_or_else(|| dirs::CACHE.join("task-artifacts"))
+        .join(CACHE_DIR_VERSION)
 }
 
 pub(crate) fn validate_config(task: &Task, root: &Path) -> Result<()> {

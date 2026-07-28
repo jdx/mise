@@ -2603,6 +2603,18 @@ it, and skips sudo entirely when already running as root (e.g. containers/CI).
 env = "MISE_SYSTEM_PACKAGES_SUDO"
 type = "Bool"
 
+[task.cache_dir]
+description = "[experimental] Directory for task output cache artifacts."
+docs = """
+Store task output cache artifacts in this directory instead of
+`MISE_CACHE_DIR/task-artifacts`. mise stores the current artifact format in a
+versioned subdirectory and includes custom locations in `mise cache clear` and
+`mise cache prune`.
+"""
+env = "MISE_TASK_CACHE_DIR"
+optional = true
+type = "Path"
+
 [task.disable_paths]
 default = []
 description = "Paths that mise will not look for tasks in."
