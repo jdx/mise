@@ -615,6 +615,9 @@ Display a tree visualization of a dependency graph
 \fBtasks edit\fR
 Edit a task with $EDITOR
 .TP
+\fBtasks graph\fR
+[experimental] Inspect the workspace project graph
+.TP
 \fBtasks info\fR
 Get information about a task
 .TP
@@ -3723,6 +3726,19 @@ Display the path to the task instead of editing it
 .TP
 \fB<TASK>\fR
 Task to edit
+.SH "MISE TASKS GRAPH"
+[experimental] Inspect the workspace project graph
+.PP
+\fBUsage:\fR mise tasks graph [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output the project graph as JSON
+.TP
+\fB\-\-no\-header\fR
+Do not print table headers
 .SH "MISE TASKS INFO"
 Get information about a task
 .PP
