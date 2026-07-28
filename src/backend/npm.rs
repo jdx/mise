@@ -17,6 +17,7 @@ use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than};
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aube::embed::EmbedderRuntime;
@@ -963,6 +964,12 @@ impl NPMBackend {
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
         let package = format!("{}@{}", self.tool_name(), tv.version);
+        // aube runs its low-download supply-chain gate before emitting install
+        // progress events. That gate may write an interactive confirmation
+        // directly to stderr and wait on stdin, so keep clx from repainting
+        // over it. Resume on the first phase/progress event, after the gate has
+        // completed; the guard also resumes on every early-error path.
+        let mut progress_pause = Some(MultiProgressReport::get().pause_progress());
         let install = aube::embed::add(&install_path, std::slice::from_ref(&package), opts);
         tokio::pin!(install);
         // Drain events alongside the install rather than after it: the
@@ -971,7 +978,17 @@ impl NPMBackend {
         let result = loop {
             tokio::select! {
                 res = &mut install => break res,
-                Some(event) = rx.recv() => apply_aube_event(event, ctx.pr.as_ref()),
+                Some(event) = rx.recv() => {
+                    let starts_install = matches!(
+                        &event,
+                        aube::embed::InstallEvent::Phase(_)
+                            | aube::embed::InstallEvent::Progress(_)
+                    );
+                    apply_aube_event(event, ctx.pr.as_ref());
+                    if starts_install {
+                        drop(progress_pause.take());
+                    }
+                },
             }
         };
         // Events queued between the last poll and the install returning —

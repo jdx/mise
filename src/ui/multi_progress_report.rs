@@ -11,10 +11,51 @@ use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, Verb
 pub struct MultiProgressReport {
     quiet: bool,
     use_progress_ui: bool,
+    pause_state: Mutex<ProgressPauseState>,
     total_count: Mutex<usize>,
     completed_count: Mutex<usize>,
     /// Header job for updating progress display
     header_job: Mutex<Option<Arc<progress::ProgressJob>>>,
+}
+
+#[derive(Debug, Default)]
+struct ProgressPauseState {
+    count: usize,
+    resume_on_zero: bool,
+}
+
+impl ProgressPauseState {
+    fn acquire(&mut self, renderer_is_paused: bool) -> bool {
+        let should_pause = self.count == 0 && !renderer_is_paused;
+        if self.count == 0 {
+            self.resume_on_zero = should_pause;
+        }
+        self.count += 1;
+        should_pause
+    }
+
+    fn release(&mut self) -> bool {
+        debug_assert!(self.count > 0, "unbalanced progress suspension");
+        self.count = self.count.saturating_sub(1);
+        if self.count == 0 {
+            std::mem::take(&mut self.resume_on_zero)
+        } else {
+            false
+        }
+    }
+}
+
+/// Keeps the global progress renderer suspended until every overlapping
+/// suspension has been released.
+#[derive(Debug)]
+pub struct ProgressPauseGuard {
+    report: Arc<MultiProgressReport>,
+}
+
+impl Drop for ProgressPauseGuard {
+    fn drop(&mut self) {
+        self.report.resume_progress();
+    }
 }
 
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
@@ -76,9 +117,33 @@ impl MultiProgressReport {
         MultiProgressReport {
             quiet: settings.quiet,
             use_progress_ui,
+            pause_state: Mutex::new(ProgressPauseState::default()),
             total_count: Mutex::new(0),
             completed_count: Mutex::new(0),
             header_job: Mutex::new(None),
+        }
+    }
+
+    /// Suspend the animated progress display while another component owns the
+    /// terminal, such as an interactive confirmation prompt.
+    ///
+    /// Suspensions are reference-counted because tool installs run in
+    /// parallel. The renderer resumes only after the final guard is dropped.
+    pub fn pause_progress(self: &Arc<Self>) -> ProgressPauseGuard {
+        let mut state = self.pause_state.lock().unwrap();
+        let renderer_is_paused = !self.use_progress_ui || progress::is_paused();
+        if state.acquire(renderer_is_paused) {
+            progress::pause();
+        }
+        ProgressPauseGuard {
+            report: self.clone(),
+        }
+    }
+
+    fn resume_progress(&self) {
+        let mut state = self.pause_state.lock().unwrap();
+        if state.release() {
+            progress::resume();
         }
     }
 
@@ -232,5 +297,21 @@ mod tests {
         pr.finish_with_message("test".into());
         pr.println("".into());
         pr.set_message("test".into());
+    }
+
+    #[test]
+    fn progress_pause_state_is_reference_counted() {
+        let mut state = ProgressPauseState::default();
+        assert!(state.acquire(false));
+        assert!(!state.acquire(true));
+        assert!(!state.release());
+        assert!(state.release());
+    }
+
+    #[test]
+    fn progress_pause_state_preserves_an_existing_pause() {
+        let mut state = ProgressPauseState::default();
+        assert!(!state.acquire(true));
+        assert!(!state.release());
     }
 }
