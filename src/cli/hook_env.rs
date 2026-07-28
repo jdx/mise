@@ -8,7 +8,7 @@ use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{ShellType, get_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::ui::style;
-use crate::{env, exit, hook_env, hooks, watch_files};
+use crate::{env, hook_env, hooks, watch_files};
 use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
@@ -78,7 +78,7 @@ impl HookEnv {
                         display_path(&config_path)
                     );
                 }
-                exit(1);
+                return Err(crate::request_exit(1));
             }
         };
         // Shell activation must stay fast and non-networked; missing tools are

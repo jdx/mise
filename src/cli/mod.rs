@@ -1,12 +1,11 @@
 use crate::config::{Config, Settings};
-use crate::exit::exit;
 use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
-use crate::{Result, backend};
+use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Subcommand};
-use eyre::bail;
+use eyre::{Report, bail};
 use std::path::PathBuf;
 
 mod activate;
@@ -676,6 +675,10 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
 
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
+        run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
+    }
+
+    async fn run_inner(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
         // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
         // This allows setting MISE_ENV in a config file instead of only via env vars.
@@ -693,7 +696,6 @@ impl Cli {
         measure!("logger", { logger::init() });
         check_working_directory();
         measure!("handle_shim", { shims::handle_shim().await })?;
-        ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
         // Clap's tool argument parsers consult installed plugin/tool metadata while
         // resolving registry options. Initialize that filesystem-only state before
@@ -713,12 +715,12 @@ impl Cli {
         // Reuse the already-built clap command rather than letting
         // `Cli::parse_from` construct the whole tree a second time.
         let cli = measure!("get_matches_from", {
-            let matches = cmd.get_matches_from(processed_args.iter());
-            match <Cli as clap::FromArgMatches>::from_arg_matches(&matches) {
-                Ok(cli) => cli,
-                Err(err) => err.format(&mut Cli::command()).exit(),
-            }
-        });
+            let matches = cmd
+                .try_get_matches_from(processed_args.iter())
+                .map_err(clap_error)?;
+            <Cli as clap::FromArgMatches>::from_arg_matches(&matches)
+                .map_err(|err| clap_error(err.format(&mut Cli::command())))
+        })?;
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
@@ -738,7 +740,7 @@ impl Cli {
         trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
         if print_version {
             version::show_latest().await;
-            exit(0);
+            return Err(request_exit(0));
         }
         let cmd = cli.get_command().await?;
         measure!("run {cmd}", { cmd.run().await })
@@ -752,7 +754,7 @@ impl Cli {
                 // Handle special case: "help", "-h", or "--help" as task should print help
                 if task == "help" || task == "-h" || task == "--help" {
                     Cli::command().print_help()?;
-                    exit(0);
+                    return Err(request_exit(0));
                 }
 
                 let config = Config::get().await?;
@@ -818,12 +820,30 @@ impl Cli {
                             .chain(self.task_args_last)
                             .collect(),
                     )?;
-                    exit(0);
+                    return Err(request_exit(0));
                 }
             }
             Cli::command().print_help()?;
-            exit(1)
+            Err(request_exit(1))
         }
+    }
+}
+
+async fn run_with_exit_signal<T>(
+    command: impl std::future::Future<Output = Result<T>>,
+    exit_signal: impl std::future::Future<Output = i32>,
+) -> Result<T> {
+    tokio::select! {
+        result = command => result,
+        code = exit_signal => Err(request_exit(code)),
+    }
+}
+
+fn clap_error(err: clap::Error) -> Report {
+    let code = err.exit_code();
+    match err.print() {
+        Ok(()) => request_exit(code),
+        Err(err) => err.into(),
     }
 }
 
@@ -920,6 +940,31 @@ mod tests {
         );
     }
     use super::*;
+
+    #[tokio::test]
+    async fn exit_signal_drops_command_future_before_returning() {
+        struct DropGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+        impl Drop for DropGuard {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
+        let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let guard = DropGuard(dropped.clone());
+        let command = async move {
+            let _guard = guard;
+            std::future::pending::<Result<()>>().await
+        };
+
+        let err = run_with_exit_signal(command, std::future::ready(42))
+            .await
+            .unwrap_err();
+
+        assert_eq!(crate::exit::requested_exit_code(&err), Some(42));
+        assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
 
     #[test]
     fn test_subcommands_are_sorted() {

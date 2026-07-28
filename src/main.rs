@@ -6,6 +6,7 @@
 use std::{
     panic,
     sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
 };
 
 use crate::cli::Cli;
@@ -100,11 +101,11 @@ mod versions_host;
 mod watch_files;
 mod wildcard;
 
-pub(crate) use crate::exit::exit;
+pub(crate) use crate::exit::request as request_exit;
 pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-fn main() -> eyre::Result<()> {
+fn main() {
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();
@@ -117,11 +118,41 @@ fn main() -> eyre::Result<()> {
     let threads = crate::env::MISE_JOBS
         .unwrap_or_else(|| nprocs.min(16))
         .max(8);
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(threads)
-        .build()?
-        .block_on(main_())
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            eprintln!("Error: {err:?}");
+            exit::terminate(1);
+        }
+    };
+    let result = runtime.block_on(main_());
+    let (code, requested_exit) = match result {
+        Ok(()) => (0, false),
+        Err(err) => match exit::requested_exit_code(&err) {
+            Some(code) => {
+                exit::kill_all();
+                (code, true)
+            }
+            None => {
+                eprintln!("Error: {err:?}");
+                (1, false)
+            }
+        },
+    };
+    if requested_exit {
+        // Blocking tasks cannot be cancelled and may ignore the signals sent
+        // above. Bound the wait so an intentional exit cannot hang forever.
+        runtime.shutdown_timeout(Duration::from_secs(1));
+    } else {
+        drop(runtime);
+    }
+    if code != 0 {
+        exit::terminate(code);
+    }
 }
 
 async fn main_() -> eyre::Result<()> {
@@ -152,6 +183,9 @@ async fn main_() -> eyre::Result<()> {
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {
+    if exit::requested_exit_code(&err).is_some() {
+        return Err(err);
+    }
     if let Some(err) = err.downcast_ref::<std::io::Error>()
         && err.kind() == std::io::ErrorKind::BrokenPipe
     {
@@ -159,20 +193,20 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     }
     if is_interrupted_io_error(&err) {
         stop_multi_progress();
-        exit(130);
+        return Err(request_exit(130));
     }
 
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
     {
         safe_eprintln!("{}", diagnostic.render());
-        exit(1);
+        return Err(request_exit(1));
     }
 
     show_github_rate_limit_err(&err);
     if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);
-        exit(1);
+        return Err(request_exit(1));
     }
     let async_backtrace = async_backtrace::taskdump_tree(true);
     Err(err.section(async_backtrace.header("Async Tasks")))

@@ -1,4 +1,4 @@
-use crate::exit;
+use crate::request_exit;
 
 use eyre::Result;
 
@@ -33,6 +33,6 @@ impl HookNotFound {
                 return Ok(());
             }
         }
-        exit(127);
+        Err(request_exit(127))
     }
 }

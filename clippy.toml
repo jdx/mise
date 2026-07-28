@@ -7,4 +7,5 @@
 disallowed-methods = [
   { path = "std::env::vars", reason = "panics on non-UTF-8 environment variables (jdx/mise#5370); use crate::env::vars_safe(), or std::env::vars_os() when values must not be dropped" },
   { path = "std::env::args", reason = "panics on non-UTF-8 arguments (jdx/mise#10056); use crate::env::args_safe(), or std::env::args_os()" },
+  { path = "std::process::exit", reason = "skips destructors; propagate the status to the binary's outermost boundary and allow only that boundary" },
 ]

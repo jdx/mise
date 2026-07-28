@@ -81,7 +81,7 @@ impl Prune {
             let has_work = !to_delete.is_empty();
             delete(&config, self.is_dry_run(), to_delete).await?;
             if self.dry_run_code && has_work {
-                exit::exit(1);
+                return Err(exit::request(1));
             }
             if self.is_dry_run() {
                 return Ok(());

@@ -5,7 +5,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::dirs;
 use crate::env;
-use crate::exit::exit;
+use crate::request_exit;
 use crate::task::Deps;
 use crate::task::task_source_checker::task_cwd;
 use crate::toolset::ToolsetBuilder;
@@ -74,7 +74,7 @@ impl Watch {
                 eprintln!("{}: {}", style("Error").red().bold(), err);
                 eprintln!("{}: Install watchexec with:", style("Hint").bold());
                 eprintln!("  mise use -g watchexec@latest");
-                exit(1);
+                return Err(request_exit(1));
             }
         }
         let args = once(self.task)

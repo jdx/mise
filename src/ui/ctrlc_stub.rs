@@ -1,4 +1,6 @@
-pub fn init() {}
+pub async fn exit_signal() -> i32 {
+    std::future::pending().await
+}
 
 // pub fn add_handler(_func: impl Fn() + Send + Sync + 'static) {}
 

@@ -1214,7 +1214,7 @@ impl BootstrapStatus {
             table.print()?;
         }
         if self.missing && report.any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -1948,7 +1948,7 @@ impl BootstrapPluginsStatus {
         }
         table.print()?;
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -2087,7 +2087,7 @@ impl BootstrapReposStatus {
             table.print()?;
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -2216,7 +2216,7 @@ impl BootstrapLaunchdStatus {
             table.print()?;
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -2322,7 +2322,7 @@ impl BootstrapSystemdStatus {
             table.print()?;
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -2419,7 +2419,7 @@ impl BootstrapMacosDefaultsStatus {
             table.print()?;
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -2498,7 +2498,7 @@ impl BootstrapShellStatus {
             table.print()?;
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -2596,7 +2596,7 @@ impl BootstrapUserStatus {
             table.print()?;
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }

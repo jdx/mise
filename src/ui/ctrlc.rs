@@ -1,4 +1,3 @@
-use crate::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cmd::CmdLineRunner;
@@ -9,23 +8,21 @@ static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 // static HANDLERS: OnceCell<Vec<Box<dyn Fn() + Send + Sync + 'static>>> = OnceCell::new();
 
-pub fn init() {
-    tokio::spawn(async move {
-        loop {
-            tokio::signal::ctrl_c().await.unwrap();
-            if SHOW_CURSOR.load(Ordering::Relaxed) {
-                let _ = Term::stderr().show_cursor();
-            }
-            CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
-            if EXIT.load(Ordering::Relaxed) || CANCELLED.load(Ordering::Relaxed) {
-                debug!("Ctrl-C pressed, exiting...");
-                exit(1);
-            }
-            // First ctrl-c when EXIT is false: mark as cancelled so a second
-            // ctrl-c will force-exit and in-process operations can check the flag.
-            CANCELLED.store(true, Ordering::Relaxed);
+pub async fn exit_signal() -> i32 {
+    loop {
+        tokio::signal::ctrl_c().await.unwrap();
+        if SHOW_CURSOR.load(Ordering::Relaxed) {
+            let _ = Term::stderr().show_cursor();
         }
-    });
+        CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
+        if EXIT.load(Ordering::Relaxed) || CANCELLED.load(Ordering::Relaxed) {
+            debug!("Ctrl-C pressed, exiting...");
+            return 1;
+        }
+        // First ctrl-c when EXIT is false: mark as cancelled so a second
+        // ctrl-c will end the command and in-process operations can check the flag.
+        CANCELLED.store(true, Ordering::Relaxed);
+    }
 }
 
 pub fn exit_on_ctrl_c(do_exit: bool) {

@@ -210,7 +210,7 @@ impl Run {
         let status = run_result?;
         if let Some(code) = status.code() {
             if code != 0 {
-                std::process::exit(code);
+                return Err(crate::request_exit(code));
             }
         } else if !status.success() {
             bail!("{engine_bin} exited abnormally: {status:?}");

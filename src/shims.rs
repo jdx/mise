@@ -1,4 +1,4 @@
-use crate::exit;
+use crate::request_exit;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -77,7 +77,7 @@ pub async fn handle_shim() -> Result<()> {
     };
     time!("shim exec");
     exec.run().await?;
-    exit(0);
+    Err(request_exit(0))
 }
 
 #[cfg(windows)]

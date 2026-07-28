@@ -108,7 +108,7 @@ impl SystemStatus {
             }
         }
         if self.missing && any_missing {
-            crate::exit(1);
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }

@@ -318,7 +318,7 @@ impl Install {
             if self.dry_run_code {
                 let has_work = versions.iter().any(|tv| tv.install_satisfied != Some(true));
                 if has_work {
-                    exit::exit(1);
+                    return Err(exit::request(1));
                 }
             }
             return install_error;
@@ -540,7 +540,7 @@ impl Install {
         };
         if self.is_dry_run() {
             if self.dry_run_code && has_missing {
-                exit::exit(1);
+                return Err(exit::request(1));
             }
             return install_error;
         }
