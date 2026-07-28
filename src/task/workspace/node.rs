@@ -294,6 +294,7 @@ fn collect_matching_package_roots(
             .git_exclude(false)
             .git_global(false)
             .git_ignore(false)
+            .ignore(false)
             .filter_entry(|entry| {
                 entry.depth() == 0
                     || !matches!(entry.file_name().to_str(), Some(".git" | "node_modules"))
@@ -482,6 +483,27 @@ mod tests {
                 ("node:web", Path::new("apps/web"), None),
                 ("node:app", Path::new("packages/app"), None),
             ]
+        );
+    }
+
+    #[test]
+    fn workspace_discovery_does_not_honor_dot_ignore_files() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        write(&temp.path().join(".ignore"), "packages/ignored\n");
+        write(
+            &temp.path().join("packages/ignored/package.json"),
+            r#"{"name":"ignored"}"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            project_summary(&projects),
+            vec![("node:ignored", Path::new("packages/ignored"), None)]
         );
     }
 
