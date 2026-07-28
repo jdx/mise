@@ -139,6 +139,10 @@ struct AquaFileLink {
     explicit_link: bool,
 }
 
+fn has_installed_bin_path(paths: &[PathBuf]) -> bool {
+    paths.iter().any(|path| path.is_dir())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GithubAttestationStatus {
     Verified,
@@ -149,6 +153,24 @@ enum GithubAttestationStatus {
 impl Backend for AquaBackend {
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+
+        // Aqua registry entries may change their archive layout between mise
+        // releases. An install directory alone is therefore not enough to show
+        // that the version still matches the current package definition.
+        Ok(has_installed_bin_path(
+            &self.list_bin_paths(config, tv).await?,
+        ))
     }
 
     async fn description(&self) -> Option<String> {
@@ -3301,6 +3323,21 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn install_requires_a_current_bin_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_layout = temp.path().join("codex");
+        file::write(&old_layout, "old binary").unwrap();
+
+        assert!(!has_installed_bin_path(&[]));
+        assert!(!has_installed_bin_path(&[temp.path().join("bin")]));
+        assert!(!has_installed_bin_path(&[old_layout]));
+
+        let current_layout = temp.path().join("bin");
+        file::create_dir_all(&current_layout).unwrap();
+        assert!(has_installed_bin_path(&[current_layout]));
     }
 
     #[test]
