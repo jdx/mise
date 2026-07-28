@@ -39,7 +39,7 @@ outside this tracker.
 - [x] Merge graphs from multiple providers for polyglot repositories
 - [x] Allow explicit configuration to add, remove, or override inferred projects and dependency
       edges
-- [ ] Detect project graph cycles and report actionable diagnostics
+- [x] Detect project graph cycles and report actionable diagnostics
 - [ ] Preserve dependency traversal through projects that do not implement the requested task
 - [ ] Add human-readable and machine-readable project graph inspection
 

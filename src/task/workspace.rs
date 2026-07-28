@@ -121,6 +121,40 @@ pub struct WorkspaceProjectGraph {
     projects: BTreeMap<ProjectId, WorkspaceProject>,
 }
 
+/// A deterministic dependency cycle found in the workspace project graph.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkspaceProjectCycleError {
+    path: Vec<ProjectId>,
+}
+
+impl WorkspaceProjectCycleError {
+    /// Returns the closed cycle path, with the first project repeated at the end.
+    pub fn path(&self) -> &[ProjectId] {
+        &self.path
+    }
+}
+
+impl Display for WorkspaceProjectCycleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path = self
+            .path
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        let project = format!(
+            "{:?}",
+            self.path.first().expect("cycle path is not empty").as_str()
+        );
+        write!(
+            f,
+            "workspace project dependency cycle detected: {path}; adjust [monorepo.projects.{project}] depends, depends_add, or depends_remove to break the cycle"
+        )
+    }
+}
+
+impl std::error::Error for WorkspaceProjectCycleError {}
+
 impl WorkspaceProjectGraph {
     /// Discovers and validates a provider's projects.
     pub fn discover(
@@ -140,7 +174,7 @@ impl WorkspaceProjectGraph {
         workspace_root: &Path,
     ) -> Result<WorkspaceProjectGraph> {
         let graph = Self::collect_provider_projects(providers, workspace_root)?;
-        graph.validate_dependencies()?;
+        graph.validate()?;
         Ok(graph)
     }
 
@@ -252,7 +286,7 @@ impl WorkspaceProjectGraph {
                     .retain(|dependency| !removed.contains(dependency));
             }
         }
-        self.validate_dependencies()?;
+        self.validate()?;
         Ok(self)
     }
 
@@ -266,7 +300,7 @@ impl WorkspaceProjectGraph {
         self.projects.get(id)
     }
 
-    fn validate_dependencies(&self) -> Result<()> {
+    fn validate(&self) -> Result<()> {
         for project in self.projects() {
             for dependency in &project.dependencies {
                 if self.get(dependency).is_none() {
@@ -278,7 +312,51 @@ impl WorkspaceProjectGraph {
                 }
             }
         }
+        if let Some(path) = self.find_cycle() {
+            return Err(WorkspaceProjectCycleError { path }.into());
+        }
         Ok(())
+    }
+
+    fn find_cycle(&self) -> Option<Vec<ProjectId>> {
+        let mut visited = BTreeSet::new();
+        let mut active = BTreeMap::new();
+        let mut path = Vec::new();
+        for id in self.projects.keys() {
+            if let Some(cycle) = self.find_cycle_from(id, &mut visited, &mut active, &mut path) {
+                return Some(cycle);
+            }
+        }
+        None
+    }
+
+    fn find_cycle_from(
+        &self,
+        id: &ProjectId,
+        visited: &mut BTreeSet<ProjectId>,
+        active: &mut BTreeMap<ProjectId, usize>,
+        path: &mut Vec<ProjectId>,
+    ) -> Option<Vec<ProjectId>> {
+        if visited.contains(id) {
+            return None;
+        }
+        if let Some(start) = active.get(id) {
+            let mut cycle = path[*start..].to_vec();
+            cycle.push(id.clone());
+            return Some(cycle);
+        }
+
+        active.insert(id.clone(), path.len());
+        path.push(id.clone());
+        for dependency in &self.projects.get(id)?.dependencies {
+            if let Some(cycle) = self.find_cycle_from(dependency, visited, active, path) {
+                return Some(cycle);
+            }
+        }
+        path.pop();
+        active.remove(id);
+        visited.insert(id.clone());
+        None
     }
 }
 
@@ -730,5 +808,130 @@ mod tests {
                 .dependencies
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn discovery_reports_self_cycles_with_override_guidance() {
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(app_id.clone());
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app],
+        };
+
+        let err = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap_err();
+        let cycle = err.downcast_ref::<WorkspaceProjectCycleError>().unwrap();
+
+        assert_eq!(cycle.path(), &[app_id.clone(), app_id]);
+        assert_eq!(
+            err.to_string(),
+            "workspace project dependency cycle detected: node:app -> node:app; adjust [monorepo.projects.\"node:app\"] depends, depends_add, or depends_remove to break the cycle"
+        );
+    }
+
+    #[test]
+    fn cross_provider_cycle_diagnostics_are_order_independent() {
+        let cargo_id = ProjectId::new("cargo", "core").unwrap();
+        let node_id = ProjectId::new("node", "app").unwrap();
+        let mut core = project("cargo", "core", "core");
+        core.dependencies.insert(node_id.clone());
+        let cargo = TestProvider {
+            id: "cargo",
+            projects: vec![core],
+        };
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(cargo_id.clone());
+        let node = TestProvider {
+            id: "node",
+            projects: vec![app],
+        };
+
+        let forward =
+            WorkspaceProjectGraph::discover_all(&[&cargo, &node], Path::new("/workspace"))
+                .unwrap_err();
+        let reverse =
+            WorkspaceProjectGraph::discover_all(&[&node, &cargo], Path::new("/workspace"))
+                .unwrap_err();
+
+        assert_eq!(forward.to_string(), reverse.to_string());
+        assert_eq!(
+            forward
+                .downcast_ref::<WorkspaceProjectCycleError>()
+                .unwrap()
+                .path(),
+            &[cargo_id.clone(), node_id, cargo_id]
+        );
+    }
+
+    #[test]
+    fn configured_discovery_can_repair_inferred_cycles() {
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let lib_id = ProjectId::new("node", "lib").unwrap();
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(lib_id.clone());
+        let mut lib = project("node", "lib", "lib");
+        lib.dependencies.insert(app_id.clone());
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, lib],
+        };
+        let overrides = BTreeMap::from([(
+            "node:lib".to_string(),
+            WorkspaceProjectOverride {
+                depends_remove: BTreeSet::from(["node:app".to_string()]),
+                ..Default::default()
+            },
+        )]);
+
+        assert!(
+            WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+                .unwrap_err()
+                .downcast_ref::<WorkspaceProjectCycleError>()
+                .is_some()
+        );
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides(
+            &[&provider],
+            Path::new("/workspace"),
+            &overrides,
+        )
+        .unwrap();
+
+        assert!(graph.get(&lib_id).unwrap().dependencies.is_empty());
+        assert_eq!(
+            graph.get(&app_id).unwrap().dependencies,
+            BTreeSet::from([lib_id])
+        );
+    }
+
+    #[test]
+    fn overrides_reject_new_cycles() {
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![project("node", "app", "app"), project("node", "lib", "lib")],
+        };
+        let overrides = BTreeMap::from([
+            (
+                "node:app".to_string(),
+                WorkspaceProjectOverride {
+                    depends_add: BTreeSet::from(["node:lib".to_string()]),
+                    ..Default::default()
+                },
+            ),
+            (
+                "node:lib".to_string(),
+                WorkspaceProjectOverride {
+                    depends_add: BTreeSet::from(["node:app".to_string()]),
+                    ..Default::default()
+                },
+            ),
+        ]);
+
+        let err = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+            .unwrap()
+            .with_overrides(&overrides)
+            .unwrap_err();
+
+        assert!(err.downcast_ref::<WorkspaceProjectCycleError>().is_some());
     }
 }
