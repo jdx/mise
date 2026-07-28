@@ -30,6 +30,7 @@ use crate::{
     config::Config,
 };
 use crate::{file, github, minisign};
+use aqua_registry::AquaRegistryError;
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
@@ -671,7 +672,10 @@ impl Backend for AquaBackend {
             .await
         {
             Ok(candidates) => candidates,
-            Err(err) if Self::has_legacy_root_bin(&self.ba, &install_path) => {
+            Err(err)
+                if Self::is_registry_unavailable(&err)
+                    && Self::has_legacy_root_bin(&self.ba, &install_path) =>
+            {
                 debug!(
                     "unable to resolve current Aqua bin paths for {}: {err:#}; using compatible root-level binary layout",
                     tv.style()
@@ -2919,6 +2923,13 @@ impl AquaBackend {
             .any(|path| path.is_file() && file::is_executable(&path))
     }
 
+    fn is_registry_unavailable(err: &eyre::Report) -> bool {
+        matches!(
+            err.downcast_ref::<AquaRegistryError>(),
+            Some(AquaRegistryError::RegistryNotAvailable(_))
+        )
+    }
+
     fn srcs_for_platform(
         pkg: &AquaPackage,
         version: &str,
@@ -3343,6 +3354,19 @@ mod tests {
         file::write(&codex, "codex binary").unwrap();
         file::make_executable(&codex).unwrap();
         assert!(AquaBackend::has_legacy_root_bin(&ba, temp.path()));
+    }
+
+    #[test]
+    fn legacy_fallback_only_accepts_registry_unavailability() {
+        let unavailable = eyre!(AquaRegistryError::RegistryNotAvailable(
+            "network unavailable".into()
+        ));
+        assert!(AquaBackend::is_registry_unavailable(&unavailable));
+
+        let template = eyre!(AquaRegistryError::TemplateError(eyre!(
+            "missing required variable"
+        )));
+        assert!(!AquaBackend::is_registry_unavailable(&template));
     }
 
     #[test]
