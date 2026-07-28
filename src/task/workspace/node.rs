@@ -70,7 +70,9 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         if definition.include_named_root {
             let root_manifest_path = workspace_root.join(PACKAGE_JSON);
             if root_manifest_path.is_file()
-                && read_package_name_if_valid(&root_manifest_path)?.is_some()
+                && read_package_json_if_valid(&root_manifest_path)?
+                    .and_then(|manifest| manifest.name)
+                    .is_some()
             {
                 roots.insert(PathBuf::from("."));
             }
@@ -124,8 +126,9 @@ fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinit
     let root_manifest_path = workspace_root.join(PACKAGE_JSON);
     let root_manifest = root_manifest_path
         .is_file()
-        .then(|| read_package_json(&root_manifest_path))
-        .transpose()?;
+        .then(|| read_package_json_if_valid(&root_manifest_path))
+        .transpose()?
+        .flatten();
     let Some(root_manifest) = root_manifest else {
         return Ok(None);
     };
@@ -146,11 +149,9 @@ fn read_package_json(path: &Path) -> Result<PackageJson> {
         .wrap_err_with(|| format!("failed to parse Node package manifest {}", path.display()))
 }
 
-fn read_package_name_if_valid(path: &Path) -> Result<Option<String>> {
+fn read_package_json_if_valid(path: &Path) -> Result<Option<PackageJson>> {
     let contents = file::read_to_string(path)?;
-    Ok(serde_json::from_str::<PackageJson>(&contents)
-        .ok()
-        .and_then(|manifest| manifest.name))
+    Ok(serde_json::from_str(&contents).ok())
 }
 
 fn detect_package_manager(workspace_root: &Path, configured: Option<String>) -> Option<String> {
@@ -514,6 +515,16 @@ mod tests {
             project_summary(&projects),
             vec![("node:app", Path::new("packages/app"), Some("pnpm"))]
         );
+    }
+
+    #[test]
+    fn ignores_an_invalid_root_manifest_without_a_workspace_definition() {
+        let temp = tempdir().unwrap();
+        write(&temp.path().join(PACKAGE_JSON), "{");
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert!(projects.is_empty());
     }
 
     #[test]
