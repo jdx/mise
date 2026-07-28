@@ -35,7 +35,7 @@ use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
 use crate::task::workspace::WorkspaceProjectOverride;
-use crate::task::{Task, TaskTemplate};
+use crate::task::{Task, TaskTemplate, TaskTomlBoolPresence};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
@@ -2192,6 +2192,41 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
     }
 }
 
+struct TaskBoolPresenceMapAccess<'a, M> {
+    inner: M,
+    presence: &'a mut TaskTomlBoolPresence,
+}
+
+impl<'de, M> de::MapAccess<'de> for TaskBoolPresenceMapAccess<'_, M>
+where
+    M: de::MapAccess<'de>,
+{
+    type Error = M::Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+    where
+        K: de::DeserializeSeed<'de>,
+    {
+        let Some(key) = self.inner.next_key::<String>()? else {
+            return Ok(None);
+        };
+        self.presence.record(&key);
+        seed.deserialize(de::value::StringDeserializer::<M::Error>::new(key))
+            .map(Some)
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+    where
+        V: de::DeserializeSeed<'de>,
+    {
+        self.inner.next_value_seed(seed)
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.inner.size_hint()
+    }
+}
+
 impl<'de> de::Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -2250,10 +2285,15 @@ impl<'de> de::Deserialize<'de> for Tasks {
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let t = de::Deserialize::deserialize(
-                                    de::value::MapAccessDeserializer::new(map),
-                                )?;
-                                Ok(TaskDef(t))
+                                let mut presence = TaskTomlBoolPresence::default();
+                                let map = TaskBoolPresenceMapAccess {
+                                    inner: map,
+                                    presence: &mut presence,
+                                };
+                                let mut task =
+                                    Task::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                                task.toml_bool_presence = presence;
+                                Ok(TaskDef(task))
                             }
                         }
                         deserializer.deserialize_any(TaskDefVisitor)
@@ -2468,6 +2508,7 @@ mod tests {
 
     use crate::dirs;
     use crate::file;
+    use crate::task::Silent;
     use crate::test::replace_path;
     use crate::toolset::{CoreToolOptions, ToolRequest};
     use crate::{config::Config, dirs::CWD};
@@ -2507,6 +2548,53 @@ mod tests {
             BTreeSet::from(["node:legacy".to_string()])
         );
         assert!(projects.get("node:legacy").unwrap().remove);
+    }
+
+    #[test]
+    fn test_task_toml_boolean_overlay_presence() {
+        let Tasks(mut tasks) = toml::from_str(
+            r#"
+            [explicit]
+            hide = false
+            raw = false
+            raw_args = false
+            interactive = false
+            quiet = false
+            silent = false
+
+            [omitted]
+            description = "no boolean overrides"
+            "#,
+        )
+        .unwrap();
+
+        let script_task = || Task {
+            hide: true,
+            raw: true,
+            raw_args: true,
+            interactive: true,
+            quiet: true,
+            silent: Silent::Bool(true),
+            ..Default::default()
+        };
+
+        let mut explicit = script_task();
+        explicit.merge_toml_overlay(tasks.remove("explicit").unwrap());
+        assert!(!explicit.hide);
+        assert!(!explicit.raw);
+        assert!(!explicit.raw_args);
+        assert!(!explicit.interactive);
+        assert!(!explicit.quiet);
+        assert_eq!(explicit.silent, Silent::Off);
+
+        let mut omitted = script_task();
+        omitted.merge_toml_overlay(tasks.remove("omitted").unwrap());
+        assert!(omitted.hide);
+        assert!(omitted.raw);
+        assert!(omitted.raw_args);
+        assert!(omitted.interactive);
+        assert!(omitted.quiet);
+        assert_eq!(omitted.silent, Silent::Bool(true));
     }
 
     #[tokio::test]
