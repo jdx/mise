@@ -558,6 +558,46 @@ none, and may emit at most 16 MiB across stdout and stderr. They should be fast,
 free of side effects because they run whenever mise computes the task's cache key. Command inputs
 are not run during dry runs or when caching is disabled for raw or interactive execution.
 
+#### External dependencies and lockfiles
+
+Declare dependency manifests and lockfiles as filesystem inputs so dependency updates invalidate the
+cache. They can be listed directly in a task's `sources`, shared through an input group, or applied to
+every task in a config scope with `task_config.global_inputs`.
+
+```mise-toml
+[settings]
+experimental = true
+
+[task_config]
+global_inputs = ["@group:node-dependencies"]
+
+[task_config.input_groups]
+node-dependencies = ["package.json", "pnpm-lock.yaml"]
+
+[tasks.build]
+run = "pnpm build"
+sources = ["src/**"]
+outputs = ["dist"]
+cache = { enabled = true }
+```
+
+The lockfile content represents the resolved external dependency graph, so installed dependency
+directories such as `node_modules` generally should not be included. Resolved mise tools already
+participate in the cache key. Use `cache.command_inputs` for relevant external state that is not
+captured in committed files, such as a package registry selection or a compiler wrapper version:
+
+```mise-toml
+[tasks.build]
+run = "pnpm build"
+sources = ["package.json", "pnpm-lock.yaml", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, command_inputs = ["pnpm config get registry"] }
+```
+
+Only declare deterministic external state that can affect task outputs. Secrets and credentials
+should use pass-through environment variables instead so their values are not included in cache
+keys.
+
 ```mise-toml
 [tasks.lint]
 run = "eslint ."
