@@ -5,6 +5,7 @@ cat <<EOF >mise.toml
 [tools]
 EOF
 assert_succeed "mise bootstrap --yes"
+assert_succeed "mise bs --yes"
 assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap --yes"
 assert_succeed "MISE_EXPERIMENTAL=0 mise bootstrap status"
 assert_not_contains "mise bootstrap --yes" "bootstrap: follow-up"

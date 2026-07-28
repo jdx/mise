@@ -66,7 +66,11 @@ use clap::{Subcommand, ValueEnum};
 /// named parts. Both flags can be repeated or comma-separated, but they
 /// cannot be used together.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(
+    visible_alias = "bs",
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP
+)]
 pub struct Bootstrap {
     #[clap(subcommand)]
     command: Option<Commands>,
