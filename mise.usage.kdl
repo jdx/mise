@@ -281,6 +281,7 @@ e.g.: ruby@3
 """# required=#false var=#true
 }
 cmd bootstrap help="Set up a machine for the current config in one command" effect=write {
+    alias bs
     long_help #"""
 Set up a machine for the current config in one command
 
