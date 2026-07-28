@@ -30,6 +30,7 @@ use crate::{
     config::Config,
 };
 use crate::{file, github, minisign};
+use aqua_registry::AquaRegistryError;
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
@@ -655,7 +656,7 @@ impl Backend for AquaBackend {
                 .with_cache_key(format!("{cache_key:?}"))
                 .build();
 
-        let candidates = cache
+        let candidates = match cache
             .get_or_try_init_async(async || {
                 let pkg = self.package_with_version_candidates(tv).await?;
                 // Pure: no filesystem reads, so a mid-install call can never
@@ -668,9 +669,23 @@ impl Backend for AquaBackend {
                     arch(),
                 )
             })
-            .await?;
+            .await
+        {
+            Ok(candidates) => candidates,
+            Err(err)
+                if Self::is_registry_unavailable(&err)
+                    && Self::has_legacy_root_bin(&self.ba, &install_path) =>
+            {
+                debug!(
+                    "unable to resolve current Aqua bin paths for {}: {err:#}; using compatible root-level binary layout",
+                    tv.style()
+                );
+                return Ok(vec![runtime_path]);
+            }
+            Err(err) => return Err(err),
+        };
 
-        let paths = candidates
+        let mut paths: Vec<_> = candidates
             .iter()
             // Existence checked LIVE, on the install_path basis (matches the
             // original pre-`strip_prefix` filter). Returned paths are
@@ -678,6 +693,9 @@ impl Backend for AquaBackend {
             .filter(|rel| install_path.join(rel).exists())
             .map(|rel| rel.mount(&runtime_path))
             .collect();
+        if paths.is_empty() && Self::has_legacy_root_bin(&self.ba, &install_path) {
+            paths.push(runtime_path);
+        }
         Ok(paths)
     }
 
@@ -2896,6 +2914,22 @@ impl AquaBackend {
             .collect())
     }
 
+    fn has_legacy_root_bin(ba: &BackendArg, install_path: &Path) -> bool {
+        [&ba.short, &ba.tool_name]
+            .into_iter()
+            .filter_map(|name| name.rsplit([':', '/']).next())
+            .unique()
+            .map(|name| install_path.join(format!("{name}{}", std::env::consts::EXE_SUFFIX)))
+            .any(|path| path.is_file() && file::is_executable(&path))
+    }
+
+    fn is_registry_unavailable(err: &eyre::Report) -> bool {
+        matches!(
+            err.downcast_ref::<AquaRegistryError>(),
+            Some(AquaRegistryError::RegistryNotAvailable(_))
+        )
+    }
+
     fn srcs_for_platform(
         pkg: &AquaPackage,
         version: &str,
@@ -3301,6 +3335,38 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn detects_legacy_root_binary_layout() {
+        let temp = tempfile::tempdir().unwrap();
+        let ba = BackendArg::from("codex");
+        let unrelated = temp
+            .path()
+            .join(format!("node{}", std::env::consts::EXE_SUFFIX));
+        file::write(&unrelated, "unrelated binary").unwrap();
+        file::make_executable(&unrelated).unwrap();
+        assert!(!AquaBackend::has_legacy_root_bin(&ba, temp.path()));
+
+        let codex = temp
+            .path()
+            .join(format!("codex{}", std::env::consts::EXE_SUFFIX));
+        file::write(&codex, "codex binary").unwrap();
+        file::make_executable(&codex).unwrap();
+        assert!(AquaBackend::has_legacy_root_bin(&ba, temp.path()));
+    }
+
+    #[test]
+    fn legacy_fallback_only_accepts_registry_unavailability() {
+        let unavailable = eyre!(AquaRegistryError::RegistryNotAvailable(
+            "network unavailable".into()
+        ));
+        assert!(AquaBackend::is_registry_unavailable(&unavailable));
+
+        let template = eyre!(AquaRegistryError::TemplateError(eyre!(
+            "missing required variable"
+        )));
+        assert!(!AquaBackend::is_registry_unavailable(&template));
     }
 
     #[test]
