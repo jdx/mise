@@ -1,5 +1,6 @@
 //! `[dotfiles]` — declarative edits to files mise doesn't own,
-//! applied by `mise bootstrap dotfiles apply` or `mise bootstrap`.
+//! applied by `mise bootstrap dotfiles apply` or `mise bootstrap`, and
+//! removed by `mise bootstrap dotfiles unapply`.
 //!
 //! Where whole-file dotfile entries manage whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,

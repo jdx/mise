@@ -1,5 +1,6 @@
 //! `[dotfiles]` — declarative config files (dotfiles) applied by
-//! `mise bootstrap dotfiles apply` or `mise bootstrap`.
+//! `mise bootstrap dotfiles apply` or `mise bootstrap`, and removed by
+//! `mise bootstrap dotfiles unapply`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
@@ -1125,24 +1126,10 @@ fn plan_unapply_one<'a>(
             if req.target.is_dir() && !req.source.exists() {
                 bail!("source directory is missing, so managed children cannot be identified");
             }
-            if !req.source.exists() && req.target.exists() && !opts.force {
-                bail!("source is missing; use --force to remove the target");
-            }
-            if opts.force && (req.target.exists() || req.target.is_symlink()) {
-                paths.insert(req.target.clone(), ());
-            } else if req.source.exists() {
-                plan_regular_file(&req.source, &req.target, false, &mut paths)?;
-            }
+            plan_single_file(req, opts, &mut paths)?;
         }
         FileMode::Symlink => {
-            if !req.source.exists() && req.target.exists() && !opts.force {
-                bail!("source is missing; use --force to remove the target");
-            }
-            if opts.force && (req.target.exists() || req.target.is_symlink()) {
-                paths.insert(req.target.clone(), ());
-            } else if req.source.exists() {
-                plan_regular_file(&req.source, &req.target, false, &mut paths)?;
-            }
+            plan_single_file(req, opts, &mut paths)?;
         }
         FileMode::SymlinkEach => {
             bail!("mode symlink-each requires the source to be a directory");
@@ -1177,6 +1164,22 @@ fn plan_unapply_one<'a>(
             conditional,
         }))
     }
+}
+
+fn plan_single_file(
+    req: &FileRequest,
+    opts: &UnapplyOpts,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if !req.source.exists() && req.target.exists() && !opts.force {
+        bail!("source is missing; use --force to remove the target");
+    }
+    if opts.force && (req.target.exists() || req.target.is_symlink()) {
+        paths.insert(req.target.clone(), ());
+    } else if req.source.exists() {
+        plan_regular_file(&req.source, &req.target, false, paths)?;
+    }
+    Ok(())
 }
 
 fn plan_regular_file(

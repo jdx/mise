@@ -2,6 +2,7 @@ use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::ui::prompt;
 
 /// Remove dotfiles applied from `[dotfiles]`
 ///
@@ -61,13 +62,13 @@ impl DotfilesUnapply {
             return Ok(());
         }
 
-        let edit_opts = system::edits::UnapplyOpts {
+        let mut edit_opts = system::edits::UnapplyOpts {
             dry_run: self.dry_run,
             verbose: Settings::get().verbose,
             force: self.force,
             yes: self.yes,
         };
-        let file_opts = system::files::UnapplyOpts {
+        let mut file_opts = system::files::UnapplyOpts {
             dry_run: self.dry_run,
             verbose: Settings::get().verbose,
             force: self.force,
@@ -78,6 +79,23 @@ impl DotfilesUnapply {
         // Apply writes whole files before edits, so execute the inverse order.
         let edit_plan = system::edits::plan_unapply(&edits, &edit_opts)?;
         let file_plan = system::files::plan_unapply(&config, &files, &file_opts)?;
+        if !self.dry_run
+            && !self.yes
+            && console::user_attended_stderr()
+            && (!edit_plan.is_empty() || !file_plan.is_empty())
+            && !prompt::confirm(format!(
+                "dotfiles: unapply {} file(s) and {} edit(s)?",
+                file_plan.len(),
+                edit_plan.len()
+            ))?
+        {
+            info!("dotfiles: skipped");
+            return Ok(());
+        }
+        // Confirmation covers the complete validated plan. Suppress the
+        // per-domain prompts so declining cannot leave a partial unapply.
+        edit_opts.yes = true;
+        file_opts.yes = true;
         if !edits.is_empty() {
             system::edits::execute_unapply(&edit_plan, &edit_opts)?;
         }
