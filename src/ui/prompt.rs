@@ -4,6 +4,7 @@ use demand::{Confirm, Dialog, DialogButton};
 
 use crate::env;
 use crate::ui::ctrlc;
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::theme::get_theme;
 
 static MUTEX: Mutex<()> = Mutex::new(());
@@ -21,6 +22,7 @@ pub fn confirm_with_default<S: Into<String>>(message: S, default_yes: bool) -> e
     if !console::user_attended_stderr() || env::__USAGE.is_some() {
         return Ok(false);
     }
+    let _progress_pause = MultiProgressReport::try_get().map(|report| report.pause_progress());
     let theme = get_theme();
     let result = Confirm::new(message)
         .selected(default_yes)
@@ -42,6 +44,7 @@ pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
         return Ok(true);
     }
 
+    let _progress_pause = MultiProgressReport::try_get().map(|report| report.pause_progress());
     let theme = get_theme();
     let answer = Dialog::new(message)
         .buttons(vec![
