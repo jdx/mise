@@ -36,7 +36,7 @@ outside this tracker.
       dependency edges
 - [x] Define a workspace provider interface that can discover projects and dependencies
       deterministically
-- [ ] Merge graphs from multiple providers for polyglot repositories
+- [x] Merge graphs from multiple providers for polyglot repositories
 - [ ] Allow explicit configuration to add, remove, or override inferred projects and dependency
       edges
 - [ ] Detect project graph cycles and report actionable diagnostics

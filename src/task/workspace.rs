@@ -85,7 +85,7 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>>;
 }
 
-/// A validated, deterministically ordered project graph from one provider.
+/// A validated, deterministically ordered project graph from workspace providers.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WorkspaceProjectGraph {
     projects: BTreeMap<ProjectId, WorkspaceProject>,
@@ -97,23 +97,49 @@ impl WorkspaceProjectGraph {
         provider: &dyn WorkspaceProvider,
         workspace_root: &Path,
     ) -> Result<WorkspaceProjectGraph> {
-        let provider_id = provider.id();
-        validate_id_part("provider", provider_id)?;
+        Self::discover_all(&[provider], workspace_root)
+    }
+
+    /// Discovers and merges projects from multiple workspace providers.
+    ///
+    /// Providers are evaluated in stable provider-ID order. Dependency edges
+    /// are validated after every provider has contributed its projects so an
+    /// edge may connect projects from different ecosystems.
+    pub fn discover_all(
+        providers: &[&dyn WorkspaceProvider],
+        workspace_root: &Path,
+    ) -> Result<WorkspaceProjectGraph> {
+        let mut providers = providers
+            .iter()
+            .map(|provider| (provider.id().to_string(), *provider))
+            .collect::<Vec<_>>();
+        providers.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        for (index, (provider_id, _)) in providers.iter().enumerate() {
+            validate_id_part("provider", provider_id)?;
+            if index > 0 && providers[index - 1].0 == *provider_id {
+                bail!("duplicate workspace provider ID {provider_id:?}");
+            }
+        }
 
         let mut projects = BTreeMap::new();
-        for mut project in provider.discover(workspace_root)? {
-            let expected_prefix = format!("{provider_id}:");
-            let Some(local_id) = project.id.as_str().strip_prefix(&expected_prefix) else {
-                bail!(
-                    "workspace provider {provider_id:?} returned project ID {:?}; IDs must use the {expected_prefix:?} namespace",
-                    project.id
-                );
-            };
-            validate_id_part("project", local_id)?;
-            project.root = normalize_project_root(&project.id, &project.root)?;
-            let id = project.id.clone();
-            if projects.insert(id.clone(), project).is_some() {
-                bail!("workspace provider {provider_id:?} returned duplicate project ID {id:?}");
+        for (provider_id, provider) in providers {
+            for mut project in provider.discover(workspace_root)? {
+                let expected_prefix = format!("{provider_id}:");
+                let Some(local_id) = project.id.as_str().strip_prefix(&expected_prefix) else {
+                    bail!(
+                        "workspace provider {provider_id:?} returned project ID {:?}; IDs must use the {expected_prefix:?} namespace",
+                        project.id
+                    );
+                };
+                validate_id_part("project", local_id)?;
+                project.root = normalize_project_root(&project.id, &project.root)?;
+                let id = project.id.clone();
+                if projects.insert(id.clone(), project).is_some() {
+                    bail!(
+                        "workspace provider {provider_id:?} returned duplicate project ID {id:?}"
+                    );
+                }
             }
         }
 
@@ -182,12 +208,13 @@ mod tests {
 
     #[derive(Debug)]
     struct TestProvider {
+        id: &'static str,
         projects: Vec<WorkspaceProject>,
     }
 
     impl WorkspaceProvider for TestProvider {
         fn id(&self) -> &str {
-            "test"
+            self.id
         }
 
         fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
@@ -195,8 +222,15 @@ mod tests {
         }
     }
 
-    fn project(name: &str, root: &str) -> WorkspaceProject {
-        WorkspaceProject::new(ProjectId::new("test", name).unwrap(), root)
+    fn project(provider: &str, name: &str, root: &str) -> WorkspaceProject {
+        WorkspaceProject::new(ProjectId::new(provider, name).unwrap(), root)
+    }
+
+    fn test_provider(projects: Vec<WorkspaceProject>) -> TestProvider {
+        TestProvider {
+            id: "test",
+            projects,
+        }
     }
 
     #[test]
@@ -211,9 +245,10 @@ mod tests {
 
     #[test]
     fn discovery_is_ordered_and_normalizes_roots() {
-        let provider = TestProvider {
-            projects: vec![project("z", "./packages/z"), project("a", "")],
-        };
+        let provider = test_provider(vec![
+            project("test", "z", "./packages/z"),
+            project("test", "a", ""),
+        ]);
 
         let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
         let projects = graph.projects().collect::<Vec<_>>();
@@ -226,9 +261,10 @@ mod tests {
 
     #[test]
     fn discovery_rejects_duplicate_ids() {
-        let provider = TestProvider {
-            projects: vec![project("app", "a"), project("app", "b")],
-        };
+        let provider = test_provider(vec![
+            project("test", "app", "a"),
+            project("test", "app", "b"),
+        ]);
 
         let err = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap_err();
         assert!(err.to_string().contains("duplicate project ID"));
@@ -236,12 +272,8 @@ mod tests {
 
     #[test]
     fn discovery_rejects_invalid_roots() {
-        let absolute = TestProvider {
-            projects: vec![project("app", "/outside")],
-        };
-        let escaping = TestProvider {
-            projects: vec![project("app", "../outside")],
-        };
+        let absolute = test_provider(vec![project("test", "app", "/outside")]);
+        let escaping = test_provider(vec![project("test", "app", "../outside")]);
 
         assert!(
             WorkspaceProjectGraph::discover(&absolute, Path::new("/workspace"))
@@ -259,9 +291,7 @@ mod tests {
 
     #[test]
     fn discovery_normalizes_internal_parent_components() {
-        let provider = TestProvider {
-            projects: vec![project("app", "packages/tmp/../app")],
-        };
+        let provider = test_provider(vec![project("test", "app", "packages/tmp/../app")]);
 
         let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
 
@@ -273,12 +303,10 @@ mod tests {
 
     #[test]
     fn discovery_rejects_dangling_dependency_edges() {
-        let mut app = project("app", "app");
+        let mut app = project("test", "app", "app");
         app.dependencies
             .insert(ProjectId::new("test", "missing").unwrap());
-        let provider = TestProvider {
-            projects: vec![app],
-        };
+        let provider = test_provider(vec![app]);
 
         let err = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap_err();
         assert!(err.to_string().contains("depends on unknown project"));
@@ -287,6 +315,7 @@ mod tests {
     #[test]
     fn discovery_rejects_ids_from_another_provider() {
         let provider = TestProvider {
+            id: "test",
             projects: vec![WorkspaceProject::new(
                 ProjectId::new("other", "app").unwrap(),
                 "app",
@@ -295,5 +324,66 @@ mod tests {
 
         let err = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap_err();
         assert!(err.to_string().contains("must use the \"test:\" namespace"));
+    }
+
+    #[test]
+    fn discovery_merges_providers_and_cross_provider_edges() {
+        let cargo = TestProvider {
+            id: "cargo",
+            projects: vec![project("cargo", "core", "crates/core")],
+        };
+        let mut app = project("node", "app", "apps/app");
+        app.dependencies
+            .insert(ProjectId::new("cargo", "core").unwrap());
+        let node = TestProvider {
+            id: "node",
+            projects: vec![app],
+        };
+
+        let graph =
+            WorkspaceProjectGraph::discover_all(&[&node, &cargo], Path::new("/workspace")).unwrap();
+        let ids = graph
+            .projects()
+            .map(|project| project.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["cargo:core", "node:app"]);
+        assert_eq!(
+            graph
+                .get(&ProjectId::new("node", "app").unwrap())
+                .unwrap()
+                .dependencies,
+            BTreeSet::from([ProjectId::new("cargo", "core").unwrap()])
+        );
+    }
+
+    #[test]
+    fn discovery_is_independent_of_provider_order() {
+        let cargo = TestProvider {
+            id: "cargo",
+            projects: vec![project("cargo", "core", ".")],
+        };
+        let node = TestProvider {
+            id: "node",
+            projects: vec![project("node", "app", ".")],
+        };
+
+        let forward =
+            WorkspaceProjectGraph::discover_all(&[&cargo, &node], Path::new("/workspace")).unwrap();
+        let reverse =
+            WorkspaceProjectGraph::discover_all(&[&node, &cargo], Path::new("/workspace")).unwrap();
+
+        assert_eq!(forward, reverse);
+    }
+
+    #[test]
+    fn discovery_rejects_duplicate_provider_ids() {
+        let first = test_provider(vec![project("test", "first", "first")]);
+        let second = test_provider(vec![project("test", "second", "second")]);
+
+        let err = WorkspaceProjectGraph::discover_all(&[&first, &second], Path::new("/workspace"))
+            .unwrap_err();
+
+        assert!(err.to_string().contains("duplicate workspace provider ID"));
     }
 }
