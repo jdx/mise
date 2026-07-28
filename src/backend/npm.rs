@@ -952,7 +952,8 @@ impl NPMBackend {
             // `aube.allowBuilds`; only the "allow everything" case needs the
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
-            control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx })),
+            control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
+                .with_prompt_handler(Arc::new(AubePromptHandler)),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
@@ -1299,6 +1300,53 @@ impl aube::embed::InstallReporter for AubeProgressReporter {
     }
 }
 
+/// Routes confirmations requested by embedded aube through mise's prompt UI.
+///
+/// The prompt UI owns TTY detection and progress suspension, so unattended
+/// installs fail closed instead of waiting on stdin and interactive prompts
+/// cannot be overwritten by the progress renderer.
+#[derive(Debug)]
+struct AubePromptHandler;
+
+impl aube::embed::InstallPromptHandler for AubePromptHandler {
+    fn confirm(&self, prompt: aube::embed::InstallPrompt) -> aube::embed::InstallPromptFuture<'_> {
+        Box::pin(async move {
+            crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
+                .map_err(|err| miette::miette!("{err:#}"))
+        })
+    }
+}
+
+fn aube_prompt_message(prompt: &aube::embed::InstallPrompt) -> String {
+    use aube::embed::InstallPrompt;
+
+    match prompt {
+        InstallPrompt::SimilarPackageName {
+            package,
+            suggested_package,
+            popularity_rank,
+            edit_distance,
+        } => format!(
+            "{package} resembles {suggested_package} (top-100,000 rank #{popularity_rank}, edit distance {edit_distance}). Continue adding {package}?"
+        ),
+        InstallPrompt::LowDownloadPackage {
+            package,
+            weekly_downloads,
+            threshold,
+        } => format!(
+            "{package} looks suspicious: {weekly_downloads} downloads last week (threshold: {threshold}). Continue adding {package}?"
+        ),
+        InstallPrompt::NewPackageName {
+            package,
+            created_at,
+            minimum_age_minutes,
+        } => format!(
+            "{package} is newly registered (first published {created_at}; minimum age: {minimum_age_minutes} minutes). Continue adding {package}?"
+        ),
+        _ => "aube requires confirmation before adding this package. Continue?".to_string(),
+    }
+}
+
 /// Render one aube install event onto mise's progress job.
 ///
 /// Everything goes in the message; the progress bar is deliberately left
@@ -1642,6 +1690,35 @@ mod tests {
         assert_eq!(NPMBackend::build_aube_minimum_release_age(1), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(60), 1);
         assert_eq!(NPMBackend::build_aube_minimum_release_age(61), 2);
+    }
+
+    #[test]
+    fn test_aube_prompt_messages_preserve_security_context() {
+        assert_eq!(
+            aube_prompt_message(&aube::embed::InstallPrompt::LowDownloadPackage {
+                package: "tiny".to_string(),
+                weekly_downloads: 12,
+                threshold: 1000,
+            }),
+            "tiny looks suspicious: 12 downloads last week (threshold: 1000). Continue adding tiny?"
+        );
+        assert_eq!(
+            aube_prompt_message(&aube::embed::InstallPrompt::SimilarPackageName {
+                package: "loadsh".to_string(),
+                suggested_package: "lodash".to_string(),
+                popularity_rank: 42,
+                edit_distance: 2,
+            }),
+            "loadsh resembles lodash (top-100,000 rank #42, edit distance 2). Continue adding loadsh?"
+        );
+        assert_eq!(
+            aube_prompt_message(&aube::embed::InstallPrompt::NewPackageName {
+                package: "new-package".to_string(),
+                created_at: "2026-07-28T00:00:00Z".to_string(),
+                minimum_age_minutes: 43_200,
+            }),
+            "new-package is newly registered (first published 2026-07-28T00:00:00Z; minimum age: 43200 minutes). Continue adding new-package?"
+        );
     }
 
     #[test]
