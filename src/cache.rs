@@ -10,6 +10,7 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+use path_absolutize::Absolutize;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::LazyLock as Lazy;
@@ -314,16 +315,18 @@ pub(crate) struct PruneOptions {
     pub(crate) age: Duration,
 }
 
-pub(crate) fn cache_dirs() -> Vec<PathBuf> {
+pub(crate) fn cache_dirs() -> Result<Vec<PathBuf>> {
     cache_dirs_with_task_cache(crate::task::task_cache::task_cache_dir())
 }
 
-fn cache_dirs_with_task_cache(task_cache_dir: PathBuf) -> Vec<PathBuf> {
-    let mut cache_dirs = vec![dirs::CACHE.to_path_buf()];
-    if !task_cache_dir.starts_with(*dirs::CACHE) {
+fn cache_dirs_with_task_cache(task_cache_dir: PathBuf) -> Result<Vec<PathBuf>> {
+    let cache_root = dirs::CACHE.absolutize()?.to_path_buf();
+    let task_cache_dir = task_cache_dir.absolutize()?.to_path_buf();
+    let mut cache_dirs = vec![cache_root.clone()];
+    if !task_cache_dir.starts_with(cache_root) {
         cache_dirs.push(task_cache_dir);
     }
-    cache_dirs
+    Ok(cache_dirs)
 }
 
 pub(crate) fn auto_prune() -> Result<()> {
@@ -343,7 +346,7 @@ pub(crate) fn auto_prune() -> Result<()> {
     {
         return Ok(());
     }
-    let cache_dirs = cache_dirs();
+    let cache_dirs = cache_dirs()?;
     let empty = cache_dirs
         .iter()
         .all(|dir| file::ls(dir).unwrap_or_default().is_empty());
@@ -491,14 +494,28 @@ mod tests {
     fn cache_dirs_adds_only_external_task_cache() {
         let external = tempfile::tempdir().unwrap();
         assert_eq!(
-            cache_dirs_with_task_cache(external.path().to_path_buf()),
+            cache_dirs_with_task_cache(external.path().to_path_buf()).unwrap(),
             vec![dirs::CACHE.to_path_buf(), external.path().to_path_buf()]
         );
 
         let nested = dirs::CACHE.join("task-artifacts").join("v2");
         assert_eq!(
-            cache_dirs_with_task_cache(nested),
+            cache_dirs_with_task_cache(nested).unwrap(),
             vec![dirs::CACHE.to_path_buf()]
+        );
+
+        let external = dirs::CACHE
+            .parent()
+            .unwrap()
+            .join("external-task-cache")
+            .join("v2");
+        let escaping = dirs::CACHE
+            .join("..")
+            .join("external-task-cache")
+            .join("v2");
+        assert_eq!(
+            cache_dirs_with_task_cache(escaping).unwrap(),
+            vec![dirs::CACHE.to_path_buf(), external]
         );
     }
 }

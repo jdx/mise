@@ -35,7 +35,7 @@ impl CacheClear {
                     }
                 })
                 .collect(),
-            None => cache::cache_dirs(),
+            None => cache::cache_dirs()?,
         };
         if self.outdate {
             for p in cache_dirs {
