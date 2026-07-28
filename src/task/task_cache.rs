@@ -169,6 +169,8 @@ impl TaskArtifactCache {
 }
 
 impl TaskArtifactCacheBuilder {
+    /// Finishes cache-key construction after task tools, environment, and
+    /// dependency artifacts have been resolved.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn finish(
         self,
@@ -350,6 +352,7 @@ impl TaskArtifactCache {
         }
     }
 
+    /// Stores a successful task's declared outputs and captured logs.
     pub(crate) fn store(&self, task: &Task, output: &[TaskCacheOutput]) -> Result<()> {
         let roots = resolve_output_roots(task, &self.root, true)?;
         let roots = remove_nested_roots(roots);
@@ -392,6 +395,7 @@ impl TaskArtifactCache {
         Ok(())
     }
 
+    /// Returns this cache entry's archive and manifest paths.
     fn paths(&self) -> (PathBuf, PathBuf) {
         (
             self.cache_dir.join(format!("{}.tar.zst", self.key)),
@@ -409,6 +413,7 @@ impl TaskArtifactCache {
     }
 }
 
+/// Returns the versioned directory containing task artifact cache entries.
 pub(crate) fn task_cache_dir() -> PathBuf {
     Settings::get()
         .task
