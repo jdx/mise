@@ -57,6 +57,11 @@ impl Which {
                 Ok(())
             }
             None => {
+                if let Some(msg) =
+                    crate::shims::unavailable_configured_tool_message(&config, &ts, &bin_name)
+                {
+                    bail!(msg);
+                }
                 if self.has_shim(&bin_name) {
                     bail!(
                         "{bin_name} is a mise bin however it is not currently active. Use `mise use` to activate it in this directory."
