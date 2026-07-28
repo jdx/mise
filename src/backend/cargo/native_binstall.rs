@@ -33,9 +33,6 @@ pub async fn install(
 ) -> Result<bool> {
     let request_options = tv.request.options();
     let opts = CargoOptions::new(&request_options);
-    if opts.locked() {
-        return Ok(false);
-    }
     let version = tv.version.as_str();
     let crate_name = opts.crate_arg().unwrap_or_else(|| tool_name.to_string());
     if Settings::get().cargo.registry_name.is_some() {
@@ -47,14 +44,23 @@ pub async fn install(
 
     let target_platform = PlatformTarget::from_current();
     let manifest = download_crate_manifest(&package, tv, ctx).await?;
-    let Some(binstall) =
-        NativeBinstallMetadata::from_manifest(&manifest, &target, &target_platform)?
-    else {
-        return Ok(false);
-    };
+    let mut binstall = NativeBinstallMetadata::from_manifest(&manifest, &target, &target_platform)?;
     if binstall.disabled_strategies.contains("crate-meta-data") {
         return Ok(false);
     }
+    if binstall.pkg_url.is_none() {
+        let Some(discovered) =
+            discover_native_binstall_metadata(&package, &crate_name, version, &target).await
+        else {
+            return Ok(false);
+        };
+        binstall.pkg_url = discovered.pkg_url;
+        binstall.pkg_fmt = discovered.pkg_fmt;
+    }
+    let pkg_url = binstall
+        .pkg_url
+        .as_deref()
+        .expect("native binstall metadata should have a package URL");
 
     let manifest_bins = native_manifest_bins(&manifest);
     let bins = native_bins_to_install(opts.bin(), &manifest_bins, &package, &crate_name);
@@ -80,10 +86,16 @@ pub async fn install(
     let bin_root = tv.install_path().join("bin");
 
     if package_format.extraction_format.is_none() {
-        if !raw_binary_url_supports_bins(&binstall.pkg_url, &bin_names) {
+        if !raw_binary_url_supports_bins(pkg_url, &bin_names) {
             return Ok(false);
         }
         if matches!(action, NativeBinstallAction::WarnOnly) {
+            for bin in &bins {
+                let archive_url = expand_binstall_template(pkg_url, &template_ctx.vars(&bin.name));
+                if !native_binstall_file_available(&archive_url).await {
+                    return Ok(false);
+                }
+            }
             warn_native_binstall_rollout();
             return Ok(false);
         }
@@ -94,7 +106,7 @@ pub async fn install(
         let mut pending = vec![];
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
-            let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
+            let archive_url = expand_binstall_template(pkg_url, &vars);
             let src = download_dir
                 .path()
                 .join(format!("{}{}", bin.name, binary_ext));
@@ -119,20 +131,31 @@ pub async fn install(
     }
 
     if matches!(action, NativeBinstallAction::WarnOnly) {
+        let archive_url = expand_binstall_template(
+            pkg_url,
+            &template_ctx.vars(
+                bins.first()
+                    .map(|bin| bin.name.as_str())
+                    .unwrap_or(&crate_name),
+            ),
+        );
+        if !native_binstall_file_available(&archive_url).await {
+            return Ok(false);
+        }
         warn_native_binstall_rollout();
         return Ok(false);
     }
 
     file::create_dir_all(&bin_root)?;
 
-    if template_contains_var(&binstall.pkg_url, "bin") {
+    if template_contains_var(pkg_url, "bin") {
         let download_dir = tempfile::Builder::new()
             .prefix("mise-cargo-binstall-archives-")
             .tempdir()?;
         let mut pending = vec![];
         for bin in &bins {
             let vars = template_ctx.vars(&bin.name);
-            let archive_url = expand_binstall_template(&binstall.pkg_url, &vars);
+            let archive_url = expand_binstall_template(pkg_url, &vars);
             let archive_path = download_dir.path().join(format!(
                 "{}-{}",
                 bin.name,
@@ -192,7 +215,7 @@ pub async fn install(
     }
 
     let archive_url = expand_binstall_template(
-        &binstall.pkg_url,
+        pkg_url,
         &template_ctx.vars(
             bins.first()
                 .map(|bin| bin.name.as_str())
@@ -340,7 +363,7 @@ where
 
 #[derive(Debug, Default)]
 struct NativeBinstallMetadata {
-    pkg_url: String,
+    pkg_url: Option<String>,
     bin_dir: Option<String>,
     pkg_fmt: Option<String>,
     disabled_strategies: BTreeSet<String>,
@@ -357,14 +380,14 @@ impl NativeBinstallMetadata {
         manifest: &toml::Value,
         target: &str,
         platform: &PlatformTarget,
-    ) -> Result<Option<Self>> {
+    ) -> Result<Self> {
         let Some(root) = manifest
             .get("package")
             .and_then(|p| p.get("metadata"))
             .and_then(|m| m.get("binstall"))
             .and_then(toml::Value::as_table)
         else {
-            return Ok(None);
+            return Ok(Self::default());
         };
 
         let mut merged = root.clone();
@@ -393,12 +416,11 @@ impl NativeBinstallMetadata {
             }
         }
 
-        let Some(pkg_url) = merged.get("pkg-url").and_then(toml::Value::as_str) else {
-            return Ok(None);
-        };
-
-        Ok(Some(Self {
-            pkg_url: pkg_url.to_string(),
+        Ok(Self {
+            pkg_url: merged
+                .get("pkg-url")
+                .and_then(toml::Value::as_str)
+                .map(str::to_string),
             bin_dir: merged
                 .get("bin-dir")
                 .and_then(toml::Value::as_str)
@@ -415,8 +437,104 @@ impl NativeBinstallMetadata {
                 .filter_map(toml::Value::as_str)
                 .map(str::to_string)
                 .collect(),
-        }))
+        })
     }
+}
+
+const DEFAULT_PACKAGE_EXTENSIONS: &[(&str, &str)] = &[
+    ("tar", ".tar"),
+    ("tbz2", ".tbz2"),
+    ("tbz2", ".tar.bz2"),
+    ("tbz2", ".tbz"),
+    ("tbz2", ".tar.bz"),
+    ("tgz", ".tgz"),
+    ("tgz", ".tar.gz"),
+    ("txz", ".txz"),
+    ("txz", ".tar.xz"),
+    ("tzstd", ".tzstd"),
+    ("tzstd", ".tzst"),
+    ("tzstd", ".tar.zst"),
+    ("zip", ".zip"),
+    ("bin", ".bin"),
+    ("bin", ""),
+    ("bin", ".exe"),
+];
+
+async fn discover_native_binstall_metadata(
+    package: &CratesIoPackage,
+    crate_name: &str,
+    version: &str,
+    target: &str,
+) -> Option<NativeBinstallMetadata> {
+    let repository = package.repository.as_deref()?;
+    let repo = github_repo_from_repository(repository)?;
+    let tags = [
+        version.to_string(),
+        format!("v{version}"),
+        format!("{crate_name}/{version}"),
+        format!("{crate_name}/v{version}"),
+    ];
+
+    for tag in tags {
+        let release = match crate::github::get_release(&repo, &tag).await {
+            Ok(release) => release,
+            Err(err) => {
+                debug!("failed to inspect GitHub release {repo}@{tag}: {err:#}");
+                continue;
+            }
+        };
+        if let Some((asset_url, pkg_fmt)) =
+            select_default_github_asset(&release.assets, crate_name, version, target)
+        {
+            return Some(NativeBinstallMetadata {
+                pkg_url: Some(asset_url),
+                pkg_fmt: Some(pkg_fmt),
+                ..Default::default()
+            });
+        }
+    }
+    None
+}
+
+fn github_repo_from_repository(repository: &str) -> Option<String> {
+    let repository = repository.strip_prefix("git+").unwrap_or(repository);
+    let url = Url::parse(repository).ok()?;
+    if url.host_str()? != "github.com" {
+        return None;
+    }
+    let mut segments = url.path_segments()?.filter(|segment| !segment.is_empty());
+    let owner = segments.next()?;
+    let repo = segments.next()?.trim_end_matches(".git");
+    (!owner.is_empty() && !repo.is_empty()).then(|| format!("{owner}/{repo}"))
+}
+
+fn select_default_github_asset(
+    assets: &[crate::github::GithubAsset],
+    crate_name: &str,
+    version: &str,
+    target: &str,
+) -> Option<(String, String)> {
+    let stems = [
+        format!("{crate_name}-{target}-v{version}"),
+        format!("{crate_name}-{target}-{version}"),
+        format!("{crate_name}-{version}-{target}"),
+        format!("{crate_name}-v{version}-{target}"),
+        format!("{crate_name}_{target}_v{version}"),
+        format!("{crate_name}_{target}_{version}"),
+        format!("{crate_name}_{version}_{target}"),
+        format!("{crate_name}_v{version}_{target}"),
+        format!("{crate_name}-{target}"),
+        format!("{crate_name}_{target}"),
+    ];
+    for stem in stems {
+        for (pkg_fmt, extension) in DEFAULT_PACKAGE_EXTENSIONS {
+            let candidate = format!("{stem}{extension}");
+            if let Some(asset) = assets.iter().find(|asset| asset.name == candidate) {
+                return Some((asset.browser_download_url.clone(), (*pkg_fmt).to_string()));
+            }
+        }
+    }
+    None
 }
 
 fn native_manifest_bins(manifest: &toml::Value) -> Vec<NativeCargoBin> {
@@ -560,6 +678,25 @@ async fn download_native_binstall_file(
 ) -> Result<()> {
     let download_url = resolve_native_binstall_download_url(url).await;
     HTTP.download_file(&download_url, path, pr).await
+}
+
+async fn native_binstall_file_available(url: &str) -> bool {
+    if let Some((repo, tag, asset_name)) = github_release_asset_from_url(url) {
+        return match crate::github::get_release(&repo, &tag).await {
+            Ok(release) => release.assets.iter().any(|asset| asset.name == asset_name),
+            Err(err) => {
+                debug!("failed to inspect GitHub release {repo}@{tag}/{asset_name}: {err:#}");
+                false
+            }
+        };
+    }
+    match HTTP.head(url).await {
+        Ok(_) => true,
+        Err(err) => {
+            debug!("native cargo binary artifact is unavailable at {url}: {err:#}");
+            false
+        }
+    }
 }
 
 async fn resolve_native_binstall_download_url(url: &str) -> String {
@@ -915,7 +1052,6 @@ mod tests {
             &PlatformTarget::new(Platform::parse("macos-x64").unwrap()),
         )
         .unwrap();
-        let metadata = metadata.unwrap();
 
         assert_eq!(metadata.pkg_fmt.as_deref(), Some("zip"));
         assert_eq!(metadata.bin_dir.as_deref(), Some("{ bin }{ binary-ext }"));
@@ -943,10 +1079,9 @@ mod tests {
             "x86_64-unknown-linux-musl",
             &PlatformTarget::new(Platform::parse("linux-x64-musl").unwrap()),
         )
-        .unwrap()
         .unwrap();
 
-        assert_eq!(metadata.pkg_url, "musl");
+        assert_eq!(metadata.pkg_url.as_deref(), Some("musl"));
         assert_eq!(metadata.pkg_fmt.as_deref(), Some("tar"));
     }
 
@@ -972,10 +1107,70 @@ mod tests {
             "x86_64-unknown-linux-gnu",
             &PlatformTarget::new(Platform::parse("linux-x64").unwrap()),
         )
-        .unwrap()
         .unwrap();
 
         assert_eq!(metadata.pkg_fmt.as_deref(), Some("zip"));
+    }
+
+    #[test]
+    fn native_binstall_metadata_is_optional() {
+        let manifest = toml::Value::Table(toml::toml! {
+            [package]
+            name = "demo"
+        });
+
+        let metadata = NativeBinstallMetadata::from_manifest(
+            &manifest,
+            "x86_64-unknown-linux-gnu",
+            &PlatformTarget::new(Platform::parse("linux-x64").unwrap()),
+        )
+        .unwrap();
+
+        assert_eq!(metadata.pkg_url, None);
+    }
+
+    #[test]
+    fn github_repository_and_conventional_asset_are_discovered() {
+        assert_eq!(
+            github_repo_from_repository("git+https://github.com/example/demo.git"),
+            Some("example/demo".to_string())
+        );
+        let assets = vec![crate::github::GithubAsset {
+            name: "demo-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            browser_download_url: "https://github.com/example/demo/releases/download/v1.2.3/demo-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            url: "https://api.github.com/repos/example/demo/releases/assets/1".to_string(),
+            digest: None,
+        }];
+
+        let discovered =
+            select_default_github_asset(&assets, "demo", "1.2.3", "x86_64-unknown-linux-gnu");
+
+        assert_eq!(
+            discovered,
+            Some((assets[0].browser_download_url.clone(), "tgz".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn warn_only_artifact_probe_requires_an_existing_file() {
+        let mut server = mockito::Server::new_async().await;
+        let available = server
+            .mock("HEAD", "/available.tgz")
+            .with_status(200)
+            .create_async()
+            .await;
+        let unavailable = server
+            .mock("HEAD", "/unavailable.tgz")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        assert!(native_binstall_file_available(&format!("{}/available.tgz", server.url())).await);
+        assert!(
+            !native_binstall_file_available(&format!("{}/unavailable.tgz", server.url())).await
+        );
+        available.assert_async().await;
+        unavailable.assert_async().await;
     }
 
     #[test]

@@ -236,7 +236,6 @@ impl Backend for CargoBackend {
                 }
                 BinstallStatus::Unavailable => match Settings::get().cargo.binstall_native {
                     Some(true) => {
-                        Settings::get().ensure_experimental("cargo.binstall_native")?;
                         if self
                             .native_binstall(ctx, &tv, NativeBinstallAction::Install)
                             .await?

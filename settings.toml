@@ -299,11 +299,11 @@ env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 
 [cargo.binstall_native]
-description = "[experimental] Use mise's native cargo binary installer when cargo-binstall is unavailable."
+description = "Use mise's native cargo binary installer when cargo-binstall is unavailable."
 docs = """
 Controls mise's native cargo binary installer, which downloads precompiled binaries using
-`package.metadata.binstall` from the crate's `Cargo.toml` when `cargo-binstall` is not installed.
-This setting is experimental and requires `experimental = true` when explicitly enabled.
+conventional GitHub release artifact names from the crate's linked repository or
+`package.metadata.binstall` from its `Cargo.toml` when `cargo-binstall` is not installed.
 
 - If `true`: Try mise's native cargo binary installer first, fall back to `cargo install` if unavailable.
 - If `false`: Do not use mise's native cargo binary installer.
@@ -314,10 +314,9 @@ This setting is experimental and requires `experimental = true` when explicitly 
 Set `cargo.binstall = false` to force `cargo install` instead of either `cargo-binstall` or mise's
 native cargo binary installer.
 
-This is a best-effort fast path. If the crate does not declare compatible
-metadata, the artifact is unavailable, or the install uses Cargo build options
-that cannot affect a downloaded binary (including `locked = true`), mise falls
-back to `cargo install`.
+This is a best-effort fast path. If neither compatible metadata nor a conventionally named GitHub
+release artifact is available, or the install uses Cargo build options that cannot affect a
+downloaded binary, mise falls back to `cargo install`.
 """
 env = "MISE_CARGO_BINSTALL_NATIVE"
 optional = true
