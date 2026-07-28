@@ -393,6 +393,17 @@ impl Git {
             .trim()
             .into())
     }
+
+    pub fn get_path<P: AsRef<Path>>(path: P) -> eyre::Result<PathBuf> {
+        let root = Self::get_root()?;
+        let path = cmd!("git", "-C", &root, "rev-parse", "--git-path", path.as_ref()).read()?;
+        let path = PathBuf::from(path.trim());
+        Ok(if path.is_absolute() {
+            path
+        } else {
+            root.join(path)
+        })
+    }
 }
 
 fn get_git_version() -> Result<String> {
