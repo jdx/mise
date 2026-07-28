@@ -210,6 +210,21 @@ fn parse_backend_components_fallible(
 }
 
 impl BackendArg {
+    pub fn matches_bin_name(&self, bin_name: &str) -> bool {
+        let bin_name = bin_name
+            .strip_suffix(std::env::consts::EXE_SUFFIX)
+            .unwrap_or(bin_name);
+        self.short
+            .rsplit([':', '/'])
+            .next()
+            .is_some_and(|name| name == bin_name)
+            || self
+                .tool_name
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name == bin_name)
+    }
+
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
         let resolution = BackendResolution::new(full.is_some());
@@ -736,6 +751,18 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use pretty_assertions::{assert_eq, assert_str_eq};
+
+    #[test]
+    fn test_matches_bin_name_uses_tool_identity() {
+        let codex: BackendArg = "codex".into();
+        let explicit_codex: BackendArg = "aqua:openai/codex".into();
+        let node: BackendArg = "node".into();
+
+        assert!(codex.matches_bin_name("codex"));
+        assert!(explicit_codex.matches_bin_name("codex"));
+        assert!(!node.matches_bin_name("codex"));
+        assert!(!codex.matches_bin_name("node"));
+    }
 
     #[tokio::test]
     async fn test_backend_arg() {

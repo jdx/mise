@@ -757,6 +757,9 @@ async fn err_no_version_set(
         .filter(|t| missing_plugins.contains(t.ba()))
         .collect_vec();
     if missing_tools.is_empty() {
+        if let Some(msg) = unavailable_configured_tool_message(config, &ts, bin_name) {
+            return Err(eyre!(msg));
+        }
         let mut msg = format!("No version is set for shim: {bin_name}\n");
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
@@ -777,9 +780,68 @@ async fn err_no_version_set(
     }
 }
 
+pub(crate) fn unavailable_configured_tool_message(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    bin_name: &str,
+) -> Option<String> {
+    let versions = ts
+        .list_current_versions()
+        .into_iter()
+        .filter(|(backend, tv)| {
+            tv.ba().matches_bin_name(bin_name) && backend.is_version_installed(config, tv, true)
+        })
+        .map(|(_, tv)| tv)
+        .collect_vec();
+    if versions.is_empty() {
+        return None;
+    }
+
+    let mut msg = format!("No executable found for configured tool: {bin_name}\n");
+    msg.push_str(
+        "The installed version does not provide this executable with its current backend metadata.\n",
+    );
+    msg.push_str("Reinstall it with:\n");
+    for tv in versions {
+        msg.push_str(&format!(
+            "mise install --force {}@{}\n",
+            tv.ba(),
+            tv.version
+        ));
+    }
+    Some(msg.trim().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::args::BackendArg;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[tokio::test]
+    async fn unavailable_tool_message_prefers_matching_configured_tool() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+
+        for name in ["codex", "node"] {
+            let ba = Arc::new(BackendArg::from(name));
+            let request = ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+            let mut tv = ToolVersion::new(request.clone(), "1.0.0".into());
+            let install_path = temp.path().join(name);
+            file::create_dir_all(&install_path).unwrap();
+            tv.install_path = Some(install_path);
+
+            let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+            tvl.requests.push(request);
+            tvl.versions.push(tv);
+            ts.versions.insert(ba, tvl);
+        }
+
+        let msg = unavailable_configured_tool_message(&config, &ts, "codex").unwrap();
+        assert!(msg.contains("mise install --force codex@1.0.0"));
+        assert!(!msg.contains("node@1.0.0"));
+    }
 
     #[cfg(windows)]
     #[test]
