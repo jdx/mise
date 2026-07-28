@@ -89,11 +89,14 @@ impl TaskFetcher {
                     format!("failed to read remote task metadata from {source}")
                 })?;
                 let header_has_templates = script_header_has_decoded_template(&body);
+                // `Task::cf` identifies monorepo task ownership, not general
+                // config provenance. Keep that semantic while trust uses the
+                // separate defining_config_source path above.
                 let mut remote = Task::from_path_unrendered_with_cf(
                     &local_path,
                     prefix,
                     &config_root,
-                    defining_cf,
+                    original.cf.clone(),
                 )
                 .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
                 // Parsing headers is inert. Check the decoded Task instead of

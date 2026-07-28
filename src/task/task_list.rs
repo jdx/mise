@@ -670,7 +670,11 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
 
     match resolve(&all_tasks) {
         Ok(tasks) => Ok(tasks),
-        Err(error) if error.to_string().starts_with("task not found:") => {
+        Err(error)
+            if error
+                .downcast_ref::<crate::task::TaskNotFoundError>()
+                .is_some() =>
+        {
             // A dependency may name an alias declared only in a remote header.
             // Retry the failed graph resolution against trusted remote metadata.
             let resolved_tasks = TaskFetcher::new(false)

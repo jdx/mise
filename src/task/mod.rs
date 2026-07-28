@@ -39,6 +39,17 @@ pub(crate) fn reset() {
     TASK_ENV_CACHE.lock().unwrap().clear();
 }
 
+#[derive(Debug)]
+pub(crate) struct TaskNotFoundError(String);
+
+impl Display for TaskNotFoundError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TaskNotFoundError {}
+
 /// Type alias for tracking failed tasks with their exit codes
 pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
@@ -1313,7 +1324,7 @@ impl Task {
 
         match resolve(&all_tasks) {
             Ok(depends) => Ok(depends),
-            Err(error) if error.to_string().starts_with("task not found:") => {
+            Err(error) if error.downcast_ref::<TaskNotFoundError>().is_some() => {
                 let resolved_tasks = TaskFetcher::new(false)
                     .require_trust_before_fetch()
                     .fetch_task_map(config, &all_tasks)
@@ -2428,7 +2439,7 @@ fn match_tasks_with_context(
             }
         }
 
-        return Err(eyre!(err_msg));
+        return Err(TaskNotFoundError(err_msg).into());
     };
 
     Ok(matches)
