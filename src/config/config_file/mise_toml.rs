@@ -603,8 +603,11 @@ impl MiseToml {
         let key_parts = key.split('.').collect_vec();
         for (i, k) in key_parts.iter().enumerate() {
             if i == key_parts.len() - 1 {
+                let value_decor = get_value_decor(env_tbl, k);
                 let k = get_key_with_decor(env_tbl, k);
-                env_tbl.insert_formatted(&k, toml_edit::value(value));
+                let mut item = toml_edit::value(value);
+                set_value_decor(&mut item, &value_decor);
+                env_tbl.insert_formatted(&k, item);
                 break;
             } else if !env_tbl.contains_key(k) {
                 env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
@@ -736,9 +739,11 @@ impl MiseToml {
         let key_parts = key.split('.').collect_vec();
         for (i, k) in key_parts.iter().enumerate() {
             if i == key_parts.len() - 1 {
+                let value_decor = get_value_decor(env_tbl, k);
                 let k = get_key_with_decor(env_tbl, k);
-                env_tbl
-                    .insert_formatted(&k, toml_edit::Item::Value(Value::InlineTable(outer_table)));
+                let mut item = toml_edit::Item::Value(Value::InlineTable(outer_table));
+                set_value_decor(&mut item, &value_decor);
+                env_tbl.insert_formatted(&k, item);
                 break;
             } else if !env_tbl.contains_key(k) {
                 env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
@@ -990,8 +995,17 @@ impl ConfigFile for MiseToml {
             .as_table_mut()
             .unwrap();
 
+        // the entry may be stored under a long name like "core:node" that is replaced by its short
+        // name below, so read the decorations off whichever key is actually there
+        let existing = if tools.contains_key(ba.short.as_str()) {
+            ba.short.to_string()
+        } else {
+            ba.full()
+        };
         // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
-        let key = get_key_with_decor(tools, ba.short.as_str());
+        let key = get_key_with_decor_from(tools, ba.short.as_str(), &existing);
+        // and the same for the value, so a comment after the version survives the replacement
+        let value_decor = get_value_decor(tools, &existing);
 
         // if a short name is used like "node", make sure we remove any long names like "core:node"
         if ba.short != ba.full() {
@@ -1000,8 +1014,8 @@ impl ConfigFile for MiseToml {
 
         if versions.len() == 1 {
             let options = versions[0].options();
-            if output_empty_opts(&options) {
-                tools.insert_formatted(&key, value(versions[0].version()));
+            let mut item = if output_empty_opts(&options) {
+                value(versions[0].version())
             } else {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
@@ -1009,8 +1023,10 @@ impl ConfigFile for MiseToml {
                     table.insert(k, toml_value_to_edit(v.clone()));
                 }
                 insert_core_options(&mut table, options);
-                tools.insert_formatted(&key, table.into());
-            }
+                Item::Value(Value::InlineTable(table))
+            };
+            set_value_decor(&mut item, &value_decor);
+            tools.insert_formatted(&key, item);
         } else {
             let mut arr = Array::new();
             for tr in versions {
@@ -1028,7 +1044,9 @@ impl ConfigFile for MiseToml {
                     arr.push(table);
                 }
             }
-            tools.insert_formatted(&key, Item::Value(Value::Array(arr)));
+            let mut item = Item::Value(Value::Array(arr));
+            set_value_decor(&mut item, &value_decor);
+            tools.insert_formatted(&key, item);
         }
 
         if is_tools_sorted {
@@ -1309,8 +1327,15 @@ impl ConfigFile for MiseToml {
 /// Returns a [`toml_edit::Key`] from the given `key`.
 /// Preserves any surrounding whitespace (e.g. comments) if the key already exists in the provided [`toml_edit::Table`].
 fn get_key_with_decor(table: &toml_edit::Table, key: &str) -> Key {
+    get_key_with_decor_from(table, key, key)
+}
+
+/// Same as [`get_key_with_decor`], but takes the decor from `existing` rather than from `key`.
+/// The entry being replaced may be stored under a different key than the one written back, e.g. a
+/// fully-qualified `"core:node"` that `mise use node` rewrites to `node`.
+fn get_key_with_decor_from(table: &toml_edit::Table, key: &str, existing: &str) -> Key {
     let mut key = Key::from(key);
-    if let Some((k, _)) = table.get_key_value(&key) {
+    if let Some((k, _)) = table.get_key_value(existing) {
         if let Some(prefix) = k.leaf_decor().prefix() {
             key.leaf_decor_mut().set_prefix(prefix.clone());
         }
@@ -1319,6 +1344,28 @@ fn get_key_with_decor(table: &toml_edit::Table, key: &str) -> Key {
         }
     }
     key
+}
+
+/// Captures the decor of the value `key` currently holds, if any.
+///
+/// A comment written after the value on the same line lives in that decor, so replacing the value
+/// without carrying it over drops the comment. The comment *above* the line belongs to the key
+/// instead and is handled by [`get_key_with_decor`].
+fn get_value_decor(table: &toml_edit::Table, key: &str) -> Option<toml_edit::Decor> {
+    let value = table.get(key)?.as_value()?;
+    Some(value.decor().clone())
+}
+
+/// Applies decor captured by [`get_value_decor`] to the value that replaces it.
+fn set_value_decor(item: &mut Item, decor: &Option<toml_edit::Decor>) {
+    if let (Some(decor), Some(value)) = (decor, item.as_value_mut()) {
+        if let Some(prefix) = decor.prefix() {
+            value.decor_mut().set_prefix(prefix.clone());
+        }
+        if let Some(suffix) = decor.suffix() {
+            value.decor_mut().set_suffix(suffix.clone());
+        }
+    }
 }
 
 impl Debug for MiseToml {
@@ -3688,6 +3735,115 @@ run = 'echo "template"'
         assert!(
             dump.contains("install_env"),
             "install_env should be written back"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_preserves_comments() {
+        // https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".replace-comments.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            # renovate: datasource=github-releases depName=node
+            node = "16.0.0" # keep me
+            dummy = ["1.0.0"] # keep me too
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node = "node".into();
+        cf.replace_versions(
+            &node,
+            vec![ToolRequest::new(Arc::new("node".into()), "18.0.0", ToolSource::Unknown).unwrap()],
+        )
+        .unwrap();
+        let dummy = "dummy".into();
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new(Arc::new("dummy".into()), "1.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("dummy".into()), "2.0.0", ToolSource::Unknown).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# renovate: datasource=github-releases depName=node"),
+            "comment above the tool should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"node = "18.0.0" # keep me"#),
+            "comment after the version should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"dummy = ["1.0.1", "2.0.0"] # keep me too"#),
+            "comment after a multi-version tool should survive: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_preserves_comments_on_qualified_key() {
+        // a fully-qualified entry is rewritten to its short name, and the comments have to move
+        // with it: https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".qualified.mise.toml");
+        let node: BackendArg = "node".into();
+        let contents = formatdoc! {r#"
+            [tools]
+            # renovate: datasource=github-releases depName=node
+            "{}" = "16.0.0" # keep me
+            "#, node.full()};
+        file::write(&p, contents).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.replace_versions(
+            &node,
+            vec![ToolRequest::new(Arc::new("node".into()), "18.0.0", ToolSource::Unknown).unwrap()],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# renovate: datasource=github-releases depName=node"),
+            "comment above should survive the rename: {dump}"
+        );
+        assert!(
+            dump.contains(r#"node = "18.0.0" # keep me"#),
+            "comment after the version should survive the rename: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_env_preserves_comments() {
+        // https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".env-comments.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [env]
+            # keep this comment
+            FOO = "bar" # keep me
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_env("FOO", "baz").unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# keep this comment"),
+            "comment above the variable should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"FOO = "baz" # keep me"#),
+            "comment after the value should survive: {dump}"
         );
         file::remove_file(&p).unwrap();
     }

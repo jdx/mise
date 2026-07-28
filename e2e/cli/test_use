@@ -150,3 +150,13 @@ assert_contains "mise use dummy@system" "mise ~/.config/mise/config.toml tools: 
 assert_contains "mise use --path mise.path.toml dummy@1" "dummy@1."
 assert "cat mise.path.toml" '[tools]
 dummy = "1"'
+
+# comments around a tool survive the version being replaced
+# See: https://github.com/jdx/mise/discussions/4797
+mkdir -p "$HOME/workdir/comments"
+cd "$HOME/workdir/comments" || exit 1
+printf '[tools]\n# renovate: datasource=github-releases depName=dummy\ndummy = "1" # keep me\n' >mise.toml
+mise use dummy@2
+assert "cat mise.toml" '[tools]
+# renovate: datasource=github-releases depName=dummy
+dummy = "2" # keep me'
