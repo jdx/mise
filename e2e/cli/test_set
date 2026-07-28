@@ -118,3 +118,12 @@ assert_not_contains "mise set --file $tmpfile" "out_of_hierarchy_secret"
 assert_contains "mise set --file $tmpfile" "out_normal"
 assert_contains "mise set --file $tmpfile --no-redact" "out_of_hierarchy_secret"
 rm -f "$tmpfile"
+
+# comments around an env var survive the value being replaced
+# See: https://github.com/jdx/mise/discussions/4797
+rm -f mise.toml mise.local.toml
+printf '[env]\n# keep this comment\nFOO = "bar" # keep me\n' >mise.toml
+assert "mise set FOO=baz" ""
+assert "cat mise.toml" '[env]
+# keep this comment
+FOO = "baz" # keep me'
