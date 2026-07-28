@@ -3022,20 +3022,6 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
     flag --deny-write help="Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
-    flag --task-cache help="Set task output cache access for this run" default=read-write {
-        long_help #"""
-Set task output cache access for this run
-
-- `read-write` - Read cached results and write new results
-- `read-only` - Read cached results without writing new results
-- `write-only` - Write new results without reading cached results
-- `off` - Disable task output caching
-- `local-only` - Read and write only the local cache
-"""#
-        arg <TASK_CACHE> {
-            choices read-write read-only write-only off local-only
-        }
-    }
     flag --no-deps help="Skip automatic dependency preparation"
     flag --no-timings help="Hides elapsed time after each task completes" {
         long_help #"""
@@ -3052,6 +3038,20 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 """#
+    }
+    flag --task-cache help="Set task output cache access for this run" default=read-write {
+        long_help #"""
+Set task output cache access for this run
+
+- `read-write` - Read cached results and write new results
+- `read-only` - Read cached results without writing new results
+- `write-only` - Write new results without reading cached results
+- `off` - Disable task output caching
+- `local-only` - Read and write only the local cache
+"""#
+        arg <TASK_CACHE> {
+            choices read-write read-only write-only off local-only
+        }
     }
     flag --timeout help=#"""
 Timeout for the task to complete
@@ -3833,20 +3833,6 @@ Supports wildcards, e.g. --allow-env='MYAPP_*'
         flag --deny-write help="Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
-        flag --task-cache help="Set task output cache access for this run" default=read-write {
-            long_help #"""
-Set task output cache access for this run
-
-- `read-write` - Read cached results and write new results
-- `read-only` - Read cached results without writing new results
-- `write-only` - Write new results without reading cached results
-- `off` - Disable task output caching
-- `local-only` - Read and write only the local cache
-"""#
-            arg <TASK_CACHE> {
-                choices read-write read-only write-only off local-only
-            }
-        }
         flag --no-deps help="Skip automatic dependency preparation"
         flag --no-timings help="Hides elapsed time after each task completes" {
             long_help #"""
@@ -3863,6 +3849,20 @@ Skip installing tools before running tasks
 Can also be set persistently with the `task.run_auto_install` setting
 or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
 """#
+        }
+        flag --task-cache help="Set task output cache access for this run" default=read-write {
+            long_help #"""
+Set task output cache access for this run
+
+- `read-write` - Read cached results and write new results
+- `read-only` - Read cached results without writing new results
+- `write-only` - Write new results without reading cached results
+- `off` - Disable task output caching
+- `local-only` - Read and write only the local cache
+"""#
+            arg <TASK_CACHE> {
+                choices read-write read-only write-only off local-only
+            }
         }
         flag --timeout help=#"""
 Timeout for the task to complete

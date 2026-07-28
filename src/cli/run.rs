@@ -182,22 +182,6 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
 
-    /// Set task output cache access for this run
-    ///
-    /// - `read-write` - Read cached results and write new results
-    /// - `read-only` - Read cached results without writing new results
-    /// - `write-only` - Write new results without reading cached results
-    /// - `off` - Disable task output caching
-    /// - `local-only` - Read and write only the local cache
-    #[clap(
-        long,
-        value_enum,
-        default_value = "read-write",
-        env = "MISE_TASK_CACHE",
-        verbatim_doc_comment
-    )]
-    pub task_cache: TaskCacheMode,
-
     /// Skip automatic dependency preparation
     #[clap(long)]
     pub no_deps: bool,
@@ -218,6 +202,22 @@ pub struct Run {
     /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
     #[clap(long, verbatim_doc_comment)]
     pub skip_tools: bool,
+
+    /// Set task output cache access for this run
+    ///
+    /// - `read-write` - Read cached results and write new results
+    /// - `read-only` - Read cached results without writing new results
+    /// - `write-only` - Write new results without reading cached results
+    /// - `off` - Disable task output caching
+    /// - `local-only` - Read and write only the local cache
+    #[clap(
+        long,
+        value_enum,
+        default_value = "read-write",
+        env = "MISE_TASK_CACHE",
+        verbatim_doc_comment
+    )]
+    pub task_cache: TaskCacheMode,
 
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
