@@ -51,6 +51,34 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
 
+### Multi-line values
+
+Each `#MISE` line is TOML. An array or inline table may be split across several
+lines as long as every line keeps the `#MISE` prefix, which keeps long
+`depends`/`sources` lists readable:
+
+```bash [mise-tasks/build]
+#!/usr/bin/env bash
+#MISE description="Build the CLI"
+#MISE depends=[
+#MISE   "lint",
+#MISE   "test",
+#MISE ]
+#MISE sources=[
+#MISE   "Cargo.toml",
+#MISE   "src/**/*.rs",
+#MISE ]
+cargo build
+```
+
+A table can also be built up by repeating the prefix with dotted keys, which
+avoids the surrounding braces entirely:
+
+```bash
+#MISE tools.node="20"
+#MISE tools.python="3.11"
+```
+
 Mise provides file tasks with project context variables such as
 `MISE_PROJECT_ROOT`, which identifies the project root regardless of the
 directory from which the task is invoked. See [Tasks](/tasks/#environment-variables-passed-to-tasks)

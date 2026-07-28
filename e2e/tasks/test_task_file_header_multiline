@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+# Multi-line `#MISE` headers in file tasks.
+# https://github.com/jdx/mise/discussions/4603
+#
+# A TOML value left open at the end of a header line continues on the following
+# `#MISE` lines, and those continuation lines must not leak into the usage spec.
+
+cat <<'EOF' >mise.toml
+[tasks.lint]
+run = 'echo "linting!"'
+[tasks.test]
+run = 'echo "testing!"'
+EOF
+
+mkdir -p mise-tasks
+touch src.txt
+
+cat <<'EOF' >mise-tasks/build
+#!/usr/bin/env bash
+#MISE description="Build the CLI"
+#MISE depends=[
+#MISE   "lint",
+#MISE   "test",
+#MISE ]
+#MISE sources=[
+#MISE   "src.txt"
+#MISE ]
+#USAGE flag "--release" help="Release build"
+echo "building! release=$usage_release"
+EOF
+chmod +x mise-tasks/build
+
+assert_contains "mise tasks ls" "Build the CLI"
+assert_contains "mise tasks info build" "src.txt"
+
+# --force so the multi-line `sources` cache can't skip the run between assertions
+assert_contains "mise run --force build --release" "linting!"
+assert_contains "mise run --force build --release" "testing!"
+assert_contains "mise run --force build --release" "building! release=true"
+
+# continuation lines are config, not usage spec text. `release=true` above
+# already proves the spec parsed; this pins down that nothing leaked into it.
+assert_contains "mise tasks ls --usage" "Release build"
+assert_not_contains "mise tasks ls --usage" '"lint",'
+
+# an array of inline tables may also span lines
+cat <<'EOF' >mise-tasks/structured
+#!/usr/bin/env bash
+#MISE depends=[
+#MISE   { task = "lint" },
+#MISE   "test",
+#MISE ]
+echo "structured!"
+EOF
+chmod +x mise-tasks/structured
+
+assert_contains "mise run structured" "linting!"
+assert_contains "mise run structured" "structured!"
+rm mise-tasks/structured
+
+# headers are parsed as TOML 1.1, so inline tables may span lines too
+cat <<'EOF' >mise-tasks/tabled
+#!/usr/bin/env bash
+#MISE env={
+#MISE   FOO = "bar",
+#MISE   BAZ = "qux"
+#MISE }
+echo "FOO=$FOO BAZ=$BAZ"
+EOF
+chmod +x mise-tasks/tabled
+
+assert_contains "mise run tabled" "FOO=bar BAZ=qux"
+rm mise-tasks/tabled
+
+# an unterminated value is still an error, but names the whole entry
+cat <<'EOF' >mise-tasks/broken
+#!/usr/bin/env bash
+#MISE depends=[
+#MISE   "lint"
+echo hi
+EOF
+chmod +x mise-tasks/broken
+
+assert_fail "mise tasks ls" "failed to parse task header TOML"
+assert_fail "mise tasks ls" "lines 2-3"
+rm mise-tasks/broken
+
+# dotted keys still build a table across several lines
+cat <<'EOF' >mise-tasks/dotted
+#!/usr/bin/env bash
+#MISE description="dotted keys"
+#MISE tools.node="20"
+#MISE tools.python="3.11"
+echo hi
+EOF
+chmod +x mise-tasks/dotted
+
+assert_contains "mise tasks ls" "dotted keys"

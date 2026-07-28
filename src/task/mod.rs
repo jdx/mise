@@ -669,18 +669,175 @@ pub struct Task {
     pub trailing_args: Vec<String>,
 }
 
+/// Tracks whether a `#MISE` header entry still has an open array, inline table
+/// or multi-line string, i.e. whether the next header line continues it.
+/// Quotes and `#` comments are honored so brackets inside strings don't count.
+#[derive(Default)]
+struct TomlOpenState {
+    brackets: usize,
+    braces: usize,
+    /// quote byte of an open `"""` / `'''` multi-line string
+    multiline: Option<u8>,
+}
+
+impl TomlOpenState {
+    /// Feed a single line of TOML.
+    fn feed(&mut self, line: &str) {
+        let b = line.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            let c = b[i];
+            if let Some(q) = self.multiline {
+                if q == b'"' && c == b'\\' {
+                    // basic strings escape with `\`, so `\"""` is a quote
+                    // followed by two more, not the closing delimiter.
+                    // Literal (`'''`) strings have no escapes.
+                    i += 2;
+                } else if c == q && b[i + 1..].starts_with(&[q, q]) {
+                    self.multiline = None;
+                    i += 3;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+            match c {
+                // the rest of the line is a TOML comment
+                b'#' => return,
+                b'[' => self.brackets += 1,
+                b']' => self.brackets = self.brackets.saturating_sub(1),
+                b'{' => self.braces += 1,
+                b'}' => self.braces = self.braces.saturating_sub(1),
+                b'"' | b'\'' => {
+                    if b[i + 1..].starts_with(&[c, c]) {
+                        self.multiline = Some(c);
+                        i += 3;
+                        continue;
+                    }
+                    // single-line string: skip to its closing quote. TOML
+                    // strings cannot contain a newline, so an unterminated one
+                    // simply ends with the line.
+                    let mut j = i + 1;
+                    while j < b.len() {
+                        if c == b'"' && b[j] == b'\\' {
+                            j += 2;
+                        } else if b[j] == c {
+                            break;
+                        } else {
+                            j += 1;
+                        }
+                    }
+                    i = j + 1;
+                    continue;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+    }
+
+    /// Whether the entry continues on the following header line.
+    fn is_open(&self) -> bool {
+        self.brackets > 0 || self.braces > 0 || self.multiline.is_some()
+    }
+}
+
+/// One logical `#MISE key=value` header entry: its TOML text plus the range of
+/// script lines it was assembled from. Entries are normally a single line, but
+/// a TOML array left open at the end of one continues on the next.
+struct MiseHeaderEntry {
+    /// TOML source, continuation lines joined with newlines
+    toml: String,
+    /// 0-based index of the entry's first line
+    start: usize,
+    /// 0-based index of the entry's last line (inclusive)
+    end: usize,
+}
+
+impl MiseHeaderEntry {
+    fn parse_toml(&self) -> Result<toml::Value> {
+        toml::de::from_str::<toml::Value>(&self.toml).map_err(|e| {
+            if self.start == self.end {
+                eyre!("failed to parse task header TOML {:?}: {e}", self.toml)
+            } else {
+                eyre!(
+                    "failed to parse task header TOML on lines {}-{}:\n{}\n{e}",
+                    self.start + 1,
+                    self.end + 1,
+                    self.toml
+                )
+            }
+        })
+    }
+}
+
+/// Split the `#MISE` (and `//MISE`, `::MISE`, `# [MISE]`) header lines of a task
+/// script into logical TOML entries.
+///
+/// An entry starts on a line that looks like `key=value`; any other `#MISE` line
+/// is a usage-spec directive (see `extract_usage_from_comments`). If the entry
+/// leaves a TOML array open, the following header lines are folded into it so
+/// arrays can be written across several lines:
+///
+/// ```text
+/// #MISE depends=[
+/// #MISE   "lint",
+/// #MISE ]
+/// ```
+fn scan_mise_header_entries(body: &str) -> Vec<MiseHeaderEntry> {
+    let header_regex = regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) (.*)$");
+    let entry_regex = regex!(r"^[a-z0-9_.-]+\s*=\s*[^\n]+$");
+    let mut entries: Vec<MiseHeaderEntry> = vec![];
+    let mut open: Option<(MiseHeaderEntry, TomlOpenState)> = None;
+    for (i, line) in body.lines().enumerate() {
+        let Some(captures) = header_regex.captures(line) else {
+            // a non-header line ends an entry whose array was never closed; it
+            // is kept so the TOML parser reports the unclosed array
+            if let Some((entry, _)) = open.take() {
+                entries.push(entry);
+            }
+            continue;
+        };
+        let content = captures.get(1).map_or("", |m| m.as_str());
+        if let Some((mut entry, mut state)) = open.take() {
+            entry.toml.push('\n');
+            entry.toml.push_str(content);
+            entry.end = i;
+            state.feed(content);
+            if state.is_open() {
+                open = Some((entry, state));
+            } else {
+                entries.push(entry);
+            }
+            continue;
+        }
+        if entry_regex.is_match(content) {
+            let mut state = TomlOpenState::default();
+            state.feed(content);
+            let entry = MiseHeaderEntry {
+                toml: content.to_string(),
+                start: i,
+                end: i,
+            };
+            if state.is_open() {
+                open = Some((entry, state));
+            } else {
+                entries.push(entry);
+            }
+        }
+    }
+    if let Some((entry, _)) = open {
+        entries.push(entry);
+    }
+    entries
+}
+
 /// Parse the `#MISE key=value` (and `// MISE`, `:: MISE`, `[MISE]`) header
 /// lines out of a task script into their decoded TOML values.
 fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
-    body.lines()
-        .filter_map(|line| {
-            regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$").captures(line)
-        })
-        .map(|captures| captures.extract().1)
-        .map(|[toml]| {
-            toml::de::from_str::<toml::Value>(toml)
-                .map_err(|e| eyre::eyre!("failed to parse task header TOML {toml:?}: {e}"))
-        })
+    scan_mise_header_entries(body)
+        .into_iter()
+        .map(|entry| entry.parse_toml())
         .collect()
 }
 
@@ -708,10 +865,12 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
         // render), so it doesn't need trust on this account.
         toml::from_str::<toml::Value>(body).is_ok_and(|v| toml_value_has_template(&v))
     } else {
-        parse_mise_header_toml(body)
-            .unwrap_or_default()
-            .iter()
-            .any(toml_value_has_template)
+        // per-entry so one unparseable header cannot hide a decoded template in
+        // another entry (the whole file used to fall back to "no template")
+        scan_mise_header_entries(body)
+            .into_iter()
+            .filter_map(|entry| entry.parse_toml().ok())
+            .any(|value| toml_value_has_template(&value))
     }
 }
 
@@ -744,9 +903,19 @@ fn extract_usage_from_comments(full: &str) -> String {
     let usage_regex = regex!(r"^(?:#|//|::)\s*(?:(USAGE|MISE)|\[(USAGE|MISE)\])(.*)$");
     let blank_comment_regex = regex!(r"^(?:#|//|::)\s*$");
     let mise_header_regex = regex!(r"^[a-z0-9_.-]+\s*=");
+    // Continuation lines of a multi-line `#MISE key=[...]` entry are config, not
+    // usage text, even though they don't look like `key=value` on their own.
+    let header_entries = scan_mise_header_entries(full);
+    let mut next_entry = 0;
     let mut usage = vec![];
     let mut found = false;
-    for line in full.lines() {
+    for (i, line) in full.lines().enumerate() {
+        while header_entries.get(next_entry).is_some_and(|e| e.end < i) {
+            next_entry += 1;
+        }
+        if header_entries.get(next_entry).is_some_and(|e| e.start <= i) {
+            continue;
+        }
         if let Some(captures) = usage_regex.captures(line) {
             let marker = captures
                 .get(1)
@@ -4170,6 +4339,223 @@ echo "test"
             task.tools.get("ruby").unwrap(),
             &TaskToolValue::String("3.2".to_string())
         );
+    }
+
+    #[test]
+    fn test_scan_mise_header_entries() {
+        // https://github.com/jdx/mise/discussions/4603
+        let body = r#"#!/usr/bin/env bash
+#MISE description="hi"
+#MISE depends=[
+#MISE   "lint",
+#MISE ]
+#MISE flag "--verbose" help="not a header"
+#MISE tools.node="20"
+echo hi
+"#;
+        let entries = super::scan_mise_header_entries(body);
+        let got = entries
+            .iter()
+            .map(|e| (e.start, e.end, e.toml.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            got,
+            vec![
+                (1, 1, "description=\"hi\""),
+                (2, 4, "depends=[\n  \"lint\",\n]"),
+                (6, 6, "tools.node=\"20\""),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_scan_mise_header_entries_multiline_basic_string() {
+        // inside a multi-line basic string `\"""` is an escaped quote followed
+        // by two more, not the closing delimiter — the entry must keep going
+        let entries = super::scan_mise_header_entries(
+            "#MISE description=\"\"\"abc \\\"\"\" def\n#MISE ghi\"\"\"\n",
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!((entries[0].start, entries[0].end), (0, 1));
+        assert_eq!(
+            entries[0].parse_toml().unwrap()["description"].as_str(),
+            Some("abc \"\"\" def\nghi")
+        );
+    }
+
+    #[test]
+    fn test_scan_mise_header_entries_ignores_brackets_in_strings() {
+        // a bracket inside a string must not open a continuation
+        let entries =
+            super::scan_mise_header_entries("#MISE description=\"see [1]\"\n#MISE alias=\"b\"\n");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].end, 0);
+        assert_eq!(entries[1].start, 1);
+    }
+
+    #[tokio::test]
+    async fn test_from_path_multi_line_array_header() {
+        // https://github.com/jdx/mise/discussions/4603
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("multi-line");
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE description="multi-line arrays"
+#MISE depends=[
+#MISE   "lint",
+#MISE   "test",
+#MISE ]
+#MISE sources=[
+#MISE   "src/**/*.rs"
+#MISE ]
+echo "test"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+
+        assert_eq!(task.description, "multi-line arrays");
+        assert_eq!(task.depends.len(), 2);
+        assert_eq!(task.depends[0].task, "lint");
+        assert_eq!(task.depends[1].task, "test");
+        assert_eq!(task.sources, vec!["src/**/*.rs".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_from_path_multi_line_array_of_inline_tables() {
+        // an inline table nested inside a multi-line array is still one entry
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("structured-multi-line");
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env node
+//MISE depends=[
+//MISE   { task = "lint", args = ["--fix"] },
+//MISE   "test",
+//MISE ]
+console.log("hi");
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+
+        assert_eq!(task.depends.len(), 2);
+        assert_eq!(task.depends[0].task, "lint");
+        assert_eq!(task.depends[0].args, ["--fix"]);
+        assert_eq!(task.depends[1].task, "test");
+    }
+
+    #[tokio::test]
+    async fn test_from_path_unterminated_multi_line_header() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("unterminated");
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE depends=[
+#MISE   "lint"
+echo "test"
+"#,
+        )
+        .unwrap();
+
+        let err = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("failed to parse task header TOML"), "{err}");
+        // the whole entry is reported, not just the `depends=[` fragment
+        assert!(err.contains("lines 2-3"), "{err}");
+        assert!(err.contains("\"lint\""), "{err}");
+    }
+
+    #[tokio::test]
+    async fn test_from_path_multi_line_inline_table() {
+        // mise parses headers with TOML 1.1, which allows inline tables to span
+        // lines as well as arrays
+        use super::TaskToolValue;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("inline-table");
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE tools={
+#MISE   node="20",
+#MISE   python="3.11"
+#MISE }
+echo "test"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            task.tools.get("node").unwrap(),
+            &TaskToolValue::String("20".to_string())
+        );
+        assert_eq!(
+            task.tools.get("python").unwrap(),
+            &TaskToolValue::String("3.11".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_usage_skips_multi_line_headers() {
+        // continuation lines are config, not usage spec text
+        let script = r#"#!/usr/bin/env bash
+#MISE depends=[
+#MISE   "lint",
+#MISE ]
+#USAGE flag "--verbose" help="Show extra output"
+echo hi
+"#;
+        assert_eq!(
+            super::extract_usage_from_comments(script),
+            r#"flag "--verbose" help="Show extra output""#
+        );
+    }
+
+    #[test]
+    fn test_file_has_decoded_template_multi_line_header() {
+        use super::file_has_decoded_template;
+        let script = Path::new("script.sh");
+
+        // a template hidden by TOML escapes inside a multi-line array
+        assert!(file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE depends=[\n#MISE \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n#MISE ]\necho hi\n"
+        ));
+        // an unparseable entry must not hide a template in another entry
+        assert!(file_has_decoded_template(
+            script,
+            "#!/usr/bin/env bash\n#MISE env={invalid=toml=here}\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
     }
 
     #[tokio::test]
