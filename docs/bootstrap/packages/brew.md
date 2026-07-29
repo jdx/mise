@@ -67,24 +67,27 @@ installs app bundles into `/Applications` while recording the version under
 "brew-cask:homebrew/cask/visual-studio-code" = "latest"
 ```
 
-`brew-cask` currently supports app-bundle casks (`app` artifacts), binary casks
-(`binary` artifacts), simple macOS installer packages (`pkg` artifacts), and
-shell completions (`bash_completion`, `fish_completion`, `zsh_completion`, and
+`brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
+generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
+simple macOS installer packages (`pkg` artifacts), and shell completions
+(`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
-Binary artifacts are staged in the Caskroom
-and linked into the Homebrew prefix, usually under `<prefix>/bin`. Package
-installers run through mise's normal system-package sudo path, so non-interactive
-runs never hang waiting for a password. Pkg casks must include `pkgutil` receipt
-IDs in their `uninstall` metadata so mise can verify installed state after the
+Binary artifacts and generated wrappers are staged in the Caskroom and linked
+into the Homebrew prefix, usually under `<prefix>/bin`. Package installers run
+through mise's normal system-package sudo path, so non-interactive runs never
+hang waiting for a password. Pkg casks must include `pkgutil` receipt IDs in
+their `uninstall` metadata so mise can verify installed state after the
 installer writes files outside the Caskroom. `zap` `pkgutil` IDs are treated as
 cleanup metadata, not install receipts. For casks with lifecycle hooks, mise
 fetches the sha256-verified cask Ruby source pinned by the API metadata and runs
 supported `preflight`/`postflight` hooks through its own Cask DSL shim, without
 delegating to Homebrew. mise also supports structured `preflight_steps` and
-`postflight_steps` for `move`/`remove` operations against `staged_path`. Casks
-that require custom installer choices, services, unsupported hook DSL, unsupported
-structured lifecycle steps, or other cask artifact types fail with a clear
-unsupported artifact error instead of delegating to Homebrew.
+`postflight_steps` for `move`/`remove` operations against `staged_path` and
+`run` operations using Homebrew's serialized command bases, arguments,
+environment, guards, and sudo setting. Casks that require custom installer
+choices, services, unsupported hook DSL, unsupported structured lifecycle
+steps, or other cask artifact types fail with a clear unsupported artifact
+error instead of delegating to Homebrew.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like

@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -61,6 +62,16 @@ struct BinaryArtifact {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandWrapperArtifact {
+    name: String,
+    target: Option<String>,
+    content: Option<String>,
+    executable: Option<String>,
+    args: Vec<String>,
+    env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgArtifact {
     source: String,
 }
@@ -106,11 +117,21 @@ enum FlightStep {
         paths: Vec<FlightPath>,
         recursive: bool,
     },
+    Run {
+        command: FlightPath,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+        sudo: bool,
+        guards: Vec<FlightGuard>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FlightPathBase {
     StagedPath,
+    AppDir,
+    HomebrewPrefix,
+    Absolute,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,10 +140,19 @@ struct FlightPath {
     path: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FlightGuard {
+    OnMacos,
+    OnLinux,
+    IfExists(FlightPath),
+    UnlessExists(FlightPath),
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CaskArtifacts {
     apps: Vec<AppArtifact>,
     binaries: Vec<BinaryArtifact>,
+    command_wrappers: Vec<CommandWrapperArtifact>,
     pkgs: Vec<PkgArtifact>,
     fonts: Vec<FontArtifact>,
     completions: Vec<CompletionArtifact>,
@@ -172,6 +202,9 @@ impl BrewCaskManager {
             for binary in &artifacts.binaries {
                 miseprintln!("link binary {}", binary.target_name()?);
             }
+            for wrapper in &artifacts.command_wrappers {
+                miseprintln!("link command wrapper {}", wrapper.target_name()?);
+            }
             for pkg in &artifacts.pkgs {
                 miseprintln!("install pkg {}", pkg.source);
             }
@@ -206,7 +239,13 @@ impl BrewCaskManager {
         for target in &current_completions {
             ensure_completion_target_replaceable(&cask, &artifacts, target)?;
         }
-        execute_flight_steps(&cask, &artifacts.preflight_steps, &stage, "preflight_steps")?;
+        execute_flight_steps(
+            &cask,
+            &artifacts.preflight_steps,
+            &stage,
+            &appdir,
+            "preflight_steps",
+        )?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         for app in &artifacts.apps {
             install_app(&stage, &tmp_caskroom, app)?;
@@ -217,10 +256,14 @@ impl BrewCaskManager {
         for font in &artifacts.fonts {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
+        for wrapper in &artifacts.command_wrappers {
+            stage_command_wrapper(&tmp_caskroom, &appdir, wrapper)?;
+        }
         execute_flight_steps(
             &cask,
             &artifacts.postflight_steps,
             &tmp_caskroom,
+            &appdir,
             "postflight_steps",
         )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
@@ -243,6 +286,9 @@ impl BrewCaskManager {
         let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
             for binary in &artifacts.binaries {
                 link_binary(&caskroom, binary)?;
+            }
+            for wrapper in &artifacts.command_wrappers {
+                link_binary(&caskroom, &wrapper.binary_artifact())?;
             }
             for target in &current_completions {
                 link_completion(&cask, &artifacts, &caskroom, target)?;
@@ -285,6 +331,26 @@ impl BinaryArtifact {
                 .and_then(|name| name.to_str())
                 .map(str::to_string)
                 .ok_or_else(|| eyre!("brew-cask: invalid binary source '{}'", self.source)),
+        }
+    }
+
+    fn target_path(&self) -> Result<PathBuf> {
+        binary_target_path(&self.target_name()?)
+    }
+}
+
+impl CommandWrapperArtifact {
+    fn target_name(&self) -> Result<String> {
+        match &self.target {
+            Some(target) => Ok(target.clone()),
+            None => Ok(self.name.clone()),
+        }
+    }
+
+    fn binary_artifact(&self) -> BinaryArtifact {
+        BinaryArtifact {
+            source: format!(".homebrew-command-wrappers/{}", self.name),
+            target: self.target.clone().or_else(|| Some(self.name.clone())),
         }
     }
 
@@ -1055,17 +1121,23 @@ fn execute_flight_steps(
     cask: &Cask,
     steps: &[FlightStep],
     staged_path: &Path,
+    appdir: &Path,
     kind: &str,
 ) -> Result<()> {
     for step in steps {
-        execute_flight_step(step, staged_path).wrap_err_with(|| {
+        execute_flight_step(cask, step, staged_path, appdir).wrap_err_with(|| {
             format!("brew-cask:{}: failed to run structured {kind}", cask.token)
         })?;
     }
     Ok(())
 }
 
-fn execute_flight_step(step: &FlightStep, staged_path: &Path) -> Result<()> {
+fn execute_flight_step(
+    cask: &Cask,
+    step: &FlightStep,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<()> {
     match step {
         FlightStep::Move {
             source,
@@ -1110,8 +1182,70 @@ fn execute_flight_step(step: &FlightStep, staged_path: &Path) -> Result<()> {
                 }
             }
         }
+        FlightStep::Run {
+            command,
+            args,
+            env,
+            sudo,
+            guards,
+        } => {
+            if !guards
+                .iter()
+                .map(|guard| flight_guard_matches(guard, staged_path, appdir))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .all(|matches| matches)
+            {
+                return Ok(());
+            }
+            let command = resolve_flight_path_with_context(command, staged_path, appdir)?;
+            let command = expand_cask_template(
+                &command.to_string_lossy(),
+                staged_path,
+                appdir,
+                Some(&cask.version),
+            );
+            let args = args
+                .iter()
+                .map(|arg| expand_cask_template(arg, staged_path, appdir, Some(&cask.version)))
+                .collect::<Vec<_>>();
+            let env = env
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        expand_cask_template(value, staged_path, appdir, Some(&cask.version)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if *sudo {
+                sudo::run(&command, &args, &env)?;
+            } else {
+                let mut runner = CmdLineRunner::new(&command);
+                for arg in &args {
+                    runner = runner.arg(arg);
+                }
+                for (key, value) in &env {
+                    runner = runner.env(key, value);
+                }
+                runner.raw(true).execute()?;
+            }
+        }
     }
     Ok(())
+}
+
+fn flight_guard_matches(guard: &FlightGuard, staged_path: &Path, appdir: &Path) -> Result<bool> {
+    match guard {
+        FlightGuard::OnMacos => Ok(cfg!(target_os = "macos")),
+        FlightGuard::OnLinux => Ok(cfg!(target_os = "linux")),
+        FlightGuard::IfExists(path) => {
+            Ok(resolve_flight_path_with_context(path, staged_path, appdir)?.exists())
+        }
+        FlightGuard::UnlessExists(path) => {
+            Ok(!resolve_flight_path_with_context(path, staged_path, appdir)?.exists())
+        }
+    }
 }
 
 fn flight_sources(
@@ -1191,10 +1325,48 @@ fn is_flight_glob(path: &str) -> bool {
 fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf> {
     match path.base {
         FlightPathBase::StagedPath => {}
+        _ => bail!("brew-cask: structured file operation must use staged_path"),
     }
     let relative = Path::new(&path.path);
     validate_flight_relative_path(&path.path)?;
     Ok(staged_path.join(relative))
+}
+
+fn resolve_flight_path_with_context(
+    path: &FlightPath,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<PathBuf> {
+    let expanded = expand_cask_template(&path.path, staged_path, appdir, None);
+    match path.base {
+        FlightPathBase::StagedPath => Ok(staged_path.join(expanded)),
+        FlightPathBase::AppDir => Ok(appdir.join(expanded)),
+        FlightPathBase::HomebrewPrefix => Ok(prefix::prefix().join(expanded)),
+        FlightPathBase::Absolute => Ok(PathBuf::from(expanded)),
+    }
+}
+
+fn expand_cask_template(
+    value: &str,
+    staged_path: &Path,
+    appdir: &Path,
+    version: Option<&str>,
+) -> String {
+    let prefix = prefix::prefix();
+    let mut value = value
+        .replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy())
+        .replace("$APPDIR", &appdir.to_string_lossy())
+        .replace("$HOME", &crate::dirs::HOME.to_string_lossy())
+        .replace("{{HOMEBREW_PREFIX}}", &prefix.to_string_lossy())
+        .replace("{{staged_path}}", &staged_path.to_string_lossy())
+        .replace("{{appdir}}", &appdir.to_string_lossy());
+    if let Some(version) = version {
+        value = value.replace("{{version}}", version);
+    }
+    if let Some(rest) = value.strip_prefix("~/") {
+        value = crate::dirs::HOME.join(rest).to_string_lossy().to_string();
+    }
+    value
 }
 
 fn validate_flight_relative_path(path: &str) -> Result<()> {
@@ -1763,6 +1935,64 @@ fn stage_binary(
     Ok(())
 }
 
+fn stage_command_wrapper(
+    caskroom: &Path,
+    appdir: &Path,
+    wrapper: &CommandWrapperArtifact,
+) -> Result<()> {
+    let binary = wrapper.binary_artifact();
+    let target = caskroom_binary_path(caskroom, &binary)?;
+    file::remove_all(&target)?;
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let content = match (&wrapper.content, &wrapper.executable) {
+        (Some(content), None) => expand_cask_template(content, caskroom, appdir, None),
+        (None, Some(executable)) => {
+            let executable = expand_cask_template(executable, caskroom, appdir, None);
+            let args = wrapper
+                .args
+                .iter()
+                .map(|arg| expand_cask_template(arg, caskroom, appdir, None))
+                .map(|arg| shell_escape::unix::escape(Cow::Owned(arg)).into_owned())
+                .collect::<Vec<_>>();
+            let env = wrapper
+                .env
+                .iter()
+                .map(|(key, value)| {
+                    if !is_shell_env_name(key) {
+                        bail!("brew-cask: invalid command_wrapper environment name '{key}'");
+                    }
+                    let value = expand_cask_template(value, caskroom, appdir, None);
+                    Ok(format!(
+                        "{key}={}",
+                        shell_escape::unix::escape(Cow::Owned(value))
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let mut command = Vec::new();
+            command.extend(env);
+            command.push("exec".to_string());
+            command.push(shell_escape::unix::escape(Cow::Owned(executable)).into_owned());
+            command.extend(args);
+            command.push("\"$@\"".to_string());
+            format!("#!/bin/bash\n{}\n", command.join(" "))
+        }
+        _ => unreachable!("command wrapper shape is validated while parsing"),
+    };
+    file::write(&target, content)?;
+    file::make_executable(&target)?;
+    Ok(())
+}
+
+fn is_shell_env_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    chars
+        .next()
+        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
 fn find_binary_source(
     stage: &Path,
     caskroom: &Path,
@@ -1933,6 +2163,10 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.binaries.push(binary);
             continue;
         }
+        if let Some(wrapper) = parse_command_wrapper_artifact(artifact)? {
+            artifacts.command_wrappers.push(wrapper);
+            continue;
+        }
         if let Some(pkg) = parse_pkg_artifact(artifact)? {
             artifacts.pkgs.push(pkg);
             continue;
@@ -1957,13 +2191,14 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     }
     if artifacts.apps.is_empty()
         && artifacts.binaries.is_empty()
+        && artifacts.command_wrappers.is_empty()
         && artifacts.pkgs.is_empty()
         && artifacts.fonts.is_empty()
         && artifacts.completions.is_empty()
         && artifacts.generated_completions.is_empty()
     {
         bail!(
-            "brew-cask:{}: no app, binary, pkg, font, or completion artifact found; only app-bundle, binary, pkg, font, and completion casks are supported",
+            "brew-cask:{}: no app, binary, command wrapper, pkg, font, or completion artifact found; only app-bundle, binary, command-wrapper, pkg, font, and completion casks are supported",
             cask.token
         );
     }
@@ -2024,6 +2259,102 @@ fn parse_binary_artifact(value: &Value) -> Option<BinaryArtifact> {
         }
         _ => None,
     }
+}
+
+fn parse_command_wrapper_artifact(value: &Value) -> Result<Option<CommandWrapperArtifact>> {
+    let Some(wrapper) = value.as_object().and_then(|o| o.get("command_wrapper")) else {
+        return Ok(None);
+    };
+    let values = wrapper
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: command_wrapper metadata must be an array"))?;
+    let name = values
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask: command_wrapper requires a command name"))?;
+    let name_path = Path::new(name);
+    if name_path.file_name().and_then(|name| name.to_str()) != Some(name)
+        || matches!(name, "." | "..")
+    {
+        bail!("brew-cask: command_wrapper requires a command name without path components");
+    }
+    let options = values
+        .get(1)
+        .and_then(Value::as_object)
+        .ok_or_else(|| eyre!("brew-cask: command_wrapper requires options"))?;
+    let mut unsupported = options
+        .keys()
+        .filter(|key| !matches!(key.as_str(), "content" | "executable" | "args" | "env"))
+        .cloned()
+        .collect::<Vec<_>>();
+    unsupported.sort();
+    if !unsupported.is_empty() {
+        bail!(
+            "brew-cask: command_wrapper has unsupported option {}",
+            unsupported.join(", ")
+        );
+    }
+    let content = options
+        .get("content")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let executable = options
+        .get("executable")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    match (content.is_some(), executable.is_some()) {
+        (false, false) => {
+            bail!("brew-cask: command_wrapper requires content or executable")
+        }
+        (true, true) => {
+            bail!("brew-cask: command_wrapper requires content or executable, not both")
+        }
+        _ => {}
+    }
+    let args = options
+        .get("args")
+        .map(|args| {
+            args.as_array()
+                .ok_or_else(|| eyre!("brew-cask: command_wrapper args must be an array"))?
+                .iter()
+                .map(|arg| {
+                    arg.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| eyre!("brew-cask: command_wrapper args must be strings"))
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let env = options
+        .get("env")
+        .map(|env| {
+            env.as_object()
+                .ok_or_else(|| eyre!("brew-cask: command_wrapper env must be an object"))?
+                .iter()
+                .map(|(key, value)| {
+                    value
+                        .as_str()
+                        .map(|value| (key.clone(), value.to_string()))
+                        .ok_or_else(|| {
+                            eyre!("brew-cask: command_wrapper environment values must be strings")
+                        })
+                })
+                .collect::<Result<BTreeMap<_, _>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    if content.is_some() && (!args.is_empty() || !env.is_empty()) {
+        bail!("brew-cask: command_wrapper args and env require executable");
+    }
+    Ok(Some(CommandWrapperArtifact {
+        name: name.to_string(),
+        target: artifact_target(value, values),
+        content,
+        executable,
+        args,
+        env,
+    }))
 }
 
 fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
@@ -2291,12 +2622,214 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                     .unwrap_or(false),
             })
         }
+        "run" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "run step",
+                object,
+                &["type", "command", "args", "env", "sudo", "guards"],
+            )?;
+            let args = object
+                .get("args")
+                .map(|args| {
+                    args.as_array()
+                        .ok_or_else(|| {
+                            eyre!(
+                                "brew-cask:{}: unsupported {kind} run args metadata format",
+                                cask.token
+                            )
+                        })?
+                        .iter()
+                        .map(|arg| {
+                            arg.as_str().map(str::to_string).ok_or_else(|| {
+                                eyre!(
+                                    "brew-cask:{}: unsupported {kind} run argument metadata format",
+                                    cask.token
+                                )
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let env = object
+                .get("env")
+                .map(|env| {
+                    env.as_object()
+                        .ok_or_else(|| {
+                            eyre!(
+                                "brew-cask:{}: unsupported {kind} run env metadata format",
+                                cask.token
+                            )
+                        })?
+                        .iter()
+                        .map(|(key, value)| {
+                            value
+                                .as_str()
+                                .map(|value| (key.clone(), value.to_string()))
+                                .ok_or_else(|| {
+                                    eyre!(
+                                        "brew-cask:{}: unsupported {kind} run env value metadata format",
+                                        cask.token
+                                    )
+                                })
+                        })
+                        .collect::<Result<BTreeMap<_, _>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let guards = object
+                .get("guards")
+                .map(|guards| {
+                    guards
+                        .as_array()
+                        .ok_or_else(|| {
+                            eyre!(
+                                "brew-cask:{}: unsupported {kind} run guards metadata format",
+                                cask.token
+                            )
+                        })?
+                        .iter()
+                        .map(|guard| parse_flight_guard(cask, kind, guard))
+                        .collect::<Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(FlightStep::Run {
+                command: parse_run_command(cask, kind, object.get("command"))?,
+                args,
+                env,
+                sudo: object.get("sudo").and_then(Value::as_bool).unwrap_or(false),
+                guards,
+            })
+        }
         _ => bail!(
             "brew-cask:{}: unsupported {kind} step type {}",
             cask.token,
             step_type
         ),
     }
+}
+
+fn parse_run_command(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<FlightPath> {
+    let object = value.and_then(Value::as_object).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} run command metadata format",
+            cask.token
+        )
+    })?;
+    reject_unsupported_flight_fields(cask, kind, "run command", object, &["base", "path"])?;
+    let path = object.get("path").and_then(Value::as_str).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} run command path",
+            cask.token
+        )
+    })?;
+    let base = match object.get("base").and_then(Value::as_str) {
+        Some("staged_path") => FlightPathBase::StagedPath,
+        Some("appdir") => FlightPathBase::AppDir,
+        Some("homebrew_prefix") => FlightPathBase::HomebrewPrefix,
+        Some(base) => bail!(
+            "brew-cask:{}: unsupported {kind} run command base {}",
+            cask.token,
+            base
+        ),
+        None => FlightPathBase::Absolute,
+    };
+    if matches!(
+        base,
+        FlightPathBase::StagedPath | FlightPathBase::AppDir | FlightPathBase::HomebrewPrefix
+    ) && (Path::new(path).is_absolute()
+        || Path::new(path)
+            .components()
+            .any(|component| matches!(component, Component::ParentDir)))
+    {
+        bail!(
+            "brew-cask:{}: invalid {kind} run command path {}",
+            cask.token,
+            path
+        );
+    }
+    Ok(FlightPath {
+        base,
+        path: path.to_string(),
+    })
+}
+
+fn parse_flight_guard(cask: &Cask, kind: &str, value: &Value) -> Result<FlightGuard> {
+    let object = value.as_object().ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} run guard metadata format",
+            cask.token
+        )
+    })?;
+    reject_unsupported_flight_fields(
+        cask,
+        kind,
+        "run guard",
+        object,
+        &["condition", "value", "base", "path", "id"],
+    )?;
+    match object.get("condition").and_then(Value::as_str) {
+        Some("on") => match object.get("value").and_then(Value::as_str) {
+            Some("macos") => Ok(FlightGuard::OnMacos),
+            Some("linux") => Ok(FlightGuard::OnLinux),
+            Some(value) => bail!(
+                "brew-cask:{}: unsupported {kind} run guard platform {}",
+                cask.token,
+                value
+            ),
+            None => bail!(
+                "brew-cask:{}: unsupported {kind} run guard platform",
+                cask.token
+            ),
+        },
+        Some(condition @ ("if_exists" | "unless_exists")) => {
+            let path = parse_context_flight_path(cask, kind, "run guard", object)?;
+            if condition == "if_exists" {
+                Ok(FlightGuard::IfExists(path))
+            } else {
+                Ok(FlightGuard::UnlessExists(path))
+            }
+        }
+        Some(condition) => bail!(
+            "brew-cask:{}: unsupported {kind} run guard condition {}",
+            cask.token,
+            condition
+        ),
+        None => bail!(
+            "brew-cask:{}: unsupported {kind} run guard condition",
+            cask.token
+        ),
+    }
+}
+
+fn parse_context_flight_path(
+    cask: &Cask,
+    kind: &str,
+    field: &str,
+    object: &serde_json::Map<String, Value>,
+) -> Result<FlightPath> {
+    let path = object
+        .get("path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask:{}: unsupported {kind} {field} path", cask.token))?;
+    let base = match object.get("base").and_then(Value::as_str) {
+        Some("staged_path") => FlightPathBase::StagedPath,
+        Some("appdir") => FlightPathBase::AppDir,
+        Some("homebrew_prefix") => FlightPathBase::HomebrewPrefix,
+        Some(base) => bail!(
+            "brew-cask:{}: unsupported {kind} {field} base {}",
+            cask.token,
+            base
+        ),
+        None => FlightPathBase::Absolute,
+    };
+    Ok(FlightPath {
+        base,
+        path: path.to_string(),
+    })
 }
 
 fn reject_unsupported_flight_fields(
@@ -2582,6 +3115,12 @@ fn binary_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
         .binaries
         .iter()
         .map(BinaryArtifact::target_path)
+        .chain(
+            artifacts
+                .command_wrappers
+                .iter()
+                .map(CommandWrapperArtifact::target_path),
+        )
         .collect::<Result<Vec<_>>>()
 }
 
@@ -2645,15 +3184,20 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
             } else {
                 receipt.apps
             };
-            let binary_targets = if receipt.binaries.is_empty() {
-                artifacts
-                    .binaries
-                    .iter()
-                    .map(BinaryArtifact::target_path)
-                    .collect::<Result<Vec<_>>>()?
+            let mut binary_targets = if receipt.binaries.is_empty() {
+                binary_targets(artifacts)?
             } else {
                 receipt.binaries
             };
+            binary_targets.extend(
+                artifacts
+                    .command_wrappers
+                    .iter()
+                    .map(CommandWrapperArtifact::target_path)
+                    .collect::<Result<Vec<_>>>()?,
+            );
+            binary_targets.sort();
+            binary_targets.dedup();
             let pkgs_installed =
                 artifacts.pkgs.is_empty() || pkg_ids_installed(&artifacts.pkg_ids)?;
             let font_targets = if receipt.fonts.is_empty() {
@@ -2691,6 +3235,11 @@ fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Opti
             }
             for binary in &artifacts.binaries {
                 if !binary.target_path()?.exists() {
+                    return Ok(None);
+                }
+            }
+            for wrapper in &artifacts.command_wrappers {
+                if !wrapper.target_path()?.exists() {
                     return Ok(None);
                 }
             }
@@ -2946,6 +3495,8 @@ fn has_lifecycle_hook(cask: &Cask, hook: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -3014,6 +3565,98 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
+    }
+
+    #[test]
+    fn parses_firefox_command_wrapper_artifact() -> Result<()> {
+        let mut cask = test_cask("firefox", "153.0.1");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "app": ["Firefox.app"],
+                "target": "/Applications/Firefox.app"
+            }),
+            serde_json::json!({
+                "command_wrapper": [
+                    "firefox",
+                    {"executable": "$APPDIR/Firefox.app/Contents/MacOS/firefox"}
+                ],
+                "target": "$HOMEBREW_PREFIX/bin/firefox"
+            }),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert_eq!(
+            artifacts.command_wrappers,
+            vec![CommandWrapperArtifact {
+                name: "firefox".to_string(),
+                target: Some("$HOMEBREW_PREFIX/bin/firefox".to_string()),
+                content: None,
+                executable: Some("$APPDIR/Firefox.app/Contents/MacOS/firefox".to_string()),
+                args: Vec::new(),
+                env: BTreeMap::new(),
+            }]
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let caskroom = prefix.join("Caskroom/firefox/153.0.1");
+        let appdir = tmp.path().join("Applications");
+        let wrapper = CommandWrapperArtifact {
+            name: "firefox".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/firefox".to_string()),
+            content: None,
+            executable: Some("$APPDIR/Firefox.app/Contents/MacOS/firefox".to_string()),
+            args: vec!["--profile".to_string(), "two words".to_string()],
+            env: BTreeMap::from([("FIREFOX_MODE".to_string(), "mise test".to_string())]),
+        };
+
+        stage_command_wrapper(&caskroom, &appdir, &wrapper)?;
+
+        let staged = caskroom.join("bin/firefox");
+        let contents = file::read_to_string(&staged)?;
+        assert!(contents.starts_with("#!/bin/bash\n"));
+        assert!(contents.contains("FIREFOX_MODE='mise test'"));
+        let executable = appdir.join("Firefox.app/Contents/MacOS/firefox");
+        assert!(contents.contains(executable.to_string_lossy().as_ref()));
+        assert!(contents.contains("--profile 'two words' \"$@\""));
+        assert!(staged.metadata()?.permissions().mode() & 0o111 != 0);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stages_command_wrapper_with_literal_content() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let caskroom = prefix.join("Caskroom/example/1.0.0");
+        let wrapper = CommandWrapperArtifact {
+            name: "example".to_string(),
+            target: None,
+            content: Some("#!/bin/sh\nexec '$HOMEBREW_PREFIX/bin/example' \"$@\"\n".to_string()),
+            executable: None,
+            args: Vec::new(),
+            env: BTreeMap::new(),
+        };
+
+        stage_command_wrapper(&caskroom, Path::new("/Applications"), &wrapper)?;
+
+        assert_eq!(
+            file::read_to_string(caskroom.join("bin/example"))?,
+            format!(
+                "#!/bin/sh\nexec '{}/bin/example' \"$@\"\n",
+                prefix.display()
+            )
+        );
+        Ok(())
     }
 
     #[test]
@@ -3089,6 +3732,94 @@ mod tests {
     }
 
     #[test]
+    fn parses_orbstack_structured_run_step() -> Result<()> {
+        let mut cask = test_cask("orbstack", "2.2.1,20628");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "app": ["OrbStack.app"],
+                "target": "/Applications/OrbStack.app"
+            }),
+            serde_json::json!({
+                "postflight_steps": [{
+                    "steps": [{
+                        "command": {
+                            "base": "appdir",
+                            "path": "OrbStack.app/Contents/MacOS/bin/orbctl"
+                        },
+                        "type": "run",
+                        "args": ["_internal", "brew-postflight"]
+                    }]
+                }]
+            }),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert_eq!(
+            artifacts.postflight_steps,
+            vec![FlightStep::Run {
+                command: FlightPath {
+                    base: FlightPathBase::AppDir,
+                    path: "OrbStack.app/Contents/MacOS/bin/orbctl".to_string(),
+                },
+                args: vec!["_internal".to_string(), "brew-postflight".to_string()],
+                env: BTreeMap::new(),
+                sudo: false,
+                guards: Vec::new(),
+            }]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn structured_run_expands_paths_args_and_env() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let staged = tmp.path().join("stage");
+        let appdir = tmp.path().join("Applications");
+        file::create_dir_all(&staged)?;
+        file::create_dir_all(&appdir)?;
+        let result = staged.join("result");
+
+        execute_flight_steps(
+            &test_cask("example", "1.2.3"),
+            &[FlightStep::Run {
+                command: FlightPath {
+                    base: FlightPathBase::Absolute,
+                    path: "/bin/sh".to_string(),
+                },
+                args: vec![
+                    "-c".to_string(),
+                    "printf '%s' \"$MISE_TEST:$1:$2:$3\" > \"$4\"".to_string(),
+                    "_".to_string(),
+                    "{{appdir}}".to_string(),
+                    "{{staged_path}}".to_string(),
+                    "{{HOMEBREW_PREFIX}}".to_string(),
+                    "{{staged_path}}/result".to_string(),
+                ],
+                env: BTreeMap::from([("MISE_TEST".to_string(), "version-{{version}}".to_string())]),
+                sudo: false,
+                guards: Vec::new(),
+            }],
+            &staged,
+            &appdir,
+            "postflight_steps",
+        )?;
+
+        assert_eq!(
+            file::read_to_string(result)?,
+            format!(
+                "version-1.2.3:{}:{}:{}",
+                appdir.display(),
+                staged.display(),
+                prefix.display()
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
     fn structured_flight_steps_move_and_remove_staged_paths() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let staged = tmp.path();
@@ -3124,6 +3855,7 @@ mod tests {
                     recursive: true,
                 },
             ],
+            staged,
             staged,
             "preflight_steps",
         )?;
@@ -4756,6 +5488,58 @@ end
                 }
             )?,
             Some("1.0.0".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn installed_cask_version_reconciles_wrapper_added_to_existing_receipt() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("firefox", "153.0.1");
+        let app = AppArtifact {
+            source: "Firefox.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Firefox.app".to_string()),
+        };
+        let wrapper = CommandWrapperArtifact {
+            name: "firefox".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/firefox".to_string()),
+            content: None,
+            executable: Some("$APPDIR/Firefox.app/Contents/MacOS/firefox".to_string()),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+        };
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        let app_target = app_target_path(app.target_name())?;
+        file::create_dir_all(&app_target)?;
+        let receipt = CaskReceipt {
+            version: cask.version.clone(),
+            apps: vec![app_target],
+            binaries: Vec::new(),
+            fonts: Vec::new(),
+            completions: Vec::new(),
+            pkg_ids: Vec::new(),
+        };
+        file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&receipt)?,
+        )?;
+        let artifacts = CaskArtifacts {
+            apps: vec![app],
+            command_wrappers: vec![wrapper.clone()],
+            ..Default::default()
+        };
+
+        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+
+        let target = wrapper.target_path()?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::write(target, "wrapper")?;
+        assert_eq!(
+            installed_cask_version(&cask, &artifacts)?,
+            Some(cask.version)
         );
         Ok(())
     }
