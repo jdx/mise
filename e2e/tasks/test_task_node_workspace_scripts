@@ -54,9 +54,18 @@ cat <<'JSON' >packages/app/package.json
 }
 JSON
 
+mkdir -p packages/tool
+cat <<'TOML' >packages/tool/mise.toml
+[tasks.build]
+run = "printf '%s' \"$ROOT_TASK_DEFAULT\" > config-root-default.txt"
+TOML
+
 assert_contains "mise tasks --all" "node:@scope/app#build"
 assert_not_contains "mise tasks --all" "node:@scope/app#test:unit"
 assert_contains "mise task info 'node:@scope/app#build'" "packages/app/package.json"
+
+mise -q run //packages/tool:build
+assert "cat packages/tool/config-root-default.txt" "from-root"
 
 mise -q run 'node:@scope/app#build' -- forwarded
 assert "cat packages/app/result.txt" "inferred"

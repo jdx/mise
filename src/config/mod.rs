@@ -707,8 +707,7 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
 
-        let workspace_graph = Settings::get()
-            .experimental
+        let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
             .then(|| config.workspace_project_graph());
         let task_definitions = collect_task_definitions(
             &config.config_files,
@@ -2340,27 +2339,24 @@ fn collect_task_definitions(
             let root = cf.project_root()?.to_path_buf();
             let monorepo = cf.monorepo()?;
             let tasks = monorepo.task_defaults.clone();
-            let mut project_roots = BTreeSet::new();
+            let mut project_roots = expand_config_root_dirs(&root, &monorepo.config_roots, None)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|project_root| file::desymlink_path(&project_root))
+                .collect::<BTreeSet<_>>();
+            project_roots.extend(
+                monorepo
+                    .projects
+                    .values()
+                    .filter(|project| !project.remove)
+                    .filter_map(|project| project.root.as_ref())
+                    .map(|project_root| file::desymlink_path(&root.join(project_root))),
+            );
             if let Some(graph) = workspace_graph {
                 project_roots.extend(
                     graph
                         .projects()
                         .map(|project| file::desymlink_path(&root.join(&project.root))),
-                );
-            } else {
-                project_roots.extend(
-                    expand_config_root_dirs(&root, &monorepo.config_roots, None)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|project_root| file::desymlink_path(&project_root)),
-                );
-                project_roots.extend(
-                    monorepo
-                        .projects
-                        .values()
-                        .filter(|project| !project.remove)
-                        .filter_map(|project| project.root.as_ref())
-                        .map(|project_root| file::desymlink_path(&root.join(project_root))),
                 );
             }
             (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
@@ -3850,8 +3846,7 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
-    let workspace_graph = Settings::get()
-        .experimental
+    let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
         .then(|| config.workspace_project_graph());
     let mut definitions = collect_task_definitions(
         config_files,
