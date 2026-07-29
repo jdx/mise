@@ -1115,6 +1115,14 @@
             "type": "string"
           }
         },
+        "idiomatic_version_file_disable_files": {
+          "default": [],
+          "description": "Specific idiomatic version files to disable for a tool.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "idiomatic_version_file_enable_tools": {
           "default": [],
           "description": "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc.",
