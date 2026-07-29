@@ -65,6 +65,6 @@ $ mise settings always_keep_download
 # set the value of the setting "always_keep_download" to "true"
 $ mise settings always_keep_download=true
 
-# set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node"
-$ mise settings node.mirror_url https://npmmirror.com/mirrors/node
+# set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/"
+$ mise settings node.mirror_url https://npmmirror.com/mirrors/node/
 ```
