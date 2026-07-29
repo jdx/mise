@@ -994,9 +994,17 @@ impl AquaBackend {
         tv: &ToolVersion,
         versions: &[&str],
     ) -> Result<AquaPackage> {
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        Self::package_with_options_for_pkg(tv, pkg, versions)
+    }
+
+    fn package_with_options_for_pkg(
+        tv: &ToolVersion,
+        pkg: AquaPackage,
+        versions: &[&str],
+    ) -> Result<AquaPackage> {
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
-        let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let target_libc = Self::target_variant_libc(&target);
         let pkg = pkg.with_version_libc(versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(&target));
@@ -1006,9 +1014,10 @@ impl AquaBackend {
     }
 
     async fn package_with_version_candidates(&self, tv: &ToolVersion) -> Result<AquaPackage> {
-        let versions = version_candidates(&tv.version, None);
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        let versions = package_version_candidates(&tv.version, &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        self.package_with_options(tv, &versions).await
+        Self::package_with_options_for_pkg(tv, pkg, &versions)
     }
 
     fn to_aqua_platform(target: &PlatformTarget) -> (&str, &str) {
@@ -3262,6 +3271,24 @@ fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec
     candidates.into_iter().unique().collect()
 }
 
+fn package_version_candidates<'a>(version: &'a str, pkg: &AquaPackage) -> Vec<Cow<'a, str>> {
+    let mut candidates = version_candidates(version, None);
+    let prefixes = pkg
+        .version_prefix
+        .iter()
+        .map(String::as_str)
+        .chain(
+            pkg.version_overrides
+                .iter()
+                .filter_map(|vo| vo.version_prefix.as_deref()),
+        )
+        .unique();
+    for prefix in prefixes {
+        candidates.extend(version_candidates(version, Some(prefix)));
+    }
+    candidates.into_iter().unique().collect()
+}
+
 fn github_release_tag_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     if url.host_str()? != "github.com" {
@@ -3589,6 +3616,70 @@ mod tests {
             .collect_vec();
 
         assert_eq!(candidates, vec!["tool-v1.2.3"]);
+    }
+
+    #[test]
+    fn test_package_version_candidates_include_package_and_override_prefixes() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: github_release
+    repo_owner: example
+    repo_name: tool
+    version_prefix: maven-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        version_prefix: lychee-v
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("example/tool").unwrap();
+        let candidates = package_version_candidates("1.2.3", &pkg)
+            .into_iter()
+            .map(Cow::into_owned)
+            .collect_vec();
+
+        assert_eq!(
+            candidates,
+            vec![
+                "1.2.3",
+                "v1.2.3",
+                "maven-1.2.3",
+                "maven-v1.2.3",
+                "lychee-v1.2.3"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_package_version_candidates_apply_prefixed_file_override() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: github_release
+    repo_owner: lycheeverse
+    repo_name: lychee
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        version_prefix: lychee-v
+        asset: lychee.tar.gz
+        format: tar.gz
+        files:
+          - name: lychee
+            src: lychee-x86_64-unknown-linux-musl/lychee
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("lycheeverse/lychee").unwrap();
+        let versions = package_version_candidates("0.24.2", &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = pkg.with_version(&versions, "linux", "amd64");
+
+        assert_eq!(pkg.version_prefix.as_deref(), Some("lychee-v"));
+        assert_eq!(pkg.files.len(), 1);
+        assert_eq!(pkg.files[0].name, "lychee");
     }
 
     #[test]
