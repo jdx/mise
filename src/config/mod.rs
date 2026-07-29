@@ -464,9 +464,10 @@ impl Config {
             .map(|config| &config.projects)
             .cloned()
             .unwrap_or_default();
+        let node = crate::task::workspace::node::NodeWorkspaceProvider;
 
         crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides(
-            &[],
+            &[&node],
             &monorepo_root,
             &overrides,
         )

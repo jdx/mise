@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+EOF
+
+cat <<'EOF' >package.json
+{
+  "packageManager": "bun@1.3.0",
+  "workspaces": ["packages/*"]
+}
+EOF
+
+mkdir -p packages/app packages/lib
+cat <<'EOF' >packages/app/package.json
+{
+  "name": "@scope/app"
+}
+EOF
+cat <<'EOF' >packages/lib/package.json
+{
+  "name": "lib"
+}
+EOF
+
+assert_contains "mise tasks graph" "node:@scope/app"
+assert_contains "mise tasks graph" "packages/app"
+assert_contains "mise tasks graph" '"package_manager":"bun"'
+assert_contains "mise tasks graph" '"workspace_source":"package.json"'
+
+assert_json "mise tasks graph --json | jq '.projects | map({id, root})'" '[
+  {
+    "id": "node:@scope/app",
+    "root": "packages/app"
+  },
+  {
+    "id": "node:lib",
+    "root": "packages/lib"
+  }
+]'
