@@ -217,8 +217,9 @@ Supports the same argument, environment variable, and optional dependency syntax
 
 - **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
 
-Similar to `depends`, it will wait for these tasks to complete before running however they won't be
-added to the list of tasks to run. This is essentially optional dependencies.
+Similar to `depends`, it will wait for these tasks to complete before running. Unlike `depends`,
+`wait_for` does not add matching tasks to the run; it only waits for them when they are already
+scheduled. To allow a task name or pattern to have no configured matches, use `optional = true`.
 
 ```mise-toml
 [tasks.lint]
