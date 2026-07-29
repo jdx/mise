@@ -188,7 +188,32 @@ edit through a symlink would modify whatever the link points at, often a
 `[dotfiles]` source, so point the edit at the real file instead.
 
 Removing an entry from config leaves its file, block, or line in place
-because mise keeps no state database. Delete unmanaged leftovers by hand.
+because mise keeps no state database. Run `mise bootstrap dotfiles unapply`
+before removing the entry when you want mise to clean up its observable
+footprint.
+
+## Unapplying
+
+`mise bootstrap dotfiles unapply` removes configured targets without removing
+their `[dotfiles]` entries or source files. It uses the current config and
+filesystem to determine what the entry owns:
+
+- `symlink` targets are removed only while they still point to the configured
+  source.
+- `symlink-each` removes exact source-to-target links, including dangling links
+  for deleted source files. Other links and files under the target survive.
+- file copies and rendered templates are removed only while their content still
+  matches. Modified targets require `--force`.
+- directory copies are removed file by file. Unmanaged neighbors always
+  survive, and directories are removed only when empty.
+- marker-delimited blocks are removed with their markers. Plain line edits have
+  no ownership marker and require `--force`.
+
+Unapply is deliberately conservative because dotfiles do not have an apply
+manifest. In particular, a copied file whose source was deleted can no longer
+be identified inside an additive directory copy. Remove such leftovers by
+hand. Use `--dry-run` to inspect the identifiable removals first; template
+dry-runs do not render or execute template functions.
 
 ## Commands
 
@@ -201,6 +226,10 @@ mise bootstrap dotfiles apply --dry-run           # print what would be done
 mise bootstrap dotfiles apply --dry-run --verbose # include diff-like details
 mise bootstrap dotfiles apply --yes               # skip the confirmation prompt
 mise bootstrap dotfiles apply --force             # also replace conflicting files
+
+mise bootstrap dotfiles unapply             # remove identifiable managed targets
+mise bootstrap dotfiles unapply --dry-run   # preview removals
+mise bootstrap dotfiles unapply --force     # also remove modified/ambiguous targets
 
 mise bootstrap dotfiles add ~/.zshrc       # capture a live file into dotfiles.root
 mise bootstrap dotfiles edit ~/.zshrc      # edit the managed source or owning config

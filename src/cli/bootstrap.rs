@@ -4,7 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 use serde_json::{Value, json};
 
-use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus};
+use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -191,6 +191,7 @@ enum BootstrapDotfilesCommands {
     Apply(BootstrapDotfilesApply),
     Edit(DotfilesEdit),
     Status(BootstrapDotfilesStatus),
+    Unapply(DotfilesUnapply),
 }
 
 /// Apply dotfiles from `[dotfiles]`
@@ -662,7 +663,9 @@ impl Bootstrap {
                     force_hint: "use --force-dotfiles or run `mise bootstrap dotfiles apply --force`",
                     yes: self.yes,
                 };
-                system::files::apply(&config, &files, &opts)?;
+                if !system::files::apply(&config, &files, &opts)? {
+                    return Ok(());
+                }
             }
 
             let edits = system::edits::edits_from_config(&config);
@@ -675,7 +678,9 @@ impl Bootstrap {
                     verbose: false,
                     yes: self.yes,
                 };
-                system::edits::apply(&config, &edits, &opts)?;
+                if !system::edits::apply(&config, &edits, &opts)? {
+                    return Ok(());
+                }
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
@@ -1869,6 +1874,7 @@ impl BootstrapDotfiles {
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
         }
     }
 }

@@ -457,6 +457,28 @@ state (missing, source missing, differs)
 """#
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         }
+        cmd unapply help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
+            long_help #"""
+Remove dotfiles applied from `[dotfiles]`
+
+Removes configured whole-file entries and edits while preserving files
+mise cannot identify as managed. Modified copies, templates, and plain-line
+edits require `--force`.
+"""#
+            after_long_help #"""
+Examples:
+
+    $ mise bootstrap dotfiles unapply
+    $ mise bootstrap dotfiles unapply ~/.zshrc
+    $ mise bootstrap dotfiles unapply --dry-run
+    $ mise bootstrap dotfiles unapply --force --yes
+
+"""#
+            flag "-f --force" help="Remove modified or otherwise ambiguous managed files and lines"
+            flag "-n --dry-run" help="Print the actions that would run without writing anything"
+            flag "-y --yes" help="Skip the confirmation prompt"
+            arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
+        }
     }
     cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {
         cmd apply effect=write {
@@ -1110,6 +1132,28 @@ Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
 """#
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+    }
+    cmd unapply hide=#true help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
+        long_help #"""
+Remove dotfiles applied from `[dotfiles]`
+
+Removes configured whole-file entries and edits while preserving files
+mise cannot identify as managed. Modified copies, templates, and plain-line
+edits require `--force`.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise bootstrap dotfiles unapply
+    $ mise bootstrap dotfiles unapply ~/.zshrc
+    $ mise bootstrap dotfiles unapply --dry-run
+    $ mise bootstrap dotfiles unapply --force --yes
+
+"""#
+        flag "-f --force" help="Remove modified or otherwise ambiguous managed files and lines"
+        flag "-n --dry-run" help="Print the actions that would run without writing anything"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
     }
 }
 cmd doctor help="Check mise installation for possible problems" effect=read {
@@ -5266,6 +5310,8 @@ source_code_link_template #"""
 {%- set path = "dotfiles/edit.rs" -%}
 {%- elif path == "bootstrap/dotfiles/status" -%}
 {%- set path = "dotfiles/status.rs" -%}
+{%- elif path == "bootstrap/dotfiles/unapply" -%}
+{%- set path = "dotfiles/unapply.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}

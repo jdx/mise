@@ -6,11 +6,13 @@ mod add;
 mod apply;
 mod edit;
 mod status;
+mod unapply;
 
 pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
 pub(crate) use edit::DotfilesEdit;
 pub(crate) use status::DotfilesStatus;
+pub(crate) use unapply::DotfilesUnapply;
 
 /// Manage dotfiles from `[dotfiles]` (deprecated)
 ///
@@ -32,6 +34,8 @@ enum Commands {
     Edit(edit::DotfilesEdit),
     #[clap(hide = true)]
     Status(status::DotfilesStatus),
+    #[clap(hide = true)]
+    Unapply(unapply::DotfilesUnapply),
 }
 
 impl Dotfiles {
@@ -47,6 +51,7 @@ impl Dotfiles {
             Commands::Apply(cmd) => cmd.run().await.map(|_| ()),
             Commands::Edit(cmd) => cmd.run().await,
             Commands::Status(cmd) => cmd.run().await,
+            Commands::Unapply(cmd) => cmd.run().await,
         }
     }
 }

@@ -1,5 +1,6 @@
 //! `[dotfiles]` — declarative config files (dotfiles) applied by
-//! `mise bootstrap dotfiles apply` or `mise bootstrap`.
+//! `mise bootstrap dotfiles apply` or `mise bootstrap`, and removed by
+//! `mise bootstrap dotfiles unapply`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
@@ -963,6 +964,412 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
             .join(", ")
     );
     Ok(true)
+}
+
+pub struct UnapplyOpts {
+    pub dry_run: bool,
+    pub verbose: bool,
+    /// remove targets whose ownership cannot be verified from their current
+    /// state (for example a modified copy)
+    pub force: bool,
+    pub yes: bool,
+}
+
+#[derive(Debug)]
+pub struct UnapplyPlan<'a> {
+    req: &'a FileRequest,
+    paths: Vec<PathBuf>,
+    /// directory-walking modes share their target with unmanaged files, so
+    /// only remove directories after their managed children are gone and only
+    /// while they are empty
+    cleanup_empty_dirs: bool,
+    /// template dry-runs do not render, so the removal is conditional
+    conditional: bool,
+}
+
+/// Remove configured whole-file entries without recursively deleting
+/// directories that may contain unmanaged files. Symlinks carry their own
+/// ownership evidence. Copies and templates must still match their source
+/// unless `--force` was given.
+pub fn plan_unapply<'a>(
+    requests: &'a [FileRequest],
+    opts: &UnapplyOpts,
+) -> Result<Vec<UnapplyPlan<'a>>> {
+    let mut todo = vec![];
+    let mut problems = vec![];
+    for req in requests {
+        match plan_unapply_one(req, opts) {
+            Ok(Some(plan)) => todo.push(plan),
+            Ok(None) => {}
+            Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw)),
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    Ok(todo)
+}
+
+/// Resolve checks that may execute user-authored template functions. This runs
+/// only after interactive confirmation, but still before any mutation.
+pub fn resolve_unapply(
+    config: &Config,
+    plans: &mut Vec<UnapplyPlan<'_>>,
+    opts: &UnapplyOpts,
+) -> Result<()> {
+    if opts.dry_run {
+        return Ok(());
+    }
+    let mut problems = vec![];
+    let rendered = plans
+        .iter()
+        .map(|plan| {
+            if plan.conditional {
+                match render_template(config, plan.req) {
+                    Ok(rendered) => Some(rendered),
+                    Err(err) => {
+                        problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+
+    // Template functions can change any selected target. Refresh every plan
+    // only after all templates have rendered so no stale validation is used.
+    let mut refreshed = Vec::with_capacity(plans.len());
+    for (plan, rendered) in std::mem::take(plans).into_iter().zip(rendered) {
+        let result = if let Some(rendered) = rendered {
+            let mut paths = IndexMap::new();
+            plan_expected_content(rendered.as_bytes(), &plan.req.target, false, &mut paths).map(
+                |_| {
+                    Some(UnapplyPlan {
+                        req: plan.req,
+                        paths: paths.into_keys().collect(),
+                        cleanup_empty_dirs: false,
+                        conditional: false,
+                    })
+                },
+            )
+        } else {
+            plan_unapply_one(plan.req, opts)
+        };
+        match result {
+            Ok(Some(plan)) => refreshed.push(plan),
+            Ok(None) => {}
+            Err(err) => problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw)),
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    *plans = refreshed;
+    Ok(())
+}
+
+pub fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+    let todo = plans;
+    if todo.is_empty() {
+        info!("files: all files are unapplied");
+        return Ok(());
+    }
+    if opts.dry_run {
+        for plan in todo {
+            for path in &plan.paths {
+                let suffix = if plan.conditional {
+                    " (if unchanged)"
+                } else {
+                    ""
+                };
+                miseprintln!("rm {}{suffix}", path.display_user());
+            }
+            if plan.cleanup_empty_dirs {
+                miseprintln!("rmdir {} (if empty)", plan.req.target.display_user());
+            }
+            if opts.verbose && plan.cleanup_empty_dirs {
+                miseprintln!(
+                    "  preserve unmanaged files under {}",
+                    plan.req.target.display_user()
+                );
+            }
+        }
+        return Ok(());
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = todo
+            .iter()
+            .map(|plan| plan.req.target_raw.clone())
+            .join(", ");
+        if !prompt::confirm(format!("files: unapply {list}?"))? {
+            info!("files: skipped");
+            return Ok(());
+        }
+    }
+    for plan in todo {
+        unapply_one(plan)?;
+    }
+    info!(
+        "files: unapplied {}",
+        todo.iter()
+            .map(|plan| plan.req.target_raw.clone())
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn plan_unapply_one<'a>(
+    req: &'a FileRequest,
+    opts: &UnapplyOpts,
+) -> Result<Option<UnapplyPlan<'a>>> {
+    let mut paths = IndexMap::<PathBuf, ()>::new();
+    let mut cleanup_empty_dirs = false;
+    let mut conditional = false;
+    match req.mode {
+        FileMode::Symlink if !(cfg!(windows) && req.source.is_file()) => {
+            if req.target.is_symlink() {
+                let dest = std::fs::read_link(&req.target)?;
+                if opts.force || dest == req.source || points_at_same_file(&req.target, &req.source)
+                {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!(
+                        "target symlink points to {}, use --force to remove it",
+                        dest.display_user()
+                    );
+                }
+            } else if req.target.exists() {
+                if opts.force {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!("target is not the managed symlink, use --force to remove it");
+                }
+            }
+        }
+        FileMode::SymlinkEach if !cfg!(windows) => {
+            if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
+                if opts.force {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!("target is not the managed directory, use --force to remove it");
+                }
+            } else if req.target.is_dir() {
+                for path in owned_links(req)? {
+                    paths.insert(path, ());
+                }
+                cleanup_empty_dirs = true;
+            }
+        }
+        FileMode::Copy | FileMode::SymlinkEach if req.source.is_dir() => {
+            if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
+                if opts.force {
+                    paths.insert(req.target.clone(), ());
+                } else {
+                    bail!("target is not the managed directory, use --force to remove it");
+                }
+            } else if req.target.is_dir() {
+                for (source, target) in walk_source_files(req)? {
+                    plan_regular_file(&source, &target, opts.force, &mut paths)?;
+                }
+                cleanup_empty_dirs = true;
+            }
+        }
+        FileMode::Copy => {
+            if req.target.is_dir() && !req.source.exists() {
+                bail!("source directory is missing, so managed children cannot be identified");
+            }
+            plan_single_file(req, opts, &mut paths)?;
+        }
+        FileMode::Symlink => {
+            plan_single_file(req, opts, &mut paths)?;
+        }
+        FileMode::SymlinkEach => {
+            bail!("mode symlink-each requires the source to be a directory");
+        }
+        FileMode::Template => {
+            if !req.target.exists() && !req.target.is_symlink() {
+                return Ok(None);
+            }
+            if opts.force {
+                paths.insert(req.target.clone(), ());
+            } else if opts.dry_run {
+                // Rendering may execute commands. Keep dry-run inert, matching
+                // apply/status policy, and describe the removal as conditional.
+                paths.insert(req.target.clone(), ());
+                conditional = true;
+            } else {
+                if !req.source.exists() {
+                    bail!("source is missing; use --force to remove the target");
+                }
+                // Rendering may execute user-authored commands. Defer it until
+                // after the complete unapply plan has been confirmed.
+                conditional = true;
+            }
+        }
+    }
+    if paths.is_empty() && !cleanup_empty_dirs && !conditional {
+        Ok(None)
+    } else {
+        Ok(Some(UnapplyPlan {
+            req,
+            paths: paths.into_keys().collect(),
+            cleanup_empty_dirs,
+            conditional,
+        }))
+    }
+}
+
+fn plan_single_file(
+    req: &FileRequest,
+    opts: &UnapplyOpts,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if !req.source.exists() && req.target.exists() && !opts.force {
+        bail!("source is missing; use --force to remove the target");
+    }
+    if opts.force && (req.target.exists() || req.target.is_symlink()) {
+        paths.insert(req.target.clone(), ());
+    } else if req.source.exists() {
+        plan_regular_file(&req.source, &req.target, false, paths)?;
+    }
+    Ok(())
+}
+
+fn plan_regular_file(
+    source: &Path,
+    target: &Path,
+    force: bool,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if !target.exists() && !target.is_symlink() {
+        return Ok(());
+    }
+    if source.is_file() {
+        plan_expected_content(&file::read(source)?, target, force, paths)
+    } else if force {
+        paths.insert(target.to_path_buf(), ());
+        Ok(())
+    } else {
+        bail!(
+            "cannot verify {}; use --force to remove it",
+            target.display_user()
+        )
+    }
+}
+
+fn plan_expected_content(
+    expected: &[u8],
+    target: &Path,
+    force: bool,
+    paths: &mut IndexMap<PathBuf, ()>,
+) -> Result<()> {
+    if force || (target.is_file() && !target.is_symlink() && file::read(target)? == expected) {
+        paths.insert(target.to_path_buf(), ());
+        Ok(())
+    } else {
+        bail!(
+            "{} differs from its managed source; use --force to remove it",
+            target.display_user()
+        )
+    }
+}
+
+/// All symlinks under a symlink-each target that point exactly where this
+/// entry maps that relative path. Unlike stale-link pruning this includes
+/// both current and deleted source files because unapply removes the entry's
+/// complete observable footprint.
+fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    if !req.target.is_dir() || req.target.is_symlink() {
+        return Ok(vec![]);
+    }
+    let mut out = vec![];
+    for entry in walkdir::WalkDir::new(&req.target).sort_by_file_name() {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                debug!("files: walking {}: {err}", req.target.display_user());
+                continue;
+            }
+        };
+        if !entry.file_type().is_symlink() {
+            continue;
+        }
+        let Ok(rel) = entry.path().strip_prefix(&req.target) else {
+            continue;
+        };
+        // Excluded paths are outside this entry's managed footprint. Even an
+        // exact source-shaped link there may have been created by the user.
+        if is_excluded(rel, &req.exclude) {
+            continue;
+        }
+        let dest = match std::fs::read_link(entry.path()) {
+            Ok(dest) => dest,
+            Err(err) => {
+                debug!("files: reading {}: {err}", entry.path().display_user());
+                continue;
+            }
+        };
+        let expected = req.source.join(rel);
+        if dest == expected || points_at_same_file(entry.path(), &expected) {
+            out.push(entry.path().to_path_buf());
+        }
+    }
+    Ok(out)
+}
+
+fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
+    let mut parents = vec![];
+    for path in &plan.paths {
+        debug!("files: removing {}", path.display_user());
+        if path.is_symlink() || path.is_file() {
+            file::remove_file(path)?;
+        } else if path.is_dir() {
+            // Only reached for a forced type conflict. The user explicitly
+            // asked to remove the declared whole target.
+            file::remove_all(path)?;
+        }
+        if let Some(parent) = path.parent() {
+            parents.push(parent.to_path_buf());
+        }
+    }
+    if plan.cleanup_empty_dirs && plan.req.target.is_dir() {
+        parents.push(plan.req.target.clone());
+        for start in parents
+            .into_iter()
+            .sorted_by_key(|p| std::cmp::Reverse(p.components().count()))
+            .unique()
+        {
+            let mut dir = start.as_path();
+            while dir.starts_with(&plan.req.target) {
+                if !dir.is_dir() || dir.read_dir()?.next().is_some() {
+                    break;
+                }
+                file::remove_dir(dir)?;
+                if dir == plan.req.target {
+                    break;
+                }
+                let Some(parent) = dir.parent() else {
+                    break;
+                };
+                dir = parent;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// existing paths this entry would have to delete or replace — not counting

@@ -1,5 +1,6 @@
 //! `[dotfiles]` — declarative edits to files mise doesn't own,
-//! applied by `mise bootstrap dotfiles apply` or `mise bootstrap`.
+//! applied by `mise bootstrap dotfiles apply` or `mise bootstrap`, and
+//! removed by `mise bootstrap dotfiles unapply`.
 //!
 //! Where whole-file dotfile entries manage whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,
@@ -648,6 +649,226 @@ pub fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Res
             .join(", ")
     );
     Ok(true)
+}
+
+pub struct UnapplyOpts {
+    pub dry_run: bool,
+    pub verbose: bool,
+    /// plain line edits have no ownership marker, so removing them requires
+    /// explicit confirmation that the configured line should be removed
+    pub force: bool,
+    pub yes: bool,
+}
+
+pub struct UnapplyPlan<'a> {
+    req: &'a EditRequest,
+    /// Exact target contents observed during planning. Template functions run
+    /// before execution, so selected edits must still have this same state.
+    text: String,
+}
+
+/// Remove marker-delimited blocks and, with `--force`, exact line edits.
+/// Block markers are their ownership record. A plain line may have existed
+/// before apply, so stateless unapply refuses to guess without `--force`.
+pub fn plan_unapply<'a>(
+    requests: &'a [EditRequest],
+    opts: &UnapplyOpts,
+) -> Result<Vec<UnapplyPlan<'a>>> {
+    let mut todo = vec![];
+    let mut problems = vec![];
+    let mut seen_lines = indexmap::IndexSet::new();
+    for req in requests {
+        if req.path.is_symlink() {
+            problems.push(format!(
+                "  \"{}\" ({}): {SYMLINK_REASON}",
+                req.path_raw,
+                req.describe_op()
+            ));
+            continue;
+        }
+        if !req.path.exists() {
+            continue;
+        }
+        let text = match file::read_to_string(&req.path) {
+            Ok(text) => text,
+            Err(err) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {err}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
+        };
+        let lines = text.lines().collect::<Vec<_>>();
+        match &req.op {
+            EditOp::Block { comment, .. } => match find_block(&lines, &req.id, comment) {
+                Ok(Some(_)) => todo.push(UnapplyPlan { req, text }),
+                Ok(None) => {}
+                Err(reason) => problems.push(format!(
+                    "  \"{}\" ({}): {reason}, fix the file manually",
+                    req.path_raw,
+                    req.describe_op()
+                )),
+            },
+            EditOp::Line { line } if lines.contains(&line.as_str()) => {
+                if !opts.force {
+                    problems.push(format!(
+                        "  \"{}\" ({}): line edits have no ownership marker; use --force to remove the line",
+                        req.path_raw,
+                        req.describe_op()
+                    ));
+                } else if seen_lines.insert((req.path.clone(), line.clone())) {
+                    // Two ids with the same line converge to one applied line
+                    // and therefore produce one unapply action.
+                    todo.push(UnapplyPlan { req, text });
+                }
+            }
+            EditOp::Line { .. } => {}
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "edits: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    Ok(todo)
+}
+
+/// Ensure template functions or another concurrent actor did not invalidate
+/// any edit ownership checks performed during planning.
+pub fn validate_unapply(todo: &[UnapplyPlan<'_>]) -> Result<()> {
+    let mut checked = indexmap::IndexSet::new();
+    let mut problems = vec![];
+    for plan in todo {
+        if !checked.insert(plan.req.path.clone()) {
+            continue;
+        }
+        let result = if plan.req.path.is_symlink() {
+            Err(eyre::eyre!("{SYMLINK_REASON}"))
+        } else {
+            file::read_to_string(&plan.req.path).and_then(|text| {
+                if text == plan.text {
+                    Ok(())
+                } else {
+                    bail!("target changed after unapply planning")
+                }
+            })
+        };
+        if let Err(err) = result {
+            problems.push(format!(
+                "  \"{}\" ({}): {err}",
+                plan.req.path_raw,
+                plan.req.describe_op()
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "edits: cannot unapply these entries:\n{}",
+            problems.join("\n")
+        );
+    }
+    Ok(())
+}
+
+pub fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+    if todo.is_empty() {
+        info!("edits: all edits are unapplied");
+        return Ok(());
+    }
+    if opts.dry_run {
+        for plan in todo {
+            miseprintln!(
+                "remove edit {} ({})",
+                plan.req.path.display_user(),
+                plan.req.describe_op()
+            );
+            if opts.verbose {
+                miseprintln!("  preserve all content outside the managed edit");
+            }
+        }
+        return Ok(());
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = todo
+            .iter()
+            .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !prompt::confirm(format!("edits: unapply {list}?"))? {
+            info!("edits: skipped");
+            return Ok(());
+        }
+    }
+    for plan in todo {
+        unapply_one(plan.req)?;
+    }
+    info!(
+        "edits: unapplied {}",
+        todo.iter()
+            .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn unapply_one(req: &EditRequest) -> Result<()> {
+    let text = file::read_to_string(&req.path)?;
+    let lines = text_lines(&text);
+    let remove = match &req.op {
+        EditOp::Block { comment, .. } => {
+            let refs = lines.iter().map(|line| line.content).collect::<Vec<_>>();
+            match find_block(&refs, &req.id, comment) {
+                Ok(Some((begin, end))) => lines[begin].start..lines[end].end,
+                Ok(None) => return Ok(()),
+                Err(reason) => bail!(
+                    "edits: \"{}\": {reason}, fix the file manually",
+                    req.path_raw
+                ),
+            }
+        }
+        EditOp::Line { line } => {
+            // Apply appends a missing line, so the last matching occurrence is
+            // the best stateless approximation of the one it added.
+            if let Some(found) = lines.iter().rfind(|candidate| candidate.content == line) {
+                found.start..found.end
+            } else {
+                return Ok(());
+            }
+        }
+    };
+    let mut out = text;
+    out.replace_range(remove, "");
+    file::write(&req.path, out)?;
+    Ok(())
+}
+
+struct TextLine<'a> {
+    content: &'a str,
+    start: usize,
+    end: usize,
+}
+
+/// Logical lines plus their exact byte spans, including CRLF/LF terminators.
+/// Edit removal uses the spans so bytes outside the removed edit are preserved.
+fn text_lines(text: &str) -> Vec<TextLine<'_>> {
+    let mut offset = 0;
+    text.split_inclusive('\n')
+        .map(|raw| {
+            let start = offset;
+            offset += raw.len();
+            let content = raw.strip_suffix('\n').unwrap_or(raw);
+            let content = content.strip_suffix('\r').unwrap_or(content);
+            TextLine {
+                content,
+                start,
+                end: offset,
+            }
+        })
+        .collect()
 }
 
 /// Simulate applying an edit to in-memory text for bootstrap dry-run config
