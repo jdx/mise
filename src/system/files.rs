@@ -1459,8 +1459,9 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
 }
 
 /// Whether replacing `target` with a symlink to `source` preserves all of the
-/// target's filesystem state. Directory comparisons include empty directories,
-/// symlink identity, and permissions as well as regular-file contents.
+/// target's filesystem state. Real directories are never considered
+/// equivalent because portable filesystem APIs cannot compare all ownership,
+/// ACL, extended-attribute, flag, and security-label metadata.
 fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
     if source.is_file() && target.is_file() {
         if !permissions_match(source, target)?
@@ -1473,61 +1474,8 @@ fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
     if !source.is_dir() || !target.is_dir() {
         return Ok(false);
     }
-    // Windows ACLs are not represented by std::fs::Permissions. Refuse to
-    // destructively replace a real directory unless the user explicitly
-    // accepts that risk with --force.
-    #[cfg(not(unix))]
-    return Ok(false);
-    if !permissions_match(source, target)? {
-        return Ok(false);
-    }
-    let relative_entries = |root: &Path| -> Result<Vec<PathBuf>> {
-        let mut entries = walkdir::WalkDir::new(root)
-            .follow_links(false)
-            .min_depth(1)
-            .into_iter()
-            .map(|entry| {
-                let entry = entry?;
-                Ok(entry.path().strip_prefix(root)?.to_path_buf())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        entries.sort();
-        Ok(entries)
-    };
-    let source_entries = relative_entries(source)?;
-    if source_entries != relative_entries(target)? {
-        return Ok(false);
-    }
-    for rel in source_entries {
-        let source_entry = source.join(&rel);
-        let target_entry = target.join(rel);
-        let source_metadata = source_entry.symlink_metadata()?;
-        let target_metadata = target_entry.symlink_metadata()?;
-        let source_type = source_metadata.file_type();
-        let target_type = target_metadata.file_type();
-        if source_type.is_dir() != target_type.is_dir()
-            || source_type.is_file() != target_type.is_file()
-            || source_type.is_symlink() != target_type.is_symlink()
-            || !permissions_match(&source_entry, &target_entry)?
-        {
-            return Ok(false);
-        }
-        if source_type.is_file()
-            && (source_metadata.len() != target_metadata.len()
-                || file::read(&source_entry)? != file::read(&target_entry)?)
-        {
-            return Ok(false);
-        }
-        if source_type.is_symlink()
-            && std::fs::read_link(&source_entry)? != std::fs::read_link(&target_entry)?
-        {
-            return Ok(false);
-        }
-        if !source_type.is_dir() && !source_type.is_file() && !source_type.is_symlink() {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    // The caller can still replace the directory with an explicit --force.
+    Ok(false)
 }
 
 #[cfg(unix)]

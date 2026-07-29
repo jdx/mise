@@ -342,7 +342,7 @@ mkdir ~/.captured-dir/empty
 ln -s file ~/.captured-dir/link
 chmod 600 ~/.captured-dir/file
 captured_out="$(MISE_DOTFILES_ROOT="$PWD/captured-root" MISE_DOTFILES_DEFAULT_MODE=symlink mise dotfiles add "$HOME/.captured-dir/" "$HOME/.captured" --yes 2>&1)"
-assert_contains_text "$captured_out" "copied ~/.captured-dir to"
+assert_contains_text "$captured_out" "moved ~/.captured-dir to"
 assert_contains_text "$captured_out" "added ~/.captured to ~/.config/mise/config.toml"
 assert_contains_text "$captured_out" "created symlink ~/.captured ->"
 assert "cat captured-root/.captured" "captured content"
@@ -381,7 +381,8 @@ ln -s second same-dir-target/link
 assert_fail "mise dotfiles apply --yes"
 rm same-dir-target/link
 ln -s first same-dir-target/link
-assert_succeed "mise dotfiles apply --yes"
+assert_fail "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles apply --yes --force"
 assert "readlink same-dir-target" "$PWD/same-dir-source"
 
 # parent-directory components normalize to the canonical target key
@@ -400,28 +401,43 @@ assert_fail "mise dotfiles add ~/.invalid-template --source \"$PWD/template-sour
 assert "cat template-source" "original template"
 assert_fail "test -e ~/.config/mise/config.toml"
 
-# capture failures roll back sources changed earlier in the same invocation
-echo "live rollback one" >~/.rollback-one
-echo "live rollback two" >~/.rollback-two
-echo "source rollback one" >captured-root/.rollback-one
-echo "source rollback two" >captured-root/.rollback-two
-chmod 400 captured-root/.rollback-two
-assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.rollback-one ~/.rollback-two --yes"
-chmod 600 captured-root/.rollback-two
-assert "cat captured-root/.rollback-one" "source rollback one"
-assert "cat captured-root/.rollback-two" "source rollback two"
-assert_fail "test -e ~/.config/mise/config.toml"
+if [ "$(id -u)" != 0 ]; then
+  # capture failures roll back sources changed earlier in the same invocation
+  echo "live rollback one" >~/.rollback-one
+  echo "live rollback two" >~/.rollback-two
+  echo "source rollback one" >captured-root/.rollback-one
+  echo "source rollback two" >captured-root/.rollback-two
+  chmod 400 captured-root/.rollback-two
+  assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.rollback-one ~/.rollback-two --yes"
+  chmod 600 captured-root/.rollback-two
+  assert "cat captured-root/.rollback-one" "source rollback one"
+  assert "cat captured-root/.rollback-two" "source rollback two"
+  assert_fail "test -e ~/.config/mise/config.toml"
 
-# execution failures restore source/config state after planning has succeeded
-mkdir apply-failure-parent
-echo "live execution rollback" >apply-failure-parent/target
-echo "source execution rollback" >apply-failure-source
-chmod 500 apply-failure-parent
-assert_fail "mise dotfiles add \"$PWD/apply-failure-parent/target\" --source \"$PWD/apply-failure-source\" --yes"
-chmod 700 apply-failure-parent
-assert "cat apply-failure-parent/target" "live execution rollback"
-assert "cat apply-failure-source" "source execution rollback"
-assert_fail "test -e ~/.config/mise/config.toml"
+  # execution failures restore source/config state after planning has succeeded
+  mkdir apply-failure-parent
+  echo "live execution rollback" >apply-failure-parent/target
+  echo "source execution rollback" >apply-failure-source
+  chmod 500 apply-failure-parent
+  assert_fail "mise dotfiles add \"$PWD/apply-failure-parent/target\" --source \"$PWD/apply-failure-source\" --yes"
+  chmod 700 apply-failure-parent
+  assert "cat apply-failure-parent/target" "live execution rollback"
+  assert "cat apply-failure-source" "source execution rollback"
+  assert_fail "test -e ~/.config/mise/config.toml"
+fi
+
+# config failures restore a newly created source to its missing state
+echo "not a directory" >config-path-blocker
+assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.missing-rollback --path \"$PWD/config-path-blocker/config.toml\" --yes"
+assert_fail "test -e captured-root/.missing-rollback"
+
+# directory auto-add moves the original into place so a later failure can
+# restore its complete filesystem metadata without reconstructing it
+mkdir ~/.moved-rollback
+echo "moved rollback" >~/.moved-rollback/file
+assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.moved-rollback --path \"$PWD/config-path-blocker/config.toml\" --yes"
+assert "cat ~/.moved-rollback/file" "moved rollback"
+assert_fail "test -e captured-root/.moved-rollback"
 
 # --no-apply leaves the captured target in place
 echo "capture only" >~/.capture-only

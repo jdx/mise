@@ -173,6 +173,7 @@ impl DotfilesAdd {
         };
         let mut source_backups = vec![];
         let mut target_backups = vec![];
+        let mut moved_targets = vec![];
         let mut apply_started = false;
         let result = (|| -> Result<()> {
             let mut accepted = vec![];
@@ -195,13 +196,6 @@ impl DotfilesAdd {
                             continue;
                         }
                     }
-                    target_backups.push((
-                        item.target.clone(),
-                        backup_path(
-                            &item.target,
-                            &backup_dir.path().join("targets").join(index.to_string()),
-                        )?,
-                    ));
                     source_backups.push((
                         item.source.clone(),
                         backup_path(
@@ -209,12 +203,37 @@ impl DotfilesAdd {
                             &backup_dir.path().join("sources").join(index.to_string()),
                         )?,
                     ));
-                    system::files::copy_path(&item.target, &item.source)?;
-                    info!(
-                        "dotfiles: copied {} to {}",
-                        item.target.display_user(),
-                        item.source.display_user()
-                    );
+                    if !self.no_apply
+                        && item.mode == FileMode::Symlink
+                        && item.target.is_dir()
+                        && !item.target.is_symlink()
+                    {
+                        remove_path(&item.source)?;
+                        if let Some(parent) = item.source.parent() {
+                            file::create_dir_all(parent)?;
+                        }
+                        file::rename(&item.target, &item.source)?;
+                        moved_targets.push((item.target.clone(), item.source.clone()));
+                        info!(
+                            "dotfiles: moved {} to {}",
+                            item.target.display_user(),
+                            item.source.display_user()
+                        );
+                    } else {
+                        target_backups.push((
+                            item.target.clone(),
+                            backup_path(
+                                &item.target,
+                                &backup_dir.path().join("targets").join(index.to_string()),
+                            )?,
+                        ));
+                        system::files::copy_path(&item.target, &item.source)?;
+                        info!(
+                            "dotfiles: copied {} to {}",
+                            item.target.display_user(),
+                            item.source.display_user()
+                        );
+                    }
                 } else if !item.source.exists() {
                     target_backups.push((
                         item.target.clone(),
@@ -300,6 +319,7 @@ impl DotfilesAdd {
             if let Err(rollback_err) = rollback_add(
                 &source_backups,
                 &target_backups,
+                &moved_targets,
                 apply_started,
                 &config_path,
                 original_config.as_deref(),
@@ -467,11 +487,28 @@ fn remove_path(path: &std::path::Path) -> Result<()> {
 fn rollback_add(
     source_backups: &[(PathBuf, PathBackup)],
     target_backups: &[(PathBuf, PathBackup)],
+    moved_targets: &[(PathBuf, PathBuf)],
     restore_targets: bool,
     config_path: &std::path::Path,
     original_config: Option<&[u8]>,
 ) -> Result<()> {
     let mut errors = vec![];
+    for (target, source) in moved_targets.iter().rev() {
+        let result = (|| -> Result<()> {
+            remove_path(target)?;
+            if let Some(parent) = target.parent() {
+                file::create_dir_all(parent)?;
+            }
+            file::rename(source, target)
+        })();
+        if let Err(err) = result {
+            errors.push(format!(
+                "moved target {} from {}: {err}",
+                target.display_user(),
+                source.display_user()
+            ));
+        }
+    }
     if restore_targets && let Err(err) = restore_paths(target_backups) {
         errors.push(format!("targets: {err}"));
     }
