@@ -413,8 +413,17 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
             // hash after a successful run.
             return Ok(false);
         }
-        if use_content_hash && existing_hash.is_some() {
+        if use_content_hash {
             // In hash mode, content alone determines freshness — no mtime check.
+            // With no stored baseline there is nothing to compare the content
+            // against, so the task is stale. Falling through to the mtime
+            // comparison here would let an edit whose mtime is older than the
+            // output masquerade as fresh — exactly what hash mode exists to
+            // prevent — on the first run after the setting is enabled.
+            if existing_hash.is_none() {
+                debug!("no stored content hash in {}", source_hash_path.display());
+                return Ok(false);
+            }
             // Compare against the stored output hash to catch partial/missing outputs.
             let current_output_hash = compute_output_hash(task, &root)?;
             let stored_output_hash = output_existing_hash(task, &root);
