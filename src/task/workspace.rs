@@ -276,7 +276,11 @@ impl WorkspaceProjectGraph {
 
             let project = self.projects.get_mut(&id).expect("project was inserted");
             if let Some(root) = &config.root {
-                project.root = normalize_project_root(&id, root)?;
+                let root = normalize_project_root(&id, root)?;
+                if root != project.root {
+                    project.tasks.clear();
+                    project.root = root;
+                }
             }
             if let Some(metadata) = &config.metadata {
                 project.metadata.clone_from(metadata);
@@ -685,6 +689,14 @@ mod tests {
         let old_id = ProjectId::new("node", "old").unwrap();
         let mut app = project("node", "app", "apps/app");
         app.dependencies = BTreeSet::from([lib_id.clone(), old_id.clone()]);
+        app.tasks.insert(
+            "build".to_string(),
+            WorkspaceTask {
+                command: "npm run build --".to_string(),
+                description: "vite build".to_string(),
+                source: "apps/app/package.json".into(),
+            },
+        );
         let node = TestProvider {
             id: "node",
             projects: vec![
@@ -738,6 +750,7 @@ mod tests {
 
         assert!(graph.get(&lib_id).is_none());
         assert_eq!(app.root, Path::new("apps/web"));
+        assert!(app.tasks.is_empty());
         assert_eq!(
             app.metadata,
             BTreeMap::from([("kind".to_string(), "frontend".to_string())])

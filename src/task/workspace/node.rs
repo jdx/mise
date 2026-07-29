@@ -126,7 +126,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                     .scripts
                     .into_iter()
                     .map(|(name, script)| {
-                        let command = shell_words::join([package_manager, "run", &name]);
+                        let command = shell_words::join([package_manager, "run", &name, "--"]);
                         (
                             name,
                             WorkspaceTask {
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(
             project.tasks.get("build"),
             Some(&WorkspaceTask {
-                command: "pnpm run build".to_string(),
+                command: "pnpm run build --".to_string(),
                 description: "vite build".to_string(),
                 source: PathBuf::from("packages/app/package.json"),
             })
@@ -286,7 +286,7 @@ mod tests {
                 .tasks
                 .get("test:unit")
                 .map(|task| task.command.as_str()),
-            Some("pnpm run test:unit")
+            Some("pnpm run test:unit --")
         );
     }
 
