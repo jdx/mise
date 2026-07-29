@@ -239,6 +239,8 @@ impl BrewCaskManager {
         for target in &current_completions {
             ensure_completion_target_replaceable(&cask, &artifacts, target)?;
         }
+        // Match Homebrew's artifact phases: preflight runs before app installation.
+        // An appdir-based preflight command therefore sees only a previously installed app.
         execute_flight_steps(
             &cask,
             &artifacts.preflight_steps,
@@ -257,7 +259,7 @@ impl BrewCaskManager {
             stage_font(&stage, &tmp_caskroom, font)?;
         }
         for wrapper in &artifacts.command_wrappers {
-            stage_command_wrapper(&tmp_caskroom, &appdir, wrapper)?;
+            stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
         }
         execute_flight_steps(
             &cask,
@@ -288,7 +290,7 @@ impl BrewCaskManager {
                 link_binary(&caskroom, binary)?;
             }
             for wrapper in &artifacts.command_wrappers {
-                link_binary(&caskroom, &wrapper.binary_artifact())?;
+                link_command_wrapper(&caskroom, wrapper)?;
             }
             for target in &current_completions {
                 link_completion(&cask, &artifacts, &caskroom, target)?;
@@ -347,15 +349,12 @@ impl CommandWrapperArtifact {
         }
     }
 
-    fn binary_artifact(&self) -> BinaryArtifact {
-        BinaryArtifact {
-            source: format!(".homebrew-command-wrappers/{}", self.name),
-            target: self.target.clone().or_else(|| Some(self.name.clone())),
-        }
-    }
-
     fn target_path(&self) -> Result<PathBuf> {
         binary_target_path(&self.target_name()?)
+    }
+
+    fn caskroom_path(&self, caskroom: &Path) -> PathBuf {
+        caskroom.join(".homebrew-command-wrappers").join(&self.name)
     }
 }
 
@@ -1938,22 +1937,22 @@ fn stage_binary(
 fn stage_command_wrapper(
     caskroom: &Path,
     appdir: &Path,
+    cask: &Cask,
     wrapper: &CommandWrapperArtifact,
 ) -> Result<()> {
-    let binary = wrapper.binary_artifact();
-    let target = caskroom_binary_path(caskroom, &binary)?;
+    let target = wrapper.caskroom_path(caskroom);
     file::remove_all(&target)?;
     if let Some(parent) = target.parent() {
         file::create_dir_all(parent)?;
     }
     let content = match (&wrapper.content, &wrapper.executable) {
-        (Some(content), None) => expand_cask_template(content, caskroom, appdir, None),
+        (Some(content), None) => expand_command_wrapper_content(content, appdir),
         (None, Some(executable)) => {
-            let executable = expand_cask_template(executable, caskroom, appdir, None);
+            let executable = expand_command_wrapper_value(executable, appdir, cask);
             let args = wrapper
                 .args
                 .iter()
-                .map(|arg| expand_cask_template(arg, caskroom, appdir, None))
+                .map(|arg| expand_command_wrapper_value(arg, appdir, cask))
                 .map(|arg| shell_escape::unix::escape(Cow::Owned(arg)).into_owned())
                 .collect::<Vec<_>>();
             let env = wrapper
@@ -1963,7 +1962,7 @@ fn stage_command_wrapper(
                     if !is_shell_env_name(key) {
                         bail!("brew-cask: invalid command_wrapper environment name '{key}'");
                     }
-                    let value = expand_cask_template(value, caskroom, appdir, None);
+                    let value = expand_command_wrapper_value(value, appdir, cask);
                     Ok(format!(
                         "{key}={}",
                         shell_escape::unix::escape(Cow::Owned(value))
@@ -1983,6 +1982,17 @@ fn stage_command_wrapper(
     file::write(&target, content)?;
     file::make_executable(&target)?;
     Ok(())
+}
+
+fn expand_command_wrapper_content(value: &str, appdir: &Path) -> String {
+    value
+        .replace("$HOMEBREW_PREFIX", &prefix::prefix().to_string_lossy())
+        .replace("$APPDIR", &appdir.to_string_lossy())
+}
+
+fn expand_command_wrapper_value(value: &str, appdir: &Path, cask: &Cask) -> String {
+    let staged_path = caskroom_version_dir(&cask.token, &cask.version);
+    expand_cask_template(value, &staged_path, appdir, Some(&cask.version))
 }
 
 fn is_shell_env_name(value: &str) -> bool {
@@ -2114,6 +2124,22 @@ fn link_binary(caskroom: &Path, binary: &BinaryArtifact) -> Result<()> {
         create_dir_all_elevating(parent)?;
     }
     make_symlink_elevating(&caskroom_binary, &target)?;
+    Ok(())
+}
+
+fn link_command_wrapper(caskroom: &Path, wrapper: &CommandWrapperArtifact) -> Result<()> {
+    let source = wrapper.caskroom_path(caskroom);
+    if !source.is_file() {
+        bail!(
+            "brew-cask: command wrapper '{}' was not staged",
+            wrapper.name
+        );
+    }
+    let target = wrapper.target_path()?;
+    if let Some(parent) = target.parent() {
+        create_dir_all_elevating(parent)?;
+    }
+    make_symlink_elevating(&source, &target)?;
     Ok(())
 }
 
@@ -3606,27 +3632,43 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
-        let caskroom = prefix.join("Caskroom/firefox/153.0.1");
+        let cask = test_cask("firefox", "153.0.1");
+        let caskroom = prefix.join("Caskroom/firefox/.mise-tmp");
+        let final_caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let appdir = tmp.path().join("Applications");
         let wrapper = CommandWrapperArtifact {
             name: "firefox".to_string(),
             target: Some("$HOMEBREW_PREFIX/bin/firefox".to_string()),
             content: None,
             executable: Some("$APPDIR/Firefox.app/Contents/MacOS/firefox".to_string()),
-            args: vec!["--profile".to_string(), "two words".to_string()],
-            env: BTreeMap::from([("FIREFOX_MODE".to_string(), "mise test".to_string())]),
+            args: vec![
+                "--profile".to_string(),
+                "two words".to_string(),
+                "{{version}}".to_string(),
+            ],
+            env: BTreeMap::from([
+                ("FIREFOX_MODE".to_string(), "mise test".to_string()),
+                ("FIREFOX_ROOT".to_string(), "{{staged_path}}".to_string()),
+            ]),
         };
 
-        stage_command_wrapper(&caskroom, &appdir, &wrapper)?;
+        stage_command_wrapper(&caskroom, &appdir, &cask, &wrapper)?;
+        file::rename(&caskroom, &final_caskroom)?;
+        link_command_wrapper(&final_caskroom, &wrapper)?;
 
-        let staged = caskroom.join("bin/firefox");
+        let staged = final_caskroom.join(".homebrew-command-wrappers/firefox");
         let contents = file::read_to_string(&staged)?;
         assert!(contents.starts_with("#!/bin/bash\n"));
         assert!(contents.contains("FIREFOX_MODE='mise test'"));
+        assert!(contents.contains(&format!(
+            "FIREFOX_ROOT={}",
+            final_caskroom.to_string_lossy()
+        )));
         let executable = appdir.join("Firefox.app/Contents/MacOS/firefox");
         assert!(contents.contains(executable.to_string_lossy().as_ref()));
-        assert!(contents.contains("--profile 'two words' \"$@\""));
+        assert!(contents.contains("--profile 'two words' 153.0.1 \"$@\""));
         assert!(staged.metadata()?.permissions().mode() & 0o111 != 0);
+        assert_eq!(std::fs::read_link(wrapper.target_path()?)?, staged);
         Ok(())
     }
 
@@ -3637,22 +3679,26 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
+        let cask = test_cask("example", "1.0.0");
         let caskroom = prefix.join("Caskroom/example/1.0.0");
         let wrapper = CommandWrapperArtifact {
             name: "example".to_string(),
             target: None,
-            content: Some("#!/bin/sh\nexec '$HOMEBREW_PREFIX/bin/example' \"$@\"\n".to_string()),
+            content: Some(
+                "#!/bin/sh\nHOME=$HOME\nSTAGE={{staged_path}}\nexec '$HOMEBREW_PREFIX/bin/example' \"$@\"\n"
+                    .to_string(),
+            ),
             executable: None,
             args: Vec::new(),
             env: BTreeMap::new(),
         };
 
-        stage_command_wrapper(&caskroom, Path::new("/Applications"), &wrapper)?;
+        stage_command_wrapper(&caskroom, Path::new("/Applications"), &cask, &wrapper)?;
 
         assert_eq!(
-            file::read_to_string(caskroom.join("bin/example"))?,
+            file::read_to_string(caskroom.join(".homebrew-command-wrappers/example"))?,
             format!(
-                "#!/bin/sh\nexec '{}/bin/example' \"$@\"\n",
+                "#!/bin/sh\nHOME=$HOME\nSTAGE={{{{staged_path}}}}\nexec '{}/bin/example' \"$@\"\n",
                 prefix.display()
             )
         );
