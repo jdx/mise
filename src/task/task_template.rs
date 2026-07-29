@@ -371,6 +371,7 @@ mod tests {
                 task: "local-dep".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -379,6 +380,7 @@ mod tests {
                 task: "template-dep".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
