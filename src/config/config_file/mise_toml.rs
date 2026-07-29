@@ -499,7 +499,8 @@ impl MiseToml {
             .or_default()
             .versions
             .insert(from.into(), to.into());
-        self.doc_mut()?
+        let mut doc = self.doc_mut()?;
+        let versions = doc
             .get_mut()
             .unwrap()
             .entry("tool_alias")
@@ -511,10 +512,8 @@ impl MiseToml {
             .as_table_like_mut()
             .unwrap()
             .entry("versions")
-            .or_insert_with(table)
-            .as_table_like_mut()
-            .unwrap()
-            .insert(from, value(to));
+            .or_insert_with(table);
+        insert_preserving_decor(versions, from, value(to));
         Ok(())
     }
 
@@ -573,14 +572,13 @@ impl MiseToml {
 
     pub fn set_shell_alias(&mut self, name: &str, command: &str) -> eyre::Result<()> {
         self.shell_alias.insert(name.into(), command.into());
-        self.doc_mut()?
+        let mut doc = self.doc_mut()?;
+        let shell_alias = doc
             .get_mut()
             .unwrap()
             .entry("shell_alias")
-            .or_insert_with(table)
-            .as_table_like_mut()
-            .unwrap()
-            .insert(name, value(command));
+            .or_insert_with(table);
+        insert_preserving_decor(shell_alias, name, value(command));
         Ok(())
     }
 
@@ -646,7 +644,10 @@ impl MiseToml {
             .as_table_mut()
             .unwrap();
         let key = get_key_with_decor(packages, spec);
-        packages.insert_formatted(&key, toml_edit::value(version));
+        let value_decor = get_value_decor(packages, spec);
+        let mut item = toml_edit::value(version);
+        set_value_decor(&mut item, &value_decor);
+        packages.insert_formatted(&key, item);
         Ok(())
     }
 
@@ -680,7 +681,10 @@ impl MiseToml {
             .as_table_mut()
             .unwrap();
         let key = get_key_with_decor(taps, tap);
-        taps.insert_formatted(&key, toml_edit::value(url));
+        let value_decor = get_value_decor(taps, tap);
+        let mut item = toml_edit::value(url);
+        set_value_decor(&mut item, &value_decor);
+        taps.insert_formatted(&key, item);
         Ok(())
     }
 
@@ -1360,6 +1364,22 @@ fn get_key_with_decor_from(table: &toml_edit::Table, key: &str, existing: &str) 
 fn get_value_decor(table: &toml_edit::Table, key: &str) -> Option<toml_edit::Decor> {
     let value = table.get(key)?.as_value()?;
     Some(value.decor().clone())
+}
+
+/// Inserts `item` under `key` in `target`, carrying over the decor of the entry being replaced:
+/// the comment above the line lives on the key, the one after the value on the value.
+///
+/// Inline tables have no `insert_formatted`, so they fall back to a plain insert — which is what
+/// every caller here did unconditionally before, so nothing regresses for them.
+fn insert_preserving_decor(target: &mut Item, key: &str, mut item: Item) {
+    if let Some(tbl) = target.as_table_mut() {
+        let k = get_key_with_decor(tbl, key);
+        let value_decor = get_value_decor(tbl, key);
+        set_value_decor(&mut item, &value_decor);
+        tbl.insert_formatted(&k, item);
+    } else if let Some(tbl) = target.as_table_like_mut() {
+        tbl.insert(key, item);
+    }
 }
 
 /// Applies decor captured by [`get_value_decor`] to the value that replaces it.
@@ -3974,6 +3994,122 @@ run = 'echo "template"'
         assert!(
             dump.contains(r#"FOO = "baz" # keep me"#),
             "comment after the value should survive: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_set_alias_preserves_comments() {
+        // https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".alias-comments.mise.toml");
+        let node: BackendArg = "node".into();
+        let contents = formatdoc! {r#"
+            [tool_alias.{node}.versions]
+            # keep this comment
+            lts = "20" # keep me
+            "#};
+        file::write(&p, contents).unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.set_alias(&node, "lts", "22").unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# keep this comment"),
+            "comment above the alias should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"lts = "22" # keep me"#),
+            "comment after the alias should survive: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_set_shell_alias_preserves_comments() {
+        // https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".shell-alias.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [shell_alias]
+            # keep this comment
+            ll = "ls -l" # keep me
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.set_shell_alias("ll", "ls -la").unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# keep this comment"),
+            "comment above the shell alias should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"ll = "ls -la" # keep me"#),
+            "comment after the shell alias should survive: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_comments() {
+        // https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".bootstrap-comments.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [bootstrap.packages]
+            # keep this comment
+            "apt:curl" = "8.5.0" # keep me
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("apt:curl", "8.6.0").unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# keep this comment"),
+            "comment above the package should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#""apt:curl" = "8.6.0" # keep me"#),
+            "comment after the package version should survive: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_update_bootstrap_brew_tap_preserves_comments() {
+        // https://github.com/jdx/mise/discussions/4797
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".brew-tap-comments.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [bootstrap.brew.taps]
+            # keep this comment
+            "acme/tools" = "https://example.com/old.git" # keep me
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_brew_tap("acme/tools", "https://example.com/new.git")
+            .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("# keep this comment"),
+            "comment above the tap should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#""acme/tools" = "https://example.com/new.git" # keep me"#),
+            "comment after the tap url should survive: {dump}"
         );
         file::remove_file(&p).unwrap();
     }
