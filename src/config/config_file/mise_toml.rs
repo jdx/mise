@@ -16,6 +16,7 @@ use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
+use crate::backend::unalias_backend;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
@@ -965,7 +966,13 @@ impl ConfigFile for MiseToml {
         if let Some(tools) = doc.get_mut("tools")
             && let Some(tools) = tools.as_table_like_mut()
         {
-            tools.remove(&fa.to_string());
+            // the tool may be written as an alias ("nodejs"), a qualified name ("core:node") or the
+            // fully-qualified backend rather than as fa.short; removing only the short name leaves
+            // the entry in the document and save() writes it straight back out
+            let keys = tool_keys_for(&*tools, fa);
+            for key in &keys {
+                tools.remove(key);
+            }
             if tools.is_empty() {
                 doc.as_table_mut().remove("tools");
             }
@@ -1008,21 +1015,32 @@ impl ConfigFile for MiseToml {
             .as_table_mut()
             .unwrap();
 
-        // the entry may be stored under a long name like "core:node" that is replaced by its short
-        // name below, so read the decorations off whichever key is actually there
-        let existing = if tools.contains_key(ba.short.as_str()) {
-            ba.short.to_string()
-        } else {
-            ba.full()
-        };
+        // the entry may be written under any spelling of this tool — an alias like "nodejs", a
+        // qualified "core:node", or the fully-qualified backend — so collect every key in the
+        // document that refers to it. The first one is the entry the file appears to define, so it
+        // supplies the decorations; the rest are duplicates of it and are dropped below.
+        let keys = tool_keys_for(&*tools, ba);
+        let existing = keys.first().cloned().unwrap_or_else(|| ba.short.clone());
+        if keys.len() > 1 {
+            let dupes = keys.iter().map(|k| format!("`{k}`")).join(", ");
+            warn!(
+                "{}: {dupes} are the same tool; collapsing them into a single `{}` entry",
+                display_path(&self.path),
+                ba.short
+            );
+        }
         // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
         let key = get_key_with_decor_from(tools, ba.short.as_str(), &existing);
         // and the same for the value, so a comment after the version survives the replacement
         let value_decor = get_value_decor(tools, &existing);
 
-        // if a short name is used like "node", make sure we remove any long names like "core:node"
-        if ba.short != ba.full() {
-            tools.remove(&ba.full());
+        // drop the other spellings: they all deserialize to this one entry, so leaving one behind
+        // means the file has two keys for one tool and the later one silently wins on read-back.
+        // ba.short itself is kept so insert_formatted overwrites it in place instead of appending.
+        for k in &keys {
+            if k != &ba.short {
+                tools.remove(k);
+            }
         }
 
         if versions.len() == 1 {
@@ -1357,6 +1375,33 @@ fn get_key_with_decor_from(table: &toml_edit::Table, key: &str, existing: &str) 
         }
     }
     key
+}
+
+/// Every key in a `[tools]` table that refers to `ba`, in document order.
+///
+/// The same tool can be written under several spellings: its short name (`node`), one of the
+/// hardcoded aliases (`nodejs`, `golang`, `dotnet-core`), a `core:`-qualified name (`core:node`),
+/// or the fully-qualified backend the short name resolves to. [`unalias_backend`] folds the first
+/// three onto the short name, and that is what happens when the file is deserialized — so mise's
+/// own view of `[tools]` holds a single entry no matter how many of those keys the document has,
+/// and when there is more than one the later one silently wins. A writer therefore has to find all
+/// of them and not just the one it would write itself, or it leaves a second key behind that
+/// outvotes the one it just wrote.
+///
+/// Registry aliases (`rg` for `ripgrep`) are a different mechanism: they resolve to *different*
+/// short names, mise keeps them as separate entries and writes each back as the user spelled it,
+/// so they are deliberately not matched here. Keys carrying inline options
+/// (`"go:example.com/x[tags=y]"`) are likewise left alone — collapsing those would have to decide
+/// what happens to the options.
+///
+/// The keys are returned owned so the caller can go on to mutate the table.
+fn tool_keys_for(tools: &dyn toml_edit::TableLike, ba: &BackendArg) -> Vec<String> {
+    let full = ba.full();
+    tools
+        .iter()
+        .filter(|&(k, _)| unalias_backend(k) == ba.short.as_str() || k == full.as_str())
+        .map(|(k, _)| k.to_string())
+        .collect()
 }
 
 /// Captures the decor of the value `key` currently holds, if any.
@@ -3968,6 +4013,217 @@ run = 'echo "template"'
         assert!(
             dump.contains(r#"node = "18.0.0" # keep me"#),
             "comment after the version should survive the rename: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_renames_aliased_key() {
+        // `nodejs` is an alias for `node`, so the file defines one tool and not two: the entry has
+        // to be renamed in place rather than a second key added beside it, or the file ends up
+        // with two keys for one tool and the later one silently wins when it is read back
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".aliased-key.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            # renovate: datasource=github-releases depName=node
+            nodejs = "20.11.0" # keep me
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node: BackendArg = "node".into();
+        cf.replace_versions(
+            &node,
+            vec![
+                ToolRequest::new(Arc::new("node".into()), "24.16.0", ToolSource::Unknown).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#"node = "24.16.0" # keep me"#),
+            "the aliased key should be renamed and keep its comment: {dump}"
+        );
+        assert!(
+            dump.contains("# renovate: datasource=github-releases depName=node"),
+            "the comment above should survive the rename: {dump}"
+        );
+        assert!(
+            !dump.contains("nodejs"),
+            "the alias must not be left behind as a second key: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_renames_aliased_key_with_array() {
+        // same for a multi-version entry: the array moves to the short name rather than being
+        // written out a second time
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".aliased-array.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            nodejs = ["20.11.0", "22.0.0"] # keep me
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node: BackendArg = "node".into();
+        cf.replace_versions(
+            &node,
+            vec![
+                ToolRequest::new(Arc::new("node".into()), "20.11.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("node".into()), "22.1.0", ToolSource::Unknown).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#"node = ["20.11.1", "22.1.0"] # keep me"#),
+            "the array should move to the short name: {dump}"
+        );
+        assert!(
+            !dump.contains("nodejs"),
+            "the alias must not be left behind as a second key: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_collapses_duplicate_spellings() {
+        // a file damaged by the old behavior has both keys; they deserialize to one entry and the
+        // later one silently wins, so the write has to leave exactly one key behind. The first key
+        // in the file is the entry the file appears to define, so it supplies the decorations.
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".dupe-spellings.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            nodejs = "20.11.0" # keep me
+            node = "24.16.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node: BackendArg = "node".into();
+        cf.replace_versions(
+            &node,
+            vec![
+                ToolRequest::new(Arc::new("node".into()), "24.17.0", ToolSource::Unknown).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#"node = "24.17.0" # keep me"#),
+            "the first key in the file supplies the decor: {dump}"
+        );
+        assert!(
+            !dump.contains("nodejs"),
+            "the duplicate spelling should be removed: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_keeps_registry_alias_key() {
+        // `rg` is a registry alias for `ripgrep`, not one of the hardcoded backend aliases: the two
+        // resolve to different short names, mise treats them as separate entries, and each is
+        // written back under the name it was asked for
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".registry-alias.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            ripgrep = "14.1.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let rg: BackendArg = "rg".into();
+        cf.replace_versions(
+            &rg,
+            vec![ToolRequest::new(Arc::new("rg".into()), "14.1.1", ToolSource::Unknown).unwrap()],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#"ripgrep = "14.1.0""#),
+            "a registry alias is a different entry and must be left as written: {dump}"
+        );
+        assert!(
+            dump.contains(r#"rg = "14.1.1""#),
+            "the tool should be written under the name it was asked for: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_remove_tool_removes_aliased_key() {
+        // `mise unuse nodejs` used to report success and prune the install while leaving the
+        // `nodejs` key in the file, because it only ever looked for the short name
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".remove-aliased.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            dummy = "1.0.0"
+            nodejs = "20.11.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.remove_tool(&"nodejs".into()).unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            !dump.contains("nodejs"),
+            "the aliased key should be removed: {dump}"
+        );
+        assert!(
+            dump.contains(r#"dummy = "1.0.0""#),
+            "other tools should be left alone: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_remove_tool_removes_qualified_key() {
+        // matching is done on the key as written, so this holds whatever the registry currently
+        // reports as node's backend
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".remove-qualified.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            "core:node" = "20.11.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.remove_tool(&"node".into()).unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            !dump.contains("node"),
+            "the qualified key should be removed: {dump}"
+        );
+        assert!(
+            !dump.contains("[tools]"),
+            "the now-empty tools table should be dropped: {dump}"
         );
         file::remove_file(&p).unwrap();
     }
