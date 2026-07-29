@@ -33,6 +33,10 @@
               "additionalProperties": {
                 "type": "string"
               }
+            },
+            "optional": {
+              "description": "do not fail when the task name or pattern has no matches",
+              "type": "boolean"
             }
           },
           "required": ["task"],

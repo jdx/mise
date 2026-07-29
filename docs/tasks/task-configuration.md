@@ -76,7 +76,7 @@ run = "cargo build"
 
 ### `depends`
 
-- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string } })[]`
+- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
 
 Tasks that must be run before this task. This is a list of task names or aliases. Arguments can be
 passed to the task, e.g.: `depends = ["build --release"]`. If multiple tasks have the same dependency,
@@ -140,6 +140,19 @@ run = "echo checks complete"
 
 Note: These environment variables are passed only to the specified dependency, not to the current task or other dependencies.
 
+#### Optional dependencies
+
+Set `optional = true` on a structured dependency to run matching tasks when they exist without
+failing when the task name or pattern has no matches. Invalid task patterns still produce an error.
+
+```mise-toml
+[tasks.test]
+depends = [
+  { task = "//...:test", optional = true },
+  { task = "//...:test:*", optional = true },
+]
+```
+
 #### Passing parent task arguments to dependencies
 
 You can forward a parent task's arguments to its dependencies using <span v-pre>`{{usage.*}}`</span> templates.
@@ -185,7 +198,7 @@ forward its resolved arguments to its own dependencies.
 
 ### `depends_post`
 
-- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string } })[]`
+- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
 
 Like `depends` but these tasks run _after_ this task and its dependencies complete. For example, you
 may want a `postlint` task that you can run individually without also running `lint`:
@@ -198,14 +211,15 @@ depends_post = ["postlint"]
 run = "echo 'linting complete'"
 ```
 
-Supports the same argument and environment variable syntax as `depends`.
+Supports the same argument, environment variable, and optional dependency syntax as `depends`.
 
 ### `wait_for`
 
-- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string } })[]`
+- **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
 
-Similar to `depends`, it will wait for these tasks to complete before running however they won't be
-added to the list of tasks to run. This is essentially optional dependencies.
+Similar to `depends`, it will wait for these tasks to complete before running. Unlike `depends`,
+`wait_for` does not add matching tasks to the run; it only waits for them when they are already
+scheduled. To allow a task name or pattern to have no configured matches, use `optional = true`.
 
 ```mise-toml
 [tasks.lint]
@@ -213,7 +227,7 @@ wait_for = ["render"] # creates some js files, so if it's running, wait for it t
 run = "eslint ."
 ```
 
-Supports the same argument and environment variable syntax as `depends`.
+Supports the same argument, environment variable, and optional dependency syntax as `depends`.
 
 `wait_for` matches tasks differently depending on whether args or env vars are specified:
 

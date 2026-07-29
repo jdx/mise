@@ -2567,7 +2567,7 @@ fn match_tasks_with_context(
             Ok(t)
         })
         .collect::<Result<Vec<_>>>()?;
-    if matches.is_empty() {
+    if matches.is_empty() && !td.optional {
         let mut err_msg = format!("task not found: {}", td.task);
 
         // In monorepo mode, suggest similar tasks using fuzzy matching
@@ -3530,11 +3530,13 @@ exec proxy "$@"
                     task: "post1".to_string(),
                     args: vec![],
                     env: Default::default(),
+                    optional: false,
                 },
                 TaskDep {
                     task: "post2".to_string(),
                     args: vec![],
                     env: Default::default(),
+                    optional: false,
                 },
             ],
             ..Default::default()
@@ -3547,6 +3549,7 @@ exec proxy "$@"
                 task: "other_post".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -3935,6 +3938,7 @@ echo "hello world"
                 task: "task_b".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -3945,6 +3949,7 @@ echo "hello world"
                 task: "task_a".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -3970,6 +3975,7 @@ echo "hello world"
                 task: "task_b".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -3980,6 +3986,7 @@ echo "hello world"
                 task: "task_c".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -3990,6 +3997,7 @@ echo "hello world"
                 task: "task_a".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -4020,11 +4028,13 @@ echo "hello world"
                     task: "task_a".to_string(),
                     args: vec![],
                     env: Default::default(),
+                    optional: false,
                 },
                 crate::task::task_dep::TaskDep {
                     task: "task_b".to_string(),
                     args: vec![],
                     env: Default::default(),
+                    optional: false,
                 },
             ],
             ..Default::default()
@@ -4036,6 +4046,7 @@ echo "hello world"
                 task: "common".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };
@@ -4046,6 +4057,7 @@ echo "hello world"
                 task: "common".to_string(),
                 args: vec![],
                 env: Default::default(),
+                optional: false,
             }],
             ..Default::default()
         };

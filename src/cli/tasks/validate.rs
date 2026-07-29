@@ -287,11 +287,17 @@ impl TasksValidate {
         let all_deps = task
             .depends
             .iter()
-            .map(|d| ("depends", &d.task))
-            .chain(task.depends_post.iter().map(|d| ("depends_post", &d.task)))
-            .chain(task.wait_for.iter().map(|d| ("wait_for", &d.task)));
+            .map(|d| ("depends", d))
+            .chain(task.depends_post.iter().map(|d| ("depends_post", d)))
+            .chain(task.wait_for.iter().map(|d| ("wait_for", d)));
 
-        for (dep_type, dep_name) in all_deps {
+        for (dep_type, dep) in all_deps {
+            if dep.optional {
+                // Graph construction above still validates the selector and reports matcher
+                // errors. Only the later missing-reference check is skipped here.
+                continue;
+            }
+            let dep_name = &dep.task;
             // Skip pattern wildcards for now (they're resolved at runtime)
             if dep_name.contains('*') || dep_name.contains('?') {
                 continue;
