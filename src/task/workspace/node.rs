@@ -101,14 +101,16 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         manifests
             .into_iter()
             .map(|(root, manifest, _, id)| {
-                let mut project = WorkspaceProject::new(id, root);
-                project.dependencies = manifest
+                let dependencies = manifest
                     .all_dependencies()
                     .map(|(name, _)| name)
                     .chain(manifest.optional_dependencies.keys().map(String::as_str))
                     .chain(manifest.peer_dependencies.keys().map(String::as_str))
                     .filter_map(|name| project_ids.get(name).cloned())
+                    .filter(|dependency| dependency != &id)
                     .collect();
+                let mut project = WorkspaceProject::new(id, root);
+                project.dependencies = dependencies;
                 project.metadata.insert(
                     "workspace_source".to_string(),
                     definition.source.to_string(),
@@ -560,6 +562,28 @@ mod tests {
                 ProjectId::new("node", "runtime").unwrap(),
             ])
         );
+    }
+
+    #[test]
+    fn ignores_declared_self_dependencies() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app","dependencies":{"app":"*"}}"#,
+        );
+
+        let graph = crate::task::workspace::WorkspaceProjectGraph::discover(
+            &NodeWorkspaceProvider,
+            temp.path(),
+        )
+        .unwrap();
+        let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert!(app.dependencies.is_empty());
     }
 
     #[test]

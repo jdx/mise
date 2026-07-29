@@ -356,7 +356,7 @@ For every discovered Node package, mise checks these `package.json` fields:
 - `optionalDependencies`
 - `peerDependencies`
 
-When a declared dependency name exactly matches another discovered workspace package, mise adds an edge to that package's stable `node:` project ID. External package names are ignored.
+When a declared dependency name exactly matches another discovered workspace package, mise adds an edge to that package's stable `node:` project ID. External package names and declarations that refer back to the same project are ignored.
 
 Dependency version strings are treated as opaque. A matching internal name creates the same edge whether its value uses `workspace:*`, `catalog:`, `*`, a normal version range, or another package-manager-specific form. mise does not resolve or compare those values when constructing the project graph.
 
