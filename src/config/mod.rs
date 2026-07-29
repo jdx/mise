@@ -794,11 +794,18 @@ impl Config {
             }
         }
         if let Some(monorepo_root) = config.monorepo_root() {
-            let graph = workspace_graph
-                .as_ref()
-                .and_then(|graph| graph.as_ref().ok());
-            for task in tasks.values_mut() {
-                task.resolve_workspace_task_dependencies(graph, &monorepo_root)?;
+            match workspace_graph.as_ref() {
+                Some(Ok(graph)) => {
+                    for task in tasks.values_mut() {
+                        task.resolve_workspace_task_dependencies(graph, &monorepo_root)?;
+                    }
+                }
+                Some(Err(err)) => {
+                    for task in tasks.values_mut() {
+                        task.set_workspace_task_dependency_error(err);
+                    }
+                }
+                _ => {}
             }
         }
         let all_tasks = tasks.clone();

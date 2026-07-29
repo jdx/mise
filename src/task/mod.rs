@@ -695,6 +695,10 @@ pub struct Task {
     #[serde(skip)]
     pub wait_for_raw: Option<Vec<TaskDep>>,
 
+    /// Workspace graph error that prevents this task's `^task` dependencies from resolving.
+    #[serde(skip)]
+    pub(crate) workspace_dependency_error: Option<String>,
+
     /// Args supplied after a literal `--` separator on the command line.
     /// Tracked separately from `args` so the usage parser can be bypassed
     /// when these contain `--help`/`-h`, restoring the documented escape
@@ -1364,6 +1368,11 @@ impl Task {
         tasks: &BTreeMap<String, &Task>,
         visited: &mut HashSet<String>,
     ) -> Result<Vec<Task>> {
+        if !self.depends.is_empty()
+            && let Some(err) = &self.workspace_dependency_error
+        {
+            bail!("{err}");
+        }
         let mut depends: Vec<Task> = self
             .depends
             .iter()
@@ -1396,6 +1405,11 @@ impl Task {
     ) -> Result<(Vec<Task>, Vec<Task>)> {
         use crate::task::TaskLoadContext;
 
+        if !self.depends.is_empty()
+            && let Some(err) = &self.workspace_dependency_error
+        {
+            bail!("{err}");
+        }
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
 
         // Build context with path hints from self, tasks_to_run, and dependency patterns
@@ -1482,17 +1496,12 @@ impl Task {
     /// through those projects so matching tasks farther upstream are retained.
     pub(crate) fn resolve_workspace_task_dependencies(
         &mut self,
-        graph: Option<&workspace::WorkspaceProjectGraph>,
+        graph: &workspace::WorkspaceProjectGraph,
         monorepo_root: &Path,
     ) -> Result<()> {
         if !self.depends.iter().any(|dep| dep.task.starts_with('^')) {
             return Ok(());
         }
-        let Some(graph) = graph else {
-            self.depends
-                .retain(|dependency| !dependency.task.starts_with('^'));
-            return Ok(());
-        };
 
         let mut project_ids = BTreeSet::new();
         let stable_task_names = once(self.name.as_str())
@@ -1528,6 +1537,9 @@ impl Task {
         if project_ids.is_empty() {
             self.depends
                 .retain(|dependency| !dependency.task.starts_with('^'));
+            if let Some(raw) = &mut self.depends_raw {
+                raw.retain(|dependency| !dependency.task.starts_with('^'));
+            }
             return Ok(());
         }
 
@@ -1541,31 +1553,47 @@ impl Task {
             );
         }
 
-        let mut expanded = Vec::new();
-        for dependency in &self.depends {
-            let Some(task_name) = dependency
-                .task
-                .strip_prefix('^')
-                .filter(|task_name| !task_name.is_empty())
-            else {
-                expanded.push(dependency.clone());
-                continue;
-            };
-
-            expanded.extend(upstream_roots.iter().map(|root| {
-                let mut dependency = dependency.clone();
-                let scope = if root.as_os_str().is_empty() || root == Path::new(".") {
-                    "//".to_string()
-                } else {
-                    format!("//{}", root.to_string_lossy().replace('\\', "/"))
+        fn expand(dependencies: &mut Vec<TaskDep>, upstream_roots: &BTreeSet<PathBuf>) {
+            let mut expanded = Vec::new();
+            for dependency in dependencies.iter() {
+                let Some(task_name) = dependency
+                    .task
+                    .strip_prefix('^')
+                    .filter(|task_name| !task_name.is_empty())
+                else {
+                    expanded.push(dependency.clone());
+                    continue;
                 };
-                dependency.task = format!("{scope}:{task_name}");
-                dependency.optional = true;
-                dependency
-            }));
+
+                expanded.extend(upstream_roots.iter().map(|root| {
+                    let mut dependency = dependency.clone();
+                    let scope = if root.as_os_str().is_empty() || root == Path::new(".") {
+                        "//".to_string()
+                    } else {
+                        format!("//{}", root.to_string_lossy().replace('\\', "/"))
+                    };
+                    dependency.task = format!("{scope}:{task_name}");
+                    dependency.optional = true;
+                    dependency
+                }));
+            }
+            *dependencies = expanded;
         }
-        self.depends = expanded;
+
+        expand(&mut self.depends, &upstream_roots);
+        if let Some(raw) = &mut self.depends_raw {
+            expand(raw, &upstream_roots);
+        }
         Ok(())
+    }
+
+    pub(crate) fn set_workspace_task_dependency_error(&mut self, error: &eyre::Report) {
+        if self.depends.iter().any(|dep| dep.task.starts_with('^')) {
+            self.workspace_dependency_error = Some(format!(
+                "failed to resolve upstream task dependencies because the workspace project graph \
+                 could not be loaded: {error:#}"
+            ));
+        }
     }
 
     /// True when mise should not run the usage parser against this task's
@@ -2753,6 +2781,7 @@ impl Default for Task {
             depends_raw: None,
             depends_post_raw: None,
             wait_for_raw: None,
+            workspace_dependency_error: None,
         }
     }
 }

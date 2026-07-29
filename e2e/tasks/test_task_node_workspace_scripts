@@ -107,6 +107,11 @@ cat <<'TOML' >packages/app/mise.toml
 [tasks.build]
 extends = "build-override"
 run = "printf explicit > result.txt; printf '%s' \"$ROOT_TASK_DEFAULT\" > explicit-default.txt; printf '%s' \"$TASK_PRECEDENCE\" > precedence.txt"
+
+[tasks.deploy]
+usage = 'arg "<task>"'
+depends = ["^{{usage.task}}"]
+run = "printf deployed > deploy-result.txt"
 TOML
 
 cat <<'TOML' >packages/core/mise.toml
@@ -128,6 +133,11 @@ assert "cat packages/app/explicit-default.txt" "from-root"
 assert "cat packages/app/precedence.txt" "from-template"
 assert "cat packages/core/explicit-result.txt" "explicit-upstream"
 
+printf stale >packages/core/explicit-result.txt
+mise -q run //packages/app:deploy build
+assert "cat packages/app/deploy-result.txt" "deployed"
+assert "cat packages/core/explicit-result.txt" "explicit-upstream"
+
 mise -q run //packages/app:lint
 assert "cat packages/app/executable-default.txt" "from-executable-default"
 
@@ -140,6 +150,7 @@ mise -q run local
 assert "cat local-result.txt" "local"
 assert "cat local-default.txt" ""
 
-printf stale >packages/app/explicit-default.txt
-mise -q run //packages/app:build
-assert "cat packages/app/explicit-default.txt" "from-root"
+printf stale >packages/app/executable-default.txt
+mise -q run //packages/app:lint
+assert "cat packages/app/executable-default.txt" "from-executable-default"
+assert_fail_contains "mise run //packages/app:build" "failed to resolve upstream task dependencies"
