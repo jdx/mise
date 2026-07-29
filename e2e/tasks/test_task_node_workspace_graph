@@ -16,7 +16,10 @@ EOF
 mkdir -p packages/app packages/lib
 cat <<'EOF' >packages/app/package.json
 {
-  "name": "@scope/app"
+  "name": "@scope/app",
+  "dependencies": {
+    "lib": "workspace:*"
+  }
 }
 EOF
 cat <<'EOF' >packages/lib/package.json
@@ -29,14 +32,19 @@ assert_contains "mise tasks graph" "node:@scope/app"
 assert_contains "mise tasks graph" "packages/app"
 assert_contains "mise tasks graph" '"package_manager":"bun"'
 assert_contains "mise tasks graph" '"workspace_source":"package.json"'
+assert_contains "mise tasks graph" "node:lib"
 
-assert_json "mise tasks graph --json | jq '.projects | map({id, root})'" '[
+assert_json "mise tasks graph --json | jq '.projects | map({id, root, dependencies})'" '[
   {
     "id": "node:@scope/app",
-    "root": "packages/app"
+    "root": "packages/app",
+    "dependencies": [
+      "node:lib"
+    ]
   },
   {
     "id": "node:lib",
-    "root": "packages/lib"
+    "root": "packages/lib",
+    "dependencies": []
   }
 ]'

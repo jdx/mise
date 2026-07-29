@@ -347,6 +347,21 @@ When both files exist, `pnpm-workspace.yaml` defines membership. For pnpm and de
 
 Each discovered package must have a `name` in its `package.json`. mise uses that stable ecosystem identity to create an ID such as `node:@acme/web`; moving the package to another directory does not change its ID. `mise tasks graph` also reports the package root, workspace-definition source, and detected package manager.
 
+### Node Dependency Inference
+
+For every discovered Node package, mise checks these `package.json` fields:
+
+- `dependencies`
+- `devDependencies`
+- `optionalDependencies`
+- `peerDependencies`
+
+When a declared dependency name exactly matches another discovered workspace package, mise adds an edge to that package's stable `node:` project ID. External package names and declarations that refer back to the same project are ignored.
+
+Dependency version strings are treated as opaque. A matching internal name creates the same edge whether its value uses `workspace:*`, `catalog:`, `*`, a normal version range, or another package-manager-specific form. mise does not resolve or compare those values when constructing the project graph.
+
+All four dependency kinds participate in the same project graph, including development dependencies. If the declarations produce a cycle, `mise tasks graph` reports the cycle instead of silently dropping an edge. Use `depends`, `depends_add`, or `depends_remove` in a project override when the inferred build relationship needs to differ from the package manifests.
+
 ### Project Overrides
 
 Use `[monorepo.projects]` in the root `mise.toml` to correct or extend provider inference. Project IDs containing `:` or scoped package names must be quoted:
