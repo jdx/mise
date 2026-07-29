@@ -50,7 +50,37 @@ respond to every PR with detailed context. A rejection may be brief.
 
 ## Packaging and Self-Update Instructions
 
-When mise is installed via a package manager, in-app self-update is disabled and users should update via their package manager. Packaging should install a TOML file with platform-specific instructions at `lib/mise-self-update-instructions.toml` (or `lib/mise/mise-self-update-instructions.toml`). Example contents:
+When mise is installed via a package manager, `mise self-update` should not replace the binary the package manager owns; users should update through the package manager instead. This is opt-in: a package that does none of the following keeps self-update fully enabled. Packagers have three ways to turn it off, and any of them makes `mise doctor` report `self_update_available: no`.
+
+The paths below are relative to the install prefix, which mise derives from its own binary: the path is canonicalized (symlinks resolved) and then taken two levels up, so `/usr/bin/mise` gives `/usr`.
+
+### Disable at build time
+
+Build without the `self_update` Cargo feature, as the Arch Linux package does:
+
+```bash
+cargo build --release --no-default-features --features native-tls
+```
+
+The subcommand still exists, so scripts that call it get a clear error rather than "unknown command", but it always fails with `mise's self-update feature has been disabled at build time, cannot update`.
+
+### Disable with a marker file
+
+Install an empty `.disable-self-update` file at any one of:
+
+- `lib/.disable-self-update` (used by Homebrew)
+- `lib/mise/.disable-self-update` (used by the AUR `mise-bin` package)
+- `lib64/mise/.disable-self-update`
+
+### Ship update instructions
+
+Installing a TOML file with platform-specific instructions also disables self-update, and mise prints its message when `mise self-update` is run and when a newer release is detected. Install it at any one of:
+
+- `lib/mise-self-update-instructions.toml`
+- `lib/mise/mise-self-update-instructions.toml`
+- `lib64/mise/mise-self-update-instructions.toml`
+
+Example contents:
 
 ```toml
 # Debian/Ubuntu (APT)
@@ -61,6 +91,14 @@ message = "To update mise from the APT repository, run:\n\n  sudo apt update && 
 # Fedora/CentOS Stream (DNF)
 message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
 ```
+
+Setting `MISE_SELF_UPDATE_INSTRUCTIONS` to a file path overrides the search.
+
+### Overriding the outcome
+
+`MISE_SELF_UPDATE_AVAILABLE=false` disables self-update without installing anything, and `MISE_SELF_UPDATE_AVAILABLE=true` re-enables it even when a marker or instructions file is present. Both are useful for testing a package build. Neither has any effect on a binary built without the `self_update` feature, where self-update is always unavailable.
+
+`mise self-update --force` also bypasses the availability check, so a user who passes it updates the binary in place even when a marker file, an instructions file, or `MISE_SELF_UPDATE_AVAILABLE=false` is in effect. Treat the runtime mechanisms as "do not update by default" rather than a hard block. A build without the `self_update` feature is the only variant `--force` cannot get past.
 
 ## Testing
 

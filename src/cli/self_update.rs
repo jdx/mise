@@ -59,7 +59,9 @@ pub fn append_self_update_instructions(mut message: String) -> String {
 /// By default, this will also update any installed plugins.
 /// Uses mise's GitHub token resolution chain for authenticated requests.
 ///
-/// This command is not available if mise is installed via a package manager.
+/// Packagers can disable this command so that mise is updated through the
+/// package manager instead. See
+/// https://mise.en.dev/contributing.html#packaging-and-self-update-instructions
 #[derive(Debug, Default, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {
