@@ -707,10 +707,18 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
 
-        let templates = collect_task_templates(&config.config_files);
+        let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+            .then(|| config.workspace_project_graph());
+        let task_definitions = collect_task_definitions(
+            &config.config_files,
+            workspace_graph
+                .as_ref()
+                .and_then(|graph| graph.as_ref().ok()),
+        );
 
-        let mut local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
-        let global_tasks = load_global_tasks(&config, &templates).await?;
+        let mut local_tasks =
+            load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
+        let global_tasks = load_global_tasks(&config, &task_definitions).await?;
         local_tasks.retain(|local| {
             !global_tasks
                 .iter()
@@ -730,12 +738,18 @@ impl Config {
             .map(|t| (t.name.clone(), t))
             .collect();
         if Settings::get().experimental {
-            let inferred_tasks = match inferred_workspace_tasks(&config) {
-                Ok(tasks) => tasks,
-                Err(err) => {
-                    warn!("failed to infer workspace tasks: {err:#}");
+            let inferred_tasks = match workspace_graph.as_ref() {
+                Some(Ok(graph)) => {
+                    inferred_workspace_tasks(&config, &task_definitions, graph).await
+                }
+                Some(Err(err)) => {
+                    warn!(
+                        "failed to load workspace project graph; inferred tasks and root task \
+                         defaults are unavailable: {err:#}"
+                    );
                     Vec::new()
                 }
+                None => Vec::new(),
             };
             for task in inferred_tasks {
                 if tasks.contains_key(&task.name) {
@@ -2307,9 +2321,25 @@ impl Debug for Config {
     }
 }
 
-/// Collect all task templates from the config file hierarchy.
+#[derive(Clone, Debug, Default)]
+struct TaskDefinitions {
+    templates: IndexMap<String, TaskTemplate>,
+    workspace_defaults: Option<WorkspaceTaskDefaults>,
+}
+
+#[derive(Clone, Debug)]
+struct WorkspaceTaskDefaults {
+    project_roots: BTreeSet<PathBuf>,
+    tasks: IndexMap<String, TaskTemplate>,
+}
+
+/// Collect all task templates from the config file hierarchy and task-name defaults from the
+/// selected monorepo root.
 /// Templates from child configs (closer to cwd) override templates from parent configs.
-fn collect_task_templates(config_files: &ConfigMap) -> IndexMap<String, TaskTemplate> {
+fn collect_task_definitions(
+    config_files: &ConfigMap,
+    workspace_graph: Option<&crate::task::workspace::WorkspaceProjectGraph>,
+) -> TaskDefinitions {
     let mut templates = IndexMap::new();
 
     // Iterate in reverse order (global -> local) so child directories override parent configs
@@ -2319,31 +2349,83 @@ fn collect_task_templates(config_files: &ConfigMap) -> IndexMap<String, TaskTemp
         }
     }
 
-    templates
+    let workspace_defaults = Settings::get()
+        .experimental
+        .then(|| {
+            let cf = find_monorepo_config(config_files)?;
+            let root = cf.project_root()?.to_path_buf();
+            let monorepo = cf.monorepo()?;
+            let tasks = monorepo.task_defaults.clone();
+            let mut project_roots = expand_config_root_dirs(&root, &monorepo.config_roots, None)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|project_root| file::desymlink_path(&project_root))
+                .collect::<BTreeSet<_>>();
+            project_roots.extend(
+                monorepo
+                    .projects
+                    .values()
+                    .filter(|project| !project.remove)
+                    .filter_map(|project| project.root.as_ref())
+                    .map(|project_root| file::desymlink_path(&root.join(project_root))),
+            );
+            if let Some(graph) = workspace_graph {
+                project_roots.extend(
+                    graph
+                        .projects()
+                        .map(|project| file::desymlink_path(&root.join(&project.root))),
+                );
+            }
+            (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
+                project_roots,
+                tasks,
+            })
+        })
+        .flatten();
+
+    TaskDefinitions {
+        templates,
+        workspace_defaults,
+    }
 }
 
-/// Resolve a task template and merge it into the task.
+/// Resolve a task template and merge it into the task, then fill remaining fields from any
+/// workspace-root default matching the task's unscoped name.
 /// Returns an error if the template is not found.
-fn resolve_task_template(
-    task: &mut Task,
-    templates: &IndexMap<String, TaskTemplate>,
-) -> Result<()> {
+fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Result<()> {
     if let Some(template_name) = &task.extends {
-        let template = templates.get(template_name).ok_or_else(|| {
+        let template = definitions.templates.get(template_name).ok_or_else(|| {
             eyre!(
                 "Task '{}' extends template '{}' which was not found. \
                  Available templates: {}",
                 task.name,
                 template_name,
-                if templates.is_empty() {
+                if definitions.templates.is_empty() {
                     "(none)".to_string()
                 } else {
-                    templates.keys().join(", ")
+                    definitions.templates.keys().join(", ")
                 }
             )
         })?;
 
         task.merge_template(template);
+    }
+    if let Some(defaults) = &definitions.workspace_defaults
+        && !task.global
+        && task
+            .config_root
+            .as_deref()
+            .map(file::desymlink_path)
+            .is_some_and(|root| defaults.project_roots.contains(&root))
+    {
+        let task_name = task
+            .name
+            .split_once('#')
+            .filter(|_| crate::task::is_workspace_project_task(&task.name))
+            .map_or(task.name.as_str(), |(_, name)| name);
+        if let Some(default) = defaults.tasks.get(task_name) {
+            task.merge_template(default);
+        }
     }
     Ok(())
 }
@@ -2679,11 +2761,14 @@ fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Pa
     }
 }
 
-fn inferred_workspace_tasks(config: &Config) -> Result<Vec<Task>> {
+async fn inferred_workspace_tasks(
+    config: &Arc<Config>,
+    task_definitions: &TaskDefinitions,
+    graph: &crate::task::workspace::WorkspaceProjectGraph,
+) -> Vec<Task> {
     let Some(monorepo_root) = config.monorepo_root() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    let graph = config.workspace_project_graph()?;
     let mut tasks = Vec::new();
 
     for project in graph.projects() {
@@ -2694,7 +2779,7 @@ fn inferred_workspace_tasks(config: &Config) -> Result<Vec<Task>> {
                 .as_ref()
                 .map(|scope| vec![format!("{scope}:{name}")])
                 .unwrap_or_default();
-            tasks.push(Task {
+            let mut task = Task {
                 name: format!("{}#{name}", project.id),
                 description: inferred.description.clone(),
                 aliases,
@@ -2703,11 +2788,28 @@ fn inferred_workspace_tasks(config: &Config) -> Result<Vec<Task>> {
                 raw_args: true,
                 run: vec![RunEntry::Script(inferred.command.clone())],
                 ..Default::default()
-            });
+            };
+            if let Err(err) = resolve_task_template(&mut task, task_definitions) {
+                warn!(
+                    "Failed to resolve inferred task {} in {}: {err:#}. Task will not be available.",
+                    task.name,
+                    display_path(&task.config_source)
+                );
+                continue;
+            }
+            if let Err(err) = task.render(config, &project_root).await {
+                warn!(
+                    "Failed to render inferred task {} in {}: {err:#}. Task will not be available.",
+                    task.name,
+                    display_path(&task.config_source)
+                );
+                continue;
+            }
+            tasks.push(task);
         }
     }
 
-    Ok(tasks)
+    tasks
 }
 
 /// Monorepo roots that enclose the selected one.
@@ -2760,7 +2862,7 @@ fn dir_is_in_enclosing_monorepo(
 async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
-    templates: &IndexMap<String, TaskTemplate>,
+    templates: &TaskDefinitions,
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
@@ -2792,7 +2894,8 @@ async fn load_local_tasks_with_context(
             );
             continue;
         }
-        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
+        let mut dir_tasks =
+            load_tasks_in_dir_with_definitions(config, &d, &local_config_files, templates).await?;
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -3212,10 +3315,7 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_global_tasks(
-    config: &Arc<Config>,
-    templates: &IndexMap<String, TaskTemplate>,
-) -> Result<Vec<Task>> {
+async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
     // User-global config overrides system config. Within each group the path
     // lists are lowest-first, so reverse them before applying first-wins task
     // precedence.
@@ -3409,7 +3509,7 @@ async fn load_config_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
-    templates: &IndexMap<String, TaskTemplate>,
+    templates: &TaskDefinitions,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     task_config: &ResolvedTaskConfig,
 ) -> Result<Vec<Task>> {
@@ -3471,7 +3571,7 @@ async fn load_tasks_includes(
     root: &Path,
     config_root: &Path,
     task_config: &ResolvedTaskConfig,
-    templates: &IndexMap<String, TaskTemplate>,
+    templates: &TaskDefinitions,
     options: LoadTaskIncludesOptions<'_>,
 ) -> Result<Vec<Task>> {
     let LoadTaskIncludesOptions {
@@ -3546,6 +3646,18 @@ async fn load_tasks_includes(
                 &config_root,
                 monorepo_cf.cloned(),
             )?;
+            if let Err(err) = resolve_task_template(&mut task, templates) {
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to resolve task {} in {}: {err:#}. Task will not be available.",
+                        task.name,
+                        display_path(&path)
+                    );
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
             let cache_key = rendered_task_cache_key(&task);
             if let Some(cached) = rendered_file_tasks
                 .as_deref()
@@ -3751,6 +3863,24 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
+    let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+        .then(|| config.workspace_project_graph());
+    let mut definitions = collect_task_definitions(
+        config_files,
+        workspace_graph
+            .as_ref()
+            .and_then(|graph| graph.as_ref().ok()),
+    );
+    definitions.templates = templates.clone();
+    load_tasks_in_dir_with_definitions(config, dir, config_files, &definitions).await
+}
+
+async fn load_tasks_in_dir_with_definitions(
+    config: &Arc<Config>,
+    dir: &Path,
+    config_files: &ConfigMap,
+    templates: &TaskDefinitions,
+) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
     let cascaded_task_config = cascaded_task_config_for_dir(dir, config_files)?;
     load_tasks_from_configs(
@@ -3904,7 +4034,7 @@ async fn load_tasks_from_configs(
     config: &Arc<Config>,
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
-    templates: &IndexMap<String, TaskTemplate>,
+    templates: &TaskDefinitions,
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
 ) -> Result<Vec<Task>> {
@@ -3930,7 +4060,7 @@ async fn load_task_sources_from_configs(
     config: &Arc<Config>,
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
-    templates: &IndexMap<String, TaskTemplate>,
+    templates: &TaskDefinitions,
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
@@ -4076,7 +4206,7 @@ async fn load_task_file(
     path: &Path,
     config_root: &Path,
     task_config: &ResolvedTaskConfig,
-    templates: &IndexMap<String, TaskTemplate>,
+    templates: &TaskDefinitions,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<Vec<Task>> {
@@ -5236,7 +5366,7 @@ vars = { target = "linux" }
             &tasks_toml,
             temp_dir.path(),
             &ResolvedTaskConfig::default(),
-            &IndexMap::new(),
+            &TaskDefinitions::default(),
             None,
             None,
         )

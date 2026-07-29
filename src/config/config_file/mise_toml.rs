@@ -310,6 +310,9 @@ pub struct MonorepoConfig {
     #[allow(dead_code)]
     #[serde(default)]
     pub projects: BTreeMap<String, WorkspaceProjectOverride>,
+    /// Experimental task defaults applied by task name across workspace projects.
+    #[serde(default)]
+    pub task_defaults: IndexMap<String, TaskTemplate>,
 }
 
 impl EnvList {

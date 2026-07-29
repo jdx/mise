@@ -394,6 +394,27 @@ This inference is currently experimental and only runs for a configured monorepo
 mise settings experimental=true
 ```
 
+### Root Task Defaults
+
+Use `[monorepo.task_defaults.<name>]` in the root `mise.toml` to define shared defaults for
+tasks with the same name in every workspace project:
+
+```toml
+[monorepo.task_defaults.build]
+sources = ["src/**", "package.json"]
+outputs = ["dist/**"]
+cache = { enabled = true }
+
+[monorepo.task_defaults.test]
+env = { NODE_ENV = "test" }
+```
+
+These defaults apply to both provider-inferred tasks such as `node:@acme/web#build` and explicit
+mise tasks such as `//apps/web:build`. Task-local configuration takes precedence. When an explicit
+task uses `extends`, its template also takes precedence over the root default.
+
+Root task defaults are experimental and are ignored unless experimental features are enabled.
+
 ### Project Overrides
 
 Use `[monorepo.projects]` in the root `mise.toml` to correct or extend provider inference. Project IDs containing `:` or scoped package names must be quoted:
