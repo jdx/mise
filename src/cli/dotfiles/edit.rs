@@ -66,7 +66,7 @@ impl DotfilesEdit {
             local: false,
             path: None,
             dry_run: false,
-            no_apply: false,
+            no_apply: true,
             force: false,
             yes: true,
         }

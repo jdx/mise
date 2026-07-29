@@ -338,12 +338,17 @@ assert_contains_text "$verbose_out" "content differs"
 echo "captured content" >~/.captured
 mkdir -p ~/.captured-dir
 echo "captured dir content" >~/.captured-dir/file
+mkdir ~/.captured-dir/empty
+ln -s file ~/.captured-dir/link
+chmod 600 ~/.captured-dir/file
 captured_out="$(MISE_DOTFILES_ROOT="$PWD/captured-root" MISE_DOTFILES_DEFAULT_MODE=symlink mise dotfiles add "$HOME/.captured-dir/" "$HOME/.captured" --yes 2>&1)"
 assert_contains_text "$captured_out" "copied ~/.captured-dir to"
 assert_contains_text "$captured_out" "added ~/.captured to ~/.config/mise/config.toml"
 assert_contains_text "$captured_out" "created symlink ~/.captured ->"
 assert "cat captured-root/.captured" "captured content"
 assert "cat captured-root/.captured-dir/file" "captured dir content"
+assert_directory_exists "captured-root/.captured-dir/empty"
+assert "readlink captured-root/.captured-dir/link" "file"
 assert_contains "cat ~/.config/mise/config.toml" '"~/.captured" = {}'
 assert_contains "cat ~/.config/mise/config.toml" '"~/.captured-dir" = {}'
 assert_not_contains "cat ~/.config/mise/config.toml" "$HOME"
@@ -359,16 +364,41 @@ rm ~/.config/mise/config.toml
 mkdir -p same-dir-source same-dir-target
 echo "same" >same-dir-source/file
 echo "same" >same-dir-target/file
-echo "extra" >same-dir-target/extra
 cat <<EOF >mise.toml
 [dotfiles]
 "$PWD/same-dir-target" = { source = "same-dir-source", mode = "symlink" }
 EOF
+mkdir same-dir-target/extra-empty
 assert_fail "mise dotfiles apply --yes"
-assert "cat same-dir-target/extra" "extra"
-rm same-dir-target/extra
+assert_directory_exists "same-dir-target/extra-empty"
+rmdir same-dir-target/extra-empty
+chmod 755 same-dir-source
+chmod 700 same-dir-target
+assert_fail "mise dotfiles apply --yes"
+chmod --reference=same-dir-source same-dir-target
+ln -s first same-dir-source/link
+ln -s second same-dir-target/link
+assert_fail "mise dotfiles apply --yes"
+rm same-dir-target/link
+ln -s first same-dir-target/link
 assert_succeed "mise dotfiles apply --yes"
 assert "readlink same-dir-target" "$PWD/same-dir-source"
+
+# parent-directory components normalize to the canonical target key
+echo "normalized" >~/.normalized
+mkdir -p ~/.normalization-parent
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.normalization-parent/../.normalized --no-apply --yes
+assert_contains "cat ~/.config/mise/config.toml" '"~/.normalized" = {}'
+assert_not_contains "cat ~/.config/mise/config.toml" "normalization-parent"
+rm ~/.config/mise/config.toml
+
+# failed automatic apply validation restores overwritten sources and does not
+# write a config entry
+echo "original template" >template-source
+echo "{{ invalid template" >~/.invalid-template
+assert_fail "mise dotfiles add ~/.invalid-template --source \"$PWD/template-source\" --mode template --yes"
+assert "cat template-source" "original template"
+assert_fail "test -e ~/.config/mise/config.toml"
 
 # --no-apply leaves the captured target in place
 echo "capture only" >~/.capture-only
@@ -421,6 +451,12 @@ EOF
 assert_succeed "mise dotfiles apply --yes"
 EDITOR="$PWD/editor-write" mise dotfiles edit --apply ~/.edit-copy
 assert "cat ~/.edit-copy" "edited source"
+
+# unmanaged edits are not applied unless --apply is requested
+echo "unmanaged before edit" >~/.edit-unmanaged
+EDITOR="$PWD/editor-write" mise dotfiles edit ~/.edit-unmanaged --yes
+assert "cat ~/.edit-unmanaged" "unmanaged before edit"
+assert "cat ~/.dotfiles/.edit-unmanaged" "edited source"
 
 # inline edit entries open the owning mise config file
 cat <<'EOF' >editor-append

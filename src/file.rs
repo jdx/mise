@@ -284,14 +284,16 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()
     })
 }
 
-fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
+pub fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
+    let mut directory_permissions = vec![(to.to_path_buf(), fs::metadata(from)?.permissions())];
     for entry in WalkDir::new(from).follow_links(false).min_depth(1) {
         let entry = entry?;
         let relative = entry.path().strip_prefix(from)?;
         let dest = to.join(relative);
         if entry.file_type().is_dir() {
             create_dir_all(&dest)?;
+            directory_permissions.push((dest, entry.metadata()?.permissions()));
         } else if entry.file_type().is_symlink() {
             create_dir_all(dest.parent().unwrap())?;
             make_symlink(&fs::read_link(entry.path())?, &dest)?;
@@ -299,6 +301,11 @@ fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
             create_dir_all(dest.parent().unwrap())?;
             copy(entry.path(), &dest)?;
         }
+    }
+    // Apply directory permissions after copying children so read-only source
+    // directories do not prevent populating their destination.
+    for (path, permissions) in directory_permissions.into_iter().rev() {
+        fs::set_permissions(path, permissions)?;
     }
     Ok(())
 }

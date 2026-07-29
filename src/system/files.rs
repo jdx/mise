@@ -285,7 +285,21 @@ pub fn source_is_implied(req: &FileRequest) -> bool {
 }
 
 pub fn resolve_target_arg(target: &str) -> PathBuf {
-    file::replace_path(target)
+    lexical_normalize(&file::replace_path(target))
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 pub fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
@@ -303,11 +317,11 @@ pub fn copy_path(source: &Path, target: &Path) -> Result<()> {
         file::create_dir_all(parent)?;
     }
     if source.is_dir() {
-        if target.exists() && !target.is_dir() {
+        if target.exists() || target.is_symlink() {
             remove_existing(target)?;
         }
         file::create_dir_all(target)?;
-        file::copy_dir_all(source, target)?;
+        file::copy_dir_all_preserve_symlinks(source, target)?;
     } else {
         if target.is_symlink() {
             file::remove_file(target)?;
@@ -849,12 +863,71 @@ pub struct ApplyOpts {
     pub yes: bool,
 }
 
+pub struct ApplyPlan<'a> {
+    todo: Vec<(&'a FileRequest, Option<String>)>,
+}
+
 /// Apply all entries that aren't already in the desired state. Conflicting
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
 /// copy/template entries are not conflicts, overwriting is their job. Returns
 /// `false` when the user declines the confirmation prompt.
 pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
+    execute_apply(plan_apply(config, requests, opts)?, opts)
+}
+
+pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
+    if plan.todo.is_empty() {
+        info!("files: all files are applied");
+        return Ok(true);
+    }
+    if opts.dry_run {
+        for (req, rendered) in &plan.todo {
+            // template state wasn't computed (no rendering on dry runs), so
+            // the entry may already be converged
+            let conditional = req.mode == FileMode::Template && rendered.is_none();
+            let suffix = if conditional { " (if changed)" } else { "" };
+            miseprintln!("{}{suffix}", describe(req)?);
+            if opts.verbose && !conditional {
+                print_diff(req, rendered.as_deref())?;
+            }
+        }
+        return Ok(true);
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = plan
+            .todo
+            .iter()
+            .map(|(r, _)| r.target_raw.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !prompt::confirm(format!("files: apply {list}?"))? {
+            info!("files: skipped");
+            return Ok(false);
+        }
+    }
+    for (req, rendered) in &plan.todo {
+        apply_one(req, rendered.as_deref())?;
+        info!("files: {}", describe_applied(req)?);
+    }
+    info!(
+        "files: applied {}",
+        plan.todo
+            .iter()
+            .map(|(r, _)| r.target_raw.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(true)
+}
+
+/// Plan and validate an apply without changing targets. Templates are rendered
+/// here so execution writes exactly the content that was validated.
+pub fn plan_apply<'a>(
+    config: &Config,
+    requests: &'a [FileRequest],
+    opts: &ApplyOpts,
+) -> Result<ApplyPlan<'a>> {
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
@@ -925,46 +998,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     if !problems.is_empty() {
         bail!("files: {}", problems.join("\nfiles: "));
     }
-    if todo.is_empty() {
-        info!("files: all files are applied");
-        return Ok(true);
-    }
-    if opts.dry_run {
-        for (req, rendered) in &todo {
-            // template state wasn't computed (no rendering on dry runs), so
-            // the entry may already be converged
-            let conditional = req.mode == FileMode::Template && rendered.is_none();
-            let suffix = if conditional { " (if changed)" } else { "" };
-            miseprintln!("{}{suffix}", describe(req)?);
-            if opts.verbose && !conditional {
-                print_diff(req, rendered.as_deref())?;
-            }
-        }
-        return Ok(true);
-    }
-    if !opts.yes && console::user_attended_stderr() {
-        let list = todo
-            .iter()
-            .map(|(r, _)| r.target_raw.clone())
-            .collect::<Vec<_>>()
-            .join(", ");
-        if !prompt::confirm(format!("files: apply {list}?"))? {
-            info!("files: skipped");
-            return Ok(false);
-        }
-    }
-    for (req, rendered) in &todo {
-        apply_one(req, rendered.as_deref())?;
-        info!("files: {}", describe_applied(req)?);
-    }
-    info!(
-        "files: applied {}",
-        todo.iter()
-            .map(|(r, _)| r.target_raw.clone())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    Ok(true)
+    Ok(ApplyPlan { todo })
 }
 
 pub struct UnapplyOpts {
@@ -1425,11 +1459,13 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
 }
 
 /// Whether replacing `target` with a symlink to `source` preserves all of the
-/// target's file data. Directory comparisons are exact: target-only files
-/// remain conflicts rather than being silently removed.
+/// target's filesystem state. Directory comparisons include empty directories,
+/// symlink identity, and permissions as well as regular-file contents.
 fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
     if source.is_file() && target.is_file() {
-        if source.metadata()?.len() != target.metadata()?.len() {
+        if !permissions_match(source, target)?
+            || source.metadata()?.len() != target.metadata()?.len()
+        {
             return Ok(false);
         }
         return Ok(file::read(source)? == file::read(target)?);
@@ -1437,26 +1473,69 @@ fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
     if !source.is_dir() || !target.is_dir() {
         return Ok(false);
     }
-    let relative_files = |root: &Path| -> Result<Vec<PathBuf>> {
-        Ok(file::recursive_ls(root)?
-            .into_iter()
-            .map(|path| path.strip_prefix(root).map(Path::to_path_buf))
-            .collect::<std::result::Result<Vec<_>, _>>()?)
-    };
-    let source_files = relative_files(source)?;
-    if source_files != relative_files(target)? {
+    if !permissions_match(source, target)? {
         return Ok(false);
     }
-    for rel in source_files {
-        let source_file = source.join(&rel);
-        let target_file = target.join(rel);
-        if source_file.metadata()?.len() != target_file.metadata()?.len()
-            || file::read(source_file)? != file::read(target_file)?
+    let relative_entries = |root: &Path| -> Result<Vec<PathBuf>> {
+        let mut entries = walkdir::WalkDir::new(root)
+            .follow_links(false)
+            .min_depth(1)
+            .into_iter()
+            .map(|entry| {
+                let entry = entry?;
+                Ok(entry.path().strip_prefix(root)?.to_path_buf())
+            })
+            .collect::<Result<Vec<_>>>()?;
+        entries.sort();
+        Ok(entries)
+    };
+    let source_entries = relative_entries(source)?;
+    if source_entries != relative_entries(target)? {
+        return Ok(false);
+    }
+    for rel in source_entries {
+        let source_entry = source.join(&rel);
+        let target_entry = target.join(rel);
+        let source_metadata = source_entry.symlink_metadata()?;
+        let target_metadata = target_entry.symlink_metadata()?;
+        let source_type = source_metadata.file_type();
+        let target_type = target_metadata.file_type();
+        if source_type.is_dir() != target_type.is_dir()
+            || source_type.is_file() != target_type.is_file()
+            || source_type.is_symlink() != target_type.is_symlink()
+            || !permissions_match(&source_entry, &target_entry)?
         {
+            return Ok(false);
+        }
+        if source_type.is_file()
+            && (source_metadata.len() != target_metadata.len()
+                || file::read(&source_entry)? != file::read(&target_entry)?)
+        {
+            return Ok(false);
+        }
+        if source_type.is_symlink()
+            && std::fs::read_link(&source_entry)? != std::fs::read_link(&target_entry)?
+        {
+            return Ok(false);
+        }
+        if !source_type.is_dir() && !source_type.is_file() && !source_type.is_symlink() {
             return Ok(false);
         }
     }
     Ok(true)
+}
+
+#[cfg(unix)]
+fn permissions_match(source: &Path, target: &Path) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+    Ok(source.symlink_metadata()?.permissions().mode()
+        == target.symlink_metadata()?.permissions().mode())
+}
+
+#[cfg(not(unix))]
+fn permissions_match(source: &Path, target: &Path) -> Result<bool> {
+    Ok(source.symlink_metadata()?.permissions().readonly()
+        == target.symlink_metadata()?.permissions().readonly())
 }
 
 fn describe(req: &FileRequest) -> Result<String> {

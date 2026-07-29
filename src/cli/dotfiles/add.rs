@@ -165,24 +165,16 @@ impl DotfilesAdd {
             return Ok(());
         }
 
-        let writes_config = planned.iter().any(|item| item.already_managed.is_none());
-        let mut doc = if writes_config {
-            if !config_path.exists() {
-                let cf = MiseToml::init(&config_path);
-                cf.save()?;
-            }
-            let raw = file::read_to_string(&config_path)?;
-            let mut doc: DocumentMut = raw.parse()?;
-            ensure_dotfiles_table(&mut doc);
-            Some(doc)
-        } else {
+        let backup_dir = if self.no_apply {
             None
+        } else {
+            Some(tempfile::tempdir()?)
         };
-
-        let mut added_targets = vec![];
+        let mut source_backups = vec![];
+        let mut accepted = vec![];
         let mut updated_targets = vec![];
         let mut apply_requests = vec![];
-        for item in &planned {
+        for (index, item) in planned.iter().enumerate() {
             if item.target.exists() && !same_file(&item.target, &item.source) {
                 if item.source.exists()
                     && !self.force
@@ -199,6 +191,15 @@ impl DotfilesAdd {
                         continue;
                     }
                 }
+                if let Some(backup_dir) = &backup_dir {
+                    let backup = backup_dir.path().join(index.to_string());
+                    if item.source.exists() || item.source.is_symlink() {
+                        system::files::copy_path(&item.source, &backup)?;
+                        source_backups.push((item.source.clone(), Some(backup)));
+                    } else {
+                        source_backups.push((item.source.clone(), None));
+                    }
+                }
                 system::files::copy_path(&item.target, &item.source)?;
                 info!(
                     "dotfiles: copied {} to {}",
@@ -206,30 +207,62 @@ impl DotfilesAdd {
                     item.source.display_user()
                 );
             } else if !item.source.exists() {
+                if backup_dir.is_some() {
+                    source_backups.push((item.source.clone(), None));
+                }
                 if let Some(parent) = item.source.parent() {
                     file::create_dir_all(parent)?;
                 }
                 file::write(&item.source, "")?;
                 info!("dotfiles: created {}", item.source.display_user());
             }
-            if item.already_managed.is_none()
-                && let Some(doc) = &mut doc
-            {
-                write_entry(doc, item);
-                added_targets.push(item.target_raw.as_str());
-            } else {
+            if item.already_managed.is_some() {
                 updated_targets.push(item.target_raw.as_str());
             }
+            accepted.push(item);
             apply_requests.push(item.as_request(&config_path));
         }
 
-        if let Some(mut doc) = doc {
+        let apply_opts = system::files::ApplyOpts {
+            dry_run: false,
+            verbose: false,
+            force: false,
+            force_hint: "run `mise bootstrap dotfiles apply --force`",
+            yes: true,
+        };
+        let apply_plan = if !self.no_apply && !apply_requests.is_empty() {
+            match system::files::plan_apply(&config, &apply_requests, &apply_opts) {
+                Ok(plan) => Some(plan),
+                Err(err) => {
+                    restore_sources(&source_backups)?;
+                    return Err(err);
+                }
+            }
+        } else {
+            None
+        };
+
+        let added_targets = accepted
+            .iter()
+            .filter(|item| item.already_managed.is_none())
+            .collect::<Vec<_>>();
+        if !added_targets.is_empty() {
+            if !config_path.exists() {
+                let cf = MiseToml::init(&config_path);
+                cf.save()?;
+            }
+            let raw = file::read_to_string(&config_path)?;
+            let mut doc: DocumentMut = raw.parse()?;
+            ensure_dotfiles_table(&mut doc);
+            for item in &added_targets {
+                write_entry(&mut doc, item);
+            }
             sort_dotfiles_table(&mut doc);
             file::write(&config_path, doc.to_string())?;
-            for target in &added_targets {
+            for item in &added_targets {
                 info!(
                     "dotfiles: added {} to {}",
-                    target,
+                    item.target_raw,
                     config_path.display_user()
                 );
             }
@@ -237,15 +270,8 @@ impl DotfilesAdd {
         if !updated_targets.is_empty() {
             info!("dotfiles: updated {}", updated_targets.join(", "));
         }
-        if !self.no_apply && !apply_requests.is_empty() {
-            let opts = system::files::ApplyOpts {
-                dry_run: false,
-                verbose: false,
-                force: false,
-                force_hint: "use --force",
-                yes: true,
-            };
-            system::files::apply(&config, &apply_requests, &opts)?;
+        if let Some(plan) = apply_plan {
+            system::files::execute_apply(plan, &apply_opts)?;
         }
         Ok(())
     }
@@ -348,6 +374,20 @@ fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
+}
+
+fn restore_sources(backups: &[(PathBuf, Option<PathBuf>)]) -> Result<()> {
+    for (source, backup) in backups.iter().rev() {
+        if source.is_symlink() || source.is_file() {
+            file::remove_file(source)?;
+        } else if source.is_dir() {
+            file::remove_all(source)?;
+        }
+        if let Some(backup) = backup {
+            system::files::copy_path(backup, source)?;
+        }
+    }
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
