@@ -25,9 +25,11 @@ dotfiles.default_mode = "symlink"
 "~/hosts/dev" = { line = "127.0.0.1 dev.local" }                     # edit one line in ~/hosts
 ```
 
-Dotfiles are only applied when explicitly requested with
-`mise bootstrap dotfiles apply` or as part of [`mise bootstrap`](/bootstrap.html). They
-are never applied implicitly by `mise install` or `mise bootstrap packages`.
+New entries are captured and applied by `mise bootstrap dotfiles add`; pass
+`--no-apply` to only capture them. Existing entries can be applied explicitly
+with `mise bootstrap dotfiles apply` or as part of
+[`mise bootstrap`](/bootstrap.html). They are never applied implicitly by
+`mise install` or `mise bootstrap packages`.
 The nested apply command runs the configured `pre-dotfiles` and
 `post-dotfiles` bootstrap hooks.
 
@@ -41,12 +43,13 @@ uses `~/.dotfiles/.zshrc`, and `~/.config/foo.toml` uses
 `source`.
 
 String entries are shorthand for an explicit source with
-`dotfiles.default_mode`. Commands that write `[dotfiles]` always write table
-form with `mode`, even when it is the default:
+`dotfiles.default_mode`. `mise bootstrap dotfiles add` omits an implied source
+and the built-in `symlink` mode, while preserving a mode explicitly selected
+with `--mode`:
 
 ```toml
 [dotfiles]
-"~/.zshrc" = { mode = "symlink" }
+"~/.zshrc" = {}
 "~/.ssh/config" = { source = "ssh/config", mode = "copy" }
 ```
 

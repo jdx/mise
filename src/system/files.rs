@@ -955,6 +955,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     }
     for (req, rendered) in &todo {
         apply_one(req, rendered.as_deref())?;
+        info!("files: {}", describe_applied(req)?);
     }
     info!(
         "files: applied {}",
@@ -1376,16 +1377,6 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    let regular_files_have_same_content = |source: &Path, target: &Path| -> Result<bool> {
-        if !source.is_file() || !target.is_file() {
-            return Ok(false);
-        }
-        if source.metadata()?.len() != target.metadata()?.len() {
-            return Ok(false);
-        }
-        Ok(file::read(source)? == file::read(target)?)
-    };
-
     // on Windows, file "symlinks" are applied as copies (see `link_path`),
     // so existing regular-file targets are routine content updates there,
     // not conflicts — only a type mismatch blocks
@@ -1398,7 +1389,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             }
             // If this equality check cannot read either side, keep the
             // conservative conflict path so --force can still handle it.
-            Ok(!regular_files_have_same_content(source, target).unwrap_or(false))
+            Ok(!paths_have_same_content(source, target).unwrap_or(false))
         }
     };
     let mut out = vec![];
@@ -1433,6 +1424,41 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Whether replacing `target` with a symlink to `source` preserves all of the
+/// target's file data. Directory comparisons are exact: target-only files
+/// remain conflicts rather than being silently removed.
+fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
+    if source.is_file() && target.is_file() {
+        if source.metadata()?.len() != target.metadata()?.len() {
+            return Ok(false);
+        }
+        return Ok(file::read(source)? == file::read(target)?);
+    }
+    if !source.is_dir() || !target.is_dir() {
+        return Ok(false);
+    }
+    let relative_files = |root: &Path| -> Result<Vec<PathBuf>> {
+        Ok(file::recursive_ls(root)?
+            .into_iter()
+            .map(|path| path.strip_prefix(root).map(Path::to_path_buf))
+            .collect::<std::result::Result<Vec<_>, _>>()?)
+    };
+    let source_files = relative_files(source)?;
+    if source_files != relative_files(target)? {
+        return Ok(false);
+    }
+    for rel in source_files {
+        let source_file = source.join(&rel);
+        let target_file = target.join(rel);
+        if source_file.metadata()?.len() != target_file.metadata()?.len()
+            || file::read(source_file)? != file::read(target_file)?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn describe(req: &FileRequest) -> Result<String> {
     let src = req.source.display_user();
     let tgt = req.target.display_user();
@@ -1452,6 +1478,20 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
+    })
+}
+
+fn describe_applied(req: &FileRequest) -> Result<String> {
+    let src = req.source.display_user();
+    let tgt = req.target.display_user();
+    Ok(match req.mode {
+        FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
+        FileMode::SymlinkEach => format!(
+            "created {} symlink(s) from {src} in {tgt}",
+            walk_source_files(req)?.len()
+        ),
+        FileMode::Copy => format!("copied {src} to {tgt}"),
+        FileMode::Template => format!("rendered {src} to {tgt}"),
     })
 }
 

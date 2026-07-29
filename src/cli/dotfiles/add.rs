@@ -6,6 +6,7 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{Config, ConfigPathOptions, resolve_target_config_path};
+use crate::dirs;
 use crate::file;
 use crate::path::PathExt;
 use crate::system;
@@ -43,6 +44,10 @@ pub struct DotfilesAdd {
     /// Print the config/source updates without writing anything
     #[clap(long, short = 'n')]
     pub(super) dry_run: bool,
+
+    /// Add the entry without applying it
+    #[clap(long)]
+    pub(super) no_apply: bool,
 
     /// Write to this config file or directory
     #[clap(long, short, value_name = "PATH", conflicts_with_all = ["global", "local"])]
@@ -82,7 +87,9 @@ impl DotfilesAdd {
         let mut planned = vec![];
         let managed_edits = system::edits::edits_from_config(&config);
         for target_raw in &self.targets {
-            let target = system::files::resolve_target_arg(target_raw);
+            let target = system::files::resolve_target_arg(target_raw)
+                .components()
+                .collect::<PathBuf>();
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
@@ -124,11 +131,12 @@ impl DotfilesAdd {
                 );
             }
             planned.push(PlannedAdd {
-                target_raw: target_raw.clone(),
+                target_raw: normalized_target_raw(&target),
                 target,
                 source,
                 mode: write_mode,
                 implied_source: self.source.is_none(),
+                explicit_mode: self.mode.is_some(),
                 already_managed: existing.cloned(),
             });
         }
@@ -150,6 +158,9 @@ impl DotfilesAdd {
                         item.source.display_user()
                     );
                 }
+                if !self.no_apply {
+                    miseprintln!("{}", describe_apply(item));
+                }
             }
             return Ok(());
         }
@@ -170,6 +181,7 @@ impl DotfilesAdd {
 
         let mut added_targets = vec![];
         let mut updated_targets = vec![];
+        let mut apply_requests = vec![];
         for item in &planned {
             if item.target.exists() && !same_file(&item.target, &item.source) {
                 if item.source.exists()
@@ -188,11 +200,17 @@ impl DotfilesAdd {
                     }
                 }
                 system::files::copy_path(&item.target, &item.source)?;
+                info!(
+                    "dotfiles: copied {} to {}",
+                    item.target.display_user(),
+                    item.source.display_user()
+                );
             } else if !item.source.exists() {
                 if let Some(parent) = item.source.parent() {
                     file::create_dir_all(parent)?;
                 }
                 file::write(&item.source, "")?;
+                info!("dotfiles: created {}", item.source.display_user());
             }
             if item.already_managed.is_none()
                 && let Some(doc) = &mut doc
@@ -202,20 +220,32 @@ impl DotfilesAdd {
             } else {
                 updated_targets.push(item.target_raw.as_str());
             }
+            apply_requests.push(item.as_request(&config_path));
         }
 
-        if let Some(doc) = doc {
+        if let Some(mut doc) = doc {
+            sort_dotfiles_table(&mut doc);
             file::write(&config_path, doc.to_string())?;
-            if !added_targets.is_empty() {
+            for target in &added_targets {
                 info!(
-                    "{}: added {}",
-                    config_path.display_user(),
-                    added_targets.join(", ")
+                    "dotfiles: added {} to {}",
+                    target,
+                    config_path.display_user()
                 );
             }
         }
         if !updated_targets.is_empty() {
             info!("dotfiles: updated {}", updated_targets.join(", "));
+        }
+        if !self.no_apply && !apply_requests.is_empty() {
+            let opts = system::files::ApplyOpts {
+                dry_run: false,
+                verbose: false,
+                force: false,
+                force_hint: "use --force",
+                yes: true,
+            };
+            system::files::apply(&config, &apply_requests, &opts)?;
         }
         Ok(())
     }
@@ -228,12 +258,35 @@ struct PlannedAdd {
     source: PathBuf,
     mode: FileMode,
     implied_source: bool,
+    explicit_mode: bool,
     already_managed: Option<FileRequest>,
+}
+
+impl PlannedAdd {
+    fn as_request(&self, config_path: &std::path::Path) -> FileRequest {
+        FileRequest {
+            target_raw: self.target_raw.clone(),
+            target: self.target.clone(),
+            source: self.source.clone(),
+            mode: self.mode,
+            exclude: vec![],
+            base: config_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf(),
+        }
+    }
 }
 
 fn ensure_dotfiles_table(doc: &mut DocumentMut) {
     if !doc.as_table().contains_key("dotfiles") {
         doc["dotfiles"] = Item::Table(Table::new());
+    }
+}
+
+fn sort_dotfiles_table(doc: &mut DocumentMut) {
+    if let Some(table) = doc["dotfiles"].as_table_mut() {
+        table.sort_values();
     }
 }
 
@@ -260,11 +313,34 @@ fn inline_entry(item: &PlannedAdd) -> Value {
             )),
         );
     }
-    table.insert(
-        "mode",
-        Value::String(toml_edit::Formatted::new(item.mode.name().to_string())),
-    );
+    if item.explicit_mode || item.mode != FileMode::Symlink {
+        table.insert(
+            "mode",
+            Value::String(toml_edit::Formatted::new(item.mode.name().to_string())),
+        );
+    }
     Value::InlineTable(table)
+}
+
+fn normalized_target_raw(target: &std::path::Path) -> String {
+    let normalized = target.components().collect::<PathBuf>();
+    match normalized.strip_prefix(&*dirs::HOME) {
+        Ok(rel) if !rel.as_os_str().is_empty() => format!("~/{}", rel.display()),
+        Ok(_) => "~".to_string(),
+        Err(_) => normalized.to_string_lossy().to_string(),
+    }
+}
+
+fn describe_apply(item: &PlannedAdd) -> String {
+    let source = item.source.display_user();
+    let target = item.target.display_user();
+    match item.mode {
+        FileMode::Symlink => format!("ln -sf {source} {target}"),
+        FileMode::SymlinkEach => format!("ln -sf {source}/* into {target}/"),
+        FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
+        FileMode::Copy => format!("cp {source} {target}"),
+        FileMode::Template => format!("render {source} -> {target}"),
+    }
 }
 
 fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
