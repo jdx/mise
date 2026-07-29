@@ -1,5 +1,104 @@
 # Changelog
 
+## [2026.7.16](https://github.com/jdx/mise/compare/v2026.7.15..v2026.7.16) - 2026-07-29
+
+### 🚀 Features
+
+- **(bootstrap)** consolidate dotfiles commands by @jdx in [#11436](https://github.com/jdx/mise/pull/11436)
+- **(bootstrap)** add bs command alias by @jdx in [#11439](https://github.com/jdx/mise/pull/11439)
+- **(cargo)** discover native binary release artifacts by @jdx in [#11433](https://github.com/jdx/mise/pull/11433)
+- **(dotfiles)** add unapply command by @jdx in [#11437](https://github.com/jdx/mise/pull/11437)
+- **(mcp)** serve mise's command effects to agents by @jdx in [#11389](https://github.com/jdx/mise/pull/11389)
+- **(spm)** add install_command option for source installs by @Marukome0743 in [#11369](https://github.com/jdx/mise/pull/11369)
+- **(task)** add command inputs to cache by @jdx in [#11381](https://github.com/jdx/mise/pull/11381)
+- **(task)** add per-run cache controls by @jdx in [#11396](https://github.com/jdx/mise/pull/11396)
+- **(task)** add workspace project graph model by @jdx in [#11400](https://github.com/jdx/mise/pull/11400)
+- **(task)** add configurable cache directory by @jdx in [#11399](https://github.com/jdx/mise/pull/11399)
+- **(task)** merge workspace provider graphs by @jdx in [#11418](https://github.com/jdx/mise/pull/11418)
+- **(task)** add workspace graph overrides by @jdx in [#11420](https://github.com/jdx/mise/pull/11420)
+- **(task)** detect workspace project cycles by @jdx in [#11422](https://github.com/jdx/mise/pull/11422)
+- **(task)** preserve workspace dependency traversal by @jdx in [#11424](https://github.com/jdx/mise/pull/11424)
+- **(task)** inspect workspace project graph by @jdx in [#11427](https://github.com/jdx/mise/pull/11427)
+- **(task)** discover node workspace projects by @jdx in [#11430](https://github.com/jdx/mise/pull/11430)
+- **(task)** discover node workspaces with aube by @jdx in [#11445](https://github.com/jdx/mise/pull/11445)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** preserve legacy root binary layouts by @jdx in [#11397](https://github.com/jdx/mise/pull/11397)
+- **(backend)** report version listing fetch failures instead of blaming filters by @jdx in [#11391](https://github.com/jdx/mise/pull/11391)
+- **(bootstrap)** honor MISE_VERSION and MISE_INSTALL_PATH in generated script by @JamBalaya56562 in [#11401](https://github.com/jdx/mise/pull/11401)
+- **(bootstrap)** detect mise-managed mas by @jdx in [#11429](https://github.com/jdx/mise/pull/11429)
+- **(brew)** maintain linked-keg compatibility records by @benjaminwestern in [#11371](https://github.com/jdx/mise/pull/11371)
+- **(brew)** adopt existing cask completion links by @jdx in [#11383](https://github.com/jdx/mise/pull/11383)
+- **(brew)** use download client for artifacts by @jdx in [#11428](https://github.com/jdx/mise/pull/11428)
+- **(config)** preserve trailing comments when rewriting mise.toml by @JamBalaya56562 in [#11415](https://github.com/jdx/mise/pull/11415)
+- **(dotfiles)** prune stale symlink-each links, add exclude patterns by @jdx in [#11388](https://github.com/jdx/mise/pull/11388)
+- **(generate)** respect quiet flags for git pre-commit by @Marukome0743 in [#11310](https://github.com/jdx/mise/pull/11310)
+- **(generate)** use current env directive syntax by @Marukome0743 in [#11311](https://github.com/jdx/mise/pull/11311)
+- **(generate)** resolve hooks in git worktrees by @Marukome0743 in [#11313](https://github.com/jdx/mise/pull/11313)
+- **(link)** reject selector-style link requests by @risu729 in [#11218](https://github.com/jdx/mise/pull/11218)
+- **(npm)** trust packages pinned in mise lockfiles by @jdx in [#11384](https://github.com/jdx/mise/pull/11384)
+- **(npm)** route aube prompts through mise by @jdx in [#11441](https://github.com/jdx/mise/pull/11441)
+- **(oci)** accept 201 Created on chunked blob PATCH (AWS ECR compat) by @fire-ant in [#11376](https://github.com/jdx/mise/pull/11376)
+- **(pipx)** don't suggest uv when uvx is disabled for the package by @JamBalaya56562 in [#11373](https://github.com/jdx/mise/pull/11373)
+- **(shim)** attribute missing executables to configured tools by @jdx in [#11398](https://github.com/jdx/mise/pull/11398)
+- **(task)** support mixed file task dependencies by @jdx in [#11382](https://github.com/jdx/mise/pull/11382)
+- **(task)** deduplicate equivalent task sources by @risu729 in [#11204](https://github.com/jdx/mise/pull/11204)
+- **(task)** support multi-line arrays in file task headers by @Marukome0743 in [#11412](https://github.com/jdx/mise/pull/11412)
+- **(task)** allow false to override script headers by @risu729 in [#11112](https://github.com/jdx/mise/pull/11112)
+- **(task)** treat missing content-hash baseline as stale by @JamBalaya56562 in [#11447](https://github.com/jdx/mise/pull/11447)
+- suspend progress while displaying prompts by @jdx in [#11421](https://github.com/jdx/mise/pull/11421)
+
+### 🚜 Refactor
+
+- **(cli)** defer process termination by @risu729 in [#11440](https://github.com/jdx/mise/pull/11440)
+
+### 📚 Documentation
+
+- **(self-update)** document how packagers disable self-update by @JamBalaya56562 in [#11446](https://github.com/jdx/mise/pull/11446)
+- **(task)** document external cache inputs by @jdx in [#11395](https://github.com/jdx/mise/pull/11395)
+- replace dead taobao node mirror example with npmmirror by @Bartok9 in [#11217](https://github.com/jdx/mise/pull/11217)
+- fix redactions glob example using removed nested syntax by @Marukome0743 in [#11448](https://github.com/jdx/mise/pull/11448)
+
+### ⚡ Performance
+
+- replace the hyperfine job with instruction counting by @jdx in [#11387](https://github.com/jdx/mise/pull/11387)
+
+### 📦️ Dependency Updates
+
+- use rust-aware cargo resolver by @jdx in [#11380](https://github.com/jdx/mise/pull/11380)
+- pin tree-sitter-iter to 1.27.0 by @jdx in [#11385](https://github.com/jdx/mise/pull/11385)
+- lock file maintenance by @renovate[bot] in [#11372](https://github.com/jdx/mise/pull/11372)
+- pin decmpfs to unbreak musl builds by @jdx in [5f6d3d7](https://github.com/jdx/mise/commit/5f6d3d7b65d8d9d3c62d2a35f934bd60bcc42089)
+- update ghcr.io/jdx/mise:deb docker digest to d6ed2ad by @renovate[bot] in [#11403](https://github.com/jdx/mise/pull/11403)
+- update ghcr.io/jdx/mise:alpine docker digest to 9b376ce by @renovate[bot] in [#11402](https://github.com/jdx/mise/pull/11402)
+- update node.js to v24.18.0 by @renovate[bot] in [#11410](https://github.com/jdx/mise/pull/11410)
+- update ghcr.io/jdx/mise:rpm docker digest to 55792a7 by @renovate[bot] in [#11404](https://github.com/jdx/mise/pull/11404)
+- update jdx/mise-action digest to 9e7f763 by @renovate[bot] in [#11405](https://github.com/jdx/mise/pull/11405)
+- update jdx/pr-closer action to v1.2.0 by @renovate[bot] in [#11409](https://github.com/jdx/mise/pull/11409)
+- update actions/checkout action to v7.0.1 by @renovate[bot] in [#11406](https://github.com/jdx/mise/pull/11406)
+- update dependency go to v1.26.5 by @renovate[bot] in [#11407](https://github.com/jdx/mise/pull/11407)
+- update dependency prettier to v3.9.6 by @renovate[bot] in [#11414](https://github.com/jdx/mise/pull/11414)
+- update dependency python to v3.14.6 by @renovate[bot] in [#11408](https://github.com/jdx/mise/pull/11408)
+- update docker/login-action digest to 371161b by @renovate[bot] in [#11416](https://github.com/jdx/mise/pull/11416)
+- update rust crate ubi to 0.10 by @renovate[bot] in [#11411](https://github.com/jdx/mise/pull/11411)
+
+### 📦 Registry
+
+- add micro ([aqua:micro-editor/micro](https://github.com/micro-editor/micro)) by @Jai-JAP in [#11378](https://github.com/jdx/mise/pull/11378)
+- add tealdeer ([aqua:tealdeer-rs/tealdeer github:tealdeer-rs/tealdeer](https://github.com/tealdeer-rs/tealdeer github:tealdeer-rs/tealdeer)) by @Jai-JAP in [#11390](https://github.com/jdx/mise/pull/11390)
+- add aws-cdk by @garysassano in [#11394](https://github.com/jdx/mise/pull/11394)
+
+### Chore
+
+- update aqua registry workspace exclusion by @risu729 in [#11349](https://github.com/jdx/mise/pull/11349)
+
+### New Contributors
+
+- @Jai-JAP made their first contribution in [#11390](https://github.com/jdx/mise/pull/11390)
+- @fire-ant made their first contribution in [#11376](https://github.com/jdx/mise/pull/11376)
+- @benjaminwestern made their first contribution in [#11371](https://github.com/jdx/mise/pull/11371)
+
 ## [2026.7.15](https://github.com/jdx/mise/compare/v2026.7.14..v2026.7.15) - 2026-07-27
 
 ### 🚀 Features
