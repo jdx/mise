@@ -16,8 +16,12 @@ pub(crate) fn monorepo_scope(monorepo_root: &Path, dir: &Path) -> Option<String>
 
 /// Whether a task uses the stable `<provider>:<project>#<task>` workspace identity.
 pub fn is_workspace_project_task(task: &str) -> bool {
-    task.split_once('#')
-        .is_some_and(|(project, name)| project.contains(':') && !name.is_empty())
+    task.split_once('#').is_some_and(|(project, name)| {
+        !project.starts_with('/')
+            && !project.starts_with(':')
+            && project.contains(':')
+            && !name.is_empty()
+    })
 }
 
 /// Context for loading tasks with optional filtering hints
@@ -250,6 +254,14 @@ mod tests {
             Some("//apps/api".to_string())
         );
         assert_eq!(monorepo_scope(root, Path::new("other")), None);
+    }
+
+    #[test]
+    fn test_is_workspace_project_task() {
+        assert!(is_workspace_project_task("node:@scope/app#build"));
+        assert!(!is_workspace_project_task("//packages/app:release#v2"));
+        assert!(!is_workspace_project_task(":release#v2"));
+        assert!(!is_workspace_project_task("::release#v2"));
     }
 
     #[test]

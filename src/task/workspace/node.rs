@@ -122,25 +122,47 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                         .insert("package_manager".to_string(), package_manager.clone());
                 }
                 let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
-                project.tasks = manifest
-                    .scripts
-                    .into_iter()
-                    .map(|(name, script)| {
-                        let command = shell_words::join([package_manager, "run", &name, "--"]);
-                        (
-                            name,
-                            WorkspaceTask {
-                                command,
-                                description: script,
-                                source: source.clone(),
-                            },
-                        )
-                    })
-                    .collect();
+                project.tasks = workspace_tasks(&manifest, package_manager, &source);
                 Ok(project)
             })
             .collect()
     }
+
+    fn discover_project_tasks(
+        &self,
+        workspace_root: &Path,
+        project_root: &Path,
+    ) -> Result<BTreeMap<String, WorkspaceTask>> {
+        let Some(definition) = workspace_definition(workspace_root)? else {
+            return Ok(BTreeMap::new());
+        };
+        let source = project_root.join(PACKAGE_JSON);
+        let manifest = read_package_json(&workspace_root.join(&source))?;
+        let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
+        Ok(workspace_tasks(&manifest, package_manager, &source))
+    }
+}
+
+fn workspace_tasks(
+    manifest: &PackageJson,
+    package_manager: &str,
+    source: &Path,
+) -> BTreeMap<String, WorkspaceTask> {
+    manifest
+        .scripts
+        .iter()
+        .map(|(name, script)| {
+            let command = shell_words::join([package_manager, "run", name, "--"]);
+            (
+                name.clone(),
+                WorkspaceTask {
+                    command,
+                    description: script.clone(),
+                    source: source.to_path_buf(),
+                },
+            )
+        })
+        .collect()
 }
 
 fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinition>> {
@@ -287,6 +309,49 @@ mod tests {
                 .get("test:unit")
                 .map(|task| task.command.as_str()),
             Some("pnpm run test:unit --")
+        );
+    }
+
+    #[test]
+    fn root_overrides_reload_package_scripts() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app","scripts":{"old":"old command"}}"#,
+        );
+        write(
+            &temp.path().join("overrides/app/package.json"),
+            r#"{"name":"app","scripts":{"new":"new command"}}"#,
+        );
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            super::super::WorkspaceProjectOverride {
+                root: Some("overrides/app".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = super::super::WorkspaceProjectGraph::discover_all_with_overrides(
+            &[&NodeWorkspaceProvider],
+            temp.path(),
+            &overrides,
+        )
+        .unwrap();
+        let project = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert_eq!(project.root, Path::new("overrides/app"));
+        assert!(!project.tasks.contains_key("old"));
+        assert_eq!(
+            project.tasks.get("new"),
+            Some(&WorkspaceTask {
+                command: "pnpm run new --".to_string(),
+                description: "new command".to_string(),
+                source: PathBuf::from("overrides/app/package.json"),
+            })
         );
     }
 

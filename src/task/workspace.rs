@@ -130,6 +130,15 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
     /// The returned order is ignored. Project IDs, metadata, and dependency
     /// sets determine the canonical graph order instead.
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>>;
+
+    /// Re-discovers location-derived tasks after an explicit root override.
+    fn discover_project_tasks(
+        &self,
+        _workspace_root: &Path,
+        _project_root: &Path,
+    ) -> Result<BTreeMap<String, WorkspaceTask>> {
+        Ok(BTreeMap::new())
+    }
 }
 
 /// A validated, deterministically ordered project graph from workspace providers.
@@ -204,7 +213,30 @@ impl WorkspaceProjectGraph {
         workspace_root: &Path,
         overrides: &BTreeMap<String, WorkspaceProjectOverride>,
     ) -> Result<WorkspaceProjectGraph> {
-        Self::collect_provider_projects(providers, workspace_root)?.with_overrides(overrides)
+        let mut graph = Self::collect_provider_projects(providers, workspace_root)?
+            .with_overrides(overrides)?;
+        for (raw_id, config) in overrides {
+            if config.remove || config.root.is_none() {
+                continue;
+            }
+            let id = raw_id.parse::<ProjectId>()?;
+            let Some((provider_id, _)) = id.as_str().split_once(':') else {
+                continue;
+            };
+            let Some(provider) = providers
+                .iter()
+                .find(|provider| provider.id() == provider_id)
+            else {
+                continue;
+            };
+            let project = graph
+                .projects
+                .get_mut(&id)
+                .expect("non-removed override project exists");
+            project.tasks =
+                provider.discover_project_tasks(workspace_root, project.root.as_path())?;
+        }
+        Ok(graph)
     }
 
     fn collect_provider_projects(
