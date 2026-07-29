@@ -205,6 +205,7 @@ impl ToolStubFile {
                 os: self.os.clone(),
                 depends: None,
                 install_env: self.install_env.clone(),
+                version_order: None,
             },
             opts: opts.into(),
         };

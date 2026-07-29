@@ -405,7 +405,11 @@ impl ToolRequest {
             return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
-            let matches = backend.list_installed_versions_matching(v);
+            let matches = crate::backend::order_versions(
+                backend.list_installed_versions_matching(v),
+                &self.options(),
+                backend.id(),
+            );
             if matches.iter().any(|m| m == v) {
                 return Ok(Some(v.to_string()));
             }

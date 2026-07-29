@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Version ordering is a resolution policy. Remote listings remain in backend
+# source order so mise-versions can cache source data independently of policy.
+
+VERSION_LIST_DIR="$TMPDIR/version-order-list"
+mkdir -p "$VERSION_LIST_DIR"
+cat <<'EOF' >"$VERSION_LIST_DIR/versions.txt"
+11.11.0
+10.34.5
+EOF
+
+HTTP_PORT_FILE="$TMPDIR/version_order_port"
+python3 -c "
+import http.server, socketserver
+s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
+with open('$HTTP_PORT_FILE', 'w') as f:
+    f.write(str(s.server_address[1]))
+s.serve_forever()
+" &
+HTTP_SERVER_PID=$!
+
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+cleanup() {
+  kill $HTTP_SERVER_PID 2>/dev/null || true
+}
+trap cleanup EXIT
+
+if ! curl --retry 5 --retry-connrefused --retry-delay 1 -fsS "http://localhost:$HTTP_PORT/versions.txt" >/dev/null; then
+  fail "HTTP server failed to respond"
+fi
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+EOF
+
+assert "mise latest http:version-order" "10.34.5"
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+version_order = "semver"
+EOF
+
+assert "mise latest http:version-order" "11.11.0"
+assert "mise ls-remote http:version-order" "11.11.0
+10.34.5"
+
+mkdir -p "$MISE_DATA_DIR/installs/http-version-order/10.34.5"
+mkdir -p "$MISE_DATA_DIR/installs/http-version-order/11.11.0"
+ln -s 10.34.5 "$MISE_DATA_DIR/installs/http-version-order/latest"
+
+assert "mise latest --installed http:version-order" "11.11.0"

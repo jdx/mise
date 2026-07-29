@@ -152,6 +152,21 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
+### Version ordering
+
+By default, mise resolves `latest` and version prefixes using the order returned by the tool's backend. Set `version_order = "semver"` for tools whose source publishes valid [Semantic Versions](https://semver.org/) out of semantic-precedence order:
+
+```toml
+[tools]
+pnpm = { version = "latest", version_order = "semver" }
+```
+
+With semantic ordering enabled, mise filters the candidate versions first (including prerelease and release-age filters), then selects the highest remaining semantic version. Backend shortcuts such as a marked-latest release or package-manager dist-tag are bypassed so the full candidate list can be compared.
+
+Every matching candidate must be a valid semantic version. If the list mixes semantic versions with tags such as `nightly`, mise warns and preserves the source order instead. Build metadata does not affect semantic precedence, so equal-precedence versions retain their source order.
+
+This option changes version resolution only. `mise ls-remote` and the remote-version data cached by `mise-versions` remain in source order.
+
 ### Tool postinstall commands
 
 Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only to when a specific tool is installed.

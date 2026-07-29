@@ -66,7 +66,10 @@ impl OutdatedInfo {
             // When minimum_release_age causes "latest" to resolve to a version not yet
             // installed on disk, fall back to finding the highest installed version.
             // Otherwise to_remove in `mise up` won't know which old version to uninstall.
-            let Some(current) = backend.latest_installed_version(None)? else {
+            let request_options = tv.request.options();
+            let Some(current) =
+                backend.latest_installed_version_with_opts(None, &request_options)?
+            else {
                 return Ok(None);
             };
             let current_tv = ToolVersion::new(tv.request.clone(), current);
@@ -81,7 +84,9 @@ impl OutdatedInfo {
             ToolRequest::Prefix { prefix, .. } => Some(prefix.clone()),
             _ => return Ok(None),
         };
-        let Some(current) = backend.latest_installed_version(query)? else {
+        let request_options = tv.request.options();
+        let Some(current) = backend.latest_installed_version_with_opts(query, &request_options)?
+        else {
             return Ok(None);
         };
         let current_tv = ToolVersion::new(tv.request.clone(), current);

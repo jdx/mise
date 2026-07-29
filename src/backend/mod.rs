@@ -37,7 +37,7 @@ use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
-    install_state, is_outdated_version,
+    VersionOrder, install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -2203,8 +2203,6 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
-        // No async config lookup available here; fall back to inline/registry
-        // opts, which is the best we have for a sync path.
         let filter = !self.include_prereleases(&self.ba().opts());
         self.fuzzy_match_filter(versions, query, filter)
     }
@@ -2216,7 +2214,8 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_remote_versions(config).await?;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !self.include_prereleases(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
+        let versions = self.fuzzy_match_filter(versions, query, filter);
+        Ok(order_versions(versions, &opts, self.id()))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -2251,7 +2250,8 @@ pub trait Backend: Debug + Send + Sync {
         };
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !self.include_prereleases(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
+        let versions = self.fuzzy_match_filter(versions, query, filter);
+        Ok(order_versions(versions, &opts, self.id()))
     }
 
     async fn latest_version_for_query(
@@ -2281,6 +2281,8 @@ pub trait Backend: Debug + Send + Sync {
                         .await?
                 }
             };
+            let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+            matches = order_versions(matches, &opts, self.id());
         }
         Ok(find_match_in_list(&matches, query))
     }
@@ -2315,7 +2317,10 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
     ) -> eyre::Result<Option<String>> {
         let resolved_query = query.as_deref().unwrap_or("latest");
-        if resolved_query == "latest" {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        if resolved_query == "latest"
+            && opts.version_order.unwrap_or_default() == VersionOrder::Source
+        {
             if let Some(info) = self.latest_stable_version_info(config).await? {
                 return Ok(Some(info.version));
             }
@@ -2345,7 +2350,10 @@ pub trait Backend: Debug + Send + Sync {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
         let mut fallback_refresh = refresh;
-        let latest = if resolved_query == "latest" {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let latest = if resolved_query == "latest"
+            && opts.version_order.unwrap_or_default() == VersionOrder::Source
+        {
             match self.latest_stable_version_info(config).await? {
                 Some(info) => Some(info),
                 None => self
@@ -2405,17 +2413,41 @@ pub trait Backend: Debug + Send + Sync {
                         .to_string();
                     return Ok(Some(version));
                 }
-                Ok(file::dir_subdirs(&self.ba().installs_path)
-                    .unwrap_or_default()
+                Ok(self
+                    .list_installed_version_dirs()
                     .into_iter()
-                    .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
-                    .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
         }
+    }
+    fn latest_installed_version_with_opts(
+        &self,
+        query: Option<String>,
+        opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<String>> {
+        if opts.version_order.unwrap_or_default() == VersionOrder::Source {
+            return self.latest_installed_version(query);
+        }
+        let matches = match query.as_deref() {
+            Some(query) => self.list_installed_versions_matching(query),
+            None => self.list_installed_version_dirs(),
+        };
+        let matches = order_versions(matches, opts, self.id());
+        Ok(match query {
+            Some(query) => find_match_in_list(&matches, &query),
+            None => matches.last().cloned(),
+        })
+    }
+    fn list_installed_version_dirs(&self) -> Vec<String> {
+        file::dir_subdirs(&self.ba().installs_path)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| !v.starts_with('.'))
+            .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+            .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+            .filter(|v| v != "latest")
+            .collect()
     }
 
     /// Get version info for a specific version (including checksum for rolling releases)
@@ -3729,6 +3761,11 @@ mod latest_version_tests {
             self
         }
 
+        fn with_remote_versions(mut self, remote_versions: Vec<VersionInfo>) -> Self {
+            self.remote_versions = remote_versions;
+            self
+        }
+
         fn stable_calls(&self) -> usize {
             self.stable_calls.load(Ordering::SeqCst)
         }
@@ -3807,6 +3844,104 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 2);
         assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_semver_order_bypasses_fast_path_and_selects_highest_version() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-semver-order[version_order=semver]")
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "11.11.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "10.34.5".to_string(),
+                    created_at: Some("2024-02-01".to_string()),
+                    ..Default::default()
+                },
+            ]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("11.11.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 0);
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_semver_order_applies_after_release_age_filter() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-semver-order-before[version_order=semver]")
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "2.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-02-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "nightly-3".to_string(),
+                    created_at: Some("2026-01-01".to_string()),
+                    ..Default::default()
+                },
+            ]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let before = crate::duration::parse_into_timestamp("2025-01-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
+    }
+
+    #[test]
+    fn test_semver_order_preserves_source_order_for_mixed_versions() {
+        let opts = crate::toolset::parse_tool_options("version_order=semver");
+        let source = vec![
+            "2.0.0".to_string(),
+            "1.0.0".to_string(),
+            "nightly-3".to_string(),
+        ];
+
+        assert_eq!(order_versions(source.clone(), &opts, "test-mixed"), source);
+    }
+
+    #[test]
+    fn test_semver_order_ignores_build_metadata() {
+        let opts = crate::toolset::parse_tool_options("version_order=semver");
+        let source = vec!["1.0.0-alpha+002".to_string(), "1.0.0-alpha+001".to_string()];
+
+        assert_eq!(
+            order_versions(source.clone(), &opts, "test-build-metadata"),
+            source
+        );
     }
 
     #[tokio::test]
@@ -4273,6 +4408,32 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 
 fn tool_option_bool(value: &toml::Value) -> bool {
     crate::backend::options::bool_value_or_default("prerelease", value, false)
+}
+
+pub(crate) fn order_versions(
+    versions: Vec<String>,
+    opts: &ToolVersionOptions,
+    tool: &str,
+) -> Vec<String> {
+    if opts.version_order.unwrap_or_default() == VersionOrder::Source {
+        return versions;
+    }
+    let parsed = match versions
+        .iter()
+        .map(|version| semver::Version::parse(version))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            warn_once!(
+                "{tool} version_order=semver requires every matching version to use semantic versioning: {error}; preserving source order"
+            );
+            return versions;
+        }
+    };
+    let mut versions = versions.into_iter().zip(parsed).collect::<Vec<_>>();
+    versions.sort_by(|(_, left), (_, right)| left.cmp_precedence(right));
+    versions.into_iter().map(|(version, _)| version).collect()
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection

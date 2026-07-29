@@ -418,11 +418,13 @@ impl ToolVersion {
             && !is_offline
             && !prefer_offline;
         if v == "latest" {
-            if !opts.latest_versions
-                && !should_filter_installed_versions
-                && let Some(v) = backend.latest_installed_version(None)?
-            {
-                return build(v);
+            if !opts.latest_versions && !should_filter_installed_versions {
+                let request_options = request.options();
+                if let Some(v) =
+                    backend.latest_installed_version_with_opts(None, &request_options)?
+                {
+                    return build(v);
+                }
             }
             if !is_offline
                 && let Some(v) = backend
@@ -486,7 +488,11 @@ impl ToolVersion {
             // channel name in the backend's version list as before.
         }
         if !opts.latest_versions {
-            let matches = backend.list_installed_versions_matching(&v);
+            let matches = crate::backend::order_versions(
+                backend.list_installed_versions_matching(&v),
+                &request.options(),
+                backend.id(),
+            );
             if matches.contains(&v) {
                 return build(v);
             }
@@ -646,7 +652,12 @@ impl ToolVersion {
             && !prefer_offline;
         if !opts.latest_versions
             && !should_filter_installed_versions
-            && let Some(v) = backend.list_installed_versions_matching(prefix).last()
+            && let Some(v) = crate::backend::order_versions(
+                backend.list_installed_versions_matching(prefix),
+                &request.options(),
+                backend.id(),
+            )
+            .last()
         {
             return Ok(Self::new(request, v.to_string()));
         }

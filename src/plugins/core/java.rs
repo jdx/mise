@@ -483,7 +483,9 @@ impl Backend for JavaPlugin {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query, true))
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let versions = self.fuzzy_match_filter(versions, query, true);
+        Ok(crate::backend::order_versions(versions, &opts, self.id()))
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {

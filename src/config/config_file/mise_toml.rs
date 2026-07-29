@@ -197,6 +197,15 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("install_env", env.into());
     }
+    if let Some(version_order) = core.version_order {
+        table.insert(
+            "version_order",
+            Value::from(match version_order {
+                crate::toolset::VersionOrder::Source => "source",
+                crate::toolset::VersionOrder::Semver => "semver",
+            }),
+        );
+    }
 }
 
 #[derive(Default, Deserialize)]
