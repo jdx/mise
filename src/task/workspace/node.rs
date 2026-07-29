@@ -137,7 +137,13 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             return Ok(BTreeMap::new());
         };
         let source = project_root.join(PACKAGE_JSON);
-        let manifest = read_package_json(&workspace_root.join(&source))?;
+        let manifest_path = workspace_root.join(&source);
+        if !manifest_path.is_file() {
+            return Ok(BTreeMap::new());
+        }
+        let Some(manifest) = read_package_json_if_valid(&manifest_path)? else {
+            return Ok(BTreeMap::new());
+        };
         let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
         Ok(workspace_tasks(&manifest, package_manager, &source))
     }
@@ -352,6 +358,52 @@ mod tests {
                 description: "new command".to_string(),
                 source: PathBuf::from("overrides/app/package.json"),
             })
+        );
+    }
+
+    #[test]
+    fn root_overrides_without_valid_manifests_have_no_scripts() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app","scripts":{"old":"old command"}}"#,
+        );
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            super::super::WorkspaceProjectOverride {
+                root: Some("overrides/app".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let discover = || {
+            super::super::WorkspaceProjectGraph::discover_all_with_overrides(
+                &[&NodeWorkspaceProvider],
+                temp.path(),
+                &overrides,
+            )
+            .unwrap()
+        };
+
+        assert!(
+            discover()
+                .get(&ProjectId::new("node", "app").unwrap())
+                .unwrap()
+                .tasks
+                .is_empty()
+        );
+
+        write(&temp.path().join("overrides/app/package.json"), "{");
+        assert!(
+            discover()
+                .get(&ProjectId::new("node", "app").unwrap())
+                .unwrap()
+                .tasks
+                .is_empty()
         );
     }
 

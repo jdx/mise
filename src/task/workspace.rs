@@ -233,8 +233,16 @@ impl WorkspaceProjectGraph {
                 .projects
                 .get_mut(&id)
                 .expect("non-removed override project exists");
-            project.tasks =
-                provider.discover_project_tasks(workspace_root, project.root.as_path())?;
+            match provider.discover_project_tasks(workspace_root, project.root.as_path()) {
+                Ok(tasks) => project.tasks = tasks,
+                Err(error) => {
+                    warn!(
+                        "failed to infer workspace tasks for {id} at {}: {error:#}",
+                        project.root.display()
+                    );
+                    project.tasks.clear();
+                }
+            }
         }
         Ok(graph)
     }
@@ -550,6 +558,36 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct FailingTaskProvider;
+
+    impl WorkspaceProvider for FailingTaskProvider {
+        fn id(&self) -> &str {
+            "test"
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            let mut project = WorkspaceProject::new(ProjectId::new("test", "app").unwrap(), "old");
+            project.tasks.insert(
+                "build".to_string(),
+                WorkspaceTask {
+                    command: "old build".to_string(),
+                    description: "old build".to_string(),
+                    source: "old/manifest".into(),
+                },
+            );
+            Ok(vec![project])
+        }
+
+        fn discover_project_tasks(
+            &self,
+            _workspace_root: &Path,
+            _project_root: &Path,
+        ) -> Result<BTreeMap<String, WorkspaceTask>> {
+            bail!("task discovery failed")
+        }
+    }
+
     fn project(provider: &str, name: &str, root: &str) -> WorkspaceProject {
         WorkspaceProject::new(ProjectId::new(provider, name).unwrap(), root)
     }
@@ -829,6 +867,28 @@ mod tests {
                 .dependencies,
             BTreeSet::from([ProjectId::new("node", "explicit").unwrap()])
         );
+    }
+
+    #[test]
+    fn override_task_inference_errors_are_isolated() {
+        let overrides = BTreeMap::from([(
+            "test:app".to_string(),
+            WorkspaceProjectOverride {
+                root: Some("new".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides(
+            &[&FailingTaskProvider],
+            Path::new("/workspace"),
+            &overrides,
+        )
+        .unwrap();
+        let project = graph.get(&ProjectId::new("test", "app").unwrap()).unwrap();
+
+        assert_eq!(project.root, Path::new("new"));
+        assert!(project.tasks.is_empty());
     }
 
     #[test]
