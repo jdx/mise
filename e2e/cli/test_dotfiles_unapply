@@ -5,6 +5,7 @@ echo "linked" >dotfiles/linked
 echo "copied" >dotfiles/copied
 echo "one" >dotfiles/links/one
 echo "stale" >dotfiles/links/stale
+echo "excluded" >dotfiles/links/excluded
 echo "managed" >dotfiles/copydir/managed
 cat <<'EOF' >dotfiles/rendered.tmpl
 {{ exec(command="touch $HOME/unapply-rendered") }}rendered
@@ -19,7 +20,7 @@ cat <<EOF >mise.toml
 "~/.managed-copy" = { source = "dotfiles/copied", mode = "copy" }
 "~/.managed-rendered" = { source = "dotfiles/rendered.tmpl", mode = "template" }
 "~/.managed-mutating" = { source = "dotfiles/mutating.tmpl", mode = "template" }
-"~/.managed-links" = { source = "dotfiles/links", mode = "symlink-each" }
+"~/.managed-links" = { source = "dotfiles/links", mode = "symlink-each", exclude = ["excluded"] }
 "~/.managed-copydir" = { source = "dotfiles/copydir", mode = "copy" }
 "~/.managed-rc/block" = { block = "managed block" }
 "~/.managed-lines/line" = { line = "possibly preexisting" }
@@ -88,8 +89,9 @@ assert_not_contains "cat ~/.managed-rc" "mise:block"
 assert "od -An -tx1 ~/.managed-rc | tr -d ' \n'" "6265666f72650d0a0d0a61667465722d6e6f2d6e65776c696e65"
 
 # symlink-each removes path-equivalent and stale exact mappings, but preserves
-# an unrelated user-created link and its containing directory.
+# unrelated and excluded user-created links and their containing directory.
 ln -s "$PWD/dotfiles/links/one" ~/.managed-links/alias
+ln -s "$PWD/dotfiles/links/excluded" ~/.managed-links/excluded
 rm ~/.managed-links/one
 relative_one="$(realpath --relative-to="$HOME/.managed-links" "$PWD/dotfiles/links/one")"
 ln -s "$relative_one" ~/.managed-links/one
@@ -98,6 +100,7 @@ assert_succeed "mise bootstrap dotfiles unapply ~/.managed-links --yes"
 assert_fail "test -e $HOME/.managed-links/one"
 assert_fail "test -e $HOME/.managed-links/stale"
 assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
+assert "readlink ~/.managed-links/excluded" "$PWD/dotfiles/links/excluded"
 
 # Modified copies are refused unless forced.
 assert_fail "mise bootstrap dotfiles unapply ~/.managed-copy --yes" "use --force"

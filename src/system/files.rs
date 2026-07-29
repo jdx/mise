@@ -1311,6 +1311,11 @@ fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         let Ok(rel) = entry.path().strip_prefix(&req.target) else {
             continue;
         };
+        // Excluded paths are outside this entry's managed footprint. Even an
+        // exact source-shaped link there may have been created by the user.
+        if is_excluded(rel, &req.exclude) {
+            continue;
+        }
         let dest = match std::fs::read_link(entry.path()) {
             Ok(dest) => dest,
             Err(err) => {
