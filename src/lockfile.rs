@@ -1553,8 +1553,14 @@ fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
     let Some(monorepo_root) = config.monorepo_lockfile_root() else {
         return IndexSet::new();
     };
-    let Ok(config_roots) = config.monorepo_config_root_dirs_for_lockfiles() else {
-        return IndexSet::new();
+    let config_roots = match config.monorepo_config_root_dirs_for_lockfiles() {
+        Ok(config_roots) => config_roots,
+        Err(err) => {
+            warn_once!(
+                "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
+            );
+            return IndexSet::new();
+        }
     };
     let mut source_lockfiles = IndexSet::new();
 
@@ -1568,9 +1574,7 @@ fn monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf> {
             }
         }
         for config_path in crate::config::config_paths_in_dir(&config_root) {
-            if let Some(source) =
-                legacy_lockfile_path_for_config(config, &config_path, &monorepo_root)
-            {
+            if let Some(source) = legacy_lockfile_path_for_config(&config_path, &monorepo_root) {
                 source_lockfiles.insert(source);
             }
         }
@@ -1595,12 +1599,8 @@ pub(crate) fn lockfile_variant_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     paths.into_iter().collect()
 }
 
-fn legacy_lockfile_path_for_config(
-    config: &Config,
-    config_path: &Path,
-    monorepo_root: &Path,
-) -> Option<PathBuf> {
-    if !config_path.starts_with(monorepo_root) || config.monorepo_lockfile_root().is_none() {
+fn legacy_lockfile_path_for_config(config_path: &Path, monorepo_root: &Path) -> Option<PathBuf> {
+    if !config_path.starts_with(monorepo_root) {
         return None;
     }
     let (source, _) = lockfile_path_for_config(config_path, None);
@@ -3001,7 +3001,7 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
     let (lockfile_path, _is_local) = lockfile_path_for_config(path, monorepo_root.as_deref());
     let legacy_path = monorepo_root
         .as_deref()
-        .and_then(|root| legacy_lockfile_path_for_config(config, path, root));
+        .and_then(|root| legacy_lockfile_path_for_config(path, root));
 
     read_lockfile_at(lockfile_path, legacy_path)
 }

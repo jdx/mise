@@ -485,28 +485,19 @@ impl Config {
             return None;
         }
         let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
+
+        // An explicit opt-in always routes descendant configs to the root
+        // lockfile, even when config_roots cannot be resolved. Avoid expanding
+        // config_roots here because this method is called for every tool during
+        // lockfile resolution, including on every shim invocation. Commands
+        // that migrate legacy lockfiles validate config_roots separately.
+        if setting == Some(true) {
+            return Some(monorepo_root);
+        }
+
         match self.monorepo_config_root_dirs(None) {
             Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
-            Ok(_) => {
-                if setting == Some(true) {
-                    warn_once!(
-                        "[monorepo] lockfile = true is set, but [monorepo].config_roots did not match any directories; using root lockfiles without migration"
-                    );
-                    Some(monorepo_root)
-                } else {
-                    None
-                }
-            }
-            Err(err) => {
-                if setting == Some(true) {
-                    warn_once!(
-                        "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
-                    );
-                    Some(monorepo_root)
-                } else {
-                    None
-                }
-            }
+            Ok(_) | Err(_) => None,
         }
     }
 
