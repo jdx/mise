@@ -744,7 +744,10 @@ impl Config {
                     inferred_workspace_tasks(&config, &task_definitions, graph).await
                 }
                 Some(Err(err)) => {
-                    warn!("failed to infer workspace tasks: {err:#}");
+                    warn!(
+                        "failed to load workspace project graph; inferred tasks and root task \
+                         defaults are unavailable: {err:#}"
+                    );
                     Vec::new()
                 }
                 None => Vec::new(),
@@ -3828,16 +3831,17 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
-    load_tasks_in_dir_with_definitions(
-        config,
-        dir,
+    let workspace_graph = Settings::get()
+        .experimental
+        .then(|| config.workspace_project_graph());
+    let mut definitions = collect_task_definitions(
         config_files,
-        &TaskDefinitions {
-            templates: templates.clone(),
-            workspace_defaults: None,
-        },
-    )
-    .await
+        workspace_graph
+            .as_ref()
+            .and_then(|graph| graph.as_ref().ok()),
+    );
+    definitions.templates = templates.clone();
+    load_tasks_in_dir_with_definitions(config, dir, config_files, &definitions).await
 }
 
 async fn load_tasks_in_dir_with_definitions(
