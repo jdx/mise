@@ -17,8 +17,7 @@ use petgraph::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::once;
@@ -1474,6 +1473,99 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<_>>()?;
         Ok((depends, depends_post))
+    }
+
+    /// Expands `^task` dependencies to the matching task in every upstream workspace project.
+    ///
+    /// Each expanded dependency is optional because not every project in the dependency closure
+    /// needs to implement the requested task. The workspace graph traversal still continues
+    /// through those projects so matching tasks farther upstream are retained.
+    pub(crate) fn resolve_workspace_task_dependencies(
+        &mut self,
+        graph: Option<&workspace::WorkspaceProjectGraph>,
+        monorepo_root: &Path,
+    ) -> Result<()> {
+        if !self.depends.iter().any(|dep| dep.task.starts_with('^')) {
+            return Ok(());
+        }
+        let Some(graph) = graph else {
+            self.depends
+                .retain(|dependency| !dependency.task.starts_with('^'));
+            return Ok(());
+        };
+
+        let mut project_ids = BTreeSet::new();
+        let stable_task_names = once(self.name.as_str())
+            .chain(self.aliases.iter().map(String::as_str))
+            .filter(|name| is_workspace_project_task(name))
+            .collect_vec();
+
+        for name in stable_task_names {
+            let (project_id, _) = name
+                .split_once('#')
+                .expect("workspace project task contains #");
+            if let Ok(project_id) = project_id.parse::<workspace::ProjectId>()
+                && graph.get(&project_id).is_some()
+            {
+                project_ids.insert(project_id);
+            }
+        }
+
+        if project_ids.is_empty()
+            && let Some(config_root) = self.config_root.as_deref()
+        {
+            let config_root = file::desymlink_path(config_root);
+            project_ids.extend(
+                graph
+                    .projects()
+                    .filter(|project| {
+                        file::desymlink_path(&monorepo_root.join(&project.root)) == config_root
+                    })
+                    .map(|project| project.id.clone()),
+            );
+        }
+
+        if project_ids.is_empty() {
+            self.depends
+                .retain(|dependency| !dependency.task.starts_with('^'));
+            return Ok(());
+        }
+
+        let mut upstream_roots = BTreeSet::new();
+        for project_id in &project_ids {
+            upstream_roots.extend(
+                graph
+                    .matching_dependency_projects(project_id, |_| true)?
+                    .into_iter()
+                    .map(|project| project.root.clone()),
+            );
+        }
+
+        let mut expanded = Vec::new();
+        for dependency in &self.depends {
+            let Some(task_name) = dependency
+                .task
+                .strip_prefix('^')
+                .filter(|task_name| !task_name.is_empty())
+            else {
+                expanded.push(dependency.clone());
+                continue;
+            };
+
+            expanded.extend(upstream_roots.iter().map(|root| {
+                let mut dependency = dependency.clone();
+                let scope = if root.as_os_str().is_empty() || root == Path::new(".") {
+                    "//".to_string()
+                } else {
+                    format!("//{}", root.to_string_lossy().replace('\\', "/"))
+                };
+                dependency.task = format!("{scope}:{task_name}");
+                dependency.optional = true;
+                dependency
+            }));
+        }
+        self.depends = expanded;
+        Ok(())
     }
 
     /// True when mise should not run the usage parser against this task's
