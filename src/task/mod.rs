@@ -2496,8 +2496,10 @@ where
 /// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
 pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
     // Check if this is a bare task name that should be treated as relative
-    let is_bare_name =
-        !pattern.starts_with("//") && !pattern.starts_with("::") && !pattern.starts_with(':');
+    let is_bare_name = !pattern.starts_with("//")
+        && !pattern.starts_with("::")
+        && !pattern.starts_with(':')
+        && !is_workspace_project_task(pattern);
     let parent_is_scoped = parent_task.is_some_and(|parent| {
         parent.name.starts_with("//") || is_workspace_project_task(&parent.name)
     });
@@ -3735,6 +3737,10 @@ echo "hello world"
         assert_eq!(
             resolve_task_pattern("lint", Some(&parent_task)),
             "node:@scope/app#lint"
+        );
+        assert_eq!(
+            resolve_task_pattern("node:@scope/other#test", Some(&parent_task)),
+            "node:@scope/other#test"
         );
 
         // Test 9: Pattern with wildcards
