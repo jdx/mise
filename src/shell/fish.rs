@@ -101,7 +101,9 @@ impl Shell for Fish {
                     echo;
                 end;
 
-                functions --erase __mise_cd_hook;
+                if test "$mise_fish_mode" = "eval_after_arrow";
+                    functions --erase __mise_cd_hook;
+                end;
             end;
 
             __mise_env_eval
