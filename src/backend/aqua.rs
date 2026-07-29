@@ -4666,6 +4666,31 @@ mod lock_candidate_tests {
         assert_eq!(version_from_tag(&pkg, "other-1.2.3").unwrap(), None);
     }
 
+    #[test]
+    fn test_version_from_tag_matches_override_version_prefix() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: oxc-project
+repo_name: oxc
+version_constraint: "false"
+version_overrides:
+  - version_constraint: semver(">= 1.17.0")
+    version_prefix: oxlint_v
+    error_message: unavailable
+  - version_constraint: "true"
+    version_prefix: apps_v
+    asset: oxlint.tar.gz
+    format: tar.gz
+"#,
+        );
+
+        assert_eq!(
+            version_from_tag(&pkg, "apps_v1.76.0").unwrap(),
+            Some("1.76.0".to_string())
+        );
+    }
+
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {
         let mut pkg: AquaPackage = serde_yaml::from_str(yaml).unwrap();
         pkg.setup_version_filter().unwrap();

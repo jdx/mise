@@ -480,7 +480,7 @@ impl AquaPackage {
     fn version_override(&self, versions: &[&str]) -> Option<&AquaPackage> {
         let expressions = versions
             .iter()
-            .map(|v| (self.expr_parser(v), self.expr_ctx(v)))
+            .map(|v| (*v, self.expr_parser(v), self.expr_ctx(v)))
             .collect_vec();
         vec![self]
             .into_iter()
@@ -489,7 +489,12 @@ impl AquaPackage {
                 if vo.version_constraint.is_empty() {
                     true
                 } else {
-                    expressions.iter().any(|(expr, ctx)| {
+                    expressions.iter().any(|(version, expr, ctx)| {
+                        let version_prefix =
+                            vo.version_prefix.as_ref().or(self.version_prefix.as_ref());
+                        if version_prefix.is_some_and(|prefix| !version.starts_with(prefix)) {
+                            return false;
+                        }
                         expr.eval(&vo.version_constraint, ctx)
                             .map_err(|e| {
                                 log::debug!("error parsing {}: {e}", vo.version_constraint)
@@ -1926,6 +1931,38 @@ packages:
         // which sorts before numeric versions.
         assert!(result.error_message.is_some());
         assert!(result.asset.is_empty());
+    }
+
+    #[test]
+    fn test_version_override_matches_version_prefix() {
+        let pkg = AquaPackage {
+            version_constraint: "false".to_string(),
+            version_overrides: vec![
+                AquaPackage {
+                    version_constraint: "semver(\">= 1.17.0\")".to_string(),
+                    version_prefix: Some("oxlint_v".to_string()),
+                    error_message: Some("unavailable".to_string()),
+                    ..Default::default()
+                },
+                AquaPackage {
+                    version_constraint: "true".to_string(),
+                    version_prefix: Some("apps_v".to_string()),
+                    asset: "oxlint.tar.gz".to_string(),
+                    format: "tar.gz".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let apps = pkg.version_override(&["apps_v1.76.0"]).unwrap();
+        assert_eq!(apps.version_prefix.as_deref(), Some("apps_v"));
+        assert!(apps.error_message.is_none());
+        assert_eq!(apps.asset, "oxlint.tar.gz");
+
+        let oxlint = pkg.version_override(&["oxlint_v1.76.0"]).unwrap();
+        assert_eq!(oxlint.version_prefix.as_deref(), Some("oxlint_v"));
+        assert_eq!(oxlint.error_message.as_deref(), Some("unavailable"));
     }
 
     #[test]
