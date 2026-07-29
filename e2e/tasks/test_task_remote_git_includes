@@ -223,8 +223,8 @@ snapshot_checkout_count=$(
 assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
 
 assert_fail "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run snapshot_failure"
-# A failed run exits directly and leaves its unrelated tempfile::tempdir
-# (`.tmp*`) for the e2e harness; the remote checkout itself must be gone.
+# A failed run may leave its unrelated tempfile::tempdir (`.tmp*`) for the e2e
+# harness; the command-scoped remote checkout itself must be gone.
 assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -maxdepth 1 ! -name '.tmp*' -print -quit | grep -q ."
 
 echo "All tests passed!"
