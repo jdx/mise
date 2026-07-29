@@ -73,3 +73,11 @@ assert "mise shell-alias get myalias2" "echo test2"
 
 # shell-alias set with no value and no = fails
 assert_fail "mise shell-alias set myalias3"
+
+# comments around a shell alias survive the value being replaced
+# See: https://github.com/jdx/mise/discussions/4797
+printf '[shell_alias]\n# keep this comment\nll = "ls -l" # keep me\n' >"$MISE_CONFIG_DIR/config.toml"
+mise shell-alias set ll "ls -la"
+assert "cat '$MISE_CONFIG_DIR/config.toml'" '[shell_alias]
+# keep this comment
+ll = "ls -la" # keep me'

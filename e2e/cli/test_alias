@@ -7,3 +7,11 @@ assert_not_contains "mise alias ls" "tiny  xxx"
 
 assert "mise alias set nushell aqua:nushell/nushell"
 assert "mise x nushell -- nu --version"
+
+# comments around an alias survive the value being replaced
+# See: https://github.com/jdx/mise/discussions/4797
+printf '[tool_alias.tiny.versions]\n# keep this comment\nxxx = "1" # keep me\n' >"$MISE_CONFIG_DIR/config.toml"
+assert "mise alias set tiny xxx 2"
+assert "cat '$MISE_CONFIG_DIR/config.toml'" '[tool_alias.tiny.versions]
+# keep this comment
+xxx = "2" # keep me'
