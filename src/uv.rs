@@ -4,7 +4,7 @@ use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::toolset::Toolset;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::{collections::HashMap, sync::Arc};
@@ -13,6 +13,7 @@ use tokio::sync::OnceCell;
 // use a mutex to prevent deadlocks that occurs due to reentrantly initialization
 // when resolving the venv path or env vars
 static UV_VENV: Lazy<OnceCell<Option<Venv>>> = Lazy::new(Default::default);
+const UV_PROJECT_ENVIRONMENT: &str = "UV_PROJECT_ENVIRONMENT";
 
 pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv> {
     UV_VENV
@@ -23,7 +24,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
                 return None;
             }
             let uv_root = uv_root()?;
-            let venv_path = uv_root.join(".venv");
+            let venv_path = uv_venv_path(config, &uv_root);
             if !venv_path.exists() {
                 if uv_auto.should_create() {
                     match create_python_venv(
@@ -78,6 +79,38 @@ pub(crate) fn uv_root() -> Option<PathBuf> {
     file::find_up(dirs::CWD.as_ref()?, &["uv.lock"]).map(|p| p.parent().unwrap().to_path_buf())
 }
 
+pub(crate) fn uv_venv_path(config: &Config, uv_root: &Path) -> PathBuf {
+    let project_environment = if let Some(env_results) = config.env_results_cached() {
+        if let Some((value, _)) = env_results.env.get(UV_PROJECT_ENVIRONMENT) {
+            Some(value.as_str())
+        } else if env_results.env_remove.contains(UV_PROJECT_ENVIRONMENT) {
+            None
+        } else {
+            env::PRISTINE_ENV
+                .get(UV_PROJECT_ENVIRONMENT)
+                .map(String::as_str)
+        }
+    } else {
+        env::PRISTINE_ENV
+            .get(UV_PROJECT_ENVIRONMENT)
+            .map(String::as_str)
+    };
+
+    resolve_uv_venv_path(uv_root, project_environment)
+}
+
+fn resolve_uv_venv_path(uv_root: &Path, project_environment: Option<&str>) -> PathBuf {
+    let path = project_environment
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".venv"));
+    if path.is_absolute() {
+        path
+    } else {
+        uv_root.join(path)
+    }
+}
+
 fn deps_uv_enabled(config: &Config, uv_root: &Path) -> bool {
     config.config_files.values().any(|cf| {
         if cf.config_root() != uv_root {
@@ -86,4 +119,26 @@ fn deps_uv_enabled(config: &Config, uv_root: &Path) -> bool {
         cf.deps_config()
             .is_some_and(|deps| deps.providers.contains_key("uv"))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_uv_venv_path() {
+        let root = std::env::current_dir().unwrap().join("project");
+        let absolute = std::env::current_dir().unwrap().join("absolute-venv");
+
+        assert_eq!(resolve_uv_venv_path(&root, None), root.join(".venv"));
+        assert_eq!(
+            resolve_uv_venv_path(&root, Some("custom-venv")),
+            root.join("custom-venv")
+        );
+        assert_eq!(
+            resolve_uv_venv_path(&root, Some(absolute.to_str().unwrap())),
+            absolute
+        );
+        assert_eq!(resolve_uv_venv_path(&root, Some("")), root.join(".venv"));
+    }
 }

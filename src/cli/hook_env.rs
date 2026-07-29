@@ -95,7 +95,7 @@ impl HookEnv {
         // Try to use cached watch_files for early exit check if env_cache is enabled
         // This avoids executing plugins just to get watch_files
         let watch_files = if Settings::get().env_cache {
-            if let Ok(Some(cached)) = ts.try_load_env_cache_full(&config) {
+            if let Ok(Some(cached)) = ts.try_load_env_cache_full(&config).await {
                 trace!("env_cache: using cached watch_files for early exit check");
                 cached
                     .watch_files

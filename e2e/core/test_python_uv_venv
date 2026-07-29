@@ -86,8 +86,60 @@ assert "mise x -- which python" "$PWD/.venv/bin/python"
 # legacy true mode SHOULD set UV_PYTHON
 assert_contains "mise env -s bash" "UV_PYTHON"
 
+# Test UV_PROJECT_ENVIRONMENT from mise config in source mode
+rm -rf .venv my.venv
+
+cat >mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[env]
+UV_PROJECT_ENVIRONMENT = "my.venv"
+
+[settings]
+python.uv_venv_auto = "source"
+EOF
+
+# Create the fixture with an explicit path so this test isolates mise's
+# UV_PROJECT_ENVIRONMENT sourcing behavior from the pinned uv version.
+mise x -- uv venv my.venv
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/my.venv"
+assert_directory_not_exists ".venv"
+
+# Test create|source creates the configured environment instead of .venv
+rm -rf my.venv
+sed -i.bak 's/uv_venv_auto = "source"/uv_venv_auto = "create|source"/' mise.toml
+rm mise.toml.bak
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/my.venv"
+assert_directory_exists "my.venv"
+assert_directory_not_exists ".venv"
+
+# Test UV_PROJECT_ENVIRONMENT from the process environment
+cat >mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[settings]
+python.uv_venv_auto = "source"
+EOF
+
+mkdir -p process.venv/bin absolute.venv/bin
+UV_PROJECT_ENVIRONMENT=process.venv assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/process.venv"
+UV_PROJECT_ENVIRONMENT="$PWD/absolute.venv" assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/absolute.venv"
+
+# Explicitly removing the config value must not fall back to the process environment
+cat >>mise.toml <<EOF
+
+[env]
+UV_PROJECT_ENVIRONMENT = false
+EOF
+mkdir -p .venv/bin
+UV_PROJECT_ENVIRONMENT=process.venv assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+
 # Test boolean parsing from env vars - "true","1", "yes",  should all work
-rm -rf .venv
+rm -rf .venv my.venv process.venv absolute.venv
 
 cat >mise.toml <<EOF
 [tools]
