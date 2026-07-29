@@ -73,18 +73,33 @@ pub struct WorkspaceProject {
     pub metadata: BTreeMap<String, String>,
     /// Projects that this project directly depends on.
     pub dependencies: BTreeSet<ProjectId>,
+    /// Tasks inferred from ecosystem-specific project metadata.
+    #[serde(skip)]
+    pub tasks: BTreeMap<String, WorkspaceTask>,
 }
 
 impl WorkspaceProject {
-    /// Creates a project with no metadata or dependencies.
+    /// Creates a project with no metadata, dependencies, or inferred tasks.
     pub fn new(id: ProjectId, root: impl Into<PathBuf>) -> Self {
         Self {
             id,
             root: root.into(),
             metadata: BTreeMap::new(),
             dependencies: BTreeSet::new(),
+            tasks: BTreeMap::new(),
         }
     }
+}
+
+/// A provider-neutral task inferred for a workspace project.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkspaceTask {
+    /// Command to execute in the project root.
+    pub command: String,
+    /// Human-readable description of the inferred task.
+    pub description: String,
+    /// File relative to the workspace root that supplied the task.
+    pub source: PathBuf,
 }
 
 /// Explicit changes applied after workspace providers discover their projects.

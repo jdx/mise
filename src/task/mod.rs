@@ -62,7 +62,8 @@ pub mod task_source_checker;
 pub mod task_sources;
 pub mod task_template;
 pub mod task_tool_installer;
-// Consumed by workspace providers introduced in follow-up changes.
+// Some graph traversal APIs are currently consumed only by tests and follow-up
+// workspace-task features.
 #[allow(dead_code)]
 pub mod workspace;
 
@@ -70,7 +71,7 @@ pub(crate) use task_cache::TaskCacheOutput;
 pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
 pub use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
-pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
+pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};
 pub use task_output::TaskOutput;
 pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
 pub use task_template::TaskTemplate;
@@ -2761,6 +2762,13 @@ where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
+        // Exact task identities and aliases take precedence over syntax-based
+        // pattern parsing. Workspace task IDs can contain both `:` and `/`
+        // (for example, `node:@scope/app#build`) without being monorepo paths.
+        if let Some(exact) = self.get(pat) {
+            return Ok(vec![exact]);
+        }
+
         // === Monorepo pattern matching ===
         // Only patterns starting with '//' or ':' are monorepo patterns
         // Reject patterns that look like monorepo paths but use wrong syntax (have / and : but don't start with // or :)

@@ -30,7 +30,7 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
+use crate::task::{RunEntry, Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
@@ -738,6 +738,49 @@ impl Config {
             })
             .map(|t| (t.name.clone(), t))
             .collect();
+        if Settings::get().experimental {
+            for task in inferred_workspace_tasks(&config)? {
+                if tasks.contains_key(&task.name) {
+                    let available_aliases = task
+                        .aliases
+                        .into_iter()
+                        .filter(|alias| {
+                            !tasks.contains_key(alias)
+                                && !tasks
+                                    .values()
+                                    .any(|explicit| explicit.aliases.contains(alias))
+                        })
+                        .collect::<Vec<_>>();
+                    tasks
+                        .get_mut(&task.name)
+                        .expect("explicit task name was just found")
+                        .aliases
+                        .extend(available_aliases);
+                    continue;
+                }
+                let explicit_name = task
+                    .aliases
+                    .iter()
+                    .find(|alias| tasks.contains_key(*alias))
+                    .cloned();
+                if let Some(explicit_name) = explicit_name {
+                    let explicit = tasks
+                        .get_mut(&explicit_name)
+                        .expect("explicit task name was just found");
+                    if !explicit.aliases.contains(&task.name) {
+                        explicit.aliases.push(task.name);
+                    }
+                    continue;
+                }
+                if tasks
+                    .values()
+                    .any(|explicit| explicit.aliases.contains(&task.name))
+                {
+                    continue;
+                }
+                tasks.insert(task.name.clone(), task);
+            }
+        }
         let all_tasks = tasks.clone();
         for task in tasks.values_mut() {
             task.display_name = task.display_name(&all_tasks);
@@ -2619,6 +2662,37 @@ fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Pa
             task.name = format!("{scope}:{}", task.name);
         }
     }
+}
+
+fn inferred_workspace_tasks(config: &Config) -> Result<Vec<Task>> {
+    let Some(monorepo_root) = config.monorepo_root() else {
+        return Ok(Vec::new());
+    };
+    let graph = config.workspace_project_graph()?;
+    let mut tasks = Vec::new();
+
+    for project in graph.projects() {
+        let project_root = monorepo_root.join(&project.root);
+        let path_scope = monorepo_scope(&monorepo_root, &project_root);
+        for (name, inferred) in &project.tasks {
+            let aliases = path_scope
+                .as_ref()
+                .map(|scope| vec![format!("{scope}:{name}")])
+                .unwrap_or_default();
+            tasks.push(Task {
+                name: format!("{}#{name}", project.id),
+                description: inferred.description.clone(),
+                aliases,
+                config_source: monorepo_root.join(&inferred.source),
+                config_root: Some(project_root.clone()),
+                raw_args: true,
+                run: vec![RunEntry::Script(inferred.command.clone())],
+                ..Default::default()
+            });
+        }
+    }
+
+    Ok(tasks)
 }
 
 /// Monorepo roots that enclose the selected one.

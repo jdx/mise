@@ -32,6 +32,9 @@ impl TasksInfo {
         let tasks = if task_name.starts_with("//") {
             let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
             config.tasks_with_context(Some(&ctx)).await?
+        } else if crate::task::is_workspace_project_task(&task_name) {
+            let ctx = crate::task::TaskLoadContext::all();
+            config.tasks_with_context(Some(&ctx)).await?
         } else {
             config.tasks().await?
         };

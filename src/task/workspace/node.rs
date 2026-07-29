@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
 use eyre::{Context, Result};
 
-use super::{ProjectId, WorkspaceProject, WorkspaceProvider};
+use super::{ProjectId, WorkspaceProject, WorkspaceProvider, WorkspaceTask};
 
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
@@ -109,6 +109,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                     .filter_map(|name| project_ids.get(name).cloned())
                     .filter(|dependency| dependency != &id)
                     .collect();
+                let source = root.join(PACKAGE_JSON);
                 let mut project = WorkspaceProject::new(id, root);
                 project.dependencies = dependencies;
                 project.metadata.insert(
@@ -120,6 +121,22 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                         .metadata
                         .insert("package_manager".to_string(), package_manager.clone());
                 }
+                let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
+                project.tasks = manifest
+                    .scripts
+                    .into_iter()
+                    .map(|(name, script)| {
+                        let command = shell_words::join([package_manager, "run", &name]);
+                        (
+                            name,
+                            WorkspaceTask {
+                                command,
+                                description: script,
+                                source: source.clone(),
+                            },
+                        )
+                    })
+                    .collect();
                 Ok(project)
             })
             .collect()
@@ -239,6 +256,38 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn infers_package_scripts_as_workspace_tasks() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"@scope/app","scripts":{"build":"vite build","test:unit":"vitest"}}"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+        let project = &projects[0];
+
+        assert_eq!(
+            project.tasks.get("build"),
+            Some(&WorkspaceTask {
+                command: "pnpm run build".to_string(),
+                description: "vite build".to_string(),
+                source: PathBuf::from("packages/app/package.json"),
+            })
+        );
+        assert_eq!(
+            project
+                .tasks
+                .get("test:unit")
+                .map(|task| task.command.as_str()),
+            Some("pnpm run test:unit")
+        );
     }
 
     #[test]
