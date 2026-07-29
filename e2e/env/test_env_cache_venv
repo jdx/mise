@@ -58,3 +58,30 @@ assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
 cd ../proj
 assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
 cd ..
+
+# A custom uv environment path must participate in the cache key too. Changing
+# UV_PROJECT_ENVIRONMENT must select the new venv rather than reuse the previous
+# cached environment, and the custom venv must not leak into a sibling.
+rm -rf "${MISE_STATE_DIR:?}/env-cache"
+mkdir -p proj/custom-a/bin proj/custom-b/bin
+cd proj
+UV_PROJECT_ENVIRONMENT=custom-a assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/custom-a"
+UV_PROJECT_ENVIRONMENT=custom-b assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/custom-b"
+cd ../other
+UV_PROJECT_ENVIRONMENT=custom-a assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+cd ..
+
+# A config-defined custom environment must produce the same key for cache save
+# and lookup, so the second invocation gets a full environment cache hit.
+rm -rf "${MISE_STATE_DIR:?}/env-cache"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+UV_PROJECT_ENVIRONMENT = "configured"
+
+[settings]
+python.uv_venv_auto = "source"
+EOF
+mkdir -p proj/configured/bin
+cd proj
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/configured"
+assert_contains "MISE_TRACE=1 mise env -s bash 2>&1" "env_cache: using cached environment"
