@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Test that `mise ls --monorepo` picks up idiomatic version files that are only
+# enabled via a config_root's own [settings] block, not the global/CLI settings
+# resolved from the invocation directory.
+#
+# Regression test for https://github.com/jdx/mise/discussions/8629 -- a config
+# root's `idiomatic_version_file_enable_tools` setting was silently ignored by
+# monorepo-wide commands because `load_idiomatic_filenames()` read the settings
+# snapshot resolved once from the monorepo root, before iterating config_roots,
+# so idiomatic files declared only inside a subproject's own config were never
+# even scanned for.
+export MISE_EXPERIMENTAL=1
+
+# Install the tiny plugin, which supports idiomatic .tiny-version files
+mise plugin install tiny
+
+# Note: intentionally NOT setting idiomatic_version_file_enable_tools globally here.
+# The whole point of this test is that app1 enables it for itself, in its own config.
+
+# Create monorepo root config with no idiomatic settings of its own
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+
+# Subproject that enables idiomatic version files only in its own config
+mkdir -p packages/app1
+echo "1.0.1" >packages/app1/.tiny-version
+cat <<EOF >packages/app1/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["tiny"]
+EOF
+
+# Subproject using explicit [tools], for comparison -- should keep working unaffected
+mkdir -p packages/app2
+cat <<EOF >packages/app2/mise.toml
+[tools]
+tiny = "2.0.1"
+EOF
+
+echo "=== ls --monorepo resolves an idiomatic version file enabled only by a config_root's own [settings] ==="
+output=$(mise ls --monorepo tiny 2>&1)
+assert_contains "echo '$output'" "1.0.1"
+assert_contains "echo '$output'" ".tiny-version"
+assert_contains "echo '$output'" "2.0.1"
+
+# Subproject identical to app1 (own [settings] enabling tiny), used to verify safe mode
+# ignores it -- an untrusted repo's own [settings] block must not influence resolution.
+mkdir -p packages/app3
+echo "3.0.1" >packages/app3/.tiny-version
+cat <<EOF >packages/app3/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["tiny"]
+EOF
+
+echo "=== ls --monorepo in safe mode ignores a config_root's own [settings] override ==="
+safe_output=$(MISE_SAFE=1 mise ls --monorepo tiny 2>&1)
+assert_not_contains "echo '$safe_output'" "3.0.1"
+assert_not_contains "echo '$safe_output'" "app3"
+# app1's explicit [tools]-free case still isn't picked up either in safe mode, since it
+# relies on the same per-root [settings] override.
+assert_not_contains "echo '$safe_output'" "1.0.1"
+# app2's explicit [tools] declaration is unaffected by safe mode.
+assert_contains "echo '$safe_output'" "2.0.1"
