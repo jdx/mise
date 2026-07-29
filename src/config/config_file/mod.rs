@@ -679,7 +679,7 @@ async fn path_is_idiomatic_with_disabled_files(
         match b.idiomatic_filenames().await {
             Ok(filenames) => {
                 for filename in filenames {
-                    if super::idiomatic_version_file_disabled(&disable_files, b.id(), &filename) {
+                    if super::idiomatic_version_file_disabled(disable_files, b.id(), &filename) {
                         continue;
                     }
                     backends_by_filename
