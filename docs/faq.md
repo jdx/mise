@@ -24,6 +24,10 @@ something with the aliasing is acting up, submit a ticket or just stick to using
 Under the hood, when mise reads a config file or takes CLI input it will swap out "nodejs" and
 "golang".
 
+When mise _writes_ to a `mise.toml` (`mise use`, `mise unuse`), it writes the canonical name — a
+`nodejs` entry becomes `node`, keeping its comments. `.tool-versions` files are unaffected and still
+use the asdf spellings.
+
 ## What does `mise activate` do?
 
 It registers a shell hook to run `mise hook-env` every time the shell prompt is displayed.

@@ -25,4 +25,15 @@ mise use nodejs@20.1.0
 mise ls
 assert "mise x -- node --version" "v20.1.0"
 assert_contains "mise ls-remote nodejs" "20.1.0"
+
+# a `nodejs` key is the same tool as `node`: rename it in place instead of adding a
+# second key, which would silently outvote the one just written
+cat >mise.toml <<EOF
+[tools]
+nodejs = "20.1.0" # keep me
+EOF
+mise use nodejs@20.1.0
+assert "cat mise.toml" '[tools]
+node = "20.1.0" # keep me'
+
 mise use --rm node

@@ -51,6 +51,18 @@ assert_fail "mise use --dry-run --path package.json dummy@1" "cannot update idio
 mise use --rm dummy --path mise.local.toml
 assert "cat mise.local.toml" ""
 
+# `nodejs` is an alias for `node`, so --rm has to match the key however it is spelled.
+# It used to only look for the short name, leaving the entry in the file.
+cat >mise.local.toml <<EOF
+[tools]
+dummy = "1"
+nodejs = "20.0.0"
+EOF
+mise use --rm nodejs --path mise.local.toml
+assert "cat mise.local.toml" '[tools]
+dummy = "1"'
+rm -f mise.local.toml
+
 mise use dummy@1 --path .
 assert "cat mise.toml" '[tools]
 dummy = "1"'
