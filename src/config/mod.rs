@@ -562,9 +562,16 @@ impl Config {
 
         let mut union = ToolRequestSet::new();
         for root in roots {
-            let root_paths = config_paths_in_dir_with_filenames(&root, &config_filenames);
+            let root_idiomatic_filenames =
+                idiomatic_filenames_for_root(&root, &idiomatic_filenames).await;
+            let root_config_filenames = root_idiomatic_filenames
+                .keys()
+                .chain(DEFAULT_CONFIG_FILENAMES.iter())
+                .cloned()
+                .collect_vec();
+            let root_paths = config_paths_in_dir_with_filenames(&root, &root_config_filenames);
             let mut root_config_files =
-                load_config_files_from_paths(&root_paths, &idiomatic_filenames).await?;
+                load_config_files_from_paths(&root_paths, &root_idiomatic_filenames).await?;
             for (path, cf) in root_config_files.clone() {
                 config_files.entry(path).or_insert(cf);
             }
@@ -1248,14 +1255,25 @@ async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
     let settings = Settings::get();
     let enable_tools = settings.idiomatic_version_file_enable_tools.clone();
     let disable_files = settings.idiomatic_version_file_disable_files.clone();
-    if enable_tools.is_empty() {
-        return BTreeMap::new();
-    }
     if !settings.idiomatic_version_file_disable_tools.is_empty() {
         deprecated!(
             "idiomatic_version_file_disable_tools",
             "is deprecated, use idiomatic_version_file_enable_tools instead"
         );
+    }
+    load_idiomatic_filenames_for_tools(&enable_tools, &disable_files).await
+}
+
+/// Same as [`load_idiomatic_filenames`] but for explicit `enable_tools`/`disable_files` rather
+/// than the process-wide `Settings::get()` snapshot. Used by monorepo union resolution, where a
+/// config root's own `idiomatic_version_file_enable_tools` can differ from the settings
+/// resolved from the invocation directory (see [`idiomatic_filenames_for_root`]).
+async fn load_idiomatic_filenames_for_tools(
+    enable_tools: &BTreeSet<String>,
+    disable_files: &BTreeSet<String>,
+) -> BTreeMap<String, Vec<String>> {
+    if enable_tools.is_empty() {
+        return BTreeMap::new();
     }
     let mut jset = JoinSet::new();
     for tool in backend::list() {
@@ -1309,6 +1327,47 @@ fn idiomatic_version_file_disabled(
                 disabled_tool == tool && disabled_filename == filename
             })
     })
+}
+
+/// Resolves idiomatic version filenames for a single monorepo config root, honoring that
+/// root's own `[settings].idiomatic_version_file_enable_tools`/`idiomatic_version_file_disable_files`
+/// if it sets either.
+///
+/// `Settings::get()` is a process-wide snapshot resolved once from the invocation directory
+/// (walking config files upward); it never walks *down* into `[monorepo].config_roots`, so a
+/// config root's own `[settings]` block is otherwise silently ignored by monorepo-wide
+/// commands (e.g. `mise ls --monorepo`) even though the same setting works fine when mise is
+/// actually invoked from within that root. See https://github.com/jdx/mise/discussions/8629.
+async fn idiomatic_filenames_for_root(
+    root: &Path,
+    default_idiomatic_filenames: &BTreeMap<String, Vec<String>>,
+) -> BTreeMap<String, Vec<String>> {
+    let settings = Settings::get();
+    let mut enable_tools = settings.idiomatic_version_file_enable_tools.clone();
+    let mut disable_files = settings.idiomatic_version_file_disable_files.clone();
+    let mut overridden = false;
+    let safe_mode = Settings::safe_mode();
+    for path in config_paths_in_dir_with_filenames(root, &DEFAULT_CONFIG_FILENAMES) {
+        if safe_mode && !is_global_config(&path) {
+            // Match all_settings_files()'s safe-mode boundary: an untrusted repo's own
+            // [settings] block must not influence resolution, including here.
+            continue;
+        }
+        if let Ok(partial) = Settings::parse_settings_file(&path) {
+            if let Some(tools) = partial.idiomatic_version_file_enable_tools {
+                enable_tools = tools;
+                overridden = true;
+            }
+            if let Some(files) = partial.idiomatic_version_file_disable_files {
+                disable_files = files;
+                overridden = true;
+            }
+        }
+    }
+    if !overridden {
+        return default_idiomatic_filenames.clone();
+    }
+    load_idiomatic_filenames_for_tools(&enable_tools, &disable_files).await
 }
 
 static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
