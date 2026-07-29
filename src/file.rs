@@ -187,14 +187,20 @@ pub fn remove_all_with_progress<P: AsRef<Path>>(path: P, pr: &dyn SingleReport) 
 pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
-    trace!("mv {} {}", from.display(), to.display());
-    do_rename(from, to).wrap_err_with(|| {
+    try_rename(from, to).wrap_err_with(|| {
         format!(
             "failed rename: {} -> {}",
             display_path(from),
             display_path(to)
         )
     })
+}
+
+pub(crate) fn try_rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> std::io::Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("mv {} {}", from.display(), to.display());
+    do_rename(from, to)
 }
 
 #[cfg(windows)]
@@ -228,17 +234,18 @@ fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
 ///
 /// This preserves the normal `rename` behavior when possible, but avoids cross-device failures
 /// (`ErrorKind::CrossesDevices`) when `from` and `to` live on separate mounts (for example, when
-/// downloads are cached on one volume and installs are written to another).
+/// downloads are cached on one volume and installs are written to another). Directory fallbacks
+/// preserve symlinks and file/directory permissions.
 pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
 
-    match do_rename(from, to) {
+    match try_rename(from, to) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
             if from.is_dir() {
                 create_dir_all(to)?;
-                copy_dir_all(from, to)?;
+                copy_dir_all_preserve_symlinks(from, to)?;
                 remove_all(from)?;
             } else {
                 copy(from, to)?;
@@ -284,14 +291,16 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()
     })
 }
 
-fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
+pub fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
+    let mut directory_permissions = vec![(to.to_path_buf(), fs::metadata(from)?.permissions())];
     for entry in WalkDir::new(from).follow_links(false).min_depth(1) {
         let entry = entry?;
         let relative = entry.path().strip_prefix(from)?;
         let dest = to.join(relative);
         if entry.file_type().is_dir() {
             create_dir_all(&dest)?;
+            directory_permissions.push((dest, entry.metadata()?.permissions()));
         } else if entry.file_type().is_symlink() {
             create_dir_all(dest.parent().unwrap())?;
             make_symlink(&fs::read_link(entry.path())?, &dest)?;
@@ -299,6 +308,11 @@ fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
             create_dir_all(dest.parent().unwrap())?;
             copy(entry.path(), &dest)?;
         }
+    }
+    // Apply directory permissions after copying children so read-only source
+    // directories do not prevent populating their destination.
+    for (path, permissions) in directory_permissions.into_iter().rev() {
+        fs::set_permissions(path, permissions)?;
     }
     Ok(())
 }

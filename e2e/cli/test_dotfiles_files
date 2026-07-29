@@ -183,9 +183,10 @@ assert "cat ~/.local/copydir/unmanaged" "keep me"
 
 # a real file where a symlink should go is a conflict: not clobbered
 rm ~/.gitconfig
-# identical content: regular file converges to symlink without --force
+# identical visible content can still hide ownership, ACL, or xattr differences
 cat dotfiles/gitconfig >~/.gitconfig
-assert_succeed "mise dotfiles apply --yes"
+assert_fail "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles apply --yes --force"
 assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
 rm ~/.gitconfig
 echo "precious" >~/.gitconfig
@@ -333,11 +334,125 @@ echo "implied content v2" >implied-root/.implied
 verbose_out="$(mise dotfiles apply ~/.implied --dry-run --verbose 2>&1)"
 assert_contains_text "$verbose_out" "content differs"
 
-# add captures live files into dotfiles.root and writes explicit mode
+# add captures live files into dotfiles.root, writes normalized/sorted entries,
+# and applies them by default
 echo "captured content" >~/.captured
-MISE_DOTFILES_ROOT="$PWD/captured-root" MISE_DOTFILES_DEFAULT_MODE=symlink mise dotfiles add '~/.captured' --yes
+mkdir -p ~/.captured-dir
+echo "captured dir content" >~/.captured-dir/file
+mkdir ~/.captured-dir/empty
+ln -s file ~/.captured-dir/link
+chmod 600 ~/.captured-dir/file
+captured_out="$(MISE_DOTFILES_ROOT="$PWD/captured-root" MISE_DOTFILES_DEFAULT_MODE=symlink mise dotfiles add "$HOME/.captured-dir/" "$HOME/.captured" --yes 2>&1)"
+assert_contains_text "$captured_out" "moved ~/.captured-dir to"
+assert_contains_text "$captured_out" "added ~/.captured to ~/.config/mise/config.toml"
+assert_contains_text "$captured_out" "created symlink ~/.captured ->"
 assert "cat captured-root/.captured" "captured content"
-assert_contains "cat ~/.config/mise/config.toml" '"~/.captured" = { mode = "symlink" }'
+assert "cat captured-root/.captured-dir/file" "captured dir content"
+assert_directory_exists "captured-root/.captured-dir/empty"
+assert "readlink captured-root/.captured-dir/link" "file"
+assert_contains "cat ~/.config/mise/config.toml" '"~/.captured" = {}'
+assert_contains "cat ~/.config/mise/config.toml" '"~/.captured-dir" = {}'
+assert_not_contains "cat ~/.config/mise/config.toml" "$HOME"
+assert "readlink ~/.captured" "$PWD/captured-root/.captured"
+assert "readlink ~/.captured-dir" "$PWD/captured-root/.captured-dir"
+captured_file_line="$(grep -nF '"~/.captured" = {}' ~/.config/mise/config.toml | cut -d: -f1)"
+captured_dir_line="$(grep -nF '"~/.captured-dir" = {}' ~/.config/mise/config.toml | cut -d: -f1)"
+assert_succeed "test $captured_file_line -lt $captured_dir_line"
+
+# a new symlink-each target is moved out of the way before automatic apply
+mkdir ~/.captured-each
+echo "captured each" >~/.captured-each/file
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.captured-each --mode symlink-each --yes
+assert "cat captured-root/.captured-each/file" "captured each"
+assert "readlink ~/.captured-each/file" "$PWD/captured-root/.captured-each/file"
+assert_contains "cat ~/.config/mise/config.toml" '"~/.captured-each" = { mode = "symlink-each" }'
+rm ~/.config/mise/config.toml
+
+# standalone apply never replaces an existing real directory without --force,
+# even when its visible contents match the source
+mkdir -p same-dir-source same-dir-target
+echo "same" >same-dir-source/file
+echo "same" >same-dir-target/file
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/same-dir-target" = { source = "same-dir-source", mode = "symlink" }
+EOF
+mkdir same-dir-target/extra-empty
+assert_fail "mise dotfiles apply --yes"
+assert_directory_exists "same-dir-target/extra-empty"
+rmdir same-dir-target/extra-empty
+chmod 755 same-dir-source
+chmod 700 same-dir-target
+assert_fail "mise dotfiles apply --yes"
+chmod --reference=same-dir-source same-dir-target
+ln -s first same-dir-source/link
+ln -s second same-dir-target/link
+assert_fail "mise dotfiles apply --yes"
+rm same-dir-target/link
+ln -s first same-dir-target/link
+assert_fail "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles apply --yes --force"
+assert "readlink same-dir-target" "$PWD/same-dir-source"
+
+# parent-directory components normalize to the canonical target key
+echo "normalized" >~/.normalized
+mkdir -p ~/.normalization-parent
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.normalization-parent/../.normalized --no-apply --yes
+assert_contains "cat ~/.config/mise/config.toml" '"~/.normalized" = {}'
+assert_not_contains "cat ~/.config/mise/config.toml" "normalization-parent"
+rm ~/.config/mise/config.toml
+
+# failed automatic apply validation restores overwritten sources and does not
+# write a config entry
+echo "original template" >template-source
+echo "{{ invalid template" >~/.invalid-template
+assert_fail "mise dotfiles add ~/.invalid-template --source \"$PWD/template-source\" --mode template --yes"
+assert "cat template-source" "original template"
+assert_fail "test -e ~/.config/mise/config.toml"
+
+if [ "$(id -u)" != 0 ]; then
+  # capture failures roll back sources changed earlier in the same invocation
+  echo "live rollback one" >~/.rollback-one
+  echo "live rollback two" >~/.rollback-two
+  echo "source rollback one" >captured-root/.rollback-one
+  echo "source rollback two" >captured-root/.rollback-two
+  chmod 400 captured-root/.rollback-two
+  assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.rollback-one ~/.rollback-two --mode copy --yes"
+  chmod 600 captured-root/.rollback-two
+  assert "cat captured-root/.rollback-one" "source rollback one"
+  assert "cat captured-root/.rollback-two" "source rollback two"
+  assert_fail "test -e ~/.config/mise/config.toml"
+
+  # execution failures restore source/config state after planning has succeeded
+  mkdir apply-failure-parent
+  echo "live execution rollback" >apply-failure-parent/target
+  echo "source execution rollback" >apply-failure-source
+  chmod 500 apply-failure-parent
+  assert_fail "mise dotfiles add \"$PWD/apply-failure-parent/target\" --source \"$PWD/apply-failure-source\" --yes"
+  chmod 700 apply-failure-parent
+  assert "cat apply-failure-parent/target" "live execution rollback"
+  assert "cat apply-failure-source" "source execution rollback"
+  assert_fail "test -e ~/.config/mise/config.toml"
+fi
+
+# config failures restore a newly created source to its missing state
+echo "not a directory" >config-path-blocker
+assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.missing-rollback --path \"$PWD/config-path-blocker/config.toml\" --yes"
+assert_fail "test -e captured-root/.missing-rollback"
+
+# directory auto-add moves the original into place so a later failure can
+# restore its complete filesystem metadata without reconstructing it
+mkdir ~/.moved-rollback
+echo "moved rollback" >~/.moved-rollback/file
+assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.moved-rollback --path \"$PWD/config-path-blocker/config.toml\" --yes"
+assert "cat ~/.moved-rollback/file" "moved rollback"
+assert_fail "test -e captured-root/.moved-rollback"
+
+# --no-apply leaves the captured target in place
+echo "capture only" >~/.capture-only
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.capture-only --no-apply --yes
+assert_fail "test -L ~/.capture-only"
+assert "cat captured-root/.capture-only" "capture only"
 rm ~/.config/mise/config.toml
 
 # add on an already-managed copied file stores live changes back to the source
@@ -384,6 +499,12 @@ EOF
 assert_succeed "mise dotfiles apply --yes"
 EDITOR="$PWD/editor-write" mise dotfiles edit --apply ~/.edit-copy
 assert "cat ~/.edit-copy" "edited source"
+
+# unmanaged edits are not applied unless --apply is requested
+echo "unmanaged before edit" >~/.edit-unmanaged
+EDITOR="$PWD/editor-write" mise dotfiles edit ~/.edit-unmanaged --yes
+assert "cat ~/.edit-unmanaged" "unmanaged before edit"
+assert "cat ~/.dotfiles/.edit-unmanaged" "edited source"
 
 # inline edit entries open the owning mise config file
 cat <<'EOF' >editor-append

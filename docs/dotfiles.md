@@ -25,9 +25,11 @@ dotfiles.default_mode = "symlink"
 "~/hosts/dev" = { line = "127.0.0.1 dev.local" }                     # edit one line in ~/hosts
 ```
 
-Dotfiles are only applied when explicitly requested with
-`mise bootstrap dotfiles apply` or as part of [`mise bootstrap`](/bootstrap.html). They
-are never applied implicitly by `mise install` or `mise bootstrap packages`.
+New entries are captured and applied by `mise bootstrap dotfiles add`; pass
+`--no-apply` to only capture them. Existing entries can be applied explicitly
+with `mise bootstrap dotfiles apply` or as part of
+[`mise bootstrap`](/bootstrap.html). They are never applied implicitly by
+`mise install` or `mise bootstrap packages`.
 The nested apply command runs the configured `pre-dotfiles` and
 `post-dotfiles` bootstrap hooks.
 
@@ -41,12 +43,13 @@ uses `~/.dotfiles/.zshrc`, and `~/.config/foo.toml` uses
 `source`.
 
 String entries are shorthand for an explicit source with
-`dotfiles.default_mode`. Commands that write `[dotfiles]` always write table
-form with `mode`, even when it is the default:
+`dotfiles.default_mode`. `mise bootstrap dotfiles add` omits an implied source
+and the built-in `symlink` mode, while preserving a mode explicitly selected
+with `--mode`:
 
 ```toml
 [dotfiles]
-"~/.zshrc" = { mode = "symlink" }
+"~/.zshrc" = {}
 "~/.ssh/config" = { source = "ssh/config", mode = "copy" }
 ```
 
@@ -158,9 +161,9 @@ multi-line content.
 - **Declarative and additive** — entries merge across the
   [config hierarchy](/configuration.html) (global → project). Whole-file
   entries merge by target path; edit entries merge by `(path, id)`.
-- **Manual application only** — nothing is written implicitly. Only
-  `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html) applies
-  dotfiles.
+- **Explicit application** — `mise bootstrap dotfiles add` applies the entries
+  it captures unless `--no-apply` is set. Entries not captured by `add` are
+  applied by `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html).
 - **Idempotent** — entries already in their desired state are skipped;
   re-running is always safe.
 - **Unknown modes and operations are ignored with a warning** so configs
@@ -173,9 +176,13 @@ directory where a symlink should go, or a directory where a file should go,
 is an error listing the conflicting paths. Pass
 `mise bootstrap dotfiles apply --force` to replace them.
 
-For symlink entries, an existing regular file with identical content to the
-source is converged without `--force` by replacing it with the requested
-symlink. If the content differs, mise still treats it as a conflict.
+Real files and directories always require `--force` during a standalone
+symlink apply, even when their visible content and permissions match. Portable
+filesystem APIs cannot compare ownership, ACLs, extended attributes, flags,
+and security labels. `mise bootstrap dotfiles add` avoids that destructive
+comparison by moving each captured real path to its source before creating the
+symlink; cross-filesystem moves fall back to a symlink- and
+permission-preserving copy.
 
 Content updates are not conflicts: a `copy` or `template` entry overwrites
 the target file's content without `--force` — that is the declared intent of

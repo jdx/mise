@@ -39,6 +39,10 @@ Dotfile mode to write
 
 Print the config/source updates without writing anything
 
+### `--no-apply`
+
+Add the entry without applying it
+
 ### `-p --path <PATH>`
 
 Write to this config file or directory

@@ -390,6 +390,7 @@ Examples:
                 arg <MODE>
             }
             flag "-n --dry-run" help="Print the config/source updates without writing anything"
+            flag --no-apply help="Add the entry without applying it"
             flag "-p --path" help="Write to this config file or directory" {
                 arg <PATH>
             }
@@ -1066,6 +1067,7 @@ Examples:
             arg <MODE>
         }
         flag "-n --dry-run" help="Print the config/source updates without writing anything"
+        flag --no-apply help="Add the entry without applying it"
         flag "-p --path" help="Write to this config file or directory" {
             arg <PATH>
         }

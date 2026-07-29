@@ -285,7 +285,21 @@ pub fn source_is_implied(req: &FileRequest) -> bool {
 }
 
 pub fn resolve_target_arg(target: &str) -> PathBuf {
-    file::replace_path(target)
+    lexical_normalize(&file::replace_path(target))
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 pub fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
@@ -303,11 +317,11 @@ pub fn copy_path(source: &Path, target: &Path) -> Result<()> {
         file::create_dir_all(parent)?;
     }
     if source.is_dir() {
-        if target.exists() && !target.is_dir() {
+        if target.exists() || target.is_symlink() {
             remove_existing(target)?;
         }
         file::create_dir_all(target)?;
-        file::copy_dir_all(source, target)?;
+        file::copy_dir_all_preserve_symlinks(source, target)?;
     } else {
         if target.is_symlink() {
             file::remove_file(target)?;
@@ -849,12 +863,71 @@ pub struct ApplyOpts {
     pub yes: bool,
 }
 
+pub struct ApplyPlan<'a> {
+    todo: Vec<(&'a FileRequest, Option<String>)>,
+}
+
 /// Apply all entries that aren't already in the desired state. Conflicting
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
 /// copy/template entries are not conflicts, overwriting is their job. Returns
 /// `false` when the user declines the confirmation prompt.
 pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
+    execute_apply(plan_apply(config, requests, opts)?, opts)
+}
+
+pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
+    if plan.todo.is_empty() {
+        info!("files: all files are applied");
+        return Ok(true);
+    }
+    if opts.dry_run {
+        for (req, rendered) in &plan.todo {
+            // template state wasn't computed (no rendering on dry runs), so
+            // the entry may already be converged
+            let conditional = req.mode == FileMode::Template && rendered.is_none();
+            let suffix = if conditional { " (if changed)" } else { "" };
+            miseprintln!("{}{suffix}", describe(req)?);
+            if opts.verbose && !conditional {
+                print_diff(req, rendered.as_deref())?;
+            }
+        }
+        return Ok(true);
+    }
+    if !opts.yes && console::user_attended_stderr() {
+        let list = plan
+            .todo
+            .iter()
+            .map(|(r, _)| r.target_raw.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if !prompt::confirm(format!("files: apply {list}?"))? {
+            info!("files: skipped");
+            return Ok(false);
+        }
+    }
+    for (req, rendered) in &plan.todo {
+        apply_one(req, rendered.as_deref())?;
+        info!("files: {}", describe_applied(req)?);
+    }
+    info!(
+        "files: applied {}",
+        plan.todo
+            .iter()
+            .map(|(r, _)| r.target_raw.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(true)
+}
+
+/// Plan and validate an apply without changing targets. Templates are rendered
+/// here so execution writes exactly the content that was validated.
+pub fn plan_apply<'a>(
+    config: &Config,
+    requests: &'a [FileRequest],
+    opts: &ApplyOpts,
+) -> Result<ApplyPlan<'a>> {
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
@@ -925,45 +998,7 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
     if !problems.is_empty() {
         bail!("files: {}", problems.join("\nfiles: "));
     }
-    if todo.is_empty() {
-        info!("files: all files are applied");
-        return Ok(true);
-    }
-    if opts.dry_run {
-        for (req, rendered) in &todo {
-            // template state wasn't computed (no rendering on dry runs), so
-            // the entry may already be converged
-            let conditional = req.mode == FileMode::Template && rendered.is_none();
-            let suffix = if conditional { " (if changed)" } else { "" };
-            miseprintln!("{}{suffix}", describe(req)?);
-            if opts.verbose && !conditional {
-                print_diff(req, rendered.as_deref())?;
-            }
-        }
-        return Ok(true);
-    }
-    if !opts.yes && console::user_attended_stderr() {
-        let list = todo
-            .iter()
-            .map(|(r, _)| r.target_raw.clone())
-            .collect::<Vec<_>>()
-            .join(", ");
-        if !prompt::confirm(format!("files: apply {list}?"))? {
-            info!("files: skipped");
-            return Ok(false);
-        }
-    }
-    for (req, rendered) in &todo {
-        apply_one(req, rendered.as_deref())?;
-    }
-    info!(
-        "files: applied {}",
-        todo.iter()
-            .map(|(r, _)| r.target_raw.clone())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    Ok(true)
+    Ok(ApplyPlan { todo })
 }
 
 pub struct UnapplyOpts {
@@ -1376,16 +1411,6 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    let regular_files_have_same_content = |source: &Path, target: &Path| -> Result<bool> {
-        if !source.is_file() || !target.is_file() {
-            return Ok(false);
-        }
-        if source.metadata()?.len() != target.metadata()?.len() {
-            return Ok(false);
-        }
-        Ok(file::read(source)? == file::read(target)?)
-    };
-
     // on Windows, file "symlinks" are applied as copies (see `link_path`),
     // so existing regular-file targets are routine content updates there,
     // not conflicts — only a type mismatch blocks
@@ -1393,12 +1418,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
         if cfg!(windows) && source.is_file() {
             Ok(target.exists() && target.is_dir())
         } else {
-            if !target.exists() || target.is_symlink() {
-                return Ok(false);
-            }
-            // If this equality check cannot read either side, keep the
-            // conservative conflict path so --force can still handle it.
-            Ok(!regular_files_have_same_content(source, target).unwrap_or(false))
+            Ok(target.exists() && !target.is_symlink())
         }
     };
     let mut out = vec![];
@@ -1452,6 +1472,20 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
+    })
+}
+
+fn describe_applied(req: &FileRequest) -> Result<String> {
+    let src = req.source.display_user();
+    let tgt = req.target.display_user();
+    Ok(match req.mode {
+        FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
+        FileMode::SymlinkEach => format!(
+            "created {} symlink(s) from {src} in {tgt}",
+            walk_source_files(req)?.len()
+        ),
+        FileMode::Copy => format!("copied {src} to {tgt}"),
+        FileMode::Template => format!("rendered {src} to {tgt}"),
     })
 }
 
