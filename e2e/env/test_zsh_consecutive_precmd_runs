@@ -7,6 +7,9 @@ set -eu
 # variables change. Stub _mise_hook after activation so invocation detection is
 # independent of hook-env's output and early-exit behavior.
 
+# POSIX_IDENTIFIERS changes how zsh parses $#array in arithmetic expressions.
+setopt POSIX_IDENTIFIERS
+
 eval "$(mise activate zsh --status)"
 
 mise_hook_calls=0
