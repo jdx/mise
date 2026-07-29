@@ -486,15 +486,15 @@ impl AquaPackage {
             .into_iter()
             .chain(self.version_overrides.iter())
             .find(|vo| {
-                if vo.version_constraint.is_empty() {
-                    true
-                } else {
-                    expressions.iter().any(|(version, expr, ctx)| {
-                        let version_prefix =
-                            vo.version_prefix.as_ref().or(self.version_prefix.as_ref());
-                        if version_prefix.is_some_and(|prefix| !version.starts_with(prefix)) {
-                            return false;
-                        }
+                expressions.iter().any(|(version, expr, ctx)| {
+                    let version_prefix =
+                        vo.version_prefix.as_ref().or(self.version_prefix.as_ref());
+                    if version_prefix.is_some_and(|prefix| !version.starts_with(prefix)) {
+                        return false;
+                    }
+                    if vo.version_constraint.is_empty() {
+                        true
+                    } else {
                         expr.eval(&vo.version_constraint, ctx)
                             .map_err(|e| {
                                 log::debug!("error parsing {}: {e}", vo.version_constraint)
@@ -502,8 +502,8 @@ impl AquaPackage {
                             .unwrap_or(false.into())
                             .as_bool()
                             .unwrap()
-                    })
-                }
+                    }
+                })
             })
     }
 
@@ -1963,6 +1963,34 @@ packages:
         let oxlint = pkg.version_override(&["oxlint_v1.76.0"]).unwrap();
         assert_eq!(oxlint.version_prefix.as_deref(), Some("oxlint_v"));
         assert_eq!(oxlint.error_message.as_deref(), Some("unavailable"));
+    }
+
+    #[test]
+    fn test_unconditional_version_override_matches_version_prefix() {
+        let pkg = AquaPackage {
+            version_constraint: "false".to_string(),
+            version_overrides: vec![
+                AquaPackage {
+                    version_prefix: Some("old_v".to_string()),
+                    error_message: Some("unavailable".to_string()),
+                    ..Default::default()
+                },
+                AquaPackage {
+                    version_prefix: Some("new_v".to_string()),
+                    asset: "tool.tar.gz".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let old = pkg.version_override(&["old_v1.0.0"]).unwrap();
+        assert_eq!(old.version_prefix.as_deref(), Some("old_v"));
+        assert_eq!(old.error_message.as_deref(), Some("unavailable"));
+
+        let new = pkg.version_override(&["new_v1.0.0"]).unwrap();
+        assert_eq!(new.version_prefix.as_deref(), Some("new_v"));
+        assert_eq!(new.asset, "tool.tar.gz");
     }
 
     #[test]
