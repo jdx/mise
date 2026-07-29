@@ -86,6 +86,13 @@ Or in `~/.config/mise/config.toml`:
 idiomatic_version_file_enable_tools = ["node"]
 ```
 
+To keep `.nvmrc` or `.node-version` enabled while preventing node from using
+`devEngines.runtime` in `package.json`:
+
+```sh
+mise settings add idiomatic_version_file_disable_files node:package.json
+```
+
 :::
 
 ## Default node packages

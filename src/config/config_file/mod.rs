@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, Once};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -664,11 +664,24 @@ pub(crate) fn matching_idiomatic_filenames<'a>(
 }
 
 async fn path_is_idiomatic(path: &Path) -> Option<Vec<Arc<dyn Backend>>> {
+    let disable_files = Settings::try_get()
+        .map(|settings| settings.idiomatic_version_file_disable_files.clone())
+        .unwrap_or_default();
+    path_is_idiomatic_with_disabled_files(path, &disable_files).await
+}
+
+async fn path_is_idiomatic_with_disabled_files(
+    path: &Path,
+    disable_files: &BTreeSet<String>,
+) -> Option<Vec<Arc<dyn Backend>>> {
     let mut backends_by_filename = BTreeMap::<String, Vec<Arc<dyn Backend>>>::new();
     for b in backend::list() {
         match b.idiomatic_filenames().await {
             Ok(filenames) => {
                 for filename in filenames {
+                    if super::idiomatic_version_file_disabled(disable_files, b.id(), &filename) {
+                        continue;
+                    }
                     backends_by_filename
                         .entry(filename)
                         .or_default()
@@ -815,6 +828,20 @@ mod tests {
             .expect("goreleaser should be parsed from its nested idiomatic path");
 
         assert_eq!(versions[0].version(), "2");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_path_is_idiomatic_respects_disabled_files() -> Result<()> {
+        backend::load_tools().await?;
+        let disabled = BTreeSet::from(["node:package.json".to_string()]);
+
+        let backends = path_is_idiomatic_with_disabled_files(Path::new("package.json"), &disabled)
+            .await
+            .expect("package.json should remain idiomatic for package managers");
+
+        assert!(!backends.iter().any(|backend| backend.id() == "node"));
+        assert!(backends.iter().any(|backend| backend.id() == "pnpm"));
         Ok(())
     }
 

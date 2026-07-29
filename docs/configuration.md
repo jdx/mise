@@ -455,6 +455,13 @@ In mise, these are disabled by default, see <https://github.com/jdx/mise/discuss
 
 - `mise settings add idiomatic_version_file_enable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_enable_tools))
 
+Individual files can be disabled for a tool with a `tool:filename` pair. For example, to use
+`.nvmrc` for node while leaving `package.json` available to package managers:
+
+```sh
+mise settings add idiomatic_version_file_disable_files node:package.json
+```
+
 There is a small performance cost to discovering and parsing these files. Registry parsers run
 in-process; plugin-provided files may invoke the plugin's parser. Results are [cached](/cache-behavior),
 so this is generally not noticeable.

@@ -1207,14 +1207,13 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>
 }
 
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
-    let enable_tools = Settings::get().idiomatic_version_file_enable_tools.clone();
+    let settings = Settings::get();
+    let enable_tools = settings.idiomatic_version_file_enable_tools.clone();
+    let disable_files = settings.idiomatic_version_file_disable_files.clone();
     if enable_tools.is_empty() {
         return BTreeMap::new();
     }
-    if !Settings::get()
-        .idiomatic_version_file_disable_tools
-        .is_empty()
-    {
+    if !settings.idiomatic_version_file_disable_tools.is_empty() {
         deprecated!(
             "idiomatic_version_file_disable_tools",
             "is deprecated, use idiomatic_version_file_enable_tools instead"
@@ -1223,6 +1222,7 @@ async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
     let mut jset = JoinSet::new();
     for tool in backend::list() {
         let enable_tools = enable_tools.clone();
+        let disable_files = disable_files.clone();
         jset.spawn(async move {
             if !enable_tools.contains(tool.id()) {
                 return vec![];
@@ -1230,6 +1230,9 @@ async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
             match tool.idiomatic_filenames().await {
                 Ok(filenames) => filenames
                     .iter()
+                    .filter(|filename| {
+                        !idiomatic_version_file_disabled(&disable_files, tool.id(), filename)
+                    })
                     .map(|f| (f.to_string(), tool.id().to_string()))
                     .collect::<Vec<_>>(),
                 Err(err) => {
@@ -1254,6 +1257,20 @@ async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
             .push(plugin);
     }
     idiomatic_filenames
+}
+
+fn idiomatic_version_file_disabled(
+    disable_files: &BTreeSet<String>,
+    tool: &str,
+    filename: &str,
+) -> bool {
+    disable_files.iter().any(|entry| {
+        entry
+            .rsplit_once(':')
+            .is_some_and(|(disabled_tool, disabled_filename)| {
+                disabled_tool == tool && disabled_filename == filename
+            })
+    })
 }
 
 static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
@@ -5149,6 +5166,34 @@ config_roots = ["apps/api", "apps/web"]
             ),
             vec!["nested-tool"]
         );
+    }
+
+    #[test]
+    fn test_idiomatic_version_file_disabled_is_tool_specific() {
+        let disabled = BTreeSet::from([
+            "aqua:owner/tool:tool.json".to_string(),
+            "node:package.json".to_string(),
+            "python:.python-version".to_string(),
+        ]);
+
+        assert!(idiomatic_version_file_disabled(
+            &disabled,
+            "aqua:owner/tool",
+            "tool.json"
+        ));
+        assert!(idiomatic_version_file_disabled(
+            &disabled,
+            "node",
+            "package.json"
+        ));
+        assert!(!idiomatic_version_file_disabled(
+            &disabled,
+            "pnpm",
+            "package.json"
+        ));
+        assert!(!idiomatic_version_file_disabled(
+            &disabled, "node", ".nvmrc"
+        ));
     }
 
     #[tokio::test]

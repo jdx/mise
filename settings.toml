@@ -1247,6 +1247,23 @@ hide = true
 optional = true
 type = "Bool"
 
+[idiomatic_version_file_disable_files]
+default = []
+description = "Specific idiomatic version files to disable for a tool."
+docs = """
+Use `tool:filename` pairs to exclude individual idiomatic version files without disabling
+other files for the tool or other tools that read the same file.
+
+For example, this keeps `.nvmrc` enabled for node while preventing node from reading
+`devEngines.runtime` in `package.json`:
+
+    mise settings add idiomatic_version_file_disable_files node:package.json
+"""
+env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [idiomatic_version_file_disable_tools]
 default = []
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
