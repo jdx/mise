@@ -739,7 +739,14 @@ impl Config {
             .map(|t| (t.name.clone(), t))
             .collect();
         if Settings::get().experimental {
-            for task in inferred_workspace_tasks(&config)? {
+            let inferred_tasks = match inferred_workspace_tasks(&config) {
+                Ok(tasks) => tasks,
+                Err(err) => {
+                    warn!("failed to infer workspace tasks: {err:#}");
+                    Vec::new()
+                }
+            };
+            for task in inferred_tasks {
                 if tasks.contains_key(&task.name) {
                     let available_aliases = task
                         .aliases

@@ -16,6 +16,9 @@ monorepo_root = true
 
 [monorepo]
 config_roots = ["packages/*"]
+
+[tasks.local]
+run = "printf local > local-result.txt"
 TOML
 
 mkdir -p packages/app
@@ -57,3 +60,8 @@ assert "cat packages/app/result.txt" "explicit"
 
 assert_not_contains "MISE_EXPERIMENTAL=0 mise tasks --all" "node:@scope/app#test:unit"
 assert_fail_contains "MISE_EXPERIMENTAL=0 mise run 'node:@scope/missing#build'" "no task"
+
+mkdir -p packages/bad
+printf '{' >packages/bad/package.json
+mise -q run local
+assert "cat local-result.txt" "local"
