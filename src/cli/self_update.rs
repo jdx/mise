@@ -41,6 +41,22 @@ pub fn upgrade_instructions_text() -> Option<String> {
     None
 }
 
+/// Shown when mise cannot update itself and the packager shipped no instructions
+/// file. Without it, telling the user their mise is out of date is a dead end on
+/// every install that disables self-update: a marker file (Homebrew, the AUR
+/// `mise-bin` package), a build without the `self_update` feature (Arch), or
+/// `MISE_SELF_UPDATE_AVAILABLE=false`. The wording stays neutral about which of
+/// those applies — being unable to self-update is not by itself proof that a
+/// package manager owns the install.
+pub const SELF_UPDATE_DISABLED_HINT: &str =
+    "self-update is disabled for this install, update mise the same way you installed it";
+
+/// How to update mise when `mise self-update` is not available: the packager's
+/// instructions when they shipped some, otherwise the generic hint.
+pub fn upgrade_instructions_or_hint() -> String {
+    upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
+}
+
 /// Appends self-update guidance and packaging instructions (if any) to a message.
 pub fn append_self_update_instructions(mut message: String) -> String {
     if SelfUpdate::is_available() {
@@ -49,6 +65,9 @@ pub fn append_self_update_instructions(mut message: String) -> String {
     if let Some(instructions) = upgrade_instructions_text() {
         message.push('\n');
         message.push_str(&instructions);
+    } else if !SelfUpdate::is_available() {
+        message.push('\n');
+        message.push_str(SELF_UPDATE_DISABLED_HINT);
     }
     message
 }

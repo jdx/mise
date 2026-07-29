@@ -11,6 +11,7 @@ TOML
 
 assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml MISE_LOG_LEVEL=warn mise ls 2>&1' 'recommended'
 assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml MISE_LOG_LEVEL=warn mise ls 2>&1' 'brew upgrade mise'
+assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml MISE_LOG_LEVEL=warn mise ls 2>&1' 'self-update is disabled for this install'
 
 # hard min_version: should fail and include instructions
 cat >mise.toml <<'TOML'
@@ -19,3 +20,17 @@ TOML
 
 assert_fail 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise ls 2>&1' 'is required'
 assert_fail 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise ls 2>&1' 'brew upgrade mise'
+
+# hard min_version without packager instructions: still has to say how to update
+assert_fail 'MISE_SELF_UPDATE_AVAILABLE=false mise ls 2>&1' 'self-update is disabled for this install'
+
+# soft min_version without packager instructions: same
+cat >mise.toml <<'TOML'
+min_version = { soft = "9999.0.0" }
+TOML
+
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_LOG_LEVEL=warn mise ls 2>&1' 'self-update is disabled for this install'
+
+# self-update available: unchanged advice, no generic hint
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=true MISE_LOG_LEVEL=warn mise ls 2>&1' 'mise self-update'
+assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=true MISE_LOG_LEVEL=warn mise ls 2>&1' 'self-update is disabled for this install'
