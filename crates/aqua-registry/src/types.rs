@@ -478,6 +478,11 @@ impl AquaPackage {
     }
 
     fn version_override(&self, versions: &[&str]) -> Option<&AquaPackage> {
+        // Aqua treats a package without a top-level constraint as unconditional.
+        // In that case version overrides are not considered.
+        if self.version_constraint.is_empty() {
+            return Some(self);
+        }
         let expressions = versions
             .iter()
             .map(|v| (*v, self.expr_parser(v), self.expr_ctx(v)))
@@ -1991,6 +1996,19 @@ packages:
         let new = pkg.version_override(&["new_v1.0.0"]).unwrap();
         assert_eq!(new.version_prefix.as_deref(), Some("new_v"));
         assert_eq!(new.asset, "tool.tar.gz");
+    }
+
+    #[test]
+    fn test_unconditional_package_ignores_version_prefix() {
+        let pkg = AquaPackage {
+            version_prefix: Some("jq-".to_string()),
+            asset: "jq-{{.OS}}-{{.Arch}}".to_string(),
+            ..Default::default()
+        };
+
+        let resolved = pkg.version_override(&["1.8.1"]).unwrap();
+        assert_eq!(resolved.version_prefix.as_deref(), Some("jq-"));
+        assert_eq!(resolved.asset, "jq-{{.OS}}-{{.Arch}}");
     }
 
     #[test]
