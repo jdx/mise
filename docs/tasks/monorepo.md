@@ -415,6 +415,30 @@ task uses `extends`, its template also takes precedence over the root default.
 
 Root task defaults are experimental and are ignored unless experimental features are enabled.
 
+### Upstream Task Dependencies
+
+Prefix a task dependency with `^` to run that task in upstream workspace projects first. A root
+task default is the usual way to apply this relationship across the workspace:
+
+```toml
+[monorepo.task_defaults.build]
+depends = ["^build"]
+```
+
+The `^` prefix is supported only in `depends`. It is rejected in `depends_post` and `wait_for`
+because those fields do not describe prerequisite work.
+
+Running `node:@acme/web#build` now runs `build` in each project that `@acme/web` depends on before
+building `@acme/web`. The relationship follows the complete project dependency graph, including
+through intermediate projects that do not define `build`. Missing upstream tasks are skipped.
+For a configured task root that is not represented in the detected project graph, the dependency
+is a no-op because that task has no upstream project relationship.
+
+Upstream dependencies work with both provider-inferred tasks and explicit mise tasks. They use the
+same task scheduler as ordinary `depends`, including cycle detection, deduplication, parallel
+execution, and dependency cache-key propagation. This syntax is available only for configured
+monorepo workspaces while experimental features are enabled.
+
 ### Project Overrides
 
 Use `[monorepo.projects]` in the root `mise.toml` to correct or extend provider inference. Project IDs containing `:` or scoped package names must be quoted:

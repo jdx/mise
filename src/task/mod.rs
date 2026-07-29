@@ -17,8 +17,7 @@ use petgraph::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::once;
@@ -696,6 +695,10 @@ pub struct Task {
     #[serde(skip)]
     pub wait_for_raw: Option<Vec<TaskDep>>,
 
+    /// Workspace graph error that prevents this task's `^task` dependencies from resolving.
+    #[serde(skip)]
+    pub(crate) workspace_dependency_error: Option<String>,
+
     /// Args supplied after a literal `--` separator on the command line.
     /// Tracked separately from `args` so the usage parser can be bypassed
     /// when these contain `--help`/`-h`, restoring the documented escape
@@ -1365,6 +1368,9 @@ impl Task {
         tasks: &BTreeMap<String, &Task>,
         visited: &mut HashSet<String>,
     ) -> Result<Vec<Task>> {
+        if let Some(err) = &self.workspace_dependency_error {
+            bail!("{err}");
+        }
         let mut depends: Vec<Task> = self
             .depends
             .iter()
@@ -1397,6 +1403,9 @@ impl Task {
     ) -> Result<(Vec<Task>, Vec<Task>)> {
         use crate::task::TaskLoadContext;
 
+        if let Some(err) = &self.workspace_dependency_error {
+            bail!("{err}");
+        }
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
 
         // Build context with path hints from self, tasks_to_run, and dependency patterns
@@ -1474,6 +1483,128 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<_>>()?;
         Ok((depends, depends_post))
+    }
+
+    /// Expands `^task` dependencies to the matching task in every upstream workspace project.
+    ///
+    /// Each expanded dependency is optional because not every project in the dependency closure
+    /// needs to implement the requested task. The workspace graph traversal still continues
+    /// through those projects so matching tasks farther upstream are retained.
+    pub(crate) fn resolve_workspace_task_dependencies(
+        &mut self,
+        graph: &workspace::WorkspaceProjectGraph,
+        project_ids_by_root: &BTreeMap<PathBuf, BTreeSet<workspace::ProjectId>>,
+    ) -> Result<()> {
+        if self
+            .depends_post
+            .iter()
+            .chain(&self.wait_for)
+            .any(|dep| dep.task.starts_with('^'))
+        {
+            bail!("^task dependencies are supported only in depends");
+        }
+        if !self.depends.iter().any(|dep| dep.task.starts_with('^')) {
+            return Ok(());
+        }
+
+        let mut project_ids = BTreeSet::new();
+        let stable_task_names = once(self.name.as_str())
+            .chain(self.aliases.iter().map(String::as_str))
+            .filter(|name| is_workspace_project_task(name))
+            .collect_vec();
+
+        for name in stable_task_names {
+            let (project_id, _) = name
+                .split_once('#')
+                .expect("workspace project task contains #");
+            if let Ok(project_id) = project_id.parse::<workspace::ProjectId>()
+                && graph.get(&project_id).is_some()
+            {
+                project_ids.insert(project_id);
+            }
+        }
+
+        if project_ids.is_empty()
+            && let Some(config_root) = self.config_root.as_deref()
+        {
+            let config_root = file::desymlink_path(config_root);
+            project_ids.extend(
+                project_ids_by_root
+                    .get(&config_root)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            );
+        }
+
+        if project_ids.is_empty() {
+            self.depends
+                .retain(|dependency| !dependency.task.starts_with('^'));
+            if let Some(raw) = &mut self.depends_raw {
+                raw.retain(|dependency| !dependency.task.starts_with('^'));
+            }
+            return Ok(());
+        }
+
+        let mut upstream_roots = BTreeSet::new();
+        for project_id in &project_ids {
+            upstream_roots.extend(
+                graph
+                    .matching_dependency_projects(project_id, |_| true)?
+                    .into_iter()
+                    .map(|project| project.root.clone()),
+            );
+        }
+
+        fn expand(dependencies: &mut Vec<TaskDep>, upstream_roots: &BTreeSet<PathBuf>) {
+            let mut expanded = Vec::new();
+            for dependency in dependencies.iter() {
+                let Some(task_name) = dependency
+                    .task
+                    .strip_prefix('^')
+                    .filter(|task_name| !task_name.is_empty())
+                else {
+                    expanded.push(dependency.clone());
+                    continue;
+                };
+
+                expanded.extend(upstream_roots.iter().map(|root| {
+                    let mut dependency = dependency.clone();
+                    let scope = if root.as_os_str().is_empty() || root == Path::new(".") {
+                        "//".to_string()
+                    } else {
+                        format!("//{}", root.to_string_lossy().replace('\\', "/"))
+                    };
+                    dependency.task = format!("{scope}:{task_name}");
+                    dependency.optional = true;
+                    dependency
+                }));
+            }
+            *dependencies = expanded;
+        }
+
+        expand(&mut self.depends, &upstream_roots);
+        if let Some(raw) = &mut self.depends_raw {
+            expand(raw, &upstream_roots);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_workspace_task_dependency_error(&mut self, error: &eyre::Report) {
+        if self
+            .depends_post
+            .iter()
+            .chain(&self.wait_for)
+            .any(|dep| dep.task.starts_with('^'))
+        {
+            self.workspace_dependency_error =
+                Some("^task dependencies are supported only in depends".to_string());
+        } else if self.depends.iter().any(|dep| dep.task.starts_with('^')) {
+            self.workspace_dependency_error = Some(format!(
+                "failed to resolve upstream task dependencies because the workspace project graph \
+                 could not be loaded: {error:#}"
+            ));
+        }
     }
 
     /// True when mise should not run the usage parser against this task's
@@ -2661,6 +2792,7 @@ impl Default for Task {
             depends_raw: None,
             depends_post_raw: None,
             wait_for_raw: None,
+            workspace_dependency_error: None,
         }
     }
 }
@@ -3095,11 +3227,13 @@ pub async fn parse_usage_values_from_task(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
+    use crate::task::workspace;
     use crate::task::{RunEntry, Task};
     use crate::{config::Config, dirs};
     use indexmap::IndexMap;
@@ -3356,6 +3490,42 @@ exec proxy "$@"
         assert!(!tera_template_has_usage_ref("{# usage.app #}"));
         assert!(tera_tag_has_usage_ref("if(usage.run_post)"));
         assert!(!tera_tag_has_usage_ref("ifusage.run_post"));
+    }
+
+    #[test]
+    fn workspace_task_dependencies_reject_non_prerequisite_fields() {
+        let graph = workspace::WorkspaceProjectGraph::default();
+        let project_ids_by_root = BTreeMap::new();
+        for task in [
+            Task {
+                depends_post: vec!["^build".to_string().into()],
+                ..Default::default()
+            },
+            Task {
+                wait_for: vec!["^build".to_string().into()],
+                ..Default::default()
+            },
+        ] {
+            let mut task = task;
+            let err = task
+                .resolve_workspace_task_dependencies(&graph, &project_ids_by_root)
+                .unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "^task dependencies are supported only in depends"
+            );
+        }
+
+        let mut task = Task {
+            wait_for: vec!["^build".to_string().into()],
+            ..Default::default()
+        };
+        task.set_workspace_task_dependency_error(&eyre::eyre!("invalid graph"));
+        let err = task.all_depends(&BTreeMap::new()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "^task dependencies are supported only in depends"
+        );
     }
 
     #[tokio::test]
