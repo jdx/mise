@@ -418,9 +418,15 @@ impl Backend for AquaBackend {
             .get(&platform_key)
             .and_then(|asset| asset.url_api.clone());
 
-        // Skip get_version_tags() API call if we have lockfile URL
-        let tag = if existing_platform.is_some() {
-            None // We'll determine version from URL instead
+        // Skip get_version_tags() API call if the lockfile URL contains the release tag.
+        // Keep the tag for selecting Aqua version overrides, which may be scoped by prefix.
+        let locked_tag = existing_platform
+            .as_deref()
+            .and_then(github_release_tag_from_url);
+        let tag = if let Some(tag) = locked_tag {
+            Some(tag)
+        } else if existing_platform.is_some() {
+            None
         } else {
             match self.get_version_tags().await {
                 Ok(tags) => tags
@@ -3256,6 +3262,18 @@ fn version_candidates<'a>(version: &'a str, version_prefix: Option<&str>) -> Vec
     candidates.into_iter().unique().collect()
 }
 
+fn github_release_tag_from_url(url: &str) -> Option<String> {
+    let url = Url::parse(url).ok()?;
+    if url.host_str()? != "github.com" {
+        return None;
+    }
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    let [_owner, _name, "releases", "download", tag, _asset] = segments.as_slice() else {
+        return None;
+    };
+    urlencoding::decode(tag).ok().map(Cow::into_owned)
+}
+
 fn starts_with_v(s: &str) -> bool {
     s.starts_with('v') || s.starts_with('V')
 }
@@ -4689,6 +4707,29 @@ version_overrides:
             version_from_tag(&pkg, "apps_v1.76.0").unwrap(),
             Some("1.76.0".to_string())
         );
+    }
+
+    #[test]
+    fn test_locked_release_tag_matches_version_override_prefix() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: jqlang
+repo_name: jq
+version_constraint: "false"
+version_prefix: jq-
+version_overrides:
+  - version_constraint: "true"
+    asset: jq-{{.OS}}-{{.Arch}}
+    format: raw
+"#,
+        );
+        let url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64";
+        let tag = github_release_tag_from_url(url).unwrap();
+        let versioned = pkg.with_version(&[&tag], "darwin", "arm64");
+
+        assert_eq!(tag, "jq-1.8.1");
+        assert_eq!(versioned.asset, "jq-{{.OS}}-{{.Arch}}");
     }
 
     fn pkg_from_yaml(yaml: &str) -> AquaPackage {
