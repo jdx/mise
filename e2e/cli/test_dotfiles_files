@@ -400,6 +400,29 @@ assert_fail "mise dotfiles add ~/.invalid-template --source \"$PWD/template-sour
 assert "cat template-source" "original template"
 assert_fail "test -e ~/.config/mise/config.toml"
 
+# capture failures roll back sources changed earlier in the same invocation
+echo "live rollback one" >~/.rollback-one
+echo "live rollback two" >~/.rollback-two
+echo "source rollback one" >captured-root/.rollback-one
+echo "source rollback two" >captured-root/.rollback-two
+chmod 400 captured-root/.rollback-two
+assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.rollback-one ~/.rollback-two --yes"
+chmod 600 captured-root/.rollback-two
+assert "cat captured-root/.rollback-one" "source rollback one"
+assert "cat captured-root/.rollback-two" "source rollback two"
+assert_fail "test -e ~/.config/mise/config.toml"
+
+# execution failures restore source/config state after planning has succeeded
+mkdir apply-failure-parent
+echo "live execution rollback" >apply-failure-parent/target
+echo "source execution rollback" >apply-failure-source
+chmod 500 apply-failure-parent
+assert_fail "mise dotfiles add \"$PWD/apply-failure-parent/target\" --source \"$PWD/apply-failure-source\" --yes"
+chmod 700 apply-failure-parent
+assert "cat apply-failure-parent/target" "live execution rollback"
+assert "cat apply-failure-source" "source execution rollback"
+assert_fail "test -e ~/.config/mise/config.toml"
+
 # --no-apply leaves the captured target in place
 echo "capture only" >~/.capture-only
 MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.capture-only --no-apply --yes

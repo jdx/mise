@@ -1473,6 +1473,11 @@ fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
     if !source.is_dir() || !target.is_dir() {
         return Ok(false);
     }
+    // Windows ACLs are not represented by std::fs::Permissions. Refuse to
+    // destructively replace a real directory unless the user explicitly
+    // accepts that risk with --force.
+    #[cfg(not(unix))]
+    return Ok(false);
     if !permissions_match(source, target)? {
         return Ok(false);
     }

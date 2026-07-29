@@ -165,113 +165,148 @@ impl DotfilesAdd {
             return Ok(());
         }
 
-        let backup_dir = if self.no_apply {
-            None
+        let backup_dir = tempfile::tempdir()?;
+        let original_config = if config_path.exists() {
+            Some(file::read(&config_path)?)
         } else {
-            Some(tempfile::tempdir()?)
+            None
         };
         let mut source_backups = vec![];
-        let mut accepted = vec![];
-        let mut updated_targets = vec![];
-        let mut apply_requests = vec![];
-        for (index, item) in planned.iter().enumerate() {
-            if item.target.exists() && !same_file(&item.target, &item.source) {
-                if item.source.exists()
-                    && !self.force
-                    && !self.yes
-                    && console::user_attended_stderr()
-                {
-                    let ok = prompt::confirm(format!(
-                        "dotfiles: overwrite source {} from {}?",
-                        item.source.display_user(),
-                        item.target.display_user()
-                    ))?;
-                    if !ok {
-                        info!("dotfiles: skipped {}", item.target_raw);
-                        continue;
+        let mut target_backups = vec![];
+        let mut apply_started = false;
+        let result = (|| -> Result<()> {
+            let mut accepted = vec![];
+            let mut updated_targets = vec![];
+            let mut apply_requests = vec![];
+            for (index, item) in planned.iter().enumerate() {
+                if item.target.exists() && !same_file(&item.target, &item.source) {
+                    if item.source.exists()
+                        && !self.force
+                        && !self.yes
+                        && console::user_attended_stderr()
+                    {
+                        let ok = prompt::confirm(format!(
+                            "dotfiles: overwrite source {} from {}?",
+                            item.source.display_user(),
+                            item.target.display_user()
+                        ))?;
+                        if !ok {
+                            info!("dotfiles: skipped {}", item.target_raw);
+                            continue;
+                        }
                     }
-                }
-                if let Some(backup_dir) = &backup_dir {
-                    let backup = backup_dir.path().join(index.to_string());
-                    if item.source.exists() || item.source.is_symlink() {
-                        system::files::copy_path(&item.source, &backup)?;
-                        source_backups.push((item.source.clone(), Some(backup)));
-                    } else {
-                        source_backups.push((item.source.clone(), None));
+                    target_backups.push((
+                        item.target.clone(),
+                        backup_path(
+                            &item.target,
+                            &backup_dir.path().join("targets").join(index.to_string()),
+                        )?,
+                    ));
+                    source_backups.push((
+                        item.source.clone(),
+                        backup_path(
+                            &item.source,
+                            &backup_dir.path().join("sources").join(index.to_string()),
+                        )?,
+                    ));
+                    system::files::copy_path(&item.target, &item.source)?;
+                    info!(
+                        "dotfiles: copied {} to {}",
+                        item.target.display_user(),
+                        item.source.display_user()
+                    );
+                } else if !item.source.exists() {
+                    target_backups.push((
+                        item.target.clone(),
+                        backup_path(
+                            &item.target,
+                            &backup_dir.path().join("targets").join(index.to_string()),
+                        )?,
+                    ));
+                    source_backups.push((item.source.clone(), PathBackup::Missing));
+                    if let Some(parent) = item.source.parent() {
+                        file::create_dir_all(parent)?;
                     }
+                    file::write(&item.source, "")?;
+                    info!("dotfiles: created {}", item.source.display_user());
+                } else if !self.no_apply {
+                    target_backups.push((
+                        item.target.clone(),
+                        backup_path(
+                            &item.target,
+                            &backup_dir.path().join("targets").join(index.to_string()),
+                        )?,
+                    ));
                 }
-                system::files::copy_path(&item.target, &item.source)?;
-                info!(
-                    "dotfiles: copied {} to {}",
-                    item.target.display_user(),
-                    item.source.display_user()
-                );
-            } else if !item.source.exists() {
-                if backup_dir.is_some() {
-                    source_backups.push((item.source.clone(), None));
+                if item.already_managed.is_some() {
+                    updated_targets.push(item.target_raw.as_str());
                 }
-                if let Some(parent) = item.source.parent() {
-                    file::create_dir_all(parent)?;
-                }
-                file::write(&item.source, "")?;
-                info!("dotfiles: created {}", item.source.display_user());
+                accepted.push(item);
+                apply_requests.push(item.as_request(&config_path));
             }
-            if item.already_managed.is_some() {
-                updated_targets.push(item.target_raw.as_str());
-            }
-            accepted.push(item);
-            apply_requests.push(item.as_request(&config_path));
-        }
 
-        let apply_opts = system::files::ApplyOpts {
-            dry_run: false,
-            verbose: false,
-            force: false,
-            force_hint: "run `mise bootstrap dotfiles apply --force`",
-            yes: true,
-        };
-        let apply_plan = if !self.no_apply && !apply_requests.is_empty() {
-            match system::files::plan_apply(&config, &apply_requests, &apply_opts) {
-                Ok(plan) => Some(plan),
-                Err(err) => {
-                    restore_sources(&source_backups)?;
-                    return Err(err);
+            let apply_opts = system::files::ApplyOpts {
+                dry_run: false,
+                verbose: false,
+                force: false,
+                force_hint: "run `mise bootstrap dotfiles apply --force`",
+                yes: true,
+            };
+            let apply_plan = if !self.no_apply && !apply_requests.is_empty() {
+                Some(system::files::plan_apply(
+                    &config,
+                    &apply_requests,
+                    &apply_opts,
+                )?)
+            } else {
+                None
+            };
+
+            let added_targets = accepted
+                .iter()
+                .filter(|item| item.already_managed.is_none())
+                .collect::<Vec<_>>();
+            if !added_targets.is_empty() {
+                if !config_path.exists() {
+                    let cf = MiseToml::init(&config_path);
+                    cf.save()?;
+                }
+                let raw = file::read_to_string(&config_path)?;
+                let mut doc: DocumentMut = raw.parse()?;
+                ensure_dotfiles_table(&mut doc);
+                for item in &added_targets {
+                    write_entry(&mut doc, item);
+                }
+                sort_dotfiles_table(&mut doc);
+                file::write(&config_path, doc.to_string())?;
+                for item in &added_targets {
+                    info!(
+                        "dotfiles: added {} to {}",
+                        item.target_raw,
+                        config_path.display_user()
+                    );
                 }
             }
-        } else {
-            None
-        };
-
-        let added_targets = accepted
-            .iter()
-            .filter(|item| item.already_managed.is_none())
-            .collect::<Vec<_>>();
-        if !added_targets.is_empty() {
-            if !config_path.exists() {
-                let cf = MiseToml::init(&config_path);
-                cf.save()?;
+            if !updated_targets.is_empty() {
+                info!("dotfiles: updated {}", updated_targets.join(", "));
             }
-            let raw = file::read_to_string(&config_path)?;
-            let mut doc: DocumentMut = raw.parse()?;
-            ensure_dotfiles_table(&mut doc);
-            for item in &added_targets {
-                write_entry(&mut doc, item);
+            if let Some(plan) = apply_plan {
+                apply_started = true;
+                system::files::execute_apply(plan, &apply_opts)?;
             }
-            sort_dotfiles_table(&mut doc);
-            file::write(&config_path, doc.to_string())?;
-            for item in &added_targets {
-                info!(
-                    "dotfiles: added {} to {}",
-                    item.target_raw,
-                    config_path.display_user()
-                );
+            Ok(())
+        })();
+        if let Err(err) = result {
+            if let Err(rollback_err) = rollback_add(
+                &source_backups,
+                &target_backups,
+                apply_started,
+                &config_path,
+                original_config.as_deref(),
+            ) {
+                bail!("{err}\ndotfiles: rollback failed: {rollback_err}");
             }
-        }
-        if !updated_targets.is_empty() {
-            info!("dotfiles: updated {}", updated_targets.join(", "));
-        }
-        if let Some(plan) = apply_plan {
-            system::files::execute_apply(plan, &apply_opts)?;
+            return Err(err);
         }
         Ok(())
     }
@@ -376,16 +411,82 @@ fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
     }
 }
 
-fn restore_sources(backups: &[(PathBuf, Option<PathBuf>)]) -> Result<()> {
-    for (source, backup) in backups.iter().rev() {
-        if source.is_symlink() || source.is_file() {
-            file::remove_file(source)?;
-        } else if source.is_dir() {
-            file::remove_all(source)?;
+enum PathBackup {
+    Missing,
+    Copied(PathBuf),
+    Symlink(PathBuf),
+}
+
+fn backup_path(path: &std::path::Path, backup: &std::path::Path) -> Result<PathBackup> {
+    if path.is_symlink() {
+        Ok(PathBackup::Symlink(std::fs::read_link(path)?))
+    } else if path.exists() {
+        system::files::copy_path(path, backup)?;
+        Ok(PathBackup::Copied(backup.to_path_buf()))
+    } else {
+        Ok(PathBackup::Missing)
+    }
+}
+
+fn restore_paths(backups: &[(PathBuf, PathBackup)]) -> Result<()> {
+    let mut errors = vec![];
+    for (path, backup) in backups.iter().rev() {
+        let result = (|| -> Result<()> {
+            remove_path(path)?;
+            match backup {
+                PathBackup::Missing => {}
+                PathBackup::Copied(backup) => system::files::copy_path(backup, path)?,
+                PathBackup::Symlink(target) => {
+                    if let Some(parent) = path.parent() {
+                        file::create_dir_all(parent)?;
+                    }
+                    file::make_symlink(target, path)?;
+                }
+            }
+            Ok(())
+        })();
+        if let Err(err) = result {
+            errors.push(format!("{}: {err}", path.display_user()));
         }
-        if let Some(backup) = backup {
-            system::files::copy_path(backup, source)?;
-        }
+    }
+    if !errors.is_empty() {
+        bail!("{}", errors.join("\n"));
+    }
+    Ok(())
+}
+
+fn remove_path(path: &std::path::Path) -> Result<()> {
+    if path.is_symlink() || path.is_file() {
+        file::remove_file(path)?;
+    } else if path.is_dir() {
+        file::remove_all(path)?;
+    }
+    Ok(())
+}
+
+fn rollback_add(
+    source_backups: &[(PathBuf, PathBackup)],
+    target_backups: &[(PathBuf, PathBackup)],
+    restore_targets: bool,
+    config_path: &std::path::Path,
+    original_config: Option<&[u8]>,
+) -> Result<()> {
+    let mut errors = vec![];
+    if restore_targets && let Err(err) = restore_paths(target_backups) {
+        errors.push(format!("targets: {err}"));
+    }
+    if let Err(err) = restore_paths(source_backups) {
+        errors.push(format!("sources: {err}"));
+    }
+    let config_result = match original_config {
+        Some(contents) => file::write(config_path, contents),
+        None => remove_path(config_path),
+    };
+    if let Err(err) = config_result {
+        errors.push(format!("config: {err}"));
+    }
+    if !errors.is_empty() {
+        bail!("{}", errors.join("\n"));
     }
     Ok(())
 }
