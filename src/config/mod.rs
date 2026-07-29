@@ -793,11 +793,20 @@ impl Config {
                 tasks.insert(task.name.clone(), task);
             }
         }
-        if let Some(monorepo_root) = config.monorepo_root() {
+        if Settings::get().experimental
+            && let Some(monorepo_root) = config.monorepo_root()
+        {
             match workspace_graph.as_ref() {
                 Some(Ok(graph)) => {
+                    let mut project_ids_by_root = BTreeMap::new();
+                    for project in graph.projects() {
+                        project_ids_by_root
+                            .entry(file::desymlink_path(&monorepo_root.join(&project.root)))
+                            .or_insert_with(BTreeSet::new)
+                            .insert(project.id.clone());
+                    }
                     for task in tasks.values_mut() {
-                        task.resolve_workspace_task_dependencies(graph, &monorepo_root)?;
+                        task.resolve_workspace_task_dependencies(graph, &project_ids_by_root)?;
                     }
                 }
                 Some(Err(err)) => {

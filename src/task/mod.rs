@@ -1497,8 +1497,16 @@ impl Task {
     pub(crate) fn resolve_workspace_task_dependencies(
         &mut self,
         graph: &workspace::WorkspaceProjectGraph,
-        monorepo_root: &Path,
+        project_ids_by_root: &BTreeMap<PathBuf, BTreeSet<workspace::ProjectId>>,
     ) -> Result<()> {
+        if self
+            .depends_post
+            .iter()
+            .chain(&self.wait_for)
+            .any(|dep| dep.task.starts_with('^'))
+        {
+            bail!("^task dependencies are supported only in depends");
+        }
         if !self.depends.iter().any(|dep| dep.task.starts_with('^')) {
             return Ok(());
         }
@@ -1525,12 +1533,11 @@ impl Task {
         {
             let config_root = file::desymlink_path(config_root);
             project_ids.extend(
-                graph
-                    .projects()
-                    .filter(|project| {
-                        file::desymlink_path(&monorepo_root.join(&project.root)) == config_root
-                    })
-                    .map(|project| project.id.clone()),
+                project_ids_by_root
+                    .get(&config_root)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
             );
         }
 
@@ -3216,11 +3223,13 @@ pub async fn parse_usage_values_from_task(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
+    use crate::task::workspace;
     use crate::task::{RunEntry, Task};
     use crate::{config::Config, dirs};
     use indexmap::IndexMap;
@@ -3477,6 +3486,31 @@ exec proxy "$@"
         assert!(!tera_template_has_usage_ref("{# usage.app #}"));
         assert!(tera_tag_has_usage_ref("if(usage.run_post)"));
         assert!(!tera_tag_has_usage_ref("ifusage.run_post"));
+    }
+
+    #[test]
+    fn workspace_task_dependencies_reject_non_prerequisite_fields() {
+        let graph = workspace::WorkspaceProjectGraph::default();
+        let project_ids_by_root = BTreeMap::new();
+        for task in [
+            Task {
+                depends_post: vec!["^build".to_string().into()],
+                ..Default::default()
+            },
+            Task {
+                wait_for: vec!["^build".to_string().into()],
+                ..Default::default()
+            },
+        ] {
+            let mut task = task;
+            let err = task
+                .resolve_workspace_task_dependencies(&graph, &project_ids_by_root)
+                .unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                "^task dependencies are supported only in depends"
+            );
+        }
     }
 
     #[tokio::test]

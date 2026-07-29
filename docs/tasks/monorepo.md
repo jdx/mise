@@ -425,6 +425,9 @@ task default is the usual way to apply this relationship across the workspace:
 depends = ["^build"]
 ```
 
+The `^` prefix is supported only in `depends`. It is rejected in `depends_post` and `wait_for`
+because those fields do not describe prerequisite work.
+
 Running `node:@acme/web#build` now runs `build` in each project that `@acme/web` depends on before
 building `@acme/web`. The relationship follows the complete project dependency graph, including
 through intermediate projects that do not define `build`. Missing upstream tasks are skipped.
