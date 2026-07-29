@@ -293,6 +293,8 @@ impl TasksValidate {
 
         for (dep_type, dep) in all_deps {
             if dep.optional {
+                // Graph construction above still validates the selector and reports matcher
+                // errors. Only the later missing-reference check is skipped here.
                 continue;
             }
             let dep_name = &dep.task;

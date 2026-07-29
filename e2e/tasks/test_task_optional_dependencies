@@ -48,3 +48,4 @@ run = "echo test"
 EOF
 
 assert_fail "mise run test" "relative path syntax"
+assert_contains "mise tasks validate 2>&1 || true" "relative path syntax"
