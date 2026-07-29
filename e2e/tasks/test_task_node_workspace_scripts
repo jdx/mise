@@ -56,3 +56,4 @@ mise -q run 'node:@scope/app#build'
 assert "cat packages/app/result.txt" "explicit"
 
 assert_not_contains "MISE_EXPERIMENTAL=0 mise tasks --all" "node:@scope/app#test:unit"
+assert_fail_contains "MISE_EXPERIMENTAL=0 mise run 'node:@scope/missing#build'" "no task"

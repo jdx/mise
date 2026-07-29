@@ -2498,12 +2498,22 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
     // Check if this is a bare task name that should be treated as relative
     let is_bare_name =
         !pattern.starts_with("//") && !pattern.starts_with("::") && !pattern.starts_with(':');
+    let parent_is_scoped = parent_task.is_some_and(|parent| {
+        parent.name.starts_with("//") || is_workspace_project_task(&parent.name)
+    });
 
     // If pattern starts with ":" or is a bare name in monorepo context, resolve relatively
     let should_resolve_relatively = pattern.starts_with(':') && !pattern.starts_with("::")
-        || (is_bare_name && parent_task.is_some_and(|p| p.name.starts_with("//")));
+        || (is_bare_name && parent_is_scoped);
 
     if should_resolve_relatively && let Some(parent) = parent_task {
+        if let Some((project, _)) = parent
+            .name
+            .split_once('#')
+            .filter(|_| is_workspace_project_task(&parent.name))
+        {
+            return format!("{project}#{}", pattern.strip_prefix(':').unwrap_or(pattern));
+        }
         // Extract the path portion from the parent task name
         // For monorepo tasks like "//projects/frontend:test:nested", we need to extract "//projects/frontend"
         // by finding the FIRST colon after the "//" prefix, not the last one
@@ -2767,6 +2777,19 @@ where
         // (for example, `node:@scope/app#build`) without being monorepo paths.
         if let Some(exact) = self.get(pat) {
             return Ok(vec![exact]);
+        }
+        if is_workspace_project_task(pat) {
+            let matcher = GlobBuilder::new(pat)
+                .literal_separator(false)
+                .build()
+                .map_err(|err| eyre!("invalid workspace task pattern {pat:?}: {err}"))?
+                .compile_matcher();
+            return Ok(self
+                .iter()
+                .filter(|(name, _)| matcher.is_match(name))
+                .map(|(_, task)| task)
+                .unique()
+                .collect());
         }
 
         // === Monorepo pattern matching ===
@@ -3697,6 +3720,21 @@ echo "hello world"
         assert_eq!(
             resolve_task_pattern("::global", Some(&parent_task)),
             "::global"
+        );
+
+        // Stable workspace task IDs resolve relative dependencies within the
+        // same project rather than treating the provider prefix as a path.
+        let parent_task = Task {
+            name: "node:@scope/app#build".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":test", Some(&parent_task)),
+            "node:@scope/app#test"
+        );
+        assert_eq!(
+            resolve_task_pattern("lint", Some(&parent_task)),
+            "node:@scope/app#lint"
         );
 
         // Test 9: Pattern with wildcards
@@ -5111,6 +5149,35 @@ echo "test"
 
         let matches = tasks.get_matching("pr:remove").unwrap();
         assert_eq!(matches, vec![&"pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_workspace_task_ids() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            (
+                "node:@scope/app#build".to_string(),
+                "node:@scope/app#build".to_string(),
+            ),
+            (
+                "node:@scope/app#test:unit".to_string(),
+                "node:@scope/app#test:unit".to_string(),
+            ),
+        ]);
+
+        assert!(
+            tasks
+                .get_matching("node:@scope/missing#build")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            tasks.get_matching("node:@scope/app#test:*").unwrap(),
+            vec![&"node:@scope/app#test:unit".to_string()]
+        );
     }
 
     #[test]
