@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+mkdir -p bin
+cat <<'SH' >bin/npm
+#!/bin/sh
+printf '%s' "$*" >manager-args.txt
+printf inferred >result.txt
+SH
+chmod +x bin/npm
+export PATH="$PWD/bin:$PATH"
+
+cat <<'TOML' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.local]
+run = "printf local > local-result.txt"
+TOML
+
+mkdir -p packages/app
+cat <<'JSON' >package.json
+{
+  "packageManager": "npm@11.0.0",
+  "workspaces": ["packages/*"]
+}
+JSON
+cat <<'JSON' >packages/app/package.json
+{
+  "name": "@scope/app",
+  "scripts": {
+    "build": "printf inferred > result.txt",
+    "test:unit": "printf tested > test-result.txt"
+  }
+}
+JSON
+
+assert_contains "mise tasks --all" "node:@scope/app#build"
+assert_contains "mise task info 'node:@scope/app#build'" "packages/app/package.json"
+
+mise -q run 'node:@scope/app#build' -- forwarded
+assert "cat packages/app/result.txt" "inferred"
+assert "cat packages/app/manager-args.txt" "run build -- forwarded"
+
+printf stale >packages/app/result.txt
+mise -q run //packages/app:build
+assert "cat packages/app/result.txt" "inferred"
+
+cat <<'TOML' >packages/app/mise.toml
+[tasks.build]
+run = "printf explicit > result.txt"
+TOML
+
+printf stale >packages/app/result.txt
+mise -q run 'node:@scope/app#build'
+assert "cat packages/app/result.txt" "explicit"
+
+assert_not_contains "MISE_EXPERIMENTAL=0 mise tasks --all" "node:@scope/app#test:unit"
+assert_fail_contains "MISE_EXPERIMENTAL=0 mise run 'node:@scope/missing#build'" "no task"
+
+mkdir -p packages/bad
+printf '{' >packages/bad/package.json
+mise -q run local
+assert "cat local-result.txt" "local"

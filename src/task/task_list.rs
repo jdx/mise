@@ -1,7 +1,8 @@
 use crate::config::{self, Config};
 use crate::file::display_path;
 use crate::task::{
-    GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, resolve_task_pattern,
+    GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
+    resolve_task_pattern,
 };
 use crate::ui::ctrlc;
 use crate::ui::{prompt, style};
@@ -432,7 +433,11 @@ pub async fn get_task_lists(
         let monorepo_patterns: Vec<&str> = args
             .iter()
             .filter_map(|(t, _)| {
-                if t.starts_with("//") || t.contains("...") || t.starts_with(':') {
+                if t.starts_with("//")
+                    || t.contains("...")
+                    || t.starts_with(':')
+                    || is_workspace_project_task(t)
+                {
                     Some(t.as_str())
                 } else {
                     None

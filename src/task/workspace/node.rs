@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
 use eyre::{Context, Result};
 
-use super::{ProjectId, WorkspaceProject, WorkspaceProvider};
+use super::{ProjectId, WorkspaceProject, WorkspaceProvider, WorkspaceTask};
 
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
@@ -109,6 +109,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                     .filter_map(|name| project_ids.get(name).cloned())
                     .filter(|dependency| dependency != &id)
                     .collect();
+                let source = root.join(PACKAGE_JSON);
                 let mut project = WorkspaceProject::new(id, root);
                 project.dependencies = dependencies;
                 project.metadata.insert(
@@ -120,10 +121,54 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                         .metadata
                         .insert("package_manager".to_string(), package_manager.clone());
                 }
+                let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
+                project.tasks = workspace_tasks(&manifest, package_manager, &source);
                 Ok(project)
             })
             .collect()
     }
+
+    fn discover_project_tasks(
+        &self,
+        workspace_root: &Path,
+        project_root: &Path,
+    ) -> Result<BTreeMap<String, WorkspaceTask>> {
+        let Some(definition) = workspace_definition(workspace_root)? else {
+            return Ok(BTreeMap::new());
+        };
+        let source = project_root.join(PACKAGE_JSON);
+        let manifest_path = workspace_root.join(&source);
+        if !manifest_path.is_file() {
+            return Ok(BTreeMap::new());
+        }
+        let Some(manifest) = read_package_json_if_valid(&manifest_path)? else {
+            return Ok(BTreeMap::new());
+        };
+        let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
+        Ok(workspace_tasks(&manifest, package_manager, &source))
+    }
+}
+
+fn workspace_tasks(
+    manifest: &PackageJson,
+    package_manager: &str,
+    source: &Path,
+) -> BTreeMap<String, WorkspaceTask> {
+    manifest
+        .scripts
+        .iter()
+        .map(|(name, script)| {
+            let command = shell_words::join([package_manager, "run", name, "--"]);
+            (
+                name.clone(),
+                WorkspaceTask {
+                    command,
+                    description: script.clone(),
+                    source: source.to_path_buf(),
+                },
+            )
+        })
+        .collect()
 }
 
 fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinition>> {
@@ -239,6 +284,127 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn infers_package_scripts_as_workspace_tasks() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"@scope/app","scripts":{"build":"vite build","test:unit":"vitest"}}"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+        let project = &projects[0];
+
+        assert_eq!(
+            project.tasks.get("build"),
+            Some(&WorkspaceTask {
+                command: "pnpm run build --".to_string(),
+                description: "vite build".to_string(),
+                source: PathBuf::from("packages/app/package.json"),
+            })
+        );
+        assert_eq!(
+            project
+                .tasks
+                .get("test:unit")
+                .map(|task| task.command.as_str()),
+            Some("pnpm run test:unit --")
+        );
+    }
+
+    #[test]
+    fn root_overrides_reload_package_scripts() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app","scripts":{"old":"old command"}}"#,
+        );
+        write(
+            &temp.path().join("overrides/app/package.json"),
+            r#"{"name":"app","scripts":{"new":"new command"}}"#,
+        );
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            super::super::WorkspaceProjectOverride {
+                root: Some("overrides/app".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = super::super::WorkspaceProjectGraph::discover_all_with_overrides(
+            &[&NodeWorkspaceProvider],
+            temp.path(),
+            &overrides,
+        )
+        .unwrap();
+        let project = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert_eq!(project.root, Path::new("overrides/app"));
+        assert!(!project.tasks.contains_key("old"));
+        assert_eq!(
+            project.tasks.get("new"),
+            Some(&WorkspaceTask {
+                command: "pnpm run new --".to_string(),
+                description: "new command".to_string(),
+                source: PathBuf::from("overrides/app/package.json"),
+            })
+        );
+    }
+
+    #[test]
+    fn root_overrides_without_valid_manifests_have_no_scripts() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app","scripts":{"old":"old command"}}"#,
+        );
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            super::super::WorkspaceProjectOverride {
+                root: Some("overrides/app".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let discover = || {
+            super::super::WorkspaceProjectGraph::discover_all_with_overrides(
+                &[&NodeWorkspaceProvider],
+                temp.path(),
+                &overrides,
+            )
+            .unwrap()
+        };
+
+        assert!(
+            discover()
+                .get(&ProjectId::new("node", "app").unwrap())
+                .unwrap()
+                .tasks
+                .is_empty()
+        );
+
+        write(&temp.path().join("overrides/app/package.json"), "{");
+        assert!(
+            discover()
+                .get(&ProjectId::new("node", "app").unwrap())
+                .unwrap()
+                .tasks
+                .is_empty()
+        );
     }
 
     #[test]

@@ -73,18 +73,33 @@ pub struct WorkspaceProject {
     pub metadata: BTreeMap<String, String>,
     /// Projects that this project directly depends on.
     pub dependencies: BTreeSet<ProjectId>,
+    /// Tasks inferred from ecosystem-specific project metadata.
+    #[serde(skip)]
+    pub tasks: BTreeMap<String, WorkspaceTask>,
 }
 
 impl WorkspaceProject {
-    /// Creates a project with no metadata or dependencies.
+    /// Creates a project with no metadata, dependencies, or inferred tasks.
     pub fn new(id: ProjectId, root: impl Into<PathBuf>) -> Self {
         Self {
             id,
             root: root.into(),
             metadata: BTreeMap::new(),
             dependencies: BTreeSet::new(),
+            tasks: BTreeMap::new(),
         }
     }
+}
+
+/// A provider-neutral task inferred for a workspace project.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkspaceTask {
+    /// Command to execute in the project root.
+    pub command: String,
+    /// Human-readable description of the inferred task.
+    pub description: String,
+    /// File relative to the workspace root that supplied the task.
+    pub source: PathBuf,
 }
 
 /// Explicit changes applied after workspace providers discover their projects.
@@ -115,6 +130,15 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
     /// The returned order is ignored. Project IDs, metadata, and dependency
     /// sets determine the canonical graph order instead.
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>>;
+
+    /// Re-discovers location-derived tasks after an explicit root override.
+    fn discover_project_tasks(
+        &self,
+        _workspace_root: &Path,
+        _project_root: &Path,
+    ) -> Result<BTreeMap<String, WorkspaceTask>> {
+        Ok(BTreeMap::new())
+    }
 }
 
 /// A validated, deterministically ordered project graph from workspace providers.
@@ -189,7 +213,38 @@ impl WorkspaceProjectGraph {
         workspace_root: &Path,
         overrides: &BTreeMap<String, WorkspaceProjectOverride>,
     ) -> Result<WorkspaceProjectGraph> {
-        Self::collect_provider_projects(providers, workspace_root)?.with_overrides(overrides)
+        let mut graph = Self::collect_provider_projects(providers, workspace_root)?
+            .with_overrides(overrides)?;
+        for (raw_id, config) in overrides {
+            if config.remove || config.root.is_none() {
+                continue;
+            }
+            let id = raw_id.parse::<ProjectId>()?;
+            let Some((provider_id, _)) = id.as_str().split_once(':') else {
+                continue;
+            };
+            let Some(provider) = providers
+                .iter()
+                .find(|provider| provider.id() == provider_id)
+            else {
+                continue;
+            };
+            let project = graph
+                .projects
+                .get_mut(&id)
+                .expect("non-removed override project exists");
+            match provider.discover_project_tasks(workspace_root, project.root.as_path()) {
+                Ok(tasks) => project.tasks = tasks,
+                Err(error) => {
+                    warn!(
+                        "failed to infer workspace tasks for {id} at {}: {error:#}",
+                        project.root.display()
+                    );
+                    project.tasks.clear();
+                }
+            }
+        }
+        Ok(graph)
     }
 
     fn collect_provider_projects(
@@ -261,7 +316,11 @@ impl WorkspaceProjectGraph {
 
             let project = self.projects.get_mut(&id).expect("project was inserted");
             if let Some(root) = &config.root {
-                project.root = normalize_project_root(&id, root)?;
+                let root = normalize_project_root(&id, root)?;
+                if root != project.root {
+                    project.tasks.clear();
+                    project.root = root;
+                }
             }
             if let Some(metadata) = &config.metadata {
                 project.metadata.clone_from(metadata);
@@ -499,6 +558,36 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct FailingTaskProvider;
+
+    impl WorkspaceProvider for FailingTaskProvider {
+        fn id(&self) -> &str {
+            "test"
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            let mut project = WorkspaceProject::new(ProjectId::new("test", "app").unwrap(), "old");
+            project.tasks.insert(
+                "build".to_string(),
+                WorkspaceTask {
+                    command: "old build".to_string(),
+                    description: "old build".to_string(),
+                    source: "old/manifest".into(),
+                },
+            );
+            Ok(vec![project])
+        }
+
+        fn discover_project_tasks(
+            &self,
+            _workspace_root: &Path,
+            _project_root: &Path,
+        ) -> Result<BTreeMap<String, WorkspaceTask>> {
+            bail!("task discovery failed")
+        }
+    }
+
     fn project(provider: &str, name: &str, root: &str) -> WorkspaceProject {
         WorkspaceProject::new(ProjectId::new(provider, name).unwrap(), root)
     }
@@ -670,6 +759,14 @@ mod tests {
         let old_id = ProjectId::new("node", "old").unwrap();
         let mut app = project("node", "app", "apps/app");
         app.dependencies = BTreeSet::from([lib_id.clone(), old_id.clone()]);
+        app.tasks.insert(
+            "build".to_string(),
+            WorkspaceTask {
+                command: "npm run build --".to_string(),
+                description: "vite build".to_string(),
+                source: "apps/app/package.json".into(),
+            },
+        );
         let node = TestProvider {
             id: "node",
             projects: vec![
@@ -723,6 +820,7 @@ mod tests {
 
         assert!(graph.get(&lib_id).is_none());
         assert_eq!(app.root, Path::new("apps/web"));
+        assert!(app.tasks.is_empty());
         assert_eq!(
             app.metadata,
             BTreeMap::from([("kind".to_string(), "frontend".to_string())])
@@ -769,6 +867,28 @@ mod tests {
                 .dependencies,
             BTreeSet::from([ProjectId::new("node", "explicit").unwrap()])
         );
+    }
+
+    #[test]
+    fn override_task_inference_errors_are_isolated() {
+        let overrides = BTreeMap::from([(
+            "test:app".to_string(),
+            WorkspaceProjectOverride {
+                root: Some("new".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides(
+            &[&FailingTaskProvider],
+            Path::new("/workspace"),
+            &overrides,
+        )
+        .unwrap();
+        let project = graph.get(&ProjectId::new("test", "app").unwrap()).unwrap();
+
+        assert_eq!(project.root, Path::new("new"));
+        assert!(project.tasks.is_empty());
     }
 
     #[test]

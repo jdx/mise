@@ -14,6 +14,16 @@ pub(crate) fn monorepo_scope(monorepo_root: &Path, dir: &Path) -> Option<String>
     }
 }
 
+/// Whether a task uses the stable `<provider>:<project>#<task>` workspace identity.
+pub fn is_workspace_project_task(task: &str) -> bool {
+    task.split_once('#').is_some_and(|(project, name)| {
+        !project.starts_with('/')
+            && !project.starts_with(':')
+            && project.contains(':')
+            && !name.is_empty()
+    })
+}
+
 /// Context for loading tasks with optional filtering hints
 #[derive(Debug, Clone, Default, Hash, Eq, PartialEq)]
 pub struct TaskLoadContext {
@@ -171,7 +181,7 @@ pub fn expand_colon_task_syntax(
     config: &crate::config::Config,
 ) -> eyre::Result<String> {
     // Skip expansion for absolute monorepo paths or explicit global tasks
-    if task.starts_with("//") || task.starts_with("::") {
+    if task.starts_with("//") || task.starts_with("::") || is_workspace_project_task(task) {
         return Ok(task.to_string());
     }
 
@@ -244,6 +254,14 @@ mod tests {
             Some("//apps/api".to_string())
         );
         assert_eq!(monorepo_scope(root, Path::new("other")), None);
+    }
+
+    #[test]
+    fn test_is_workspace_project_task() {
+        assert!(is_workspace_project_task("node:@scope/app#build"));
+        assert!(!is_workspace_project_task("//packages/app:release#v2"));
+        assert!(!is_workspace_project_task(":release#v2"));
+        assert!(!is_workspace_project_task("::release#v2"));
     }
 
     #[test]

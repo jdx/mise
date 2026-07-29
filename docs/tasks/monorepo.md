@@ -362,6 +362,38 @@ Dependency version strings are treated as opaque. A matching internal name creat
 
 All four dependency kinds participate in the same project graph, including development dependencies. If the declarations produce a cycle, `mise tasks graph` reports the cycle instead of silently dropping an edge. Use `depends`, `depends_add`, or `depends_remove` in a project override when the inferred build relationship needs to differ from the package manifests.
 
+### Node Package Scripts
+
+When experimental features are enabled, mise imports scripts from each discovered Node workspace
+package as tasks. Packages do not need their own `mise.toml`.
+
+An imported task uses the stable project ID followed by `#` and the package script name:
+
+```bash
+mise run 'node:@acme/web#build'
+```
+
+The equivalent monorepo path is available as an alias, so existing path patterns also work:
+
+```bash
+mise run //apps/web:build
+mise //...:test
+```
+
+The task runs in the package directory through the workspace package manager (`npm`, `pnpm`,
+`yarn`, or `bun`) and passes task arguments through to it. mise uses the root `packageManager`
+declaration or lockfile to select the manager and falls back to npm when neither identifies one.
+`mise task info` reports the package's `package.json` as the task source.
+
+An explicit mise task at the package's monorepo path takes precedence over the imported script.
+Both names continue to resolve to that explicit task.
+
+This inference is currently experimental and only runs for a configured monorepo root:
+
+```bash
+mise settings experimental=true
+```
+
 ### Project Overrides
 
 Use `[monorepo.projects]` in the root `mise.toml` to correct or extend provider inference. Project IDs containing `:` or scoped package names must be quoted:
