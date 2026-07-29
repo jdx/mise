@@ -97,3 +97,7 @@ printf '{' >packages/bad/package.json
 mise -q run local
 assert "cat local-result.txt" "local"
 assert "cat local-default.txt" ""
+
+printf stale >packages/app/explicit-default.txt
+mise -q run //packages/app:build
+assert "cat packages/app/explicit-default.txt" "from-root"

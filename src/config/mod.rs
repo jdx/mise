@@ -2338,12 +2338,31 @@ fn collect_task_definitions(
         .then(|| {
             let cf = find_monorepo_config(config_files)?;
             let root = cf.project_root()?.to_path_buf();
-            let tasks = cf.monorepo()?.task_defaults.clone();
-            let graph = workspace_graph?;
-            let project_roots = graph
-                .projects()
-                .map(|project| file::desymlink_path(&root.join(&project.root)))
-                .collect();
+            let monorepo = cf.monorepo()?;
+            let tasks = monorepo.task_defaults.clone();
+            let mut project_roots = BTreeSet::new();
+            if let Some(graph) = workspace_graph {
+                project_roots.extend(
+                    graph
+                        .projects()
+                        .map(|project| file::desymlink_path(&root.join(&project.root))),
+                );
+            } else {
+                project_roots.extend(
+                    expand_config_root_dirs(&root, &monorepo.config_roots, None)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|project_root| file::desymlink_path(&project_root)),
+                );
+                project_roots.extend(
+                    monorepo
+                        .projects
+                        .values()
+                        .filter(|project| !project.remove)
+                        .filter_map(|project| project.root.as_ref())
+                        .map(|project_root| file::desymlink_path(&root.join(project_root))),
+                );
+            }
             (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
                 project_roots,
                 tasks,
