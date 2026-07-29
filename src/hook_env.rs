@@ -1,6 +1,7 @@
 use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -57,6 +58,29 @@ fn write_last_full_check(timestamp: u128) {
     if let Err(e) = std::fs::write(last_check_file_for_dir(cwd), timestamp.to_string()) {
         trace!("failed to write last check file: {e}");
     }
+}
+
+/// Set when [`should_exit_early_fast`] determines a full hook-env run is
+/// required because something looks stale.
+///
+/// [`should_exit_early`] consults this so a run the fast path forced always
+/// reaches [`build_session`], which is what rewrites `latest_update`. The two
+/// checks are not identical — the fast path also compares config-search
+/// directory mtimes, which the slow path has no equivalent for — so without
+/// this the slow path could exit early on a run the fast path forced, leaving
+/// `latest_update` stale and forcing another full run on the next prompt,
+/// forever.
+///
+/// Both functions run in the same process for a given `mise hook-env`:
+/// `should_exit_early_fast` from `cli::run` before config is loaded, and
+/// `should_exit_early` from `cli::hook_env::HookEnv::run` after.
+static FAST_PATH_FORCED_FULL_RUN: AtomicBool = AtomicBool::new(false);
+
+/// Record that the fast path requires a full run and return `false`, so call
+/// sites can `return force_full_run();` in place of a bare `return false`.
+fn force_full_run() -> bool {
+    FAST_PATH_FORCED_FULL_RUN.store(true, Ordering::Relaxed);
+    false
 }
 
 /// Convert a SystemTime to milliseconds since Unix epoch
@@ -244,16 +268,18 @@ pub fn should_exit_early_fast() -> bool {
         return true;
     }
 
+    // Every staleness check below returns via force_full_run() so the slow path
+    // knows this run must reach build_session and refresh the session.
     // Check if any loaded config files have been modified
     for config_path in &PREV_SESSION.loaded_configs {
         if let Ok(metadata) = config_path.metadata() {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                return false;
+                return force_full_run();
             }
         } else if !config_path.exists() {
-            return false;
+            return force_full_run();
         }
     }
     // Check if any files accessed by tera template functions have been modified
@@ -262,10 +288,10 @@ pub fn should_exit_early_fast() -> bool {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                return false;
+                return force_full_run();
             }
         } else if !path.exists() {
-            return false;
+            return force_full_run();
         }
     }
     // Check if any files from [[watch_files]] patterns have been modified
@@ -274,31 +300,33 @@ pub fn should_exit_early_fast() -> bool {
             if let Ok(modified) = metadata.modified()
                 && mtime_to_millis(modified) > PREV_SESSION.latest_update
             {
-                return false;
+                return force_full_run();
             }
         } else if !path.exists() {
-            return false;
+            return force_full_run();
         }
     }
     if have_trust_state_dirs_been_modified() {
-        return false;
+        return force_full_run();
     }
     // Check if data dir has been modified (new tools installed, etc.)
     // Also check if it's been deleted - this requires a full update
     if !dirs::DATA.exists() {
-        return false;
+        return force_full_run();
     }
     if let Ok(metadata) = dirs::DATA.metadata()
         && let Ok(modified) = metadata.modified()
         && mtime_to_millis(modified) > PREV_SESSION.latest_update
     {
-        return false;
+        return force_full_run();
     }
     // Check if any directory in the config search path has been modified
-    // This catches new config files created anywhere in the hierarchy
+    // This catches new config files created anywhere in the hierarchy.
+    // The slow path has no equivalent check, which is exactly why the
+    // FAST_PATH_FORCED_FULL_RUN handshake exists.
     for modified in config_search_dir_mtimes() {
         if mtime_to_millis(modified) > PREV_SESSION.latest_update {
-            return false;
+            return force_full_run();
         }
     }
     // Filesystem checks passed - update the last check timestamp so subsequent
@@ -344,6 +372,13 @@ pub fn should_exit_early(
         return false;
     }
     if have_mise_env_vars_been_modified() {
+        return false;
+    }
+    // The fast path already decided this run is necessary. Check it only after
+    // the slow-path checks above, since they also record modified watch files
+    // and schedule hooks as side effects.
+    if FAST_PATH_FORCED_FULL_RUN.load(Ordering::Relaxed) {
+        trace!("fast-path forced a full run, not exiting early");
         return false;
     }
     trace!("early-exit");
@@ -757,10 +792,23 @@ pub fn build_alias_commands(
 
 #[cfg(test)]
 mod tests {
-    use super::has_preclap_logging_flag;
+    use super::{FAST_PATH_FORCED_FULL_RUN, force_full_run, has_preclap_logging_flag};
+    use std::sync::atomic::Ordering;
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn force_full_run_records_the_decision_and_reports_not_exiting_early() {
+        let prev = FAST_PATH_FORCED_FULL_RUN.swap(false, Ordering::Relaxed);
+
+        // Returns false so callers can `return force_full_run();` directly, and
+        // leaves the flag set for should_exit_early to observe.
+        assert!(!force_full_run());
+        assert!(FAST_PATH_FORCED_FULL_RUN.load(Ordering::Relaxed));
+
+        FAST_PATH_FORCED_FULL_RUN.store(prev, Ordering::Relaxed);
     }
 
     #[test]

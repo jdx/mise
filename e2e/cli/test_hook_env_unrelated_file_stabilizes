@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# A file created in a config-search directory bumps that directory's mtime,
+# which only should_exit_early_fast checks. should_exit_early has no equivalent
+# check, so it used to return early before build_session ran. Config — and
+# therefore env._.source — is loaded before that early return, so the expensive
+# work happened on every prompt while the session timestamp stayed stale,
+# forcing the same thing again on the next prompt, indefinitely.
+#
+# test_hook_env_dir_mtime_stabilizes covers the case where the new file is
+# itself a config file; that also trips the slow path's watch-file check, so it
+# stabilized regardless. This covers the uncovered case: an unrelated file.
+#
+# Note that hook-env prints nothing when the slow path returns early, so an
+# empty stdout does not distinguish "fast-path skipped the work" from "the work
+# ran and was thrown away". Counting env._.source executions does.
+
+export MISE_ENV_CACHE=0
+
+cat >env.sh <<'EOF'
+echo ran >>"$COUNTER_FILE"
+export FROM_SOURCE=1
+EOF
+
+cat >mise.toml <<'EOF'
+[env]
+_.source = "env.sh"
+EOF
+
+export COUNTER_FILE="$PWD/source-runs.txt"
+: >"$COUNTER_FILE"
+
+eval "$(mise activate bash 2>/dev/null)"
+eval "$(mise hook-env -s bash 2>/dev/null)"
+before_touch=$(wc -l <"$COUNTER_FILE")
+
+# Creating a non-config file bumps the directory mtime, which legitimately
+# forces one more full run so the new state can be picked up.
+sleep 1
+touch unrelated.lock
+eval "$(mise hook-env -s bash 2>/dev/null)"
+settled=$(wc -l <"$COUNTER_FILE")
+if [[ $settled -le $before_touch ]]; then
+  fail "unrelated file did not trigger env._.source: $before_touch -> $settled"
+fi
+
+# That run must have refreshed the session. Every prompt after it should take
+# the fast path and leave env._.source alone.
+for _ in 1 2 3; do
+  eval "$(mise hook-env -s bash 2>/dev/null)"
+done
+after=$(wc -l <"$COUNTER_FILE")
+
+if [[ $after -eq $settled ]]; then
+  ok "env._.source stopped re-running after an unrelated file was created"
+else
+  fail "env._.source kept re-running: $settled -> $after over 3 prompts"
+fi
+
+# Belt and braces: a settled prompt takes the fast path, which exits before
+# logger init, so it emits nothing on either stream.
+output=$(mise hook-env -s bash 2>&1)
+if [[ -z $output ]]; then
+  ok "fast-path works once the session is stable"
+else
+  fail "expected fast-path (no output) but got: '$output'"
+fi
