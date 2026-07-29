@@ -431,6 +431,8 @@ because those fields do not describe prerequisite work.
 Running `node:@acme/web#build` now runs `build` in each project that `@acme/web` depends on before
 building `@acme/web`. The relationship follows the complete project dependency graph, including
 through intermediate projects that do not define `build`. Missing upstream tasks are skipped.
+For a configured task root that is not represented in the detected project graph, the dependency
+is a no-op because that task has no upstream project relationship.
 
 Upstream dependencies work with both provider-inferred tasks and explicit mise tasks. They use the
 same task scheduler as ordinary `depends`, including cycle detection, deduplication, parallel

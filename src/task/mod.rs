@@ -1368,9 +1368,7 @@ impl Task {
         tasks: &BTreeMap<String, &Task>,
         visited: &mut HashSet<String>,
     ) -> Result<Vec<Task>> {
-        if !self.depends.is_empty()
-            && let Some(err) = &self.workspace_dependency_error
-        {
+        if let Some(err) = &self.workspace_dependency_error {
             bail!("{err}");
         }
         let mut depends: Vec<Task> = self
@@ -1405,9 +1403,7 @@ impl Task {
     ) -> Result<(Vec<Task>, Vec<Task>)> {
         use crate::task::TaskLoadContext;
 
-        if !self.depends.is_empty()
-            && let Some(err) = &self.workspace_dependency_error
-        {
+        if let Some(err) = &self.workspace_dependency_error {
             bail!("{err}");
         }
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
@@ -1595,7 +1591,15 @@ impl Task {
     }
 
     pub(crate) fn set_workspace_task_dependency_error(&mut self, error: &eyre::Report) {
-        if self.depends.iter().any(|dep| dep.task.starts_with('^')) {
+        if self
+            .depends_post
+            .iter()
+            .chain(&self.wait_for)
+            .any(|dep| dep.task.starts_with('^'))
+        {
+            self.workspace_dependency_error =
+                Some("^task dependencies are supported only in depends".to_string());
+        } else if self.depends.iter().any(|dep| dep.task.starts_with('^')) {
             self.workspace_dependency_error = Some(format!(
                 "failed to resolve upstream task dependencies because the workspace project graph \
                  could not be loaded: {error:#}"
@@ -3511,6 +3515,17 @@ exec proxy "$@"
                 "^task dependencies are supported only in depends"
             );
         }
+
+        let mut task = Task {
+            wait_for: vec!["^build".to_string().into()],
+            ..Default::default()
+        };
+        task.set_workspace_task_dependency_error(&eyre::eyre!("invalid graph"));
+        let err = task.all_depends(&BTreeMap::new()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "^task dependencies are supported only in depends"
+        );
     }
 
     #[tokio::test]
