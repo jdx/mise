@@ -211,15 +211,34 @@ impl DotfilesAdd {
                         }
                         match file::try_rename(&item.target, &item.source) {
                             Ok(()) => {
-                                moved_targets.push((item.target.clone(), item.source.clone()));
+                                moved_targets.push(MovedTarget {
+                                    target: item.target.clone(),
+                                    source: item.source.clone(),
+                                    recovery: None,
+                                });
                             }
                             Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
-                                system::files::copy_path(&item.target, &item.source)?;
-                                // Record the completed copy before removing the
-                                // original so rollback can restore the target
-                                // even when removal fails partway through.
-                                moved_targets.push((item.target.clone(), item.source.clone()));
-                                file::remove_all(&item.target)?;
+                                let parent = item.target.parent().ok_or_else(|| {
+                                    eyre::eyre!(
+                                        "cannot stage target without a parent: {}",
+                                        item.target.display_user()
+                                    )
+                                })?;
+                                let recovery = tempfile::Builder::new()
+                                    .prefix(".mise-dotfiles-rollback-")
+                                    .tempdir_in(parent)?;
+                                let recovery_path = recovery.path().join("target");
+                                // Keep the original on its own filesystem until
+                                // the entire transaction succeeds. This makes
+                                // rollback an atomic rename instead of another
+                                // potentially failing recursive removal.
+                                file::rename(&item.target, &recovery_path)?;
+                                moved_targets.push(MovedTarget {
+                                    target: item.target.clone(),
+                                    source: item.source.clone(),
+                                    recovery: Some(recovery),
+                                });
+                                system::files::copy_path(&recovery_path, &item.source)?;
                             }
                             Err(err) => bail!(
                                 "failed rename: {} -> {}: {err}",
@@ -497,28 +516,40 @@ fn remove_path(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+struct MovedTarget {
+    target: PathBuf,
+    source: PathBuf,
+    /// A same-filesystem staging directory used by cross-device captures.
+    /// Keeping it alive preserves the original until the transaction commits.
+    recovery: Option<tempfile::TempDir>,
+}
+
 fn rollback_add(
     source_backups: &[(PathBuf, PathBackup)],
     target_backups: &[(PathBuf, PathBackup)],
-    moved_targets: &[(PathBuf, PathBuf)],
+    moved_targets: &[MovedTarget],
     restore_targets: bool,
     config_path: &std::path::Path,
     original_config: Option<&[u8]>,
 ) -> Result<()> {
     let mut errors = vec![];
-    for (target, source) in moved_targets.iter().rev() {
+    for moved in moved_targets.iter().rev() {
         let result = (|| -> Result<()> {
-            remove_path(target)?;
-            if let Some(parent) = target.parent() {
+            remove_path(&moved.target)?;
+            if let Some(parent) = moved.target.parent() {
                 file::create_dir_all(parent)?;
             }
-            file::move_file(source, target)
+            if let Some(recovery) = &moved.recovery {
+                file::rename(recovery.path().join("target"), &moved.target)
+            } else {
+                file::move_file(&moved.source, &moved.target)
+            }
         })();
         if let Err(err) = result {
             errors.push(format!(
                 "moved target {} from {}: {err}",
-                target.display_user(),
-                source.display_user()
+                moved.target.display_user(),
+                moved.source.display_user()
             ));
         }
     }
@@ -549,3 +580,48 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rollback_uses_staged_cross_device_original() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("target");
+        let source = root.path().join("source");
+        let source_backup = root.path().join("source-backup");
+        let recovery = tempfile::tempdir_in(root.path()).unwrap();
+        let recovery_target = recovery.path().join("target");
+
+        file::create_dir_all(&recovery_target).unwrap();
+        file::write(recovery_target.join("file"), "live target").unwrap();
+        file::create_dir_all(&source).unwrap();
+        file::write(source.join("file"), "captured copy").unwrap();
+        file::create_dir_all(&source_backup).unwrap();
+        file::write(source_backup.join("file"), "old source").unwrap();
+
+        rollback_add(
+            &[(source.clone(), PathBackup::Copied(source_backup))],
+            &[],
+            &[MovedTarget {
+                target: target.clone(),
+                source: source.clone(),
+                recovery: Some(recovery),
+            }],
+            false,
+            &root.path().join("config.toml"),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            file::read_to_string(target.join("file")).unwrap(),
+            "live target"
+        );
+        assert_eq!(
+            file::read_to_string(source.join("file")).unwrap(),
+            "old source"
+        );
+    }
+}
