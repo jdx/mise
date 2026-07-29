@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# When a newer mise is available, the warning must always be followed by a way
+# to act on it. Installs that disable self-update without shipping an
+# instructions file (Homebrew, Arch, the AUR mise-bin package) previously got
+# "mise version X available" and nothing else.
+
+# show_latest() returns early under ci_info::is_ci(), so clear the CI markers
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+# Pretend the daily check already found a newer release, so no network is needed
+echo "9999.0.0" >"$MISE_CACHE_DIR/latest-version"
+
+# self-update disabled, no packager instructions → generic hint
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false mise version 2>&1' '9999.0.0 available'
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false mise version 2>&1' 'self-update is disabled for this install'
+
+# packager instructions win over the generic hint
+cat >instructions.toml <<'TOML'
+message = "To update, run brew upgrade mise"
+TOML
+
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise version 2>&1' 'brew upgrade mise'
+assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=false MISE_SELF_UPDATE_INSTRUCTIONS=./instructions.toml mise version 2>&1' 'self-update is disabled for this install'
+
+# self-update available → unchanged advice
+assert_contains 'MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' 'mise self-update'
+assert_not_contains 'MISE_SELF_UPDATE_AVAILABLE=true mise version 2>&1' 'self-update is disabled for this install'

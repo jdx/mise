@@ -7,7 +7,7 @@ use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
-use crate::cli::self_update::SelfUpdate;
+use crate::cli::self_update::{SelfUpdate, upgrade_instructions_or_hint};
 use crate::file::modified_duration;
 use crate::ui::style;
 use crate::{dirs, duration, env, file};
@@ -125,8 +125,8 @@ pub async fn show_latest() {
         if SelfUpdate::is_available() {
             let cmd = style("mise self-update").bright().yellow().for_stderr();
             warn!("To update, run {}", cmd);
-        } else if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
-            warn!("{}", instructions);
+        } else {
+            warn!("{}", upgrade_instructions_or_hint());
         }
     }
 }
