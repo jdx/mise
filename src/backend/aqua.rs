@@ -722,6 +722,7 @@ impl Backend for AquaBackend {
         versions: Vec<String>,
         query: &str,
         filter_prereleases: bool,
+        opts: &ToolVersionOptions,
     ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
@@ -742,8 +743,7 @@ impl Backend for AquaBackend {
                 query_regex.is_match(v)
             })
             .collect();
-        let opts = self.ba.opts();
-        if AquaOptions::new(&opts).uses_semantic_version_sort() {
+        if AquaOptions::new(opts).uses_semantic_version_sort() {
             sort_versions_semantically(versions)
         } else {
             versions
@@ -3354,7 +3354,7 @@ fn sort_versions_semantically(versions: Vec<String>) -> Vec<String> {
         }
     };
     let mut versions = versions.into_iter().zip(parsed).collect::<Vec<_>>();
-    versions.sort_by(|(_, left), (_, right)| left.cmp(right));
+    versions.sort_by(|(_, left), (_, right)| left.cmp_precedence(right));
     versions.into_iter().map(|(version, _)| version).collect()
 }
 
@@ -4026,16 +4026,30 @@ packages:
     }
 
     #[test]
-    fn test_semantic_version_sort_orders_backports_by_version_precedence() {
+    fn test_semantic_version_sort_uses_tool_request_options() {
         let backend = AquaBackend::from_arg(BackendArg::new(
-            "tuist".to_string(),
-            Some("aqua:tuist/tuist".to_string()),
+            "tool".to_string(),
+            Some("aqua:owner/tool".to_string()),
         ));
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            VERSION_SORT_OPTION.to_string(),
+            toml::Value::String("semver".to_string()),
+        );
+        let request = ToolRequest::new_opts(
+            backend.ba.clone(),
+            "latest",
+            opts,
+            crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml")),
+        )
+        .unwrap();
+        let request_opts = request.options();
 
         let versions = backend.fuzzy_match_filter(
             vec!["4.202.6".to_string(), "4.197.3".to_string()],
             "latest",
             true,
+            &request_opts,
         );
 
         assert_eq!(versions, vec!["4.197.3", "4.202.6"]);
@@ -4052,6 +4066,7 @@ packages:
             vec!["4.202.6".to_string(), "4.197.3".to_string()],
             "latest",
             true,
+            &ToolVersionOptions::default(),
         );
 
         assert_eq!(versions, vec!["4.202.6", "4.197.3"]);
@@ -4063,6 +4078,16 @@ packages:
             sort_versions_semantically(vec!["1.0.0".to_string(), "not-semver".to_string()]);
 
         assert_eq!(versions, vec!["1.0.0", "not-semver"]);
+    }
+
+    #[test]
+    fn test_semantic_version_sort_ignores_build_metadata() {
+        let versions = sort_versions_semantically(vec![
+            "1.0.0-alpha+002".to_string(),
+            "1.0.0-alpha+001".to_string(),
+        ]);
+
+        assert_eq!(versions, vec!["1.0.0-alpha+002", "1.0.0-alpha+001"]);
     }
 
     #[test]

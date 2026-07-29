@@ -123,6 +123,7 @@ impl Backend for PIPXBackend {
         versions: Vec<String>,
         query: &str,
         filter_prereleases: bool,
+        _opts: &ToolVersionOptions,
     ) -> Vec<String> {
         crate::backend::fuzzy_match_versions_pep440(versions, query, filter_prereleases)
     }

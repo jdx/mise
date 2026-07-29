@@ -353,6 +353,7 @@ impl Backend for UbiBackend {
         versions: Vec<String>,
         query: &str,
         filter_prereleases: bool,
+        _opts: &ToolVersionOptions,
     ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
