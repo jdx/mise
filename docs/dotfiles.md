@@ -162,8 +162,8 @@ multi-line content.
   [config hierarchy](/configuration.html) (global → project). Whole-file
   entries merge by target path; edit entries merge by `(path, id)`.
 - **Explicit application** — `mise bootstrap dotfiles add` applies the entries
-  it captures unless `--no-apply` is set. Existing entries are applied only by
-  `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html).
+  it captures unless `--no-apply` is set. Entries not captured by `add` are
+  applied by `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html).
 - **Idempotent** — entries already in their desired state are skipped;
   re-running is always safe.
 - **Unknown modes and operations are ignored with a warning** so configs
