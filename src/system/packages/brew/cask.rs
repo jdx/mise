@@ -1959,9 +1959,6 @@ fn stage_command_wrapper(
                 .env
                 .iter()
                 .map(|(key, value)| {
-                    if !is_shell_env_name(key) {
-                        bail!("brew-cask: invalid command_wrapper environment name '{key}'");
-                    }
                     let value = expand_command_wrapper_value(value, appdir, cask);
                     Ok(format!(
                         "{key}={}",
@@ -1977,7 +1974,10 @@ fn stage_command_wrapper(
             command.push("\"$@\"".to_string());
             format!("#!/bin/bash\n{}\n", command.join(" "))
         }
-        _ => unreachable!("command wrapper shape is validated while parsing"),
+        _ => bail!(
+            "brew-cask: command_wrapper '{}' must set exactly one of content or executable",
+            wrapper.name
+        ),
     };
     file::write(&target, content)?;
     file::make_executable(&target)?;
@@ -2359,6 +2359,9 @@ fn parse_command_wrapper_artifact(value: &Value) -> Result<Option<CommandWrapper
                 .ok_or_else(|| eyre!("brew-cask: command_wrapper env must be an object"))?
                 .iter()
                 .map(|(key, value)| {
+                    if !is_shell_env_name(key) {
+                        bail!("brew-cask: invalid command_wrapper environment name '{key}'");
+                    }
                     value
                         .as_str()
                         .map(|value| (key.clone(), value.to_string()))
@@ -2763,14 +2766,18 @@ fn parse_run_command(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<F
         ),
         None => FlightPathBase::Absolute,
     };
-    if matches!(
+    let path_value = Path::new(path);
+    let invalid_absolute_path = base == FlightPathBase::Absolute
+        && !path_value.is_absolute()
+        && path_value.components().count() > 1;
+    let invalid_based_path = matches!(
         base,
         FlightPathBase::StagedPath | FlightPathBase::AppDir | FlightPathBase::HomebrewPrefix
-    ) && (Path::new(path).is_absolute()
-        || Path::new(path)
+    ) && (path_value.is_absolute()
+        || path_value
             .components()
-            .any(|component| matches!(component, Component::ParentDir)))
-    {
+            .any(|component| matches!(component, Component::ParentDir)));
+    if invalid_absolute_path || invalid_based_path {
         bail!(
             "brew-cask:{}: invalid {kind} run command path {}",
             cask.token,
@@ -3626,6 +3633,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_command_wrapper_invalid_environment_name() {
+        let value = serde_json::json!({
+            "command_wrapper": [
+                "example",
+                {
+                    "executable": "/usr/bin/example",
+                    "env": {"INVALID-NAME": "value"}
+                }
+            ]
+        });
+
+        let err = parse_command_wrapper_artifact(&value)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("invalid command_wrapper environment name 'INVALID-NAME'"));
+    }
+
+    #[test]
     #[cfg(unix)]
     fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
@@ -3971,6 +3996,37 @@ mod tests {
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("unsupported postflight_steps remove step field guards"));
+    }
+
+    #[test]
+    fn rejects_baseless_relative_run_command_paths() {
+        let cask = test_cask("example", "1.0.0");
+        for path in ["bin/tool", "../tool", "./tool"] {
+            let value = serde_json::json!({"path": path});
+            let err = parse_run_command(&cask, "preflight_steps", Some(&value))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("invalid preflight_steps run command path"),
+                "{err}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_baseless_bare_and_absolute_run_commands() -> Result<()> {
+        let cask = test_cask("example", "1.0.0");
+        for path in ["xattr", "/usr/bin/xattr"] {
+            let value = serde_json::json!({"path": path});
+            assert_eq!(
+                parse_run_command(&cask, "preflight_steps", Some(&value))?,
+                FlightPath {
+                    base: FlightPathBase::Absolute,
+                    path: path.to_string(),
+                }
+            );
+        }
+        Ok(())
     }
 
     #[test]
