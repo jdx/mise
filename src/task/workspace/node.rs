@@ -135,11 +135,13 @@ fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinit
     let Some(workspaces) = root_manifest.workspaces else {
         return Ok(None);
     };
+    let package_manager = detect_package_manager(workspace_root, root_manifest.package_manager);
+    let include_named_root = package_manager.as_deref() == Some("yarn");
     Ok(Some(WorkspaceDefinition {
         patterns: workspaces.patterns(),
         source: PACKAGE_JSON,
-        package_manager: detect_package_manager(workspace_root, root_manifest.package_manager),
-        include_named_root: false,
+        package_manager,
+        include_named_root,
     }))
 }
 
@@ -404,6 +406,29 @@ mod tests {
         assert_eq!(
             project_summary(&projects),
             vec![("node:web", Path::new("apps/web"), None)]
+        );
+    }
+
+    #[test]
+    fn yarn_includes_a_named_root_package() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"name":"root","packageManager":"yarn@4.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            project_summary(&projects),
+            vec![
+                ("node:root", Path::new("."), Some("yarn")),
+                ("node:app", Path::new("packages/app"), Some("yarn")),
+            ]
         );
     }
 
