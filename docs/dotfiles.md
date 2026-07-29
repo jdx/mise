@@ -176,14 +176,12 @@ directory where a symlink should go, or a directory where a file should go,
 is an error listing the conflicting paths. Pass
 `mise bootstrap dotfiles apply --force` to replace them.
 
-For symlink entries, an existing regular file with identical content to the
-source is converged without `--force` by replacing it with the requested
-symlink. If the content differs, mise still treats it as a conflict.
-Real directories always require `--force` during a standalone apply because
-portable filesystem APIs cannot compare ownership, ACLs, extended attributes,
-flags, and security labels. `mise bootstrap dotfiles add` avoids that
-destructive comparison by moving a captured directory to its source before
-creating the symlink; cross-filesystem moves fall back to a symlink- and
+Real files and directories always require `--force` during a standalone
+symlink apply, even when their visible content and permissions match. Portable
+filesystem APIs cannot compare ownership, ACLs, extended attributes, flags,
+and security labels. `mise bootstrap dotfiles add` avoids that destructive
+comparison by moving each captured real path to its source before creating the
+symlink; cross-filesystem moves fall back to a symlink- and
 permission-preserving copy.
 
 Content updates are not conflicts: a `copy` or `template` entry overwrites

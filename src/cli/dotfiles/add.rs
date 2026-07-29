@@ -203,17 +203,30 @@ impl DotfilesAdd {
                             &backup_dir.path().join("sources").join(index.to_string()),
                         )?,
                     ));
-                    if !self.no_apply
-                        && item.mode == FileMode::Symlink
-                        && item.target.is_dir()
-                        && !item.target.is_symlink()
+                    if !self.no_apply && item.mode == FileMode::Symlink && !item.target.is_symlink()
                     {
                         remove_path(&item.source)?;
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
                         }
-                        file::move_file(&item.target, &item.source)?;
-                        moved_targets.push((item.target.clone(), item.source.clone()));
+                        match file::try_rename(&item.target, &item.source) {
+                            Ok(()) => {
+                                moved_targets.push((item.target.clone(), item.source.clone()));
+                            }
+                            Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+                                system::files::copy_path(&item.target, &item.source)?;
+                                // Record the completed copy before removing the
+                                // original so rollback can restore the target
+                                // even when removal fails partway through.
+                                moved_targets.push((item.target.clone(), item.source.clone()));
+                                file::remove_all(&item.target)?;
+                            }
+                            Err(err) => bail!(
+                                "failed rename: {} -> {}: {err}",
+                                item.target.display_user(),
+                                item.source.display_user()
+                            ),
+                        }
                         info!(
                             "dotfiles: moved {} to {}",
                             item.target.display_user(),

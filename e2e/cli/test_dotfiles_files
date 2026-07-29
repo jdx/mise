@@ -183,9 +183,10 @@ assert "cat ~/.local/copydir/unmanaged" "keep me"
 
 # a real file where a symlink should go is a conflict: not clobbered
 rm ~/.gitconfig
-# identical content: regular file converges to symlink without --force
+# identical visible content can still hide ownership, ACL, or xattr differences
 cat dotfiles/gitconfig >~/.gitconfig
-assert_succeed "mise dotfiles apply --yes"
+assert_fail "mise dotfiles apply --yes"
+assert_succeed "mise dotfiles apply --yes --force"
 assert "readlink ~/.gitconfig" "$PWD/dotfiles/gitconfig"
 rm ~/.gitconfig
 echo "precious" >~/.gitconfig
@@ -408,7 +409,7 @@ if [ "$(id -u)" != 0 ]; then
   echo "source rollback one" >captured-root/.rollback-one
   echo "source rollback two" >captured-root/.rollback-two
   chmod 400 captured-root/.rollback-two
-  assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.rollback-one ~/.rollback-two --yes"
+  assert_fail "MISE_DOTFILES_ROOT=\"$PWD/captured-root\" mise dotfiles add ~/.rollback-one ~/.rollback-two --mode copy --yes"
   chmod 600 captured-root/.rollback-two
   assert "cat captured-root/.rollback-one" "source rollback one"
   assert "cat captured-root/.rollback-two" "source rollback two"

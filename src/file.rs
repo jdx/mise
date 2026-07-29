@@ -187,14 +187,20 @@ pub fn remove_all_with_progress<P: AsRef<Path>>(path: P, pr: &dyn SingleReport) 
 pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
-    trace!("mv {} {}", from.display(), to.display());
-    do_rename(from, to).wrap_err_with(|| {
+    try_rename(from, to).wrap_err_with(|| {
         format!(
             "failed rename: {} -> {}",
             display_path(from),
             display_path(to)
         )
     })
+}
+
+pub(crate) fn try_rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> std::io::Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    trace!("mv {} {}", from.display(), to.display());
+    do_rename(from, to)
 }
 
 #[cfg(windows)]
@@ -234,7 +240,7 @@ pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
 
-    match do_rename(from, to) {
+    match try_rename(from, to) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
             if from.is_dir() {

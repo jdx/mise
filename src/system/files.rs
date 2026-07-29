@@ -1418,12 +1418,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
         if cfg!(windows) && source.is_file() {
             Ok(target.exists() && target.is_dir())
         } else {
-            if !target.exists() || target.is_symlink() {
-                return Ok(false);
-            }
-            // If this equality check cannot read either side, keep the
-            // conservative conflict path so --force can still handle it.
-            Ok(!paths_have_same_content(source, target).unwrap_or(false))
+            Ok(target.exists() && !target.is_symlink())
         }
     };
     let mut out = vec![];
@@ -1456,41 +1451,6 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(out)
-}
-
-/// Whether replacing `target` with a symlink to `source` preserves all of the
-/// target's filesystem state. Real directories are never considered
-/// equivalent because portable filesystem APIs cannot compare all ownership,
-/// ACL, extended-attribute, flag, and security-label metadata.
-fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
-    if source.is_file() && target.is_file() {
-        if !permissions_match(source, target)?
-            || source.metadata()?.len() != target.metadata()?.len()
-        {
-            return Ok(false);
-        }
-        return Ok(file::read(source)? == file::read(target)?);
-    }
-    if !source.is_dir() || !target.is_dir() {
-        return Ok(false);
-    }
-    // A standalone apply can still replace the directory with an explicit
-    // --force. `dotfiles add` avoids this comparison by moving the live
-    // directory to its source before applying the symlink.
-    Ok(false)
-}
-
-#[cfg(unix)]
-fn permissions_match(source: &Path, target: &Path) -> Result<bool> {
-    use std::os::unix::fs::PermissionsExt;
-    Ok(source.symlink_metadata()?.permissions().mode()
-        == target.symlink_metadata()?.permissions().mode())
-}
-
-#[cfg(not(unix))]
-fn permissions_match(source: &Path, target: &Path) -> Result<bool> {
-    Ok(source.symlink_metadata()?.permissions().readonly()
-        == target.symlink_metadata()?.permissions().readonly())
 }
 
 fn describe(req: &FileRequest) -> Result<String> {
