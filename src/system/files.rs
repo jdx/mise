@@ -1474,7 +1474,9 @@ fn paths_have_same_content(source: &Path, target: &Path) -> Result<bool> {
     if !source.is_dir() || !target.is_dir() {
         return Ok(false);
     }
-    // The caller can still replace the directory with an explicit --force.
+    // A standalone apply can still replace the directory with an explicit
+    // --force. `dotfiles add` avoids this comparison by moving the live
+    // directory to its source before applying the symlink.
     Ok(false)
 }
 

@@ -161,9 +161,9 @@ multi-line content.
 - **Declarative and additive** — entries merge across the
   [config hierarchy](/configuration.html) (global → project). Whole-file
   entries merge by target path; edit entries merge by `(path, id)`.
-- **Manual application only** — nothing is written implicitly. Only
-  `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html) applies
-  dotfiles.
+- **Explicit application** — `mise bootstrap dotfiles add` applies the entries
+  it captures unless `--no-apply` is set. Existing entries are applied only by
+  `mise bootstrap dotfiles apply` or [`mise bootstrap`](/bootstrap.html).
 - **Idempotent** — entries already in their desired state are skipped;
   re-running is always safe.
 - **Unknown modes and operations are ignored with a warning** so configs
@@ -179,6 +179,12 @@ is an error listing the conflicting paths. Pass
 For symlink entries, an existing regular file with identical content to the
 source is converged without `--force` by replacing it with the requested
 symlink. If the content differs, mise still treats it as a conflict.
+Real directories always require `--force` during a standalone apply because
+portable filesystem APIs cannot compare ownership, ACLs, extended attributes,
+flags, and security labels. `mise bootstrap dotfiles add` avoids that
+destructive comparison by moving a captured directory to its source before
+creating the symlink; cross-filesystem moves fall back to a symlink- and
+permission-preserving copy.
 
 Content updates are not conflicts: a `copy` or `template` entry overwrites
 the target file's content without `--force` — that is the declared intent of

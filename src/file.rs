@@ -228,7 +228,8 @@ fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
 ///
 /// This preserves the normal `rename` behavior when possible, but avoids cross-device failures
 /// (`ErrorKind::CrossesDevices`) when `from` and `to` live on separate mounts (for example, when
-/// downloads are cached on one volume and installs are written to another).
+/// downloads are cached on one volume and installs are written to another). Directory fallbacks
+/// preserve symlinks and file/directory permissions.
 pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -238,7 +239,7 @@ pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
         Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
             if from.is_dir() {
                 create_dir_all(to)?;
-                copy_dir_all(from, to)?;
+                copy_dir_all_preserve_symlinks(from, to)?;
                 remove_all(from)?;
             } else {
                 copy(from, to)?;

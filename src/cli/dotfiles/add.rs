@@ -212,7 +212,7 @@ impl DotfilesAdd {
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
                         }
-                        file::rename(&item.target, &item.source)?;
+                        file::move_file(&item.target, &item.source)?;
                         moved_targets.push((item.target.clone(), item.source.clone()));
                         info!(
                             "dotfiles: moved {} to {}",
@@ -499,7 +499,7 @@ fn rollback_add(
             if let Some(parent) = target.parent() {
                 file::create_dir_all(parent)?;
             }
-            file::rename(source, target)
+            file::move_file(source, target)
         })();
         if let Err(err) = result {
             errors.push(format!(

@@ -359,8 +359,8 @@ captured_dir_line="$(grep -nF '"~/.captured-dir" = {}' ~/.config/mise/config.tom
 assert_succeed "test $captured_file_line -lt $captured_dir_line"
 rm ~/.config/mise/config.toml
 
-# apply only replaces an existing directory without --force when its complete
-# file set matches the source
+# standalone apply never replaces an existing real directory without --force,
+# even when its visible contents match the source
 mkdir -p same-dir-source same-dir-target
 echo "same" >same-dir-source/file
 echo "same" >same-dir-target/file
