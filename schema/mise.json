@@ -2365,6 +2365,13 @@
           "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.",
           "type": "boolean"
         },
+        "task_defaults": {
+          "description": "Experimental task defaults applied by task name across inferred and explicit workspace projects",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/task_template"
+          }
+        },
         "projects": {
           "description": "Experimental explicit additions, removals, and overrides applied to provider-inferred workspace projects",
           "type": "object",

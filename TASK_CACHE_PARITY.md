@@ -48,7 +48,7 @@ outside this tracker.
 - [x] Add a Node workspace provider for npm, pnpm, Yarn, and Bun workspace definitions
 - [x] Infer Node project dependency edges from declared internal package dependencies
 - [x] Import package scripts as scoped mise tasks without requiring a `mise.toml` in every package
-- [ ] Add root task defaults that apply by task name across inferred and explicit projects
+- [x] Add root task defaults that apply by task name across inferred and explicit projects
 - [ ] Add dependency-scoped task relationships equivalent to building the same task in upstream
       projects first
 - [ ] Define deterministic precedence between provider inference, root task defaults, task
