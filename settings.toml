@@ -1247,16 +1247,6 @@ hide = true
 optional = true
 type = "Bool"
 
-[idiomatic_version_file_disable_tools]
-default = []
-deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
-description = "Specific tools to disable idiomatic version files for."
-env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
-hide = true
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
-type = "SetString"
-
 [idiomatic_version_file_disable_files]
 default = []
 description = "Specific idiomatic version files to disable for a tool."
@@ -1270,6 +1260,16 @@ For example, this keeps `.nvmrc` enabled for node while preventing node from rea
     mise settings add idiomatic_version_file_disable_files node:package.json
 """
 env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
+[idiomatic_version_file_disable_tools]
+default = []
+deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
+description = "Specific tools to disable idiomatic version files for."
+env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
+hide = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
