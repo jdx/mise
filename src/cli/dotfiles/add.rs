@@ -405,7 +405,7 @@ fn inline_entry(item: &PlannedAdd) -> Value {
 
 fn normalized_target_raw(target: &std::path::Path) -> String {
     let normalized = target.components().collect::<PathBuf>();
-    match normalized.strip_prefix(&*dirs::HOME) {
+    match normalized.strip_prefix(*dirs::HOME) {
         Ok(rel) if !rel.as_os_str().is_empty() => format!("~/{}", rel.display()),
         Ok(_) => "~".to_string(),
         Err(_) => normalized.to_string_lossy().to_string(),
