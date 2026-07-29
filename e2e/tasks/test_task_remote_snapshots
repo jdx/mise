@@ -26,4 +26,4 @@ mkdir -p "$ARTIFACT_TMPDIR"
 output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_revision_a ::: remote_revision_b")
 assert_contains_text "$output" "remote revision 1"
 assert_contains_text "$output" "remote revision 2"
-assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."
+assert_directory_empty "$ARTIFACT_TMPDIR"

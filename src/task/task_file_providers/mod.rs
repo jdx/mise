@@ -32,7 +32,7 @@ struct TaskFileArtifactCleanup {
 
 impl Drop for TaskFileArtifactCleanup {
     fn drop(&mut self) {
-        if let Err(err) = crate::file::remove_all(&self.path) {
+        if let Err(err) = crate::file::remove_all_with_retry(&self.path) {
             warn!(
                 "failed to clean up remote task artifact {}: {err:#}",
                 crate::file::display_path(&self.path)
