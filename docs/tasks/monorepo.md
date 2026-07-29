@@ -403,7 +403,7 @@ tasks with the same name in every workspace project:
 [monorepo.task_defaults.build]
 sources = ["src/**", "package.json"]
 outputs = ["dist/**"]
-cache = true
+cache = { enabled = true }
 
 [monorepo.task_defaults.test]
 env = { NODE_ENV = "test" }

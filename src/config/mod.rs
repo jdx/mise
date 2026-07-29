@@ -707,7 +707,15 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
 
-        let task_definitions = collect_task_definitions(&config.config_files);
+        let workspace_graph = Settings::get()
+            .experimental
+            .then(|| config.workspace_project_graph());
+        let task_definitions = collect_task_definitions(
+            &config.config_files,
+            workspace_graph
+                .as_ref()
+                .and_then(|graph| graph.as_ref().ok()),
+        );
 
         let mut local_tasks =
             load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
@@ -731,12 +739,15 @@ impl Config {
             .map(|t| (t.name.clone(), t))
             .collect();
         if Settings::get().experimental {
-            let inferred_tasks = match inferred_workspace_tasks(&config, &task_definitions).await {
-                Ok(tasks) => tasks,
-                Err(err) => {
+            let inferred_tasks = match workspace_graph.as_ref() {
+                Some(Ok(graph)) => {
+                    inferred_workspace_tasks(&config, &task_definitions, graph).await
+                }
+                Some(Err(err)) => {
                     warn!("failed to infer workspace tasks: {err:#}");
                     Vec::new()
                 }
+                None => Vec::new(),
             };
             for task in inferred_tasks {
                 if tasks.contains_key(&task.name) {
@@ -2299,14 +2310,17 @@ struct TaskDefinitions {
 
 #[derive(Clone, Debug)]
 struct WorkspaceTaskDefaults {
-    root: PathBuf,
+    project_roots: BTreeSet<PathBuf>,
     tasks: IndexMap<String, TaskTemplate>,
 }
 
 /// Collect all task templates from the config file hierarchy and task-name defaults from the
 /// selected monorepo root.
 /// Templates from child configs (closer to cwd) override templates from parent configs.
-fn collect_task_definitions(config_files: &ConfigMap) -> TaskDefinitions {
+fn collect_task_definitions(
+    config_files: &ConfigMap,
+    workspace_graph: Option<&crate::task::workspace::WorkspaceProjectGraph>,
+) -> TaskDefinitions {
     let mut templates = IndexMap::new();
 
     // Iterate in reverse order (global -> local) so child directories override parent configs
@@ -2322,7 +2336,15 @@ fn collect_task_definitions(config_files: &ConfigMap) -> TaskDefinitions {
             let cf = find_monorepo_config(config_files)?;
             let root = cf.project_root()?.to_path_buf();
             let tasks = cf.monorepo()?.task_defaults.clone();
-            (!tasks.is_empty()).then_some(WorkspaceTaskDefaults { root, tasks })
+            let graph = workspace_graph?;
+            let project_roots = graph
+                .projects()
+                .map(|project| file::desymlink_path(&root.join(&project.root)))
+                .collect();
+            (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
+                project_roots,
+                tasks,
+            })
         })
         .flatten();
 
@@ -2358,7 +2380,8 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
         && task
             .config_root
             .as_deref()
-            .is_some_and(|root| file::path_starts_with_resolved(root, &defaults.root))
+            .map(file::desymlink_path)
+            .is_some_and(|root| defaults.project_roots.contains(&root))
     {
         let task_name = task
             .name
@@ -2706,11 +2729,11 @@ fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Pa
 async fn inferred_workspace_tasks(
     config: &Arc<Config>,
     task_definitions: &TaskDefinitions,
-) -> Result<Vec<Task>> {
+    graph: &crate::task::workspace::WorkspaceProjectGraph,
+) -> Vec<Task> {
     let Some(monorepo_root) = config.monorepo_root() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    let graph = config.workspace_project_graph()?;
     let mut tasks = Vec::new();
 
     for project in graph.projects() {
@@ -2731,13 +2754,27 @@ async fn inferred_workspace_tasks(
                 run: vec![RunEntry::Script(inferred.command.clone())],
                 ..Default::default()
             };
-            resolve_task_template(&mut task, task_definitions)?;
-            task.render(config, &project_root).await?;
+            if let Err(err) = resolve_task_template(&mut task, task_definitions) {
+                warn!(
+                    "Failed to resolve inferred task {} in {}: {err:#}. Task will not be available.",
+                    task.name,
+                    display_path(&task.config_source)
+                );
+                continue;
+            }
+            if let Err(err) = task.render(config, &project_root).await {
+                warn!(
+                    "Failed to render inferred task {} in {}: {err:#}. Task will not be available.",
+                    task.name,
+                    display_path(&task.config_source)
+                );
+                continue;
+            }
             tasks.push(task);
         }
     }
 
-    Ok(tasks)
+    tasks
 }
 
 /// Monorepo roots that enclose the selected one.
@@ -3574,6 +3611,18 @@ async fn load_tasks_includes(
                 &config_root,
                 monorepo_cf.cloned(),
             )?;
+            if let Err(err) = resolve_task_template(&mut task, templates) {
+                if monorepo_cf.is_some() {
+                    warn!(
+                        "Failed to resolve task {} in {}: {err:#}. Task will not be available.",
+                        task.name,
+                        display_path(&path)
+                    );
+                    continue;
+                } else {
+                    return Err(err);
+                }
+            }
             let cache_key = rendered_task_cache_key(&task);
             if let Some(cached) = rendered_file_tasks
                 .as_deref()

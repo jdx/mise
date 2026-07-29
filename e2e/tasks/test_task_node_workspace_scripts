@@ -21,11 +21,20 @@ config_roots = ["packages/*"]
 [monorepo.task_defaults.build]
 env = { ROOT_TASK_DEFAULT = "from-root", TASK_PRECEDENCE = "from-root" }
 
+[monorepo.task_defaults.lint]
+env = { ROOT_TASK_DEFAULT = "from-executable-default" }
+
+[monorepo.task_defaults.local]
+env = { ROOT_TASK_DEFAULT = "must-not-apply" }
+
+[monorepo.task_defaults."test:unit"]
+dir = "{{ invalid"
+
 [task_templates.build-override]
 env = { TASK_PRECEDENCE = "from-template" }
 
 [tasks.local]
-run = "printf local > local-result.txt"
+run = "printf local > local-result.txt; printf '%s' \"$ROOT_TASK_DEFAULT\" > local-default.txt"
 TOML
 
 mkdir -p packages/app
@@ -46,6 +55,7 @@ cat <<'JSON' >packages/app/package.json
 JSON
 
 assert_contains "mise tasks --all" "node:@scope/app#build"
+assert_not_contains "mise tasks --all" "node:@scope/app#test:unit"
 assert_contains "mise task info 'node:@scope/app#build'" "packages/app/package.json"
 
 mise -q run 'node:@scope/app#build' -- forwarded
@@ -63,11 +73,21 @@ extends = "build-override"
 run = "printf explicit > result.txt; printf '%s' \"$ROOT_TASK_DEFAULT\" > explicit-default.txt; printf '%s' \"$TASK_PRECEDENCE\" > precedence.txt"
 TOML
 
+mkdir -p packages/app/mise-tasks
+cat <<'SH' >packages/app/mise-tasks/lint
+#!/bin/sh
+printf '%s' "$ROOT_TASK_DEFAULT" >executable-default.txt
+SH
+chmod +x packages/app/mise-tasks/lint
+
 printf stale >packages/app/result.txt
 mise -q run 'node:@scope/app#build'
 assert "cat packages/app/result.txt" "explicit"
 assert "cat packages/app/explicit-default.txt" "from-root"
 assert "cat packages/app/precedence.txt" "from-template"
+
+mise -q run //packages/app:lint
+assert "cat packages/app/executable-default.txt" "from-executable-default"
 
 assert_not_contains "MISE_EXPERIMENTAL=0 mise tasks --all" "node:@scope/app#test:unit"
 assert_fail_contains "MISE_EXPERIMENTAL=0 mise run 'node:@scope/missing#build'" "no task"
@@ -76,3 +96,4 @@ mkdir -p packages/bad
 printf '{' >packages/bad/package.json
 mise -q run local
 assert "cat local-result.txt" "local"
+assert "cat local-default.txt" ""
