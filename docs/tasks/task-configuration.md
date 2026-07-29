@@ -1180,7 +1180,7 @@ redactions = ["API_KEY", "PASSWORD"]
 
 Running the above task will output `echo [redacted]` instead.
 
-You can also specify these as a glob pattern, e.g.: `redactions.env = ["SECRETS_*"]`.
+You can also specify these as a glob pattern, e.g.: `redactions = ["SECRETS_*"]`.
 
 ## `[vars]` options
 

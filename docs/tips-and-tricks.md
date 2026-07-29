@@ -299,7 +299,7 @@ redactions = ["API_KEY", "PASSWORD"]
 Glob patterns are also supported:
 
 ```toml
-redactions.env = ["SECRETS_*"]
+redactions = ["SECRETS_*"]
 ```
 
 ## Software verification
