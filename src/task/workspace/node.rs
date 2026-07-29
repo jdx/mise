@@ -35,12 +35,12 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             )
         })?;
         let mut roots = aube::embed::discover_workspace_packages(
-            workspace_root,
+            &canonical_root,
             WorkspaceDiscoveryOptions::confined_to_root(),
         )
         .map_err(|error| {
             eyre::eyre!(
-                "failed to discover Node workspace packages under {}: {error:?}",
+                "failed to discover Node workspace packages under {}: {error}",
                 workspace_root.display()
             )
         })?
@@ -510,7 +510,10 @@ mod tests {
             r#"{"workspaces":["../outside"]}"#,
         );
         let err = NodeWorkspaceProvider.discover(temp.path()).unwrap_err();
-        assert!(err.to_string().contains("cannot escape the workspace root"));
+        assert!(
+            err.to_string()
+                .contains("failed to discover Node workspace packages under")
+        );
 
         write(
             &temp.path().join(PACKAGE_JSON),
