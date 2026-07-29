@@ -770,10 +770,23 @@ fn get_file_metadatas(
 }
 
 /// Convert file metadata to a hash string for comparison
-/// Includes path and file size to detect changes even when mtimes are unreliable
+///
+/// Includes path, file size and mtime. Without the mtime, a change that keeps the file size — a
+/// version bump from `1.2.3` to `1.2.4`, say — and lands an mtime no newer than the output falls
+/// through to the mtime comparison below, which then reports the task as fresh and leaves a stale
+/// output in place. That is what tar, unzip, `rsync -a` and `cp -p` do when they restore an older
+/// tree; `git checkout` is unaffected because it always writes with the current time.
+///
+/// The [`SystemTime`] is hashed as it is rather than as a duration since the epoch: converting
+/// would fold every pre-epoch mtime into the same value as "this filesystem reports no mtime",
+/// making two distinct timestamps indistinguishable. `None` therefore means only that the mtime is
+/// unavailable.
 fn file_metadatas_to_hash(metadatas: &[(PathBuf, fs::Metadata)]) -> String {
-    let path_and_sizes: Vec<_> = metadatas.iter().map(|(p, m)| (p, m.len())).collect();
-    hash::hash_to_str(&path_and_sizes)
+    let stat_info: Vec<_> = metadatas
+        .iter()
+        .map(|(p, m)| (p, m.len(), m.modified().ok()))
+        .collect();
+    hash::hash_to_str(&stat_info)
 }
 
 /// Per-file content hash cache entry. The `(size, mtime_secs, mtime_nanos)`
@@ -961,6 +974,61 @@ mod tests {
         let matcher = build_output_matcher(root.path(), &patterns).unwrap();
 
         assert!(is_output(&matcher, &output, false));
+    }
+
+    #[test]
+    fn metadata_hash_notices_a_same_size_change_with_an_older_mtime() {
+        // https://github.com/jdx/mise/discussions/4209 — restoring an older tree with tar,
+        // `rsync -a` or `cp -p` keeps the recorded mtime, so a same-size edit is invisible to a
+        // hash built from the path and size alone and the mtime comparison then calls it fresh.
+        let root = tempfile::tempdir().unwrap();
+        let p = root.path().join("pin.txt");
+        fs::write(&p, "1.2.3").unwrap();
+        let before = file_metadatas_to_hash(&[(p.clone(), fs::metadata(&p).unwrap())]);
+
+        fs::write(&p, "1.2.4").unwrap();
+        let restored = filetime::FileTime::from_unix_time(1_000_000, 0);
+        filetime::set_file_times(&p, restored, restored).unwrap();
+        let after = file_metadatas_to_hash(&[(p.clone(), fs::metadata(&p).unwrap())]);
+
+        assert_eq!(
+            fs::metadata(&p).unwrap().len(),
+            5,
+            "the fixture only exercises the bug while both versions are the same size"
+        );
+        assert_ne!(before, after, "the mtime change should be part of the hash");
+    }
+
+    #[test]
+    fn metadata_hash_separates_pre_epoch_mtimes() {
+        // mtimes from before 1970 must stay distinct from each other, and from "the filesystem
+        // reports no mtime" — folding them together would hide a change the same way the missing
+        // mtime did.
+        let root = tempfile::tempdir().unwrap();
+        let p = root.path().join("ancient.txt");
+        fs::write(&p, "x").unwrap();
+
+        let stamp = |secs: i64| {
+            let t = filetime::FileTime::from_unix_time(secs, 0);
+            // a filesystem that cannot store a pre-epoch timestamp is not what this pins down
+            filetime::set_file_times(&p, t, t).ok()?;
+            let metadata = fs::metadata(&p).unwrap();
+            let mtime = metadata.modified().ok()?;
+            Some((mtime, file_metadatas_to_hash(&[(p.clone(), metadata)])))
+        };
+        let (Some((first_mtime, first)), Some((second_mtime, second))) =
+            (stamp(-2_000_000), stamp(-1_000_000))
+        else {
+            return;
+        };
+        if first_mtime == second_mtime {
+            return;
+        }
+
+        assert_ne!(
+            first, second,
+            "two different pre-epoch mtimes should hash differently"
+        );
     }
 
     #[test]

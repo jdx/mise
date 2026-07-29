@@ -36,6 +36,29 @@ touch sizeout.txt
 # Should rebuild because size changed in the metadata hash
 assert "mise run -q sizetest" "rebuilt"
 
+# Test same-size detection (a change that keeps the size but restores an older mtime, the way
+# tar/unzip/rsync -a/cp -p put an older tree back, must still trigger a rebuild)
+cat <<EOF >mise.toml
+[tasks.pintest]
+run = 'echo rebuilt'
+sources = ['pin.txt']
+outputs = ['pinout.txt']
+EOF
+
+echo 'version = "1.2.3"' >pin.txt
+echo "out" >pinout.txt
+sleep 0.1
+touch pinout.txt
+
+# First run should skip (output is newer)
+assert_empty "mise run -q pintest"
+
+# Same number of bytes as the line above, and older than the output, so neither the size nor the
+# mtime comparison can see the change on their own
+echo 'version = "1.2.4"' >pin.txt
+touch -t 202001010000 pin.txt
+assert "mise run -q pintest" "rebuilt"
+
 # Test that normal source/output freshness still works
 cat <<EOF >mise.toml
 [tasks.fresh]
