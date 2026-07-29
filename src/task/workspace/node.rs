@@ -1,12 +1,8 @@
 use std::collections::BTreeSet;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use eyre::{Context, Result, bail};
-use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use ignore::WalkBuilder;
-use serde::Deserialize;
-
-use crate::file;
+use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
+use eyre::{Context, Result};
 
 use super::{ProjectId, WorkspaceProject, WorkspaceProvider};
 
@@ -17,41 +13,7 @@ const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
 #[derive(Debug, Default)]
 pub struct NodeWorkspaceProvider;
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PackageJson {
-    name: Option<String>,
-    package_manager: Option<String>,
-    workspaces: Option<PackageJsonWorkspaces>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum PackageJsonWorkspaces {
-    Patterns(Vec<String>),
-    Config {
-        #[serde(default)]
-        packages: Vec<String>,
-    },
-}
-
-impl PackageJsonWorkspaces {
-    fn patterns(self) -> Vec<String> {
-        match self {
-            Self::Patterns(patterns) => patterns,
-            Self::Config { packages } => packages,
-        }
-    }
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct PnpmWorkspace {
-    #[serde(default)]
-    packages: Vec<String>,
-}
-
 struct WorkspaceDefinition {
-    patterns: Vec<String>,
     source: &'static str,
     package_manager: Option<String>,
     include_named_root: bool,
@@ -66,7 +28,45 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         let Some(definition) = workspace_definition(workspace_root)? else {
             return Ok(Vec::new());
         };
-        let mut roots = expand_workspace_patterns(workspace_root, &definition.patterns)?;
+        let canonical_root = workspace_root.canonicalize().wrap_err_with(|| {
+            format!(
+                "failed to resolve Node workspace root {}",
+                workspace_root.display()
+            )
+        })?;
+        let mut roots = aube::embed::discover_workspace_packages(
+            &canonical_root,
+            WorkspaceDiscoveryOptions::confined_to_root(),
+        )
+        .map_err(|error| {
+            eyre::eyre!(
+                "failed to discover Node workspace packages under {}: {error}",
+                workspace_root.display()
+            )
+        })?
+        .into_iter()
+        .filter_map(|root| {
+            let relative = match root.strip_prefix(&canonical_root) {
+                Ok(relative) if relative.as_os_str().is_empty() => PathBuf::from("."),
+                Ok(relative) => relative.to_path_buf(),
+                Err(_) => {
+                    return Some(Err(eyre::eyre!(
+                        "Node workspace package {} is outside workspace root {}",
+                        root.display(),
+                        canonical_root.display()
+                    )));
+                }
+            };
+            if relative
+                .components()
+                .any(|component| component.as_os_str() == ".git")
+            {
+                None
+            } else {
+                Some(Ok(relative))
+            }
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
         if definition.include_named_root {
             let root_manifest_path = workspace_root.join(PACKAGE_JSON);
             if root_manifest_path.is_file()
@@ -108,15 +108,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
 fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinition>> {
     let pnpm_workspace_path = workspace_root.join(PNPM_WORKSPACE);
     if pnpm_workspace_path.is_file() {
-        let contents = file::read_to_string(&pnpm_workspace_path)?;
-        let workspace: PnpmWorkspace = serde_yaml::from_str(&contents).wrap_err_with(|| {
-            format!(
-                "failed to parse Node workspace definition {}",
-                pnpm_workspace_path.display()
-            )
-        })?;
         return Ok(Some(WorkspaceDefinition {
-            patterns: workspace.packages,
             source: PNPM_WORKSPACE,
             package_manager: Some("pnpm".to_string()),
             include_named_root: true,
@@ -132,13 +124,22 @@ fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinit
     let Some(root_manifest) = root_manifest else {
         return Ok(None);
     };
-    let Some(workspaces) = root_manifest.workspaces else {
+    let Some(workspaces) = root_manifest.workspaces.as_ref() else {
         return Ok(None);
     };
-    let package_manager = detect_package_manager(workspace_root, root_manifest.package_manager);
+    if workspaces.patterns().is_empty() {
+        return Ok(None);
+    }
+    let package_manager = detect_package_manager(
+        workspace_root,
+        root_manifest
+            .extra
+            .get("packageManager")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    );
     let include_named_root = package_manager.as_deref() == Some("yarn");
     Ok(Some(WorkspaceDefinition {
-        patterns: workspaces.patterns(),
         source: PACKAGE_JSON,
         package_manager,
         include_named_root,
@@ -146,14 +147,23 @@ fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinit
 }
 
 fn read_package_json(path: &Path) -> Result<PackageJson> {
-    let contents = file::read_to_string(path)?;
-    serde_json::from_str(&contents)
-        .wrap_err_with(|| format!("failed to parse Node package manifest {}", path.display()))
+    PackageJson::from_path(path).map_err(|error| {
+        eyre::eyre!(
+            "failed to parse Node package manifest {}: {error}",
+            path.display()
+        )
+    })
 }
 
 fn read_package_json_if_valid(path: &Path) -> Result<Option<PackageJson>> {
-    let contents = file::read_to_string(path)?;
-    Ok(serde_json::from_str(&contents).ok())
+    match PackageJson::from_path(path) {
+        Ok(manifest) => Ok(Some(manifest)),
+        Err(ManifestError::Parse(_)) => Ok(None),
+        Err(error) => Err(eyre::eyre!(
+            "failed to read Node package manifest {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 fn detect_package_manager(workspace_root: &Path, configured: Option<String>) -> Option<String> {
@@ -180,153 +190,6 @@ fn detect_package_manager(workspace_root: &Path, configured: Option<String>) -> 
                     .then(|| manager.to_string())
             })
         })
-}
-
-fn expand_workspace_patterns(
-    workspace_root: &Path,
-    patterns: &[String],
-) -> Result<BTreeSet<PathBuf>> {
-    let mut included = GlobSetBuilder::new();
-    let mut excluded = GlobSetBuilder::new();
-    let mut walk_roots = BTreeSet::new();
-    for raw_pattern in patterns {
-        let (target, pattern) = raw_pattern
-            .strip_prefix('!')
-            .map_or((&mut included, raw_pattern.as_str()), |pattern| {
-                (&mut excluded, pattern)
-            });
-        validate_workspace_pattern(pattern)?;
-        let pattern = normalize_workspace_pattern(pattern);
-        target.add(
-            GlobBuilder::new(pattern)
-                .literal_separator(true)
-                .backslash_escape(false)
-                .build()
-                .wrap_err_with(|| format!("invalid Node workspace pattern {pattern:?}"))?,
-        );
-        if !raw_pattern.starts_with('!') {
-            walk_roots.insert(literal_workspace_prefix(pattern));
-        }
-    }
-    if walk_roots.is_empty() {
-        return Ok(BTreeSet::new());
-    }
-    collect_matching_package_roots(
-        workspace_root,
-        &minimize_walk_roots(walk_roots),
-        &included.build()?,
-        &excluded.build()?,
-    )
-}
-
-fn validate_workspace_pattern(pattern: &str) -> Result<()> {
-    if pattern.is_empty() {
-        bail!("Node workspace pattern cannot be empty");
-    }
-    let path = Path::new(pattern);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-    {
-        bail!(
-            "Node workspace pattern {pattern:?} must be relative and cannot escape the workspace root"
-        );
-    }
-    Ok(())
-}
-
-fn normalize_workspace_pattern(pattern: &str) -> &str {
-    let pattern = pattern
-        .strip_prefix("./")
-        .unwrap_or(pattern)
-        .trim_end_matches('/');
-    if pattern.is_empty() { "." } else { pattern }
-}
-
-fn literal_workspace_prefix(pattern: &str) -> PathBuf {
-    let mut prefix = PathBuf::new();
-    for component in pattern.split('/') {
-        if component
-            .chars()
-            .any(|character| matches!(character, '*' | '?' | '[' | '{'))
-        {
-            break;
-        }
-        if component != "." {
-            prefix.push(component);
-        }
-    }
-    if prefix.as_os_str().is_empty() {
-        PathBuf::from(".")
-    } else {
-        prefix
-    }
-}
-
-fn minimize_walk_roots(roots: BTreeSet<PathBuf>) -> BTreeSet<PathBuf> {
-    let mut minimized = BTreeSet::new();
-    for root in roots {
-        if minimized
-            .iter()
-            .any(|ancestor| ancestor == Path::new(".") || root.starts_with(ancestor))
-        {
-            continue;
-        }
-        minimized.insert(root);
-    }
-    minimized
-}
-
-fn collect_matching_package_roots(
-    workspace_root: &Path,
-    walk_roots: &BTreeSet<PathBuf>,
-    included: &GlobSet,
-    excluded: &GlobSet,
-) -> Result<BTreeSet<PathBuf>> {
-    let mut roots = BTreeSet::new();
-    for walk_root in walk_roots {
-        let walk_root = workspace_root.join(walk_root);
-        if !walk_root.exists() {
-            continue;
-        }
-        let mut builder = WalkBuilder::new(walk_root);
-        builder
-            .hidden(false)
-            .git_exclude(false)
-            .git_global(false)
-            .git_ignore(false)
-            .ignore(false)
-            .filter_entry(|entry| {
-                entry.depth() == 0
-                    || !matches!(entry.file_name().to_str(), Some(".git" | "node_modules"))
-            });
-        for entry in builder.build() {
-            let entry = entry.wrap_err("failed to scan Node workspace packages")?;
-            if !entry
-                .file_type()
-                .is_some_and(|file_type| file_type.is_file())
-                || entry.file_name() != PACKAGE_JSON
-            {
-                continue;
-            }
-            let root = entry
-                .path()
-                .parent()
-                .expect("package.json has a parent")
-                .strip_prefix(workspace_root)
-                .expect("workspace walk stays beneath its root");
-            let root = if root.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                root
-            };
-            if included.is_match(root) && !excluded.is_match(root) {
-                roots.insert(root.to_path_buf());
-            }
-        }
-    }
-    Ok(roots)
 }
 
 #[cfg(test)]
@@ -433,6 +296,26 @@ mod tests {
     }
 
     #[test]
+    fn supports_string_workspace_syntax() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"workspaces":"packages/*"}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            project_summary(&projects),
+            vec![("node:app", Path::new("packages/app"), None)]
+        );
+    }
+
+    #[test]
     fn pnpm_workspace_takes_precedence_and_supports_exclusions() {
         let temp = tempdir().unwrap();
         write(
@@ -533,6 +416,27 @@ mod tests {
     }
 
     #[test]
+    fn workspace_discovery_excludes_git_metadata() {
+        let temp = tempdir().unwrap();
+        write(&temp.path().join(PACKAGE_JSON), r#"{"workspaces":["**"]}"#);
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app"}"#,
+        );
+        write(
+            &temp.path().join(".git/objects/example/package.json"),
+            r#"{"name":"git-object"}"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+
+        assert_eq!(
+            project_summary(&projects),
+            vec![("node:app", Path::new("packages/app"), None)]
+        );
+    }
+
+    #[test]
     fn pnpm_skips_an_unnamed_root_package() {
         let temp = tempdir().unwrap();
         write(&temp.path().join(PACKAGE_JSON), r#"{"private":true}"#);
@@ -599,23 +503,6 @@ mod tests {
     }
 
     #[test]
-    fn narrows_walk_roots_to_literal_pattern_prefixes() {
-        let roots = ["packages/*", "packages/nested/**", "apps/**/plugins/*"]
-            .into_iter()
-            .map(literal_workspace_prefix)
-            .collect();
-
-        assert_eq!(
-            minimize_walk_roots(roots),
-            BTreeSet::from([PathBuf::from("apps"), PathBuf::from("packages")])
-        );
-        assert_eq!(
-            literal_workspace_prefix("{apps,packages}/**"),
-            PathBuf::from(".")
-        );
-    }
-
-    #[test]
     fn rejects_escaping_patterns_and_unnamed_packages() {
         let temp = tempdir().unwrap();
         write(
@@ -623,7 +510,10 @@ mod tests {
             r#"{"workspaces":["../outside"]}"#,
         );
         let err = NodeWorkspaceProvider.discover(temp.path()).unwrap_err();
-        assert!(err.to_string().contains("cannot escape the workspace root"));
+        assert!(
+            err.to_string()
+                .contains("failed to discover Node workspace packages under")
+        );
 
         write(
             &temp.path().join(PACKAGE_JSON),

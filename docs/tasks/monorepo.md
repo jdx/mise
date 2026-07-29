@@ -340,9 +340,10 @@ The Node provider discovers npm, pnpm, Yarn, and Bun workspace packages from:
 
 - `pnpm-workspace.yaml`
 - the `workspaces` array in the root `package.json`
+- the single-pattern string form of `workspaces`
 - the Yarn Classic object form, `workspaces.packages`
 
-When both files exist, `pnpm-workspace.yaml` defines membership. For pnpm and detected Yarn workspaces, a valid root `package.json` with a `name` is implicitly included. Positive and negative patterns, recursive `**` globs, and brace patterns such as `packages/{web,api}` are supported for Node workspace discovery. The scanner skips `.git` and `node_modules`, but does not apply Git ignore files or `.ignore` files.
+When both files exist, `pnpm-workspace.yaml` defines membership. For pnpm and detected Yarn workspaces, a valid root `package.json` with a `name` is implicitly included. Positive and negative patterns, recursive `**` globs, and brace patterns such as `packages/{web,api}` are supported for Node workspace discovery. Discovery skips `.git` and `node_modules`, but does not apply Git ignore files or `.ignore` files.
 
 Each discovered package must have a `name` in its `package.json`. mise uses that stable ecosystem identity to create an ID such as `node:@acme/web`; moving the package to another directory does not change its ID. `mise tasks graph` also reports the package root, workspace-definition source, and detected package manager.
 
