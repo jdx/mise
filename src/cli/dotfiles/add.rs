@@ -203,8 +203,9 @@ impl DotfilesAdd {
                             &backup_dir.path().join("sources").join(index.to_string()),
                         )?,
                     ));
-                    if !self.no_apply && item.mode == FileMode::Symlink && !item.target.is_symlink()
-                    {
+                    let move_before_apply = item.mode == FileMode::Symlink
+                        || (item.mode == FileMode::SymlinkEach && item.already_managed.is_none());
+                    if !self.no_apply && move_before_apply && !item.target.is_symlink() {
                         remove_path(&item.source)?;
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
@@ -351,7 +352,7 @@ impl DotfilesAdd {
             if let Err(rollback_err) = rollback_add(
                 &source_backups,
                 &target_backups,
-                &moved_targets,
+                &mut moved_targets,
                 apply_started,
                 &config_path,
                 original_config.as_deref(),
@@ -524,16 +525,24 @@ struct MovedTarget {
     recovery: Option<tempfile::TempDir>,
 }
 
+impl MovedTarget {
+    fn keep_recovery(&mut self) -> Option<PathBuf> {
+        self.recovery
+            .take()
+            .map(|recovery| recovery.keep().join("target"))
+    }
+}
+
 fn rollback_add(
     source_backups: &[(PathBuf, PathBackup)],
     target_backups: &[(PathBuf, PathBackup)],
-    moved_targets: &[MovedTarget],
+    moved_targets: &mut [MovedTarget],
     restore_targets: bool,
     config_path: &std::path::Path,
     original_config: Option<&[u8]>,
 ) -> Result<()> {
     let mut errors = vec![];
-    for moved in moved_targets.iter().rev() {
+    for moved in moved_targets.iter_mut().rev() {
         let result = (|| -> Result<()> {
             remove_path(&moved.target)?;
             if let Some(parent) = moved.target.parent() {
@@ -546,11 +555,18 @@ fn rollback_add(
             }
         })();
         if let Err(err) = result {
-            errors.push(format!(
+            let mut message = format!(
                 "moved target {} from {}: {err}",
                 moved.target.display_user(),
                 moved.source.display_user()
-            ));
+            );
+            if let Some(recovery) = moved.keep_recovery() {
+                message.push_str(&format!(
+                    "; original preserved at {}",
+                    recovery.display_user()
+                ));
+            }
+            errors.push(message);
         }
     }
     if restore_targets && let Err(err) = restore_paths(target_backups) {
@@ -601,14 +617,15 @@ mod tests {
         file::create_dir_all(&source_backup).unwrap();
         file::write(source_backup.join("file"), "old source").unwrap();
 
+        let mut moved_targets = vec![MovedTarget {
+            target: target.clone(),
+            source: source.clone(),
+            recovery: Some(recovery),
+        }];
         rollback_add(
             &[(source.clone(), PathBackup::Copied(source_backup))],
             &[],
-            &[MovedTarget {
-                target: target.clone(),
-                source: source.clone(),
-                recovery: Some(recovery),
-            }],
+            &mut moved_targets,
             false,
             &root.path().join("config.toml"),
             None,
@@ -623,5 +640,23 @@ mod tests {
             file::read_to_string(source.join("file")).unwrap(),
             "old source"
         );
+    }
+
+    #[test]
+    fn failed_rollback_can_keep_staged_original() {
+        let root = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir_in(root.path()).unwrap();
+        let recovery_target = recovery.path().join("target");
+        file::write(&recovery_target, "original").unwrap();
+        let mut moved = MovedTarget {
+            target: root.path().join("target"),
+            source: root.path().join("source"),
+            recovery: Some(recovery),
+        };
+
+        let kept = moved.keep_recovery().unwrap();
+        drop(moved);
+
+        assert_eq!(file::read_to_string(kept).unwrap(), "original");
     }
 }

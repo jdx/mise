@@ -358,6 +358,14 @@ assert "readlink ~/.captured-dir" "$PWD/captured-root/.captured-dir"
 captured_file_line="$(grep -nF '"~/.captured" = {}' ~/.config/mise/config.toml | cut -d: -f1)"
 captured_dir_line="$(grep -nF '"~/.captured-dir" = {}' ~/.config/mise/config.toml | cut -d: -f1)"
 assert_succeed "test $captured_file_line -lt $captured_dir_line"
+
+# a new symlink-each target is moved out of the way before automatic apply
+mkdir ~/.captured-each
+echo "captured each" >~/.captured-each/file
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.captured-each --mode symlink-each --yes
+assert "cat captured-root/.captured-each/file" "captured each"
+assert "readlink ~/.captured-each/file" "$PWD/captured-root/.captured-each/file"
+assert_contains "cat ~/.config/mise/config.toml" '"~/.captured-each" = { mode = "symlink-each" }'
 rm ~/.config/mise/config.toml
 
 # standalone apply never replaces an existing real directory without --force,
