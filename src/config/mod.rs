@@ -123,6 +123,7 @@ impl Config {
                 *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
                 *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
                 GLOB_RESULTS.lock().unwrap().clear();
+                crate::lockfile::invalidate_caches();
                 crate::task::reset();
                 Ok(())
             },

@@ -3485,6 +3485,14 @@ mod tests {
         }
 
         assert_eq!(discoveries.load(Ordering::Relaxed), 1);
+
+        invalidate_caches();
+        let paths = cached_legacy_lockfile_paths(cache_key, || {
+            discoveries.fetch_add(1, Ordering::Relaxed);
+            expected.clone()
+        });
+        assert_eq!(paths, expected);
+        assert_eq!(discoveries.load(Ordering::Relaxed), 2);
     }
 
     fn basic_tv(backend: &str, version: &str) -> ToolVersion {
