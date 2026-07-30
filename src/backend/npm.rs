@@ -260,8 +260,6 @@ impl<'a> NpmOptions<'a> {
     }
 }
 
-const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
-
 #[async_trait]
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -421,28 +419,29 @@ impl Backend for NPMBackend {
                 self.install_via_aube_cli(ctx, &tv, &options).await?;
             }
             NpmPackageManager::Bun => {
-                let mut cmd = CmdLineRunner::new("bun")
-                    .arg("install")
-                    .arg(format!("{}@{}", self.tool_name(), tv.version))
-                    .arg("--global")
-                    // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
-                    // https://github.com/jdx/mise/discussions/7541
-                    .arg("--linker")
-                    .arg("hoisted")
-                    .args(install_before_args)
-                    .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .env_values(tv.install_env())
-                    .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
-                    .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
-                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-                    .prepend_path(
-                        self.dependency_toolset(&ctx.config)
-                            .await?
-                            .list_paths(&ctx.config)
-                            .await,
-                    )?
-                    .current_dir(tv.install_path());
+                let mut cmd =
+                    CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "bun").await)
+                        .arg("install")
+                        .arg(format!("{}@{}", self.tool_name(), tv.version))
+                        .arg("--global")
+                        // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
+                        // https://github.com/jdx/mise/discussions/7541
+                        .arg("--linker")
+                        .arg("hoisted")
+                        .args(install_before_args)
+                        .with_pr(ctx.pr.as_ref())
+                        .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                        .env_values(tv.install_env())
+                        .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
+                        .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
+                        .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                        .prepend_path(
+                            self.dependency_toolset(&ctx.config)
+                                .await?
+                                .list_paths(&ctx.config)
+                                .await,
+                        )?
+                        .current_dir(tv.install_path());
                 if let Some(args) = options.bun_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
@@ -451,28 +450,30 @@ impl Backend for NPMBackend {
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
-                let mut cmd = CmdLineRunner::new("pnpm")
-                    .arg("add")
-                    .arg("--global")
-                    .arg(format!("{}@{}", self.tool_name(), tv.version))
-                    .arg("--global-dir")
-                    .arg(tv.install_path())
-                    .arg("--global-bin-dir")
-                    .arg(&bin_dir)
-                    .args(install_before_args)
-                    .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .env_values(tv.install_env())
-                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-                    .prepend_path(
-                        self.dependency_toolset(&ctx.config)
-                            .await?
-                            .list_paths(&ctx.config)
-                            .await,
-                    )?
-                    // required to avoid pnpm error "global bin dir isn't in PATH"
-                    // https://github.com/pnpm/pnpm/issues/9333
-                    .prepend_path(vec![bin_dir])?;
+                let mut cmd = CmdLineRunner::new(
+                    self.spawn_program(&ctx.config, Some(&ctx.ts), "pnpm").await,
+                )
+                .arg("add")
+                .arg("--global")
+                .arg(format!("{}@{}", self.tool_name(), tv.version))
+                .arg("--global-dir")
+                .arg(tv.install_path())
+                .arg("--global-bin-dir")
+                .arg(&bin_dir)
+                .args(install_before_args)
+                .with_pr(ctx.pr.as_ref())
+                .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                .env_values(tv.install_env())
+                .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                .prepend_path(
+                    self.dependency_toolset(&ctx.config)
+                        .await?
+                        .list_paths(&ctx.config)
+                        .await,
+                )?
+                // required to avoid pnpm error "global bin dir isn't in PATH"
+                // https://github.com/pnpm/pnpm/issues/9333
+                .prepend_path(vec![bin_dir])?;
                 if let Some(args) = options.pnpm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
@@ -498,24 +499,25 @@ impl Backend for NPMBackend {
                     NpmOptions::npm_lifecycle_script_args(allow_builds, supports_allow_scripts);
                 let skipped_lifecycle_scripts =
                     Self::effective_npm_ignore_scripts(default_ignore_scripts, &npm_args);
-                let mut cmd = CmdLineRunner::new(NPM_PROGRAM)
-                    .arg("install")
-                    .arg("-g")
-                    .arg(format!("{}@{}", self.tool_name(), tv.version))
-                    .arg("--prefix")
-                    .arg(tv.install_path())
-                    .args(install_before_args)
-                    .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                    .env_values(tv.install_env())
-                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-                    .prepend_path(
-                        self.dependency_toolset(&ctx.config)
-                            .await?
-                            .list_paths(&ctx.config)
-                            .await,
-                    )?;
+                let mut cmd =
+                    CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "npm").await)
+                        .arg("install")
+                        .arg("-g")
+                        .arg(format!("{}@{}", self.tool_name(), tv.version))
+                        .arg("--prefix")
+                        .arg(tv.install_path())
+                        .args(install_before_args)
+                        .with_pr(ctx.pr.as_ref())
+                        .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
+                        .env_values(tv.install_env())
+                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                        .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                        .prepend_path(
+                            self.dependency_toolset(&ctx.config)
+                                .await?
+                                .list_paths(&ctx.config)
+                                .await,
+                        )?;
                 cmd = cmd.args(lifecycle_script_args);
                 if let Some(args) = &npm_args {
                     cmd = cmd.args(args);
@@ -580,9 +582,10 @@ impl NPMBackend {
             async || {
                 let env = self.dependency_env(config).await?;
                 let prefix = Self::npm_meta_prefix()?;
+                let npm = self.spawn_program(config, None, "npm").await;
 
                 let raw = cmd!(
-                    NPM_PROGRAM,
+                    npm,
                     "view",
                     self.tool_name(),
                     "versions",
@@ -607,8 +610,9 @@ impl NPMBackend {
     /// Legacy `npm view` dist-tags lookup, see [`Self::list_remote_versions_npm_view`].
     async fn latest_dist_tag_npm_view(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let prefix = Self::npm_meta_prefix()?;
+        let npm = self.spawn_program(config, None, "npm").await;
         let raw = cmd!(
-            NPM_PROGRAM,
+            npm,
             "view",
             self.tool_name(),
             "dist-tags",
@@ -778,7 +782,8 @@ impl NPMBackend {
                 return false;
             }
         };
-        let output = match cmd!(NPM_PROGRAM, "--version")
+        let npm = self.spawn_program(config, None, "npm").await;
+        let output = match cmd!(npm, "--version")
             .full_env(env)
             .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
             .read()
@@ -808,7 +813,9 @@ impl NPMBackend {
         // TODO: Once bun supports querying packages without package.json, this can be updated
         self.warn_if_dependency_missing(
             config,
-            "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
+            // The bare name: `executable_names` expands it across
+            // `windows_executable_extensions`, so the node-bundled `npm.cmd` is found.
+            "npm",
             &["node", "npm"],
             "To use npm packages with mise, you need to install Node.js first:\n\
               mise use node@latest\n\n\

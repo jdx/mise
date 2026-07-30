@@ -157,8 +157,12 @@ impl Backend for GoBackend {
         let raw_opts = tv.request.options();
         let opts = GoOptions::new(&raw_opts);
 
+        // Hoisted: the closure below runs twice (with and without a `v` prefix), and the
+        // program does not change between attempts.
+        let go = self.spawn_program(&ctx.config, Some(&ctx.ts), "go").await;
+
         let install = async |v| {
-            let mut cmd = CmdLineRunner::new("go").arg("install").arg("-mod=readonly");
+            let mut cmd = CmdLineRunner::new(&go).arg("install").arg("-mod=readonly");
 
             if let Some(tags) = opts.tags() {
                 cmd = cmd.arg("-tags").arg(tags);
@@ -323,8 +327,9 @@ impl GoBackend {
 
         cache
             .get_or_try_init_async(async || {
+                let go = self.spawn_program(config, None, "go").await;
                 let raw = match cmd!(
-                    "go",
+                    go,
                     "list",
                     "-mod=readonly",
                     "-m",
@@ -364,8 +369,9 @@ impl GoBackend {
         mod_path: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
         let env = self.go_list_env(config).await?;
+        let go = self.spawn_program(config, None, "go").await;
         let raw = cmd!(
-            "go",
+            go,
             "list",
             "-mod=readonly",
             "-m",
@@ -400,6 +406,12 @@ impl GoBackend {
             }
         };
 
+        // Resolved once for every batch below. Metadata is best-effort — a failed batch
+        // leaves those versions with defaults rather than failing the listing — so without
+        // this the whole enrichment step would silently no-op on a Windows go that is not
+        // spawnable by bare name.
+        let go = self.spawn_program(config, None, "go").await;
+
         let mut metadata_by_version = HashMap::with_capacity(versions.len());
         for chunk in versions.chunks(GO_LIST_VERSION_INFO_BATCH_SIZE) {
             let mut args = vec![
@@ -411,7 +423,7 @@ impl GoBackend {
             for version in chunk {
                 args.push(format!("{mod_path}@{version}").into());
             }
-            let Ok(raw) = cmd("go", args).full_env(&env).read() else {
+            let Ok(raw) = cmd(&go, args).full_env(&env).read() else {
                 continue;
             };
             let Ok(infos) = Deserializer::from_str(&raw)

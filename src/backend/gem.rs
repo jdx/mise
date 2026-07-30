@@ -17,8 +17,6 @@ use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::OnceCell as TokioOnceCell;
 
-const GEM_PROGRAM: &str = if cfg!(windows) { "gem.cmd" } else { "gem" };
-
 /// Cached gem source URL, memoized globally after first successful detection
 static GEM_SOURCE: TokioOnceCell<String> = TokioOnceCell::const_new();
 
@@ -97,7 +95,7 @@ impl Backend for GemBackend {
         )
         .await;
 
-        CmdLineRunner::new(GEM_PROGRAM)
+        CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await)
             .arg("install")
             .arg(self.tool_name())
             .arg("--version")
@@ -142,11 +140,12 @@ impl GemBackend {
 
         // Get the mise-managed Ruby environment
         let env = self.dependency_env(config).await.unwrap_or_default();
+        let gem = self.spawn_program(config, None, "gem").await;
 
         // Try to initialize the source - only memoize on success
         match GEM_SOURCE
             .get_or_try_init(|| async {
-                let output = crate::cmd::cmd_read_async(GEM_PROGRAM, &["sources"], &env)
+                let output = crate::cmd::cmd_read_async(&gem, &["sources"], &env)
                     .await
                     .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
 
