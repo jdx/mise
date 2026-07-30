@@ -219,6 +219,8 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let file_path = temp_dir.path().join("stat-file.txt");
         let file_path_str = file_path.to_string_lossy().to_string();
+        // only read by the `#[cfg(unix)]` permissions assertion further down
+        #[cfg(unix)]
         let file_path_str_clone = file_path_str.clone();
         let dir_path = temp_dir.path().join("stat-dir");
         let dir_path_str = dir_path.to_string_lossy().to_string();
