@@ -38,6 +38,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
             ~/.cache/sccache
+            target
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with: { tool: sccache }
       - name: Configure sccache
@@ -189,6 +190,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
             ~/.cache/sccache
+            target
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with: { tool: sccache }
       - name: Configure sccache
@@ -202,10 +204,6 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: mise-ubuntu-latest
-          path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
@@ -219,10 +217,19 @@ jobs:
             exit 1
           fi
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
+      # Keep MSRV artifacts from invalidating the stable artifacts reused by
+      # the render and Clippy steps.
       - run: cargo msrv verify
+        env:
+          CARGO_TARGET_DIR: target/msrv
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
+      # The Clippy passes below compile the same Rust targets with stricter checks.
+      # Keep cargo-check in the local lint task, but avoid compiling them a third
+      # time in CI.
       - run: mise run lint
+        env:
+          HK_SKIP_STEPS: cargo-check
       - run: cargo clippy -- -D warnings
       - run: cargo clippy --all-features --all-targets -- -D warnings
       - run: sccache --show-stats
