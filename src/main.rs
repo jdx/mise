@@ -5,6 +5,7 @@
 
 use std::{
     panic,
+    process::ExitCode,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -105,7 +106,7 @@ pub(crate) use crate::exit::request as request_exit;
 pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-fn main() {
+fn main() -> ExitCode {
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();
@@ -126,7 +127,7 @@ fn main() {
         Ok(runtime) => runtime,
         Err(err) => {
             eprintln!("Error: {err:?}");
-            exit::terminate(1);
+            return exit::status(1);
         }
     };
     let result = runtime.block_on(main_());
@@ -150,8 +151,10 @@ fn main() {
     } else {
         drop(runtime);
     }
-    if code != 0 {
-        exit::terminate(code);
+    if code == 0 {
+        ExitCode::SUCCESS
+    } else {
+        exit::status(code)
     }
 }
 

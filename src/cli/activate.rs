@@ -140,7 +140,7 @@ impl Activate {
         // This key is session-scoped and lost when the shell closes
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();
-            prelude.push(ActivatePrelude::SetEnv(
+            prelude.push(ActivatePrelude::Set(
                 "__MISE_ENV_CACHE_KEY".to_string(),
                 key,
             ));
@@ -160,7 +160,7 @@ impl Activate {
 
     fn prepend_path(&self, p: &Path) -> Option<ActivatePrelude> {
         if is_dir_not_in_nix(p) && !is_dir_in_path(p) && !p.is_relative() {
-            Some(ActivatePrelude::PrependEnv(
+            Some(ActivatePrelude::Prepend(
                 PATH_KEY.to_string(),
                 p.to_string_lossy().to_string(),
             ))
@@ -172,18 +172,18 @@ impl Activate {
     /// Used by activate_shims for the shims directory. Always prepends the path to
     /// the front, even if already present (accepting a duplicate entry), so the
     /// shims dir wins on re-source. For shells with native path dedup (fish), uses
-    /// MovePrependEnv to reorder without duplicating.
+    /// MovePrepend to reorder without duplicating.
     fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
         if !is_dir_not_in_nix(p) || p.is_relative() {
             return None;
         }
         if shell.supports_move_path() {
-            Some(ActivatePrelude::MovePrependEnv(
+            Some(ActivatePrelude::MovePrepend(
                 PATH_KEY.to_string(),
                 p.to_string_lossy().to_string(),
             ))
         } else {
-            Some(ActivatePrelude::PrependEnv(
+            Some(ActivatePrelude::Prepend(
                 PATH_KEY.to_string(),
                 p.to_string_lossy().to_string(),
             ))
@@ -209,7 +209,7 @@ fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
         // goes back into the user's live shell: a duplicate entry the user put there is
         // theirs to keep, and only the shims dir may be dropped here.
         let path = path_env.join_verbatim().to_string_lossy().to_string();
-        Ok(Some(ActivatePrelude::SetEnv(PATH_KEY.to_string(), path)))
+        Ok(Some(ActivatePrelude::Set(PATH_KEY.to_string(), path)))
     } else {
         Ok(None)
     }
