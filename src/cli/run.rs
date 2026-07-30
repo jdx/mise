@@ -559,12 +559,20 @@ impl Run {
                 &mut main_done_rx,
                 main_deps.clone(),
                 || this.is_stopping(),
+                || this.is_interrupted(),
                 this.continue_on_error,
-                |task, deps_for_remove| {
+                |task, deps_for_remove, allow_during_interruption| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
-                        Self::spawn_sched_job(this, task, deps_for_remove, spawn_context).await
+                        Self::spawn_sched_job(
+                            this,
+                            task,
+                            deps_for_remove,
+                            allow_during_interruption,
+                            spawn_context,
+                        )
+                        .await
                     }
                 },
             )
@@ -578,6 +586,7 @@ impl Run {
             this.executor.as_ref().unwrap().failed_tasks.clone(),
             this.continue_on_error,
             this.timings(),
+            this.is_interrupted(),
         );
         results_display.display_results(num_tasks, timer)?;
         time!("parallelize_tasks done");
@@ -589,23 +598,23 @@ impl Run {
         this: Arc<Self>,
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
+        inherited_allow_during_interruption: bool,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
-        // If we're already stopping due to a previous failure and not in
-        // continue-on-error mode, do not launch this task unless it's a
-        // post-dependency (cleanup task that should run even on failure).
-        if this.is_stopping() && !this.continue_on_error {
-            let mut deps = deps_for_remove.lock().await;
-            if !deps.is_runnable_post_dep(&task) {
-                trace!(
-                    "aborting spawn before start (not continue-on-error): {} {}",
-                    task.name,
-                    task.args.join(" ")
-                );
-                deps.remove(&task);
-                return Ok(());
-            }
-            drop(deps);
+        if Self::should_abort_while_stopping(
+            &this,
+            &task,
+            &deps_for_remove,
+            inherited_allow_during_interruption,
+        )
+        .await
+        {
+            trace!(
+                "aborting spawn before start while stopping: {} {}",
+                task.name,
+                task.args.join(" ")
+            );
+            return Ok(());
         }
         let needs_permit = task_needs_permit(&task);
         let permit_opt = if needs_permit {
@@ -616,23 +625,23 @@ impl Run {
                 task.name,
                 wait_start.elapsed().as_millis()
             );
-            // If a failure occurred while we were waiting for a permit and we're not
-            // in continue-on-error mode, skip launching this task unless it's a
-            // post-dependency (cleanup task). This prevents subsequently queued
-            // tasks from running after failure, while still allowing cleanup.
-            if this.is_stopping() && !this.continue_on_error {
-                let mut deps = deps_for_remove.lock().await;
-                if !deps.is_runnable_post_dep(&task) {
-                    trace!(
-                        "aborting spawn after failure (not continue-on-error): {} {}",
-                        task.name,
-                        task.args.join(" ")
-                    );
-                    // Remove from deps so the scheduler can drain and not hang
-                    deps.remove(&task);
-                    return Ok(());
-                }
-                drop(deps);
+            // If a failure or interruption occurred while waiting for a permit,
+            // skip this task unless failures may continue or it is a
+            // post-dependency. Interruption always stops new normal tasks.
+            if Self::should_abort_while_stopping(
+                &this,
+                &task,
+                &deps_for_remove,
+                inherited_allow_during_interruption,
+            )
+            .await
+            {
+                trace!(
+                    "aborting spawn after wait while stopping: {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                return Ok(());
             }
             p
         } else {
@@ -644,6 +653,8 @@ impl Run {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let in_flight_c = ctx.in_flight.clone();
         trace!("running task: {task}");
+        let allow_during_interruption = inherited_allow_during_interruption
+            || deps_for_remove.lock().await.is_runnable_post_dep(&task);
         // Mark task as executed synchronously before spawning so that the
         // scheduler's failure-cleanup path (which checks is_runnable_post_dep)
         // always sees the parent in `executed` — avoiding a race where a
@@ -664,6 +675,7 @@ impl Run {
                 dependency_state,
                 semaphore,
                 &mut permit,
+                allow_during_interruption,
             ))
             .catch_unwind()
             .await
@@ -686,13 +698,19 @@ impl Run {
                     deps.mark_cache_key(&task, cache_key.clone());
                 }
             }
+            let interrupted = result.as_ref().is_err_and(|err| {
+                !panicked && ctrlc::is_cancelled() && Error::is_task_interrupted(err)
+            });
             if let Err(err) = &result {
+                if interrupted {
+                    this.mark_interrupted();
+                }
                 let status = if panicked {
                     Some(1)
                 } else {
                     Error::get_exit_status(err)
                 };
-                if !this.is_stopping() && (panicked || status.is_none()) {
+                if !interrupted && !this.is_stopping() && (panicked || status.is_none()) {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
@@ -705,13 +723,15 @@ impl Run {
                         }
                     };
                 }
-                this.add_failed_task(task.clone(), status);
+                if !interrupted {
+                    this.add_failed_task(task.clone(), status);
+                }
                 // SIGTERM any still-running siblings so we exit promptly on
                 // failure instead of waiting for them to finish naturally.
                 // run_loop only sees `is_stopping` when it next iterates,
                 // which doesn't happen while it's awaiting an idle select —
                 // so the kill has to be triggered from here.
-                if !this.continue_on_error {
+                if !interrupted && !this.continue_on_error {
                     debug!("task {} failed, killing siblings", task.name);
                     #[cfg(unix)]
                     crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
@@ -724,13 +744,45 @@ impl Run {
             {
                 oh.keep_order_state.lock().unwrap().on_task_finished(&task);
             }
-            deps_for_remove.lock().await.remove(&task);
+            let mut deps = deps_for_remove.lock().await;
+            if result
+                .as_ref()
+                .is_err_and(Error::is_task_interrupted_before_start)
+            {
+                deps.unmark_executed(&task);
+            }
+            deps.remove(&task);
+            drop(deps);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));
             in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            result.map(|_| ())
+            if interrupted {
+                Ok(())
+            } else {
+                result.map(|_| ())
+            }
         });
 
         Ok(())
+    }
+
+    async fn should_abort_while_stopping(
+        this: &Self,
+        task: &Task,
+        deps_for_remove: &Arc<Mutex<Deps>>,
+        inherited_allow_during_interruption: bool,
+    ) -> bool {
+        if !this.is_stopping()
+            || (this.continue_on_error && !this.is_interrupted())
+            || inherited_allow_during_interruption
+        {
+            return false;
+        }
+        let mut deps = deps_for_remove.lock().await;
+        if deps.is_runnable_post_dep(task) {
+            return false;
+        }
+        deps.remove(task);
+        true
     }
 
     // ============================================================================
@@ -875,10 +927,27 @@ impl Run {
     }
 
     fn is_stopping(&self) -> bool {
-        self.executor
-            .as_ref()
-            .map(|e| e.is_stopping())
-            .unwrap_or(false)
+        ctrlc::is_cancelled()
+            || self
+                .executor
+                .as_ref()
+                .map(|e| e.is_stopping())
+                .unwrap_or(false)
+    }
+
+    fn is_interrupted(&self) -> bool {
+        ctrlc::is_cancelled()
+            || self
+                .executor
+                .as_ref()
+                .map(|e| e.is_interrupted())
+                .unwrap_or(false)
+    }
+
+    fn mark_interrupted(&self) {
+        if let Some(executor) = &self.executor {
+            executor.mark_interrupted();
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -886,11 +955,12 @@ impl Run {
         &self,
         task: &Task,
         config: &Arc<Config>,
-        sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<crate::task::task_scheduler::SchedMsg>>,
         completion_state: crate::task::TaskCompletionState,
         dependency_state: crate::task::TaskDependencyState,
         semaphore: Arc<tokio::sync::Semaphore>,
         permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+        allow_during_interruption: bool,
     ) -> Result<crate::task::task_executor::TaskRunOutcome> {
         self.executor
             .as_ref()
@@ -903,6 +973,7 @@ impl Run {
                 dependency_state,
                 semaphore,
                 permit,
+                allow_during_interruption,
             )
             .await
     }

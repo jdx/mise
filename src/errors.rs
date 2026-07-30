@@ -21,6 +21,8 @@ pub enum Error {
     VersionNotInstalled(Box<BackendArg>, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
+    #[error("task interrupted before process start")]
+    TaskInterrupted,
     #[error(
         "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.en.dev/cli/trust.html for more information.",
         display_path(.0)
@@ -115,6 +117,32 @@ impl Error {
         }
     }
 
+    #[cfg(unix)]
+    pub fn is_sigint(err: &Report) -> bool {
+        use std::os::unix::process::ExitStatusExt;
+
+        err.downcast_ref::<Error>().is_some_and(|err| {
+            matches!(
+                err,
+                Error::ScriptFailed(_, Some(status))
+                    if status.signal() == Some(nix::sys::signal::SIGINT as i32)
+            )
+        })
+    }
+
+    #[cfg(not(unix))]
+    pub fn is_sigint(_err: &Report) -> bool {
+        false
+    }
+
+    pub fn is_task_interrupted(err: &Report) -> bool {
+        Self::is_task_interrupted_before_start(err) || Self::is_sigint(err)
+    }
+
+    pub fn is_task_interrupted_before_start(err: &Report) -> bool {
+        matches!(err.downcast_ref::<Error>(), Some(Error::TaskInterrupted))
+    }
+
     pub fn is_argument_err(err: &Report) -> bool {
         err.downcast_ref::<Error>()
             .map(|e| {
@@ -127,5 +155,34 @@ impl Error {
                 )
             })
             .unwrap_or(false)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    #[test]
+    fn detects_sigint_script_failure() {
+        let status = ExitStatus::from_raw(nix::sys::signal::SIGINT as i32);
+        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status)));
+
+        assert!(Error::is_sigint(&err));
+    }
+
+    #[test]
+    fn does_not_treat_exit_code_as_sigint() {
+        let status = ExitStatus::from_raw(2 << 8);
+        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status)));
+
+        assert!(!Error::is_sigint(&err));
+    }
+
+    #[test]
+    fn detects_interruption_before_process_start() {
+        let err = Report::new(Error::TaskInterrupted);
+
+        assert!(Error::is_task_interrupted(&err));
     }
 }

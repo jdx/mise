@@ -11,6 +11,7 @@ use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_scheduler::SchedMsg;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
@@ -31,6 +32,7 @@ use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
@@ -176,6 +178,7 @@ pub struct TaskExecutor {
     pub context_builder: TaskContextBuilder,
     pub output_handler: OutputHandler,
     pub failed_tasks: FailedTasks,
+    interrupted: AtomicBool,
 
     // CLI flags
     pub force: bool,
@@ -206,6 +209,7 @@ impl TaskExecutor {
             context_builder,
             output_handler,
             failed_tasks: Arc::new(StdMutex::new(Vec::new())),
+            interrupted: AtomicBool::new(false),
             force: config.force,
             cd: config.cd,
             shell: config.shell,
@@ -220,7 +224,22 @@ impl TaskExecutor {
     }
 
     pub fn is_stopping(&self) -> bool {
-        !self.failed_tasks.lock().unwrap().is_empty()
+        self.is_interrupted() || !self.failed_tasks.lock().unwrap().is_empty()
+    }
+
+    pub fn is_interrupted(&self) -> bool {
+        self.interrupted.load(Ordering::Relaxed)
+    }
+
+    pub fn mark_interrupted(&self) {
+        self.interrupted.store(true, Ordering::Relaxed);
+    }
+
+    fn check_interruption(allow_during_interruption: bool) -> Result<()> {
+        if !allow_during_interruption && crate::ui::ctrlc::is_cancelled() {
+            return Err(crate::errors::Error::TaskInterrupted.into());
+        }
+        Ok(())
     }
 
     pub fn add_failed_task(&self, task: Task, status: Option<i32>) {
@@ -328,14 +347,16 @@ impl TaskExecutor {
         &self,
         task: &Task,
         config: &Arc<Config>,
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
         completion_state: TaskCompletionState,
         dependency_state: TaskDependencyState,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
+        allow_during_interruption: bool,
     ) -> Result<TaskRunOutcome> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
+        Self::check_interruption(allow_during_interruption)?;
         if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
@@ -593,40 +614,42 @@ impl TaskExecutor {
                     if self.task_cache.reads()
                         && !self.force
                         && !dependency_state.any_unkeyed_did_work
-                        && let Some(output) = cache.restore(task)?
                     {
-                        if !self.quiet(Some(task)) {
-                            let kind = if task.outputs.is_no_files() {
-                                "result"
-                            } else {
-                                "outputs"
-                            };
-                            self.eprint(
-                                task,
-                                &prefix,
-                                &format!("restored {kind} from cache {}", cache.key()),
-                            );
+                        Self::check_interruption(allow_during_interruption)?;
+                        if let Some(output) = cache.restore(task)? {
+                            if !self.quiet(Some(task)) {
+                                let kind = if task.outputs.is_no_files() {
+                                    "result"
+                                } else {
+                                    "outputs"
+                                };
+                                self.eprint(
+                                    task,
+                                    &prefix,
+                                    &format!("restored {kind} from cache {}", cache.key()),
+                                );
+                            }
+                            self.output_handler
+                                .replay_cached_output(task, &prefix, &output);
+                            if let Err(err) = save_checksum(task, config).await {
+                                warn!(
+                                    "task {} artifact cache checksum update failed: {err}",
+                                    task.name
+                                );
+                            }
+                            if self.task_cache.writes()
+                                && let Err(err) = cache.mark_current()
+                            {
+                                warn!(
+                                    "task {} artifact cache state update failed: {err}",
+                                    task.name
+                                );
+                            }
+                            return Ok(TaskRunOutcome {
+                                did_work: true,
+                                cache_key: Some(cache.key().to_string()),
+                            });
                         }
-                        self.output_handler
-                            .replay_cached_output(task, &prefix, &output);
-                        if let Err(err) = save_checksum(task, config).await {
-                            warn!(
-                                "task {} artifact cache checksum update failed: {err}",
-                                task.name
-                            );
-                        }
-                        if self.task_cache.writes()
-                            && let Err(err) = cache.mark_current()
-                        {
-                            warn!(
-                                "task {} artifact cache state update failed: {err}",
-                                task.name
-                            );
-                        }
-                        return Ok(TaskRunOutcome {
-                            did_work: true,
-                            cache_key: Some(cache.key().to_string()),
-                        });
                     }
                     Some(cache)
                 }
@@ -644,6 +667,7 @@ impl TaskExecutor {
 
         if let Some(file) = task_file {
             let exec_start = std::time::Instant::now();
+            Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
             self.exec_file(
                 config,
@@ -653,6 +677,7 @@ impl TaskExecutor {
                 &prefix,
                 confirm_guard,
                 output_capture.as_ref(),
+                allow_during_interruption,
             )
             .await?;
             trace!(
@@ -673,6 +698,7 @@ impl TaskExecutor {
                 .await?;
 
             let exec_start = std::time::Instant::now();
+            Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
             self.exec_task_run_entries(
                 config,
@@ -686,6 +712,7 @@ impl TaskExecutor {
                 semaphore,
                 permit,
                 output_capture.as_ref(),
+                allow_during_interruption,
             )
             .await?;
             trace!(
@@ -771,12 +798,13 @@ impl TaskExecutor {
         full_env: (&BTreeMap<String, String>, &[(String, String)]),
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
         completion_state: &TaskCompletionState,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
         output_capture: Option<&TaskOutputCapture>,
+        allow_during_interruption: bool,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -821,8 +849,16 @@ impl TaskExecutor {
                         if guard.is_none() {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
-                        self.exec_script(&script, &args, task, env, prefix, output_capture)
-                            .await?;
+                        self.exec_script(
+                            &script,
+                            &args,
+                            task,
+                            env,
+                            prefix,
+                            output_capture,
+                            allow_during_interruption,
+                        )
+                        .await?;
                     }
                 }
                 RunEntry::SingleTask {
@@ -860,6 +896,7 @@ impl TaskExecutor {
                             override_env_ref,
                             sched_tx.clone(),
                             &completion_state,
+                            allow_during_interruption,
                         )
                         .await?;
                     completion_state.merge(completed);
@@ -884,6 +921,7 @@ impl TaskExecutor {
                             None,
                             sched_tx.clone(),
                             &completion_state,
+                            allow_during_interruption,
                         )
                         .await?;
                     completion_state.merge(completed);
@@ -904,8 +942,9 @@ impl TaskExecutor {
         task_env: &[(String, String)],
         override_args: Option<&[String]>,
         override_env: Option<&[(String, String)]>,
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
         completion_state: &TaskCompletionState,
+        allow_during_interruption: bool,
     ) -> Result<TaskCompletionState> {
         use crate::task::TaskLoadContext;
         trace!("inject start: {}", specs.join(", "));
@@ -987,7 +1026,11 @@ impl TaskExecutor {
                             any = true;
                             let task = task.derive_env(&task_env_directives);
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
-                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                            let _ = sched_tx.send(SchedMsg::new(
+                                task,
+                                sub_deps_clone.clone(),
+                                allow_during_interruption,
+                            ));
                         }
                         Ok(None) => {
                             trace!("inject initial done");
@@ -1017,7 +1060,11 @@ impl TaskExecutor {
                                 task.args.join(" ")
                             );
                             let task = task.derive_env(&task_env_directives);
-                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                            let _ = sched_tx.send(SchedMsg::new(
+                                task,
+                                sub_deps_clone.clone(),
+                                allow_during_interruption,
+                            ));
                         }
                         None => {
                             let _ = done_tx.send(());
@@ -1032,7 +1079,7 @@ impl TaskExecutor {
         // Wait for completion with a check for early stopping
         loop {
             // Check if we should stop early due to failure
-            if self.is_stopping() && !self.continue_on_error {
+            if self.is_stopping() && !self.continue_on_error && !allow_during_interruption {
                 trace!("inject_and_wait: stopping early due to failure");
                 // Clean up the dependency graph to ensure completion
                 let mut deps = sub_deps.lock().await;
@@ -1063,7 +1110,7 @@ impl TaskExecutor {
         }
 
         // Final check if we failed during the execution
-        if self.is_stopping() && !self.continue_on_error {
+        if self.is_stopping() && !self.continue_on_error && !allow_during_interruption {
             return Err(eyre!("task sequence aborted due to failure"));
         }
 
@@ -1071,6 +1118,7 @@ impl TaskExecutor {
         Ok(completion_state)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_script(
         &self,
         script: &str,
@@ -1079,6 +1127,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         output_capture: Option<&TaskOutputCapture>,
+        allow_during_interruption: bool,
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
@@ -1109,8 +1158,16 @@ impl TaskExecutor {
             let file = dir.path().join("script");
             tokio::fs::write(&file, script.as_bytes()).await?;
             file::make_executable(&file)?;
-            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix, output_capture)
-                .await
+            self.exec_with_text_file_busy_retry(
+                &file,
+                args,
+                task,
+                env,
+                prefix,
+                output_capture,
+                allow_during_interruption,
+            )
+            .await
         } else {
             let (program, args, cmd_verbatim) =
                 self.get_cmd_program_and_args(script, task, args)?;
@@ -1122,6 +1179,7 @@ impl TaskExecutor {
                 prefix,
                 cmd_verbatim,
                 output_capture,
+                allow_during_interruption,
             )
             .await
         }
@@ -1331,6 +1389,7 @@ impl TaskExecutor {
         prefix: &str,
         guard: Option<RuntimeLockGuard<'static>>,
         output_capture: Option<&TaskOutputCapture>,
+        allow_during_interruption: bool,
     ) -> Result<()> {
         let args = task.args.iter().cloned().collect_vec();
 
@@ -1348,10 +1407,19 @@ impl TaskExecutor {
         } else {
             Some(acquire_runtime_lock(task.interactive).await)
         };
-        self.exec(file, &args, task, env, prefix, output_capture)
-            .await
+        self.exec(
+            file,
+            &args,
+            task,
+            env,
+            prefix,
+            output_capture,
+            allow_during_interruption,
+        )
+        .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec(
         &self,
         file: &Path,
@@ -1360,12 +1428,23 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         output_capture: Option<&TaskOutputCapture>,
+        allow_during_interruption: bool,
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(&program, &args, task, env, prefix, false, output_capture)
-            .await
+        self.exec_program(
+            &program,
+            &args,
+            task,
+            env,
+            prefix,
+            false,
+            output_capture,
+            allow_during_interruption,
+        )
+        .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_with_text_file_busy_retry(
         &self,
         file: &Path,
@@ -1374,6 +1453,7 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
         output_capture: Option<&TaskOutputCapture>,
+        allow_during_interruption: bool,
     ) -> Result<()> {
         const ETXTBUSY_RETRIES: usize = 3;
         const ETXTBUSY_SLEEP_MS: u64 = 50;
@@ -1381,7 +1461,15 @@ impl TaskExecutor {
         let mut attempt = 0;
         loop {
             match self
-                .exec(file, args, task, env, prefix, output_capture)
+                .exec(
+                    file,
+                    args,
+                    task,
+                    env,
+                    prefix,
+                    output_capture,
+                    allow_during_interruption,
+                )
                 .await
             {
                 Ok(()) => break Ok(()),
@@ -1412,6 +1500,7 @@ impl TaskExecutor {
         prefix: &str,
         cmd_verbatim: bool,
         output_capture: Option<&TaskOutputCapture>,
+        allow_during_interruption: bool,
     ) -> Result<()> {
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1673,7 +1762,10 @@ impl TaskExecutor {
         }
         // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
-        cmd.execute_async().await?;
+        cmd.execute_async_with_cancel_check(|| {
+            !allow_during_interruption && crate::ui::ctrlc::is_cancelled()
+        })
+        .await?;
         trace!("{prefix} exited successfully");
         Ok(())
     }

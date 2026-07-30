@@ -344,6 +344,12 @@ impl Deps {
         self.executed.insert(task_key(task));
     }
 
+    /// Clear the execution marker when cancellation prevents a scheduled task
+    /// from reaching process startup.
+    pub fn unmark_executed(&mut self, task: &Task) {
+        self.executed.remove(&task_key(task));
+    }
+
     /// Mark a task as having executed or restored outputs.
     /// Used to invalidate dependent tasks' source freshness checks.
     pub fn mark_did_work(&mut self, task: &Task) {
@@ -587,6 +593,22 @@ mod tests {
             post_dep_parents,
             tx,
         }
+    }
+
+    #[test]
+    fn unmark_executed_disables_post_dependency_cleanup() {
+        let parent = task("parent");
+        let cleanup = task("cleanup");
+        let mut deps = deps_with_relationships(
+            HashMap::new(),
+            HashMap::from([(task_key(&cleanup), HashSet::from([task_key(&parent)]))]),
+        );
+
+        deps.mark_executed(&parent);
+        assert!(deps.is_runnable_post_dep(&cleanup));
+
+        deps.unmark_executed(&parent);
+        assert!(!deps.is_runnable_post_dep(&cleanup));
     }
 
     #[test]
