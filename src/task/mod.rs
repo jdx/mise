@@ -3025,6 +3025,9 @@ where
             .build()
             .ok()
             .map(|b| b.compile_matcher());
+        let trailing_ellipsis_base_matcher = trailing_ellipsis_base
+            .and_then(|base| GlobBuilder::new(base).literal_separator(true).build().ok())
+            .map(|glob| glob.compile_matcher());
 
         // Build task matcher if not wildcard
         let task_matcher = if task_glob != "*" {
@@ -3082,7 +3085,9 @@ where
             // Match path part with ellipsis support
             let path_matches = if let Some(ref matcher) = path_matcher {
                 matcher.is_match(key_path)
-                    || trailing_ellipsis_base.is_some_and(|base| base == key_path)
+                    || trailing_ellipsis_base_matcher
+                        .as_ref()
+                        .is_some_and(|base_matcher| base_matcher.is_match(key_path))
             } else {
                 false
             };
@@ -5407,6 +5412,14 @@ echo "test"
             tasks.get_matching("//...:test").unwrap(),
             vec![
                 &"//:test".to_string(),
+                &"//apps/api:test".to_string(),
+                &"//apps/web/e2e:test".to_string(),
+                &"//apps/web:test".to_string(),
+            ]
+        );
+        assert_eq!(
+            tasks.get_matching("//apps/*/...:test").unwrap(),
+            vec![
                 &"//apps/api:test".to_string(),
                 &"//apps/web/e2e:test".to_string(),
                 &"//apps/web:test".to_string(),

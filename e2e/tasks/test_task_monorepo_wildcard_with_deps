@@ -160,6 +160,8 @@ assert_not_contains "mise run '//apps/frontend:relative-tests'" "root grouped te
 # ./ followed directly by a task separator stays in the declaring project
 assert_contains "mise run '//apps/frontend:relative-bootstrap'" "frontend bootstrap executed"
 assert_contains "mise run '//apps/frontend:relative-bootstrap'" "frontend relative bootstrap executed"
+assert_not_contains "mise run '//apps/frontend:relative-bootstrap'" "shared bootstrap executed"
+assert_not_contains "mise run '//apps/frontend:relative-bootstrap'" "backend bootstrap executed"
 
 assert_contains "mise run '//apps/frontend/child:relative-tests'" "child grouped test executed"
 assert_not_contains "mise run '//apps/frontend/child:relative-tests'" "frontend grouped test executed"
