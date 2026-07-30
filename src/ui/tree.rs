@@ -65,14 +65,13 @@ pub fn print_tree<T: TreeItem>(item: &T) -> std::io::Result<()> {
     print_tree_item(item, String::from(""), String::from(""), &indent, 0)
 }
 
-pub fn print_tree_compact<T, K, F>(item: &T, key: F) -> std::io::Result<()>
+pub fn print_tree_compact<T, K, F>(item: &T, key: F, seen: &mut HashSet<K>) -> std::io::Result<()>
 where
     T: TreeItem<Child = T>,
     K: Eq + Hash,
     F: Fn(&T) -> K,
 {
     let indent = TreeItemIndent::new(4, 1, &TREE_ITEM_CHARS);
-    let mut seen = HashSet::new();
     print_tree_item_compact(
         item,
         String::from(""),
@@ -80,7 +79,7 @@ where
         &indent,
         0,
         &key,
-        &mut seen,
+        seen,
     )
 }
 

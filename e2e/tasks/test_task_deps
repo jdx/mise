@@ -73,6 +73,17 @@ if [[ $leaf_count -ne 1 ]]; then
   exit 1
 fi
 
+multi_root_output="$(mise tasks deps --compact left right)"
+assert_contains "printf '%s\n' \"$multi_root_output\"" "shared (already shown)"
+multi_root_leaf_count="$(printf '%s\n' "$multi_root_output" | grep -c 'leaf')"
+if [[ $multi_root_leaf_count -ne 1 ]]; then
+  echo "Expected compact multi-root output to expand leaf once, got $multi_root_leaf_count"
+  printf '%s\n' "$multi_root_output"
+  exit 1
+fi
+
+assert_fail "mise tasks deps --compact --dot root"
+
 hello_all_info="$(mise tasks hello:all)"
 assert_contains "printf '%s\n' \"$hello_all_info\"" "Task: hello:all"
 assert_contains "printf '%s\n' \"$hello_all_info\"" "Description: Hello from all"

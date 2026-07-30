@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::config::Config;
 use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map};
@@ -20,7 +20,7 @@ pub struct TasksDeps {
     pub tasks: Option<Vec<String>>,
 
     /// Collapse repeated dependencies after their first occurrence
-    #[clap(long, verbatim_doc_comment)]
+    #[clap(long, conflicts_with = "dot", verbatim_doc_comment)]
     pub compact: bool,
 
     /// Display dependencies in DOT format
@@ -149,9 +149,10 @@ impl TasksDeps {
             tasks.iter().any(|t| t.name == task.name)
         });
         // iterate over selected graph nodes and print tree
+        let mut seen = HashSet::new();
         for idx in start_indexes {
             if self.compact {
-                print_tree_compact(&(&deps.graph, idx), |item| item.1)?;
+                print_tree_compact(&(&deps.graph, idx), |item| item.1, &mut seen)?;
             } else {
                 print_tree(&(&deps.graph, idx))?;
             }
