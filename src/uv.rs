@@ -1,5 +1,5 @@
 use crate::cli::args::BackendArg;
-use crate::config::env_directive::venv::{Venv, create_python_venv, load_venv};
+use crate::config::env_directive::venv::{PythonVenvOptions, Venv, create_python_venv, load_venv};
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
@@ -32,10 +32,10 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
                         ts,
                         &venv_path,
                         EnvMap::new(),
-                        None,
-                        None,
-                        None,
-                        true,
+                        PythonVenvOptions {
+                            require_uv: true,
+                            ..Default::default()
+                        },
                     )
                     .await
                     {

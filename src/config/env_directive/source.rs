@@ -1,38 +1,38 @@
 use crate::Result;
-use crate::config::env_directive::EnvResults;
+use crate::config::env_directive::{EnvDirectiveContext, EnvResults};
 use crate::env;
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffOptions, EnvMap};
+use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffOptions};
 use indexmap::IndexMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 impl EnvResults {
-    #[allow(clippy::too_many_arguments)]
-    pub fn source(
-        ctx: &mut tera::Context,
-        tera: &mut Option<crate::tera::TeraEngine>,
+    pub(super) fn source(
+        ctx: &mut EnvDirectiveContext<'_>,
         paths: &mut Vec<(PathBuf, PathBuf)>,
-        r: &mut EnvResults,
-        normalize_path: fn(&Path, PathBuf) -> PathBuf,
-        source: &Path,
-        exec_env: &EnvMap,
-        config_root: &Path,
-        env_vars: &EnvMap,
         input: String,
     ) -> Result<IndexMap<PathBuf, IndexMap<String, String>>> {
         // Note: in safe mode `_.source` directives are dropped during env
         // resolution (see EnvResults::resolve), so this is never reached.
         let mut out = IndexMap::new();
-        let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
-        let orig_path = env_vars.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+        let s = ctx.parse_template(&input)?;
+        let orig_path = ctx
+            .exec_env
+            .get(&*env::PATH_KEY)
+            .cloned()
+            .unwrap_or_default();
         let mut env_diff_opts = EnvDiffOptions::default();
         env_diff_opts.ignore_keys.shift_remove(&*env::PATH_KEY); // allow modifying PATH
-        for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
+        for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
             if !p.exists() {
                 continue;
             }
             let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
-            let env_diff =
-                EnvDiff::from_bash_script(&p, config_root, env_vars.clone(), &env_diff_opts)?;
+            let env_diff = EnvDiff::from_bash_script(
+                &p,
+                ctx.config_root,
+                ctx.exec_env.clone(),
+                &env_diff_opts,
+            )?;
             for p in env_diff.to_patches() {
                 match p {
                     EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
@@ -43,17 +43,17 @@ impl EnvResults {
                                     if p.as_os_str().is_empty() {
                                         continue;
                                     }
-                                    paths.push((p, source.to_path_buf()));
+                                    paths.push((p, ctx.source.to_path_buf()));
                                 }
                             }
                         } else {
-                            r.env_remove.remove(&k);
+                            ctx.results.env_remove.remove(&k);
                             env.insert(k.clone(), v.clone());
                         }
                     }
                     EnvDiffOperation::Remove(k) => {
                         env.shift_remove(&k);
-                        r.env_remove.insert(k);
+                        ctx.results.env_remove.insert(k);
                     }
                 }
             }
