@@ -58,6 +58,35 @@ pub(crate) struct TaskRunContext<'a> {
     pub(crate) allow_during_interruption: bool,
 }
 
+#[derive(Clone, Copy)]
+struct TaskExecContext<'a> {
+    task: &'a Task,
+    env: &'a BTreeMap<String, String>,
+    prefix: &'a str,
+    output_capture: Option<&'a TaskOutputCapture>,
+    allow_during_interruption: bool,
+}
+
+struct TaskRunEntriesContext<'a> {
+    config: &'a Arc<Config>,
+    exec: TaskExecContext<'a>,
+    task_env: &'a [(String, String)],
+    sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
+    existing_guard: Option<RuntimeLockGuard<'static>>,
+    completion_state: &'a TaskCompletionState,
+    semaphore: Arc<Semaphore>,
+    permit: &'a mut Option<OwnedSemaphorePermit>,
+}
+
+#[derive(Clone, Copy)]
+struct TaskInjectionContext<'a> {
+    config: &'a Arc<Config>,
+    task_env: &'a [(String, String)],
+    sched_tx: &'a Arc<mpsc::UnboundedSender<SchedMsg>>,
+    completion_state: &'a TaskCompletionState,
+    allow_during_interruption: bool,
+}
+
 #[allow(dead_code)] // Guards are held for their Drop impl, not read
 enum RuntimeLockGuard<'a> {
     Read(tokio::sync::RwLockReadGuard<'a, ()>),
@@ -672,6 +701,13 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
+        let exec_ctx = TaskExecContext {
+            task,
+            env: &env,
+            prefix: &prefix,
+            output_capture: output_capture.as_ref(),
+            allow_during_interruption,
+        };
 
         let timer = std::time::Instant::now();
 
@@ -679,17 +715,8 @@ impl TaskExecutor {
             let exec_start = std::time::Instant::now();
             Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
-            self.exec_file(
-                config,
-                &file,
-                task,
-                &env,
-                &prefix,
-                confirm_guard,
-                output_capture.as_ref(),
-                allow_during_interruption,
-            )
-            .await?;
+            self.exec_file(config, &file, confirm_guard, exec_ctx)
+                .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -711,18 +738,17 @@ impl TaskExecutor {
             Self::check_interruption(allow_during_interruption)?;
             remove_auto_output(task, config).await?;
             self.exec_task_run_entries(
-                config,
-                task,
-                (&env, &task_env),
-                &prefix,
                 rendered_run_scripts,
-                sched_tx,
-                confirm_guard,
-                &completion_state,
-                semaphore,
-                permit,
-                output_capture.as_ref(),
-                allow_during_interruption,
+                TaskRunEntriesContext {
+                    config,
+                    exec: exec_ctx,
+                    task_env: &task_env,
+                    sched_tx,
+                    existing_guard: confirm_guard,
+                    completion_state: &completion_state,
+                    semaphore,
+                    permit,
+                },
             )
             .await?;
             trace!(
@@ -800,23 +826,22 @@ impl TaskExecutor {
         env
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn exec_task_run_entries(
         &self,
-        config: &Arc<Config>,
-        task: &Task,
-        full_env: (&BTreeMap<String, String>, &[(String, String)]),
-        prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
-        sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
-        existing_guard: Option<RuntimeLockGuard<'static>>,
-        completion_state: &TaskCompletionState,
-        semaphore: Arc<Semaphore>,
-        permit: &mut Option<OwnedSemaphorePermit>,
-        output_capture: Option<&TaskOutputCapture>,
-        allow_during_interruption: bool,
+        ctx: TaskRunEntriesContext<'_>,
     ) -> Result<()> {
-        let (env, task_env) = full_env;
+        let TaskRunEntriesContext {
+            config,
+            exec,
+            task_env,
+            sched_tx,
+            existing_guard,
+            completion_state,
+            semaphore,
+            permit,
+        } = ctx;
+        let task = exec.task;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
         let mut completion_state = completion_state.clone();
@@ -830,7 +855,7 @@ impl TaskExecutor {
             if !usage_values.is_empty() {
                 tera_ctx.insert("usage", &usage_values);
             }
-            tera_ctx.insert("env", env);
+            tera_ctx.insert("env", exec.env);
             Some((tera, tera_ctx))
         } else {
             None
@@ -859,16 +884,7 @@ impl TaskExecutor {
                         if guard.is_none() {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
-                        self.exec_script(
-                            &script,
-                            &args,
-                            task,
-                            env,
-                            prefix,
-                            output_capture,
-                            allow_during_interruption,
-                        )
-                        .await?;
+                        self.exec_script(&script, &args, exec).await?;
                     }
                 }
                 RunEntry::SingleTask {
@@ -899,14 +915,16 @@ impl TaskExecutor {
                     *permit = None;
                     let completed = self
                         .inject_and_wait(
-                            config,
                             &[resolved_spec],
-                            task_env,
                             override_args.as_deref(),
                             override_env_ref,
-                            sched_tx.clone(),
-                            &completion_state,
-                            allow_during_interruption,
+                            TaskInjectionContext {
+                                config,
+                                task_env,
+                                sched_tx: &sched_tx,
+                                completion_state: &completion_state,
+                                allow_during_interruption: exec.allow_during_interruption,
+                            },
                         )
                         .await?;
                     completion_state.merge(completed);
@@ -924,14 +942,16 @@ impl TaskExecutor {
                     *permit = None;
                     let completed = self
                         .inject_and_wait(
-                            config,
                             &resolved_tasks,
-                            task_env,
                             None,
                             None,
-                            sched_tx.clone(),
-                            &completion_state,
-                            allow_during_interruption,
+                            TaskInjectionContext {
+                                config,
+                                task_env,
+                                sched_tx: &sched_tx,
+                                completion_state: &completion_state,
+                                allow_during_interruption: exec.allow_during_interruption,
+                            },
                         )
                         .await?;
                     completion_state.merge(completed);
@@ -944,18 +964,20 @@ impl TaskExecutor {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn inject_and_wait(
         &self,
-        config: &Arc<Config>,
         specs: &[String],
-        task_env: &[(String, String)],
         override_args: Option<&[String]>,
         override_env: Option<&[(String, String)]>,
-        sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
-        completion_state: &TaskCompletionState,
-        allow_during_interruption: bool,
+        ctx: TaskInjectionContext<'_>,
     ) -> Result<TaskCompletionState> {
+        let TaskInjectionContext {
+            config,
+            task_env,
+            sched_tx,
+            completion_state,
+            allow_during_interruption,
+        } = ctx;
         use crate::task::TaskLoadContext;
         trace!("inject start: {}", specs.join(", "));
         // Build tasks list from specs
@@ -1128,20 +1150,15 @@ impl TaskExecutor {
         Ok(completion_state)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn exec_script(
         &self,
         script: &str,
         args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-        output_capture: Option<&TaskOutputCapture>,
-        allow_during_interruption: bool,
+        ctx: TaskExecContext<'_>,
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
-        let display_script = self.display_script_with_args(script, args, task)?;
+        let display_script = self.display_script_with_args(script, args, ctx.task)?;
         // For display, skip leading shebang/blank/`set ...` boilerplate and join
         // backslash-continued lines so the header shows the first real command as a
         // single logical line (see display_first_command). When show_full_cmd is set,
@@ -1156,11 +1173,11 @@ impl TaskExecutor {
             true => "$".to_string(),
             false => format!("$ {display_script}"),
         };
-        if !self.quiet(Some(task)) {
-            let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
+        if !self.quiet(Some(ctx.task)) {
+            let msg = style::ebold(trunc(ctx.prefix, config.redact(&cmd).trim()))
                 .bright()
                 .to_string();
-            self.eprint(task, prefix, &msg)
+            self.eprint(ctx.task, ctx.prefix, &msg)
         }
 
         if script.starts_with("#!") {
@@ -1168,30 +1185,11 @@ impl TaskExecutor {
             let file = dir.path().join("script");
             tokio::fs::write(&file, script.as_bytes()).await?;
             file::make_executable(&file)?;
-            self.exec_with_text_file_busy_retry(
-                &file,
-                args,
-                task,
-                env,
-                prefix,
-                output_capture,
-                allow_during_interruption,
-            )
-            .await
+            self.exec_with_text_file_busy_retry(&file, args, ctx).await
         } else {
             let (program, args, cmd_verbatim) =
-                self.get_cmd_program_and_args(script, task, args)?;
-            self.exec_program(
-                &program,
-                &args,
-                task,
-                env,
-                prefix,
-                cmd_verbatim,
-                output_capture,
-                allow_during_interruption,
-            )
-            .await
+                self.get_cmd_program_and_args(script, ctx.task, args)?;
+            self.exec_program(&program, &args, cmd_verbatim, ctx).await
         }
     }
 
@@ -1389,99 +1387,49 @@ impl TaskExecutor {
         Ok(inputs)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn exec_file(
         &self,
         config: &Arc<Config>,
         file: &Path,
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
         guard: Option<RuntimeLockGuard<'static>>,
-        output_capture: Option<&TaskOutputCapture>,
-        allow_during_interruption: bool,
+        ctx: TaskExecContext<'_>,
     ) -> Result<()> {
-        let args = task.args.iter().cloned().collect_vec();
+        let args = ctx.task.args.iter().cloned().collect_vec();
 
-        if !self.quiet(Some(task)) {
+        if !self.quiet(Some(ctx.task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
                 .trim()
                 .to_string();
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-            let cmd = trunc(prefix, config.redact(&cmd).trim());
-            self.eprint(task, prefix, &cmd);
+            let cmd = trunc(ctx.prefix, config.redact(&cmd).trim());
+            self.eprint(ctx.task, ctx.prefix, &cmd);
         }
 
         let _guard = if guard.is_some() {
             guard
         } else {
-            Some(acquire_runtime_lock(task.interactive).await)
+            Some(acquire_runtime_lock(ctx.task.interactive).await)
         };
-        self.exec(
-            file,
-            &args,
-            task,
-            env,
-            prefix,
-            output_capture,
-            allow_during_interruption,
-        )
-        .await
+        self.exec(file, &args, ctx).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn exec(
-        &self,
-        file: &Path,
-        args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-        output_capture: Option<&TaskOutputCapture>,
-        allow_during_interruption: bool,
-    ) -> Result<()> {
-        let (program, args) = self.get_file_program_and_args(file, task, args)?;
-        self.exec_program(
-            &program,
-            &args,
-            task,
-            env,
-            prefix,
-            false,
-            output_capture,
-            allow_during_interruption,
-        )
-        .await
+    async fn exec(&self, file: &Path, args: &[String], ctx: TaskExecContext<'_>) -> Result<()> {
+        let (program, args) = self.get_file_program_and_args(file, ctx.task, args)?;
+        self.exec_program(&program, &args, false, ctx).await
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn exec_with_text_file_busy_retry(
         &self,
         file: &Path,
         args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
-        output_capture: Option<&TaskOutputCapture>,
-        allow_during_interruption: bool,
+        ctx: TaskExecContext<'_>,
     ) -> Result<()> {
         const ETXTBUSY_RETRIES: usize = 3;
         const ETXTBUSY_SLEEP_MS: u64 = 50;
 
         let mut attempt = 0;
         loop {
-            match self
-                .exec(
-                    file,
-                    args,
-                    task,
-                    env,
-                    prefix,
-                    output_capture,
-                    allow_during_interruption,
-                )
-                .await
-            {
+            match self.exec(file, args, ctx).await {
                 Ok(()) => break Ok(()),
                 Err(err) if Self::is_text_file_busy(&err) && attempt < ETXTBUSY_RETRIES => {
                     attempt += 1;
@@ -1500,18 +1448,20 @@ impl TaskExecutor {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn exec_program(
         &self,
         program: &str,
         args: &[String],
-        task: &Task,
-        env: &BTreeMap<String, String>,
-        prefix: &str,
         cmd_verbatim: bool,
-        output_capture: Option<&TaskOutputCapture>,
-        allow_during_interruption: bool,
+        ctx: TaskExecContext<'_>,
     ) -> Result<()> {
+        let TaskExecContext {
+            task,
+            env,
+            prefix,
+            output_capture,
+            allow_during_interruption,
+        } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
         let config = Config::get().await?;
