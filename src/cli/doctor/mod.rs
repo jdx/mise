@@ -426,7 +426,7 @@ impl Doctor {
                 && !plugin.is_installed()
             {
                 self.errors
-                    .push(format!("plugin {} is not installed", &plugin.name()));
+                    .push(format!("plugin {} is not installed", plugin.name()));
                 continue;
             }
         }
@@ -823,7 +823,7 @@ impl Doctor {
 
             if is_core && matches!(plugin_type, Some(PluginType::Asdf | PluginType::Vfox)) {
                 self.warnings
-                    .push(format!("plugin {} overrides a core plugin", &plugin.id()));
+                    .push(format!("plugin {} overrides a core plugin", plugin.id()));
             }
         }
     }

@@ -65,7 +65,7 @@ impl Backend for DotnetBackend {
                 // version arrays of packages that are visible.
                 "{}?q={}&packageType=dotnettool&take=1&prerelease={}&semVerLevel=2.0.0",
                 feed_url,
-                &self.tool_name(),
+                self.tool_name(),
                 true
             ))
             .await?;

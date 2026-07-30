@@ -1491,7 +1491,7 @@ fn set_value_decor(item: &mut Item, decor: &Option<toml_edit::Decor>) {
 impl Debug for MiseToml {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let tools = self.to_tool_request_set().unwrap().to_string();
-        let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
+        let title = format!("MiseToml({}): {tools}", display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
             d.field("min_version", min_version);
@@ -2808,7 +2808,7 @@ mod tests {
         )));
         assert_debug_snapshot!(cf.alias);
 
-        assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
+        assert_snapshot!(replace_path(&format!("{:#?}", cf)));
     }
 
     #[tokio::test]

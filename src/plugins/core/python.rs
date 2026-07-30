@@ -500,7 +500,7 @@ impl PythonPlugin {
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
         if let Some(patches_dir) = &Settings::get().python.patches_directory {
-            let patch_file = patches_dir.join(format!("{}.patch", &tv.version));
+            let patch_file = patches_dir.join(format!("{}.patch", tv.version));
             if patch_file.exists() {
                 ctx.pr
                     .set_message(format!("with patch file: {}", patch_file.display()));
