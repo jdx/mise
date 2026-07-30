@@ -219,11 +219,6 @@ jobs:
             exit 1
           fi
       - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
-      # Keep MSRV artifacts from invalidating the stable artifacts reused by
-      # the render and Clippy steps.
-      - run: cargo msrv verify
-        env:
-          CARGO_TARGET_DIR: target/msrv
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       # The Clippy passes below compile the same Rust targets with stricter checks.
@@ -232,8 +227,29 @@ jobs:
       - run: mise run lint
         env:
           HK_SKIP_STEPS: cargo-check
-      - run: cargo clippy -- -D warnings
-      - run: cargo clippy --all-features --all-targets -- -D warnings
+      # MSRV uses a separate compiler and target directory, so it can run
+      # alongside the sequential stable Clippy checks without consuming
+      # another Namespace runner.
+      - name: Run MSRV and Clippy checks
+        run: |
+          set +e
+          CARGO_TARGET_DIR=target/msrv cargo msrv verify &
+          msrv_pid=$!
+
+          cargo clippy -- -D warnings
+          clippy_status=$?
+          if [ "$clippy_status" -eq 0 ]; then
+            cargo clippy --all-features --all-targets -- -D warnings
+            clippy_status=$?
+          fi
+
+          wait "$msrv_pid"
+          msrv_status=$?
+          if [ "$msrv_status" -ne 0 ]; then
+            echo "::error::MSRV verification failed"
+            exit "$msrv_status"
+          fi
+          exit "$clippy_status"
       - run: sccache --show-stats
         if: always()
 
