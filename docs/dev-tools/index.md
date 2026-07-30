@@ -161,6 +161,8 @@ Internally, nested options are flattened to dot notation (e.g., `platforms.macos
 pnpm = { version = "latest", version_order = "semver" }
 ```
 
+Registry entries may provide a backend-specific default for sources known to require semantic ordering. An explicit user setting takes precedence, including `version_order = "source"` to restore source ordering.
+
 With semantic ordering enabled, eligible valid [Semantic Versions](https://semver.org/) rank above non-SemVer entries and are ordered by semantic precedence. Query, prerelease, and release-age filters preserve that relative ordering before mise selects the last matching candidate. Non-SemVer entries retain their source order, so a list containing only non-SemVer entries naturally keeps the backend's ordering. Build metadata does not affect semantic precedence, and equal-precedence versions retain their source order.
 
 Semantic ordering applies only when mise must choose among candidates. An exact request for an opaque version such as `nightly` remains an exact request. Backend shortcuts such as a marked-latest release or package-manager dist-tag are bypassed for semantic ordering so the full candidate list can be compared.

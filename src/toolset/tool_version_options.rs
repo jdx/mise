@@ -1314,6 +1314,7 @@ mod tests {
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
                 ("version_prefix".to_string(), s("v")),
+                ("version_order".to_string(), s("semver")),
             ]
             .iter()
             .cloned()
@@ -1329,10 +1330,13 @@ mod tests {
                     .collect(),
                 ..Default::default()
             },
-            opts: [("api_url".to_string(), s("https://inline.example"))]
-                .iter()
-                .cloned()
-                .collect(),
+            opts: [
+                ("api_url".to_string(), s("https://inline.example")),
+                ("version_order".to_string(), s("source")),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
         };
 
         base.apply_overrides(&overrides);
@@ -1345,5 +1349,6 @@ mod tests {
         );
         assert_eq!(base.get("api_url"), Some("https://inline.example"));
         assert_eq!(base.get("version_prefix"), Some("v"));
+        assert_eq!(base.get("version_order"), Some("source"));
     }
 }
