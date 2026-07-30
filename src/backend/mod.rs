@@ -1674,6 +1674,15 @@ pub trait Backend: Debug + Send + Sync {
         &[]
     }
 
+    /// Opaque context that affects this backend's remote version listing.
+    ///
+    /// Backends should return a digest rather than raw values. A non-empty
+    /// context partitions the remote-version cache and disables the shared
+    /// versions host, whose response cannot account for local context.
+    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     /// dependencies which wait for install but do not warn, like cargo-binstall
     fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec![])
@@ -1752,7 +1761,11 @@ pub trait Backend: Debug + Send + Sync {
         config: &Arc<Config>,
         refresh: bool,
     ) -> eyre::Result<Vec<VersionInfo>> {
-        let remote_versions = self.get_remote_version_cache();
+        let cache_context = self.remote_version_cache_context(config).await?;
+        let remote_versions = match cache_context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        };
         let mut remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
@@ -1796,6 +1809,12 @@ pub trait Backend: Debug + Send + Sync {
             trace!(
                 "Skipping versions host for {} because {} backend has a direct source",
                 ba.short, backend_type
+            );
+            false
+        } else if cache_context.is_some() {
+            trace!(
+                "Skipping versions host for {} because local context affects remote version listing",
+                ba.short,
             );
             false
         } else if has_local_version_listing_override {
@@ -3353,20 +3372,34 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
+        self.get_remote_version_cache_with_context(None)
+    }
+
+    fn get_remote_version_cache_with_context(
+        &self,
+        context: Option<&str>,
+    ) -> Arc<TokioMutex<VersionCacheManager>> {
         // use a mutex to prevent deadlocks that occurs due to reentrant cache access
         static REMOTE_VERSION_CACHE: Lazy<
             Mutex<HashMap<String, Arc<TokioMutex<VersionCacheManager>>>>,
         > = Lazy::new(Default::default);
 
+        let map_key = match context {
+            Some(context) => format!("{}\0{context}", self.ba().full()),
+            None => self.ba().full(),
+        };
         REMOTE_VERSION_CACHE
             .lock()
             .unwrap()
-            .entry(self.ba().full())
+            .entry(map_key)
             .or_insert_with(|| {
                 let mut cm = CacheManagerBuilder::new(
                     self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
+                if let Some(context) = context {
+                    cm = cm.with_cache_key(context.to_string());
+                }
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
                     cm = cm
                         .with_fresh_file(plugin_path.clone())
@@ -3996,6 +4029,37 @@ mod latest_version_tests {
 
         assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
         assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_remote_version_cache_contexts_are_isolated() {
+        let _config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-context-cache");
+        let first = backend.get_remote_version_cache_with_context(Some("first"));
+        let second = backend.get_remote_version_cache_with_context(Some("second"));
+
+        first
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "1.0.0".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
+        second
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "2.0.0".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
+
+        assert_eq!(first.lock().await.get_cached().unwrap()[0].version, "1.0.0");
+        assert_eq!(
+            second.lock().await.get_cached().unwrap()[0].version,
+            "2.0.0"
+        );
     }
 
     #[tokio::test]
