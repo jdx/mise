@@ -21,6 +21,7 @@ use base64::prelude::BASE64_STANDARD;
 use eyre::{Context, Result, bail};
 use serde::Deserialize;
 
+use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::env;
 
 /// A username/secret pair for registry auth. `username == "<token>"` is the
@@ -239,13 +240,17 @@ fn run_credential_helper(helper: &str, registry: &str) -> Result<Credential> {
         registry
     };
     debug!("running {bin} get for {server}");
-    let mut child = Command::new(&bin)
+    let mut command = Command::new(&bin);
+    command
         .arg("get")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    prepare_noninteractive_child(&mut command);
+    let mut child = command
         .spawn()
         .wrap_err_with(|| format!("spawning {bin} (from credHelpers/credsStore)"))?;
+    let _running_pid = RunningPidGuard::new(Some(child.id()));
     {
         use std::io::Write;
         let mut stdin = child.stdin.take().expect("stdin piped");

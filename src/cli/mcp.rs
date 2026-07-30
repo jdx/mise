@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::config::Config;
 use clap::Parser;
 use rmcp::{
@@ -175,20 +176,22 @@ impl MiseServer {
             cmd_args.extend(args);
         }
 
-        let child = tokio::process::Command::new(exe)
+        let mut command = tokio::process::Command::new(exe);
+        command
             .args(&cmd_args)
             .env("NO_COLOR", "1")
             .env("MISE_YES", "1")
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| ErrorData {
-                code: ErrorCode::INTERNAL_ERROR,
-                message: Cow::Owned(format!("Failed to spawn mise run: {e}")),
-                data: None,
-            })?;
+            .stderr(std::process::Stdio::piped());
+        prepare_noninteractive_child(command.as_std_mut());
+        let child = command.spawn().map_err(|e| ErrorData {
+            code: ErrorCode::INTERNAL_ERROR,
+            message: Cow::Owned(format!("Failed to spawn mise run: {e}")),
+            data: None,
+        })?;
+        let _running_pid = RunningPidGuard::new(child.id());
 
         let output = match crate::config::Settings::get().task_timeout_duration() {
             Some(timeout) => tokio::time::timeout(timeout, child.wait_with_output())

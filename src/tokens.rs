@@ -1,3 +1,4 @@
+use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::config::Settings;
 use crate::env;
 use serde::Deserialize;
@@ -195,29 +196,30 @@ pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
 
     let path_without_shims = path_env_without_shims();
     let input = format!("protocol=https\nhost={host}\n\n");
-    let result = std::process::Command::new("git")
+    let mut command = std::process::Command::new("git");
+    command
         .args(["credential", "fill"])
         .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()
-        .and_then(|mut child| {
-            use std::io::Write;
-            child.stdin.take()?.write_all(input.as_bytes()).ok()?;
-            let output = child.wait_with_output().ok()?;
-            if !output.status.success() {
-                return None;
-            }
-            String::from_utf8(output.stdout)
-                .ok()?
-                .lines()
-                .find_map(|line| line.strip_prefix("password="))
-                .map(|p| p.to_string())
-                .filter(|s| !s.is_empty())
-        });
+        .stderr(std::process::Stdio::null());
+    prepare_noninteractive_child(&mut command);
+    let result = command.spawn().ok().and_then(|mut child| {
+        let _running_pid = RunningPidGuard::new(Some(child.id()));
+        use std::io::Write;
+        child.stdin.take()?.write_all(input.as_bytes()).ok()?;
+        let output = child.wait_with_output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        String::from_utf8(output.stdout)
+            .ok()?
+            .lines()
+            .find_map(|line| line.strip_prefix("password="))
+            .map(|p| p.to_string())
+            .filter(|s| !s.is_empty())
+    });
 
     trace!(
         "{provider} git credential fill for {host}: {}",

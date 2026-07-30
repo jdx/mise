@@ -295,10 +295,10 @@ pub fn kill_all_on_panic() {
     kill_pids_immediately(&pids);
 }
 
-struct RunningPidGuard(Option<u32>);
+pub(crate) struct RunningPidGuard(Option<u32>);
 
 impl RunningPidGuard {
-    fn new(pid: Option<u32>) -> Self {
+    pub(crate) fn new(pid: Option<u32>) -> Self {
         if let Some(pid) = pid {
             RUNNING_PIDS.lock().unwrap().insert(pid);
         }
@@ -361,6 +361,25 @@ fn should_use_pgroup() -> bool {
         true
     });
     *CACHED
+}
+
+/// Put a non-interactive child in the process tree managed by mise.
+///
+/// Callers must retain a [`RunningPidGuard`] after spawning the command.
+pub(crate) fn prepare_noninteractive_child(cmd: &mut std::process::Command) {
+    #[cfg(unix)]
+    if should_use_pgroup() {
+        cmd.env(TASK_PGID_MANAGED_ENV, "1");
+        unsafe {
+            cmd.pre_exec(|| {
+                let _ = nix::unistd::setpgid(
+                    nix::unistd::Pid::from_raw(0),
+                    nix::unistd::Pid::from_raw(0),
+                );
+                Ok(())
+            });
+        }
+    }
 }
 
 /// Grace period after a child's ExitStatus arrives during which we keep
