@@ -197,7 +197,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
         {
             break;
         }
-        url = resolve_pagination_url(&url, &next)?;
+        url = crate::http::resolve_pagination_url(&url, &next)?;
         headers = get_headers(&url)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
@@ -216,7 +216,9 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_tags_(API_URL, repo).await)
+        .get_or_try_init_async(async || {
+            list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+        })
         .await?
         .to_vec())
 }
@@ -226,21 +228,26 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_tags_(api_url, repo).await)
+        .get_or_try_init_async(async || {
+            list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
+        })
         .await?
         .to_vec())
 }
 
-async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
+/// `list_all` is `MISE_LIST_ALL_VERSIONS`, taken as an argument rather than read here so
+/// tests can exercise the pagination loop: the env var is a process-wide `Lazy` that other
+/// modules' tests have already forced by the time this one runs.
+async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
     let headers = get_headers(&url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
         .await?;
 
-    if *env::MISE_LIST_ALL_VERSIONS {
+    if list_all {
         while let Some(next) = next_page(&headers) {
-            url = resolve_pagination_url(&url, &next)?;
+            url = crate::http::resolve_pagination_url(&url, &next)?;
             headers = get_headers(&url)?;
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
@@ -268,7 +275,7 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 
     // Fetch all pages when MISE_LIST_ALL_VERSIONS is set
     while let Some(next) = next_page(&response_headers) {
-        url = resolve_pagination_url(&url, &next)?;
+        url = crate::http::resolve_pagination_url(&url, &next)?;
         response_headers = get_headers(&url)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &response_headers)
@@ -470,20 +477,6 @@ fn next_page(headers: &HeaderMap) -> Option<String> {
     regex!(r#"<([^>]+)>; rel="next""#)
         .captures(&link)
         .map(|c| c.get(1).unwrap().as_str().to_string())
-}
-
-fn resolve_pagination_url(current: &str, next: &str) -> Result<String> {
-    if next.starts_with("http://") || next.starts_with("https://") {
-        return Ok(next.to_string());
-    }
-    let base = url::Url::parse(current)
-        .wrap_err_with(|| format!("invalid pagination base URL: {current}"))?;
-    if next.starts_with('/') {
-        return Ok(format!("{}{next}", base.origin().ascii_serialization()));
-    }
-    base.join(next)
-        .map(|u| u.to_string())
-        .wrap_err_with(|| format!("invalid pagination URL: {next}"))
 }
 
 fn cache_dir() -> PathBuf {
@@ -1195,23 +1188,6 @@ something_else = "value"
         );
     }
 
-    #[test]
-    fn test_resolve_pagination_url() {
-        let base = "https://api.github.com/repos/jdx/aube/releases?per_page=100";
-        assert_eq!(
-            resolve_pagination_url(base, "/repos/jdx/aube/releases?page=2").unwrap(),
-            "https://api.github.com/repos/jdx/aube/releases?page=2"
-        );
-        assert_eq!(
-            resolve_pagination_url(
-                base,
-                "https://api.github.com/repos/jdx/aube/releases?page=2"
-            )
-            .unwrap(),
-            "https://api.github.com/repos/jdx/aube/releases?page=2"
-        );
-    }
-
     fn make_release(tag: &str) -> GithubRelease {
         GithubRelease {
             tag_name: tag.to_string(),
@@ -1534,5 +1510,165 @@ something_else = "value"
         p3.assert_async().await;
         p4.assert_async().await;
         assert_eq!(releases.len(), 3);
+    }
+
+    const PAGINATE_TEST_TOKEN: &str = "ghp_paginate_test";
+
+    /// A GHES-shaped base URL: `get_headers` only attaches auth to REST API URLs, and for a
+    /// host that is not api.github.com that means the path must sit under [`API_PATH`].
+    fn ghes_api_url(base: &str) -> String {
+        format!("{base}{API_PATH}")
+    }
+
+    fn tag_without_commit(name: &str) -> GithubTag {
+        GithubTag {
+            name: name.to_string(),
+            commit: None,
+        }
+    }
+
+    // Regression for #6318: every paginated request must carry the Authorization header.
+    // Before that fix page 2 was sent page 1's *response* headers and went out
+    // unauthenticated; nothing pinned the fix until now.
+    #[tokio::test]
+    async fn test_list_releases_sends_auth_on_every_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let api = ghes_api_url(&base);
+        let repo = "owner/auth-on-every-page";
+        let host = url::Url::parse(&base)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string();
+        let _token = TokensFileOverrideGuard::set(&host, PAGINATE_TEST_TOKEN);
+        let auth = format!("Bearer {PAGINATE_TEST_TOKEN}");
+
+        let page1 = server
+            .mock("GET", format!("{API_PATH}/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{api}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&vec![make_prerelease("v2.0.0-alpha.1")]).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2 = server
+            .mock("GET", format!("{API_PATH}/page2").as_str())
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&vec![make_release("v1.0.0")]).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&api, repo).await.unwrap();
+        page1.assert_async().await;
+        page2.assert_async().await;
+        assert_eq!(releases.len(), 2);
+    }
+
+    // Same regression for the tags loop -- see the release test above.
+    #[tokio::test]
+    async fn test_list_tags_sends_auth_on_every_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let api = ghes_api_url(&base);
+        let repo = "owner/auth-on-every-page";
+        let host = url::Url::parse(&base)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string();
+        let _token = TokensFileOverrideGuard::set(&host, PAGINATE_TEST_TOKEN);
+        let auth = format!("Bearer {PAGINATE_TEST_TOKEN}");
+
+        let page1 = server
+            .mock("GET", format!("{API_PATH}/repos/{repo}/tags").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{api}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&vec![tag_without_commit("v2.0.0")]).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2 = server
+            .mock("GET", format!("{API_PATH}/page2").as_str())
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&vec![tag_without_commit("v1.0.0")]).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let tags = list_tags_(&api, repo, true).await.unwrap();
+        page1.assert_async().await;
+        page2.assert_async().await;
+        assert_eq!(tags, ["v2.0.0", "v1.0.0"]);
+    }
+
+    // `list_tags_with_dates_` paginates unconditionally, so it needs the same guarantee.
+    // Tags carry no `commit`, which keeps this to the two paginated requests.
+    #[tokio::test]
+    async fn test_list_tags_with_dates_sends_auth_on_every_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let api = ghes_api_url(&base);
+        let repo = "owner/auth-on-every-page-dates";
+        let host = url::Url::parse(&base)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string();
+        let _token = TokensFileOverrideGuard::set(&host, PAGINATE_TEST_TOKEN);
+        let auth = format!("Bearer {PAGINATE_TEST_TOKEN}");
+
+        let page1 = server
+            .mock("GET", format!("{API_PATH}/repos/{repo}/tags").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{api}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&vec![tag_without_commit("v2.0.0")]).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2 = server
+            .mock("GET", format!("{API_PATH}/page2").as_str())
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&vec![tag_without_commit("v1.0.0")]).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let tags = list_tags_with_dates_(&api, repo).await.unwrap();
+        page1.assert_async().await;
+        page2.assert_async().await;
+        assert_eq!(
+            tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            ["v2.0.0", "v1.0.0"]
+        );
+        assert!(tags.iter().all(|t| t.date.is_none()));
     }
 }
