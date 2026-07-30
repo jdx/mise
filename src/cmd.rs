@@ -692,6 +692,11 @@ impl<'a> CmdLineRunner<'a> {
         let id = cp.id();
         RUNNING_PIDS.lock().unwrap().insert(id);
         trace!("Started process: {id} for {}", self.get_program());
+        #[cfg(panic = "abort")]
+        if std::env::var_os("MISE_TEST_ABORT_AFTER_SPAWN").is_some() {
+            thread::sleep(Duration::from_millis(500));
+            panic!("intentional abort-profile child cleanup test");
+        }
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
             thread::spawn({

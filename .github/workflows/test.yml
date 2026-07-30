@@ -101,6 +101,53 @@ jobs:
       - run: sccache --show-stats
         if: always()
 
+  # Temporary validation for PR #11520. Remove before merge.
+  abort-cleanup:
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 60
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 11520
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+      - name: Build abort-profile binary
+        run: >-
+          cargo build --profile serious --no-default-features
+          --features rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
+      - name: Verify panics terminate spawned process groups
+        shell: bash
+        run: |
+          test_dir="$(mktemp -d)"
+          pid_file="$test_dir/child.pid"
+          trap 'if test -s "$pid_file"; then kill "$(cat "$pid_file")" 2>/dev/null || true; fi; rm -rf "$test_dir"' EXIT
+          cat > "$test_dir/mise.toml" <<'EOF'
+          [tasks.hold]
+          run = 'echo $$ > "$MISE_ABORT_PID_FILE"; sleep 300'
+          EOF
+
+          set +e
+          MISE_TEST_ABORT_AFTER_SPAWN=1 \
+            MISE_ABORT_PID_FILE="$pid_file" \
+            target/serious/mise --cd "$test_dir" run hold
+          status=$?
+          set -e
+
+          test "$status" -ne 0
+          test -s "$pid_file"
+          pid="$(cat "$pid_file")"
+          for _ in {1..50}; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              exit 0
+            fi
+            sleep 0.1
+          done
+          echo "spawned task process $pid survived mise abort" >&2
+          exit 1
+
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 60
