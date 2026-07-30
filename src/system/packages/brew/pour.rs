@@ -648,11 +648,10 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
+    use tokio::sync::Mutex;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: Mutex<()> = Mutex::const_new(());
 
     struct BrewPrefixGuard {
         previous: Option<String>,
@@ -729,7 +728,7 @@ mod tests {
     /// inside the Cellar and must still be recognized as brew's
     #[test]
     fn test_upgrade_over_brew_file_links() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
@@ -748,7 +747,7 @@ mod tests {
     /// relink without conflicts or modifying the old keg
     #[test]
     fn test_upgrade_over_brew_dir_symlink() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let old_keg = write_lib_keg(&prefix, "foo", "1.0")?;
@@ -776,7 +775,7 @@ mod tests {
     /// ship symlinks to system libraries) is still brew's own link
     #[test]
     fn test_upgrade_over_link_whose_cellar_target_leaves_the_cellar() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         for version in ["1.0", "2.0"] {
@@ -811,7 +810,7 @@ mod tests {
     /// and must still be reported as a conflict
     #[test]
     fn test_foreign_regular_file_still_conflicts() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "2.0")?;
@@ -831,7 +830,7 @@ mod tests {
     /// directory keeping that keg's entries visible, like brew does
     #[test]
     fn test_materialize_shared_dir_owned_by_other_keg() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         // other keg owns share/xml via a dir symlink
@@ -861,7 +860,7 @@ mod tests {
 
     #[test]
     fn test_nested_relative_link_is_brew_owned() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = prefix.join("Cellar/foo/1.0/lib");
@@ -879,7 +878,7 @@ mod tests {
 
     #[test]
     fn test_link_keg_maintains_homebrew_linked_record() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
@@ -924,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_repairs_active_records_without_relinking_the_keg() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
@@ -953,7 +952,7 @@ mod tests {
 
     #[test]
     fn test_repairs_dangling_owned_records_but_not_foreign_records() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
@@ -989,7 +988,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)] // guards the process-global brew prefix for this test
     async fn test_manager_repairs_linked_record_without_repouring() -> Result<()> {
         use std::os::unix::fs::MetadataExt;
 
@@ -997,7 +995,7 @@ mod tests {
             InstallOpts, PackageRequest, PackageState, SystemPackageManager,
         };
 
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = write_lib_keg(&prefix, "foo", "1.0")?;
@@ -1058,7 +1056,7 @@ mod tests {
 
     #[test]
     fn test_does_not_infer_a_linked_record_without_public_links() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;
@@ -1073,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_runtime_loader_does_not_make_glibc_look_linked() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = prefix.join("Cellar/glibc/1.0");
@@ -1099,7 +1097,7 @@ mod tests {
 
     #[test]
     fn test_foreign_linked_record_blocks_linking_before_changes() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
         write_lib_keg(&prefix, "foo", "1.0")?;

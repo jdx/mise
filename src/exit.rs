@@ -35,11 +35,10 @@ pub fn kill_all() {
     CmdLineRunner::kill_all();
 }
 
-/// Terminate only after command scopes and their destructors have unwound.
-#[allow(clippy::disallowed_methods)]
-pub fn terminate(code: i32) -> ! {
+/// Convert a requested process status after command scopes have unwound.
+pub fn status(code: i32) -> std::process::ExitCode {
     debug!("exiting with code: {code}");
-    std::process::exit(code)
+    std::process::ExitCode::from(code as u8)
 }
 
 #[cfg(test)]

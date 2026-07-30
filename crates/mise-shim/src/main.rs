@@ -2,7 +2,7 @@
 
 use std::env;
 use std::path::Path;
-use std::process::{Command, exit};
+use std::process::{Command, ExitCode};
 
 const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
 
@@ -24,29 +24,32 @@ fn paths_eq(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn main() {
-    let exe = env::current_exe().unwrap_or_else(|e| {
-        eprintln!("mise-shim: failed to determine executable path: {e}");
-        exit(1);
-    });
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => ExitCode::from(code as u8),
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<i32, String> {
+    let exe = env::current_exe()
+        .map_err(|err| format!("mise-shim: failed to determine executable path: {err}"))?;
     let tool = exe
         .file_stem()
-        .unwrap_or_else(|| {
-            eprintln!("mise-shim: failed to determine tool name from executable path");
-            exit(1);
-        })
+        .ok_or_else(|| "mise-shim: failed to determine tool name from executable path".to_string())?
         .to_os_string();
-
     if env::var_os(MISE_SHIM_PATH_ENV)
         .as_deref()
         .is_some_and(|previous| paths_eq(Path::new(previous), &exe))
     {
-        eprintln!(
+        return Err(format!(
             "mise-shim: recursive shim invocation detected for {}: {}",
             tool.to_string_lossy(),
             exe.display()
-        );
-        exit(1);
+        ));
     }
 
     let args = env::args_os().skip(1);
@@ -60,12 +63,11 @@ fn main() {
         .status();
 
     match status {
-        Ok(s) => exit(s.code().unwrap_or(1)),
-        Err(e) => {
-            eprintln!("mise-shim: failed to execute mise: {e}");
-            eprintln!("Ensure `mise` is installed and available on your PATH.");
-            eprintln!("See https://mise.en.dev for installation instructions.");
-            exit(1);
-        }
+        Ok(status) => Ok(status.code().unwrap_or(1)),
+        Err(err) => Err(format!(
+            "mise-shim: failed to execute mise: {err}\n\
+             Ensure `mise` is installed and available on your PATH.\n\
+             See https://mise.en.dev for installation instructions."
+        )),
     }
 }

@@ -86,7 +86,7 @@ impl Completion {
         match shell {
             Shell::Bash => include_str!("../../completions/mise.bash"),
             Shell::Fish => include_str!("../../completions/mise.fish"),
-            Shell::PowerShell => include_str!("../../completions/mise.ps1"),
+            Shell::Powershell => include_str!("../../completions/mise.ps1"),
             Shell::Zsh => include_str!("../../completions/_mise"),
         }
         .to_string()
@@ -105,18 +105,17 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[derive(Debug, Clone, Copy, EnumString, strum::Display)]
 #[strum(serialize_all = "snake_case")]
-#[allow(clippy::enum_variant_names)] // PowerShell is a proper noun
 enum Shell {
     Bash,
     Fish,
     #[strum(serialize = "powershell")]
-    PowerShell,
+    Powershell,
     Zsh,
 }
 
 impl ValueEnum for Shell {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Bash, Self::Fish, Self::PowerShell, Self::Zsh]
+        &[Self::Bash, Self::Fish, Self::Powershell, Self::Zsh]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(PossibleValue::new(self.to_string()))
