@@ -673,6 +673,15 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
     result
 }
 
+struct RemoteTaskArtifactsGuard;
+
+impl Drop for RemoteTaskArtifactsGuard {
+    fn drop(&mut self) {
+        crate::config::clear_remote_task_include_artifacts();
+        crate::task::task_fetcher::clear_remote_task_artifacts();
+    }
+}
+
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
@@ -742,6 +751,7 @@ impl Cli {
             version::show_latest().await;
             return Err(request_exit(0));
         }
+        let _remote_task_artifacts = RemoteTaskArtifactsGuard;
         let cmd = cli.get_command().await?;
         measure!("run {cmd}", { cmd.run().await })
     }
