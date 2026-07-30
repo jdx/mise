@@ -834,8 +834,8 @@ impl Config {
             // parse without trust and must still protect their tool versions.
             let trust_root = config_file::config_trust_root(&path);
             if config_file::path_requires_trust(&path).await
+                && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
-                && !config_file::is_trusted(&path)
             {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
