@@ -1,5 +1,54 @@
 # Changelog
 
+## [2026.7.17](https://github.com/jdx/mise/compare/v2026.7.16..v2026.7.17) - 2026-07-29
+
+### 🚀 Features
+
+- **(config)** allow disabling individual idiomatic version files by @jdx in [#11470](https://github.com/jdx/mise/pull/11470)
+- **(dotfiles)** improve add and apply workflow by @jdx in [#11451](https://github.com/jdx/mise/pull/11451)
+- **(task)** infer node workspace dependencies by @jdx in [#11435](https://github.com/jdx/mise/pull/11435)
+- **(task)** import node workspace scripts by @jdx in [#11466](https://github.com/jdx/mise/pull/11466)
+- **(task)** support optional dependencies by @jdx in [#11471](https://github.com/jdx/mise/pull/11471)
+- **(task)** add root task defaults by @jdx in [#11473](https://github.com/jdx/mise/pull/11473)
+- **(task)** add upstream task dependencies by @jdx in [#11476](https://github.com/jdx/mise/pull/11476)
+
+### 🐛 Bug Fixes
+
+- **(activate)** support zsh POSIX_IDENTIFIERS by @jdx in [#11467](https://github.com/jdx/mise/pull/11467)
+- **(activate)** keep fish cd hook active during commands by @Marukome0743 in [#11478](https://github.com/jdx/mise/pull/11478)
+- **(aqua)** match version override prefixes by @jdx in [#11469](https://github.com/jdx/mise/pull/11469)
+- **(aqua)** include prefixed override candidates by @jdx in [#11482](https://github.com/jdx/mise/pull/11482)
+- **(brew)** support cask command wrappers and run steps by @jdx in [#11472](https://github.com/jdx/mise/pull/11472)
+- **(config)** preserve comments in alias and bootstrap writers by @JamBalaya56562 in [#11453](https://github.com/jdx/mise/pull/11453)
+- **(config)** match aliased tool keys when writing mise.toml by @JamBalaya56562 in [#11474](https://github.com/jdx/mise/pull/11474)
+- **(config)** preserve comments between version array elements by @JamBalaya56562 in [#11454](https://github.com/jdx/mise/pull/11454)
+- **(hook-env)** ensure fast-path-forced runs refresh the session by @Marukome0743 in [#11458](https://github.com/jdx/mise/pull/11458)
+- **(lockfile)** avoid config root scans during shim resolution by @jdx in [#11468](https://github.com/jdx/mise/pull/11468)
+- **(python)** respect UV_PROJECT_ENVIRONMENT for uv venvs by @Marukome0743 in [#11475](https://github.com/jdx/mise/pull/11475)
+- **(self-update)** show a generic update hint when no packager instructions exist by @JamBalaya56562 in [#11449](https://github.com/jdx/mise/pull/11449)
+- **(task)** include mtime in the source metadata hash by @JamBalaya56562 in [#11455](https://github.com/jdx/mise/pull/11455)
+
+### 📚 Documentation
+
+- update stephane-robert guide URL and external post dates by @Bartok9 in [#11252](https://github.com/jdx/mise/pull/11252)
+
+### 📦️ Dependency Updates
+
+- bump aube to 1.36.0 by @jdx in [#11479](https://github.com/jdx/mise/pull/11479)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`Kotlin/ktfmt`](https://github.com/Kotlin/ktfmt)
+- [`grafana/otel-checker`](https://github.com/grafana/otel-checker)
+
+#### Updated Packages (3)
+
+- [`goss-org/goss`](https://github.com/goss-org/goss)
+- [`kubermatic/kubeone`](https://github.com/kubermatic/kubeone)
+- [`supernovae-st/nika`](https://github.com/supernovae-st/nika)
+
 ## [2026.7.16](https://github.com/jdx/mise/compare/v2026.7.15..v2026.7.16) - 2026-07-29
 
 ### 🚀 Features
