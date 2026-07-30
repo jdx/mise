@@ -2716,14 +2716,9 @@ pub trait Backend: Debug + Send + Sync {
         }
 
         self.cleanup_install_dirs(&tv);
-        // attempt to touch all the .tool-version files to trigger updates in hook-env
-        let mut touch_dirs = vec![dirs::DATA.to_path_buf()];
-        touch_dirs.extend(ctx.config.config_files.keys().cloned());
-        for path in touch_dirs {
-            let err = file::touch_dir(&path);
-            if let Err(err) = err {
-                trace!("error touching config file: {:?} {:?}", path, err);
-            }
+        // Touch the data directory to trigger updates in hook-env after PATH changes.
+        if let Err(err) = file::touch_dir(&dirs::DATA) {
+            trace!("error touching data directory: {:?}", err);
         }
         install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
