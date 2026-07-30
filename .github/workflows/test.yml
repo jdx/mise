@@ -240,7 +240,7 @@ jobs:
     name: e2e-${{matrix.tranche}}
     # The release PR runs the full suite against the packaged release tarball.
     # Keep that stronger signal instead of also testing the debug artifact.
-    if: ${{ github.event_name != 'pull_request' || github.head_ref != 'release' }}
+    if: ${{ github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main' }}
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu]
     timeout-minutes: 30
@@ -344,12 +344,13 @@ jobs:
       - e2e
       - windows-unit
       - windows-e2e
-    # Run on success or upstream failure but skip when the workflow is cancelled
-    # — `always()` would override `cancel-in-progress` and waste a runner.
-    if: ${{ !cancelled() }}
+    # Evaluate skipped and failed dependencies, but do not waste a runner when
+    # the workflow is cancelled.
+    if: ${{ always() && !cancelled() }}
     steps:
       - name: Check CI job results
         env:
+          BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
           if [ "${{ needs.build-ubuntu.result }}" != "success" ]; then
@@ -368,7 +369,7 @@ jobs:
             echo "lint failed or was skipped"
             exit 1
           fi
-          if [ "${{ github.event_name }}" == "pull_request" ] && [ "$HEAD_REF" == "release" ]; then
+          if [ "${{ github.event_name }}" == "pull_request" ] && [ "$HEAD_REF" == "release" ] && [ "$BASE_REF" == "main" ]; then
             if [ "${{ needs.e2e.result }}" != "skipped" ]; then
               echo "e2e should be handled by the release workflow"
               exit 1
