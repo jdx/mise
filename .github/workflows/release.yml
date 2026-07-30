@@ -40,11 +40,13 @@ jobs:
         include:
           # pgo: the amd64 runner can execute x86_64 binaries, so those
           # targets build via scripts/pgo.bash (instrument -> train ->
-          # rebuild with profile). arm targets can't run their
+          # rebuild with profile). bolt: apply post-link optimization to
+          # the glibc x64 binary after PGO. arm targets can't run their
           # instrumented binaries here and stay plain serious builds.
           - name: linux-x64
             target: x86_64-unknown-linux-gnu
             pgo: 1
+            bolt: 1
           - name: linux-x64-musl
             target: x86_64-unknown-linux-musl
             pgo: 1
@@ -65,10 +67,18 @@ jobs:
       - name: Install llvm-tools (PGO)
         if: matrix.pgo
         run: rustup component add llvm-tools
+      - name: Install BOLT
+        if: matrix.bolt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bolt-19
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         env:
           MISE_PGO: ${{ matrix.pgo || '' }}
+          MISE_BOLT: ${{ matrix.bolt || '' }}
+          LLVM_BOLT: llvm-bolt-19
+          MERGE_FDATA: merge-fdata-19
         with:
           timeout_minutes: 140
           max_attempts: 3
