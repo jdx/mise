@@ -2661,7 +2661,11 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
             if let Some(colon_idx) = stripped.find(':') {
                 let parent_path = &stripped[..colon_idx];
                 if let Some(relative_path) = pattern.strip_prefix("./") {
-                    let separator = if parent_path.is_empty() { "" } else { "/" };
+                    let separator = if parent_path.is_empty() || relative_path.starts_with(':') {
+                        ""
+                    } else {
+                        "/"
+                    };
                     return format!("//{parent_path}{separator}{relative_path}");
                 }
                 let path = format!("//{parent_path}");
@@ -4030,6 +4034,10 @@ echo "hello world"
             resolve_task_pattern("./child:build", Some(&parent_task)),
             "//projects/frontend/child:build"
         );
+        assert_eq!(
+            resolve_task_pattern("./:build", Some(&parent_task)),
+            "//projects/frontend:build"
+        );
 
         // Root tasks resolve ./ directly beneath the monorepo root.
         let root_task = Task {
@@ -4039,6 +4047,10 @@ echo "hello world"
         assert_eq!(
             resolve_task_pattern("./...:test:*", Some(&root_task)),
             "//...:test:*"
+        );
+        assert_eq!(
+            resolve_task_pattern("./:build", Some(&root_task)),
+            "//:build"
         );
 
         // Explicit relative paths need a monorepo parent.
