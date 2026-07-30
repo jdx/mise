@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+
+make_asdf_plugin() {
+  local plugin_dir=$1
+  local version=$2
+  mkdir -p "$plugin_dir/bin"
+  cat >"$plugin_dir/bin/list-all" <<EOF
+#!/usr/bin/env bash
+echo "$version"
+EOF
+  chmod +x "$plugin_dir/bin/list-all"
+}
+
+mkdir absolute-case
+(
+  cd absolute-case
+  make_asdf_plugin "$PWD/local-plugin" "1.0.0"
+  cat >mise.toml <<EOF
+[plugins]
+local-absolute = "$PWD/local-plugin"
+EOF
+
+  mise plugin install local-absolute
+  [[ -L "$MISE_DATA_DIR/plugins/local-absolute" ]]
+  assert "readlink '$MISE_DATA_DIR/plugins/local-absolute'" "$PWD/local-plugin"
+)
+
+mkdir relative-case
+(
+  cd relative-case
+  make_asdf_plugin "$PWD/local-plugin" "1.0.0"
+  cat >"$PWD/local-plugin/bin/post-plugin-add" <<'EOF'
+#!/usr/bin/env bash
+touch "$HOME/post-plugin-add-ran"
+EOF
+  chmod +x "$PWD/local-plugin/bin/post-plugin-add"
+  rm -f "$HOME/post-plugin-add-ran"
+  cat >mise.toml <<'EOF'
+[plugins]
+local-relative = "./local-plugin"
+EOF
+
+  mise plugin install local-relative
+  [[ -f "$HOME/post-plugin-add-ran" ]]
+  [[ -L "$MISE_DATA_DIR/plugins/local-relative" ]]
+  assert "readlink '$MISE_DATA_DIR/plugins/local-relative'" "$PWD/local-plugin"
+  assert "'$MISE_DATA_DIR/plugins/local-relative/bin/list-all'" "1.0.0"
+
+  make_asdf_plugin "$PWD/local-plugin" "2.0.0"
+  assert "'$MISE_DATA_DIR/plugins/local-relative/bin/list-all'" "2.0.0"
+)
+
+mkdir zip-directory-case
+(
+  cd zip-directory-case
+  make_asdf_plugin "$PWD/local-plugin.zip" "1.0.0"
+  cat >mise.toml <<EOF
+[plugins]
+local-zip-directory = "$PWD/local-plugin.zip"
+EOF
+
+  mise plugin install local-zip-directory
+  [[ -L "$MISE_DATA_DIR/plugins/local-zip-directory" ]]
+  assert "readlink '$MISE_DATA_DIR/plugins/local-zip-directory'" "$PWD/local-plugin.zip"
+)
+
+mkdir failed-hook-case
+(
+  cd failed-hook-case
+  make_asdf_plugin "$PWD/local-plugin" "1.0.0"
+  cat >"$PWD/local-plugin/bin/post-plugin-add" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "$PWD/local-plugin/bin/post-plugin-add"
+  cat >mise.toml <<'EOF'
+[plugins]
+local-failed-hook = "./local-plugin"
+EOF
+
+  assert_fail "mise plugin install local-failed-hook"
+  [[ ! -e "$MISE_DATA_DIR/plugins/local-failed-hook" ]]
+  [[ ! -L "$MISE_DATA_DIR/plugins/local-failed-hook" ]]
+
+  rm "$PWD/local-plugin/bin/post-plugin-add"
+  mise plugin install local-failed-hook
+  [[ -L "$MISE_DATA_DIR/plugins/local-failed-hook" ]]
+)
+
+mkdir vfox-case
+(
+  cd vfox-case
+  mkdir local-vfox-plugin
+  touch local-vfox-plugin/metadata.lua
+  cat >mise.toml <<'EOF'
+[plugins]
+"vfox:local-vfox" = "./local-vfox-plugin"
+EOF
+
+  mise install
+  [[ -L "$MISE_DATA_DIR/plugins/local-vfox" ]]
+  assert "readlink '$MISE_DATA_DIR/plugins/local-vfox'" "$PWD/local-vfox-plugin"
+)
+
+mkdir missing-case
+(
+  cd missing-case
+  cat >mise.toml <<'EOF'
+[plugins]
+missing-local = "./does-not-exist"
+EOF
+
+  if output=$(mise plugin install missing-local 2>&1); then
+    echo "expected missing local plugin installation to fail"
+    exit 1
+  fi
+  [[ $output == *"local plugin directory does not exist"* ]]
+  [[ ! -e "$MISE_DATA_DIR/plugins/missing-local" ]]
+  [[ ! -L "$MISE_DATA_DIR/plugins/missing-local" ]]
+)
+
+mkdir file-url-case
+(
+  cd file-url-case
+  make_asdf_plugin "$PWD/plugin-repo" "1.0.0"
+  git -C plugin-repo init -q
+  git -C plugin-repo add .
+  git -C plugin-repo \
+    -c user.name=test \
+    -c user.email=test@example.com \
+    commit -qm "initial"
+  cat >mise.toml <<EOF
+[plugins]
+local-file-url = "file://$PWD/plugin-repo"
+local-path-ref = "$PWD/plugin-repo#HEAD"
+EOF
+
+  mise plugin install local-file-url
+  [[ ! -L "$MISE_DATA_DIR/plugins/local-file-url" ]]
+  [[ -d "$MISE_DATA_DIR/plugins/local-file-url/.git" ]]
+
+  mise plugin install local-path-ref
+  [[ ! -L "$MISE_DATA_DIR/plugins/local-path-ref" ]]
+  [[ -d "$MISE_DATA_DIR/plugins/local-path-ref/.git" ]]
+)

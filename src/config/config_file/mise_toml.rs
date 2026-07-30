@@ -2,11 +2,12 @@ use eyre::{WrapErr, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+use path_absolutize::Absolutize;
 use serde::Deserialize;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use std::fmt::{Debug, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -919,7 +920,7 @@ impl ConfigFile for MiseToml {
             .into_iter()
             .map(|(k, v)| {
                 let v = self.parse_template(&v)?;
-                Ok((k, v))
+                Ok((k, resolve_plugin_source_path(&self.path, v)?))
             })
             .collect()
     }
@@ -1376,6 +1377,27 @@ impl ConfigFile for MiseToml {
 
     fn dotfiles_config(&self) -> Option<DotfilesTomlConfig> {
         self.dotfiles.clone()
+    }
+}
+
+fn resolve_plugin_source_path(config_path: &Path, source: String) -> eyre::Result<String> {
+    let source_path = Path::new(&source);
+    let is_explicit_relative = matches!(
+        source_path.components().next(),
+        Some(Component::CurDir | Component::ParentDir)
+    );
+    let expanded = file::replace_path(source_path);
+    let path = if expanded.is_absolute() {
+        Some(expanded)
+    } else if is_explicit_relative {
+        Some(config_root::config_root(config_path).join(expanded))
+    } else {
+        None
+    };
+
+    match path {
+        Some(path) => Ok(path.absolutize()?.to_string_lossy().into_owned()),
+        None => Ok(source),
     }
 }
 
@@ -2653,6 +2675,43 @@ mod tests {
     use crate::{config::Config, dirs::CWD};
 
     use super::*;
+
+    #[test]
+    fn test_resolve_plugin_source_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("project/mise.toml");
+        let absolute_plugin = temp.path().join("absolute/plugin");
+        let home_plugin = dirs::HOME.join("plugins/example");
+
+        for (source, expected) in [
+            (
+                absolute_plugin.to_string_lossy().into_owned(),
+                absolute_plugin,
+            ),
+            (
+                "./plugins/example".to_string(),
+                temp.path().join("project/plugins/example"),
+            ),
+            ("../example".to_string(), temp.path().join("example")),
+            ("~/plugins/example".to_string(), home_plugin),
+        ] {
+            assert_eq!(
+                resolve_plugin_source_path(&config_path, source).unwrap(),
+                expected.to_string_lossy()
+            );
+        }
+
+        for source in [
+            "https://github.com/example/plugin.git",
+            "file:///tmp/plugin",
+            "example/plugin",
+        ] {
+            assert_eq!(
+                resolve_plugin_source_path(&config_path, source.to_string()).unwrap(),
+                source
+            );
+        }
+    }
 
     #[test]
     fn test_parse_monorepo_project_overrides() {

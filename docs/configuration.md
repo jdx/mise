@@ -220,6 +220,21 @@ If you simply want to install a plugin from a specific URL once, it's better to 
 `mise plugin install <NAME> <GIT_URL>`. Add this section to `mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
+Local plugin directories are also supported. Absolute paths and paths beginning
+with `~/` are used directly. Explicit relative paths beginning with `./` or `../`
+are resolved relative to the config root of the file that declares them:
+
+```toml
+[plugins]
+example = "./plugins/mise-example"
+```
+
+Local plugins are symlinked into mise's plugin directory, matching
+`mise plugins link`, so changes to the source directory are available immediately.
+As with remote entries, `[plugins]` only affects new installations. Run
+`mise plugins install --force <NAME>` to replace an existing plugin with the
+configured local source. `file://` sources remain Git repositories and are cloned.
+
 This replaces the deprecated `settings.shorthands_file` / `MISE_SHORTHANDS_FILE` mechanism: put the
 same `shortname = "backend-or-url"` entries under `[plugins]` instead of a separate TOML file.
 

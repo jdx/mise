@@ -413,6 +413,12 @@ impl Config {
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
+        if let Some(url) = self.repo_urls.get(plugin_name)
+            && (Path::new(url).is_absolute() || url.starts_with("file://"))
+        {
+            return Some(url.clone());
+        }
+
         let plugin_name = self
             .all_aliases
             .get(plugin_name)
@@ -428,7 +434,13 @@ impl Config {
             .find(|k| k.ends_with(&format!(":{plugin_name}")))
             .and_then(|k| self.repo_urls.get(k))
         {
-            return Some(url.clone());
+            return Some(
+                if Path::new(url).is_absolute() || url.starts_with("file://") {
+                    url.clone()
+                } else {
+                    registry::full_to_url(url)
+                },
+            );
         }
 
         self.shorthands
@@ -5427,6 +5439,66 @@ config_roots = ["apps/api", "apps/web"]
             );
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_get_repo_url_preserves_explicit_local_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let local_asdf = temp
+            .path()
+            .join("plugins/local-asdf")
+            .to_string_lossy()
+            .into_owned();
+        let local_vfox = temp
+            .path()
+            .join("plugins/local-vfox")
+            .to_string_lossy()
+            .into_owned();
+        let repo_urls = HashMap::from([
+            ("local-asdf".to_string(), local_asdf.clone()),
+            ("vfox:local-vfox".to_string(), local_vfox.clone()),
+            ("remote-asdf".to_string(), "owner/asdf-plugin".to_string()),
+            (
+                "vfox:remote-vfox".to_string(),
+                "owner/vfox-plugin".to_string(),
+            ),
+        ]);
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases: Default::default(),
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls,
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_results: OnceCell::new(),
+        };
+
+        assert_eq!(
+            config.get_repo_url("local-asdf").as_deref(),
+            Some(local_asdf.as_str())
+        );
+        assert_eq!(
+            config.get_repo_url("local-vfox").as_deref(),
+            Some(local_vfox.as_str())
+        );
+        assert_eq!(
+            config.get_repo_url("remote-asdf").as_deref(),
+            Some("https://github.com/owner/asdf-plugin.git")
+        );
+        assert_eq!(
+            config.get_repo_url("remote-vfox").as_deref(),
+            Some("https://github.com/owner/vfox-plugin.git")
+        );
     }
 
     #[tokio::test]

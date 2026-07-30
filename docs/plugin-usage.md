@@ -62,6 +62,20 @@ mise plugin install tiny https://github.com/mise-plugins/mise-tiny.git
 mise plugin link <plugin-name> /path/to/plugin/directory
 ```
 
+Local plugins can also be declared in `mise.toml`:
+
+```toml
+[plugins]
+my-plugin = "./plugins/my-plugin"
+```
+
+Absolute paths and `~/...` are supported. Explicit relative paths beginning with
+`./` or `../` are resolved from the config root of the file containing the
+declaration. Mise symlinks the directory just like `mise plugins link`, so local
+edits are reflected immediately. Existing plugin installations are not replaced
+automatically; use `mise plugins install --force my-plugin` when changing an
+existing installation to a local source.
+
 ## Using Plugins (Advanced)
 
 Once a plugin is installed, you can use it with the `plugin:tool` format:
