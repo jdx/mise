@@ -174,9 +174,6 @@ jobs:
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.head_ref }}
       - name: Install mold
         run: sudo apt-get update && sudo apt-get install -y mold
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
@@ -209,7 +206,10 @@ jobs:
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
+      # build-ubuntu produced this commit's binary, downloaded above.
       - run: mise run render
+        env:
+          MISE_TASK_SKIP: build
       - name: assert render produces no diff
         run: |
           if [ -n "$(git status --porcelain)" ]; then
