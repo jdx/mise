@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+create_plugin_repo() {
+  local repo="$1"
+  mkdir -p "$repo/bin"
+  cat >"$repo/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+  chmod +x "$repo/bin/list-all"
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" commit -qm "initial plugin"
+}
+
+mkdir -p sources
+create_plugin_repo "$PWD/sources/install-good"
+
+git config --global \
+  url."file://$PWD/sources/missing-alpha".insteadOf \
+  "https://github.com/gr1m0h/asdf-act.git"
+git config --global \
+  url."file://$PWD/sources/install-good".insteadOf \
+  "https://github.com/mpalmer/action-validator.git"
+git config --global \
+  url."file://$PWD/sources/missing-zeta".insteadOf \
+  "https://gitlab.com/td7x/asdf/adr-tools"
+
+if output="$(mise plugins install adr-tools action-validator act --jobs 1 2>&1)"; then
+  fail "expected batch plugin install to fail"
+fi
+assert_contains_text "$output" \
+  "Failed to install plugins: act, adr-tools"
+[[ -d $MISE_DATA_DIR/plugins/action-validator/.git ]] ||
+  fail "expected successful plugin install to complete"
+
+create_plugin_repo "$PWD/sources/update-bad"
+create_plugin_repo "$PWD/sources/update-good"
+
+mise plugins install update-bad "file://$PWD/sources/update-bad"
+mise plugins install update-good "file://$PWD/sources/update-good"
+git -C "$MISE_DATA_DIR/plugins/update-bad" remote set-url origin \
+  "file://$PWD/sources/missing-update"
+
+echo updated >"$PWD/sources/update-good/updated"
+git -C "$PWD/sources/update-good" add updated
+git -C "$PWD/sources/update-good" commit -qm "update plugin"
+expected_sha="$(git -C "$PWD/sources/update-good" rev-parse HEAD)"
+
+if output="$(mise plugins update update-bad update-good --jobs 1 2>&1)"; then
+  fail "expected batch plugin update to fail"
+fi
+assert_contains_text "$output" "[update-bad] plugin update"
+assert "git -C \"$MISE_DATA_DIR/plugins/update-good\" rev-parse HEAD" "$expected_sha"
