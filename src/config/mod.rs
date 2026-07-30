@@ -123,6 +123,7 @@ impl Config {
                 *GLOBAL_CONFIG_FILES.lock().unwrap() = None;
                 *SYSTEM_CONFIG_FILES.lock().unwrap() = None;
                 GLOB_RESULTS.lock().unwrap().clear();
+                crate::lockfile::invalidate_caches();
                 crate::task::reset();
                 Ok(())
             },
@@ -461,6 +462,20 @@ impl Config {
 
     pub fn monorepo_root(&self) -> Option<PathBuf> {
         find_monorepo_root(&self.config_files)
+    }
+
+    pub(crate) fn monorepo_lockfile_discovery_key(
+        &self,
+    ) -> Option<(PathBuf, Option<bool>, Vec<String>)> {
+        let cf = find_monorepo_config(&self.config_files)?;
+        let monorepo = cf.monorepo();
+        Some((
+            cf.get_path().to_path_buf(),
+            monorepo.and_then(|config| config.lockfile),
+            monorepo
+                .map(|config| config.config_roots.clone())
+                .unwrap_or_default(),
+        ))
     }
 
     /// Discovers the provider-neutral workspace project graph and applies the
