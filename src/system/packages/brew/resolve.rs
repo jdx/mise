@@ -170,46 +170,42 @@ async fn resolve_closure_pairs(
     let mut sorted: Vec<ResolvedFormula> = vec![];
     let mut done: HashSet<FormulaKey> = HashSet::new();
     let mut visiting: Vec<FormulaKey> = vec![];
-    #[allow(clippy::too_many_arguments)]
-    fn visit(
-        key: &FormulaKey,
-        host_tag: &str,
-        formulae: &HashMap<FormulaKey, Formula>,
-        raw_bases: &HashMap<FormulaKey, Option<String>>,
-        canonical: &HashMap<FormulaKey, FormulaKey>,
-        done: &mut HashSet<FormulaKey>,
-        visiting: &mut Vec<FormulaKey>,
-        on_request: &HashSet<FormulaKey>,
-        sorted: &mut Vec<ResolvedFormula>,
-    ) -> Result<()> {
-        if done.contains(key) {
+    struct VisitContext<'a> {
+        host_tag: &'a str,
+        formulae: &'a HashMap<FormulaKey, Formula>,
+        raw_bases: &'a HashMap<FormulaKey, Option<String>>,
+        canonical: &'a HashMap<FormulaKey, FormulaKey>,
+        done: &'a mut HashSet<FormulaKey>,
+        visiting: &'a mut Vec<FormulaKey>,
+        on_request: &'a HashSet<FormulaKey>,
+        sorted: &'a mut Vec<ResolvedFormula>,
+    }
+    fn visit(key: &FormulaKey, ctx: &mut VisitContext<'_>) -> Result<()> {
+        if ctx.done.contains(key) {
             return Ok(());
         }
-        if visiting.iter().any(|n| n == key) {
+        if ctx.visiting.iter().any(|n| n == key) {
             // dependency cycles exist in homebrew/core (rare, e.g. mutual
             // optional deps); break the cycle rather than erroring
             debug!("dependency cycle involving {}, breaking", key.name);
             return Ok(());
         }
-        let Some(formula) = formulae.get(key) else {
+        let Some(formula) = ctx.formulae.get(key) else {
             bail!("unresolved dependency: {}", key.name);
         };
-        visiting.push(key.clone());
-        let tag = dep_tag(formula, host_tag);
+        ctx.visiting.push(key.clone());
+        let tag = dep_tag(formula, ctx.host_tag);
         for dep in install_deps(formula, &tag) {
             let dep_key = FormulaKey::new(dep.clone(), key.tap_name.clone(), key.tap_url.clone());
-            let dep_key = canonical.get(&dep_key).cloned().unwrap_or(dep_key);
-            visit(
-                &dep_key, host_tag, formulae, raw_bases, canonical, done, visiting, on_request,
-                sorted,
-            )?;
+            let dep_key = ctx.canonical.get(&dep_key).cloned().unwrap_or(dep_key);
+            visit(&dep_key, ctx)?;
         }
-        visiting.pop();
-        done.insert(key.clone());
-        sorted.push(ResolvedFormula {
-            formula: formulae[key].clone(),
-            tap_raw_base: raw_bases.get(key).cloned().flatten(),
-            on_request: on_request.contains(key),
+        ctx.visiting.pop();
+        ctx.done.insert(key.clone());
+        ctx.sorted.push(ResolvedFormula {
+            formula: ctx.formulae[key].clone(),
+            tap_raw_base: ctx.raw_bases.get(key).cloned().flatten(),
+            on_request: ctx.on_request.contains(key),
         });
         Ok(())
     }
@@ -220,18 +216,18 @@ async fn resolve_closure_pairs(
             .then_with(|| a.tap_url.cmp(&b.tap_url))
             .then_with(|| a.name.cmp(&b.name))
     }); // deterministic order
+    let mut visit_ctx = VisitContext {
+        host_tag: &host_tag,
+        formulae: &formulae,
+        raw_bases: &raw_bases,
+        canonical: &canonical,
+        done: &mut done,
+        visiting: &mut visiting,
+        on_request: &on_request,
+        sorted: &mut sorted,
+    };
     for key in keys {
-        visit(
-            &key,
-            &host_tag,
-            &formulae,
-            &raw_bases,
-            &canonical,
-            &mut done,
-            &mut visiting,
-            &on_request,
-            &mut sorted,
-        )?;
+        visit(&key, &mut visit_ctx)?;
     }
     Ok(sorted)
 }

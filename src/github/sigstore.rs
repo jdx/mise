@@ -151,14 +151,16 @@ pub async fn verify_attestation(
     let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL));
     if let Some(digest) = digest {
         mise_sigstore::verify_github_attestation_with_base_url_and_digest(
-            artifact_path,
-            owner,
-            repo,
-            token.as_deref(),
-            expected_workflow,
-            &base_url,
-            &digest,
-            mise_retry_config(),
+            mise_sigstore::GithubAttestationRequest {
+                artifact_path,
+                owner,
+                repo,
+                token: token.as_deref(),
+                signer_workflow: expected_workflow,
+                base_url: Some(&base_url),
+                digest: Some(&digest),
+                retry_config: mise_retry_config(),
+            },
         )
         .await
     } else {
