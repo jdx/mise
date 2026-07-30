@@ -409,25 +409,50 @@ static MISE_GITLAB_TOKENS: Lazy<HashMap<String, String>> = Lazy::new(|| {
 static GLAB_HOSTS: Lazy<HashMap<String, String>> =
     Lazy::new(|| read_glab_hosts().unwrap_or_default());
 
+/// Resolve the path to glab's config.yml, following glab's own `ConfigDir()`:
+/// 1. `$GLAB_CONFIG_DIR/config.yml`
+/// 2. `$HOME/.config/glab-cli/config.yml` — glab's *legacy* location, which it still prefers when
+///    the file is there. glab's `legacyConfigDir()` is `os.UserHomeDir()` + `.config/glab-cli` on
+///    every platform, so it is deliberately derived from `HOME` and **not** from
+///    `XDG_CONFIG_HOME`: those differ as soon as the user sets that variable.
+/// 3. `xdg.ConfigHome/glab-cli/config.yml`, which on Windows is under `%LOCALAPPDATA%`: glab uses
+///    the `adrg/xdg` package, and that maps `XDG_CONFIG_HOME` to `%LOCALAPPDATA%` there, not to
+///    `%APPDATA%` the way `gh` does
 fn glab_config_path() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("GLAB_CONFIG_DIR") {
+    // Empty means unset, as in glab's `if glabDir != ""`; `var_os` rather than `var` so a
+    // non-UTF-8 directory is honoured instead of silently skipped.
+    if let Some(dir) = std::env::var_os("GLAB_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
         return Some(PathBuf::from(dir).join("config.yml"));
     }
 
     let xdg_path = env::XDG_CONFIG_HOME.join("glab-cli/config.yml");
-    if xdg_path.exists() {
-        return Some(xdg_path);
-    }
+    let candidates: Vec<PathBuf> = [
+        dirs::HOME.join(".config/glab-cli/config.yml"),
+        xdg_path.clone(),
+    ]
+    .into_iter()
+    .chain(glab_native_config_paths())
+    .collect();
+    // Nothing found: name the location glab itself would settle on, which is the last candidate
+    // (its platform-native XDG config dir).
+    let fallback = candidates.last().cloned().unwrap_or(xdg_path);
+    Some(tokens::first_existing_file(candidates, fallback))
+}
 
-    #[cfg(target_os = "macos")]
-    {
-        let macos_path = dirs::HOME.join("Library/Application Support/glab-cli/config.yml");
-        if macos_path.exists() {
-            return Some(macos_path);
-        }
-    }
+/// Platform-native locations glab may have written to, probed after the legacy/XDG one.
+#[cfg(target_os = "macos")]
+fn glab_native_config_paths() -> Vec<PathBuf> {
+    vec![dirs::HOME.join("Library/Application Support/glab-cli/config.yml")]
+}
 
-    Some(xdg_path)
+#[cfg(windows)]
+fn glab_native_config_paths() -> Vec<PathBuf> {
+    vec![env::LOCAL_APPDATA.join("glab-cli/config.yml")]
+}
+
+#[cfg(all(not(target_os = "macos"), not(windows)))]
+fn glab_native_config_paths() -> Vec<PathBuf> {
+    Vec::new()
 }
 
 fn read_glab_hosts() -> Option<HashMap<String, String>> {

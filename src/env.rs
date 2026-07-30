@@ -82,6 +82,20 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
+/// `%LOCALAPPDATA%`. What the `adrg/xdg` Go package resolves `XDG_CONFIG_HOME` to on Windows,
+/// so it is where CLIs built on it — `glab` among them — keep their config.
+///
+/// Roaming `%APPDATA%` deliberately has no counterpart here. Its only consumer is the `gh`
+/// lookup, which has to reproduce go-gh's literal `os.Getenv("AppData")` test — including
+/// falling through to `~/.config/gh` when the variable is unset — so a synthesized default
+/// would make mise look somewhere gh never would.
+///
+/// An empty `%LOCALAPPDATA%` falls back rather than resolving to an empty path — see
+/// [`var_path`] — which is also what `adrg/xdg` does (`dir != "" && filepath.IsAbs(dir)`).
+#[cfg(windows)]
+pub static LOCAL_APPDATA: Lazy<PathBuf> =
+    Lazy::new(|| var_path("LOCALAPPDATA").unwrap_or_else(|| HOME.join("AppData").join("Local")));
+
 /// control display of "friendly" errors - defaults to release mode behavior unless overridden
 pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
     if var_is_true("MISE_FRIENDLY_ERROR") {
@@ -662,8 +676,19 @@ pub fn in_home_dir() -> bool {
     current_dir().is_ok_and(|d| d == *HOME)
 }
 
+/// The value of `key` as a path, or `None` when it is unset **or empty**.
+///
+/// An empty value is not a directory. Without this it would yield an empty `PathBuf`, and every
+/// caller joins onto the result — producing a *relative* path that gets resolved against the
+/// current working directory. `XDG_CONFIG_HOME=` would make `MISE_CONFIG_DIR` the relative
+/// `mise`, and a forge CLI lookup read `gh/hosts.yml` out of whatever directory mise happened to
+/// be run from. Treating empty as unset is also what the tools mise mirrors here do: go-gh
+/// (`os.Getenv(x) != ""`) and `adrg/xdg` (`dir != "" && filepath.IsAbs(dir)`) both fall through.
 pub fn var_path(key: &str) -> Option<PathBuf> {
-    var_os(key).map(PathBuf::from).map(replace_path)
+    var_os(key)
+        .map(PathBuf::from)
+        .map(replace_path)
+        .filter(|p| !p.as_os_str().is_empty())
 }
 
 /// this returns the environment as if __MISE_DIFF was reversed.
@@ -995,6 +1020,17 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("MISE_TEST_PATH");
+    }
+
+    /// An empty value is not a directory. Callers all join onto the result, so returning
+    /// `Some("")` would hand them a relative path resolved against the cwd — e.g. an empty
+    /// `XDG_CONFIG_HOME` turning `MISE_CONFIG_DIR` into the relative `mise`.
+    #[tokio::test]
+    async fn test_var_path_treats_empty_as_unset() {
+        let _config = Config::get().await.unwrap();
+        set_var("MISE_TEST_EMPTY_PATH", "");
+        assert_eq!(var_path("MISE_TEST_EMPTY_PATH"), None);
+        remove_var("MISE_TEST_EMPTY_PATH");
     }
 
     /// vars_safe() must skip pairs whose key or value is not valid UTF-8 rather

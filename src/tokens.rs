@@ -3,6 +3,7 @@ use crate::env;
 use serde::Deserialize;
 use serde_yaml::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 
 use crate::file::path_env_without_shims;
@@ -316,9 +317,80 @@ fn token_from_entry(entry: &serde_yaml::Mapping) -> Option<String> {
         })
 }
 
+/// First candidate that is a regular file, else `fallback`.
+///
+/// Forge CLIs (`gh`, `glab`) each keep their config under a platform-dependent directory, and
+/// mise probes the plausible ones in priority order. Factored out so that order is one rule with
+/// one set of tests instead of a copy per forge — the copies are exactly how the Windows location
+/// came to be missing from both.
+///
+/// `is_file` rather than `exists`: every caller hands the result to `read_to_string`, so a
+/// directory that happens to be named `hosts.yml` must not shadow a real config further down the
+/// list. Symlinks are followed, so a symlinked config still matches.
+pub fn first_existing_file(candidates: Vec<PathBuf>, fallback: PathBuf) -> PathBuf {
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .unwrap_or(fallback)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_first_existing_file_prefers_the_earliest_that_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let second = dir.path().join("second");
+        let third = dir.path().join("third");
+        std::fs::write(&second, "").unwrap();
+        std::fs::write(&third, "").unwrap();
+        assert_eq!(
+            first_existing_file(
+                vec![dir.path().join("first"), second.clone(), third],
+                dir.path().join("fallback")
+            ),
+            second,
+            "a missing earlier candidate must be skipped, not short-circuit the search"
+        );
+    }
+
+    #[test]
+    fn test_first_existing_file_skips_a_directory_of_the_same_name() {
+        // A directory named like the config file must not shadow a real one further down:
+        // the result is handed straight to `read_to_string`.
+        let dir = tempfile::tempdir().unwrap();
+        let decoy = dir.path().join("early").join("config.yml");
+        std::fs::create_dir_all(&decoy).unwrap();
+        let real = dir.path().join("late-config.yml");
+        std::fs::write(&real, "").unwrap();
+        assert_eq!(
+            first_existing_file(vec![decoy, real.clone()], dir.path().join("fallback")),
+            real
+        );
+    }
+
+    #[test]
+    fn test_first_existing_file_falls_back_when_none_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let fallback = dir.path().join("fallback");
+        assert_eq!(
+            first_existing_file(
+                vec![dir.path().join("a"), dir.path().join("b")],
+                fallback.clone()
+            ),
+            fallback,
+            "the fallback is returned even though it does not exist -- callers use it to name \
+             the conventional location in a trace message"
+        );
+    }
+
+    #[test]
+    fn test_first_existing_file_with_no_candidates() {
+        let dir = tempfile::tempdir().unwrap();
+        let fallback = dir.path().join("fallback");
+        assert_eq!(first_existing_file(vec![], fallback.clone()), fallback);
+    }
 
     #[test]
     fn test_parse_tokens_toml() {

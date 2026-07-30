@@ -76,8 +76,10 @@ If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read token
 mise looks for `hosts.yml` in these locations (first match wins):
 
 1. `$GH_CONFIG_DIR/hosts.yml`
-2. `$XDG_CONFIG_HOME/gh/hosts.yml` (defaults to `~/.config/gh/hosts.yml`)
+2. `$XDG_CONFIG_HOME/gh/hosts.yml` (when that variable is set)
 3. `~/Library/Application Support/gh/hosts.yml` (macOS only)
+4. `%APPDATA%\GitHub CLI\hosts.yml` (Windows only — this is gh's default location there)
+5. `~/.config/gh/hosts.yml`
 
 This is especially useful for **GitHub Enterprise** — the gh CLI stores per-host tokens, so mise can authenticate to multiple GHE instances without juggling environment variables:
 
@@ -193,7 +195,32 @@ mise can use your existing git credential helpers to obtain GitHub tokens. This 
 This is especially useful for:
 
 - **Devcontainer environments** where tokens are provided via git credential helpers
-- **macOS/Windows** where `gh auth login` stores tokens in the system keyring rather than `hosts.yml`
+- **macOS/Windows** where `gh auth login` stores the token in the system keyring (macOS Keychain,
+  Windows Credential Manager) rather than in `hosts.yml`. In that case `hosts.yml` exists but has no
+  `oauth_token` key, so reading it cannot help. Run `mise token github` to tell the two apart: if it
+  prints `(none)` while `gh auth status` works, this setting — or a `github.credential_command`
+  that shells out to gh — is what you want.
+
+  With a single account, `credential_command = "gh auth token"` is enough. If you authenticate to
+  more than one host (GitHub Enterprise), pass the host mise is asking about, because bare
+  `gh auth token` returns the token for gh's _own_ active host. mise exports it as
+  `MISE_CREDENTIAL_HOST`, and the command runs through the platform's inline shell, so the
+  interpolation differs:
+
+  On macOS and Linux:
+
+  ```toml
+  [settings.github]
+  credential_command = 'gh auth token --hostname "$MISE_CREDENTIAL_HOST"'
+  ```
+
+  On Windows, `cmd` is the default inline shell and does not expand `$VAR`:
+
+  ```toml
+  [settings.github]
+  credential_command = 'gh auth token --hostname %MISE_CREDENTIAL_HOST%'
+  ```
+
 - Any environment where git already has credentials configured
 
 mise runs `git credential fill` with `GIT_TERMINAL_PROMPT=0` (to prevent interactive prompts) and caches the result per host for the session.
