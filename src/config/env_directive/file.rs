@@ -1,4 +1,7 @@
-use crate::config::{Config, env_directive::EnvResults};
+use crate::config::{
+    Config,
+    env_directive::{EnvDirectiveContext, EnvResults},
+};
 use crate::env_diff::EnvMap as TeraEnvMap;
 use crate::file::display_path;
 use crate::{Result, file, sops};
@@ -22,27 +25,21 @@ struct Env<V> {
 }
 
 impl EnvResults {
-    #[allow(clippy::too_many_arguments)]
-    pub async fn file(
-        config: &Arc<Config>,
-        ctx: &mut tera::Context,
-        tera: &mut Option<crate::tera::TeraEngine>,
-        r: &mut EnvResults,
-        normalize_path: fn(&Path, PathBuf) -> PathBuf,
-        source: &Path,
-        exec_env: &TeraEnvMap,
-        config_root: &Path,
+    pub(super) async fn file(
+        ctx: &mut EnvDirectiveContext<'_>,
         input: String,
         expand: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = r.parse_template(ctx, tera, source, exec_env, &input)?;
+        let s = ctx.parse_template(&input)?;
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
-        let mut acc: TeraEnvMap = exec_env.clone();
-        for p in xx::file::glob(normalize_path(config_root, s.into())).unwrap_or_default() {
-            let parse_template = |s: String| r.parse_template(ctx, tera, source, exec_env, &s);
+        let mut acc: TeraEnvMap = ctx.exec_env.clone();
+        for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
+            let config = ctx.config;
+            let exec_env = ctx.exec_env;
+            let parse_template = |s: String| ctx.parse_template(&s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())

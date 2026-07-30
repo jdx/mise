@@ -327,6 +327,28 @@ pub struct EnvResults {
     pub has_uncacheable: bool,
 }
 
+pub(super) struct EnvDirectiveContext<'a> {
+    config: &'a Arc<Config>,
+    tera_ctx: &'a mut tera::Context,
+    tera: &'a mut Option<TeraEngine>,
+    results: &'a mut EnvResults,
+    normalize_path: fn(&Path, PathBuf) -> PathBuf,
+    source: &'a Path,
+    exec_env: &'a EnvMap,
+    config_root: &'a Path,
+}
+
+impl EnvDirectiveContext<'_> {
+    fn parse_template(&mut self, input: &str) -> eyre::Result<String> {
+        self.results
+            .parse_template(self.tera_ctx, self.tera, self.source, self.exec_env, input)
+    }
+
+    fn normalize_path(&self, path: PathBuf) -> PathBuf {
+        (self.normalize_path)(self.config_root, path)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub enum ToolsFilter {
     ToolsOnly,
@@ -592,27 +614,33 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    let path =
-                        Self::path(&mut ctx, &mut tera, &mut r, &source, &env_vars, input_str)
-                            .await?;
+                    let mut directive_ctx = EnvDirectiveContext {
+                        config,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
+                        normalize_path,
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                    };
+                    let path = Self::path(&mut directive_ctx, input_str).await?;
                     paths.push((path.clone(), source.clone()));
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
                 EnvDirective::File(input, opts) => {
-                    let files = Self::file(
+                    let mut directive_ctx = EnvDirectiveContext {
                         config,
-                        &mut ctx,
-                        &mut tera,
-                        &mut r,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
                         normalize_path,
-                        &source,
-                        &env_vars,
-                        &config_root,
-                        input,
-                        opts.expand,
-                    )
-                    .await?;
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                    };
+                    let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
@@ -631,18 +659,17 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Source(input, _opts) => {
-                    let files = Self::source(
-                        &mut ctx,
-                        &mut tera,
-                        &mut paths,
-                        &mut r,
+                    let mut directive_ctx = EnvDirectiveContext {
+                        config,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
                         normalize_path,
-                        &source,
-                        &env_vars,
-                        &config_root,
-                        &env_vars,
-                        input,
-                    )?;
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                    };
+                    let files = Self::source(&mut directive_ctx, &mut paths, input)?;
                     for (f, new_env) in files {
                         r.env_scripts.push(f.clone());
                         for (k, v) in new_env {
@@ -668,22 +695,27 @@ impl EnvResults {
                     python_create_args,
                     options: _opts,
                 } => {
-                    Self::venv(
+                    let mut directive_ctx = EnvDirectiveContext {
                         config,
-                        &mut ctx,
-                        &mut tera,
-                        &mut env,
-                        &mut r,
+                        tera_ctx: &mut ctx,
+                        tera: &mut tera,
+                        results: &mut r,
                         normalize_path,
-                        &source,
-                        &env_vars,
-                        &config_root,
-                        env_vars.clone(),
+                        source: &source,
+                        exec_env: &env_vars,
+                        config_root: &config_root,
+                    };
+                    Self::venv(
+                        &mut directive_ctx,
+                        &mut env,
                         path,
                         create,
-                        python,
-                        uv_create_args,
-                        python_create_args,
+                        venv::PythonVenvOptions {
+                            python,
+                            uv_create_args,
+                            python_create_args,
+                            require_uv: false,
+                        },
                     )
                     .await?;
                 }
