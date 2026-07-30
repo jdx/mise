@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use clx::progress::{self, ProgressJobBuilder, ProgressOutput};
 
@@ -107,9 +107,11 @@ impl MultiProgressReport {
         // Configure OSC progress based on settings
         if !settings.terminal_progress {
             // Disable OSC progress if terminal_progress is disabled
-            // clx::osc::configure panics if called more than once (singleton pattern),
-            // so we use catch_unwind to safely ignore duplicate calls
-            let _ = std::panic::catch_unwind(|| {
+            // clx configuration is write-once. MultiProgressReport may be
+            // reconstructed, so ensure the initializer is called only once
+            // without using a caught panic as control flow.
+            static DISABLE_OSC_PROGRESS: Once = Once::new();
+            DISABLE_OSC_PROGRESS.call_once(|| {
                 clx::osc::configure(false);
             });
         }

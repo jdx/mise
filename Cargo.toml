@@ -60,7 +60,6 @@ path = "src/main.rs"
 inherits = "release"
 lto = true
 panic = "abort"
-strip = true
 
 [profile.dev.package.backtrace]
 opt-level = 3

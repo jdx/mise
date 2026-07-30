@@ -255,6 +255,12 @@ static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
 pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
     panic::set_hook(Box::new(move |panic_info| {
+        // Serious release builds abort after this hook returns, so destructors
+        // and catch_unwind cleanup will not run. Terminate registered child
+        // process trees synchronously while we still can.
+        #[cfg(panic = "abort")]
+        cmd::kill_all_on_panic();
+
         if tokio::runtime::Handle::try_current().is_ok()
             && !ASYNC_PANIC_OCCURRED.swap(true, Ordering::SeqCst)
         {
