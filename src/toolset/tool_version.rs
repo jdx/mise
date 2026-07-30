@@ -488,11 +488,8 @@ impl ToolVersion {
             // channel name in the backend's version list as before.
         }
         if !opts.latest_versions {
-            let matches = crate::backend::order_versions(
-                backend.list_installed_versions_matching(&v),
-                &request.options(),
-                backend.id(),
-            );
+            let matches =
+                backend.list_installed_versions_matching_with_opts(&v, &request.options())?;
             if matches.contains(&v) {
                 return build(v);
             }
@@ -652,12 +649,9 @@ impl ToolVersion {
             && !prefer_offline;
         if !opts.latest_versions
             && !should_filter_installed_versions
-            && let Some(v) = crate::backend::order_versions(
-                backend.list_installed_versions_matching(prefix),
-                &request.options(),
-                backend.id(),
-            )
-            .last()
+            && let Some(v) = backend
+                .list_installed_versions_matching_with_opts(prefix, &request.options())?
+                .last()
         {
             return Ok(Self::new(request, v.to_string()));
         }

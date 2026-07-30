@@ -4,6 +4,98 @@ use crate::backend::static_helpers::{
     lookup_platform_value_for_target, lookup_with_fallback,
 };
 use crate::toolset::ToolVersionOptions;
+use dashmap::DashMap;
+use eyre::{Result, bail};
+use std::sync::{Arc, LazyLock};
+
+static VERSION_ORDER_CACHE: LazyLock<DashMap<[u8; 32], Arc<[String]>>> =
+    LazyLock::new(DashMap::new);
+
+/// The policy used to order version candidates before selecting a match.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VersionOrder {
+    #[default]
+    Source,
+    Semver,
+}
+
+impl VersionOrder {
+    /// Parse `version_order` from the raw tool options.
+    pub(crate) fn from_options(options: &ToolVersionOptions) -> Result<Self> {
+        match options.opts.get("version_order") {
+            None => Ok(Self::Source),
+            Some(toml::Value::String(value)) => match value.as_str() {
+                "source" => Ok(Self::Source),
+                "semver" => Ok(Self::Semver),
+                _ => bail!("version_order must be \"source\" or \"semver\""),
+            },
+            Some(_) => bail!("version_order must be \"source\" or \"semver\""),
+        }
+    }
+
+    /// Return an ordering of the complete candidate list.
+    ///
+    /// Invalid semantic versions sort before valid ones, retaining source order.
+    /// Valid versions use semantic precedence, with source position breaking
+    /// equal-precedence ties such as versions that differ only in build metadata.
+    pub(crate) fn order(self, versions: Vec<String>) -> Vec<String> {
+        match self {
+            Self::Source => versions,
+            Self::Semver => self.order_cached(&versions).to_vec(),
+        }
+    }
+
+    fn order_cached(self, versions: &[String]) -> Arc<[String]> {
+        let key = version_order_cache_key(self, versions);
+        if let Some(ordered) = VERSION_ORDER_CACHE.get(&key) {
+            return ordered.clone();
+        }
+
+        let ordered: Arc<[String]> = match self {
+            Self::Source => versions.to_vec().into(),
+            Self::Semver => {
+                let mut invalid = Vec::new();
+                let mut valid = Vec::new();
+                for (source_index, version) in versions.iter().enumerate() {
+                    match semver::Version::parse(version) {
+                        Ok(parsed) => valid.push((source_index, version.clone(), parsed)),
+                        Err(_) => invalid.push(version.clone()),
+                    }
+                }
+                valid.sort_by(|(left_index, _, left), (right_index, _, right)| {
+                    left.cmp_precedence(right)
+                        .then_with(|| left_index.cmp(right_index))
+                });
+                invalid.extend(valid.into_iter().map(|(_, version, _)| version));
+                invalid.into()
+            }
+        };
+
+        VERSION_ORDER_CACHE
+            .entry(key)
+            .or_insert_with(|| ordered.clone())
+            .clone()
+    }
+}
+
+fn version_order_cache_key(order: VersionOrder, versions: &[String]) -> [u8; 32] {
+    fn update_field(hasher: &mut blake3::Hasher, value: &[u8]) {
+        hasher.update(&(value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"mise-version-order-cache-v1");
+    hasher.update(&[match order {
+        VersionOrder::Source => 0,
+        VersionOrder::Semver => 1,
+    }]);
+    hasher.update(&(versions.len() as u64).to_le_bytes());
+    for version in versions {
+        update_field(&mut hasher, version.as_bytes());
+    }
+    *hasher.finalize().as_bytes()
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BackendOptions<'a> {
@@ -96,6 +188,10 @@ impl<'a> BackendOptions<'a> {
             .opts
             .get(key)
             .map_or(default, |value| bool_value_or_default(key, value, default))
+    }
+
+    pub(crate) fn version_order(&self) -> Result<VersionOrder> {
+        VersionOrder::from_options(self.raw)
     }
 
     pub(crate) fn available_platforms_with_key(&self, key: &str) -> Vec<String> {
@@ -286,5 +382,111 @@ mod tests {
 
         assert!(!values.platform_bool_for_target("no_app", &linux));
         assert!(values.platform_bool_for_target("no_app", &windows));
+    }
+
+    #[test]
+    fn test_version_order_parses_raw_option() {
+        assert_eq!(
+            BackendOptions::new(&ToolVersionOptions::default())
+                .version_order()
+                .unwrap(),
+            VersionOrder::Source
+        );
+        assert_eq!(
+            BackendOptions::new(&opts_with_value(
+                "version_order",
+                toml::Value::String("semver".into())
+            ))
+            .version_order()
+            .unwrap(),
+            VersionOrder::Semver
+        );
+        assert_eq!(
+            BackendOptions::new(&opts_with_value(
+                "version_order",
+                toml::Value::String("source".into())
+            ))
+            .version_order()
+            .unwrap(),
+            VersionOrder::Source
+        );
+    }
+
+    #[test]
+    fn test_version_order_rejects_invalid_option() {
+        let invalid = opts_with_value("version_order", toml::Value::String("chronological".into()));
+        assert_eq!(
+            BackendOptions::new(&invalid)
+                .version_order()
+                .unwrap_err()
+                .to_string(),
+            "version_order must be \"source\" or \"semver\""
+        );
+
+        let wrong_type = opts_with_value("version_order", toml::Value::Boolean(true));
+        assert_eq!(
+            BackendOptions::new(&wrong_type)
+                .version_order()
+                .unwrap_err()
+                .to_string(),
+            "version_order must be \"source\" or \"semver\""
+        );
+    }
+
+    #[test]
+    fn test_semver_order_places_invalid_versions_first() {
+        let versions = ["2.0.0", "nightly", "1.0.0", "edge", "3.0.0"]
+            .map(String::from)
+            .to_vec();
+
+        assert_eq!(
+            VersionOrder::Semver.order(versions.clone()),
+            ["nightly", "edge", "1.0.0", "2.0.0", "3.0.0"]
+        );
+        assert_eq!(
+            VersionOrder::Semver
+                .order(versions)
+                .last()
+                .map(String::as_str),
+            Some("3.0.0")
+        );
+    }
+
+    #[test]
+    fn test_semver_order_preserves_all_invalid_source_order() {
+        let versions = ["nightly", "edge", "tip"].map(String::from).to_vec();
+        assert_eq!(VersionOrder::Semver.order(versions.clone()), versions);
+    }
+
+    #[test]
+    fn test_semver_order_ignores_build_metadata_for_precedence() {
+        let versions = [
+            "1.0.0-alpha+002",
+            "1.0.0-alpha+001",
+            "1.0.0",
+            "1.0.0+002",
+            "1.0.0+001",
+        ]
+        .map(String::from)
+        .to_vec();
+
+        assert_eq!(VersionOrder::Semver.order(versions.clone()), versions);
+    }
+
+    #[test]
+    fn test_version_order_cache_reuses_only_complete_key_matches() {
+        let versions = ["2.0.0", "1.0.0"].map(String::from).to_vec();
+        let cached = VersionOrder::Semver.order_cached(&versions);
+        let reused = VersionOrder::Semver.order_cached(&versions);
+        assert!(Arc::ptr_eq(&cached, &reused));
+
+        let reversed = ["1.0.0", "2.0.0"].map(String::from).to_vec();
+        let different_input = VersionOrder::Semver.order_cached(&reversed);
+        assert!(!Arc::ptr_eq(&cached, &different_input));
+
+        assert_ne!(
+            version_order_cache_key(VersionOrder::Semver, &versions),
+            version_order_cache_key(VersionOrder::Source, &versions)
+        );
     }
 }

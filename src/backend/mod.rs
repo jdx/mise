@@ -37,7 +37,7 @@ use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
-    VersionOrder, install_state, is_outdated_version,
+    install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -54,6 +54,8 @@ use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
+
+use self::options::{BackendOptions, VersionOrder};
 
 pub mod aqua;
 pub mod asdf;
@@ -2206,6 +2208,17 @@ pub trait Backend: Debug + Send + Sync {
         let filter = !self.include_prereleases(&self.ba().opts());
         self.fuzzy_match_filter(versions, query, filter)
     }
+    fn list_installed_versions_matching_with_opts(
+        &self,
+        query: &str,
+        opts: &ToolVersionOptions,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = BackendOptions::new(opts)
+            .version_order()?
+            .order(self.list_installed_versions());
+        let filter = !self.include_prereleases(opts);
+        Ok(self.fuzzy_match_filter(versions, query, filter))
+    }
     async fn list_versions_matching(
         &self,
         config: &Arc<Config>,
@@ -2213,9 +2226,9 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let versions = BackendOptions::new(&opts).version_order()?.order(versions);
         let filter = !self.include_prereleases(&opts);
-        let versions = self.fuzzy_match_filter(versions, query, filter);
-        Ok(order_versions(versions, &opts, self.id()))
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -2249,9 +2262,9 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let versions = BackendOptions::new(&opts).version_order()?.order(versions);
         let filter = !self.include_prereleases(&opts);
-        let versions = self.fuzzy_match_filter(versions, query, filter);
-        Ok(order_versions(versions, &opts, self.id()))
+        Ok(self.fuzzy_match_filter(versions, query, filter))
     }
 
     async fn latest_version_for_query(
@@ -2282,7 +2295,7 @@ pub trait Backend: Debug + Send + Sync {
                 }
             };
             let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-            matches = order_versions(matches, &opts, self.id());
+            matches = BackendOptions::new(&opts).version_order()?.order(matches);
         }
         Ok(find_match_in_list(&matches, query))
     }
@@ -2319,7 +2332,7 @@ pub trait Backend: Debug + Send + Sync {
         let resolved_query = query.as_deref().unwrap_or("latest");
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         if resolved_query == "latest"
-            && opts.version_order.unwrap_or_default() == VersionOrder::Source
+            && BackendOptions::new(&opts).version_order()? == VersionOrder::Source
         {
             if let Some(info) = self.latest_stable_version_info(config).await? {
                 return Ok(Some(info.version));
@@ -2352,7 +2365,7 @@ pub trait Backend: Debug + Send + Sync {
         let mut fallback_refresh = refresh;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let latest = if resolved_query == "latest"
-            && opts.version_order.unwrap_or_default() == VersionOrder::Source
+            && BackendOptions::new(&opts).version_order()? == VersionOrder::Source
         {
             match self.latest_stable_version_info(config).await? {
                 Some(info) => Some(info),
@@ -2426,14 +2439,14 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
         opts: &ToolVersionOptions,
     ) -> eyre::Result<Option<String>> {
-        if opts.version_order.unwrap_or_default() == VersionOrder::Source {
+        let version_order = BackendOptions::new(opts).version_order()?;
+        if version_order == VersionOrder::Source {
             return self.latest_installed_version(query);
         }
         let matches = match query.as_deref() {
-            Some(query) => self.list_installed_versions_matching(query),
-            None => self.list_installed_version_dirs(),
+            Some(query) => self.list_installed_versions_matching_with_opts(query, opts)?,
+            None => version_order.order(self.list_installed_version_dirs()),
         };
-        let matches = order_versions(matches, opts, self.id());
         Ok(match query {
             Some(query) => find_match_in_list(&matches, &query),
             None => matches.last().cloned(),
@@ -3921,29 +3934,6 @@ mod latest_version_tests {
         );
     }
 
-    #[test]
-    fn test_semver_order_preserves_source_order_for_mixed_versions() {
-        let opts = crate::toolset::parse_tool_options("version_order=semver");
-        let source = vec![
-            "2.0.0".to_string(),
-            "1.0.0".to_string(),
-            "nightly-3".to_string(),
-        ];
-
-        assert_eq!(order_versions(source.clone(), &opts, "test-mixed"), source);
-    }
-
-    #[test]
-    fn test_semver_order_ignores_build_metadata() {
-        let opts = crate::toolset::parse_tool_options("version_order=semver");
-        let source = vec!["1.0.0-alpha+002".to_string(), "1.0.0-alpha+001".to_string()];
-
-        assert_eq!(
-            order_versions(source.clone(), &opts, "test-build-metadata"),
-            source
-        );
-    }
-
     #[tokio::test]
     async fn test_date_filtered_latest_uses_stable_when_not_newer() {
         let config = Config::get().await.unwrap();
@@ -4408,32 +4398,6 @@ pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
 
 fn tool_option_bool(value: &toml::Value) -> bool {
     crate::backend::options::bool_value_or_default("prerelease", value, false)
-}
-
-pub(crate) fn order_versions(
-    versions: Vec<String>,
-    opts: &ToolVersionOptions,
-    tool: &str,
-) -> Vec<String> {
-    if opts.version_order.unwrap_or_default() == VersionOrder::Source {
-        return versions;
-    }
-    let parsed = match versions
-        .iter()
-        .map(|version| semver::Version::parse(version))
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            warn_once!(
-                "{tool} version_order=semver requires every matching version to use semantic versioning: {error}; preserving source order"
-            );
-            return versions;
-        }
-    };
-    let mut versions = versions.into_iter().zip(parsed).collect::<Vec<_>>();
-    versions.sort_by(|(_, left), (_, right)| left.cmp_precedence(right));
-    versions.into_iter().map(|(version, _)| version).collect()
 }
 
 /// Fuzzy-match `versions` against `query` with PEP 440 prerelease detection

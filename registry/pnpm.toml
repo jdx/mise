@@ -1,7 +1,4 @@
-backends = [
-  { full = "aqua:pnpm/pnpm", options = { version_order = "semver" } },
-  "npm:pnpm",
-]
+backends = ["aqua:pnpm/pnpm", "npm:pnpm"]
 description = "Fast, disk space efficient package manager"
 detect = ["pnpm-lock.yaml", "pnpm-workspace.yaml"]
 idiomatic_files = ["package.json"]

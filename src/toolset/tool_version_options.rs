@@ -3,16 +3,6 @@ use std::ops::{Deref, DerefMut};
 
 use crate::config::env_directive::EnvValue;
 
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum VersionOrder {
-    #[default]
-    Source,
-    Semver,
-}
-
 /// Option keys that are only relevant during initial installation and should not
 /// be persisted in the manifest or serialized into task/backend option specs.
 // install_env is a core field on CoreToolOptions, but parse_tool_options()
@@ -23,6 +13,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "depends",
     "install_before",
     "minimum_release_age",
+    "version_order",
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -33,8 +24,6 @@ pub struct CoreToolOptions {
     pub depends: Option<Vec<String>>,
     #[serde(default)]
     pub install_env: IndexMap<String, EnvValue>,
-    #[serde(default)]
-    pub version_order: Option<VersionOrder>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -206,9 +195,6 @@ impl ResolvedToolOptions {
                 self.sources.insert(format!("install_env.{key}"), source);
             }
         }
-        if options.version_order.is_some() {
-            self.sources.insert("version_order".to_string(), source);
-        }
     }
 }
 
@@ -224,8 +210,6 @@ impl std::hash::Hash for ToolOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
         self.depends.hash(state);
-        self.version_order.hash(state);
-
         // Hash install_env in sorted order for deterministic hashing
         let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
         install_env_sorted.sort_by_key(|(k, _)| *k);
@@ -274,7 +258,6 @@ impl ToolOptions {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
             && self.install_env.is_empty()
-            && self.version_order.is_none()
             && self.opts.is_empty()
     }
 
@@ -335,15 +318,13 @@ impl ToolOptions {
         if overrides.depends.is_some() {
             self.depends = overrides.depends.clone();
         }
-        if overrides.version_order.is_some() {
-            self.version_order = overrides.version_order;
-        }
     }
 
     pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
         if self.insert_core_option(&key, &value)? {
             return Ok(());
         }
+        validate_backend_option(&key, &value)?;
         let value = normalize_backend_option_value(&key, value);
         self.opts.insert(key, value);
         Ok(())
@@ -352,11 +333,7 @@ impl ToolOptions {
     /// Returns true for keys owned by mise's option parser. A few install-time
     /// scalar keys are still stored in raw opts after validation because
     /// downstream install code reads them from that map.
-    pub(crate) fn insert_core_option(
-        &mut self,
-        key: &str,
-        value: &toml::Value,
-    ) -> Result<bool, String> {
+    fn insert_core_option(&mut self, key: &str, value: &toml::Value) -> Result<bool, String> {
         match key {
             "os" => {
                 self.os = Some(parse_string_or_array(value, "os")?);
@@ -393,17 +370,6 @@ impl ToolOptions {
                 );
                 Ok(true)
             }
-            "version_order" => {
-                let value = value
-                    .as_str()
-                    .ok_or_else(|| "version_order must be \"source\" or \"semver\"".to_string())?;
-                self.version_order = Some(match value {
-                    "source" => VersionOrder::Source,
-                    "semver" => VersionOrder::Semver,
-                    _ => return Err("version_order must be \"source\" or \"semver\"".to_string()),
-                });
-                Ok(true)
-            }
             _ => {
                 if let Some(env_key) = key.strip_prefix("install_env.") {
                     self.install_env.insert(
@@ -431,9 +397,6 @@ impl ToolOptions {
         }
         if key == "install_env" {
             return !self.install_env.is_empty();
-        }
-        if key == "version_order" {
-            return self.version_order.is_some();
         }
         if let Some(env_key) = key.strip_prefix("install_env.") {
             return self.install_env.contains_key(env_key);
@@ -551,6 +514,17 @@ fn normalize_backend_option_value(key: &str, value: toml::Value) -> toml::Value 
     match value {
         toml::Value::Table(_) | toml::Value::Array(_) | toml::Value::String(_) => value,
         _ => toml::Value::String(value.to_string().trim_matches('"').to_string()),
+    }
+}
+
+/// Validate mise-recognized backend options while keeping them in the raw option map.
+fn validate_backend_option(key: &str, value: &toml::Value) -> Result<(), String> {
+    if key != "version_order" {
+        return Ok(());
+    }
+    match value.as_str() {
+        Some("source" | "semver") => Ok(()),
+        _ => Err("version_order must be \"source\" or \"semver\"".to_string()),
     }
 }
 
@@ -878,7 +852,7 @@ mod tests {
             Some(vec!["python".to_string(), "node".to_string()])
         );
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
-        assert_eq!(opts.version_order, Some(VersionOrder::Semver));
+        assert_eq!(opts.get("version_order"), Some("semver"));
         assert_eq!(
             opts.install_env.get("FOO"),
             Some(&EnvValue::String("bar".to_string()))
@@ -894,11 +868,17 @@ mod tests {
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
-        assert!(!opts.opts.contains_key("version_order"));
+        assert!(opts.opts.contains_key("version_order"));
     }
 
     #[test]
-    fn test_parse_tool_options_rejects_invalid_version_order() {
+    fn test_parse_tool_options_validates_version_order() {
+        assert_eq!(
+            try_parse_tool_options("version_order=source")
+                .unwrap()
+                .get("version_order"),
+            Some("source")
+        );
         assert_eq!(
             try_parse_tool_options("version_order=chronological"),
             Err("version_order must be \"source\" or \"semver\"".to_string())

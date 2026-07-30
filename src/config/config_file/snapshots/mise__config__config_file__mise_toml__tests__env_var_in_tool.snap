@@ -12,7 +12,6 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
                     os: None,
                     depends: None,
                     install_env: {},
-                    version_order: None,
                 },
                 opts: RawBackendOptions {
                     values: {},
@@ -32,7 +31,6 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
                     os: None,
                     depends: None,
                     install_env: {},
-                    version_order: None,
                 },
                 opts: RawBackendOptions {
                     values: {},

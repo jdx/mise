@@ -154,16 +154,16 @@ Internally, nested options are flattened to dot notation (e.g., `platforms.macos
 
 ### Version ordering
 
-By default, mise resolves `latest` and version prefixes using the order returned by the tool's backend. Set `version_order = "semver"` for tools whose source publishes valid [Semantic Versions](https://semver.org/) out of semantic-precedence order:
+`version_order` is a common backend option that can be set in user tool configuration. By default, mise resolves `latest` and version prefixes using the order returned by the tool's backend. Set `version_order = "semver"` when a backend returns versions out of semantic-precedence order:
 
 ```toml
 [tools]
 pnpm = { version = "latest", version_order = "semver" }
 ```
 
-With semantic ordering enabled, mise filters the candidate versions first (including prerelease and release-age filters), then selects the highest remaining semantic version. Backend shortcuts such as a marked-latest release or package-manager dist-tag are bypassed so the full candidate list can be compared.
+With semantic ordering enabled, eligible valid [Semantic Versions](https://semver.org/) rank above non-SemVer entries and are ordered by semantic precedence. Query, prerelease, and release-age filters preserve that relative ordering before mise selects the last matching candidate. Non-SemVer entries retain their source order, so a list containing only non-SemVer entries naturally keeps the backend's ordering. Build metadata does not affect semantic precedence, and equal-precedence versions retain their source order.
 
-Every matching candidate must be a valid semantic version. If the list mixes semantic versions with tags such as `nightly`, mise warns and preserves the source order instead. Build metadata does not affect semantic precedence, so equal-precedence versions retain their source order.
+Semantic ordering applies only when mise must choose among candidates. An exact request for an opaque version such as `nightly` remains an exact request. Backend shortcuts such as a marked-latest release or package-manager dist-tag are bypassed for semantic ordering so the full candidate list can be compared.
 
 This option changes version resolution only. `mise ls-remote` and the remote-version data cached by `mise-versions` remain in source order.
 

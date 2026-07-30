@@ -2,11 +2,12 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::http::HTTP;
-use crate::toolset::ToolVersionOptions;
+use crate::toolset::{RawBackendOptions, ToolVersionOptions};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::{Context, Result, bail, ensure};
 use heck::ToShoutySnakeCase;
+use indexmap::IndexMap;
 use serde::Serialize as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
@@ -600,23 +601,21 @@ impl RegistryTool {
 
     /// Get options for a specific backend
     pub fn backend_options(&self, full: &str) -> ToolVersionOptions {
-        let mut opts = ToolVersionOptions::default();
+        let mut opts = IndexMap::new();
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
                 let value = v.parse::<toml::Value>().unwrap_or_else(|e| {
                     panic!("failed to parse registry option {k} as a TOML value: {e}")
                 });
-                let is_core = opts
-                    .insert_core_option(k, &value)
-                    .unwrap_or_else(|e| panic!("invalid registry option {k}: {e}"));
-                if !is_core {
-                    opts.opts.insert(k.to_string(), value);
-                }
+                opts.insert(k.to_string(), value);
             }
         }
 
-        opts
+        ToolVersionOptions {
+            opts: RawBackendOptions::from(opts),
+            ..Default::default()
+        }
     }
 }
 
@@ -1005,7 +1004,6 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             ("bin", r#""rg""#),
             ("prerelease", "true"),
             ("strip_components", "1"),
-            ("version_order", r#""semver""#),
             (
                 "targets",
                 r#"["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]"#,
@@ -1043,11 +1041,6 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             opts.opts.get("strip_components"),
             Some(&toml::Value::Integer(1))
         );
-        assert_eq!(
-            opts.version_order,
-            Some(crate::toolset::VersionOrder::Semver)
-        );
-        assert!(!opts.opts.contains_key("version_order"));
         assert!(opts.opts.get("targets").is_some_and(toml::Value::is_array));
         assert_eq!(
             opts.get_nested_string("platforms.linux-x64.asset_pattern"),
