@@ -14,6 +14,10 @@ esac
 export MISE_SYSTEM_BREW_PREFIX="$HOME/brew-source-prefix"
 # hello has bottles everywhere; force it down the source-build path
 export MISE_SYSTEM_BREW_FORCE_SOURCE=hello
+# GNU's load-balancing mirror intermittently returns 502s. Use the canonical
+# archive host so this test exercises mise's source builder instead of mirror
+# availability; the Homebrew-provided sha256 still verifies the download.
+export MISE_URL_REPLACEMENTS='{"https://ftpmirror.gnu.org/gnu":"https://ftp.gnu.org/gnu"}'
 
 cat <<EOF >mise.toml
 [bootstrap.packages]
