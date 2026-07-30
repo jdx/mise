@@ -16,6 +16,8 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
 use crate::{backend::unalias_backend, config::Settings};
 
+use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_task};
+
 /// Install a plugin
 ///
 /// note that mise can automatically install plugins when you install a tool
@@ -101,30 +103,21 @@ impl PluginsInstall {
         config: &Arc<Config>,
         plugins: Vec<String>,
     ) -> Result<()> {
-        let mut jset: JoinSet<Result<()>> = JoinSet::new();
+        let mut jset: JoinSet<PluginTaskResult> = JoinSet::new();
+        let mut task_names = PluginTaskNames::new();
         let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(Settings::get().jobs)));
         for plugin in plugins {
             let this = self.clone();
             let config = config.clone();
-            let permit = semaphore.clone().acquire_owned().await?;
-            jset.spawn(async move {
-                let _permit = permit;
+            let semaphore = semaphore.clone();
+            let plugin_name = plugin.clone();
+            spawn_plugin_task(&mut jset, &mut task_names, plugin_name, async move {
+                let _permit = semaphore.acquire_owned().await?;
                 println!("installing {plugin}");
                 this.install_one(&config, plugin, None).await
             });
         }
-        while let Some(result) = jset.join_next().await {
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    return Err(e);
-                }
-                Err(e) => {
-                    return Err(eyre!(e));
-                }
-            }
-        }
-        Ok(())
+        join_plugin_tasks(jset, task_names, "install").await
     }
 
     async fn install_one(
