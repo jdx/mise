@@ -165,6 +165,37 @@ pub enum Mode {
     Loading(String),
 }
 
+pub(crate) struct RenderOptions<'a> {
+    pub(crate) title: &'a str,
+    pub(crate) path: &'a str,
+    pub(crate) dry_run: bool,
+    pub(crate) can_undo: bool,
+}
+
+struct RenderStyles {
+    header: Style,
+    section: Style,
+    key: Style,
+    value: Style,
+    cursor: Style,
+    dim: Style,
+    add: Style,
+}
+
+impl RenderStyles {
+    fn new() -> Self {
+        Self {
+            header: Style::new().cyan().bold(),
+            section: Style::new().yellow().bold(),
+            key: Style::new().green(),
+            value: Style::new().white(),
+            cursor: Style::new().reverse(),
+            dim: Style::new().dim(),
+            add: Style::new().blue(),
+        }
+    }
+}
+
 /// Renderer for the interactive config editor
 pub struct Renderer {
     term: Term,
@@ -210,38 +241,27 @@ impl Renderer {
     }
 
     /// Render the document
-    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         doc: &TomlDocument,
         cursor: &Cursor,
         mode: &Mode,
-        title: &str,
-        path: &str,
-        dry_run: bool,
-        can_undo: bool,
+        options: RenderOptions<'_>,
     ) -> io::Result<()> {
         self.clear()?;
         self.update_size();
 
         let mut output = Vec::new();
 
-        // Styles
-        let header_style = Style::new().cyan().bold();
-        let section_style = Style::new().yellow().bold();
-        let key_style = Style::new().green();
-        let value_style = Style::new().white();
-        let cursor_style = Style::new().reverse();
-        let dim_style = Style::new().dim();
-        let add_style = Style::new().blue();
+        let styles = RenderStyles::new();
 
         // Header
-        let dry_run_str = if dry_run { " [dry-run]" } else { "" };
-        output.push(format!("{}", header_style.apply_to(title)));
+        let dry_run_str = if options.dry_run { " [dry-run]" } else { "" };
+        output.push(format!("{}", styles.header.apply_to(options.title)));
         output.push(format!(
             "{}{}",
-            dim_style.apply_to(path),
-            dim_style.apply_to(dry_run_str)
+            styles.dim.apply_to(options.path),
+            styles.dim.apply_to(dry_run_str)
         ));
         output.push(String::new());
 
@@ -267,27 +287,16 @@ impl Renderer {
             .take(visible_end - visible_start)
         {
             let is_cursor = idx == cursor_idx;
-            let line = self.render_item(
-                doc,
-                target,
-                is_cursor,
-                mode,
-                &section_style,
-                &key_style,
-                &value_style,
-                &cursor_style,
-                &dim_style,
-                &add_style,
-            );
+            let line = self.render_item(doc, target, is_cursor, mode, &styles);
             output.push(line);
         }
 
         // Scroll indicators
         if self.scroll_offset > 0 {
-            output.insert(3, format!("{}", dim_style.apply_to("  ↑ more above")));
+            output.insert(3, format!("{}", styles.dim.apply_to("  ↑ more above")));
         }
         if visible_end < items.len() {
-            output.push(format!("{}", dim_style.apply_to("  ↓ more below")));
+            output.push(format!("{}", styles.dim.apply_to("  ↓ more below")));
         }
 
         // Footer
@@ -349,13 +358,13 @@ impl Renderer {
                 if can_remove {
                     parts.push("backspace remove");
                 }
-                if can_undo {
+                if options.can_undo {
                     parts.push("u undo");
                 }
-                if !dry_run {
+                if !options.dry_run {
                     parts.push("s save");
                 }
-                parts.push(if dry_run { "q done" } else { "q quit" });
+                parts.push(if options.dry_run { "q done" } else { "q quit" });
                 parts.join(" • ")
             }
             Mode::Edit(_)
@@ -370,7 +379,7 @@ impl Renderer {
             Mode::BooleanSelect(_) => "←/→ or t/f toggle • Enter confirm • Esc cancel".to_string(),
             Mode::Loading(_) => "Please wait...".to_string(),
         };
-        output.push(format!("{}", dim_style.apply_to(&footer)));
+        output.push(format!("{}", styles.dim.apply_to(&footer)));
 
         // Write output
         for line in &output {
@@ -382,20 +391,21 @@ impl Renderer {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_item(
         &self,
         doc: &TomlDocument,
         target: &CursorTarget,
         is_cursor: bool,
         mode: &Mode,
-        section_style: &Style,
-        key_style: &Style,
-        value_style: &Style,
-        cursor_style: &Style,
-        dim_style: &Style,
-        add_style: &Style,
+        styles: &RenderStyles,
     ) -> String {
+        let section_style = &styles.section;
+        let key_style = &styles.key;
+        let value_style = &styles.value;
+        let cursor_style = &styles.cursor;
+        let dim_style = &styles.dim;
+        let add_style = &styles.add;
+
         match target {
             CursorTarget::Comment(text) => {
                 // Comments are rendered in dim green style (not selectable)

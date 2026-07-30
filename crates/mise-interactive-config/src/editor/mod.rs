@@ -16,7 +16,7 @@ use crate::providers::{
     BackendProvider, EmptyBackendProvider, EmptyToolProvider, EmptyVersionProvider, ToolProvider,
     VersionProvider,
 };
-use crate::render::{Mode, Renderer};
+use crate::render::{Mode, RenderOptions, Renderer};
 
 use undo::UndoAction;
 
@@ -265,10 +265,12 @@ impl InteractiveConfig {
                     &self.doc,
                     &self.cursor,
                     &self.mode,
-                    &self.title,
-                    &self.path_display,
-                    self.dry_run,
-                    !self.undo_stack.is_empty(),
+                    RenderOptions {
+                        title: &self.title,
+                        path: &self.path_display,
+                        dry_run: self.dry_run,
+                        can_undo: !self.undo_stack.is_empty(),
+                    },
                 )?;
             }
         }
