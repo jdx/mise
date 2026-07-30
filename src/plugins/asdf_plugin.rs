@@ -5,7 +5,8 @@ use crate::git::Git;
 use crate::http::HTTP;
 use crate::plugins::{
     Plugin, PluginSource, PluginType, Script, ScriptManager, install_git_plugin_source,
-    managed_git_plugin_repo_path, remove_git_plugin_source,
+    install_local_plugin_source, local_plugin_source_path, managed_git_plugin_repo_path,
+    remove_git_plugin_source, validate_local_plugin_source,
 };
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
@@ -360,11 +361,31 @@ impl Plugin for AsdfPlugin {
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         Settings::ensure_not_safe("installing plugins")?;
         let repository = self.get_repo_url(config)?;
+        let local_source = local_plugin_source_path(&repository);
+        if let Some(source) = &local_source {
+            validate_local_plugin_source(source, &self.plugin_path)?;
+        }
         let source = PluginSource::parse(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
             self.uninstall(pr).await?;
+        }
+
+        if let Some(source) = local_source {
+            install_local_plugin_source(&self.plugin_path, &source, pr)?;
+            if let Err(err) = self.exec_hook(pr, "post-plugin-add") {
+                if let Err(cleanup_err) =
+                    remove_git_plugin_source(&self.name, &self.plugin_path, pr)
+                {
+                    warn!(
+                        "failed to clean up local plugin link after post-plugin-add failed: {cleanup_err:#}"
+                    );
+                }
+                return Err(err);
+            }
+            pr.finish_with_message(format!("linked {}", display_path(source)));
+            return Ok(());
         }
 
         match source {
@@ -379,13 +400,6 @@ impl Plugin for AsdfPlugin {
                 git_ref,
                 subdir,
             } => {
-                if regex!(r"^[/~]").is_match(&repo_url) {
-                    Err(eyre!(
-                        r#"Invalid repository URL: {repo_url}
-If you are trying to link to a local directory, use `mise plugins link` instead.
-Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
-                    ))?;
-                }
                 let git = install_git_plugin_source(
                     &self.name,
                     &self.plugin_path,

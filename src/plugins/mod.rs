@@ -1,5 +1,5 @@
 use crate::errors::Error::PluginNotInstalled;
-use crate::file;
+use crate::file::{self, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
@@ -11,7 +11,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{config::Config, dirs};
 use async_trait::async_trait;
 use clap::Command;
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
@@ -517,9 +517,167 @@ pub fn install_git_plugin_source(
     }
 }
 
+pub fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(repository);
+    let source = PluginSource::parse(repository);
+    if path.is_absolute() && path.is_dir() && matches!(&source, PluginSource::Zip { .. }) {
+        return Some(path);
+    }
+
+    match source {
+        PluginSource::Git {
+            url,
+            git_ref: None,
+            subdir: None,
+        } if url == repository => path.is_absolute().then_some(path),
+        _ => None,
+    }
+}
+
+pub fn validate_local_plugin_source(source: &Path, plugin_path: &Path) -> Result<()> {
+    if !source.exists() {
+        bail!(
+            "local plugin directory does not exist: {}",
+            display_path(source)
+        );
+    }
+    if !source.is_dir() {
+        bail!(
+            "local plugin source is not a directory: {}",
+            display_path(source)
+        );
+    }
+    let resolved_source = file::desymlink_path(source);
+    let resolved_plugin_path = match (plugin_path.parent(), plugin_path.file_name()) {
+        (Some(parent), Some(file_name)) => file::desymlink_path(parent).join(file_name),
+        _ => plugin_path.to_path_buf(),
+    };
+    if resolved_source
+        .ancestors()
+        .any(|path| file::paths_eq(path, &resolved_plugin_path))
+        || resolved_plugin_path
+            .ancestors()
+            .any(|path| file::paths_eq(path, &resolved_source))
+    {
+        bail!(
+            "local plugin source cannot contain, be, or be inside the plugin install path: {}",
+            display_path(source)
+        );
+    }
+    Ok(())
+}
+
+pub fn install_local_plugin_source(
+    plugin_path: &Path,
+    source: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let parent = plugin_path.parent().ok_or_else(|| {
+        eyre!(
+            "plugin install path has no parent: {}",
+            display_path(plugin_path)
+        )
+    })?;
+    file::create_dir_all(parent)?;
+    pr.set_message(format!("link {}", display_path(source)));
+    file::make_symlink(source, plugin_path)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_local_plugin_source_path_requires_plain_absolute_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().to_string_lossy();
+
+        assert_eq!(
+            local_plugin_source_path(&source),
+            Some(temp.path().to_path_buf())
+        );
+        let source_with_ref = format!("{source}#main");
+        assert_eq!(local_plugin_source_path(&source_with_ref), None);
+        assert!(matches!(
+            PluginSource::parse(&source_with_ref),
+            PluginSource::Git {
+                url,
+                git_ref: Some(git_ref),
+                subdir: None,
+            } if url == source && git_ref == "main"
+        ));
+
+        let referenced_directory = temp.path().join("plugin#main");
+        fs::create_dir_all(&referenced_directory).unwrap();
+        assert_eq!(
+            local_plugin_source_path(&referenced_directory.to_string_lossy()),
+            None
+        );
+
+        let zip_directory = temp.path().join("plugin.zip");
+        fs::create_dir_all(&zip_directory).unwrap();
+        assert_eq!(
+            local_plugin_source_path(&zip_directory.to_string_lossy()),
+            Some(zip_directory)
+        );
+
+        let archive = temp.path().join("plugin-archive.zip");
+        fs::write(&archive, b"archive").unwrap();
+        let archive = archive.to_string_lossy();
+        assert_eq!(local_plugin_source_path(&archive), None);
+        assert!(matches!(
+            PluginSource::parse(&archive),
+            PluginSource::Zip { url } if url == archive
+        ));
+    }
+
+    #[test]
+    fn test_validate_local_plugin_source_rejects_recursive_layouts() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugins_dir = temp.path().join("plugins");
+        let plugin_path = plugins_dir.join("example");
+        let descendant = plugin_path.join("source");
+        let separate_source = temp.path().join("source");
+        fs::create_dir_all(&descendant).unwrap();
+        fs::create_dir_all(&separate_source).unwrap();
+
+        assert!(validate_local_plugin_source(&plugins_dir, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&plugin_path, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&descendant, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&separate_source, &plugin_path).is_ok());
+    }
+
+    #[test]
+    fn test_validate_local_plugin_source_resolves_symlink_aliases() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugins_dir = temp.path().join("plugins");
+        let plugin_path = plugins_dir.join("example");
+        let plugin_alias = temp.path().join("plugin-alias");
+        let parent_alias = temp.path().join("parent-alias");
+        fs::create_dir_all(&plugin_path).unwrap();
+        file::make_symlink(&plugin_path, &plugin_alias).unwrap();
+        file::make_symlink(&plugins_dir, &parent_alias).unwrap();
+
+        assert!(validate_local_plugin_source(&plugin_alias, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&parent_alias, &plugin_path).is_err());
+    }
+
+    #[test]
+    fn test_validate_local_plugin_source_preserves_symlinked_install_slot() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugins_dir = temp.path().join("plugins");
+        let plugin_path = plugins_dir.join("example");
+        let old_source = temp.path().join("old-source");
+        let new_source = temp.path().join("new-source");
+        fs::create_dir_all(&plugins_dir).unwrap();
+        fs::create_dir_all(&old_source).unwrap();
+        fs::create_dir_all(&new_source).unwrap();
+        file::make_symlink(&old_source, &plugin_path).unwrap();
+
+        assert!(validate_local_plugin_source(&plugins_dir, &plugin_path).is_err());
+        assert!(validate_local_plugin_source(&new_source, &plugin_path).is_ok());
+    }
 
     #[test]
     fn test_plugin_source_parse_git() {
