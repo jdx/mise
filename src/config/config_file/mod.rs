@@ -296,7 +296,6 @@ pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
         Some(ConfigFileType::IdiomaticVersion(backends)) => Ok(Arc::new(
             IdiomaticVersionFile::parse(path.to_path_buf(), backends).await?,
         )),
-        #[allow(clippy::box_default)]
         _ => Ok(Arc::new(MiseToml::default())),
     }
 }

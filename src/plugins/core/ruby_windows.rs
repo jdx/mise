@@ -271,13 +271,8 @@ fn parse_gemfile(body: &str) -> String {
     v
 }
 
-#[allow(clippy::if_same_then_else)]
 fn arch() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "x64"
-    } else {
-        "x64"
-    }
+    "x64"
 }
 
 #[cfg(test)]

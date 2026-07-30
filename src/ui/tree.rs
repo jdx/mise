@@ -114,7 +114,6 @@ fn print_tree_item<T: TreeItem>(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn print_tree_item_compact<T, K, F>(
     item: &T,
     prefix: String,

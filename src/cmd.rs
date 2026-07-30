@@ -609,7 +609,6 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    #[allow(clippy::readonly_write_lock)]
     pub fn execute(mut self) -> Result<()> {
         let read_lock = raw_read_lock_blocking();
         debug!("$ {self}");

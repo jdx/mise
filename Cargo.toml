@@ -346,8 +346,5 @@ unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(coverage,coverage_nightly)',
 ] }
 
-[lints.clippy]
-borrowed_box = "allow"
-
 [profile.dev]
 debug = 1
