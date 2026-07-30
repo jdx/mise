@@ -55,6 +55,13 @@ impl ToolVersions {
         Self::parse_str(&file::read_to_string(path)?, path.to_path_buf())
     }
 
+    pub fn path_requires_trust(path: &Path) -> bool {
+        match file::read_to_string(path) {
+            Ok(body) => contains_template_syntax(&body),
+            Err(_) => true,
+        }
+    }
+
     pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent();

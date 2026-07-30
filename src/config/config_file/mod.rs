@@ -301,6 +301,24 @@ pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     }
 }
 
+/// Whether parsing `path` requires a trust record.
+///
+/// Tracked config loading uses this to avoid interactive prompts without
+/// discarding plain version files that never require trust.
+pub async fn path_requires_trust(path: &Path) -> bool {
+    if Settings::safe_mode() {
+        return false;
+    }
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+        return true;
+    }
+    match detect_config_file_type(path).await {
+        Some(ConfigFileType::MiseToml) => !MiseToml::path_is_trust_exempt(path),
+        Some(ConfigFileType::ToolVersions) => ToolVersions::path_requires_trust(path),
+        Some(ConfigFileType::IdiomaticVersion(_)) | None => false,
+    }
+}
+
 pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid {
         path.to_path_buf()
