@@ -451,11 +451,10 @@ impl Backend for AquaBackend {
         let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let versions = match &v_prefixed {
-            Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
-            None => vec![v.as_str()],
-        };
-        let pkg = self.package_with_options(&tv, &versions).await?;
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        let versions = install_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = Self::package_with_options_for_pkg(&tv, pkg, &versions)?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
         {
@@ -989,15 +988,6 @@ impl Backend for AquaBackend {
 }
 
 impl AquaBackend {
-    async fn package_with_options(
-        &self,
-        tv: &ToolVersion,
-        versions: &[&str],
-    ) -> Result<AquaPackage> {
-        let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        Self::package_with_options_for_pkg(tv, pkg, versions)
-    }
-
     fn package_with_options_for_pkg(
         tv: &ToolVersion,
         pkg: AquaPackage,
@@ -3289,6 +3279,21 @@ fn package_version_candidates<'a>(version: &'a str, pkg: &AquaPackage) -> Vec<Co
     candidates.into_iter().unique().collect()
 }
 
+fn install_package_version_candidates<'a>(
+    version: &'a str,
+    tag: Option<&'a str>,
+    pkg: &AquaPackage,
+) -> Vec<Cow<'a, str>> {
+    if let Some(tag) = tag {
+        vec![Cow::Borrowed(tag)]
+    } else {
+        // Locked HTTP package URLs do not contain a GitHub release tag. Include the
+        // registry's prefixes so prefix-scoped overrides still provide metadata such
+        // as the archive format.
+        package_version_candidates(version, pkg)
+    }
+}
+
 fn github_release_tag_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     if url.host_str()? != "github.com" {
@@ -3680,6 +3685,38 @@ packages:
         assert_eq!(pkg.version_prefix.as_deref(), Some("lychee-v"));
         assert_eq!(pkg.files.len(), 1);
         assert_eq!(pkg.files[0].name, "lychee");
+    }
+
+    #[test]
+    fn test_package_version_candidates_apply_inherited_prefix_format_override() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: http
+    repo_owner: haskell
+    repo_name: cabal
+    version_prefix: cabal-install-v
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: tar.xz
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("haskell/cabal").unwrap();
+        let backend = Arc::new(BackendArg::new(
+            "cabal".to_string(),
+            Some("aqua:haskell/cabal/cabal-install".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend, "3.16.1.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "3.16.1.0".to_string());
+        let versions = install_package_version_candidates("3.16.1.0", None, &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = AquaBackend::package_with_options_for_pkg(&tv, pkg, &versions).unwrap();
+
+        assert_eq!(pkg.version_prefix.as_deref(), Some("cabal-install-v"));
+        assert_eq!(pkg.format, "tar.xz");
     }
 
     #[test]
