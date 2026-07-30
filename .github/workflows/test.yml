@@ -131,7 +131,7 @@ jobs:
 
   nightly:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
-    timeout-minutes: 10
+    timeout-minutes: 15
     # Track rolling nightly for early rustc regressions without blocking PRs on upstream compiler ICEs.
     continue-on-error: true
     steps:
@@ -160,11 +160,7 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
-      - run: |
-          cargo build --all-features
-          echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - uses: ./.github/actions/mise-tools
-      - run: mise run test
+      - run: cargo test --all-features
       - run: sccache --show-stats
         if: always()
 
@@ -174,20 +170,23 @@ jobs:
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Install mold
-        run: sudo apt-get update && sudo apt-get install -y mold
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with:
-          tool: cargo-deny,cargo-msrv,cargo-machete
-      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/sccache
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: sccache }
+      - parallel:
+          - name: Install mold
+            run: sudo apt-get update && sudo apt-get install -y mold
+          - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+            with:
+              tool: cargo-deny,cargo-msrv,cargo-machete,sccache
+          - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+            with:
+              path: |
+                ~/.cargo/registry
+                ~/.cargo/git
+                ~/.cargo/.global-cache
+                ~/.cache/sccache
+          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+            with:
+              name: mise-ubuntu-latest
+              path: target/debug
       - name: Configure sccache
         run: |
           export RUSTC_WRAPPER=sccache
@@ -199,10 +198,6 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: mise-ubuntu-latest
-          path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
@@ -218,17 +213,16 @@ jobs:
             git diff HEAD
             exit 1
           fi
-      - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
-      - run: cargo machete --with-metadata
-      - run: ./scripts/test-standalone.sh
-      # The Clippy passes below compile the same Rust targets with stricter checks.
-      # Keep cargo-check in the local lint task, but avoid compiling them a third
-      # time in CI.
-      - run: mise run lint
-        env:
-          HK_SKIP_STEPS: cargo-check
-      # Keep these checks on one Namespace runner while overlapping their work.
+      # Keep these independent checks on one Namespace runner while overlapping
+      # their work. Clippy is stricter than HK's cargo-check, so CI can skip that
+      # redundant compilation while retaining it for local lint runs.
       - parallel:
+          - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
+          - run: cargo machete --with-metadata
+          - run: ./scripts/test-standalone.sh
+          - run: mise run lint
+            env:
+              HK_SKIP_STEPS: cargo-check
           # MSRV uses a separate target directory so its older compiler cannot
           # invalidate stable's build artifacts.
           - name: Verify MSRV
