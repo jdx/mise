@@ -11,10 +11,17 @@ cat <<'EOF' >mise.toml
 monorepo_root = true
 
 [monorepo]
-config_roots = ["libs/*", "apps/*", "tools/*"]
+config_roots = ["libs/*", "apps/*", "apps/*/*", "tools/*"]
 
 [settings]
 experimental = true
+
+[tasks."groups:tests:root"]
+run = 'echo "root grouped test executed"'
+
+[tasks.relative-tests]
+depends = [{ task = "./...:groups:tests:*", optional = true }]
+run = 'echo "root relative tests executed"'
 EOF
 
 # Create first project with format depending on bootstrap
@@ -45,6 +52,24 @@ run = 'echo "frontend format executed"'
 [tasks.build]
 depends = [":bootstrap"]
 run = 'echo "frontend build executed"'
+
+[tasks."groups:tests:frontend"]
+run = 'echo "frontend grouped test executed"'
+
+[tasks.relative-tests]
+depends = [{ task = "./...:groups:tests:*", optional = true }]
+run = 'echo "frontend relative tests executed"'
+EOF
+
+# Create a nested project using the same relative dependency declaration
+mkdir -p apps/frontend/child
+cat <<'EOF' >apps/frontend/child/mise.toml
+[tasks."groups:tests:child"]
+run = 'echo "child grouped test executed"'
+
+[tasks.relative-tests]
+depends = [{ task = "./...:groups:tests:*", optional = true }]
+run = 'echo "child relative tests executed"'
 EOF
 
 # Create third project with same pattern
@@ -60,6 +85,9 @@ run = 'echo "backend format executed"'
 [tasks.test]
 depends = [":format"]
 run = 'echo "backend test executed"'
+
+[tasks."groups:tests:backend"]
+run = 'echo "backend grouped test executed"'
 EOF
 
 # Create a project WITHOUT bootstrap to ensure it doesn't interfere
@@ -118,5 +146,20 @@ assert_contains "mise run '//apps/backend:test'" "backend test executed"
 assert_contains "mise run '//...:test'" "backend bootstrap executed"
 assert_contains "mise run '//...:test'" "backend format executed"
 assert_contains "mise run '//...:test'" "backend test executed"
+
+# Test 7: ./ paths in dependencies resolve relative to the declaring task
+assert_contains "mise run '//apps/frontend:relative-tests'" "frontend grouped test executed"
+assert_contains "mise run '//apps/frontend:relative-tests'" "child grouped test executed"
+assert_not_contains "mise run '//apps/frontend:relative-tests'" "backend grouped test executed"
+assert_not_contains "mise run '//apps/frontend:relative-tests'" "root grouped test executed"
+
+assert_contains "mise run '//apps/frontend/child:relative-tests'" "child grouped test executed"
+assert_not_contains "mise run '//apps/frontend/child:relative-tests'" "frontend grouped test executed"
+assert_not_contains "mise run '//apps/frontend/child:relative-tests'" "backend grouped test executed"
+
+assert_contains "mise run '//:relative-tests'" "root grouped test executed"
+assert_contains "mise run '//:relative-tests'" "frontend grouped test executed"
+assert_contains "mise run '//:relative-tests'" "child grouped test executed"
+assert_contains "mise run '//:relative-tests'" "backend grouped test executed"
 
 echo "=== All wildcard with dependencies tests passed! ==="

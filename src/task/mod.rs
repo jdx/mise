@@ -2622,12 +2622,16 @@ where
         .collect()
 }
 
-/// Resolve a task dependency pattern, optionally relative to a parent task
-/// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
-/// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
+/// Resolve a task dependency pattern, optionally relative to a parent task.
+///
+/// `:build` and bare task names resolve within the parent's project, while
+/// `./...:build` and other `./`-prefixed paths resolve from the parent's
+/// monorepo path.
 pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
+    let is_relative_path = pattern.starts_with("./");
     // Check if this is a bare task name that should be treated as relative
-    let is_bare_name = !pattern.starts_with("//")
+    let is_bare_name = !is_relative_path
+        && !pattern.starts_with("//")
         && !pattern.starts_with("::")
         && !pattern.starts_with(':')
         && !is_workspace_project_task(pattern);
@@ -2635,8 +2639,10 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
         parent.name.starts_with("//") || is_workspace_project_task(&parent.name)
     });
 
-    // If pattern starts with ":" or is a bare name in monorepo context, resolve relatively
+    // If pattern starts with ":", is an explicit relative path, or is a bare
+    // name in monorepo context, resolve it relative to the parent.
     let should_resolve_relatively = pattern.starts_with(':') && !pattern.starts_with("::")
+        || (is_relative_path && parent_task.is_some_and(|parent| parent.name.starts_with("//")))
         || (is_bare_name && parent_is_scoped);
 
     if should_resolve_relatively && let Some(parent) = parent_task {
@@ -2653,7 +2659,12 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
         if let Some(stripped) = parent.name.strip_prefix("//") {
             // Find the first colon after "//" prefix
             if let Some(colon_idx) = stripped.find(':') {
-                let path = format!("//{}", &stripped[..colon_idx]);
+                let parent_path = &stripped[..colon_idx];
+                if let Some(relative_path) = pattern.strip_prefix("./") {
+                    let separator = if parent_path.is_empty() { "" } else { "/" };
+                    return format!("//{parent_path}{separator}{relative_path}");
+                }
+                let path = format!("//{parent_path}");
                 // If pattern is a bare name, add the colon prefix
                 return if is_bare_name {
                     format!("{}:{}", path, pattern)
@@ -2995,6 +3006,9 @@ where
         // Convert ellipsis (...) to glob pattern (**)
         // //... matches everything, //foo/... matches foo and all subdirs
         let path_glob = path_pattern.replace("...", "**");
+        let trailing_ellipsis_base = path_pattern
+            .strip_suffix("/...")
+            .map(|base| if base == "/" { "//" } else { base });
 
         // For task patterns, * only matches within the task name portion (after final :)
         // e.g., test:* matches test:unit, test:integration, etc.
@@ -3064,6 +3078,7 @@ where
             // Match path part with ellipsis support
             let path_matches = if let Some(ref matcher) = path_matcher {
                 matcher.is_match(key_path)
+                    || trailing_ellipsis_base.is_some_and(|base| base == key_path)
             } else {
                 false
             };
@@ -4005,6 +4020,37 @@ echo "hello world"
             resolve_task_pattern("::global", Some(&parent_task)),
             "::global"
         );
+
+        // Explicit relative paths resolve from the declaring task's monorepo path.
+        assert_eq!(
+            resolve_task_pattern("./...:test:*", Some(&parent_task)),
+            "//projects/frontend/...:test:*"
+        );
+        assert_eq!(
+            resolve_task_pattern("./child:build", Some(&parent_task)),
+            "//projects/frontend/child:build"
+        );
+
+        // Root tasks resolve ./ directly beneath the monorepo root.
+        let root_task = Task {
+            name: "//:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("./...:test:*", Some(&root_task)),
+            "//...:test:*"
+        );
+
+        // Explicit relative paths need a monorepo parent.
+        let regular_task = Task {
+            name: "test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("./...:test:*", Some(&regular_task)),
+            "./...:test:*"
+        );
+        assert_eq!(resolve_task_pattern("./...:test:*", None), "./...:test:*");
     }
 
     #[test]
@@ -5320,6 +5366,40 @@ echo "test"
         );
         let matches = only_file.get_matching("//pkg:migrate").unwrap();
         assert_eq!(matches, vec![&"//pkg:migrate.sh".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_trailing_ellipsis_includes_base_path() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            ("//:test".to_string(), "//:test".to_string()),
+            ("//apps/web:test".to_string(), "//apps/web:test".to_string()),
+            (
+                "//apps/web/e2e:test".to_string(),
+                "//apps/web/e2e:test".to_string(),
+            ),
+            ("//apps/api:test".to_string(), "//apps/api:test".to_string()),
+        ]);
+
+        assert_eq!(
+            tasks.get_matching("//apps/web/...:test").unwrap(),
+            vec![
+                &"//apps/web/e2e:test".to_string(),
+                &"//apps/web:test".to_string(),
+            ]
+        );
+        assert_eq!(
+            tasks.get_matching("//...:test").unwrap(),
+            vec![
+                &"//:test".to_string(),
+                &"//apps/api:test".to_string(),
+                &"//apps/web/e2e:test".to_string(),
+                &"//apps/web:test".to_string(),
+            ]
+        );
     }
 
     #[test]

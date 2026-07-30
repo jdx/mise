@@ -113,6 +113,19 @@ depends = ["lint"]   # Also works (for migration compatibility)
 run = "webpack build"
 ```
 
+Dependency paths beginning with `./` are resolved relative to the task that
+declares them. This makes it possible to reuse the same dependency declaration
+at different levels of a monorepo:
+
+```toml
+[tasks.test]
+depends = [{ task = "./...:groups:tests:*", optional = true }]
+```
+
+For example, when declared by `//apps/frontend:test`, this pattern resolves to
+`//apps/frontend/...:groups:tests:*` and matches the current project and its
+descendants without matching sibling projects.
+
 The bare name syntax (without `:`) is supported primarily to ease migration from non-monorepo to monorepo configurations. When migrating, you won't need to update all your task dependencies immediately - they'll continue to work. However, using the `:` prefix makes it clear you're referencing a task in the current config_root.
 :::
 
