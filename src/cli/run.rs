@@ -13,6 +13,7 @@ use crate::duration;
 use crate::env;
 use crate::file::display_path;
 use crate::task::has_any_usage_spec;
+use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
@@ -667,16 +668,16 @@ impl Run {
                 let deps = deps_for_remove.lock().await;
                 (deps.completion_state(), deps.dependency_state(&task))
             };
-            let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(
-                &task,
-                &ctx.config,
-                ctx.sched_tx.clone(),
+            let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
+                task: &task,
+                config: &ctx.config,
+                sched_tx: ctx.sched_tx.clone(),
                 completion_state,
                 dependency_state,
                 semaphore,
-                &mut permit,
+                permit: &mut permit,
                 allow_during_interruption,
-            ))
+            }))
             .catch_unwind()
             .await
             {
@@ -950,31 +951,14 @@ impl Run {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn run_task_sched(
         &self,
-        task: &Task,
-        config: &Arc<Config>,
-        sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<crate::task::task_scheduler::SchedMsg>>,
-        completion_state: crate::task::TaskCompletionState,
-        dependency_state: crate::task::TaskDependencyState,
-        semaphore: Arc<tokio::sync::Semaphore>,
-        permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
-        allow_during_interruption: bool,
+        ctx: TaskRunContext<'_>,
     ) -> Result<crate::task::task_executor::TaskRunOutcome> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(
-                task,
-                config,
-                sched_tx,
-                completion_state,
-                dependency_state,
-                semaphore,
-                permit,
-                allow_during_interruption,
-            )
+            .run_task_sched(ctx)
             .await
     }
 

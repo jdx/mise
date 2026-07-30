@@ -132,6 +132,16 @@ pub(crate) struct TaskArtifactCacheBuilder {
     inputs: TaskCacheInputs,
 }
 
+pub(crate) struct TaskCacheContext<'a> {
+    pub(crate) task: &'a Task,
+    pub(crate) config: &'a Arc<Config>,
+    pub(crate) toolset: &'a Toolset,
+    pub(crate) resolved_env: &'a BTreeMap<String, String>,
+    pub(crate) declared_env: &'a [(String, String)],
+    pub(crate) dependency_keys: &'a [String],
+    pub(crate) command_inputs: Vec<CommandInput>,
+}
+
 impl TaskArtifactCache {
     pub(crate) async fn prepare(
         task: &Task,
@@ -171,17 +181,16 @@ impl TaskArtifactCache {
 impl TaskArtifactCacheBuilder {
     /// Finishes cache-key construction after task tools, environment, and
     /// dependency artifacts have been resolved.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn finish(
-        self,
-        task: &Task,
-        config: &Arc<Config>,
-        toolset: &Toolset,
-        resolved_env: &BTreeMap<String, String>,
-        declared_env: &[(String, String)],
-        dependency_keys: &[String],
-        command_inputs: Vec<CommandInput>,
-    ) -> Result<TaskArtifactCache> {
+    pub(crate) async fn finish(self, ctx: TaskCacheContext<'_>) -> Result<TaskArtifactCache> {
+        let TaskCacheContext {
+            task,
+            config,
+            toolset,
+            resolved_env,
+            declared_env,
+            dependency_keys,
+            command_inputs,
+        } = ctx;
         let Self { root, inputs } = self;
         let mut environment = declared_env
             .iter()

@@ -6,7 +6,7 @@ use crate::env_diff::EnvDiff;
 use crate::file::{can_execute_directly, display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
-use crate::task::task_cache::CommandInput;
+use crate::task::task_cache::{CommandInput, TaskCacheContext};
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -46,6 +46,17 @@ static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()
 type TaskOutputCapture = Arc<StdMutex<Vec<TaskCacheOutput>>>;
 const COMMAND_INPUT_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_INPUT_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+
+pub(crate) struct TaskRunContext<'a> {
+    pub(crate) task: &'a Task,
+    pub(crate) config: &'a Arc<Config>,
+    pub(crate) sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
+    pub(crate) completion_state: TaskCompletionState,
+    pub(crate) dependency_state: TaskDependencyState,
+    pub(crate) semaphore: Arc<Semaphore>,
+    pub(crate) permit: &'a mut Option<OwnedSemaphorePermit>,
+    pub(crate) allow_during_interruption: bool,
+}
 
 #[allow(dead_code)] // Guards are held for their Drop impl, not read
 enum RuntimeLockGuard<'a> {
@@ -342,18 +353,17 @@ impl TaskExecutor {
 
     /// Run a task, returning whether it did work and any stable artifact identity
     /// it produced or reused.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn run_task_sched(
-        &self,
-        task: &Task,
-        config: &Arc<Config>,
-        sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
-        completion_state: TaskCompletionState,
-        dependency_state: TaskDependencyState,
-        semaphore: Arc<Semaphore>,
-        permit: &mut Option<OwnedSemaphorePermit>,
-        allow_during_interruption: bool,
-    ) -> Result<TaskRunOutcome> {
+    pub async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
+        let TaskRunContext {
+            task,
+            config,
+            sched_tx,
+            completion_state,
+            dependency_state,
+            semaphore,
+            permit,
+            allow_during_interruption,
+        } = ctx;
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         Self::check_interruption(allow_during_interruption)?;
@@ -581,15 +591,15 @@ impl TaskExecutor {
                         .resolve_cache_command_inputs(task, config, &env)
                         .await?;
                     let cache = prepared
-                        .finish(
+                        .finish(TaskCacheContext {
                             task,
                             config,
-                            &ts,
-                            &env,
-                            &task_env,
-                            &dependency_state.cache_keys,
+                            toolset: &ts,
+                            resolved_env: &env,
+                            declared_env: &task_env,
+                            dependency_keys: &dependency_state.cache_keys,
                             command_inputs,
-                        )
+                        })
                         .await?;
                     let current_output = if self.task_cache.reads()
                         && !self.force
