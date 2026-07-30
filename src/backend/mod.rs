@@ -618,6 +618,94 @@ fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
         .find_map(file::which_non_pristine)
 }
 
+/// True when the OS will accept `path` as the program argument of a spawn.
+///
+/// [`file::can_execute_directly`] is *pure extension inspection* on Windows — it never
+/// touches the filesystem, so it answers true for a `foo.exe` that is not there. The
+/// `is_file()` guard supplies the existence check that [`file::is_executable`] performs
+/// inline; without it a lookup built on this would hand back paths to missing files.
+///
+/// The guard is `cfg!(windows)`-gated deliberately. On unix `can_execute_directly`
+/// delegates to `is_executable`, which stats already — and which answers true for a
+/// mode-0755 *directory*. Adding `is_file()` unconditionally would silently narrow every
+/// unix lookup below it, so unix keeps today's answer exactly.
+fn is_spawnable(path: &Path) -> bool {
+    if cfg!(windows) && !path.is_file() {
+        return false;
+    }
+    file::can_execute_directly(path)
+}
+
+/// Resolve `bin` inside `dirs`, in the order the OS itself resolves: directory-major,
+/// extension-minor.
+///
+/// `spawnable` picks the predicate, and the distinction is the whole point:
+///
+/// * `false` — the historical "looks executable" test. On Windows that deliberately
+///   accepts a shebang-only script and a `.ps1`, because it answers *"does this tool
+///   provide this bin"* for `mise which`, shims, auto-install and tool-stubs. Not to be
+///   narrowed.
+/// * `true` — [`is_spawnable`], i.e. *"can the OS launch this"*. Crucially it keeps
+///   searching **past** a candidate it rejects, so `None` means "nothing spawnable
+///   exists" rather than "the first thing I looked at was not spawnable".
+///
+/// Directory-major only matters on Windows, where [`executable_names`] yields several
+/// candidates per directory. It is the order `CreateProcess`+`PATHEXT`, `cmd.exe` and the
+/// `which` crate all use, and the order [`Backend::which`] has always used. It diverges
+/// from [`which_non_pristine_executable`], which is *name-major* — the bare name is tried
+/// across the whole PATH before any extension — and that one is left alone. Only
+/// directory-major resolves the case this exists for: mise's own node install ships a
+/// shebang `npm` and an `npm.cmd` side by side in one directory, with no `npm.exe`.
+///
+/// On unix `executable_names` returns exactly one name, so both orders are the same
+/// traversal and this degenerates to `file::_which` with a different predicate.
+fn which_in_dirs<I>(dirs: I, bin: &str, spawnable: bool) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    let names = executable_names(bin);
+    dirs.into_iter().find_map(|dir| {
+        names.iter().map(|name| dir.join(name)).find(|candidate| {
+            if spawnable {
+                is_spawnable(candidate)
+            } else {
+                candidate.exists() && file::is_executable(candidate)
+            }
+        })
+    })
+}
+
+/// PATH-side counterpart of [`which_non_pristine_executable`], narrowed to what the OS can
+/// actually spawn.
+///
+/// Non-pristine to match that function, which is what [`Backend::dependency_which`] uses.
+/// The "a mise-managed tool beats a system one" contract that
+/// `e2e/backend/test_pipx_direct_dependencies` asserts comes from consulting the toolset
+/// first in [`Backend::spawnable_dependency`], not from the PATH flavor, so it is kept.
+///
+/// mise's shim directories are skipped on Windows. A shim re-enters mise, and once a
+/// resolved absolute path is handed to `Command::new` the child PATH no longer gets a
+/// vote, so a shim that the child PATH would have shadowed must not win —
+/// [`file::which_no_shims`] exists for the same reason. Windows-gated so the unix answer
+/// stays identical to `which_non_pristine_executable`'s.
+///
+/// The skip is not free for callers that treat `None` as fatal. Through
+/// [`Backend::spawn_program`] a miss falls back to the bare name, i.e. today's code path.
+/// Through [`Backend::spawnable_dependency`] it is a gate, so a tool reachable *only* via a
+/// mise shim — installed by mise yet declared in no active config, so the dependency
+/// toolset does not have it either — now reports its install instructions instead of
+/// re-entering mise through the shim. That trade is deliberate: the alternative is
+/// spawning our own shim from inside an install, and the instructions are correct advice
+/// for a tool that is installed but unconfigured.
+fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
+    let skip_shims = cfg!(windows);
+    let dirs = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| !skip_shims || !file::is_mise_shims_dir(p))
+        .cloned();
+    which_in_dirs(dirs, bin, true)
+}
+
 pub(crate) async fn configured_toolset_or_path_which(
     config: &Arc<Config>,
     tools: impl IntoIterator<Item = String>,
@@ -685,6 +773,177 @@ mod tests {
         assert_eq!(
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn which_in_dirs_skips_shebang_script_for_node_npm_layout() {
+        // The exact on-disk shape of installs\node\<version>: a bare `npm` that is a
+        // `#!/usr/bin/env bash` script, an `npm.cmd`, an `npm.ps1`, and no `npm.exe`. On
+        // Windows the node plugin puts that directory itself on PATH.
+        //
+        // The paired assertion is the point. The permissive predicate answers with the
+        // bash script, because `executable_names` puts the bare name first and
+        // `file::is_executable` accepts a shebang — and that is precisely why
+        // `NPM_PROGRAM = "npm.cmd"` had to be hardcoded. The spawnable predicate walks
+        // past it to `npm.cmd`, which is what makes the hardcode removable.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("npm"), "#!/usr/bin/env bash\nexit 0\n").unwrap();
+        fs::write(dir.path().join("npm.cmd"), "@echo off\n").unwrap();
+        fs::write(dir.path().join("npm.ps1"), "exit 0\n").unwrap();
+        fs::write(dir.path().join("node.exe"), "MZ").unwrap();
+
+        let dirs = || vec![dir.path().to_path_buf()];
+        assert_eq!(
+            which_in_dirs(dirs(), "npm", false),
+            Some(dir.path().join("npm")),
+            "the permissive predicate still answers with the shebang script"
+        );
+        assert_eq!(
+            which_in_dirs(dirs(), "npm", true),
+            Some(dir.path().join("npm.cmd")),
+            "the spawnable predicate has to walk past it to npm.cmd"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn which_in_dirs_rejects_interpreter_only_extensions() {
+        // A .ps1 needs `pwsh -File` and a .vbs needs wscript/cscript, so neither can be
+        // handed to Command::new — but both extensions are in the default
+        // windows_executable_extensions list, so the permissive predicate accepts them.
+        //
+        // Casing is deliberately not exercised here: `which_in_dirs` builds its candidates
+        // from `executable_names`, whose entries are always lowercase, so the guard would
+        // never see an uppercase extension through this path however the file is named on a
+        // case-insensitive filesystem. See
+        // `is_spawnable_rejects_interpreter_only_extensions_case_insensitively`.
+        for name in ["pipx.ps1", "pipx.vbs"] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join(name), "exit 42\n").unwrap();
+            let dirs = || vec![dir.path().to_path_buf()];
+            assert!(
+                which_in_dirs(dirs(), "pipx", false).is_some(),
+                "{name} must still satisfy the permissive predicate"
+            );
+            assert_eq!(
+                which_in_dirs(dirs(), "pipx", true),
+                None,
+                "{name} cannot be spawned directly"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn which_in_dirs_prefers_exe_over_cmd_within_a_directory() {
+        // `executable_names` orders by the settings list, where `exe` precedes `cmd`.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("tool.cmd"), "@echo off\n").unwrap();
+        fs::write(dir.path().join("tool.exe"), "MZ").unwrap();
+        assert_eq!(
+            which_in_dirs(vec![dir.path().to_path_buf()], "tool", true),
+            Some(dir.path().join("tool.exe"))
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn which_in_dirs_is_directory_major() {
+        // Pins the ordering decision. `which_non_pristine_executable` is name-major and
+        // would answer dir_b/tool.exe here, because it tries every directory for one name
+        // before moving to the next name. This resolver is directory-major, like
+        // CreateProcess+PATHEXT and like Backend::which, so the earlier directory wins even
+        // though its candidate has a later extension.
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        fs::write(dir_a.path().join("tool.cmd"), "@echo off\n").unwrap();
+        fs::write(dir_b.path().join("tool.exe"), "MZ").unwrap();
+        assert_eq!(
+            which_in_dirs(
+                vec![dir_a.path().to_path_buf(), dir_b.path().to_path_buf()],
+                "tool",
+                true
+            ),
+            Some(dir_a.path().join("tool.cmd"))
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn is_spawnable_rejects_interpreter_only_extensions_case_insensitively() {
+        // The casing guard inside `can_execute_directly`, exercised where it is actually
+        // reachable: with a path read off disk rather than one built from
+        // `executable_names`. `task::task_executor` hands it exactly such a path when
+        // deciding whether a file task can be executed directly, so an uppercase `.PS1`
+        // there must be rejected — Windows extensions are case-insensitive while the guard
+        // compares strings.
+        //
+        // The paired `is_executable` assertion is the point: these files do look executable
+        // (their extensions are in windows_executable_extensions), which is why the spawn
+        // side needs a predicate of its own.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a.ps1", "b.PS1", "c.vbs", "d.VBS"] {
+            let path = dir.path().join(name);
+            fs::write(&path, "exit 0\n").unwrap();
+            assert!(!is_spawnable(&path), "{name} must not be spawnable");
+            assert!(
+                file::is_executable(&path),
+                "{name} should still satisfy the permissive predicate"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn which_in_dirs_ignores_missing_candidates() {
+        // Guards the is_file() composition in `is_spawnable`. `can_execute_directly` is
+        // pure extension inspection on Windows, so without that guard the `tool.exe`
+        // candidate answers true for a file that was never created. Removing the guard
+        // breaks this test and the node-layout one above, both by returning a path to a
+        // file that does not exist.
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            which_in_dirs(vec![dir.path().to_path_buf()], "tool", true),
+            None
+        );
+        assert_eq!(
+            which_in_dirs(vec![dir.path().to_path_buf()], "tool", false),
+            None
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn is_spawnable_matches_is_executable_on_unix() {
+        // "unix stays byte-identical" as a checked claim rather than a comment. The
+        // directory case is the sharp one: `is_executable` answers true for a mode-0755
+        // directory, so an ungated is_file() in `is_spawnable` would silently narrow every
+        // unix lookup built on it.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("tool");
+        fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        let plain = dir.path().join("plain");
+        fs::write(&plain, "not executable\n").unwrap();
+        fs::set_permissions(&plain, fs::Permissions::from_mode(0o644)).unwrap();
+        let subdir = dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+
+        assert!(is_spawnable(&tool));
+        assert!(!is_spawnable(&plain));
+        assert_eq!(
+            is_spawnable(&subdir),
+            file::is_executable(&subdir),
+            "a mode-0755 directory must be answered the same either way"
+        );
+        assert_eq!(
+            which_in_dirs(vec![dir.path().to_path_buf()], "tool", true),
+            which_in_dirs(vec![dir.path().to_path_buf()], "tool", false),
+            "both predicates agree on unix"
         );
     }
 
@@ -2713,22 +2972,40 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         bin_name: &str,
     ) -> eyre::Result<Option<PathBuf>> {
-        let bin_paths = self
-            .list_bin_paths(config, tv)
-            .await?
-            .into_iter()
-            .filter(|p| p.parent().is_some());
-        for bin_path in bin_paths {
-            for bin_path in executable_names(bin_name)
+        Ok(which_in_dirs(
+            self.list_bin_paths(config, tv)
+                .await?
                 .into_iter()
-                .map(|bin| bin_path.join(bin))
-            {
-                if bin_path.exists() && file::is_executable(&bin_path) {
-                    return Ok(Some(bin_path));
-                }
-            }
-        }
-        Ok(None)
+                .filter(|p| p.parent().is_some()),
+            bin_name,
+            false,
+        ))
+    }
+
+    /// [`Self::which`] narrowed to a path the OS can spawn.
+    ///
+    /// Same bin paths, same directory-major traversal, stricter predicate: a shebang-only
+    /// `npm` or an `npm.ps1` is skipped and the search *continues*, so an `npm.cmd` beside
+    /// them wins. `None` here is a stronger statement than [`Self::which`]'s — "this tool
+    /// provides nothing spawnable for `bin_name`" — which is what makes a gate built on it
+    /// trustworthy.
+    ///
+    /// No backend overrides [`Self::which`], so the two can never disagree about which
+    /// directories they searched.
+    async fn which_spawnable(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        bin_name: &str,
+    ) -> eyre::Result<Option<PathBuf>> {
+        Ok(which_in_dirs(
+            self.list_bin_paths(config, tv)
+                .await?
+                .into_iter()
+                .filter(|p| p.parent().is_some()),
+            bin_name,
+            true,
+        ))
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
@@ -2890,6 +3167,83 @@ pub trait Backend: Debug + Send + Sync {
             return Some(bin);
         }
         self.dependency_which(config, bin).await
+    }
+
+    /// The spawnable path for a dependency program: the same three sources in the same
+    /// preference order as [`Self::dependency_path_for_install`] — the install's own
+    /// toolset, then PATH, then the dependency toolset — except every candidate must be
+    /// something the OS can launch.
+    ///
+    /// Returns `None` only when *nothing spawnable* exists in any of them, which is
+    /// strictly stronger than `dependency_path_for_install`'s `None`: a `pipx.ps1`, a
+    /// `pipx.vbs` or a shebang-only `pipx.pyz` satisfies that one, while this one steps
+    /// past it and keeps looking. Use this for gate and bail decisions so that "we found
+    /// it" and "we can run it" stop being two different questions.
+    ///
+    /// On unix this is identical to `dependency_path_for_install`: `executable_names`
+    /// yields one name, `can_execute_directly` *is* `is_executable`, and both the
+    /// `is_file()` and shim filters are `cfg!(windows)`-gated.
+    async fn spawnable_dependency(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+        bin: &str,
+    ) -> Option<PathBuf> {
+        if let Some(ts) = ts
+            && let Some(bin) = ts.which_bin_spawnable(config, bin).await
+        {
+            return Some(bin);
+        }
+        if let Some(bin) = which_non_pristine_spawnable(bin) {
+            return Some(bin);
+        }
+        let ts = self.dependency_toolset(config).await.ok()?;
+        ts.which_bin_spawnable(config, bin).await
+    }
+
+    /// The program to hand `CmdLineRunner::new` or `cmd!` for `bin`.
+    ///
+    /// On Windows: a resolved absolute path when one spawnable candidate was found. mise's
+    /// own lookup is PATHEXT-aware — `executable_names` expands the
+    /// `windows_executable_extensions` setting — but `Command::new` is not: std only ever
+    /// appends `.exe` to a bare name and then reports "program not found". mise's node
+    /// install ships `npm` (a `#!/usr/bin/env bash` script), `npm.cmd` and `npm.ps1` but no
+    /// `npm.exe`, and on Windows the node plugin puts the install root itself on PATH;
+    /// pipx from scoop or `pip install pipx` is only ever `pipx.cmd` (discussion #5333).
+    /// Handing over the resolved path skips std's weaker second lookup — std routes
+    /// `.cmd`/`.bat` through cmd.exe with escaped arguments, the same way the `pip.cmd`
+    /// wrappers mise synthesizes for Windows python are already run.
+    ///
+    /// Falls back to the bare name — today's behavior on every platform — when nothing
+    /// spawnable resolved. The child still receives a PATH built from the toolset, so the
+    /// fallback *is* the old code path and a genuinely missing program produces exactly the
+    /// error it produces today.
+    ///
+    /// Unix keeps the bare name on purpose, and `cfg!(windows)` short-circuits so it does
+    /// no filesystem work to get there. The unix spawn already works, and it is the child
+    /// PATH that decides between a mise-managed tool and a system one
+    /// (`e2e/backend/test_pipx_direct_dependencies` asserts that preference). Resolving
+    /// there would move that decision out of the child's PATH and into mise.
+    ///
+    /// Returns `OsString`, and that is load-bearing rather than cosmetic: duct implements
+    /// `IntoExecutablePath for PathBuf` as `Path::new(".").join(path)`, so a `PathBuf` in a
+    /// `cmd!` program position becomes `./npm` and stops being a PATH lookup at all. duct's
+    /// `OsString` impl returns the value verbatim, and std's `Command::new` never dotifies.
+    async fn spawn_program(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+        bin: &str,
+    ) -> OsString {
+        let resolved = if cfg!(windows) {
+            self.spawnable_dependency(config, ts, bin).await
+        } else {
+            None
+        };
+        match resolved {
+            Some(path) => path.into_os_string(),
+            None => OsString::from(bin),
+        }
     }
 
     /// Check if a required dependency is available and show a warning if not.
