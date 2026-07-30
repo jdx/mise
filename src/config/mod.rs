@@ -452,6 +452,20 @@ impl Config {
         find_monorepo_root(&self.config_files)
     }
 
+    pub(crate) fn monorepo_lockfile_discovery_key(
+        &self,
+    ) -> Option<(PathBuf, Option<bool>, Vec<String>)> {
+        let cf = find_monorepo_config(&self.config_files)?;
+        let monorepo = cf.monorepo();
+        Some((
+            cf.get_path().to_path_buf(),
+            monorepo.and_then(|config| config.lockfile),
+            monorepo
+                .map(|config| config.config_roots.clone())
+                .unwrap_or_default(),
+        ))
+    }
+
     /// Discovers the provider-neutral workspace project graph and applies the
     /// explicit overrides from the active monorepo root.
     pub fn workspace_project_graph(&self) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
