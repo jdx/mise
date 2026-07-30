@@ -907,6 +907,11 @@ impl<'a> CmdLineRunner<'a> {
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         RUNNING_PIDS.lock().unwrap().insert(id);
+        #[cfg(panic = "abort")]
+        if std::env::var_os("MISE_TEST_ABORT_AFTER_SPAWN").is_some() {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            panic!("intentional abort-profile child cleanup test");
+        }
         if is_cancelled() {
             #[cfg(unix)]
             signal_process_tree(id, nix::sys::signal::SIGINT);
