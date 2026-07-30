@@ -122,7 +122,7 @@ jobs:
       - name: Build abort-profile binary
         run: >-
           cargo build --profile serious --no-default-features
-          --features vfox/vendored-lua
+          --features rustls-native-roots,self_update,vfox/vendored-lua
       - name: Verify panics terminate spawned process groups
         shell: bash
         run: |
