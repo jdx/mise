@@ -3,9 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-#[cfg(not(windows))]
-use crate::file::is_executable;
-use crate::file::{display_path, replace_path};
+use crate::file::{can_execute_directly, display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
 use crate::task::task_cache::CommandInput;
@@ -1800,30 +1798,31 @@ impl TaskExecutor {
     }
 }
 
-/// Check if a file can be executed directly by the OS without a shell wrapper.
-/// On Unix, this checks the executable permission bit.
-/// On Windows, this checks for a known executable extension (.bat, .ps1, etc.)
-/// — shebang-only files need to be run through a shell.
-fn can_execute_directly(path: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        // .ps1 files need pwsh -File, they can't be executed directly
-        if path.extension().is_some_and(|e| e == "ps1") {
-            return false;
-        }
-        crate::file::has_known_executable_extension(path)
-    }
-    #[cfg(not(windows))]
-    {
-        is_executable(path)
-    }
-}
-
 /// Determine the shell from a file's extension.
 /// e.g. `.ps1` → `["pwsh", "-File"]`
+///
+/// This covers exactly the extensions [`crate::file::can_execute_directly`] rejects as
+/// interpreter-only, so every file the spawn predicate turns down has an explicit
+/// interpreter here rather than falling through to `windows_default_file_shell_args`.
+///
+/// `.vbs` names `cscript`, the *console* script host, instead of letting `cmd /c` resolve
+/// the file association: the registered handler is whichever host the machine has, and
+/// `wscript` — the Windows-based host — writes its output to message boxes rather than the
+/// pipes mise reads. Naming the console host keeps task output capturable, the same reason
+/// `.ps1` names `pwsh -File`. `//nologo` keeps the banner out of the task's output.
+///
+/// That arm is `cfg(windows)`-only because `cscript` does not exist elsewhere, and this
+/// function is not gated — selecting it on unix would replace the configured default file
+/// shell with a program that cannot be found. `.ps1` needs no gate: `pwsh` is
+/// cross-platform, which is why that arm predates this and was never gated.
+///
+/// Matched case-insensitively because `can_execute_directly` is, so `TASK.PS1` cannot be
+/// rejected there and then miss its interpreter here.
 fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
-    match path.extension()?.to_str()? {
+    match path.extension()?.to_str()?.to_lowercase().as_str() {
         "ps1" => Some(vec!["pwsh".to_string(), "-File".to_string()]),
+        #[cfg(windows)]
+        "vbs" => Some(vec!["cscript".to_string(), "//nologo".to_string()]),
         _ => None,
     }
 }
@@ -1956,6 +1955,62 @@ mod tests {
         env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
         env.insert("OTHER".to_string(), "unchanged".to_string());
         env
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_shell_from_extension_has_a_mapping_for_every_interpreter_only_extension() {
+        // The invariant, enforced rather than merely documented: an extension that
+        // `file::can_execute_directly` rejects as interpreter-only must be named in
+        // `shell_from_extension`, or the task silently falls through to
+        // `windows_default_file_shell_args` — and for .vbs that means whichever script host
+        // the machine's file association points at, where `wscript` writes to message boxes
+        // instead of the pipes mise reads.
+        //
+        // Iterating the list is the point. `shell_from_extension` cannot match against it
+        // directly because that function is not cfg(windows)-gated while the list is, so
+        // adding an entry there without a mapping here would otherwise go unnoticed.
+        for ext in crate::file::INTERPRETER_ONLY_EXTENSIONS {
+            let path = PathBuf::from(format!("task.{ext}"));
+            assert!(
+                shell_from_extension(&path).is_some(),
+                "{ext} is rejected as interpreter-only but has no interpreter mapping"
+            );
+        }
+        // The console host specifically, and case-insensitively.
+        for name in ["task.vbs", "task.VBS"] {
+            assert_eq!(
+                shell_from_extension(Path::new(name)),
+                Some(vec!["cscript".to_string(), "//nologo".to_string()])
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_shell_from_extension_leaves_vbs_to_the_default_shell_off_windows() {
+        // `cscript` is Windows-only, so selecting it here would swap the configured default
+        // file shell for a program that does not exist. `shell_from_extension` is not
+        // cfg-gated, so the arm has to be.
+        assert_eq!(shell_from_extension(Path::new("task.vbs")), None);
+        assert_eq!(shell_from_extension(Path::new("task.VBS")), None);
+    }
+
+    #[test]
+    fn test_shell_from_extension_maps_ps1_on_every_platform() {
+        // `pwsh` is cross-platform, so this arm is deliberately ungated. Case-insensitive
+        // because the predicate that rejects `.ps1` for direct execution is.
+        assert_eq!(
+            shell_from_extension(Path::new("task.ps1")),
+            Some(vec!["pwsh".to_string(), "-File".to_string()])
+        );
+        assert_eq!(
+            shell_from_extension(Path::new("task.PS1")),
+            Some(vec!["pwsh".to_string(), "-File".to_string()])
+        );
+        // Anything else keeps using the configured default file shell.
+        assert_eq!(shell_from_extension(Path::new("task.sh")), None);
+        assert_eq!(shell_from_extension(Path::new("task")), None);
     }
 
     #[test]

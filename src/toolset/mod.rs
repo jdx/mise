@@ -580,6 +580,25 @@ impl Toolset {
         None
     }
 
+    /// [`Self::which_bin`] narrowed to a path the OS can spawn, for
+    /// [`Backend::spawn_program`] and [`Backend::spawnable_dependency`]. `which_bin` itself
+    /// is untouched because `mise which`, shim dispatch and auto-install all depend on its
+    /// answer.
+    pub async fn which_bin_spawnable(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Option<PathBuf> {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed).unwrap();
+        for (p, tv) in installed {
+            if let Ok(Some(bin)) = Box::pin(p.which_spawnable(config, &tv, bin_name)).await {
+                return Some(bin);
+            }
+        }
+        None
+    }
+
     pub async fn list_rtvs_with_bin(
         &self,
         config: &Arc<Config>,

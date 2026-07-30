@@ -792,6 +792,54 @@ pub fn has_shebang(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Extensions that `windows_executable_extensions` lists but `CreateProcess` cannot
+/// launch: they need an interpreter (`pwsh -File`, `wscript`/`cscript`). `.bat` and
+/// `.cmd` are not here — std routes those through cmd.exe with escaped arguments.
+///
+/// `pub(crate)` so `task::task_executor` can assert that its `shell_from_extension` names
+/// an interpreter for every entry. That function is not `cfg(windows)`-gated, so it cannot
+/// match against this list directly; the correspondence is enforced by a test instead.
+#[cfg(windows)]
+pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
+
+/// Check if a file can be executed directly by the OS without a shell wrapper.
+/// On Unix, this checks the executable permission bit.
+/// On Windows, this checks for a known executable extension (.bat, .cmd, .exe, ...)
+/// minus the ones that only an interpreter can run.
+///
+/// Distinct from [`is_executable`], which on Windows deliberately also accepts a
+/// shebang-only file. Callers that hand the path to `Command::new` need this one:
+/// `CreateProcess` can run `.exe`/`.com`/`.cmd`/`.bat`, but not a `.ps1`, a `.vbs`,
+/// or a script that only carries a shebang.
+///
+/// Note that on Windows this never touches the filesystem — it is pure extension
+/// inspection, so it answers true for a `foo.exe` that does not exist. `is_executable`
+/// checks `is_file()` inline; this one does not. A lookup that walks candidate paths must
+/// compose the two, which is what `backend::is_spawnable` does.
+pub fn can_execute_directly(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        // Compared case-insensitively, the way has_known_executable_extension does:
+        // Windows extensions are not case-sensitive, so PIPX.PS1 is the same file.
+        if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                INTERPRETER_ONLY_EXTENSIONS
+                    .iter()
+                    .any(|only| ext.eq_ignore_ascii_case(only))
+            })
+        {
+            return false;
+        }
+        has_known_executable_extension(path)
+    }
+    #[cfg(not(windows))]
+    {
+        is_executable(path)
+    }
+}
+
 #[cfg(unix)]
 pub fn make_executable<P: AsRef<Path>>(path: P) -> Result<()> {
     trace!("chmod +x {}", display_path(&path));
