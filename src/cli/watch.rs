@@ -148,14 +148,7 @@ impl Watch {
             args.push("--on-busy-update".to_string());
             args.push(self.watchexec.on_busy_update.to_string());
         }
-        // Forward --wrap-process to watchexec when it differs from watchexec's
-        // default ("group"). Without this the flag is parsed but dropped, so e.g.
-        // `mise watch --wrap-process none` had no effect and a TUI task launched in
-        // the default process group would block on terminal I/O (#10212).
-        if self.watchexec.wrap_process != WrapMode::Group {
-            args.push("--wrap-process".to_string());
-            args.push(self.watchexec.wrap_process.to_string());
-        }
+        args.extend(wrap_process_args(self.watchexec.wrap_process));
         if !self.watchexec.signal_map.is_empty() {
             for signal_map in &self.watchexec.signal_map {
                 args.push("--map-signal".to_string());
@@ -1104,8 +1097,8 @@ pub struct WatchexecArgs {
 
     /// Configure how the process is wrapped
     ///
-    /// By default, Watchexec will run the command in a process group in Unix, and in a Job Object
-    /// in Windows.
+    /// By default, Watchexec will run the command in a session on macOS, in a process group on
+    /// other Unix platforms, and in a Job Object in Windows.
     ///
     /// Some Unix programs prefer running in a session, while others do not work in a process group.
     ///
@@ -1115,9 +1108,8 @@ pub struct WatchexecArgs {
 		long,
 		help_heading = OPTSET_COMMAND,
 		value_name = "MODE",
-		default_value = "group",
     )]
-    pub wrap_process: WrapMode,
+    pub wrap_process: Option<WrapMode>,
 
     /// Alert when commands start and end
     ///
@@ -1454,6 +1446,21 @@ pub enum OnBusyUpdate {
     Signal,
 }
 
+/// The `--wrap-process` arguments to pass on to watchexec, i.e. the user's choice or nothing.
+///
+/// The flag used to be parsed and then dropped entirely, so `--wrap-process none` had no effect
+/// and a TUI task stayed stuck in a process group waiting on terminal I/O (#10212).
+///
+/// mise deliberately has no default of its own here. watchexec's `WRAP_DEFAULT` is
+/// platform-dependent — `"session"` on macOS, `"group"` elsewhere — so any fixed default mise
+/// picked would be wrong on some platform, both in `--help` and when deciding that a value is
+/// "the same as the default" and can be dropped. Forwarding exactly what was asked for, and
+/// nothing when nothing was asked for, leaves that choice where it belongs.
+fn wrap_process_args(mode: Option<WrapMode>) -> Vec<String> {
+    mode.map(|m| vec!["--wrap-process".to_string(), m.to_string()])
+        .unwrap_or_default()
+}
+
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub enum WrapMode {
@@ -1503,7 +1510,7 @@ pub enum ColourMode {
 mod tests {
     use super::{
         WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
-        relativize_source, source_watch_dir,
+        relativize_source, source_watch_dir, wrap_process_args,
     };
     use std::path::{Path, PathBuf};
 
@@ -1523,6 +1530,32 @@ mod tests {
         assert_eq!(WrapMode::Group.to_string(), "group");
         assert_eq!(WrapMode::Session.to_string(), "session");
         assert_eq!(WrapMode::None.to_string(), "none");
+    }
+
+    #[test]
+    fn wrap_process_is_forwarded_verbatim_when_given() {
+        // Every mode reaches watchexec, including `group`. The previous `!= WrapMode::Group`
+        // check dropped an explicit `group`, which on macOS left the command running under
+        // watchexec's own default of `session` instead.
+        assert_eq!(
+            wrap_process_args(Some(WrapMode::Group)),
+            s(&["--wrap-process", "group"])
+        );
+        assert_eq!(
+            wrap_process_args(Some(WrapMode::Session)),
+            s(&["--wrap-process", "session"])
+        );
+        assert_eq!(
+            wrap_process_args(Some(WrapMode::None)),
+            s(&["--wrap-process", "none"])
+        );
+    }
+
+    #[test]
+    fn wrap_process_is_omitted_when_not_given() {
+        // Nothing is forwarded, so watchexec applies its own platform-dependent default
+        // (`session` on macOS, `group` elsewhere) rather than one mise guessed.
+        assert!(wrap_process_args(None).is_empty());
     }
 
     #[test]

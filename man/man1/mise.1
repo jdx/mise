@@ -4833,14 +4833,11 @@ Use key=value syntax. Multiple variables can be set by repeating the option.
 \fB\-\-wrap\-process\fR \fI<MODE>\fR
 Configure how the process is wrapped
 
-By default, Watchexec will run the command in a process group in Unix, and in a Job Object in Windows.
+By default, Watchexec will run the command in a session on macOS, in a process group on other Unix platforms, and in a Job Object in Windows.
 
 Some Unix programs prefer running in a session, while others do not work in a process group.
 
 Use 'group' to use a process group, 'session' to use a process session, and 'none' to run the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
-.RS
-\fIDefault: \fRgroup
-.RE
 .TP
 \fB\-N, \-\-notify\fR
 Alert when commands start and end
