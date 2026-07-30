@@ -41,6 +41,38 @@ hello:2
 hello:all
 ├── hello:2
 └── hello:1"
+
+cat <<EOF >>mise.toml
+
+[tasks.leaf]
+run = "echo leaf"
+
+[tasks.shared]
+depends = ["leaf"]
+run = "echo shared"
+
+[tasks.left]
+depends = ["shared"]
+run = "echo left"
+
+[tasks.right]
+depends = ["shared"]
+run = "echo right"
+
+[tasks.root]
+depends = ["left", "right"]
+run = "echo root"
+EOF
+
+compact_output="$(mise tasks deps --compact root)"
+assert_contains "printf '%s\n' \"$compact_output\"" "shared (already shown)"
+leaf_count="$(printf '%s\n' "$compact_output" | grep -c 'leaf')"
+if [[ $leaf_count -ne 1 ]]; then
+  echo "Expected compact dependency output to expand leaf once, got $leaf_count"
+  printf '%s\n' "$compact_output"
+  exit 1
+fi
+
 hello_all_info="$(mise tasks hello:all)"
 assert_contains "printf '%s\n' \"$hello_all_info\"" "Task: hello:all"
 assert_contains "printf '%s\n' \"$hello_all_info\"" "Description: Hello from all"

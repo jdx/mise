@@ -3704,7 +3704,11 @@ Examples:
     # Show dependencies in DOT format
     $ mise tasks deps --dot
 
+    # Collapse repeated dependencies
+    $ mise tasks deps --compact
+
 """#
+        flag --compact help="Collapse repeated dependencies after their first occurrence"
         flag --dot help="Display dependencies in DOT format"
         flag --hidden help="Show hidden tasks"
         arg "[TASKS]…" help=#"""

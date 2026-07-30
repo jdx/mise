@@ -215,7 +215,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
-- [`mise tasks deps [--dot] [--hidden] [TASKS]…`](/cli/tasks/deps.md)
+- [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks graph [-J --json] [--no-header]`](/cli/tasks/graph.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
