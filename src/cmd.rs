@@ -797,13 +797,25 @@ impl<'a> CmdLineRunner<'a> {
         Ok(())
     }
 
-    pub async fn execute_async(mut self) -> Result<()> {
+    pub async fn execute_async(self) -> Result<()> {
+        self.execute_async_with_cancel_check(|| false).await
+    }
+
+    /// Execute a command while preventing cancellation from being lost between
+    /// the pre-spawn check and PID registration.
+    pub async fn execute_async_with_cancel_check(
+        mut self,
+        is_cancelled: impl Fn() -> bool + Send + Sync,
+    ) -> Result<()> {
+        if is_cancelled() {
+            return Err(crate::errors::Error::TaskInterrupted.into());
+        }
         let read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
         if Settings::get().raw || self.raw {
             drop(read_lock);
             let _write_lock = RAW_LOCK.write().await;
-            return self.execute_raw_async().await;
+            return self.execute_raw_async_with_cancel_check(is_cancelled).await;
         }
         #[cfg(unix)]
         if should_use_pgroup() {
@@ -827,6 +839,12 @@ impl<'a> CmdLineRunner<'a> {
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         RUNNING_PIDS.lock().unwrap().insert(id);
+        if is_cancelled() {
+            #[cfg(unix)]
+            signal_process_tree(id, nix::sys::signal::SIGINT);
+            #[cfg(windows)]
+            kill_process_tree(id);
+        }
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         if let Some(stdout) = cp.stdout.take() {
@@ -1270,7 +1288,10 @@ impl<'a> CmdLineRunner<'a> {
         Ok(())
     }
 
-    async fn execute_raw_async(mut self) -> Result<()> {
+    async fn execute_raw_async_with_cancel_check(
+        mut self,
+        is_cancelled: impl Fn() -> bool + Send + Sync,
+    ) -> Result<()> {
         if self.stdin.is_none() {
             self.cmd.stdin(Stdio::inherit());
         }
@@ -1278,6 +1299,12 @@ impl<'a> CmdLineRunner<'a> {
         self.cmd.stderr(Stdio::inherit());
         let mut cp = self.spawn_async_with_etxtbsy_retry().await?;
         let id = cp.id().unwrap_or_default();
+        if is_cancelled() {
+            #[cfg(unix)]
+            signal_process_tree(id, nix::sys::signal::SIGINT);
+            #[cfg(windows)]
+            kill_process_tree(id);
+        }
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
         let status = cp.wait().await?;
         if let Some(g) = &timeout_guard {
@@ -1695,6 +1722,7 @@ where
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     use pretty_assertions::assert_eq;
@@ -1735,6 +1763,46 @@ mod tests {
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
         assert_eq!(observed_stdout.lock().unwrap().as_slice(), ["out"]);
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[tokio::test]
+    async fn test_execute_async_skips_pre_cancelled_command() {
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "exit 0"])
+            .execute_async_with_cancel_check(|| true)
+            .await
+            .unwrap_err();
+
+        assert!(crate::errors::Error::is_task_interrupted(&err));
+    }
+
+    #[tokio::test]
+    async fn test_execute_async_catches_cancellation_after_spawn() {
+        let checks = Arc::new(AtomicUsize::new(0));
+        let checks_c = checks.clone();
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "sleep 30"])
+            .execute_async_with_cancel_check(move || checks_c.fetch_add(1, Ordering::SeqCst) > 0)
+            .await
+            .unwrap_err();
+
+        assert!(crate::errors::Error::is_sigint(&err));
+        assert!(checks.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[tokio::test]
+    async fn test_execute_raw_async_catches_cancellation_after_spawn() {
+        let checks = Arc::new(AtomicUsize::new(0));
+        let checks_c = checks.clone();
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "sleep 30"])
+            .raw(true)
+            .execute_async_with_cancel_check(move || checks_c.fetch_add(1, Ordering::SeqCst) > 0)
+            .await
+            .unwrap_err();
+
+        assert!(crate::errors::Error::is_sigint(&err));
+        assert!(checks.load(Ordering::SeqCst) >= 2);
     }
 
     #[tokio::test]

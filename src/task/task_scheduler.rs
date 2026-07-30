@@ -10,7 +10,21 @@ use tokio::task::JoinSet;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
 
-pub type SchedMsg = (Task, Arc<Mutex<Deps>>);
+pub struct SchedMsg {
+    pub task: Task,
+    pub deps: Arc<Mutex<Deps>>,
+    pub allow_during_interruption: bool,
+}
+
+impl SchedMsg {
+    pub fn new(task: Task, deps: Arc<Mutex<Deps>>, allow_during_interruption: bool) -> Self {
+        Self {
+            task,
+            deps,
+            allow_during_interruption,
+        }
+    }
+}
 
 /// Schedules and executes tasks with concurrency control
 pub struct Scheduler {
@@ -103,7 +117,7 @@ impl Scheduler {
                             task.name,
                             task.args.join(" ")
                         );
-                        let _ = sched_tx.send((task, deps_clone.clone()));
+                        let _ = sched_tx.send(SchedMsg::new(task, deps_clone.clone(), false));
                     }
                     Ok(None) => {
                         trace!("main deps initial done");
@@ -130,7 +144,7 @@ impl Scheduler {
                             task.name,
                             task.args.join(" ")
                         );
-                        let _ = sched_tx.send((task, deps_clone.clone()));
+                        let _ = sched_tx.send(SchedMsg::new(task, deps_clone.clone(), false));
                     }
                     None => {
                         trace!("main deps completed");
@@ -151,51 +165,58 @@ impl Scheduler {
     /// - no tasks are in-flight AND
     /// - no tasks were recently drained
     ///
-    /// Or if should_stop returns true (for early exit due to failures)
+    /// Or if should_stop returns true (for early exit due to failures or interruption).
+    /// An interruption always stops new work, even in continue-on-error mode.
     pub async fn run_loop<F, Fut>(
         &mut self,
         main_done_rx: &mut tokio::sync::watch::Receiver<bool>,
         main_deps: Arc<Mutex<Deps>>,
         should_stop: impl Fn() -> bool,
+        was_interrupted: impl Fn() -> bool,
         continue_on_error: bool,
         mut spawn_job: F,
     ) -> Result<()>
     where
-        F: FnMut(Task, Arc<Mutex<Deps>>) -> Fut,
+        F: FnMut(Task, Arc<Mutex<Deps>>, bool) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
     {
         let mut sched_rx = self.take_receiver().expect("receiver already taken");
-        let mut failure_cleanup_done = false;
+        let mut stop_cleanup_done = false;
 
         loop {
             // Drain ready tasks without awaiting
             let mut drained_any = false;
             loop {
                 match sched_rx.try_recv() {
-                    Ok((task, deps_for_remove)) => {
+                    Ok(SchedMsg {
+                        task,
+                        deps: deps_for_remove,
+                        allow_during_interruption,
+                    }) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if should_stop() && !continue_on_error {
+                        if should_stop() && (!continue_on_error || was_interrupted()) {
                             // Still allow post-dep (cleanup) tasks to run on failure,
                             // but only if their parent was actually started
                             let mut deps = deps_for_remove.lock().await;
-                            if !deps.is_runnable_post_dep(&task) {
+                            if !allow_during_interruption && !deps.is_runnable_post_dep(&task) {
                                 deps.remove(&task);
                                 continue;
                             }
                             drop(deps);
                         }
-                        spawn_job(task, deps_for_remove).await?;
+                        spawn_job(task, deps_for_remove, allow_during_interruption).await?;
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
                 }
             }
 
-            // Check if we should stop early due to failure (run cleanup only once)
-            if should_stop() && !continue_on_error && !failure_cleanup_done {
-                failure_cleanup_done = true;
-                trace!("scheduler: stopping early due to failure, cleaning up non-post-dep tasks");
+            // Check if we should stop early due to failure or interruption
+            // (run cleanup only once).
+            if should_stop() && (!continue_on_error || was_interrupted()) && !stop_cleanup_done {
+                stop_cleanup_done = true;
+                trace!("scheduler: stopping early, cleaning up non-post-dep tasks");
                 // Clean up tasks that shouldn't run: non-post-deps and post-deps whose
                 // parent was never started. Use batch removal so intermediate emit_leaves
                 // calls don't schedule post-deps of never-started tasks.
@@ -223,17 +244,23 @@ impl Scheduler {
             // Await either new work or main_done change
             tokio::select! {
                 m = sched_rx.recv() => {
-                    if let Some((task, deps_for_remove)) = m {
+                    if let Some(SchedMsg {
+                        task,
+                        deps: deps_for_remove,
+                        allow_during_interruption,
+                    }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if should_stop() && !continue_on_error {
+                        if should_stop() && (!continue_on_error || was_interrupted()) {
                             let mut deps = deps_for_remove.lock().await;
-                            if !deps.is_runnable_post_dep(&task) {
+                            if !allow_during_interruption
+                                && !deps.is_runnable_post_dep(&task)
+                            {
                                 deps.remove(&task);
                                 continue;
                             }
                             drop(deps);
                         }
-                        spawn_job(task, deps_for_remove).await?;
+                        spawn_job(task, deps_for_remove, allow_during_interruption).await?;
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
                     }

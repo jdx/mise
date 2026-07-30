@@ -12,6 +12,14 @@ assert_exit_code() {
   assert_not_contains_text "$output" "exit with status"
 }
 
+run_in_new_session() {
+  if command -v setsid >/dev/null 2>&1; then
+    exec setsid "$@"
+  fi
+  exec python3 -c \
+    'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
+}
+
 # Clap help and errors should keep their conventional statuses without exposing
 # the internal exit request used to unwind the command.
 assert_exit_code 0 mise --help
@@ -31,8 +39,108 @@ touch "$READY_FILE"
 trap '' INT TERM
 while true; do sleep 1; done
 """
+
+[tasks.interrupt]
+run = """
+touch "$READY_FILE"
+sleep 30
+"""
+
+[tasks.handle-interrupt]
+run = """
+touch "$READY_FILE"
+trap 'exit 0' INT
+while true; do sleep 1; done
+"""
+
+[tasks.after-interrupt]
+depends = ["interrupt"]
+run = 'touch "$AFTER_FILE"'
+
+[tasks.after-handled-interrupt]
+depends = ["handle-interrupt"]
+run = 'touch "$AFTER_FILE"'
+
+[tasks.fail-before-interrupt]
+run = """
+touch "$FAILED_FILE"
+exit 23
+"""
+
+[tasks.wait-for-interrupt]
+run = """
+touch "$READY_FILE"
+sleep 30
+"""
 EOF
 assert_exit_code 23 mise run fail
+
+# A task stopped by the first Ctrl-C is a user interruption, not a task
+# failure. It should exit with the conventional status without printing an
+# error report or launching later work, even with --continue-on-error.
+ready_file="$TMPDIR/exit-status-interrupt-ready"
+after_file="$TMPDIR/exit-status-after-interrupt"
+output_file="$TMPDIR/exit-status-interrupt-output"
+READY_FILE="$ready_file" AFTER_FILE="$after_file" \
+  mise run --continue-on-error after-interrupt >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "interruptible task child" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+output="$(cat "$output_file")"
+if [[ $status -ne 130 ]]; then
+  fail "mise run expected exit code 130 after Ctrl-C, got $status: $output"
+fi
+assert_not_contains_text "$output" "exited with non-zero status"
+assert_not_contains_text "$output" "task failed"
+assert_not_contains_text "$output" "task(s) failed"
+if [[ -e $after_file ]]; then
+  fail "dependent task ran after Ctrl-C with --continue-on-error"
+fi
+
+# Cancellation is authoritative even if the task handles SIGINT and exits
+# successfully. Dependents must remain stopped and mise must still return 130.
+ready_file="$TMPDIR/exit-status-handled-ready"
+after_file="$TMPDIR/exit-status-after-handled"
+output_file="$TMPDIR/exit-status-handled-output"
+READY_FILE="$ready_file" AFTER_FILE="$after_file" \
+  mise run --continue-on-error after-handled-interrupt >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "SIGINT-handling task child" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+output="$(cat "$output_file")"
+if [[ $status -ne 130 ]]; then
+  fail "mise run expected exit code 130 after handled Ctrl-C, got $status: $output"
+fi
+if [[ -e $after_file ]]; then
+  fail "dependent task ran after handled Ctrl-C with --continue-on-error"
+fi
+
+# Ctrl-C takes precedence over a task failure that was already recorded while
+# another task was still running.
+ready_file="$TMPDIR/exit-status-after-failure-ready"
+failed_file="$TMPDIR/exit-status-prior-failure"
+output_file="$TMPDIR/exit-status-after-failure-output"
+READY_FILE="$ready_file" FAILED_FILE="$failed_file" \
+  mise run --continue-on-error --jobs 2 \
+  fail-before-interrupt ::: wait-for-interrupt >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "task running after a sibling failure" 30 "$mise_pid"
+wait_for_file "$failed_file" "failed task marker" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+output="$(cat "$output_file")"
+if [[ $status -ne 130 ]]; then
+  fail "mise run expected Ctrl-C to override a prior task failure, got $status: $output"
+fi
+assert_not_contains_text "$output" "task(s) failed"
 
 # Task execution handles the first Ctrl-C gracefully and force-exits on the
 # second. The forced path should still unwind command-scoped destructors.
@@ -40,7 +148,7 @@ ready_file="$TMPDIR/exit-status-child-ready"
 output_file="$TMPDIR/exit-status-child-output"
 # Isolate the process tree so the failure fallback can reap a child that
 # deliberately ignores INT and TERM.
-READY_FILE="$ready_file" setsid mise run wait >"$output_file" 2>&1 &
+READY_FILE="$ready_file" run_in_new_session mise run wait >"$output_file" 2>&1 &
 mise_pid=$!
 wait_for_file "$ready_file" "task child" 30 "$mise_pid"
 kill -INT "$mise_pid"

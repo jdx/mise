@@ -14,14 +14,14 @@ pub async fn exit_signal() -> i32 {
         if SHOW_CURSOR.load(Ordering::Relaxed) {
             let _ = Term::stderr().show_cursor();
         }
+        // Record the first task-mode interrupt before signalling children so
+        // their exit handlers can distinguish cancellation from task failure.
+        let should_exit = EXIT.load(Ordering::Relaxed) || CANCELLED.swap(true, Ordering::Relaxed);
         CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
-        if EXIT.load(Ordering::Relaxed) || CANCELLED.load(Ordering::Relaxed) {
+        if should_exit {
             debug!("Ctrl-C pressed, exiting...");
             return 1;
         }
-        // First ctrl-c when EXIT is false: mark as cancelled so a second
-        // ctrl-c will end the command and in-process operations can check the flag.
-        CANCELLED.store(true, Ordering::Relaxed);
     }
 }
 
