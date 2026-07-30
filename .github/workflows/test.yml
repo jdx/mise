@@ -227,29 +227,18 @@ jobs:
       - run: mise run lint
         env:
           HK_SKIP_STEPS: cargo-check
-      # MSRV uses a separate compiler and target directory, so it can run
-      # alongside the sequential stable Clippy checks without consuming
-      # another Namespace runner.
-      - name: Run MSRV and Clippy checks
-        run: |
-          set +e
-          CARGO_TARGET_DIR=target/msrv cargo msrv verify &
-          msrv_pid=$!
-
-          cargo clippy -- -D warnings
-          clippy_status=$?
-          if [ "$clippy_status" -eq 0 ]; then
-            cargo clippy --all-features --all-targets -- -D warnings
-            clippy_status=$?
-          fi
-
-          wait "$msrv_pid"
-          msrv_status=$?
-          if [ "$msrv_status" -ne 0 ]; then
-            echo "::error::MSRV verification failed"
-            exit "$msrv_status"
-          fi
-          exit "$clippy_status"
+      # Keep these checks on one Namespace runner while overlapping their work.
+      - parallel:
+          # MSRV uses a separate target directory so its older compiler cannot
+          # invalidate stable's build artifacts.
+          - name: Verify MSRV
+            run: cargo msrv verify
+            env:
+              CARGO_TARGET_DIR: target/msrv
+          - name: Run Clippy
+            run: |
+              cargo clippy -- -D warnings
+              cargo clippy --all-features --all-targets -- -D warnings
       - run: sccache --show-stats
         if: always()
 
