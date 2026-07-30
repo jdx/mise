@@ -3704,9 +3704,16 @@ packages:
         )
         .unwrap();
         let pkg = registry.package("haskell/cabal").unwrap();
+        let backend = Arc::new(BackendArg::new(
+            "cabal".to_string(),
+            Some("aqua:haskell/cabal/cabal-install".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend, "3.16.1.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "3.16.1.0".to_string());
         let versions = install_package_version_candidates("3.16.1.0", None, &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        let pkg = pkg.with_version(&versions, "linux", "amd64");
+        let pkg = AquaBackend::package_with_options_for_pkg(&tv, pkg, &versions).unwrap();
 
         assert_eq!(pkg.version_prefix.as_deref(), Some("cabal-install-v"));
         assert_eq!(pkg.format, "tar.xz");
