@@ -2389,9 +2389,7 @@ mod tests {
             .into_iter()
             .map(|s| s.to_string())
             .collect_vec();
-        #[allow(clippy::needless_collect)]
-        let find_up = FindUp::new(path, &filenames).collect::<Vec<_>>();
-        let mut find_up = find_up.into_iter();
+        let mut find_up = FindUp::new(path, &filenames);
         assert_eq!(
             find_up.next(),
             Some(dirs::HOME.join("cwd/.test-tool-versions"))

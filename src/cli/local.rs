@@ -102,7 +102,6 @@ pub fn get_parent_path() -> Result<PathBuf> {
         .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn local(
     config: &Arc<Config>,
     path: &Path,

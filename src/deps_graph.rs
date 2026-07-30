@@ -291,15 +291,10 @@ where
 mod tests {
     use super::*;
 
-    #[allow(clippy::ptr_arg)]
-    fn string_key(s: &String) -> String {
-        s.clone()
-    }
-
     #[test]
     fn test_empty_graph() {
         let deps: DepsGraph<String, String> =
-            DepsGraph::new(vec![], Vec::<(String, String)>::new(), string_key).unwrap();
+            DepsGraph::new(vec![], Vec::<(String, String)>::new(), String::clone).unwrap();
         assert!(deps.is_empty());
     }
 
@@ -311,7 +306,7 @@ mod tests {
             ("c".into(), "c".into()),
         ];
         let mut deps: DepsGraph<String, String> =
-            DepsGraph::new(nodes, Vec::<(String, String)>::new(), string_key).unwrap();
+            DepsGraph::new(nodes, Vec::<(String, String)>::new(), String::clone).unwrap();
         let mut rx = deps.subscribe();
 
         let mut emitted = vec![];
@@ -329,7 +324,7 @@ mod tests {
             ("c".into(), "c".into()),
         ];
         let edges: Vec<(String, String)> = vec![("b".into(), "a".into()), ("c".into(), "b".into())];
-        let mut deps = DepsGraph::new(nodes, edges, string_key).unwrap();
+        let mut deps = DepsGraph::new(nodes, edges, String::clone).unwrap();
         let mut rx = deps.subscribe();
 
         let first = rx.try_recv().unwrap().unwrap();
@@ -358,7 +353,7 @@ mod tests {
             ("d".into(), "d".into()),
         ];
         let edges: Vec<(String, String)> = vec![("b".into(), "a".into()), ("c".into(), "b".into())];
-        let mut deps = DepsGraph::new(nodes, edges, string_key).unwrap();
+        let mut deps = DepsGraph::new(nodes, edges, String::clone).unwrap();
         let mut rx = deps.subscribe();
 
         let mut initial = vec![];
@@ -387,7 +382,7 @@ mod tests {
             ("c".into(), "c".into()),
         ];
         let edges: Vec<(String, String)> = vec![("a".into(), "b".into()), ("b".into(), "a".into())];
-        let mut deps = DepsGraph::new(nodes, edges, string_key).unwrap();
+        let mut deps = DepsGraph::new(nodes, edges, String::clone).unwrap();
 
         let blocked = deps.blocked_keys();
         assert!(blocked.contains(&"a".to_string()));
@@ -406,7 +401,7 @@ mod tests {
     fn test_unknown_dep_error() {
         let nodes: Vec<(String, String)> = vec![("a".into(), "a".into())];
         let edges: Vec<(String, String)> = vec![("a".into(), "nonexistent".into())];
-        let result = DepsGraph::new(nodes, edges, string_key);
+        let result = DepsGraph::new(nodes, edges, String::clone);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unknown"));
     }
