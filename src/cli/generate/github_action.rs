@@ -27,7 +27,7 @@ impl GithubAction {
         if self.write {
             let path = Git::get_root()?
                 .join(".github/workflows")
-                .join(format!("{}.yml", &self.name));
+                .join(format!("{}.yml", self.name));
             file::write(&path, &output)?;
             miseprintln!("Wrote to {}", display_path(&path));
         } else {

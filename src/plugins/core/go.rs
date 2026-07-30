@@ -123,7 +123,7 @@ impl GoPlugin {
 
         let tarball_url_ = tarball_url.clone();
         let checksum_handle = tokio::spawn(async move {
-            let checksum_url = format!("{}.sha256", &tarball_url_);
+            let checksum_url = format!("{}.sha256", tarball_url_);
             HTTP.get_text(checksum_url).await
         });
         pr.set_message(format!("download {filename}"));
@@ -370,7 +370,7 @@ impl Backend for GoPlugin {
         };
         Ok(Some(format!(
             "{}/go{}.{}-{}.{}",
-            &settings.go.download_mirror, tv.version, platform, arch, ext
+            settings.go.download_mirror, tv.version, platform, arch, ext
         )))
     }
 
@@ -389,7 +389,7 @@ impl Backend for GoPlugin {
 
         // Go provides .sha256 files alongside each tarball
         let checksum = if !settings.go.skip_checksum {
-            let checksum_url = format!("{}.sha256", &url);
+            let checksum_url = format!("{}.sha256", url);
             fetch_checksum_from_file(&checksum_url, "sha256").await
         } else {
             None

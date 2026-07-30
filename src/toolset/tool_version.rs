@@ -297,7 +297,7 @@ impl ToolVersion {
         format!(
             "{}{}",
             style(&self.ba().short).blue().for_stderr(),
-            style(&format!("@{}", &self.version)).for_stderr()
+            style(&format!("@{}", self.version)).for_stderr()
         )
     }
     pub fn tv_pathname(&self) -> String {
@@ -699,7 +699,7 @@ impl ToolVersion {
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", &self.ba().full(), &self.version)
+        write!(f, "{}@{}", self.ba().full(), self.version)
     }
 }
 

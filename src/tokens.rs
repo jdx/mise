@@ -99,10 +99,10 @@ pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Op
     // the plain Command::new(program).args(args). The command body is the last
     // element of args (see credential_command_shell_from).
     #[cfg(windows)]
-    if let Some((body, flags)) = args.split_last() {
-        if let Some(c) = crate::path::cmd_verbatim_command(&program, flags, body) {
-            command = c;
-        }
+    if let Some((body, flags)) = args.split_last()
+        && let Some(c) = crate::path::cmd_verbatim_command(&program, flags, body)
+    {
+        command = c;
     }
     let result = command
         .env("PATH", &path_without_shims)

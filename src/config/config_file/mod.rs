@@ -756,7 +756,7 @@ async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
 impl Display for dyn ConfigFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let toolset = self.to_toolset().unwrap().to_string();
-        write!(f, "{}: {toolset}", &display_path(self.get_path()))
+        write!(f, "{}: {toolset}", display_path(self.get_path()))
     }
 }
 

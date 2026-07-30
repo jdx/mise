@@ -86,8 +86,8 @@ impl RemoteTaskGit {
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
         let key = format!(
             "{}{}",
-            &repo_structure.url_without_path,
-            &repo_structure.branch.to_owned().unwrap_or("".to_string())
+            repo_structure.url_without_path,
+            repo_structure.branch.to_owned().unwrap_or("".to_string())
         );
         hash::hash_sha256_to_str(&key)
     }
@@ -150,7 +150,7 @@ impl TaskFileProvider for RemoteTaskGit {
             trace!("Cache mode disabled");
         }
 
-        let tmp_destination = self.storage_path.join(format!("{}.clone-tmp", &cache_key));
+        let tmp_destination = self.storage_path.join(format!("{}.clone-tmp", cache_key));
         if tmp_destination.exists() {
             crate::file::remove_all(&tmp_destination)?;
         }

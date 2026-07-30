@@ -443,7 +443,7 @@ impl Plugin for AsdfPlugin {
         }
 
         let topic = Command::new(self.name.clone())
-            .about(format!("Commands provided by {} plugin", &self.name))
+            .about(format!("Commands provided by {} plugin", self.name))
             .subcommands(commands.into_iter().map(|cmd| {
                 Command::new(cmd.join("-"))
                     .about(format!("{} command", cmd.join("-")))

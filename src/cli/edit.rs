@@ -207,7 +207,7 @@ impl Edit {
     async fn interactive(&self, path: &Path) -> Result<()> {
         use crate::ui::progress_report::ProgressReport;
 
-        let title = format!("mise {} by @jdx", &*VERSION_PLAIN);
+        let title = format!("mise {} by @jdx", *VERSION_PLAIN);
 
         // Show loading spinner while setting up
         let pr = ProgressReport::new("edit".into());

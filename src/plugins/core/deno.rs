@@ -196,7 +196,7 @@ impl Backend for DenoPlugin {
             .ok_or_else(|| eyre::eyre!("Failed to get deno tarball URL"))?;
 
         // Deno provides .sha256sum files alongside each zip
-        let checksum_url = format!("{}.sha256sum", &url);
+        let checksum_url = format!("{}.sha256sum", url);
         let checksum = fetch_checksum_from_file(&checksum_url, "sha256").await;
 
         Ok(PlatformInfo {

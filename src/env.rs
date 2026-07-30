@@ -929,7 +929,7 @@ fn filename(path: &str) -> &str {
 fn get_token(keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|key| var(key).ok())
-        .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
+        .filter(|v| !v.trim().is_empty())
 }
 
 pub fn is_activated() -> bool {

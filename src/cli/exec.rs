@@ -473,18 +473,16 @@ where
     // `mise exec -- cmd /c "echo one" two` is not reinterpreted as a shell body.
     // cwd is intentionally inherited from the process here, matching the duct
     // fallback below; the resolved `cwd` above governs program lookup only.
-    if shell_body_mode {
-        if let (Some(prog), [.., last]) = (program.to_str(), args.as_slice()) {
-            let flags: Vec<String> = args[..args.len() - 1]
-                .iter()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect();
-            let body = last.to_string_lossy();
-            if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
-                match c.status()?.code() {
-                    Some(code) => return Err(crate::request_exit(code)),
-                    None => return Err(eyre!("command failed: terminated by signal")),
-                }
+    if shell_body_mode && let (Some(prog), [.., last]) = (program.to_str(), args.as_slice()) {
+        let flags: Vec<String> = args[..args.len() - 1]
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let body = last.to_string_lossy();
+        if let Some(mut c) = crate::path::cmd_verbatim_command(prog, &flags, &body) {
+            match c.status()?.code() {
+                Some(code) => return Err(crate::request_exit(code)),
+                None => return Err(eyre!("command failed: terminated by signal")),
             }
         }
     }
