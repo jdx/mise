@@ -439,7 +439,7 @@ Use key=value syntax. Multiple variables can be set by repeating the option.
 
 Configure how the process is wrapped
 
-By default, Watchexec will run the command in a process group in Unix, and in a Job Object in Windows.
+By default, Watchexec will run the command in a session on macOS, in a process group on other Unix platforms, and in a Job Object in Windows.
 
 Some Unix programs prefer running in a session, while others do not work in a process group.
 
@@ -450,8 +450,6 @@ Use 'group' to use a process group, 'session' to use a process session, and 'non
 - `group`
 - `session`
 - `none`
-
-**Default:** `group`
 
 ### `-N --notify`
 
