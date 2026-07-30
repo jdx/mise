@@ -32,3 +32,10 @@ self-hosted-runner:
 # organization. `null` means disabling configuration variables check.
 # Empty array means no configuration variable is allowed.
 config-variables: null
+
+paths:
+  .github/workflows/test.yml:
+    # actionlint 1.7.12 predates GitHub's native parallel step groups.
+    # Remove this once actionlint recognizes the `parallel` keyword.
+    ignore:
+      - 'step must run script with "run" section or run action with "uses" section'
