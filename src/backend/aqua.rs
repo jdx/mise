@@ -57,6 +57,17 @@ struct AquaOptions<'a> {
     values: BackendOptions<'a>,
 }
 
+struct MinisignCheck<'a> {
+    artifact_path: &'a Path,
+    artifact_filename: &'a str,
+    pkg: &'a AquaPackage,
+    config: &'a AquaMinisign,
+    checksum: Option<&'a AquaChecksum>,
+    version: &'a str,
+    download_dir: &'a Path,
+    progress: Option<&'a dyn SingleReport>,
+}
+
 impl<'a> AquaOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
@@ -1303,16 +1314,16 @@ impl AquaBackend {
                     .as_ref()
                     .filter(|minisign| minisign.enabled != Some(false))
                 {
-                    self.run_minisign_check(
-                        &artifact_path,
-                        &filename,
+                    self.run_minisign_check(MinisignCheck {
+                        artifact_path: &artifact_path,
+                        artifact_filename: &filename,
                         pkg,
-                        minisign,
-                        None,
-                        v,
-                        tmp_dir.path(),
-                        None,
-                    )
+                        config: minisign,
+                        checksum: None,
+                        version: v,
+                        download_dir: tmp_dir.path(),
+                        progress: None,
+                    })
                     .await?;
                 } else {
                     let (checksum_config, minisign) = Self::checksum_minisign_config(pkg).wrap_err(
@@ -1325,16 +1336,16 @@ impl AquaBackend {
                         .file_name()
                         .and_then(|f| f.to_str())
                         .unwrap_or("checksum");
-                    self.run_minisign_check(
-                        &checksum_path,
-                        checksum_filename,
+                    self.run_minisign_check(MinisignCheck {
+                        artifact_path: &checksum_path,
+                        artifact_filename: checksum_filename,
                         pkg,
-                        minisign,
-                        Some(checksum_config),
-                        v,
-                        tmp_dir.path(),
-                        None,
-                    )
+                        config: minisign,
+                        checksum: Some(checksum_config),
+                        version: v,
+                        download_dir: tmp_dir.path(),
+                        progress: None,
+                    })
                     .await?;
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
@@ -1537,67 +1548,74 @@ impl AquaBackend {
     }
 
     /// Download minisign signature and verify against an already-downloaded artifact.
-    #[allow(clippy::too_many_arguments)]
-    async fn run_minisign_check(
-        &self,
-        artifact_path: &Path,
-        artifact_filename: &str,
-        pkg: &AquaPackage,
-        minisign_config: &AquaMinisign,
-        checksum_config: Option<&AquaChecksum>,
-        v: &str,
-        download_dir: &Path,
-        pr: Option<&dyn SingleReport>,
-    ) -> Result<()> {
-        let template_ctx = checksum_config
-            .map(|checksum| checksum.template_ctx(pkg, v, os(), arch()))
+    async fn run_minisign_check(&self, check: MinisignCheck<'_>) -> Result<()> {
+        let template_ctx = check
+            .checksum
+            .map(|checksum| checksum.template_ctx(check.pkg, check.version, os(), arch()))
             .transpose()?;
-        let sig_path = match minisign_config._type() {
+        let sig_path = match check.config._type() {
             AquaMinisignType::GithubRelease => {
                 let asset = if let Some(ctx) = &template_ctx {
                     let mut overrides = ctx.clone();
-                    overrides.insert("Asset".to_string(), artifact_filename.to_string());
-                    pkg.parse_aqua_str(
-                        minisign_config.asset.as_ref().unwrap(),
-                        v,
+                    overrides.insert("Asset".to_string(), check.artifact_filename.to_string());
+                    check.pkg.parse_aqua_str(
+                        check.config.asset.as_ref().unwrap(),
+                        check.version,
                         &overrides,
                         os(),
                         arch(),
                     )?
                 } else {
-                    minisign_config.asset(pkg, artifact_filename, v, os(), arch())?
+                    check.config.asset(
+                        check.pkg,
+                        check.artifact_filename,
+                        check.version,
+                        os(),
+                        arch(),
+                    )?
                 };
                 let asset_strs = IndexSet::from([asset]);
                 let (repo_owner, repo_name) = resolve_repo_info(
-                    minisign_config.repo_owner.as_ref(),
-                    minisign_config.repo_name.as_ref(),
-                    pkg,
+                    check.config.repo_owner.as_ref(),
+                    check.config.repo_name.as_ref(),
+                    check.pkg,
                 );
-                let mut sig_pkg = pkg.clone();
+                let mut sig_pkg = check.pkg.clone();
                 sig_pkg.repo_owner = repo_owner;
                 sig_pkg.repo_name = repo_name;
                 let (url, download_url) = self
-                    .github_release_asset_urls(&sig_pkg, v, asset_strs)
+                    .github_release_asset_urls(&sig_pkg, check.version, asset_strs)
                     .await?;
-                let path = download_dir.join(get_filename_from_url(&url));
-                HTTP.download_file(&download_url, &path, pr).await?;
+                let path = check.download_dir.join(get_filename_from_url(&url));
+                HTTP.download_file(&download_url, &path, check.progress)
+                    .await?;
                 path
             }
             AquaMinisignType::Http => {
                 let url = if let Some(ctx) = &template_ctx {
-                    pkg.parse_aqua_str(minisign_config.url.as_ref().unwrap(), v, ctx, os(), arch())?
+                    check.pkg.parse_aqua_str(
+                        check.config.url.as_ref().unwrap(),
+                        check.version,
+                        ctx,
+                        os(),
+                        arch(),
+                    )?
                 } else {
-                    minisign_config.url(pkg, v, os(), arch())?
+                    check.config.url(check.pkg, check.version, os(), arch())?
                 };
-                let path = download_dir.join(format!("{artifact_filename}.minisig"));
-                HTTP.download_file(&url, &path, pr).await?;
+                let path = check
+                    .download_dir
+                    .join(format!("{}.minisig", check.artifact_filename));
+                HTTP.download_file(&url, &path, check.progress).await?;
                 path
             }
         };
-        let data = file::read(artifact_path)?;
+        let data = file::read(check.artifact_path)?;
         let sig = file::read_to_string(&sig_path)?;
         minisign::verify(
-            &minisign_config.public_key(pkg, v, os(), arch())?,
+            &check
+                .config
+                .public_key(check.pkg, check.version, os(), arch())?,
             &data,
             &sig,
         )?;
@@ -2461,16 +2479,16 @@ impl AquaBackend {
                     .is_some_and(|p| p.is_slsa() || p.is_github_attestations())
             {
                 let checksum_filename = checksum_asset_name;
-                self.run_minisign_check(
-                    &checksum_path,
-                    checksum_filename,
+                self.run_minisign_check(MinisignCheck {
+                    artifact_path: &checksum_path,
+                    artifact_filename: checksum_filename,
                     pkg,
-                    minisign,
-                    Some(checksum),
-                    v,
-                    &download_path,
-                    Some(ctx.pr.as_ref()),
-                )
+                    config: minisign,
+                    checksum: Some(checksum),
+                    version: v,
+                    download_dir: &download_path,
+                    progress: Some(ctx.pr.as_ref()),
+                })
                 .await?;
                 self.record_provenance(tv, ProvenanceType::Minisign);
             }
@@ -2570,16 +2588,17 @@ impl AquaBackend {
             ctx.pr.set_message("verify minisign".to_string());
             debug!("minisign: {:?}", minisign);
             let artifact_path = tv.download_path().join(filename);
-            self.run_minisign_check(
-                &artifact_path,
-                filename,
+            let download_path = tv.download_path();
+            self.run_minisign_check(MinisignCheck {
+                artifact_path: &artifact_path,
+                artifact_filename: filename,
                 pkg,
-                minisign,
-                None,
-                v,
-                &tv.download_path(),
-                Some(ctx.pr.as_ref()),
-            )
+                config: minisign,
+                checksum: None,
+                version: v,
+                download_dir: &download_path,
+                progress: Some(ctx.pr.as_ref()),
+            })
             .await?;
 
             // Record minisign provenance if no higher-priority verification already recorded
