@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+plugin_dir="$MISE_DATA_DIR/plugins/env-listing"
+mkdir -p "$plugin_dir/bin"
+mkdir -p version-tools version-tools-alt
+
+cat >version-tools/version-list-helper <<'EOF'
+#!/usr/bin/env bash
+echo "$1"
+EOF
+
+cat >version-tools-alt/version-list-helper <<'EOF'
+#!/usr/bin/env bash
+echo 3.4.5
+EOF
+
+cat >"$plugin_dir/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${FAIL_VERSION_SCRIPTS:-} == 1 ]]; then
+  exit 1
+fi
+version-list-helper "${VERSION_LIST_SECRET:-0.0.0}"
+EOF
+
+cat >"$plugin_dir/bin/latest-stable" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${FAIL_VERSION_SCRIPTS:-} == 1 ]]; then
+  exit 1
+fi
+version-list-helper "${VERSION_LIST_SECRET:-0.0.0}"
+EOF
+
+chmod +x \
+  "$plugin_dir/bin/list-all" \
+  "$plugin_dir/bin/latest-stable" \
+  version-tools/version-list-helper \
+  version-tools-alt/version-list-helper
+
+cat >mise.toml <<'EOF'
+[env]
+_.path = "./version-tools"
+VERSION_LIST_SECRET = "1.2.3"
+EOF
+
+assert "mise ls-remote env-listing" "1.2.3"
+assert "mise latest env-listing" "1.2.3"
+assert "FAIL_VERSION_SCRIPTS=1 MISE_OFFLINE=1 mise ls-remote env-listing" "1.2.3"
+assert "FAIL_VERSION_SCRIPTS=1 MISE_OFFLINE=1 mise latest env-listing" "1.2.3"
+
+cat >mise.toml <<'EOF'
+[env]
+_.path = "./version-tools"
+VERSION_LIST_SECRET = "2.3.4"
+EOF
+
+assert "MISE_OFFLINE=1 mise ls-remote env-listing" ""
+assert "mise ls-remote env-listing" "2.3.4"
+assert "mise latest env-listing" "2.3.4"
+
+cat >mise.toml <<'EOF'
+[env]
+_.path = "./version-tools-alt"
+VERSION_LIST_SECRET = "2.3.4"
+EOF
+
+assert "mise ls-remote env-listing" "3.4.5"
+assert "mise latest env-listing" "3.4.5"

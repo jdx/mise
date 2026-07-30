@@ -101,9 +101,9 @@ impl AsdfPlugin {
         }
         Ok(())
     }
-    pub fn fetch_remote_versions(&self) -> eyre::Result<Vec<String>> {
+    pub fn fetch_remote_versions(&self, script_man: &ScriptManager) -> eyre::Result<Vec<String>> {
         Settings::ensure_not_safe("executing asdf plugin scripts")?;
-        let cmd = self.script_man.cmd(&Script::ListAll);
+        let cmd = script_man.cmd(&Script::ListAll);
         let result = run_with_timeout(
             move || {
                 let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
@@ -112,7 +112,7 @@ impl AsdfPlugin {
             Settings::get().fetch_remote_versions_timeout(),
         )
         .wrap_err_with(|| {
-            let script = self.script_man.get_script_path(&Script::ListAll);
+            let script = script_man.get_script_path(&Script::ListAll);
             eyre!("Failed to run {}", display_path(script))
         })?;
         let stdout = String::from_utf8(result.stdout).unwrap();
@@ -138,12 +138,8 @@ impl AsdfPlugin {
             .map(|v| regex!(r"^v(\d+)").replace(v, "$1").to_string())
             .collect())
     }
-    pub fn fetch_latest_stable(&self) -> eyre::Result<Option<String>> {
-        let latest_stable = self
-            .script_man
-            .read(&Script::LatestStable)?
-            .trim()
-            .to_string();
+    pub fn fetch_latest_stable(&self, script_man: &ScriptManager) -> eyre::Result<Option<String>> {
+        let latest_stable = script_man.read(&Script::LatestStable)?.trim().to_string();
         Ok(if latest_stable.is_empty() {
             None
         } else {

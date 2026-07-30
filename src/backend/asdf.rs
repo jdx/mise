@@ -1,8 +1,10 @@
+use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsString;
 use std::fmt::{Debug, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::{Arc, Mutex};
 
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -10,6 +12,7 @@ use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::backend::normalize_idiomatic_contents;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
+use crate::config::env_directive::EnvResults;
 use crate::config::{Config, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::hash::hash_to_str;
@@ -37,7 +40,7 @@ pub struct AsdfBackend {
     plugin: Arc<AsdfPlugin>,
     plugin_enum: PluginEnum,
     cache: ExternalPluginCache,
-    latest_stable_cache: CacheManager<Option<String>>,
+    latest_stable_caches: Mutex<HashMap<String, Arc<CacheManager<Option<String>>>>>,
     alias_cache: CacheManager<Vec<(String, String)>>,
     idiomatic_filename_cache: CacheManager<Vec<String>>,
 }
@@ -56,13 +59,7 @@ impl AsdfBackend {
         let plugin_enum = PluginEnum::Asdf(plugin.clone());
         Self {
             cache: ExternalPluginCache::default(),
-            latest_stable_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("latest_stable.msgpack.z"),
-            )
-            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-            .with_fresh_file(plugin_path.clone())
-            .with_fresh_file(plugin_path.join("bin/latest-stable"))
-            .build(),
+            latest_stable_caches: Mutex::new(HashMap::new()),
             alias_cache: CacheManagerBuilder::new(ba.cache_path.join("aliases.msgpack.z"))
                 .with_fresh_file(plugin_path.clone())
                 .with_fresh_file(plugin_path.join("bin/list-aliases"))
@@ -106,6 +103,65 @@ impl AsdfBackend {
         file::create_dir_all(fp.parent().unwrap())?;
         file::write(fp, idiomatic_version)?;
         Ok(())
+    }
+
+    fn version_listing_cache_context(env_results: &EnvResults) -> Option<String> {
+        if env_results.env.is_empty()
+            && env_results.env_remove.is_empty()
+            && env_results.env_paths.is_empty()
+        {
+            return None;
+        }
+        let env = env_results
+            .env
+            .iter()
+            .map(|(key, (value, _))| (key, value))
+            .collect::<BTreeMap<_, _>>();
+        Some(hash_to_str(&(
+            env,
+            &env_results.env_remove,
+            &env_results.env_paths,
+        )))
+    }
+
+    fn script_man_for_version_listing(&self, env_results: &EnvResults) -> Result<ScriptManager> {
+        let mut sm = self.plugin.script_man.clone();
+        for key in &env_results.env_remove {
+            sm = sm.without_env(key);
+        }
+        for (key, (value, _)) in &env_results.env {
+            sm = sm.with_env(key, value);
+        }
+        if !env_results.env_paths.is_empty() {
+            let path_key = OsString::from(&*env::PATH_KEY);
+            let current_path = sm.env.get(&path_key).cloned().unwrap_or_default();
+            let mut paths = env_results.env_paths.clone();
+            if !current_path.is_empty() {
+                paths.extend(env::split_paths(&current_path));
+            }
+            sm = sm.with_env(path_key, env::join_paths(paths)?);
+        }
+        Ok(sm)
+    }
+
+    fn latest_stable_cache(&self, context: Option<&str>) -> Arc<CacheManager<Option<String>>> {
+        let map_key = context.unwrap_or_default().to_string();
+        self.latest_stable_caches
+            .lock()
+            .unwrap()
+            .entry(map_key)
+            .or_insert_with(|| {
+                let mut cm =
+                    CacheManagerBuilder::new(self.ba.cache_path.join("latest_stable.msgpack.z"))
+                        .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                        .with_fresh_file(self.plugin_path.clone())
+                        .with_fresh_file(self.plugin_path.join("bin/latest-stable"));
+                if let Some(context) = context {
+                    cm = cm.with_cache_key(context.to_string());
+                }
+                Arc::new(cm.build())
+            })
+            .clone()
     }
 
     async fn fetch_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<String>> {
@@ -262,8 +318,16 @@ impl Backend for AsdfBackend {
         false
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.plugin.fetch_remote_versions()?;
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        Ok(Self::version_listing_cache_context(
+            config.env_results().await?,
+        ))
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let env_results = config.env_results().await?;
+        let sm = self.script_man_for_version_listing(env_results)?;
+        let versions = self.plugin.fetch_remote_versions(&sm)?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {
@@ -273,14 +337,18 @@ impl Backend for AsdfBackend {
             .collect())
     }
 
-    async fn latest_stable_version(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let env_results = config.env_results().await?;
+        let context = Self::version_listing_cache_context(env_results);
+        let sm = self.script_man_for_version_listing(env_results)?;
+        let cache = self.latest_stable_cache(context.as_deref());
         timeout::run_with_timeout_async(
             || async {
                 if !self.plugin.has_latest_stable_script() {
                     return Ok(None);
                 }
-                self.latest_stable_cache
-                    .get_or_try_init(|| self.plugin.fetch_latest_stable())
+                cache
+                    .get_or_try_init(|| self.plugin.fetch_latest_stable(&sm))
                     .wrap_err_with(|| {
                         eyre!(
                             "Failed fetching latest stable version for plugin {}",
@@ -458,6 +526,106 @@ impl Debug for AsdfBackend {
 mod tests {
 
     use super::*;
+    use std::ffi::OsString;
+
+    fn env_results(entries: &[(&str, &str)], removals: &[&str], paths: &[&str]) -> EnvResults {
+        let mut results = EnvResults::default();
+        for (key, value) in entries {
+            results.env.insert(
+                (*key).to_string(),
+                ((*value).to_string(), PathBuf::from("mise.toml")),
+            );
+        }
+        results.env_remove = removals.iter().map(|key| (*key).to_string()).collect();
+        results.env_paths = paths.iter().map(PathBuf::from).collect();
+        results
+    }
+
+    #[test]
+    fn version_listing_cache_context_is_stable_and_tracks_changes() {
+        let first = env_results(
+            &[("TOKEN", "secret"), ("CHANNEL", "stable")],
+            &["REMOVE_ME"],
+            &["/first/bin"],
+        );
+        let reordered = env_results(
+            &[("CHANNEL", "stable"), ("TOKEN", "secret")],
+            &["REMOVE_ME"],
+            &["/first/bin"],
+        );
+        let changed = env_results(
+            &[("TOKEN", "other"), ("CHANNEL", "stable")],
+            &["REMOVE_ME"],
+            &["/first/bin"],
+        );
+        let changed_removal = env_results(
+            &[("TOKEN", "secret"), ("CHANNEL", "stable")],
+            &["OTHER"],
+            &["/first/bin"],
+        );
+        let changed_path = env_results(
+            &[("TOKEN", "secret"), ("CHANNEL", "stable")],
+            &["REMOVE_ME"],
+            &["/other/bin"],
+        );
+
+        assert_eq!(
+            AsdfBackend::version_listing_cache_context(&first),
+            AsdfBackend::version_listing_cache_context(&reordered)
+        );
+        assert_ne!(
+            AsdfBackend::version_listing_cache_context(&first),
+            AsdfBackend::version_listing_cache_context(&changed)
+        );
+        assert_ne!(
+            AsdfBackend::version_listing_cache_context(&first),
+            AsdfBackend::version_listing_cache_context(&changed_removal)
+        );
+        assert_ne!(
+            AsdfBackend::version_listing_cache_context(&first),
+            AsdfBackend::version_listing_cache_context(&changed_path)
+        );
+        assert_eq!(
+            AsdfBackend::version_listing_cache_context(&EnvResults::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn version_listing_script_manager_applies_config_env() {
+        let backend = AsdfBackend::from_arg("dummy".into());
+        let results = env_results(
+            &[("MISE_TEST_VERSION_CHANNEL", "private")],
+            &["REMOVE_ME"],
+            &["/first/bin", "/second/bin"],
+        );
+
+        let sm = backend.script_man_for_version_listing(&results).unwrap();
+
+        assert_eq!(
+            sm.env.get(&OsString::from("MISE_TEST_VERSION_CHANNEL")),
+            Some(&OsString::from("private"))
+        );
+        assert!(!sm.env.contains_key(&OsString::from("REMOVE_ME")));
+        let paths = env::split_paths(sm.env.get(&OsString::from(&*env::PATH_KEY)).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            &paths[..2],
+            &[PathBuf::from("/first/bin"), PathBuf::from("/second/bin")]
+        );
+    }
+
+    #[test]
+    fn version_listing_script_manager_can_add_paths_after_path_removal() {
+        let backend = AsdfBackend::from_arg("dummy".into());
+        let results = env_results(&[], &["PATH"], &["/only/bin"]);
+
+        let sm = backend.script_man_for_version_listing(&results).unwrap();
+        let paths = env::split_paths(sm.env.get(&OsString::from(&*env::PATH_KEY)).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, vec![PathBuf::from("/only/bin")]);
+    }
 
     #[tokio::test]
     async fn test_debug() {
