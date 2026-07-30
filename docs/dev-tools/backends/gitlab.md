@@ -81,8 +81,12 @@ The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOS
 mise can read tokens from [glab](https://gitlab.com/gitlab-org/cli) config as a fallback. It checks:
 
 1. `$GLAB_CONFIG_DIR/config.yml`
-2. `$XDG_CONFIG_HOME/glab-cli/config.yml` (defaults to `~/.config/glab-cli/config.yml`)
-3. `~/Library/Application Support/glab-cli/config.yml` (macOS)
+2. `~/.config/glab-cli/config.yml` — glab's legacy location on every platform, which glab still
+   prefers when the file is there
+3. `$XDG_CONFIG_HOME/glab-cli/config.yml`
+4. `~/Library/Application Support/glab-cli/config.yml` (macOS)
+5. `%LOCALAPPDATA%\glab-cli\config.yml` (Windows — glab resolves `XDG_CONFIG_HOME` to
+   `%LOCALAPPDATA%` there, unlike `gh`, which uses `%APPDATA%`)
 
 Disable this fallback with:
 

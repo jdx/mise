@@ -803,30 +803,76 @@ fn read_mise_github_tokens() -> Option<HashMap<String, String>> {
 /// Maps hostname (e.g. "github.com") to oauth_token.
 static GH_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_gh_hosts().unwrap_or_default());
 
-/// Resolve the path to gh CLI's hosts.yml, matching gh's own config resolution:
-/// 1. $GH_CONFIG_DIR/hosts.yml
-/// 2. $XDG_CONFIG_HOME/gh/hosts.yml (env::XDG_CONFIG_HOME handles the fallback to ~/.config)
-/// 3. ~/Library/Application Support/gh/hosts.yml (macOS native path from Go's os.UserConfigDir)
+/// Resolve the path to gh CLI's hosts.yml, following go-gh's own `ConfigDir()`:
+/// 1. `$GH_CONFIG_DIR/hosts.yml`
+/// 2. `$XDG_CONFIG_HOME/gh/hosts.yml` — only when that variable is actually set, which is gh's
+///    condition; `env::XDG_CONFIG_HOME` defaults to `~/.config` and so cannot express it
+/// 3. `%APPDATA%\GitHub CLI\hosts.yml` on Windows — gh checks `AppData` explicitly rather than
+///    going through XDG, so this is the default location there and mise never looked at it.
+///    Like gh, this branch is taken only when the variable is actually set.
+/// 4. `~/.config/gh/hosts.yml`, gh's own last branch, used as the fallback
+///
+/// The macOS candidate is kept for compatibility but does not correspond to a gh branch: gh
+/// uses `~/.config/gh` on macOS too.
 fn gh_hosts_path() -> Option<PathBuf> {
-    // Explicit GH_CONFIG_DIR takes priority
-    if let Ok(dir) = std::env::var("GH_CONFIG_DIR") {
+    // Explicit GH_CONFIG_DIR takes priority. Empty means unset, as in go-gh's
+    // `os.Getenv(ghConfigDir) != ""`; `var_os` rather than `var` so a non-UTF-8 directory is
+    // honoured instead of silently skipped.
+    if let Some(dir) = std::env::var_os("GH_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
         return Some(PathBuf::from(dir).join("hosts.yml"));
     }
-    // Try XDG path (env::XDG_CONFIG_HOME falls back to ~/.config)
-    let xdg_path = env::XDG_CONFIG_HOME.join("gh/hosts.yml");
-    if xdg_path.exists() {
-        return Some(xdg_path);
-    }
-    // Try macOS native config dir
-    #[cfg(target_os = "macos")]
-    {
-        let macos_path = dirs::HOME.join("Library/Application Support/gh/hosts.yml");
-        if macos_path.exists() {
-            return Some(macos_path);
-        }
-    }
-    // Fall back to XDG path even if it doesn't exist (will produce a trace log)
-    Some(xdg_path)
+
+    // When XDG_CONFIG_HOME is set it is both gh's next branch and the right thing to name in a
+    // trace if nothing is found; otherwise the branch gh would fall to on this platform.
+    // `var_path` treats an empty value as unset, matching go-gh's
+    // `os.Getenv(xdgConfigHome) != ""`.
+    let xdg_path = env::var_path("XDG_CONFIG_HOME").map(|dir| dir.join("gh/hosts.yml"));
+    let fallback = xdg_path.clone().unwrap_or_else(gh_default_hosts_path);
+
+    let candidates = xdg_path
+        .into_iter()
+        .chain(gh_native_hosts_paths())
+        .collect();
+    Some(tokens::first_existing_file(candidates, fallback))
+}
+
+/// `%APPDATA%\GitHub CLI\hosts.yml`, or `None` when `APPDATA` is unset or empty.
+///
+/// go-gh guards that branch with `os.Getenv(appData) != ""` and otherwise falls through to
+/// `~/.config/gh`, so the variable being absent is meaningful — synthesizing `~/AppData/Roaming`
+/// here would send mise to a directory gh would never have used.
+#[cfg(windows)]
+fn gh_appdata_hosts_path() -> Option<PathBuf> {
+    std::env::var_os("APPDATA")
+        .filter(|v| !v.is_empty())
+        .map(|v| PathBuf::from(v).join("GitHub CLI/hosts.yml"))
+}
+
+/// Where gh lands when neither `GH_CONFIG_DIR` nor `XDG_CONFIG_HOME` is set.
+#[cfg(windows)]
+fn gh_default_hosts_path() -> PathBuf {
+    gh_appdata_hosts_path().unwrap_or_else(|| dirs::HOME.join(".config/gh/hosts.yml"))
+}
+
+#[cfg(not(windows))]
+fn gh_default_hosts_path() -> PathBuf {
+    dirs::HOME.join(".config/gh/hosts.yml")
+}
+
+/// Platform-native locations gh may have written to, probed after the XDG one.
+#[cfg(target_os = "macos")]
+fn gh_native_hosts_paths() -> Vec<PathBuf> {
+    vec![dirs::HOME.join("Library/Application Support/gh/hosts.yml")]
+}
+
+#[cfg(windows)]
+fn gh_native_hosts_paths() -> Vec<PathBuf> {
+    gh_appdata_hosts_path().into_iter().collect()
+}
+
+#[cfg(all(not(target_os = "macos"), not(windows)))]
+fn gh_native_hosts_paths() -> Vec<PathBuf> {
+    Vec::new()
 }
 
 fn read_gh_hosts() -> Option<HashMap<String, String>> {
