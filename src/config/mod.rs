@@ -828,6 +828,10 @@ impl Config {
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         for path in Tracker::list_all()?.into_iter() {
+            if config_path_is_ignored(&path, false) {
+                debug!("skipping ignored tracked config: {}", display_path(&path));
+                continue;
+            }
             // Pre-check trust for config files that require it so tracked
             // config loading (e.g., during `mise upgrade`) never prompts.
             // Plain .tool-versions and idiomatic version files are safe to

@@ -8,7 +8,7 @@ cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
 idiomatic_version_file_enable_tools = ["dummy"]
 EOF
 
-mkdir idiomatic tool-versions templated other
+mkdir idiomatic tool-versions templated ignored other
 marker="$TMPDIR/mise-prune-tracked-config-pwned"
 
 echo "1.0.0" >idiomatic/.dummy-version
@@ -25,10 +25,17 @@ cat <<EOF >templated/.tool-versions
 dummy {{ exec(command="touch $marker") }}3.0.0
 EOF
 
+echo "4.0.0" >ignored/.dummy-version
+mise -C ignored install
+mise -C ignored trust --ignore .dummy-version
+
 cd other || exit 1
 output=$(MISE_YES=0 MISE_LOG_LEVEL=debug mise prune --dry-run --tools --raw 2>&1)
 
 assert_not_contains "echo '$output'" "dummy@1.0.0"
 assert_not_contains "echo '$output'" "dummy@2.0.0"
+assert_contains "echo '$output'" "dummy@3.0.0"
+assert_contains "echo '$output'" "dummy@4.0.0"
 assert_contains "echo '$output'" "skipping untrusted tracked config"
+assert_contains "echo '$output'" "skipping ignored tracked config"
 assert_fail "test -e '$marker'"
