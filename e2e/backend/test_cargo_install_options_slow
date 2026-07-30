@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+require_cmd cargo
+require_cmd git
+
+crate_dir="$PWD/option-test-crate"
+mkdir -p "$crate_dir/src"
+cat >"$crate_dir/Cargo.toml" <<'EOF'
+[package]
+name = "mise-cargo-option-test"
+version = "1.0.0"
+edition = "2024"
+
+[features]
+extra = []
+
+[[bin]]
+name = "mise-cargo-option-test"
+path = "src/main.rs"
+EOF
+cat >"$crate_dir/src/main.rs" <<'EOF'
+fn main() {
+    if cfg!(feature = "extra") {
+        println!("extra");
+    } else {
+        println!("default");
+    }
+}
+EOF
+(
+  cd "$crate_dir"
+  cargo generate-lockfile
+  git init -q
+  git config user.email "mise-e2e@example.com"
+  git config user.name "mise e2e"
+  git add Cargo.toml Cargo.lock src/main.rs
+  git commit -qm "initial"
+  git tag v1.0.0
+)
+
+export MISE_CARGO_BINSTALL=0
+export CARGO_HOME="$PWD/cargo-home"
+tool="cargo:file://$crate_dir"
+cat >mise.toml <<EOF
+[tools]
+"$tool" = { version = "tag:v1.0.0", crate = "mise-cargo-option-test" }
+EOF
+mise install
+assert "mise x -- mise-cargo-option-test" "default"
+
+cat >mise.toml <<EOF
+[tools]
+"$tool" = { version = "tag:v1.0.0", crate = "mise-cargo-option-test", features = "extra" }
+EOF
+assert_contains "mise install '$tool' --dry-run 2>&1" "would install"
+mise install
+assert "mise x -- mise-cargo-option-test" "extra"
+assert_contains "mise install '$tool' --dry-run 2>&1" "already installed"

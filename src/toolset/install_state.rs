@@ -652,25 +652,22 @@ pub fn clear_incomplete_marker_best_effort(short: &str, v: &str) {
     }
 }
 
-/// Path to the checksum file for a specific tool version
-/// Used to track changes in rolling releases (like "nightly")
-fn checksum_file_path(short: &str, v: &str) -> PathBuf {
-    dirs::INSTALLS
-        .join(short.to_kebab_case())
-        .join(v)
-        .join(".mise.checksum")
+/// Path to the checksum file for a specific tool version.
+/// Used to track changes in rolling releases (like "nightly").
+fn checksum_file_path(install_path: &Path) -> PathBuf {
+    install_path.join(".mise.checksum")
 }
 
 /// Store the checksum for a tool version (used for rolling release tracking)
-pub fn write_checksum(short: &str, v: &str, checksum: &str) -> Result<()> {
-    let path = checksum_file_path(short, v);
+pub fn write_checksum(install_path: &Path, checksum: &str) -> Result<()> {
+    let path = checksum_file_path(install_path);
     file::write(&path, checksum)?;
     Ok(())
 }
 
 /// Read the stored checksum for a tool version
-pub fn read_checksum(short: &str, v: &str) -> Option<String> {
-    let path = checksum_file_path(short, v);
+pub fn read_checksum(install_path: &Path) -> Option<String> {
+    let path = checksum_file_path(install_path);
     if path.exists() {
         file::read_to_string(&path).ok()
     } else {

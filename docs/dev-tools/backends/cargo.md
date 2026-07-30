@@ -100,6 +100,11 @@ For options that do not skip `cargo-binstall`, mise disables cargo-binstall's co
 runs `cargo install` itself only when cargo-binstall exits with code 94 to report that no prebuilt
 artifact is available.
 
+Mise records the effective `features`, `default-features`, `bin`, `crate`, and `locked` values with
+each installed Cargo version. Changing any of these options reinstalls the same version instead of
+reusing a binary built or selected with different options. Feature names are normalized, so changing
+their order or switching between a string and an array does not trigger an unnecessary reinstall.
+
 | Option                     | `cargo-binstall` behavior                                                                |
 | -------------------------- | ---------------------------------------------------------------------------------------- |
 | `features`                 | Skips `cargo-binstall`; requires `cargo install --features`.                             |

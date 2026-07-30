@@ -30,6 +30,9 @@ assert_contains "MISE_GITHUB_TOKEN=foobar GITHUB_API_TOKEN=barquz GITHUB_TOKEN=b
 
 # compile and quick-install should be disabled by default
 assert_contains "mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies compile,quick-install eza@0.18.24"
+install_path="$(mise where cargo:eza@0.18.24)"
+assert_contains "cat '$install_path/.mise-cargo-install.toml'" "default_features = true"
+assert_contains "cat '$install_path/.mise-cargo-install.toml'" "locked = true"
 
 # The setting should allow quick-install while compile remains disabled
 assert_contains "MISE_CARGO_BINSTALL_QUICKINSTALL=1 mise install -f cargo:eza@0.18.24 2>&1" "args=-y --disable-strategies compile eza@0.18.24"

@@ -5,6 +5,7 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
+use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 use url::Url;
 
@@ -23,6 +24,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
 use crate::errors::Error;
+use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
@@ -34,6 +36,18 @@ pub struct CargoBackend {
 
 const CARGO_BINSTALL_NO_FALLBACK_EXIT_CODE: i32 = 94;
 const CARGO_BINSTALL_DEFAULT_DISABLED_STRATEGIES: &[&str] = &["compile"];
+const CARGO_INSTALL_STATE_FILENAME: &str = ".mise-cargo-install.toml";
+
+#[derive(Debug, Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+struct CargoInstallState {
+    features: Vec<String>,
+    default_features: bool,
+    bin: Option<String>,
+    #[serde(rename = "crate")]
+    crate_name: Option<String>,
+    locked: bool,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CargoOptions<'a> {
@@ -97,6 +111,26 @@ impl<'a> CargoOptions<'a> {
         self.values.raw().get_string("crate")
     }
 
+    fn install_state(&self) -> CargoInstallState {
+        let mut features = self
+            .features()
+            .unwrap_or_default()
+            .split([',', ' ', '\t', '\r', '\n'])
+            .filter(|feature| !feature.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        features.sort();
+        features.dedup();
+
+        CargoInstallState {
+            features,
+            default_features: !self.default_features_disabled(),
+            bin: self.bin(),
+            crate_name: self.crate_arg(),
+            locked: self.locked(),
+        }
+    }
+
     fn lockfile_options(&self, target: &PlatformTarget) -> BTreeMap<String, String> {
         let mut result = BTreeMap::new();
         if let Some(features) = self.features() {
@@ -147,6 +181,18 @@ impl Backend for CargoBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+        Ok(self.install_state_matches(tv))
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -216,6 +262,7 @@ impl Backend for CargoBackend {
                         .execute_install_command(ctx, &tv, cmd.arg(&install_arg))
                         .await;
                     if result.as_ref().is_ok() {
+                        self.write_install_state_best_effort(&tv);
                         return Ok(tv.clone());
                     }
                     if Settings::get().cargo.binstall_only
@@ -240,6 +287,7 @@ impl Backend for CargoBackend {
                             .native_binstall(ctx, &tv, NativeBinstallAction::Install)
                             .await?
                         {
+                            self.write_install_state_best_effort(&tv);
                             return Ok(tv.clone());
                         }
                     }
@@ -288,6 +336,7 @@ impl Backend for CargoBackend {
             cmd = cmd.arg(&install_arg);
         }
         self.execute_install_command(ctx, &tv, cmd).await?;
+        self.write_install_state_best_effort(&tv);
 
         Ok(tv.clone())
     }
@@ -316,6 +365,44 @@ pub fn install_time_option_keys() -> Vec<String> {
 impl CargoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    fn requested_install_state(&self, tv: &ToolVersion) -> CargoInstallState {
+        CargoOptions::new(&tv.request.options()).install_state()
+    }
+
+    fn install_state_matches(&self, tv: &ToolVersion) -> bool {
+        let expected = self.requested_install_state(tv);
+        let state_path = tv.install_path().join(CARGO_INSTALL_STATE_FILENAME);
+        if !state_path.exists() {
+            return expected
+                == CargoInstallState {
+                    default_features: true,
+                    locked: true,
+                    ..Default::default()
+                };
+        }
+        file::read_to_string(&state_path)
+            .ok()
+            .and_then(|body| toml::from_str::<CargoInstallState>(&body).ok())
+            .is_some_and(|state| state == expected)
+    }
+
+    fn write_install_state(&self, tv: &ToolVersion) -> Result<()> {
+        let state = self.requested_install_state(tv);
+        file::write(
+            tv.install_path().join(CARGO_INSTALL_STATE_FILENAME),
+            toml::to_string(&state)?,
+        )
+    }
+
+    fn write_install_state_best_effort(&self, tv: &ToolVersion) {
+        if let Err(err) = self.write_install_state(tv) {
+            warn!(
+                "failed to persist cargo install state for {}: {err:#}",
+                tv.style()
+            );
+        }
     }
 
     async fn execute_install_command<'a>(
@@ -470,7 +557,22 @@ struct CrateVersion {
 mod tests {
     use super::*;
     use crate::platform::Platform;
-    use crate::toolset::parse_tool_options;
+    use crate::toolset::{ToolSource, parse_tool_options};
+
+    fn test_tool_version(
+        install_path: &std::path::Path,
+        options: ToolVersionOptions,
+    ) -> ToolVersion {
+        let backend = Arc::new(BackendArg::new(
+            "cargo:tool".to_string(),
+            Some("cargo:tool".to_string()),
+        ));
+        let request =
+            ToolRequest::new_opts(backend, "1.0.0", options, ToolSource::Unknown).unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+        tv.install_path = Some(install_path.to_path_buf());
+        tv
+    }
 
     #[tokio::test]
     async fn exact_semver_versions_resolve_without_remote_discovery() {
@@ -589,6 +691,92 @@ mod tests {
         let opts = ToolVersionOptions::default();
 
         assert!(CargoOptions::new(&opts).locked());
+    }
+
+    #[test]
+    fn cargo_install_state_normalizes_features_and_defaults() {
+        let string_opts = parse_tool_options(
+            "features='rustls, postgres rustls',default-features=true,locked=true",
+        );
+        let mut array_opts = ToolVersionOptions::default();
+        array_opts.opts.insert(
+            "features".into(),
+            toml::Value::Array(vec![
+                toml::Value::String("postgres".into()),
+                toml::Value::String("rustls".into()),
+            ]),
+        );
+
+        let expected = CargoInstallState {
+            features: vec!["postgres".into(), "rustls".into()],
+            default_features: true,
+            locked: true,
+            ..Default::default()
+        };
+        assert_eq!(CargoOptions::new(&string_opts).install_state(), expected);
+        assert_eq!(CargoOptions::new(&array_opts).install_state(), expected);
+        assert_eq!(
+            CargoOptions::new(&ToolVersionOptions::default()).install_state(),
+            CargoInstallState {
+                default_features: true,
+                locked: true,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn cargo_install_state_round_trips() {
+        let opts = parse_tool_options(
+            "features='rustls postgres',default-features=false,bin=sqlx,crate=sqlx-cli,locked=false",
+        );
+        let state = CargoOptions::new(&opts).install_state();
+
+        assert_eq!(
+            toml::from_str::<CargoInstallState>(&toml::to_string(&state).unwrap()).unwrap(),
+            state
+        );
+    }
+
+    #[test]
+    fn cargo_install_state_matches_legacy_default_and_tracks_changes() {
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("install");
+        file::create_dir_all(&install_path).unwrap();
+
+        let default_tv = test_tool_version(&install_path, ToolVersionOptions::default());
+        let feature_tv = test_tool_version(&install_path, parse_tool_options("features=extra"));
+        assert!(backend.install_state_matches(&default_tv));
+        assert!(!backend.install_state_matches(&feature_tv));
+
+        backend.write_install_state(&feature_tv).unwrap();
+        assert!(backend.install_state_matches(&feature_tv));
+        assert!(!backend.install_state_matches(&default_tv));
+
+        file::write(
+            install_path.join(CARGO_INSTALL_STATE_FILENAME),
+            "not valid toml =",
+        )
+        .unwrap();
+        assert!(!backend.install_state_matches(&feature_tv));
+        assert!(!backend.install_state_matches(&default_tv));
+
+        backend.write_install_state(&default_tv).unwrap();
+        assert!(backend.install_state_matches(&default_tv));
+        assert!(!backend.install_state_matches(&feature_tv));
+    }
+
+    #[test]
+    fn cargo_install_state_write_failure_is_best_effort() {
+        let backend = CargoBackend::from_arg("cargo:tool".into());
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("missing").join("install");
+        let tv = test_tool_version(&install_path, parse_tool_options("features=extra"));
+
+        backend.write_install_state_best_effort(&tv);
+
+        assert!(!install_path.join(CARGO_INSTALL_STATE_FILENAME).exists());
     }
 
     #[test]
