@@ -366,12 +366,12 @@ fn should_use_pgroup() -> bool {
 /// Put a non-interactive child in the process tree managed by mise.
 ///
 /// Callers must retain a [`RunningPidGuard`] after spawning the command.
-pub(crate) fn prepare_noninteractive_child(cmd: &mut std::process::Command) {
+pub(crate) fn prepare_noninteractive_child(_cmd: &mut std::process::Command) {
     #[cfg(unix)]
     if should_use_pgroup() {
-        cmd.env(TASK_PGID_MANAGED_ENV, "1");
+        _cmd.env(TASK_PGID_MANAGED_ENV, "1");
         unsafe {
-            cmd.pre_exec(|| {
+            _cmd.pre_exec(|| {
                 let _ = nix::unistd::setpgid(
                     nix::unistd::Pid::from_raw(0),
                     nix::unistd::Pid::from_raw(0),
