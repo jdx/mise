@@ -316,7 +316,11 @@ impl Backend for CargoBackend {
             );
         }
 
-        let mut cmd = CmdLineRunner::new("cargo").arg("install");
+        let mut cmd = CmdLineRunner::new(
+            self.spawn_program(&ctx.config, Some(&ctx.ts), "cargo")
+                .await,
+        )
+        .arg("install");
         if let Some(url) = self.git_url() {
             cmd = cmd.arg(format!("--git={url}"));
             if let Some(rev) = tv.version.strip_prefix("rev:") {

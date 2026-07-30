@@ -421,9 +421,12 @@ impl SPMBackend {
         repo_dir: &PathBuf,
         tv: &ToolVersion,
     ) -> Result<Vec<String>, eyre::Error> {
+        let swift = self
+            .spawn_program(&ctx.config, Some(&ctx.ts), "swift")
+            .await;
         let package_json = with_install_env(
             cmd!(
-                "swift",
+                swift,
                 "package",
                 "dump-package",
                 "--package-path",
@@ -456,7 +459,11 @@ impl SPMBackend {
         tv: &ToolVersion,
     ) -> Result<PathBuf, eyre::Error> {
         debug!("Building swift package");
-        CmdLineRunner::new("swift")
+        // Resolved once: both the build and the --show-bin-path query below use it.
+        let swift = self
+            .spawn_program(&ctx.config, Some(&ctx.ts), "swift")
+            .await;
+        CmdLineRunner::new(&swift)
             .arg("build")
             .arg("--configuration")
             .arg("release")
@@ -480,7 +487,7 @@ impl SPMBackend {
 
         let bin_path = with_install_env(
             cmd!(
-                "swift",
+                &swift,
                 "build",
                 "--configuration",
                 "release",
@@ -755,8 +762,11 @@ async fn swift_target_triples(
     backend: &SPMBackend,
     tv: &ToolVersion,
 ) -> eyre::Result<Vec<String>> {
+    let swift = backend
+        .spawn_program(&ctx.config, Some(&ctx.ts), "swift")
+        .await;
     let target_info = with_install_env(
-        cmd!("swift", "-print-target-info").full_env(backend.dependency_env(&ctx.config).await?),
+        cmd!(swift, "-print-target-info").full_env(backend.dependency_env(&ctx.config).await?),
         tv,
     )
     .read()?;
