@@ -93,7 +93,7 @@ jobs:
       - name: Prepare mise artifact
         run: |
           install -Dm755 target/debug/mise target/ci-artifacts/mise
-          strip target/ci-artifacts/mise
+          strip --strip-debug target/ci-artifacts/mise
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise-ubuntu-latest
@@ -285,7 +285,7 @@ jobs:
     if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu, classify-changes]
-    timeout-minutes: 30
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -353,6 +353,8 @@ jobs:
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
+              TRANCHE_A: 0
+              TRANCHE_B: 4
               TOKEN_A: ${{ steps.token_0.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.token_4.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: &e2e-retry
@@ -360,8 +362,8 @@ jobs:
               retry_wait_seconds: 30
               max_attempts: 2
               command: |
-                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE=0 ./e2e/run_all_tests
-                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE=4 ./e2e/run_all_tests
+                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests
+                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests
           - name: Test tranches 1 and 5
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
@@ -369,6 +371,8 @@ jobs:
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
+              TRANCHE_A: 1
+              TRANCHE_B: 5
               TOKEN_A: ${{ steps.token_1.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.token_5.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
@@ -379,6 +383,8 @@ jobs:
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
+              TRANCHE_A: 2
+              TRANCHE_B: 6
               TOKEN_A: ${{ steps.token_2.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.token_6.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
@@ -389,6 +395,8 @@ jobs:
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
+              TRANCHE_A: 3
+              TRANCHE_B: 7
               TOKEN_A: ${{ steps.token_3.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
