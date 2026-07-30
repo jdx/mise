@@ -245,7 +245,7 @@ jobs:
     # The release PR runs the full suite against the packaged release tarball.
     # Keep that stronger signal instead of also testing the debug artifact.
     if: ${{ github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main' }}
-    runs-on: namespace-profile-endev-linux-amd64-xlarge
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu]
     timeout-minutes: 30
     steps:
@@ -304,99 +304,54 @@ jobs:
       - name: Pull e2e Docker image
         run: docker pull ghcr.io/jdx/mise:e2e
       # Each test gets isolated host directories and an ephemeral container.
-      # Two tests per tranche caps this runner at 16 concurrent containers.
+      # Run four branches on a standard runner; each branch handles two
+      # token-isolated tranches sequentially.
       - parallel:
-          - name: Test tranche 0
+          - name: Test tranches 0 and 4
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_0.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              E2E_JOBS: 1
               MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_0.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 0
               TEST_TRANCHE_COUNT: 8
+              TOKEN_A: ${{ steps.token_0.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.token_4.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: &e2e-retry
               timeout_minutes: 30
               retry_wait_seconds: 30
               max_attempts: 2
-              command: ./e2e/run_all_tests
-          - name: Test tranche 1
+              command: |
+                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE=0 ./e2e/run_all_tests
+                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE=4 ./e2e/run_all_tests
+          - name: Test tranches 1 and 5
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_1.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              E2E_JOBS: 1
               MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_1.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 1
               TEST_TRANCHE_COUNT: 8
+              TOKEN_A: ${{ steps.token_1.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.token_5.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
-          - name: Test tranche 2
+          - name: Test tranches 2 and 6
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_2.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              E2E_JOBS: 1
               MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_2.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 2
               TEST_TRANCHE_COUNT: 8
+              TOKEN_A: ${{ steps.token_2.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.token_6.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
-          - name: Test tranche 3
+          - name: Test tranches 3 and 7
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_3.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              E2E_JOBS: 1
               MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_3.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 3
               TEST_TRANCHE_COUNT: 8
-            with: *e2e-retry
-          - name: Test tranche 4
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
-            env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_4.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_4.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 4
-              TEST_TRANCHE_COUNT: 8
-            with: *e2e-retry
-          - name: Test tranche 5
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
-            env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_5.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_5.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 5
-              TEST_TRANCHE_COUNT: 8
-            with: *e2e-retry
-          - name: Test tranche 6
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
-            env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_6.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_6.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 6
-              TEST_TRANCHE_COUNT: 8
-            with: *e2e-retry
-          - name: Test tranche 7
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
-            env:
-              E2E_JOBS: 2
-              GITHUB_TOKEN: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              MISE_E2E_DOCKER: "1"
-              MISE_GITHUB_TOKEN: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-              TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
-              TEST_TRANCHE: 7
-              TEST_TRANCHE_COUNT: 8
+              TOKEN_A: ${{ steps.token_3.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+              TOKEN_B: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
 
   windows-unit:
