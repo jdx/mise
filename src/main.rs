@@ -274,7 +274,10 @@ pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
             } else {
                 bt_buffer.push_str("[no accessible async backtrace]");
             }
-            let all = async_backtrace::taskdump_tree(true);
+            // An aborting panic cannot wait for every running task to reach a
+            // frame boundary: some may be blocked on the panicking task, and
+            // the process must return from this hook to reach abort.
+            let all = async_backtrace::taskdump_tree(cfg!(panic = "unwind"));
             // A panic hook must never panic: a panic while the hook runs
             // aborts the process with SIGABRT.
             safe_eprintln!(
