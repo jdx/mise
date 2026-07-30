@@ -106,6 +106,10 @@ jobs:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 60
     if: github.event_name == 'pull_request' && github.event.pull_request.number == 11520
+    env:
+      # LTO does not affect panic semantics and exhausted the one-off runner
+      # before the cleanup assertion could execute.
+      CARGO_PROFILE_SERIOUS_LTO: "false"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
