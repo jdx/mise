@@ -26,6 +26,39 @@ permissions:
   contents: read
 
 jobs:
+  classify-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full-ci: ${{ steps.classify.outputs.full-ci }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Classify changes
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          echo "full-ci=true" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            exit 0
+          fi
+
+          changed=0
+          while IFS= read -r path; do
+            changed=1
+            case "$path" in
+              docs/* | *.md) ;;
+              *) exit 0 ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+
+          if [ "$changed" -eq 1 ]; then
+            echo "full-ci=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-ubuntu:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 60
@@ -71,6 +104,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 60
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
@@ -85,18 +120,21 @@ jobs:
           cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
           cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      - run: mise -v
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: mise-windows-latest
-          path: |
-            target/debug/mise.exe
-            target/debug/mise-shim.exe
+      - parallel:
+          - run: mise -v
+          - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+            with:
+              name: mise-windows-latest
+              path: |
+                target/debug/mise.exe
+                target/debug/mise-shim.exe
 
   unit:
     name: unit-macos
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 30
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -244,9 +282,9 @@ jobs:
     name: e2e
     # The release PR runs the full suite against the packaged release tarball.
     # Keep that stronger signal instead of also testing the debug artifact.
-    if: ${{ github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main' }}
+    if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
-    needs: [build-ubuntu]
+    needs: [build-ubuntu, classify-changes]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -300,17 +338,18 @@ jobs:
           name: mise-ubuntu-latest
           path: target/debug
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
-      - uses: ./.github/actions/mise-tools
-      - name: Pull e2e Docker image
-        run: docker pull ghcr.io/jdx/mise:e2e
+      - parallel:
+          - uses: ./.github/actions/mise-tools
+          - name: Pull e2e Docker image
+            run: docker pull ghcr.io/jdx/mise:e2e
       # Each test gets isolated host directories and an ephemeral container.
       # Run four branches on a standard runner; each branch handles two
-      # token-isolated tranches sequentially.
+      # token-isolated tranches sequentially, capped at eight containers total.
       - parallel:
           - name: Test tranches 0 and 4
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 1
+              E2E_JOBS: 2
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -326,7 +365,7 @@ jobs:
           - name: Test tranches 1 and 5
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 1
+              E2E_JOBS: 2
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -336,7 +375,7 @@ jobs:
           - name: Test tranches 2 and 6
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 1
+              E2E_JOBS: 2
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -346,7 +385,7 @@ jobs:
           - name: Test tranches 3 and 7
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
-              E2E_JOBS: 1
+              E2E_JOBS: 2
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -357,6 +396,8 @@ jobs:
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
@@ -380,7 +421,8 @@ jobs:
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 40
-    needs: [build-windows]
+    needs: [build-windows, classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
@@ -405,6 +447,7 @@ jobs:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 1
     needs:
+      - classify-changes
       - build-ubuntu
       - build-windows
       - unit
@@ -422,37 +465,53 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
+          full_ci="${{ needs.classify-changes.outputs.full-ci }}"
           if [ "${{ needs.build-ubuntu.result }}" != "success" ]; then
             echo "build-ubuntu failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.build-windows.result }}" != "success" ]; then
-            echo "build-windows failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.unit.result }}" != "success" ]; then
-            echo "unit failed or was skipped"
             exit 1
           fi
           if [ "${{ needs.lint.result }}" != "success" ]; then
             echo "lint failed or was skipped"
             exit 1
           fi
-          if [ "${{ github.event_name }}" == "pull_request" ] && [ "$HEAD_REF" == "release" ] && [ "$BASE_REF" == "main" ]; then
-            if [ "${{ needs.e2e.result }}" != "skipped" ]; then
-              echo "e2e should be handled by the release workflow"
+
+          if [ "$full_ci" == "true" ]; then
+            if [ "${{ needs.build-windows.result }}" != "success" ]; then
+              echo "build-windows failed or was skipped"
               exit 1
             fi
-          elif [ "${{ needs.e2e.result }}" != "success" ]; then
-            echo "e2e failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.windows-unit.result }}" != "success" ]; then
-            echo "windows-unit failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.windows-e2e.result }}" != "success" ]; then
-            echo "windows-e2e failed or was skipped"
-            exit 1
+            if [ "${{ needs.unit.result }}" != "success" ]; then
+              echo "unit failed or was skipped"
+              exit 1
+            fi
+            if [ "${{ github.event_name }}" == "pull_request" ] && [ "$HEAD_REF" == "release" ] && [ "$BASE_REF" == "main" ]; then
+              if [ "${{ needs.e2e.result }}" != "skipped" ]; then
+                echo "e2e should be handled by the release workflow"
+                exit 1
+              fi
+            elif [ "${{ needs.e2e.result }}" != "success" ]; then
+              echo "e2e failed or was skipped"
+              exit 1
+            fi
+            if [ "${{ needs.windows-unit.result }}" != "success" ]; then
+              echo "windows-unit failed or was skipped"
+              exit 1
+            fi
+            if [ "${{ needs.windows-e2e.result }}" != "success" ]; then
+              echo "windows-e2e failed or was skipped"
+              exit 1
+            fi
+          else
+            for result in \
+              "${{ needs.build-windows.result }}" \
+              "${{ needs.unit.result }}" \
+              "${{ needs.e2e.result }}" \
+              "${{ needs.windows-unit.result }}" \
+              "${{ needs.windows-e2e.result }}"; do
+              if [ "$result" != "skipped" ]; then
+                echo "docs-only jobs should be skipped"
+                exit 1
+              fi
+            done
           fi
           echo "All CI jobs completed successfully"
