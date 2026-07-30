@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 pub trait TreeItem: Clone {
     type Child: TreeItem;
@@ -63,6 +65,24 @@ pub fn print_tree<T: TreeItem>(item: &T) -> std::io::Result<()> {
     print_tree_item(item, String::from(""), String::from(""), &indent, 0)
 }
 
+pub fn print_tree_compact<T, K, F>(item: &T, key: F, seen: &mut HashSet<K>) -> std::io::Result<()>
+where
+    T: TreeItem<Child = T>,
+    K: Eq + Hash,
+    F: Fn(&T) -> K,
+{
+    let indent = TreeItemIndent::new(4, 1, &TREE_ITEM_CHARS);
+    print_tree_item_compact(
+        item,
+        String::from(""),
+        String::from(""),
+        &indent,
+        0,
+        &key,
+        seen,
+    )
+}
+
 fn print_tree_item<T: TreeItem>(
     item: &T,
     prefix: String,
@@ -88,6 +108,58 @@ fn print_tree_item<T: TreeItem>(
             let cp = child_prefix.clone() + &indent.last_child_prefix;
 
             print_tree_item(last_child, rp, cp, indent, level + 1)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn print_tree_item_compact<T, K, F>(
+    item: &T,
+    prefix: String,
+    child_prefix: String,
+    indent: &TreeItemIndent,
+    level: u32,
+    key: &F,
+    seen: &mut HashSet<K>,
+) -> std::io::Result<()>
+where
+    T: TreeItem<Child = T>,
+    K: Eq + Hash,
+    F: Fn(&T) -> K,
+{
+    miseprint!("{}", prefix)?;
+    item.write_self()?;
+
+    if !seen.insert(key(item)) {
+        miseprintln!(" (already shown)");
+        return Ok(());
+    }
+    miseprintln!("");
+
+    if level < u32::MAX {
+        let children = item.children();
+        if let Some((last_child, children)) = children.split_last() {
+            let rp = child_prefix.clone() + &indent.regular_prefix;
+            let cp = child_prefix.clone() + &indent.child_prefix;
+
+            for child in children {
+                print_tree_item_compact(
+                    child,
+                    rp.clone(),
+                    cp.clone(),
+                    indent,
+                    level + 1,
+                    key,
+                    seen,
+                )?;
+            }
+
+            let rp = child_prefix.clone() + &indent.last_regular_prefix;
+            let cp = child_prefix.clone() + &indent.last_child_prefix;
+
+            print_tree_item_compact(last_child, rp, cp, indent, level + 1, key, seen)?;
         }
     }
 

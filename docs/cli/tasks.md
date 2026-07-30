@@ -72,7 +72,7 @@ Sort order. Default is asc.
 ## Subcommands
 
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
-- [`mise tasks deps [--dot] [--hidden] [TASKS]…`](/cli/tasks/deps.md)
+- [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks graph [-J --json] [--no-header]`](/cli/tasks/graph.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)

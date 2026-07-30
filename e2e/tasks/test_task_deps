@@ -41,6 +41,57 @@ hello:2
 hello:all
 ├── hello:2
 └── hello:1"
+
+cat <<EOF >>mise.toml
+
+[tasks.leaf]
+run = "echo leaf"
+
+[tasks.shared]
+depends = ["leaf"]
+run = "echo shared"
+
+[tasks.left]
+depends = ["shared"]
+run = "echo left"
+
+[tasks.right]
+depends = ["shared"]
+run = "echo right"
+
+[tasks.root]
+depends = ["left", "right"]
+run = "echo root"
+EOF
+
+compact_output="$(mise tasks deps --compact root)"
+assert_contains "printf '%s\n' \"$compact_output\"" "shared (already shown)"
+leaf_count="$(printf '%s\n' "$compact_output" | grep -c 'leaf')"
+if [[ $leaf_count -ne 1 ]]; then
+  echo "Expected compact dependency output to expand leaf once, got $leaf_count"
+  printf '%s\n' "$compact_output"
+  exit 1
+fi
+
+multi_root_output="$(mise tasks deps --compact left right)"
+assert_contains "printf '%s\n' \"$multi_root_output\"" "shared (already shown)"
+multi_root_leaf_count="$(printf '%s\n' "$multi_root_output" | grep -c 'leaf')"
+if [[ $multi_root_leaf_count -ne 1 ]]; then
+  echo "Expected compact multi-root output to expand leaf once, got $multi_root_leaf_count"
+  printf '%s\n' "$multi_root_output"
+  exit 1
+fi
+
+explicit_root_output="$(mise tasks deps --compact root left)"
+explicit_left_count="$(printf '%s\n' "$explicit_root_output" | grep -c '^left$')"
+if [[ $explicit_left_count -ne 1 ]]; then
+  echo "Expected explicitly selected left root to be expanded"
+  printf '%s\n' "$explicit_root_output"
+  exit 1
+fi
+
+assert_fail "mise tasks deps --compact --dot root"
+
 hello_all_info="$(mise tasks hello:all)"
 assert_contains "printf '%s\n' \"$hello_all_info\"" "Task: hello:all"
 assert_contains "printf '%s\n' \"$hello_all_info\"" "Description: Hello from all"

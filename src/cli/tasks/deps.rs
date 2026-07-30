@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::config::Config;
 use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map};
 use crate::ui::style::{self};
-use crate::ui::tree::print_tree;
+use crate::ui::tree::{print_tree, print_tree_compact};
 use console::style;
 use eyre::{Result, eyre};
 use itertools::Itertools;
@@ -18,6 +18,10 @@ pub struct TasksDeps {
     /// e.g.: mise tasks deps lint test check
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
+
+    /// Collapse repeated dependencies after their first occurrence
+    #[clap(long, conflicts_with = "dot", verbatim_doc_comment)]
+    pub compact: bool,
 
     /// Display dependencies in DOT format
     #[clap(long, alias = "dot", verbatim_doc_comment)]
@@ -145,8 +149,16 @@ impl TasksDeps {
             tasks.iter().any(|t| t.name == task.name)
         });
         // iterate over selected graph nodes and print tree
+        let mut seen = HashSet::new();
         for idx in start_indexes {
-            print_tree(&(&deps.graph, idx))?;
+            if self.compact {
+                // Always expand an explicitly requested root, even if it was
+                // already reached as a dependency of an earlier root.
+                seen.remove(&idx);
+                print_tree_compact(&(&deps.graph, idx), |item| item.1, &mut seen)?;
+            } else {
+                print_tree(&(&deps.graph, idx))?;
+            }
         }
         Ok(())
     }
@@ -211,5 +223,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Show dependencies in DOT format
     $ <bold>mise tasks deps --dot</bold>
+
+    # Collapse repeated dependencies
+    $ <bold>mise tasks deps --compact</bold>
 "#
 );
