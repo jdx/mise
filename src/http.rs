@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use eyre::{Report, Result, bail, ensure, eyre};
+use eyre::{Report, Result, WrapErr, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -1113,6 +1113,26 @@ fn netrc_headers(url: &Url) -> HeaderMap {
     headers
 }
 
+/// Resolve the `rel="next"` target of a `Link` header against the URL it came from.
+///
+/// Forge APIs are inconsistent about this: an absolute URL is the common case, but a
+/// root-relative or relative target is legal and appears from instances behind a proxy.
+/// Shared by [`crate::github`] and [`crate::gitlab`] so their pagination loops resolve
+/// the next page the same way — the two drifted apart once already (#6318).
+pub(crate) fn resolve_pagination_url(current: &str, next: &str) -> Result<String> {
+    if next.starts_with("http://") || next.starts_with("https://") {
+        return Ok(next.to_string());
+    }
+    let base = url::Url::parse(current)
+        .wrap_err_with(|| format!("invalid pagination base URL: {current}"))?;
+    if next.starts_with('/') {
+        return Ok(format!("{}{next}", base.origin().ascii_serialization()));
+    }
+    base.join(next)
+        .map(|u| u.to_string())
+        .wrap_err_with(|| format!("invalid pagination URL: {next}"))
+}
+
 /// Apply URL replacements based on settings configuration
 /// Supports both simple string replacement and regex patterns (prefixed with "regex:")
 pub fn apply_url_replacements(url: &mut Url) {
@@ -1377,6 +1397,23 @@ mod tests {
         crate::config::Settings::reset(None);
 
         result
+    }
+
+    #[test]
+    fn test_resolve_pagination_url() {
+        let base = "https://api.github.com/repos/jdx/aube/releases?per_page=100";
+        assert_eq!(
+            resolve_pagination_url(base, "/repos/jdx/aube/releases?page=2").unwrap(),
+            "https://api.github.com/repos/jdx/aube/releases?page=2"
+        );
+        assert_eq!(
+            resolve_pagination_url(
+                base,
+                "https://api.github.com/repos/jdx/aube/releases?page=2"
+            )
+            .unwrap(),
+            "https://api.github.com/repos/jdx/aube/releases?page=2"
+        );
     }
 
     #[tokio::test]

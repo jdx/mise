@@ -108,7 +108,9 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(API_URL, repo).await)
+        .get_or_try_init_async(async || {
+            list_releases_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+        })
         .await?
         .to_vec())
 }
@@ -118,13 +120,18 @@ pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<Git
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(api_url, repo).await)
+        .get_or_try_init_async(async || {
+            list_releases_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
+        })
         .await?
         .to_vec())
 }
 
-async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
-    let url = format!(
+/// `list_all` is `MISE_LIST_ALL_VERSIONS`, taken as an argument rather than read here so
+/// tests can exercise the pagination loop: the env var is a process-wide `Lazy` that other
+/// modules' tests have already forced by the time this one runs.
+async fn list_releases_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<GitlabRelease>> {
+    let mut url = format!(
         "{}/projects/{}/releases?per_page=100",
         api_url,
         urlencoding::encode(repo)
@@ -132,13 +139,19 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>>
 
     let headers = get_headers(&url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GitlabRelease>, _>(url, &headers)
+        .json_headers_with_headers::<Vec<GitlabRelease>, _>(&url, &headers)
         .await?;
 
-    if *env::MISE_LIST_ALL_VERSIONS {
+    if list_all {
         while let Some(next) = next_page(&headers) {
+            url = crate::http::resolve_pagination_url(&url, &next)?;
+            // Re-derive auth for every page. `headers` holds the *response* headers of the
+            // previous page at this point (that is how `next_page` reads `Link`), and
+            // `json_headers_with_headers` bypasses the automatic host auth, so reusing it
+            // would send page 2 onward unauthenticated. Same defect github had (#6318).
+            headers = get_headers(&url);
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GitlabRelease>, _>(next, &headers)
+                .json_headers_with_headers::<Vec<GitlabRelease>, _>(&url, &headers)
                 .await?;
             releases.extend(more);
             headers = h;
@@ -154,7 +167,9 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_tags_(API_URL, repo).await)
+        .get_or_try_init_async(async || {
+            list_tags_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+        })
         .await?
         .to_vec())
 }
@@ -164,26 +179,32 @@ pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_tags_(api_url, repo).await)
+        .get_or_try_init_async(async || {
+            list_tags_(api_url, repo, *env::MISE_LIST_ALL_VERSIONS).await
+        })
         .await?
         .to_vec())
 }
 
-async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let url = format!(
+/// See [`list_releases_`] for why `list_all` is a parameter.
+async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
+    let mut url = format!(
         "{}/projects/{}/repository/tags?per_page=100",
         api_url,
         urlencoding::encode(repo)
     );
     let headers = get_headers(&url);
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GitlabTag>, _>(url, &headers)
+        .json_headers_with_headers::<Vec<GitlabTag>, _>(&url, &headers)
         .await?;
 
-    if *env::MISE_LIST_ALL_VERSIONS {
+    if list_all {
         while let Some(next) = next_page(&headers) {
+            url = crate::http::resolve_pagination_url(&url, &next)?;
+            // Re-derive auth for every page — see the comment in `list_releases_`.
+            headers = get_headers(&url);
             let (more, h) = crate::http::HTTP_FETCH
-                .json_headers_with_headers::<Vec<GitlabTag>, _>(next, &headers)
+                .json_headers_with_headers::<Vec<GitlabTag>, _>(&url, &headers)
                 .await?;
             tags.extend(more);
             headers = h;
@@ -282,6 +303,27 @@ impl fmt::Display for TokenSource {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod test_support {
+    //! Test-only hook that lets tests seed a token without mutating the environment.
+    //! Only consulted from [`super::resolve_token`] under `#[cfg(test)]`; production builds
+    //! never see it. Deliberately checked *before* the env-var branch so a developer's
+    //! ambient `GITLAB_TOKEN` / `MISE_GITLAB_ENTERPRISE_TOKEN` cannot change the outcome.
+    //! Mirrors the equivalent in [`crate::github`].
+
+    use std::collections::HashMap;
+    use std::sync::RwLock;
+
+    /// Overrides the `gitlab_tokens.toml` source in [`super::resolve_token`], keyed by host.
+    pub(crate) static TOKENS_FILE_OVERRIDE: RwLock<Option<HashMap<String, String>>> =
+        RwLock::new(None);
+
+    pub(crate) fn lookup_tokens_file_override(host: &str) -> Option<String> {
+        let guard = TOKENS_FILE_OVERRIDE.read().ok()?;
+        guard.as_ref()?.get(host).cloned()
+    }
+}
+
 /// Resolve the GitLab token for the given hostname.
 ///
 /// Priority:
@@ -292,6 +334,11 @@ impl fmt::Display for TokenSource {
 /// 5. glab CLI token (from `config.yml`)
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    #[cfg(test)]
+    if let Some(token) = test_support::lookup_tokens_file_override(host) {
+        return Some((token, TokenSource::TokensFile));
+    }
+
     let settings = Settings::get();
     let is_gitlab_com = host == "gitlab.com";
 
@@ -586,5 +633,142 @@ hosts:
     fn test_find_expired_glab_tokens_empty() {
         assert!(find_expired_glab_tokens("").is_empty());
         assert!(find_expired_glab_tokens("hosts: {}").is_empty());
+    }
+
+    const TEST_TOKEN: &str = "glpat_paginate_test";
+
+    /// Seeds a token for `host` for the lifetime of the guard.
+    struct TokensFileOverrideGuard;
+
+    impl TokensFileOverrideGuard {
+        fn set(host: &str) -> Self {
+            let mut tokens = HashMap::new();
+            tokens.insert(host.to_string(), TEST_TOKEN.to_string());
+            *test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = Some(tokens);
+            Self
+        }
+    }
+
+    impl Drop for TokensFileOverrideGuard {
+        fn drop(&mut self) {
+            *test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = None;
+        }
+    }
+
+    fn host_of(url: &str) -> String {
+        url::Url::parse(url)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn tag_json(name: &str) -> serde_json::Value {
+        serde_json::json!({ "name": name })
+    }
+
+    fn release_json(tag: &str) -> serde_json::Value {
+        serde_json::json!({
+            "tag_name": tag,
+            "description": null,
+            "released_at": null,
+            "assets": { "sources": [], "links": [] },
+        })
+    }
+
+    // Regression: every paginated request must carry the Authorization header. Before the
+    // fix, page 2 was sent page 1's *response* headers, so it went out unauthenticated and
+    // hit the anonymous rate limit on private/rate-limited projects. github had the same
+    // defect until #6318; gitlab never got that fix.
+    #[tokio::test]
+    async fn test_list_releases_sends_auth_on_every_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let _token = TokensFileOverrideGuard::set(&host_of(&base));
+        let auth = format!("Bearer {TEST_TOKEN}");
+
+        // Regex rather than an exact path: the project is percent-encoded into the path
+        // (`owner%2Frepo`) and how that is normalized before matching is not this test's
+        // subject -- the Authorization header on page 2 is.
+        let page1 = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(r"^/projects/.+/releases$".to_string()),
+            )
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::json!([release_json("v2.0.0")]).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2 = server
+            .mock("GET", "/page2")
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::json!([release_json("v1.0.0")]).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, "owner/repo", true).await.unwrap();
+        page1.assert_async().await;
+        page2.assert_async().await;
+        assert_eq!(
+            releases
+                .iter()
+                .map(|r| r.tag_name.as_str())
+                .collect::<Vec<_>>(),
+            ["v2.0.0", "v1.0.0"]
+        );
+    }
+
+    // Same regression for the tags loop -- see `test_list_releases_sends_auth_on_every_page`.
+    #[tokio::test]
+    async fn test_list_tags_sends_auth_on_every_page() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let _token = TokensFileOverrideGuard::set(&host_of(&base));
+        let auth = format!("Bearer {TEST_TOKEN}");
+
+        let page1 = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(r"^/projects/.+/repository/tags$".to_string()),
+            )
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::json!([tag_json("v2.0.0")]).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2 = server
+            .mock("GET", "/page2")
+            .match_header("authorization", auth.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::json!([tag_json("v1.0.0")]).to_string())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let tags = list_tags_(&base, "owner/repo", true).await.unwrap();
+        page1.assert_async().await;
+        page2.assert_async().await;
+        assert_eq!(tags, ["v2.0.0", "v1.0.0"]);
     }
 }
