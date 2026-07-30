@@ -141,7 +141,7 @@ impl OutdatedInfo {
         {
             // Check if this is a rolling version (like "nightly") with a new checksum
             let rolling_outdated = t
-                .is_rolling_version_outdated(config, &oi.tool_version.request.version())
+                .is_rolling_version_outdated(config, &oi.tool_version)
                 .await;
             if !rolling_outdated {
                 trace!("skipping up-to-date version {}", oi.tool_version);

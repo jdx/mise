@@ -68,8 +68,19 @@ EOF
 
 # --- step 1: initial install ---
 mise install
-INSTALL_PATH=$(mise where "vfox:file://$PLUGIN_DIR")
-assert "cat '$INSTALL_PATH/version.txt'" "content-v1"
+PRIMARY_INSTALL_PATH=$(mise where "vfox:file://$PLUGIN_DIR")
+assert "cat '$PRIMARY_INSTALL_PATH/version.txt'" "content-v1"
+
+# Move the install into a shared fallback directory. Rolling checksum checks
+# must follow the resolved install path, and an update must shadow this install
+# in the primary directory rather than modifying the shared copy.
+RELATIVE_INSTALL_PATH="${PRIMARY_INSTALL_PATH#"$MISE_DATA_DIR/installs/"}"
+SHARED_INSTALLS="$PWD/shared-installs"
+SHARED_INSTALL_PATH="$SHARED_INSTALLS/$RELATIVE_INSTALL_PATH"
+mkdir -p "$(dirname "$SHARED_INSTALL_PATH")"
+mv "$PRIMARY_INSTALL_PATH" "$SHARED_INSTALL_PATH"
+export MISE_SHARED_INSTALL_DIRS="$SHARED_INSTALLS"
+assert "mise where 'vfox:file://$PLUGIN_DIR'" "$SHARED_INSTALL_PATH"
 
 # --- step 2: same checksum → no upgrade needed ---
 # mise upgrade --dry-run must produce no "Would install" output when the
@@ -114,9 +125,12 @@ mise plugins update
 # test does not distinguish a key mismatch between those two fields.
 assert_contains "mise upgrade --dry-run" "Would install"
 
-# mise upgrade detects the checksum change and reinstalls in place.
+# mise upgrade detects the checksum change, leaves the shared install alone,
+# and installs the updated rolling release into the primary directory.
 mise upgrade
-assert "cat '$INSTALL_PATH/version.txt'" "content-v2"
+assert "cat '$PRIMARY_INSTALL_PATH/version.txt'" "content-v2"
+assert "cat '$SHARED_INSTALL_PATH/version.txt'" "content-v1"
+assert "cat '$SHARED_INSTALL_PATH/.mise.checksum'" "sha256:aaa111"
 
 # --- step 4: checksum now matches → no further upgrade ---
 assert_not_contains "mise upgrade --dry-run" "Would install"
