@@ -82,6 +82,14 @@ if [[ $multi_root_leaf_count -ne 1 ]]; then
   exit 1
 fi
 
+explicit_root_output="$(mise tasks deps --compact root left)"
+explicit_left_count="$(printf '%s\n' "$explicit_root_output" | grep -c '^left$')"
+if [[ $explicit_left_count -ne 1 ]]; then
+  echo "Expected explicitly selected left root to be expanded"
+  printf '%s\n' "$explicit_root_output"
+  exit 1
+fi
+
 assert_fail "mise tasks deps --compact --dot root"
 
 hello_all_info="$(mise tasks hello:all)"

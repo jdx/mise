@@ -152,6 +152,9 @@ impl TasksDeps {
         let mut seen = HashSet::new();
         for idx in start_indexes {
             if self.compact {
+                // Always expand an explicitly requested root, even if it was
+                // already reached as a dependency of an earlier root.
+                seen.remove(&idx);
                 print_tree_compact(&(&deps.graph, idx), |item| item.1, &mut seen)?;
             } else {
                 print_tree(&(&deps.graph, idx))?;
