@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# From https://github.com/jdx/mise/discussions/5397: `mise doctor` showed the
+# same PATH entries four and five deep.
+#
+# The accumulation happens when a session inherits an activated PATH but not the
+# __MISE_* state vars (nested shells, IDE integrated terminals). hook-env then
+# has no way to tell a stale copy of a `_.path` entry from one the user put on
+# PATH themselves, and the user's copies are contractually preserved verbatim —
+# cli/test_deactivate pins that a deliberate user duplicate survives
+# reactivation. So the live shell PATH is left alone.
+#
+# What mise *computes* is mise's to normalize: `mise env`, `mise x` child PATHs
+# and `mise doctor`'s `path:` section all build PATH via PathEnv, which now
+# collapses exact duplicates first-wins. The fresh copy in the mise-managed
+# section wins over stale copies in the inherited portion, so every computed
+# surface shows the entry exactly once no matter how polluted the inherited
+# PATH is.
+
+mkdir -p extra
+
+# global config, like the sibling zsh test: no local-config trust in play
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.path = ["$PWD/extra"]
+EOF
+
+count_live() {
+  # -F: the workdir path is data, not a regex; -x: whole components only, so a
+  # sibling like extra-old can never count
+  echo "$PATH" | tr : '\n' | grep -Fxc "$PWD/extra" || true
+}
+
+count_computed() {
+  # --json rather than -s bash: jq yields the raw PATH value, so exact component
+  # matching works without peeling shell quoting off an `export PATH='...'` line
+  mise env --json | jq -r .PATH | tr : '\n' | grep -Fxc "$PWD/extra" || true
+}
+
+drop_mise_state() {
+  # what a child process keeps (PATH) vs. loses (shell-session state vars)
+  unset __MISE_DIFF __MISE_ORIG_PATH __MISE_SESSION __MISE_WATCH
+}
+
+eval "$(mise hook-env -s bash)"
+[[ $(count_live) == "1" ]] || {
+  echo "expected 1 copy after first activation, got: $(count_live)"
+  exit 1
+}
+
+# Two state-loss rounds pollute the live PATH with stale copies.
+drop_mise_state
+eval "$(mise hook-env -s bash)"
+drop_mise_state
+eval "$(mise hook-env -s bash)"
+
+[[ $(count_live) -ge 2 ]] || {
+  echo "test setup failed: expected the live PATH to carry stale copies, got: $(count_live)"
+  exit 1
+}
+
+# The computed environment collapses them to exactly one.
+[[ $(count_computed) == "1" ]] || {
+  echo "expected mise env to show exactly 1 copy, got: $(count_computed)"
+  mise env --json | jq -r .PATH
+  exit 1
+}

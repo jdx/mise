@@ -205,8 +205,10 @@ fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
         .contains(&shims)
     {
         let path_env = PathEnv::from_iter(env::PATH.clone());
-        // PathEnv automatically removes the shims directory
-        let path = path_env.join().to_string_lossy().to_string();
+        // PathEnv automatically removes the shims directory. Verbatim, because this PATH
+        // goes back into the user's live shell: a duplicate entry the user put there is
+        // theirs to keep, and only the shims dir may be dropped here.
+        let path = path_env.join_verbatim().to_string_lossy().to_string();
         Ok(Some(ActivatePrelude::SetEnv(PATH_KEY.to_string(), path)))
     } else {
         Ok(None)

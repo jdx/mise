@@ -1,5 +1,6 @@
 use crate::config::Settings;
 use crate::dirs;
+use std::collections::HashSet;
 use std::env::{join_paths, split_paths};
 use std::ffi::OsString;
 use std::fmt;
@@ -30,7 +31,34 @@ impl PathEnv {
         }
     }
 
+    /// First occurrence wins; later exact duplicates are dropped. A later duplicate of
+    /// an earlier PATH entry can never win a lookup, so removing it changes nothing for
+    /// resolution — but it keeps stale copies left by a previous activation (a session
+    /// that inherited PATH without the `__MISE_*` state vars) from surfacing in every
+    /// computed environment: `mise env`/`mise x` child PATHs and `mise doctor`'s `path:`
+    /// section (#5397). mise re-adds its managed dirs on each activation, so the fresh
+    /// copy in `mise` outranks a stale one in `post` and supplies the surviving entry.
+    ///
+    /// Only for environments mise computes — children and display. A surface that hands
+    /// PATH back to the user's live shell must use [`Self::join_verbatim`] instead:
+    /// user-owned duplicates there are preserved exactly as written.
     pub fn to_vec(&self) -> Vec<PathBuf> {
+        let mut seen = HashSet::new();
+        self.pre
+            .iter()
+            .chain(self.mise.iter())
+            .chain(self.post.iter())
+            .filter(|p| seen.insert(*p))
+            .map(|p| p.to_path_buf())
+            .collect()
+    }
+
+    /// Every entry, duplicates included, in order. The projection for the one surface
+    /// that writes PATH back into the user's live shell — `mise activate`'s shim
+    /// removal — where a duplicate the user put there deliberately is theirs to keep
+    /// (`cli/test_deactivate` pins that contract, three copies and all). Deduplicating
+    /// here would silently rewrite the user's PATH as a side effect of removing shims.
+    pub fn to_vec_verbatim(&self) -> Vec<PathBuf> {
         self.pre
             .iter()
             .chain(self.mise.iter())
@@ -41,6 +69,11 @@ impl PathEnv {
 
     pub fn join(&self) -> OsString {
         join_paths(self.to_vec()).unwrap()
+    }
+
+    /// [`Self::join`] over the verbatim projection — see [`Self::to_vec_verbatim`].
+    pub fn join_verbatim(&self) -> OsString {
+        join_paths(self.to_vec_verbatim()).unwrap()
     }
 }
 
@@ -123,6 +156,71 @@ pub(crate) fn is_mise_install_path(path: &std::path::Path, install_dirs: &[PathB
         .iter()
         .filter_map(|d| crate::file::canonicalize_cached(d))
         .any(|d| path.starts_with(d))
+}
+
+// Platform-neutral, unlike `tests` below: dedup touches no filesystem and joins nothing,
+// so these also run in the windows-unit job.
+#[cfg(test)]
+mod dedup_tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn to_vec_drops_later_exact_duplicates() {
+        // The reactivation residue shape from #5397: a stale copy of a mise-managed dir
+        // sits in the inherited PATH (post), and mise adds a fresh copy (mise). The fresh
+        // copy comes first in pre+mise+post order, so it wins and the stale one drops.
+        let mut path_env = PathEnv::from_iter(
+            ["/stale-extra", "/usr/bin", "/stale-extra", "/bin"].map(PathBuf::from),
+        );
+        path_env.add("/stale-extra".into());
+        path_env.add("/tool".into());
+        assert_eq!(
+            path_env.to_vec(),
+            ["/stale-extra", "/tool", "/usr/bin", "/bin"].map(PathBuf::from)
+        );
+    }
+
+    #[test]
+    fn to_vec_verbatim_preserves_user_duplicates() {
+        // The live-shell projection: `mise activate`'s shim removal writes this PATH
+        // back into the user's shell, and a duplicate the user put there deliberately
+        // must survive exactly as written — the boundary cli/test_deactivate pins.
+        let mut path_env =
+            PathEnv::from_iter(["/shared", "/usr/bin", "/shared"].map(PathBuf::from));
+        path_env.add("/tool".into());
+        assert_eq!(
+            path_env.to_vec_verbatim(),
+            ["/tool", "/shared", "/usr/bin", "/shared"].map(PathBuf::from)
+        );
+    }
+
+    #[test]
+    fn to_vec_dedups_by_path_components_not_bytes() {
+        // `PathBuf` equality is component-wise, so a trailing-separator variant is the
+        // same entry (`/dir/` == `/dir`) and collapses too — those resolve to identical
+        // lookups, so dropping one is still semantics-preserving. The casing of a normal
+        // component is compared byte-wise and is NOT collapsed, on every platform
+        // including Windows: whether `/Dir` and `/dir` are the same place is a filesystem
+        // property mise does not assume.
+        let path_env = PathEnv::from_iter(["/dir", "/dir/", "/Dir", "/dir-2"].map(PathBuf::from));
+        assert_eq!(
+            path_env.to_vec(),
+            ["/dir", "/Dir", "/dir-2"].map(PathBuf::from)
+        );
+    }
+
+    /// The prefix is the one component Windows compares case-insensitively, so
+    /// drive-letter variants *are* one entry and do collapse. Pinned because it is the
+    /// exception to the case rule above rather than a contradiction of it — the two are
+    /// easy to conflate when reading `to_vec()`.
+    #[cfg(windows)]
+    #[test]
+    fn to_vec_collapses_drive_letter_case() {
+        let path_env = PathEnv::from_iter([r"C:\x", r"c:\x", r"C:\y"].map(PathBuf::from));
+        assert_eq!(path_env.to_vec(), [r"C:\x", r"C:\y"].map(PathBuf::from));
+    }
 }
 
 #[cfg(unix)]
