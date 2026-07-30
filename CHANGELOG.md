@@ -1,5 +1,56 @@
 # Changelog
 
+## [2026.7.18](https://github.com/jdx/mise/compare/v2026.7.17..v2026.7.18) - 2026-07-30
+
+### 🚀 Features
+
+- **(task)** support relative monorepo dependency paths by @jdx in [#11503](https://github.com/jdx/mise/pull/11503)
+- **(task)** add compact dependency tree output by @jdx in [#11502](https://github.com/jdx/mise/pull/11502)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** preserve locked HTTP override metadata by @jdx in [#11499](https://github.com/jdx/mise/pull/11499)
+- **(asdf)** pass config env to version scripts by @Marukome0743 in [#11492](https://github.com/jdx/mise/pull/11492)
+- **(backend)** resolve a spawnable program on Windows instead of a bare name by @JamBalaya56562 in [#11486](https://github.com/jdx/mise/pull/11486)
+- **(backend)** resolve tool programs instead of hardcoding .cmd on Windows by @JamBalaya56562 in [#11489](https://github.com/jdx/mise/pull/11489)
+- **(cargo)** reinstall when install options change by @Marukome0743 in [#11480](https://github.com/jdx/mise/pull/11480)
+- **(env)** collapse duplicate PATH entries in computed environments by @JamBalaya56562 in [#11491](https://github.com/jdx/mise/pull/11491)
+- **(gitlab)** send auth headers on paginated release/tag requests by @JamBalaya56562 in [#11507](https://github.com/jdx/mise/pull/11507)
+- **(install)** preserve config file timestamps by @Marukome0743 in [#11495](https://github.com/jdx/mise/pull/11495)
+- **(lockfile)** cache monorepo legacy path discovery by @jdx in [#11500](https://github.com/jdx/mise/pull/11500)
+- **(monorepo)** resolve idiomatic version files per config_root by @kaii-zen in [#11463](https://github.com/jdx/mise/pull/11463)
+- **(plugins)** support local paths in config by @Marukome0743 in [#11487](https://github.com/jdx/mise/pull/11487)
+- **(plugins)** continue batch operations after failures by @Marukome0743 in [#11490](https://github.com/jdx/mise/pull/11490)
+- **(prune)** preserve untrusted version file references by @jdx in [#11501](https://github.com/jdx/mise/pull/11501)
+- **(watch)** honor an explicit --wrap-process group on macOS by @JamBalaya56562 in [#11512](https://github.com/jdx/mise/pull/11512)
+
+### ⚡ Performance
+
+- **(ci)** reduce redundant lint compilation by @jdx in [#11504](https://github.com/jdx/mise/pull/11504)
+
+### 🧪 Testing
+
+- **(system)** avoid flaky GNU mirror in brew source e2e by @jdx in [#11509](https://github.com/jdx/mise/pull/11509)
+
+### 📦 Registry
+
+- add witr by @Jelenkee in [#11505](https://github.com/jdx/mise/pull/11505)
+
+### New Contributors
+
+- @Jelenkee made their first contribution in [#11505](https://github.com/jdx/mise/pull/11505)
+- @kaii-zen made their first contribution in [#11463](https://github.com/jdx/mise/pull/11463)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`herdrdev/herdr`](https://github.com/herdrdev/herdr)
+
+#### Updated Packages (1)
+
+- [`entireio/cli`](https://github.com/entireio/cli)
+
 ## [2026.7.17](https://github.com/jdx/mise/compare/v2026.7.16..v2026.7.17) - 2026-07-29
 
 ### 🚀 Features
