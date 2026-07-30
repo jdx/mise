@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+EOF
+
+mkdir idiomatic tool-versions templated ignored other
+marker="$TMPDIR/mise-prune-tracked-config-pwned"
+
+echo "1.0.0" >idiomatic/.dummy-version
+mise -C idiomatic install
+
+echo "dummy 2.0.0" >tool-versions/.tool-versions
+mise -C tool-versions install
+
+# Track a plain .tool-versions file, then make it require trust. Tracked-config
+# loading must skip it without rendering the template.
+echo "dummy 3.0.0" >templated/.tool-versions
+mise -C templated install
+cat <<EOF >templated/.tool-versions
+dummy {{ exec(command="touch $marker") }}3.0.0
+EOF
+
+echo "4.0.0" >ignored/.dummy-version
+mise -C ignored install
+mise -C ignored trust --ignore .dummy-version
+
+cd other || exit 1
+output=$(MISE_YES=0 MISE_LOG_LEVEL=debug mise prune --dry-run --tools --raw 2>&1)
+
+assert_not_contains "echo '$output'" "dummy@1.0.0"
+assert_not_contains "echo '$output'" "dummy@2.0.0"
+assert_contains "echo '$output'" "dummy@3.0.0"
+assert_contains "echo '$output'" "dummy@4.0.0"
+assert_contains "echo '$output'" "skipping untrusted tracked config"
+assert_contains "echo '$output'" "skipping ignored tracked config"
+assert_fail "test -e '$marker'"

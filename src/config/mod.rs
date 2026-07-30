@@ -847,22 +847,18 @@ impl Config {
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         for path in Tracker::list_all()?.into_iter() {
-            // Pre-check trust to avoid interactive prompts when loading
-            // tracked configs (e.g., during `mise upgrade`). Only MiseToml files
-            // call trust_check during parsing, but we can't cheaply distinguish
-            // file types here, so we check trust for all files and fall through
-            // to parse for trusted files. Untrusted non-MiseToml files (like
-            // .tool-versions) don't need trust and will parse fine regardless.
+            if config_path_is_ignored(&path, false) {
+                debug!("skipping ignored tracked config: {}", display_path(&path));
+                continue;
+            }
+            // Pre-check trust for config files that require it so tracked
+            // config loading (e.g., during `mise upgrade`) never prompts.
+            // Plain .tool-versions and idiomatic version files are safe to
+            // parse without trust and must still protect their tool versions.
             let trust_root = config_file::config_trust_root(&path);
-            // In safe mode, config is inert and trust is not required, so don't
-            // skip untrusted tracked configs — load them like trusted ones.
-            let safe_mode = Settings::safe_mode();
-            if !safe_mode
+            if config_file::path_requires_trust(&path).await
+                && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
-                && !config_file::is_trusted(&path)
-                // safe mise.toml files load without a trust marker, so a missing
-                // marker doesn't mean they should be skipped here
-                && !MiseToml::path_is_trust_exempt(&path)
             {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
