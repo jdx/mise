@@ -52,3 +52,41 @@ assert "mise use dummy@2"
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2"
 assert "mise unuse dummy"
 assert_empty "mise ls dummy"
+
+# removing a specific version preserves the other configured versions
+cat >mise.toml <<'EOF'
+[tools]
+dummy = ["1.0.0", "2.0.0", "3.0.0"]
+EOF
+assert "mise unuse --no-prune dummy@1.0.0 dummy@1.0.0 2>&1" \
+  "mise removed: dummy@1.0.0 from ~/workdir/mise.toml"
+assert_not_contains "cat mise.toml" '"1.0.0"'
+assert_contains "cat mise.toml" '"2.0.0"'
+assert_contains "cat mise.toml" '"3.0.0"'
+
+# multiple versions of the same tool are removed together without restoring an earlier one
+assert_contains "mise unuse --no-prune dummy@2.0.0 dummy@3.0.0 2>&1" \
+  "removed: dummy@2.0.0, dummy@3.0.0"
+assert_not_contains "cat mise.toml" "dummy"
+
+# options on an unselected structured entry are preserved
+cat >mise.toml <<'EOF'
+[tools]
+dummy = [
+  { version = "1.0.0", install_env = { REMOVE = "yes" } },
+  { version = "2.0.0", install_env = { KEEP = "yes" } },
+]
+EOF
+assert "mise unuse --no-prune dummy@1.0.0"
+assert_not_contains "cat mise.toml" "REMOVE"
+assert_contains "cat mise.toml" 'version = "2.0.0"'
+assert_contains "cat mise.toml" 'install_env = { KEEP = "yes" }'
+
+# .tool-versions keeps the other versions, tools, and trailing comment
+cat >.tool-versions <<'EOF'
+dummy 1.0.0 2.0.0 # keep me
+tiny 3.1.0
+EOF
+assert "mise unuse --no-prune --path .tool-versions dummy@1.0.0"
+assert "cat .tool-versions" "dummy 2.0.0 # keep me
+tiny  3.1.0"

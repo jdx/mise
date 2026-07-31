@@ -62,17 +62,56 @@ impl Unuse {
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
-            if let Some(tool_requests) = tools.get(ta.ba.as_ref()) {
-                let should_remove = if let Some(v) = &ta.version {
-                    tool_requests.iter().any(|tv| &tv.version() == v)
-                } else {
-                    true
-                };
-                // TODO: this won't work properly for unusing a specific version in of multiple in a config
-                if should_remove {
-                    removed.push(ta);
-                    cf.remove_tool(&ta.ba)?;
-                }
+            let already_removed = removed.iter().any(|existing| {
+                existing.ba.as_ref() == ta.ba.as_ref() && existing.version == ta.version
+            });
+            if already_removed {
+                continue;
+            }
+            let Some(tool_requests) = tools.get(ta.ba.as_ref()) else {
+                continue;
+            };
+            let matches = match &ta.version {
+                Some(version) => tool_requests.iter().any(|tr| tr.version() == *version),
+                None => true,
+            };
+            if matches {
+                removed.push(ta);
+            }
+        }
+
+        for (ba, tool_requests) in &tools {
+            let matching_args = removed
+                .iter()
+                .copied()
+                .filter(|ta| ta.ba.as_ref() == ba.as_ref())
+                .collect_vec();
+            if matching_args.is_empty() {
+                continue;
+            }
+
+            if matching_args.iter().any(|ta| ta.version.is_none()) {
+                cf.remove_tool(ba)?;
+                continue;
+            }
+
+            let remaining = tool_requests
+                .iter()
+                .filter(|tr| {
+                    let version = tr.version();
+                    !matching_args
+                        .iter()
+                        .any(|ta| ta.version.as_deref() == Some(version.as_str()))
+                })
+                .cloned()
+                .collect_vec();
+            if remaining.len() == tool_requests.len() {
+                continue;
+            }
+            if remaining.is_empty() {
+                cf.remove_tool(ba)?;
+            } else {
+                cf.replace_versions(ba, remaining)?;
             }
         }
         if removed.is_empty() {
