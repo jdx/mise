@@ -624,7 +624,7 @@ fn attach_task_provenance(task: &mut WorkspaceTask, provider: &str) {
     if task.suggestions.cache.is_some() {
         attach_suggestion(&mut task.suggestions.provenance.cache);
     }
-    if !task.suggestions.depends.is_empty() {
+    if task.suggestions.depends.is_some() {
         attach_suggestion(&mut task.suggestions.provenance.depends);
     }
 }

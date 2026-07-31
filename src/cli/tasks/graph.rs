@@ -118,9 +118,11 @@ impl TasksGraph {
                         )?;
                         print_inline_provenance(suggestions.cache.as_ref())?;
                     }
-                    for dependency in &task.suggestions.depends {
-                        miseprint!("      Task dependency: {dependency}")?;
-                        print_inline_provenance(suggestions.depends.as_ref())?;
+                    if let Some(dependencies) = &task.suggestions.depends {
+                        for dependency in dependencies {
+                            miseprint!("      Task dependency: {dependency}")?;
+                            print_inline_provenance(suggestions.depends.as_ref())?;
+                        }
                     }
                 }
             }
