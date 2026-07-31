@@ -417,10 +417,10 @@ impl WorkspaceProjectGraph {
                 let root = normalize_project_root(&id, root)?;
                 if root != project.root {
                     project.tasks.clear();
-                    project.provenance = WorkspaceProvenance::default();
                     project.dependency_provenance.clear();
                     project.root = root;
                 }
+                project.provenance = WorkspaceProvenance::default();
             }
             if let Some(metadata) = &config.metadata {
                 project.metadata.clone_from(metadata);
@@ -1220,6 +1220,38 @@ mod tests {
 
         assert_eq!(app.provenance, WorkspaceProvenance::default());
         assert!(app.dependency_provenance.is_empty());
+    }
+
+    #[test]
+    fn equal_root_overrides_attribute_project_to_configuration() {
+        let dependency_id = ProjectId::new("node", "lib").unwrap();
+        let mut app = project("node", "app", "packages/app");
+        app.dependencies.insert(dependency_id.clone());
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, project("node", "lib", "packages/lib")],
+        };
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            WorkspaceProjectOverride {
+                root: Some("packages/app".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+            .unwrap()
+            .with_overrides(&overrides)
+            .unwrap();
+        let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert_eq!(app.provenance, WorkspaceProvenance::default());
+        assert_eq!(
+            app.dependency_provenance[&dependency_id]
+                .provider
+                .as_deref(),
+            Some("node")
+        );
     }
 
     #[test]
