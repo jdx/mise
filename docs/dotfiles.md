@@ -202,8 +202,8 @@ to clean up its observable footprint.
 ## Unapplying
 
 `mise bootstrap dotfiles unapply` removes configured targets without removing
-their `[dotfiles]` entries or source files. It uses the current config and
-filesystem to determine what the entry owns:
+their `[dotfiles]` entries or source files. It uses the current config,
+filesystem, and recorded `symlink-each` state to determine what the entry owns:
 
 - `symlink` targets are removed only while they still point to the configured
   source.
@@ -216,10 +216,10 @@ filesystem to determine what the entry owns:
 - marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
 
-Unapply is deliberately conservative because dotfiles do not have an apply
-manifest. In particular, a copied file whose source was deleted can no longer
-be identified inside an additive directory copy. Remove such leftovers by
-hand. Use `--dry-run` to inspect the identifiable removals first; template
+Unapply is deliberately conservative because `copy` and `template` entries have
+no apply manifest. In particular, a copied file whose source was deleted can no
+longer be identified inside an additive directory copy. Remove such leftovers
+by hand. Use `--dry-run` to inspect the identifiable removals first; template
 dry-runs do not render or execute template functions.
 
 ## Commands

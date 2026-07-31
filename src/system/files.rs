@@ -120,6 +120,7 @@ struct ManagedLink {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct SymlinkEachState {
     version: u8,
+    source: PathBuf,
     target: PathBuf,
     links: Vec<ManagedLink>,
 }
@@ -775,15 +776,17 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
     Ok(out.into_iter().collect())
 }
 
-fn symlink_each_state_path(target: &Path) -> PathBuf {
-    dirs::STATE
-        .join("dotfiles")
-        .join(format!("{}.toml", hash_to_str(&target)))
+fn symlink_each_state_path(req: &FileRequest) -> PathBuf {
+    dirs::STATE.join("dotfiles").join(format!(
+        "{}.toml",
+        hash_to_str(&(req.source.as_path(), req.target.as_path()))
+    ))
 }
 
 fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
     Ok(SymlinkEachState {
         version: SYMLINK_EACH_STATE_VERSION,
+        source: req.source.clone(),
         target: req.target.clone(),
         links: walk_source_files(req)?
             .into_iter()
@@ -793,7 +796,7 @@ fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
 }
 
 fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
-    let path = symlink_each_state_path(&req.target);
+    let path = symlink_each_state_path(req);
     if !path.exists() {
         return LoadedSymlinkEachState::Missing;
     }
@@ -810,6 +813,7 @@ fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
         }
     };
     let valid = state.version == SYMLINK_EACH_STATE_VERSION
+        && state.source == req.source
         && state.target == req.target
         && state
             .links
@@ -826,20 +830,28 @@ fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
     }
 }
 
-fn save_symlink_each_state(req: &FileRequest) -> Result<()> {
+fn save_symlink_each_state(req: &FileRequest) {
     if cfg!(windows) {
-        return Ok(());
+        return;
     }
-    let path = symlink_each_state_path(&req.target);
-    file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
-    file::write(
-        &path,
-        toml::to_string_pretty(&desired_symlink_each_state(req)?)?,
-    )
+    let path = symlink_each_state_path(req);
+    let result = (|| -> Result<()> {
+        file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
+        file::write(
+            &path,
+            toml::to_string_pretty(&desired_symlink_each_state(req)?)?,
+        )
+    })();
+    if let Err(err) = result {
+        warn!(
+            "files: failed to write dotfiles state {}: {err}",
+            path.display_user()
+        );
+    }
 }
 
 fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
-    let path = symlink_each_state_path(&req.target);
+    let path = symlink_each_state_path(req);
     if path.exists() {
         file::remove_file(path)?;
     }
@@ -1011,7 +1023,7 @@ pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
     if plan.todo.is_empty() {
         if !opts.dry_run {
             for req in plan.record_symlink_each {
-                save_symlink_each_state(req)?;
+                save_symlink_each_state(req);
             }
         }
         info!("files: all files are applied");
@@ -1045,13 +1057,13 @@ pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
     for (req, rendered) in &plan.todo {
         apply_one(req, rendered.as_deref())?;
         if req.mode == FileMode::SymlinkEach {
-            save_symlink_each_state(req)?;
+            save_symlink_each_state(req);
         }
         info!("files: {}", describe_applied(req)?);
     }
     for req in plan.record_symlink_each {
         if !plan.todo.iter().any(|(todo, _)| todo.target == req.target) {
-            save_symlink_each_state(req)?;
+            save_symlink_each_state(req);
         }
     }
     info!(
@@ -1356,7 +1368,7 @@ fn plan_unapply_one<'a>(
             }
         }
         FileMode::SymlinkEach if !cfg!(windows) => {
-            clear_symlink_each_state = symlink_each_state_path(&req.target).exists();
+            clear_symlink_each_state = symlink_each_state_path(req).exists();
             if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
                 if opts.force {
                     paths.insert(req.target.clone(), ());
