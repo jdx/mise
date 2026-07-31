@@ -83,6 +83,10 @@ if [[ $os == "macos" ]]; then
 	export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-12.0}
 fi
 
+if [[ -n "${MISE_BOLT:-}" ]] && [[ -z "${MISE_PGO:-}" ]]; then
+	error "MISE_BOLT requires MISE_PGO so BOLT optimizes the PGO release binary"
+fi
+
 if [[ -n "${MISE_PGO:-}" ]]; then
 	# Profile-guided optimization: instrument, train against the hermetic
 	# offline workload in scripts/pgo.bash, rebuild with the profile.
@@ -102,6 +106,17 @@ fi
 # Use CARGO_TARGET_DIR if set, otherwise default to target
 target_dir="${CARGO_TARGET_DIR:-target}"
 binary_path="$target_dir/$RUST_TRIPLE/serious/mise"
+
+if [[ -n "${MISE_BOLT:-}" ]]; then
+	case "$RUST_TRIPLE" in
+	x86_64-unknown-linux-gnu)
+		bash scripts/bolt.bash "$binary_path"
+		;;
+	*)
+		error "BOLT is only enabled for the x86_64 Linux GNU release target: $RUST_TRIPLE"
+		;;
+	esac
+fi
 
 case "$RUST_TRIPLE" in
 x86_64-unknown-linux-gnu)

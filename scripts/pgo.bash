@@ -4,7 +4,8 @@
 # Three-phase rustc PGO flow, adapted from jdx/aube's benchmarks/pgo.bash:
 #
 #   1. Build mise with -Cprofile-generate (instrumented binary).
-#   2. Train against a hermetic, offline workload covering the startup
+#   2. Train via scripts/train-startup.bash against a hermetic, offline
+#      workload covering the startup
 #      hot paths: settings/config load, toolset resolution, hook-env
 #      (both the full run and the per-prompt early-exit fast path),
 #      env rendering, task listing, and exec. No network, no registry —
@@ -112,82 +113,12 @@ fi
 
 # ---------- Phase 2: training ----------
 echo ">>> [2/3] Training against hermetic offline workload"
-
-train_dir="$(mktemp -d "${TMPDIR:-/tmp}/mise-pgo-train.XXXXXX")"
-cleanup() {
-	rm -rf "$train_dir"
-}
-trap cleanup EXIT
-
 # Force the instrumented binary to write profraw to a path we control,
 # regardless of what -Cprofile-generate=<dir> baked in at compile time
 # (with cross, the compile-time path is a container path that doesn't
 # resolve on the host). %m disambiguates per module; %p per process.
 export LLVM_PROFILE_FILE="$PGO_PROFRAW_DIR/mise-%m-%p.profraw"
-
-# Hermetic project fixture: env vars (incl. a template), pinned tools
-# (never resolved against the network), and a trivial task. MISE_OFFLINE
-# is belt-and-braces — nothing in the workload should hit the network.
-mkdir -p "$train_dir/home" "$train_dir/proj/subdir"
-cat >"$train_dir/proj/mise.toml" <<'EOF'
-[env]
-TRAIN_FOO = "bar"
-TRAIN_TEMPLATED = "{{ env.HOME }}/x"
-
-[tools]
-node = "22.17.0"
-
-[tasks.hello]
-run = "true"
-EOF
-echo "node 22.17.0" >"$train_dir/proj/subdir/.tool-versions"
-
-# shellcheck disable=SC2016 # the single-quoted script takes $bin/$proj as args
-train() {
-	# Fresh isolated state per training pass so cold paths (state dirs,
-	# trust, caches) and warm paths both land in the profile.
-	local pass=$1
-	local root="$train_dir/state.$pass"
-	mkdir -p "$root"
-	env -i PATH="$PATH" HOME="$train_dir/home" TMPDIR="${TMPDIR:-/tmp}" \
-		LLVM_PROFILE_FILE="$LLVM_PROFILE_FILE" \
-		MISE_DATA_DIR="$root/data" MISE_CACHE_DIR="$root/cache" \
-		MISE_CONFIG_DIR="$root/config" MISE_STATE_DIR="$root/state" \
-		MISE_GLOBAL_CONFIG_FILE="$root/config/config.toml" \
-		MISE_OFFLINE=1 MISE_HIDE_UPDATE_WARNING=1 \
-		bash -c '
-			set -e
-			bin=$1; proj=$2
-			cd "$proj"
-			"$bin" trust --all >/dev/null 2>&1 || true
-			"$bin" version >/dev/null
-			"$bin" current >/dev/null 2>&1 || true
-			"$bin" ls >/dev/null 2>&1 || true
-			"$bin" env -s zsh >/dev/null 2>&1 || true
-			"$bin" env -s bash >/dev/null 2>&1 || true
-			"$bin" settings >/dev/null 2>&1 || true
-			"$bin" tasks ls >/dev/null 2>&1 || true
-			"$bin" install >/dev/null 2>&1 || true
-			"$bin" exec -- true >/dev/null 2>&1 || true
-			# hook-env: full run, then eval the session so the
-			# remaining runs take the per-prompt early-exit fast
-			# path — the single hottest path in real usage.
-			eval "$("$bin" hook-env -s bash 2>/dev/null)" || true
-			for _ in 1 2 3 4 5; do
-				"$bin" hook-env -s bash >/dev/null 2>&1 || true
-			done
-			# subdir with .tool-versions: idiomatic-file parsing +
-			# config hierarchy walk
-			cd subdir
-			"$bin" current >/dev/null 2>&1 || true
-			"$bin" hook-env -s bash >/dev/null 2>&1 || true
-		' -- "$INSTRUMENTED_BIN" "$train_dir/proj"
-}
-
-for pass in 1 2 3; do
-	echo "  train: pass $pass"
-	train "$pass"
-done
+bash "$SCRIPT_DIR/train-startup.bash" "$INSTRUMENTED_BIN"
 unset LLVM_PROFILE_FILE
 
 # Sanity check: confirm training actually wrote profraw. On cross-built
@@ -226,8 +157,15 @@ echo ">>> Rebuilding with -Cprofile-use"
 # expected (training can't exercise every path) and LLVM otherwise logs
 # a note per uncovered symbol. Uncovered functions compile normally,
 # just without PGO data.
+bolt_rustflags=""
+if [ -n "${MISE_BOLT:-}" ]; then
+	# BOLT needs text relocations to safely reorder whole functions. Only the
+	# final binary needs them; keeping them out of the instrumented link saves
+	# memory and disk during phase 1.
+	bolt_rustflags="-Clink-arg=-Wl,--emit-relocs"
+fi
 # shellcheck disable=SC2086 # intentional word-splitting on $target_arg
-RUSTFLAGS="${RUSTFLAGS:-} -Cprofile-use=$PGO_MERGED -Cllvm-args=-pgo-warn-missing-function=false" \
+RUSTFLAGS="${RUSTFLAGS:-} -Cprofile-use=$PGO_MERGED -Cllvm-args=-pgo-warn-missing-function=false $bolt_rustflags" \
 	"$PGO_BUILD_TOOL" build --profile="$PGO_PROFILE" $target_arg --bin mise "$@"
 
 # Phase 3b wrote to the same path as phase 1, so the file at
