@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+
+mise use -g watchexec@latest
+
+git init -q
+
+cat <<'EOF' >mise.toml
+[tasks.default]
+run = "touch default-ran"
+sources = ["generated/ignored.txt"]
+
+[tasks.opted-in]
+run = "touch opted-in-ran"
+sources = ["generated/ignored.txt"]
+watch = { no_vcs_ignore = true }
+
+[tasks.dependency]
+run = "echo dependency"
+sources = ["generated/ignored.txt"]
+watch = { no_vcs_ignore = true }
+
+[tasks.root]
+run = "echo root"
+sources = ["root.txt"]
+depends = ["dependency"]
+EOF
+
+mkdir generated
+touch generated/ignored.txt root.txt
+echo generated/ >.gitignore
+
+watch_pid=""
+trap '[[ -z "$watch_pid" ]] || stop_watch' EXIT
+
+wait_for_watchexec() {
+  local log_file=$1
+  for _ in $(seq 1 40); do
+    grep -Fq '$ watchexec ' "$log_file" && return 0
+    sleep 0.25
+  done
+  fail "timed out waiting for watchexec command in $log_file"
+}
+
+stop_watch() {
+  local pid=$watch_pid
+  local child_pid
+  local child_pids=()
+
+  while IFS= read -r child_pid; do
+    child_pids+=("$child_pid")
+  done < <(pgrep -P "$pid" 2>/dev/null || true)
+  for child_pid in "${child_pids[@]}"; do
+    kill -TERM "$child_pid" 2>/dev/null || true
+  done
+  kill -TERM "$pid" 2>/dev/null || true
+  sleep 0.2
+
+  for child_pid in "${child_pids[@]}"; do
+    kill -KILL "$child_pid" 2>/dev/null || true
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  watch_pid=""
+}
+
+# VCS ignores remain enabled by default, even for explicit task sources.
+MISE_DEBUG=1 mise watch default --postpone --poll=100ms >default.log 2>&1 &
+watch_pid=$!
+wait_for_watchexec default.log
+sleep 0.5
+touch generated/ignored.txt
+sleep 1
+stop_watch
+
+if [[ -e default-ran ]]; then
+  fail "expected gitignored source not to trigger without watch.no_vcs_ignore"
+fi
+
+# Opting in forwards the watchexec flag and makes the ignored source observable.
+MISE_DEBUG=1 mise watch opted-in --postpone --poll=100ms >opted-in.log 2>&1 &
+watch_pid=$!
+wait_for_watchexec opted-in.log
+sleep 0.5
+touch generated/ignored.txt
+for _ in $(seq 1 40); do
+  [[ -e opted-in-ran ]] && break
+  sleep 0.25
+done
+stop_watch
+
+if [[ ! -e opted-in-ran ]]; then
+  fail "expected gitignored source to trigger with watch.no_vcs_ignore"
+fi
+
+debug_line=$(grep -F '$ watchexec ' opted-in.log | tail -1)
+flag_count=$(grep -o -- '--no-vcs-ignore' <<<"$debug_line" | wc -l | tr -d ' ')
+assert "echo $flag_count" "1"
+
+# --skip-deps excludes dependency task watch settings from the combined process.
+MISE_DEBUG=1 mise watch root --skip-deps --postpone >skip-deps.log 2>&1 &
+watch_pid=$!
+wait_for_watchexec skip-deps.log
+stop_watch
+assert_not_contains "grep -F '\$ watchexec ' skip-deps.log" "--no-vcs-ignore"
+
+# Without --skip-deps, an opted-in dependency enables the process-wide flag.
+MISE_DEBUG=1 mise watch root --postpone >with-deps.log 2>&1 &
+watch_pid=$!
+wait_for_watchexec with-deps.log
+stop_watch
+assert_contains "grep -F '\$ watchexec ' with-deps.log" "--no-vcs-ignore"

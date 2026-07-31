@@ -303,6 +303,9 @@
             }
           ]
         },
+        "watch": {
+          "$ref": "#/$defs/task_watch"
+        },
         "shell": {
           "description": "specify a shell command to run the script with",
           "type": "string"
@@ -818,6 +821,18 @@
             "unevaluatedProperties": false
           }
         ]
+      }
+    },
+    "task_watch": {
+      "description": "options used by `mise watch` for this task",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "no_vcs_ignore": {
+          "default": false,
+          "description": "do not load VCS ignore files such as `.gitignore` when watching this task",
+          "type": "boolean"
+        }
       }
     },
     "tool": {

@@ -527,6 +527,13 @@ impl Display for RunEntry {
     }
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct TaskWatchOptions {
+    /// Ignore VCS ignore files such as `.gitignore` when running `mise watch`.
+    pub no_vcs_ignore: bool,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
@@ -598,6 +605,8 @@ pub struct Task {
     pub interactive: bool,
     #[serde(default)]
     pub sources: Vec<String>,
+    #[serde(default)]
+    pub watch: Option<TaskWatchOptions>,
     #[serde(default)]
     pub outputs: TaskOutputs,
     /// Experimental local artifact cache configuration.
@@ -1186,6 +1195,13 @@ impl Task {
         task.raw_args = p.parse_bool("raw_args").unwrap_or_default();
         task.interactive = p.parse_bool("interactive").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
+        task.watch = p
+            .get_raw("watch")
+            .map(|v| {
+                TaskWatchOptions::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse watch field in task header: {e}"))
+            })
+            .transpose()?;
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
         task.cache = p
             .get_raw("cache")
@@ -2215,6 +2231,9 @@ impl Task {
             self.output = other.output;
         }
         self.sources.extend(other.sources);
+        if other.watch.is_some() {
+            self.watch = other.watch;
+        }
         if !other.outputs.is_empty() {
             self.outputs = other.outputs;
         }
@@ -2777,6 +2796,7 @@ impl Default for Task {
             trailing_args: vec![],
             interactive: false,
             sources: vec![],
+            watch: None,
             outputs: Default::default(),
             cache: Default::default(),
             raw_outputs: Default::default(),
@@ -3258,7 +3278,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::task::workspace;
-    use crate::task::{RunEntry, Task};
+    use crate::task::{RunEntry, Task, TaskWatchOptions};
     use crate::{config::Config, dirs};
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
@@ -3290,6 +3310,49 @@ mod tests {
         assert_eq!(
             file_task.config_sources(),
             vec![Path::new(".mise/tasks/build"), Path::new("mise.toml")]
+        );
+    }
+
+    #[test]
+    fn test_task_watch_options_deserialize() {
+        let task: Task = toml::from_str(
+            r#"
+run = "echo build"
+watch = { no_vcs_ignore = true }
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            task.watch,
+            Some(TaskWatchOptions {
+                no_vcs_ignore: true
+            })
+        );
+    }
+
+    #[test]
+    fn test_merge_toml_overlay_replaces_watch_options() {
+        let mut file_task = Task {
+            watch: Some(TaskWatchOptions {
+                no_vcs_ignore: true,
+            }),
+            ..Default::default()
+        };
+        let overlay = Task {
+            watch: Some(TaskWatchOptions {
+                no_vcs_ignore: false,
+            }),
+            ..Default::default()
+        };
+
+        file_task.merge_toml_overlay(overlay);
+
+        assert_eq!(
+            file_task.watch,
+            Some(TaskWatchOptions {
+                no_vcs_ignore: false
+            })
         );
     }
 
@@ -4461,6 +4524,7 @@ echo "hello world"
 #MISE raw_args=true
 #MISE interactive=true
 #MISE sources=["src1.txt", "src2.txt"]
+#MISE watch={no_vcs_ignore=true}
 #MISE outputs=["out1.txt"]
 #MISE cache={enabled=true,env=["PROFILE"]}
 #MISE pass_through_env=["DEPLOY_TOKEN"]
@@ -4491,6 +4555,12 @@ echo "test"
         assert_eq!(task.raw_args, true);
         assert_eq!(task.interactive, true);
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
+        assert_eq!(
+            task.watch,
+            Some(TaskWatchOptions {
+                no_vcs_ignore: true
+            })
+        );
         assert_eq!(
             task.cache,
             Some(TaskCacheConfig {

@@ -402,6 +402,24 @@ has changed since the last build.
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
 
+#### Watching VCS-ignored sources
+
+By default, `mise watch` respects VCS ignore files such as `.gitignore`, even when an ignored path is
+listed in `sources`. Set `watch.no_vcs_ignore` for tasks that need to watch generated or intermediary
+files which are intentionally excluded from version control:
+
+```mise-toml
+[tasks.generate]
+run = "process generated/output.json"
+sources = ["generated/output.json"]
+watch = { no_vcs_ignore = true }
+```
+
+This is equivalent to passing `--no-vcs-ignore` to watchexec. Because watchexec applies ignore options
+to the entire watch process, watching multiple tasks together disables VCS ignores for all of them if
+any selected task enables this option. Keep `sources` narrowly scoped: disabling VCS ignores for broad
+build, distribution, or dependency directories may substantially increase filesystem scanning.
+
 #### Excluding sources
 
 Entries in `sources` prefixed with `!` are excluded, matching the convention
