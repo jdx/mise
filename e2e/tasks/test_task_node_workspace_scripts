@@ -205,4 +205,5 @@ assert "cat local-default.txt" ""
 printf stale >packages/app/executable-default.txt
 mise -q run //packages/app:lint
 assert "cat packages/app/executable-default.txt" "from-executable-default"
+assert_fail_contains "mise run //packages/app:build" "inferred tasks and upstream task dependencies from this provider are unavailable"
 assert_fail_contains "mise run //packages/app:build" "failed to resolve upstream task dependencies"

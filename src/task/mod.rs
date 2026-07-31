@@ -1554,6 +1554,13 @@ impl Task {
         }
 
         if project_ids.is_empty() {
+            if let Some(error) = graph.provider_discovery_error() {
+                self.workspace_dependency_error = Some(format!(
+                    "failed to resolve upstream task dependencies because workspace provider \
+                     discovery failed: {error}"
+                ));
+                return Ok(());
+            }
             self.depends
                 .retain(|dependency| !dependency.task.starts_with('^'));
             if let Some(raw) = &mut self.depends_raw {
@@ -3305,6 +3312,41 @@ mod tests {
         tera_template_has_usage_ref,
     };
 
+    #[derive(Debug)]
+    struct BrokenWorkspaceProvider;
+
+    impl workspace::WorkspaceProvider for BrokenWorkspaceProvider {
+        fn id(&self) -> &str {
+            "broken"
+        }
+
+        fn discover(
+            &self,
+            _workspace_root: &Path,
+        ) -> eyre::Result<Vec<workspace::WorkspaceProject>> {
+            eyre::bail!("broken workspace metadata")
+        }
+    }
+
+    #[derive(Debug)]
+    struct WorkingWorkspaceProvider;
+
+    impl workspace::WorkspaceProvider for WorkingWorkspaceProvider {
+        fn id(&self) -> &str {
+            "node"
+        }
+
+        fn discover(
+            &self,
+            _workspace_root: &Path,
+        ) -> eyre::Result<Vec<workspace::WorkspaceProject>> {
+            Ok(vec![workspace::WorkspaceProject::new(
+                workspace::ProjectId::new("node", "app")?,
+                "packages/app",
+            )])
+        }
+    }
+
     #[test]
     fn test_merge_toml_overlay_tracks_definition_sources() {
         let mut file_task = Task {
@@ -3625,6 +3667,45 @@ exec proxy "$@"
         assert_eq!(
             err.to_string(),
             "^task dependencies are supported only in depends"
+        );
+    }
+
+    #[test]
+    fn workspace_task_dependencies_preserve_lenient_discovery_errors() {
+        let graph = workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+            &[&BrokenWorkspaceProvider, &WorkingWorkspaceProvider],
+            Path::new("/workspace"),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let project_ids_by_root = BTreeMap::new();
+
+        let mut discovered_task = Task {
+            name: "node:app#build".to_string(),
+            depends: vec!["^build".to_string().into()],
+            ..Default::default()
+        };
+        discovered_task
+            .resolve_workspace_task_dependencies(&graph, &project_ids_by_root)
+            .unwrap();
+        assert!(discovered_task.workspace_dependency_error.is_none());
+        assert!(discovered_task.depends.is_empty());
+
+        let mut unresolved_task = Task {
+            name: "//packages/missing:build".to_string(),
+            depends: vec!["^build".to_string().into()],
+            ..Default::default()
+        };
+        unresolved_task
+            .resolve_workspace_task_dependencies(&graph, &project_ids_by_root)
+            .unwrap();
+        assert_eq!(unresolved_task.depends[0].task, "^build");
+        assert_eq!(
+            unresolved_task.workspace_dependency_error.as_deref(),
+            Some(
+                "failed to resolve upstream task dependencies because workspace provider \
+                 discovery failed: broken: broken workspace metadata"
+            )
         );
     }
 
