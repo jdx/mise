@@ -1541,13 +1541,6 @@ fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
             out.insert(link.target, ());
         }
     }
-    // Include current mappings as a safe repair path for an incomplete older
-    // state file. Unlike the legacy fallback, this only walks the source.
-    for (source, target) in walk_source_files(req)? {
-        if link_points_to(&source, &target) {
-            out.insert(target, ());
-        }
-    }
     Ok(out.into_keys().collect())
 }
 

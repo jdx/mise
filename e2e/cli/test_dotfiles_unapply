@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
-mkdir -p dotfiles/links dotfiles/copydir
+mkdir -p dotfiles/links dotfiles/missing-links dotfiles/copydir
 echo "linked" >dotfiles/linked
 echo "copied" >dotfiles/copied
 echo "one" >dotfiles/links/one
 echo "stale" >dotfiles/links/stale
 echo "excluded" >dotfiles/links/excluded
+echo "missing source" >dotfiles/missing-links/file
 echo "managed" >dotfiles/copydir/managed
 cat <<'EOF' >dotfiles/rendered.tmpl
 {{ exec(command="touch $HOME/unapply-rendered") }}rendered
@@ -21,6 +22,7 @@ cat <<EOF >mise.toml
 "~/.managed-rendered" = { source = "dotfiles/rendered.tmpl", mode = "template" }
 "~/.managed-mutating" = { source = "dotfiles/mutating.tmpl", mode = "template" }
 "~/.managed-links" = { source = "dotfiles/links", mode = "symlink-each", exclude = ["excluded"] }
+"~/.managed-missing-links" = { source = "dotfiles/missing-links", mode = "symlink-each" }
 "~/.managed-copydir" = { source = "dotfiles/copydir", mode = "copy" }
 "~/.managed-rc/block" = { block = "managed block" }
 "~/.managed-lines/line" = { line = "possibly preexisting" }
@@ -90,6 +92,11 @@ assert "od -An -tx1 ~/.managed-rc | tr -d ' \n'" "6265666f72650d0a0d0a6166746572
 
 # symlink-each removes path-equivalent and stale exact mappings, but preserves
 # unrelated and excluded user-created links and their containing directory.
+# A manifest remains sufficient ownership evidence when the complete source
+# directory has been deleted.
+rm -r dotfiles/missing-links
+assert_succeed "mise bootstrap dotfiles unapply ~/.managed-missing-links --yes"
+assert_fail "test -L $HOME/.managed-missing-links/file"
 mkdir ~/.managed-links/private
 chmod 000 ~/.managed-links/private
 assert_not_contains "MISE_DEBUG=1 mise bootstrap dotfiles unapply ~/.managed-links --dry-run 2>&1" "$HOME/.managed-links/private"
