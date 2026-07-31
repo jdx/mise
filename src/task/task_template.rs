@@ -3,6 +3,7 @@ use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
     RunEntry, Silent, Task, TaskCacheConfig, TaskConfirm, TaskDep, TaskOutput, TaskToolValue,
+    TaskWatchOptions,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -31,6 +32,8 @@ pub struct TaskTemplate {
     pub dir: Option<String>,
     #[serde(default)]
     pub sources: Vec<String>,
+    #[serde(default)]
+    pub watch: Option<TaskWatchOptions>,
     #[serde(default)]
     pub outputs: TaskOutputs,
     #[serde(default)]
@@ -164,6 +167,10 @@ impl Task {
         // sources: local overrides completely if non-empty
         if self.sources.is_empty() && !template.sources.is_empty() {
             self.sources = template.sources.clone();
+        }
+
+        if self.watch.is_none() {
+            self.watch = template.watch.clone();
         }
 
         // outputs: local overrides completely if default
@@ -339,6 +346,34 @@ mod tests {
         };
         overridden.merge_template(&template);
         assert_eq!(overridden.output, Some(TaskOutput::Interleave));
+    }
+
+    #[test]
+    fn test_merge_template_watch_options() {
+        let template = TaskTemplate {
+            watch: Some(TaskWatchOptions {
+                no_vcs_ignore: true,
+            }),
+            ..Default::default()
+        };
+
+        let mut inherited = Task::default();
+        inherited.merge_template(&template);
+        assert_eq!(inherited.watch, template.watch);
+
+        let mut overridden = Task {
+            watch: Some(TaskWatchOptions {
+                no_vcs_ignore: false,
+            }),
+            ..Default::default()
+        };
+        overridden.merge_template(&template);
+        assert_eq!(
+            overridden.watch,
+            Some(TaskWatchOptions {
+                no_vcs_ignore: false
+            })
+        );
     }
 
     #[test]
