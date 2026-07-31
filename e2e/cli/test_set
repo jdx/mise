@@ -96,6 +96,21 @@ assert_not_contains "mise set" "super_secret"
 assert_contains "mise set" "john"
 assert_contains "mise set --no-redact" "super_secret"
 
+# Test that redact=false overrides inherited redaction patterns
+rm -f mise.toml
+cat <<EOF >global.mise.toml
+redactions = ["*TOKEN*"]
+[env]
+SECRET_TOKEN = "secret value"
+EOF
+cat <<EOF >mise.toml
+[env]
+TEST_TOKEN = { value = "e", redact = false }
+EOF
+assert_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/global.mise.toml mise set" "SECRET_TOKEN  [redacted]"
+assert_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/global.mise.toml mise set" "TEST_TOKEN    e"
+assert_not_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/global.mise.toml mise set" "s[redacted]cr[redacted]t"
+
 # Test redaction with --file flag
 rm -f mise.toml
 cat <<EOF >mise.toml

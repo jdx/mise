@@ -320,6 +320,7 @@ pub struct EnvResults {
     pub env_paths: Vec<PathBuf>,
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
+    pub redaction_exclusions: BTreeSet<String>,
     pub tool_add_paths: Vec<PathBuf>,
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
@@ -370,6 +371,18 @@ pub struct EnvResolveOptions {
 }
 
 impl EnvResults {
+    fn track_redaction_override(&mut self, key: &str, redact: Option<bool>) {
+        match redact {
+            Some(false) => {
+                self.redaction_exclusions.insert(key.to_string());
+            }
+            Some(true) => {
+                self.redaction_exclusions.remove(key);
+            }
+            None => {}
+        }
+    }
+
     pub async fn resolve(
         config: &Arc<Config>,
         mut ctx: tera::Context,
@@ -478,6 +491,7 @@ impl EnvResults {
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
+                    r.track_redaction_override(&k, redact);
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
@@ -495,6 +509,7 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Default(k, v, _opts) => {
+                    r.track_redaction_override(&k, redact);
                     if resolve_opts.vars {
                         if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
                             if redact.unwrap_or(false) {
@@ -537,6 +552,7 @@ impl EnvResults {
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, _opts) => {
+                    r.track_redaction_override(&k, redact);
                     // Env required directives only validate. Var required directives also surface
                     // process environment values so `{{vars.KEY}}` can render.
                     if resolve_opts.vars {
@@ -555,6 +571,7 @@ impl EnvResults {
                     ref options,
                     ..
                 } => {
+                    r.track_redaction_override(k, options.redact);
                     // Decrypt age-encrypted value
                     let res = crate::agecrypt::decrypt_age_directive(&directive).await;
                     let decrypted_v = match res {
@@ -644,6 +661,7 @@ impl EnvResults {
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
+                            r.track_redaction_override(&k, redact);
                             if resolve_opts.vars {
                                 if redact.unwrap_or(false) {
                                     r.redactions.push(k.clone());
@@ -673,6 +691,7 @@ impl EnvResults {
                     for (f, new_env) in files {
                         r.env_scripts.push(f.clone());
                         for (k, v) in new_env {
+                            r.track_redaction_override(&k, redact);
                             if resolve_opts.vars {
                                 if redact.unwrap_or(false) {
                                     r.redactions.push(k.clone());

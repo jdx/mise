@@ -1936,9 +1936,10 @@ impl Task {
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
-        config.add_redactions(
+        config.add_redactions_excluding(
             vars_results.redactions.iter().cloned(),
             &vars.clone().into_iter().collect(),
+            &vars_results.redaction_exclusions,
         );
         TASK_VARS_CACHE
             .lock()
@@ -2031,7 +2032,11 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
         if !results.redactions.is_empty() {
-            config.add_redactions(results.redactions, &env);
+            config.add_redactions_excluding(
+                results.redactions.iter().cloned(),
+                &env,
+                &results.redaction_exclusions,
+            );
         }
         TASK_ENV_CACHE
             .lock()
@@ -2085,7 +2090,11 @@ impl Task {
             .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
             .unwrap_or_default();
         redaction_vars.extend(vars.clone());
-        config.add_redactions(results.redactions.iter().cloned(), &redaction_vars);
+        config.add_redactions_excluding(
+            results.redactions.iter().cloned(),
+            &redaction_vars,
+            &results.redaction_exclusions,
+        );
         Ok(vars)
     }
 
@@ -2515,7 +2524,11 @@ impl Task {
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
-        config.add_redactions(redact_keys, &task_env_map);
+        config.add_redactions_excluding(
+            redact_keys,
+            &task_env_map,
+            &env_results.redaction_exclusions,
+        );
 
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         // Apply the resolved environment variables
