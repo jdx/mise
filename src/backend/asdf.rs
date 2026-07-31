@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Formatter};
 use std::fs;
@@ -435,7 +435,24 @@ impl Backend for AsdfBackend {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let mut sm = self.script_man_for_tv(&ctx.config, &tv).await?;
 
-        for p in ctx.ts.list_paths(&ctx.config).await {
+        // `ctx.ts` is the unresolved install toolset during a combined install, so it
+        // does not expose tools that just finished installing. Resolve this tool's
+        // declared dependencies separately so asdf install scripts can execute them
+        // on the first install (#4384). Keep the existing active-tool paths after the
+        // dependencies for compatibility, and preserve each toolset's path order.
+        let dependency_paths = self
+            .install_dependency_toolset(&ctx.config, &tv)
+            .await?
+            .list_paths(&ctx.config)
+            .await;
+        let active_paths = ctx.ts.list_paths(&ctx.config).await;
+        let mut seen = HashSet::new();
+        let paths: Vec<_> = dependency_paths
+            .into_iter()
+            .chain(active_paths)
+            .filter(|path| seen.insert(path.clone()))
+            .collect();
+        for p in paths.into_iter().rev() {
             sm.prepend_path(p);
         }
 
