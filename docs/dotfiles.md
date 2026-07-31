@@ -93,12 +93,12 @@ apply, the same as deleting the source would.
 
 ## Modes
 
-| Mode           | Behavior                                                                                                                                                                                                                                                                                                                              |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                    |
-| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file removes the link it left behind on the next apply; files and links mise didn't create are never touched. |
-| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.     |
-| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                  |
+| Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                                                                                                                                                      |
+| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file removes the link it left behind on the next apply; files and links mise didn't create are never touched. Managed links are recorded under `$MISE_STATE_DIR/dotfiles`, so shared targets are not recursively scanned after the first apply. |
+| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.                                                                                                                                       |
+| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                                                                                                                                                    |
 
 Templates get the same context as other mise templates (`env`, `vars`,
 `exec()`, etc.), which is the main reason to use them: one source file,
@@ -195,15 +195,15 @@ edit through a symlink would modify whatever the link points at, often a
 `[dotfiles]` source, so point the edit at the real file instead.
 
 Removing an entry from config leaves its file, block, or line in place
-because mise keeps no state database. Run `mise bootstrap dotfiles unapply`
-before removing the entry when you want mise to clean up its observable
-footprint.
+because the active config still defines which state belongs to an entry. Run
+`mise bootstrap dotfiles unapply` before removing the entry when you want mise
+to clean up its observable footprint.
 
 ## Unapplying
 
 `mise bootstrap dotfiles unapply` removes configured targets without removing
-their `[dotfiles]` entries or source files. It uses the current config and
-filesystem to determine what the entry owns:
+their `[dotfiles]` entries or source files. It uses the current config,
+filesystem, and recorded `symlink-each` state to determine what the entry owns:
 
 - `symlink` targets are removed only while they still point to the configured
   source.
@@ -216,10 +216,10 @@ filesystem to determine what the entry owns:
 - marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
 
-Unapply is deliberately conservative because dotfiles do not have an apply
-manifest. In particular, a copied file whose source was deleted can no longer
-be identified inside an additive directory copy. Remove such leftovers by
-hand. Use `--dry-run` to inspect the identifiable removals first; template
+Unapply is deliberately conservative because `copy` and `template` entries have
+no apply manifest. In particular, a copied file whose source was deleted can no
+longer be identified inside an additive directory copy. Remove such leftovers
+by hand. Use `--dry-run` to inspect the identifiable removals first; template
 dry-runs do not render or execute template functions.
 
 ## Commands
