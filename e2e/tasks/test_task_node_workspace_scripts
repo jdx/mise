@@ -23,6 +23,10 @@ config_roots = ["packages/*"]
 [monorepo.task_defaults.build]
 env = { ROOT_TASK_DEFAULT = "from-root", TASK_PRECEDENCE = "from-root" }
 depends = ["^build"]
+run = "printf root-default > result.txt"
+
+[monorepo.task_defaults.template-only]
+run = "printf root-default > template-result.txt"
 
 [monorepo.task_defaults.lint]
 env = { ROOT_TASK_DEFAULT = "from-executable-default" }
@@ -34,7 +38,11 @@ env = { ROOT_TASK_DEFAULT = "must-not-apply" }
 dir = "{{ invalid"
 
 [task_templates.build-override]
-env = { TASK_PRECEDENCE = "from-template" }
+env = { TASK_PRECEDENCE = "from-template", TEMPLATE_PRECEDENCE = "from-template" }
+run = "printf template > result.txt"
+
+[task_templates.template-only]
+run = "printf template > template-result.txt"
 
 [tasks.local]
 run = "printf local > local-result.txt; printf '%s' \"$ROOT_TASK_DEFAULT\" > local-default.txt"
@@ -84,6 +92,9 @@ mkdir -p packages/tool
 cat <<'TOML' >packages/tool/mise.toml
 [tasks.build]
 run = "printf '%s' \"$ROOT_TASK_DEFAULT\" > config-root-default.txt"
+
+[tasks.template-only]
+extends = "template-only"
 TOML
 
 assert_contains "mise tasks --all" "node:@scope/app#build"
@@ -92,6 +103,9 @@ assert_contains "mise task info 'node:@scope/app#build'" "packages/app/package.j
 
 mise -q run //packages/tool:build
 assert "cat packages/tool/config-root-default.txt" "from-root"
+
+mise -q run //packages/tool:template-only
+assert "cat packages/tool/template-result.txt" "template"
 
 mise -q run 'node:@scope/app#build' -- forwarded
 assert "cat packages/app/result.txt" "inferred"
@@ -106,7 +120,8 @@ assert "cat packages/app/result.txt" "inferred"
 cat <<'TOML' >packages/app/mise.toml
 [tasks.build]
 extends = "build-override"
-run = "printf explicit > result.txt; printf '%s' \"$ROOT_TASK_DEFAULT\" > explicit-default.txt; printf '%s' \"$TASK_PRECEDENCE\" > precedence.txt"
+env = { TASK_PRECEDENCE = "from-local" }
+run = "printf explicit > result.txt; printf '%s' \"$ROOT_TASK_DEFAULT\" > explicit-default.txt; printf '%s' \"$TASK_PRECEDENCE\" > precedence.txt; printf '%s' \"$TEMPLATE_PRECEDENCE\" > template-precedence.txt"
 
 [tasks.deploy]
 usage = 'arg "<task>"'
@@ -130,7 +145,8 @@ printf stale >packages/app/result.txt
 mise -q run 'node:@scope/app#build'
 assert "cat packages/app/result.txt" "explicit"
 assert "cat packages/app/explicit-default.txt" "from-root"
-assert "cat packages/app/precedence.txt" "from-template"
+assert "cat packages/app/precedence.txt" "from-local"
+assert "cat packages/app/template-precedence.txt" "from-template"
 assert "cat packages/core/explicit-result.txt" "explicit-upstream"
 
 printf stale >packages/core/explicit-result.txt
