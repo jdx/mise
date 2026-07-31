@@ -16,15 +16,17 @@ pub fn reset() {
 }
 
 pub fn config_root(path: &Path) -> PathBuf {
-    if is_global_config(path) {
-        return env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
-    }
     let path = path
         .absolutize()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|_| path.to_path_buf());
     if let Some(cached) = CONFIG_ROOT_CACHE.lock().unwrap().get(&path).cloned() {
         return cached;
+    }
+    if is_global_config(&path) {
+        let root = env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
+        CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
+        return root;
     }
     let parts = path
         .components()

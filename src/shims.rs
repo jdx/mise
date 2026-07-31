@@ -52,10 +52,8 @@ pub async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&mut config, &env::MISE_BIN_NAME, &args)
-        .await?
-        .to_string_lossy()
-        .to_string();
+    let (bin, ts) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    args[0] = bin.to_string_lossy().to_string();
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
         tool: vec![],
@@ -76,7 +74,7 @@ pub async fn handle_shim() -> Result<()> {
         allow_env: vec![],
     };
     time!("shim exec");
-    exec.run().await?;
+    exec.run_with_toolset(config, ts).await?;
     Err(request_exit(0))
 }
 
@@ -98,7 +96,11 @@ fn invoked_shim_path() -> PathBuf {
         .unwrap_or(argv0)
 }
 
-async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -> Result<PathBuf> {
+async fn which_shim(
+    config: &mut Arc<Config>,
+    bin_name: &str,
+    args: &[String],
+) -> Result<(PathBuf, Toolset)> {
     // Shell completion invokes `usage complete-word` through the `usage` shim.
     // It should use the installed CLI or fail locally, never resolve a floating
     // tool version or auto-install over the network while the user is pressing
@@ -128,7 +130,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -
             "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
             bin = display_path(&bin)
         );
-        return Ok(bin);
+        return Ok((bin, ts));
     }
     // Auto-installing here would download a tool over the network; skip it for
     // offline completion so `usage complete-word` fails locally instead.
@@ -144,7 +146,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok(bin);
+                return Ok((bin, ts));
             }
         }
     }
@@ -164,11 +166,14 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str, args: &[String]) -
                 continue;
             }
             trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-            return Ok(bin);
+            return Ok((bin, ts));
         }
     }
     let tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
-    err_no_version_set(config, ts, bin_name, tvs).await
+    match err_no_version_set(config, ts, bin_name, tvs).await {
+        Ok(_) => unreachable!("err_no_version_set always returns an error"),
+        Err(err) => Err(err),
+    }
 }
 
 /// Build the actionable, `which_shim`-style resolution error for a bin that a

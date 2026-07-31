@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::sync::Arc;
 
 use clap::ValueHint;
 use duct::IntoExecutablePath;
@@ -17,7 +18,7 @@ use crate::env;
 use crate::env_diff::EnvDiff;
 use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -109,7 +110,7 @@ impl Exec {
             env::reset_env_cache_key();
         }
 
-        let mut config = Config::get().await?;
+        let config = Config::get().await?;
 
         // Check if any tool arg explicitly specified @latest
         // If so, resolve to the actual latest version from the registry (not just latest installed)
@@ -128,7 +129,7 @@ impl Exec {
             Default::default()
         };
 
-        let mut ts = measure!("toolset", {
+        let ts = measure!("toolset", {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
@@ -137,6 +138,28 @@ impl Exec {
                 .await?
         });
 
+        self.run_with_context(config, ts, resolve_options, has_explicit_latest)
+            .await
+    }
+
+    /// Execute with a toolset that the shim path has already resolved while
+    /// locating the delegated binary.
+    pub(crate) async fn run_with_toolset(
+        self,
+        config: Arc<Config>,
+        ts: Toolset,
+    ) -> eyre::Result<()> {
+        self.run_with_context(config, ts, ResolveOptions::default(), false)
+            .await
+    }
+
+    async fn run_with_context(
+        self,
+        mut config: Arc<Config>,
+        mut ts: Toolset,
+        resolve_options: ResolveOptions,
+        has_explicit_latest: bool,
+    ) -> eyre::Result<()> {
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
