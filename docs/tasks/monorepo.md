@@ -468,6 +468,10 @@ root task defaults fill only fields the provider did not suggest. Providers leav
 their ecosystem metadata is not authoritative; mise does not guess outputs or cacheability from a
 command string.
 
+The Node workspace provider reads `inputs`, `outputs`, `cache`, and `dependsOn` from matching
+`turbo.json` task definitions. Turbo-specific patterns that mise cannot preserve exactly, such as
+`$TURBO_ROOT$`, are left unset so a task template or root task default can supply them instead.
+
 ### Upstream Task Dependencies
 
 Prefix a task dependency with `^` to run that task in upstream workspace projects first. A root

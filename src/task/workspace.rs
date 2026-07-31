@@ -117,10 +117,12 @@ pub struct WorkspaceTaskSuggestions {
     pub cache: Option<bool>,
     /// Task dependencies, including project-relative and `^task` dependencies.
     pub depends: Vec<String>,
+    /// Additional metadata files that contributed these suggestions.
+    pub config_sources: Vec<PathBuf>,
 }
 
 impl WorkspaceTaskSuggestions {
-    pub(crate) fn apply_to(&self, task: &mut Task) {
+    pub(crate) fn apply_before_defaults(&self, task: &mut Task) {
         if !self.inputs.is_empty() {
             task.sources.clone_from(&self.inputs);
         }
@@ -131,14 +133,18 @@ impl WorkspaceTaskSuggestions {
                 TaskOutputs::Files(outputs.clone())
             };
         }
-        if let Some(enabled) = self.cache {
-            task.cache = Some(TaskCacheConfig {
-                enabled,
-                ..Default::default()
-            });
-        }
         if !self.depends.is_empty() {
             task.depends = self.depends.iter().cloned().map(Into::into).collect();
+        }
+        task.additional_config_sources
+            .extend(self.config_sources.iter().cloned());
+    }
+
+    pub(crate) fn apply_after_defaults(&self, task: &mut Task) {
+        if let Some(enabled) = self.cache {
+            task.cache
+                .get_or_insert_with(TaskCacheConfig::default)
+                .enabled = enabled;
         }
     }
 }
@@ -658,10 +664,12 @@ mod tests {
             outputs: Some(vec!["dist/**".to_string()]),
             cache: Some(true),
             depends: vec!["prepare".to_string(), "^build".to_string()],
+            config_sources: vec![PathBuf::from("turbo.json")],
         };
         let mut task = Task::default();
 
-        suggestions.apply_to(&mut task);
+        suggestions.apply_before_defaults(&mut task);
+        suggestions.apply_after_defaults(&mut task);
 
         assert_eq!(task.sources, vec!["src/**", "package.json"]);
         assert_eq!(
@@ -676,17 +684,22 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["prepare", "^build"]
         );
+        assert_eq!(
+            task.additional_config_sources,
+            [PathBuf::from("turbo.json")]
+        );
     }
 
     #[test]
     fn task_suggestions_distinguish_no_outputs_from_no_suggestion() {
         let mut no_outputs = Task::default();
-        WorkspaceTaskSuggestions {
+        let no_output_suggestions = WorkspaceTaskSuggestions {
             outputs: Some(Vec::new()),
             cache: Some(false),
             ..Default::default()
-        }
-        .apply_to(&mut no_outputs);
+        };
+        no_output_suggestions.apply_before_defaults(&mut no_outputs);
+        no_output_suggestions.apply_after_defaults(&mut no_outputs);
         assert_eq!(no_outputs.outputs, TaskOutputs::NoFiles);
         assert!(
             no_outputs
@@ -705,7 +718,8 @@ mod tests {
             depends: vec!["existing".to_string().into()],
             ..Default::default()
         };
-        WorkspaceTaskSuggestions::default().apply_to(&mut unspecified);
+        WorkspaceTaskSuggestions::default().apply_before_defaults(&mut unspecified);
+        WorkspaceTaskSuggestions::default().apply_after_defaults(&mut unspecified);
         assert_eq!(unspecified.sources, vec!["existing"]);
         assert_eq!(
             unspecified.outputs,
@@ -717,6 +731,35 @@ mod tests {
                 .cache
                 .as_ref()
                 .is_some_and(|cache| cache.enabled)
+        );
+    }
+
+    #[test]
+    fn cache_suggestion_preserves_default_cache_inputs() {
+        let suggestions = WorkspaceTaskSuggestions {
+            cache: Some(true),
+            ..Default::default()
+        };
+        let mut task = Task::default();
+
+        suggestions.apply_before_defaults(&mut task);
+        task.merge_template(&super::super::TaskTemplate {
+            cache: Some(TaskCacheConfig {
+                env: vec!["NODE_ENV".to_string()],
+                command_inputs: vec!["node --version".to_string()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        suggestions.apply_after_defaults(&mut task);
+
+        assert_eq!(
+            task.cache,
+            Some(TaskCacheConfig {
+                enabled: true,
+                env: vec!["NODE_ENV".to_string()],
+                command_inputs: vec!["node --version".to_string()],
+            })
         );
     }
 

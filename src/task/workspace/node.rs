@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
 use eyre::{Context, Result};
+use serde::Deserialize;
 
 use super::{
     ProjectId, WorkspaceProject, WorkspaceProvider, WorkspaceTask, WorkspaceTaskSuggestions,
@@ -10,6 +11,7 @@ use super::{
 
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
+const TURBO_JSON: &str = "turbo.json";
 
 /// Discovers Node projects from npm, pnpm, Yarn, and Bun workspace definitions.
 #[derive(Debug, Default)]
@@ -19,6 +21,22 @@ struct WorkspaceDefinition {
     source: &'static str,
     package_manager: Option<String>,
     include_named_root: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct TurboJson {
+    tasks: BTreeMap<String, TurboTask>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct TurboTask {
+    inputs: Option<Vec<String>>,
+    outputs: Option<Vec<String>>,
+    cache: Option<bool>,
+    #[serde(rename = "dependsOn")]
+    depends_on: Option<Vec<String>>,
 }
 
 impl WorkspaceProvider for NodeWorkspaceProvider {
@@ -36,6 +54,7 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                 workspace_root.display()
             )
         })?;
+        let turbo = read_turbo_json(workspace_root)?;
         let mut roots = aube::embed::discover_workspace_packages(
             &canonical_root,
             WorkspaceDiscoveryOptions::confined_to_root(),
@@ -124,7 +143,13 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
                         .insert("package_manager".to_string(), package_manager.clone());
                 }
                 let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
-                project.tasks = workspace_tasks(&manifest, package_manager, &source);
+                project.tasks = workspace_tasks(
+                    &manifest,
+                    package_manager,
+                    &source,
+                    turbo.as_ref(),
+                    workspace_root,
+                );
                 Ok(project)
             })
             .collect()
@@ -147,7 +172,14 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             return Ok(BTreeMap::new());
         };
         let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
-        Ok(workspace_tasks(&manifest, package_manager, &source))
+        let turbo = read_turbo_json(workspace_root)?;
+        Ok(workspace_tasks(
+            &manifest,
+            package_manager,
+            &source,
+            turbo.as_ref(),
+            workspace_root,
+        ))
     }
 }
 
@@ -155,6 +187,8 @@ fn workspace_tasks(
     manifest: &PackageJson,
     package_manager: &str,
     source: &Path,
+    turbo: Option<&TurboJson>,
+    workspace_root: &Path,
 ) -> BTreeMap<String, WorkspaceTask> {
     manifest
         .scripts
@@ -167,11 +201,68 @@ fn workspace_tasks(
                     command,
                     description: script.clone(),
                     source: source.to_path_buf(),
-                    suggestions: WorkspaceTaskSuggestions::default(),
+                    suggestions: turbo
+                        .and_then(|turbo| turbo.task(manifest.name.as_deref(), name))
+                        .map(|task| task.suggestions(workspace_root))
+                        .unwrap_or_default(),
                 },
             )
         })
         .collect()
+}
+
+impl TurboJson {
+    fn task(&self, package: Option<&str>, task: &str) -> Option<&TurboTask> {
+        package
+            .and_then(|package| self.tasks.get(&format!("{package}#{task}")))
+            .or_else(|| self.tasks.get(task))
+    }
+}
+
+impl TurboTask {
+    fn suggestions(&self, workspace_root: &Path) -> WorkspaceTaskSuggestions {
+        let supported_patterns = |patterns: &Option<Vec<String>>| {
+            patterns
+                .as_ref()
+                .filter(|patterns| patterns.iter().all(|pattern| !pattern.contains('$')))
+                .cloned()
+        };
+        let inputs = supported_patterns(&self.inputs)
+            .filter(|patterns| !patterns.is_empty())
+            .unwrap_or_default();
+        let outputs = supported_patterns(&self.outputs);
+        let depends = self
+            .depends_on
+            .as_ref()
+            .filter(|dependencies| {
+                dependencies.iter().all(|dependency| {
+                    let task = dependency.strip_prefix('^').unwrap_or(dependency);
+                    !task.is_empty() && !task.contains('#') && !task.contains('$')
+                })
+            })
+            .cloned()
+            .unwrap_or_default();
+
+        WorkspaceTaskSuggestions {
+            inputs,
+            outputs,
+            cache: self.cache,
+            depends,
+            config_sources: vec![workspace_root.join(TURBO_JSON)],
+        }
+    }
+}
+
+fn read_turbo_json(workspace_root: &Path) -> Result<Option<TurboJson>> {
+    let path = workspace_root.join(TURBO_JSON);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let contents = std::fs::read_to_string(&path)
+        .wrap_err_with(|| format!("failed to read {}", path.display()))?;
+    serde_json::from_str(&contents)
+        .map(Some)
+        .wrap_err_with(|| format!("failed to parse {}", path.display()))
 }
 
 fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinition>> {
@@ -320,6 +411,67 @@ mod tests {
                 .map(|task| task.command.as_str()),
             Some("pnpm run test:unit --")
         );
+    }
+
+    #[test]
+    fn imports_authoritative_turbo_task_suggestions() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"@scope/app","scripts":{"build":"vite build"}}"#,
+        );
+        write(
+            &temp.path().join(TURBO_JSON),
+            r#"{
+                "tasks": {
+                    "build": {
+                        "inputs": ["src/**", "package.json"],
+                        "outputs": ["dist/**"],
+                        "cache": true,
+                        "dependsOn": ["^build", "prepare"]
+                    }
+                }
+            }"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+        let suggestions = &projects[0].tasks["build"].suggestions;
+
+        assert_eq!(suggestions.inputs, ["src/**", "package.json"]);
+        assert_eq!(
+            suggestions
+                .outputs
+                .as_ref()
+                .map(|outputs| outputs.iter().map(String::as_str).collect::<Vec<_>>()),
+            Some(vec!["dist/**"])
+        );
+        assert_eq!(suggestions.cache, Some(true));
+        assert_eq!(suggestions.depends, ["^build", "prepare"]);
+        assert_eq!(suggestions.config_sources, [temp.path().join(TURBO_JSON)]);
+    }
+
+    #[test]
+    fn leaves_unsupported_turbo_suggestion_fields_unset() {
+        let task: TurboTask = serde_json::from_str(
+            r#"{
+                "inputs": ["$TURBO_DEFAULT$", "src/**"],
+                "outputs": ["$TURBO_ROOT$/dist/**"],
+                "dependsOn": ["other-package#build"],
+                "cache": false
+            }"#,
+        )
+        .unwrap();
+
+        let suggestions = task.suggestions(Path::new("/workspace"));
+
+        assert!(suggestions.inputs.is_empty());
+        assert!(suggestions.outputs.is_none());
+        assert!(suggestions.depends.is_empty());
+        assert_eq!(suggestions.cache, Some(false));
     }
 
     #[test]

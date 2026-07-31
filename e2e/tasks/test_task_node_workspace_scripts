@@ -23,6 +23,7 @@ config_roots = ["packages/*"]
 [monorepo.task_defaults.build]
 env = { ROOT_TASK_DEFAULT = "from-root", TASK_PRECEDENCE = "from-root" }
 depends = ["^build"]
+cache = { env = ["NODE_ENV"] }
 run = "printf root-default > result.txt"
 
 [monorepo.task_defaults.template-only]
@@ -53,6 +54,18 @@ cat <<'JSON' >package.json
 {
   "packageManager": "npm@11.0.0",
   "workspaces": ["packages/*"]
+}
+JSON
+cat <<'JSON' >turbo.json
+{
+  "tasks": {
+    "build": {
+      "inputs": ["src/**", "package.json"],
+      "outputs": ["result.txt"],
+      "cache": true,
+      "dependsOn": ["^build"]
+    }
+  }
 }
 JSON
 cat <<'JSON' >packages/app/package.json
@@ -100,6 +113,11 @@ TOML
 assert_contains "mise tasks --all" "node:@scope/app#build"
 assert_not_contains "mise tasks --all" "node:@scope/app#test:unit"
 assert_contains "mise task info 'node:@scope/app#build'" "packages/app/package.json"
+assert_contains "mise task info 'node:@scope/app#build'" "turbo.json"
+assert_contains "mise task info 'node:@scope/app#build'" "Sources: src/**, package.json"
+assert_contains "mise task info 'node:@scope/app#build'" "Outputs: result.txt"
+assert_contains "mise task info 'node:@scope/app#build'" "Cache: enabled"
+assert "mise task info 'node:@scope/app#build' --json | jq -r '.cache.env[]'" "NODE_ENV"
 
 mise -q run //packages/tool:build
 assert "cat packages/tool/config-root-default.txt" "from-root"
