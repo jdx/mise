@@ -258,11 +258,20 @@ fn read_turbo_json(workspace_root: &Path) -> Result<Option<TurboJson>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let contents = std::fs::read_to_string(&path)
-        .wrap_err_with(|| format!("failed to read {}", path.display()))?;
-    serde_json::from_str(&contents)
-        .map(Some)
-        .wrap_err_with(|| format!("failed to parse {}", path.display()))
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) => {
+            warn!("failed to read optional {}: {error}", path.display());
+            return Ok(None);
+        }
+    };
+    match serde_json::from_str(&contents) {
+        Ok(turbo) => Ok(Some(turbo)),
+        Err(error) => {
+            warn!("failed to parse optional {}: {error}", path.display());
+            Ok(None)
+        }
+    }
 }
 
 fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinition>> {
@@ -452,6 +461,28 @@ mod tests {
         assert_eq!(suggestions.cache, Some(true));
         assert_eq!(suggestions.depends, ["^build", "prepare"]);
         assert_eq!(suggestions.config_sources, [temp.path().join(TURBO_JSON)]);
+    }
+
+    #[test]
+    fn invalid_turbo_json_does_not_remove_package_scripts() {
+        for contents in ["{", r#"{"tasks":{"build":{"cache":"yes"}}}"#] {
+            let temp = tempdir().unwrap();
+            write(
+                &temp.path().join(PACKAGE_JSON),
+                r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+            );
+            write(
+                &temp.path().join("packages/app/package.json"),
+                r#"{"name":"app","scripts":{"build":"vite build"}}"#,
+            );
+            write(&temp.path().join(TURBO_JSON), contents);
+
+            let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+            let task = &projects[0].tasks["build"];
+
+            assert_eq!(task.command, "pnpm run build --");
+            assert_eq!(task.suggestions, WorkspaceTaskSuggestions::default());
+        }
     }
 
     #[test]

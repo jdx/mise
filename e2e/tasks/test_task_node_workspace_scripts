@@ -63,7 +63,7 @@ cat <<'JSON' >turbo.json
       "inputs": ["src/**", "package.json"],
       "outputs": ["result.txt"],
       "cache": true,
-      "dependsOn": ["^build"]
+      "dependsOn": ["^prepare"]
     }
   }
 }
@@ -96,7 +96,8 @@ cat <<'JSON' >packages/core/package.json
 {
   "name": "@scope/core",
   "scripts": {
-    "build": "printf built > result.txt"
+    "build": "printf built > result.txt",
+    "prepare": "printf prepared > prepare-result.txt"
   }
 }
 JSON
@@ -129,7 +130,7 @@ mise -q run 'node:@scope/app#build' -- forwarded
 assert "cat packages/app/result.txt" "inferred"
 assert "cat packages/app/manager-args.txt" "run build -- forwarded"
 assert "cat packages/app/default.txt" "from-root"
-assert "cat workspace-task.log" $'core:run build --\napp:run build -- forwarded'
+assert "cat workspace-task.log" $'core:run prepare --\napp:run build -- forwarded'
 
 printf stale >packages/app/result.txt
 mise -q run //packages/app:build
