@@ -308,20 +308,29 @@ static FJ_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_fj_hosts().un
 fn fj_keys_path() -> Option<PathBuf> {
     // Linux/XDG: $XDG_DATA_HOME/forgejo-cli/keys.json
     let xdg_path = env::XDG_DATA_HOME.join("forgejo-cli/keys.json");
-    if xdg_path.exists() {
-        return Some(xdg_path);
-    }
+    let candidates = [xdg_path.clone()]
+        .into_iter()
+        .chain(fj_native_keys_paths())
+        .collect();
+    Some(tokens::first_existing_file(candidates, xdg_path))
+}
 
-    #[cfg(target_os = "macos")]
-    {
-        let macos_path =
-            dirs::HOME.join("Library/Application Support/Cyborus.forgejo-cli/keys.json");
-        if macos_path.exists() {
-            return Some(macos_path);
-        }
-    }
+#[cfg(target_os = "macos")]
+fn fj_native_keys_paths() -> Vec<PathBuf> {
+    fj_macos_keys_paths(&dirs::HOME).into()
+}
 
-    Some(xdg_path)
+#[cfg(not(target_os = "macos"))]
+fn fj_native_keys_paths() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn fj_macos_keys_paths(home: &std::path::Path) -> [PathBuf; 2] {
+    [
+        home.join("Library/Application Support/forgejo-cli.forgejo-cli/keys.json"),
+        home.join("Library/Application Support/Cyborus.forgejo-cli/keys.json"),
+    ]
 }
 
 fn read_fj_hosts() -> Option<HashMap<String, String>> {
@@ -428,6 +437,22 @@ something_else = "value"
 "#;
         let result = tokens::parse_tokens_toml(toml).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_fj_macos_keys_paths_prefers_current_path() {
+        let paths = fj_macos_keys_paths(std::path::Path::new("/Users/test"));
+        assert_eq!(
+            paths,
+            [
+                PathBuf::from(
+                    "/Users/test/Library/Application Support/forgejo-cli.forgejo-cli/keys.json"
+                ),
+                PathBuf::from(
+                    "/Users/test/Library/Application Support/Cyborus.forgejo-cli/keys.json"
+                ),
+            ]
+        );
     }
 
     // #10343: a first page made up entirely of prereleases must not yield "no
