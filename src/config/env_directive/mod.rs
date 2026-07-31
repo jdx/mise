@@ -7,6 +7,7 @@ use crate::path_env::PathEnv;
 use crate::tera::{
     TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
 };
+use crate::toolset::Toolset;
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -337,6 +338,12 @@ pub(super) struct EnvDirectiveContext<'a> {
     source: &'a Path,
     exec_env: &'a EnvMap,
     config_root: &'a Path,
+    /// The caller's resolved toolset, when the caller has one. `Toolset::env` does; plain
+    /// `Config::env` does not, because it runs before any toolset exists. Directives that need to
+    /// know *which* version of a tool is active — rather than just rendering `tools.*` templates —
+    /// read it from here, since CLI overrides such as `--tool python@3.12` only ever reach a
+    /// toolset and are never written back to `Config`.
+    toolset: Option<&'a Toolset>,
 }
 
 impl EnvDirectiveContext<'_> {
@@ -384,10 +391,23 @@ impl EnvResults {
 
     pub async fn resolve(
         config: &Arc<Config>,
+        ctx: tera::Context,
+        initial: &EnvMap,
+        input: Vec<(EnvDirective, PathBuf)>,
+        resolve_opts: EnvResolveOptions,
+    ) -> eyre::Result<Self> {
+        Self::resolve_with_toolset(config, ctx, initial, input, resolve_opts, None).await
+    }
+
+    /// [`Self::resolve`] for callers that already have a resolved toolset. See
+    /// [`EnvDirectiveContext::toolset`] for why a directive would want it.
+    pub async fn resolve_with_toolset(
+        config: &Arc<Config>,
         mut ctx: tera::Context,
         initial: &EnvMap,
         input: Vec<(EnvDirective, PathBuf)>,
         resolve_opts: EnvResolveOptions,
+        toolset: Option<&Toolset>,
     ) -> eyre::Result<Self> {
         // trace!("resolve: input: {:#?}", &input);
         let mut env = initial
@@ -640,6 +660,7 @@ impl EnvResults {
                         source: &source,
                         exec_env: &env_vars,
                         config_root: &config_root,
+                        toolset,
                     };
                     let path = Self::path(&mut directive_ctx, input_str).await?;
                     paths.push((path.clone(), source.clone()));
@@ -656,6 +677,7 @@ impl EnvResults {
                         source: &source,
                         exec_env: &env_vars,
                         config_root: &config_root,
+                        toolset,
                     };
                     let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
                     for (f, new_env) in files {
@@ -686,6 +708,7 @@ impl EnvResults {
                         source: &source,
                         exec_env: &env_vars,
                         config_root: &config_root,
+                        toolset,
                     };
                     let files = Self::source(&mut directive_ctx, &mut paths, input)?;
                     for (f, new_env) in files {
@@ -723,6 +746,7 @@ impl EnvResults {
                         source: &source,
                         exec_env: &env_vars,
                         config_root: &config_root,
+                        toolset,
                     };
                     Self::venv(
                         &mut directive_ctx,
@@ -731,6 +755,8 @@ impl EnvResults {
                         create,
                         venv::PythonVenvOptions {
                             python,
+                            // filled in by `venv()` from the caller's toolset
+                            active_python: None,
                             uv_create_args,
                             python_create_args,
                             require_uv: false,
