@@ -595,6 +595,8 @@ mod tests {
         let project = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
 
         assert_eq!(project.root, Path::new("overrides/app"));
+        assert_eq!(project.provenance.provider.as_deref(), Some("node"));
+        assert!(project.provenance.source.is_none());
         assert!(!project.tasks.contains_key("old"));
         assert_eq!(
             project.tasks.get("new"),

@@ -414,6 +414,10 @@ impl WorkspaceProjectGraph {
                 let root = normalize_project_root(&id, root)?;
                 if root != project.root {
                     project.tasks.clear();
+                    project.provenance.source = None;
+                    for provenance in project.dependency_provenance.values_mut() {
+                        provenance.source = None;
+                    }
                     project.root = root;
                 }
             }
@@ -1147,6 +1151,48 @@ mod tests {
                 .dependencies,
             BTreeSet::from([ProjectId::new("node", "explicit").unwrap()])
         );
+    }
+
+    #[test]
+    fn root_overrides_clear_stale_provider_source_paths() {
+        let dependency_id = ProjectId::new("node", "lib").unwrap();
+        let mut app = project("node", "app", "packages/app");
+        app.dependencies.insert(dependency_id.clone());
+        app.provenance.source = Some("packages/app/package.json".into());
+        app.dependency_provenance.insert(
+            dependency_id.clone(),
+            WorkspaceProvenance {
+                source: Some("packages/app/package.json".into()),
+                ..Default::default()
+            },
+        );
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, project("node", "lib", "packages/lib")],
+        };
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            WorkspaceProjectOverride {
+                root: Some("overrides/app".into()),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+            .unwrap()
+            .with_overrides(&overrides)
+            .unwrap();
+        let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert_eq!(app.provenance.provider.as_deref(), Some("node"));
+        assert!(app.provenance.source.is_none());
+        assert_eq!(
+            app.dependency_provenance[&dependency_id]
+                .provider
+                .as_deref(),
+            Some("node")
+        );
+        assert!(app.dependency_provenance[&dependency_id].source.is_none());
     }
 
     #[test]
