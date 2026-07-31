@@ -29,7 +29,10 @@ assert_json "mise tasks graph --json" '{
       "id": "cargo:core",
       "root": "crates/core",
       "metadata": {},
-      "dependencies": []
+      "dependencies": [],
+      "provenance": {},
+      "dependency_provenance": {},
+      "tasks": {}
     },
     {
       "id": "node:app",
@@ -40,7 +43,10 @@ assert_json "mise tasks graph --json" '{
       "dependencies": [
         "cargo:core",
         "node:lib"
-      ]
+      ],
+      "provenance": {},
+      "dependency_provenance": {},
+      "tasks": {}
     },
     {
       "id": "node:lib",
@@ -48,7 +54,10 @@ assert_json "mise tasks graph --json" '{
       "metadata": {
         "kind": "library"
       },
-      "dependencies": []
+      "dependencies": [],
+      "provenance": {},
+      "dependency_provenance": {},
+      "tasks": {}
     }
   ]
 }'
