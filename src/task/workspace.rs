@@ -144,6 +144,9 @@ impl WorkspaceTaskSuggestions {
     }
 
     pub(crate) fn apply_after_defaults(&self, task: &mut Task) {
+        if self.outputs.as_ref().is_some_and(Vec::is_empty) {
+            task.outputs = TaskOutputs::NoFiles;
+        }
         if self.depends.as_ref().is_some_and(Vec::is_empty) {
             task.depends.clear();
         }
@@ -705,6 +708,10 @@ mod tests {
             ..Default::default()
         };
         no_output_suggestions.apply_before_defaults(&mut no_outputs);
+        no_outputs.merge_template(&super::super::TaskTemplate {
+            outputs: TaskOutputs::Files(vec!["default".to_string()]),
+            ..Default::default()
+        });
         no_output_suggestions.apply_after_defaults(&mut no_outputs);
         assert_eq!(no_outputs.outputs, TaskOutputs::NoFiles);
         assert!(
