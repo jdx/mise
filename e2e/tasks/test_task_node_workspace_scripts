@@ -29,6 +29,9 @@ run = "printf root-default > result.txt"
 [monorepo.task_defaults.template-only]
 run = "printf root-default > template-result.txt"
 
+[monorepo.task_defaults.no-deps]
+depends = ["^prepare"]
+
 [monorepo.task_defaults.lint]
 env = { ROOT_TASK_DEFAULT = "from-executable-default" }
 
@@ -67,6 +70,9 @@ cat <<'JSON' >turbo.json
     },
     "cache-only": {
       "cache": true
+    },
+    "no-deps": {
+      "dependsOn": []
     }
   }
 }
@@ -80,6 +86,7 @@ cat <<'JSON' >packages/app/package.json
   "scripts": {
     "build": "printf inferred > result.txt",
     "cache-only": "printf cached > cache-result.txt",
+    "no-deps": "printf independent > no-deps-result.txt",
     "test:unit": "printf tested > test-result.txt"
   }
 }
@@ -124,6 +131,11 @@ assert_contains "mise task info 'node:@scope/app#build'" "Outputs: result.txt"
 assert_contains "mise task info 'node:@scope/app#build'" "Cache: enabled"
 assert "mise task info 'node:@scope/app#build' --json | jq -r '.cache.env[]'" "NODE_ENV"
 assert_contains "mise task info 'node:@scope/app#cache-only'" "Cache: enabled"
+
+: >workspace-task.log
+mise -q run 'node:@scope/app#no-deps'
+assert "cat workspace-task.log" "app:run no-deps --"
+: >workspace-task.log
 
 mise -q run //packages/tool:build
 assert "cat packages/tool/config-root-default.txt" "from-root"

@@ -240,8 +240,7 @@ impl TurboTask {
                     !task.is_empty() && !task.contains('#') && !task.contains('$')
                 })
             })
-            .cloned()
-            .unwrap_or_default();
+            .cloned();
 
         WorkspaceTaskSuggestions {
             inputs,
@@ -459,7 +458,13 @@ mod tests {
             Some(vec!["dist/**"])
         );
         assert_eq!(suggestions.cache, Some(true));
-        assert_eq!(suggestions.depends, ["^build", "prepare"]);
+        assert_eq!(
+            suggestions
+                .depends
+                .as_ref()
+                .map(|depends| { depends.iter().map(String::as_str).collect::<Vec<_>>() }),
+            Some(vec!["^build", "prepare"])
+        );
         assert_eq!(suggestions.config_sources, [temp.path().join(TURBO_JSON)]);
     }
 
@@ -501,7 +506,7 @@ mod tests {
 
         assert!(suggestions.inputs.is_empty());
         assert!(suggestions.outputs.is_none());
-        assert!(suggestions.depends.is_empty());
+        assert!(suggestions.depends.is_none());
         assert_eq!(suggestions.cache, Some(false));
     }
 

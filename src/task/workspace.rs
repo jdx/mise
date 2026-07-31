@@ -115,8 +115,9 @@ pub struct WorkspaceTaskSuggestions {
     pub outputs: Option<Vec<String>>,
     /// Whether task output caching should be enabled or disabled.
     pub cache: Option<bool>,
-    /// Task dependencies, including project-relative and `^task` dependencies.
-    pub depends: Vec<String>,
+    /// Task dependencies, including project-relative and `^task` dependencies. An empty vector
+    /// means the task has no dependencies.
+    pub depends: Option<Vec<String>>,
     /// Additional metadata files that contributed these suggestions.
     pub config_sources: Vec<PathBuf>,
 }
@@ -133,14 +134,19 @@ impl WorkspaceTaskSuggestions {
                 TaskOutputs::Files(outputs.clone())
             };
         }
-        if !self.depends.is_empty() {
-            task.depends = self.depends.iter().cloned().map(Into::into).collect();
+        if let Some(depends) = &self.depends
+            && !depends.is_empty()
+        {
+            task.depends = depends.iter().cloned().map(Into::into).collect();
         }
         task.additional_config_sources
             .extend(self.config_sources.iter().cloned());
     }
 
     pub(crate) fn apply_after_defaults(&self, task: &mut Task) {
+        if self.depends.as_ref().is_some_and(Vec::is_empty) {
+            task.depends.clear();
+        }
         if let Some(enabled) = self.cache {
             task.cache
                 .get_or_insert_with(TaskCacheConfig::default)
@@ -663,7 +669,7 @@ mod tests {
             inputs: vec!["src/**".to_string(), "package.json".to_string()],
             outputs: Some(vec!["dist/**".to_string()]),
             cache: Some(true),
-            depends: vec!["prepare".to_string(), "^build".to_string()],
+            depends: Some(vec!["prepare".to_string(), "^build".to_string()]),
             config_sources: vec![PathBuf::from("turbo.json")],
         };
         let mut task = Task::default();
@@ -691,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn task_suggestions_distinguish_no_outputs_from_no_suggestion() {
+    fn task_suggestions_distinguish_empty_values_from_no_suggestion() {
         let mut no_outputs = Task::default();
         let no_output_suggestions = WorkspaceTaskSuggestions {
             outputs: Some(Vec::new()),
@@ -732,6 +738,19 @@ mod tests {
                 .as_ref()
                 .is_some_and(|cache| cache.enabled)
         );
+
+        let suggestions = WorkspaceTaskSuggestions {
+            depends: Some(Vec::new()),
+            ..Default::default()
+        };
+        let mut no_dependencies = Task::default();
+        suggestions.apply_before_defaults(&mut no_dependencies);
+        no_dependencies.merge_template(&super::super::TaskTemplate {
+            depends: vec!["default".to_string().into()],
+            ..Default::default()
+        });
+        suggestions.apply_after_defaults(&mut no_dependencies);
+        assert!(no_dependencies.depends.is_empty());
     }
 
     #[test]
