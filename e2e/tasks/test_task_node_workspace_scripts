@@ -23,10 +23,14 @@ config_roots = ["packages/*"]
 [monorepo.task_defaults.build]
 env = { ROOT_TASK_DEFAULT = "from-root", TASK_PRECEDENCE = "from-root" }
 depends = ["^build"]
+cache = { env = ["NODE_ENV"] }
 run = "printf root-default > result.txt"
 
 [monorepo.task_defaults.template-only]
 run = "printf root-default > template-result.txt"
+
+[monorepo.task_defaults.no-deps]
+depends = ["^prepare"]
 
 [monorepo.task_defaults.lint]
 env = { ROOT_TASK_DEFAULT = "from-executable-default" }
@@ -55,6 +59,24 @@ cat <<'JSON' >package.json
   "workspaces": ["packages/*"]
 }
 JSON
+cat <<'JSON' >turbo.json
+{
+  "tasks": {
+    "build": {
+      "inputs": ["src/**", "package.json"],
+      "outputs": ["result.txt"],
+      "cache": true,
+      "dependsOn": ["^prepare"]
+    },
+    "cache-only": {
+      "cache": true
+    },
+    "no-deps": {
+      "dependsOn": []
+    }
+  }
+}
+JSON
 cat <<'JSON' >packages/app/package.json
 {
   "name": "@scope/app",
@@ -63,6 +85,8 @@ cat <<'JSON' >packages/app/package.json
   },
   "scripts": {
     "build": "printf inferred > result.txt",
+    "cache-only": "printf cached > cache-result.txt",
+    "no-deps": "printf independent > no-deps-result.txt",
     "test:unit": "printf tested > test-result.txt"
   }
 }
@@ -83,7 +107,8 @@ cat <<'JSON' >packages/core/package.json
 {
   "name": "@scope/core",
   "scripts": {
-    "build": "printf built > result.txt"
+    "build": "printf built > result.txt",
+    "prepare": "printf prepared > prepare-result.txt"
   }
 }
 JSON
@@ -100,6 +125,17 @@ TOML
 assert_contains "mise tasks --all" "node:@scope/app#build"
 assert_not_contains "mise tasks --all" "node:@scope/app#test:unit"
 assert_contains "mise task info 'node:@scope/app#build'" "packages/app/package.json"
+assert_contains "mise task info 'node:@scope/app#build'" "turbo.json"
+assert_contains "mise task info 'node:@scope/app#build'" "Sources: src/**, package.json"
+assert_contains "mise task info 'node:@scope/app#build'" "Outputs: result.txt"
+assert_contains "mise task info 'node:@scope/app#build'" "Cache: enabled"
+assert "mise task info 'node:@scope/app#build' --json | jq -r '.cache.env[]'" "NODE_ENV"
+assert_contains "mise task info 'node:@scope/app#cache-only'" "Cache: enabled"
+
+: >workspace-task.log
+mise -q run 'node:@scope/app#no-deps'
+assert "cat workspace-task.log" "app:run no-deps --"
+: >workspace-task.log
 
 mise -q run //packages/tool:build
 assert "cat packages/tool/config-root-default.txt" "from-root"
@@ -111,7 +147,7 @@ mise -q run 'node:@scope/app#build' -- forwarded
 assert "cat packages/app/result.txt" "inferred"
 assert "cat packages/app/manager-args.txt" "run build -- forwarded"
 assert "cat packages/app/default.txt" "from-root"
-assert "cat workspace-task.log" $'core:run build --\napp:run build -- forwarded'
+assert "cat workspace-task.log" $'core:run prepare --\napp:run build -- forwarded'
 
 printf stale >packages/app/result.txt
 mise -q run //packages/app:build
