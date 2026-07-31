@@ -417,15 +417,14 @@ impl WorkspaceProjectGraph {
                 let root = normalize_project_root(&id, root)?;
                 if root != project.root {
                     project.tasks.clear();
-                    project.provenance.source = None;
-                    for provenance in project.dependency_provenance.values_mut() {
-                        provenance.source = None;
-                    }
+                    project.provenance = WorkspaceProvenance::default();
+                    project.dependency_provenance.clear();
                     project.root = root;
                 }
             }
             if let Some(metadata) = &config.metadata {
                 project.metadata.clone_from(metadata);
+                project.provenance = WorkspaceProvenance::default();
             }
             if let Some(depends) = &config.depends {
                 project.dependencies = parse_dependency_ids(&id, "depends", depends)?;
@@ -1157,7 +1156,7 @@ mod tests {
     }
 
     #[test]
-    fn root_overrides_clear_stale_provider_source_paths() {
+    fn root_overrides_clear_stale_provider_provenance() {
         let dependency_id = ProjectId::new("node", "lib").unwrap();
         let mut app = project("node", "app", "packages/app");
         app.dependencies.insert(dependency_id.clone());
@@ -1187,15 +1186,31 @@ mod tests {
             .unwrap();
         let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
 
-        assert_eq!(app.provenance.provider.as_deref(), Some("node"));
-        assert!(app.provenance.source.is_none());
-        assert_eq!(
-            app.dependency_provenance[&dependency_id]
-                .provider
-                .as_deref(),
-            Some("node")
-        );
-        assert!(app.dependency_provenance[&dependency_id].source.is_none());
+        assert_eq!(app.provenance, WorkspaceProvenance::default());
+        assert!(app.dependency_provenance.is_empty());
+    }
+
+    #[test]
+    fn metadata_overrides_clear_provider_provenance() {
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![project("node", "app", "packages/app")],
+        };
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            WorkspaceProjectOverride {
+                metadata: Some(BTreeMap::from([("kind".to_string(), "web".to_string())])),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+            .unwrap()
+            .with_overrides(&overrides)
+            .unwrap();
+        let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert_eq!(app.provenance, WorkspaceProvenance::default());
     }
 
     #[test]
