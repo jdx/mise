@@ -49,7 +49,12 @@ toml = "1.0"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "fs", "io-util", "time"] }
 url = "2"
-xx = { version = "2", default-features = false, features = ["archive", "hash"] }
+xx = { version = "2", default-features = false, features = [
+  "archive",
+  "hash",
+  "hash_sha1",
+  "hash_md5",
+] }
 
 # cli dependencies
 env_logger = { version = "0.11", optional = true }
