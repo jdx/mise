@@ -376,10 +376,9 @@ impl EnvResults {
             Some(false) => {
                 self.redaction_exclusions.insert(key.to_string());
             }
-            Some(true) => {
+            Some(true) | None => {
                 self.redaction_exclusions.remove(key);
             }
-            None => {}
         }
     }
 
@@ -549,10 +548,10 @@ impl EnvResults {
                 }
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
+                    r.redaction_exclusions.remove(&k);
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, _opts) => {
-                    r.track_redaction_override(&k, redact);
                     // Env required directives only validate. Var required directives also surface
                     // process environment values so `{{vars.KEY}}` can render.
                     if resolve_opts.vars {
@@ -562,6 +561,7 @@ impl EnvResults {
                         if !vars.contains_key(&k)
                             && let Some(v) = required_env.get(&k)
                         {
+                            r.track_redaction_override(&k, redact);
                             r.vars.insert(k, (v.clone(), source.clone()));
                         }
                     }
@@ -1247,5 +1247,56 @@ mod tests {
         .unwrap();
 
         assert!(!results.redaction_exclusions.contains("SECRET_TOKEN"));
+    }
+
+    #[tokio::test]
+    async fn test_reassignment_and_remove_clear_redaction_exclusion() {
+        let config = Config::get().await.unwrap();
+        let excluded = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let initial = EnvMap::new();
+        let resolve = |directives| {
+            EnvResults::resolve(
+                &config,
+                BASE_CONTEXT.clone(),
+                &initial,
+                directives,
+                EnvResolveOptions {
+                    vars: false,
+                    tools: ToolsFilter::Both,
+                    warn_on_missing_required: false,
+                },
+            )
+        };
+
+        let reassigned = resolve(vec![
+            (
+                EnvDirective::Val("TOKEN".into(), "first".into(), excluded.clone()),
+                PathBuf::from("/global"),
+            ),
+            (
+                EnvDirective::Val("TOKEN".into(), "second".into(), Default::default()),
+                PathBuf::from("/local"),
+            ),
+        ])
+        .await
+        .unwrap();
+        assert!(!reassigned.redaction_exclusions.contains("TOKEN"));
+
+        let removed = resolve(vec![
+            (
+                EnvDirective::Val("TOKEN".into(), "first".into(), excluded),
+                PathBuf::from("/global"),
+            ),
+            (
+                EnvDirective::Rm("TOKEN".into(), Default::default()),
+                PathBuf::from("/local"),
+            ),
+        ])
+        .await
+        .unwrap();
+        assert!(!removed.redaction_exclusions.contains("TOKEN"));
     }
 }

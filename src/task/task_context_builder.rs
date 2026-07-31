@@ -8,7 +8,7 @@ use crate::task::task_helpers::canonicalize_path;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use eyre::Result;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -280,11 +280,11 @@ impl TaskContextBuilder {
             .redaction_keys()
             .into_iter()
             .chain(task_env_results.redactions.iter().cloned());
-        let redaction_exclusions: BTreeSet<_> = config_env_results
-            .redaction_exclusions
-            .union(&task_env_results.redaction_exclusions)
-            .cloned()
-            .collect();
+        let mut redaction_exclusions = config_env_results.redaction_exclusions.clone();
+        for key in task_env_results.env.keys() {
+            redaction_exclusions.remove(key);
+        }
+        redaction_exclusions.extend(task_env_results.redaction_exclusions.iter().cloned());
         config.add_redactions_excluding(task_redact_keys, &env, &redaction_exclusions);
 
         // Cache the result if no task-specific env directives or tools
