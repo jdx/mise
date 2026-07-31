@@ -2161,8 +2161,8 @@ impl AquaBackend {
         let url = match checksum_config._type() {
             AquaChecksumType::GithubRelease => {
                 let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
-                // Only the bytes are read here (no filename derivation), so the transport
-                // URL is all that is needed.
+                // No filename derivation is needed here, so the transport URL is all that
+                // is needed.
                 match self.github_release_asset_urls(pkg, v, asset_strs).await {
                     Ok((_, download_url)) => download_url,
                     Err(e) => {
@@ -2174,21 +2174,14 @@ impl AquaBackend {
             AquaChecksumType::Http => checksum_config.url(pkg, v, target_os, target_arch)?,
         };
 
-        // Download checksum file content. Read the bytes rather than `get_text`, which decodes with
-        // the response charset and silently replaces anything it cannot map — a UTF-16 checksum
-        // file would be recorded as mojibake instead of failing. `decode_text` honours a BOM, the
-        // same as the install path above.
-        let checksum_bytes = match HTTP.get_bytes(&url).await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                debug!("Failed to download checksum file {}: {}", url, e);
-                return Ok(None);
-            }
-        };
-        let checksum_content = match file::decode_text(checksum_bytes.as_ref()) {
+        // Download checksum file content. `get_text` decodes with BOM sniffing (reqwest's
+        // `text_with_charset` -> `encoding_rs::Encoding::decode`), so a UTF-16 checksum file is
+        // handled here without help — unlike the install path above, which reads from disk. It
+        // also detects an HTML body and retries over https, which reading bytes would skip.
+        let checksum_content = match HTTP.get_text(&url).await {
             Ok(content) => content,
             Err(e) => {
-                debug!("Failed to decode checksum file {}: {}", url, e);
+                debug!("Failed to download checksum file {}: {}", url, e);
                 return Ok(None);
             }
         };
@@ -4783,6 +4776,53 @@ mod lock_candidate_tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not match expected checksum"), "{err}");
+    }
+
+    /// The counterpart over HTTP, which needs no decoding of its own: reqwest's `text()` goes
+    /// through `text_with_charset` -> `encoding_rs::Encoding::decode`, which sniffs the BOM and
+    /// strips it. Pinned here because that is a property of the *transport*, easy to lose by
+    /// swapping `get_text` for a byte-level read on the assumption it needs the same help the
+    /// file path does.
+    #[tokio::test]
+    async fn test_fetch_checksum_from_file_decodes_a_utf16_body() {
+        const ARTIFACT: &str = "tool-1.0.0-linux-amd64.tar.gz";
+        const DIGEST: &str = "d91b9172668f4b6aef4abce8c780cd298872c7a0f4487cc47444d26877ba49f6";
+
+        let mut body = vec![0xff, 0xfe];
+        body.extend(
+            format!("{DIGEST} *{ARTIFACT}\n")
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        );
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/hashes.sha256")
+            .with_status(200)
+            .with_body(body)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let mut pkg = AquaPackage::default();
+        pkg.checksum = Some(
+            serde_json::from_str(&format!(
+                r#"{{"type":"http","algorithm":"sha256","url":"{}/hashes.sha256"}}"#,
+                server.url()
+            ))
+            .unwrap(),
+        );
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+
+        let checksum = backend
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT))
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(checksum, Some(format!("sha256:{DIGEST}")));
     }
 
     #[test]

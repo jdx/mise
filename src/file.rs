@@ -374,6 +374,12 @@ pub fn decode_text(bytes: &[u8]) -> Result<String> {
 }
 
 /// [`read_to_string`], but tolerant of a byte-order mark. See [`decode_text`].
+///
+/// Only reads *from disk* need this. Bodies fetched over HTTP already arrive decoded: reqwest's
+/// `text()` goes through `text_with_charset` -> `encoding_rs::Encoding::decode`, which sniffs a BOM
+/// and lets it override the declared charset. `std::fs::read_to_string` has no such step, and that
+/// asymmetry is the only reason this function exists — reaching for it on an `HTTP.get_text` result
+/// would be redundant.
 pub fn read_to_string_bom<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
     trace!("cat {}", path.display_user());
