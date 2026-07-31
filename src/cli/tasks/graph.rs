@@ -16,6 +16,10 @@ pub struct TasksGraph {
     /// Do not print table headers
     #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     no_header: bool,
+
+    /// Explain provider attribution for inferred projects and tasks
+    #[clap(long, conflicts_with = "json", verbatim_doc_comment)]
+    explain: bool,
 }
 
 #[derive(Serialize)]
@@ -31,6 +35,8 @@ impl TasksGraph {
 
         if self.json {
             self.display_json(&graph)
+        } else if self.explain {
+            self.display_explain(&graph)
         } else {
             self.display(&graph)
         }
@@ -69,6 +75,86 @@ impl TasksGraph {
         miseprintln!("{}", serde_json::to_string_pretty(&output)?);
         Ok(())
     }
+
+    fn display_explain(&self, graph: &WorkspaceProjectGraph) -> Result<()> {
+        for (index, project) in graph.projects().enumerate() {
+            if index > 0 {
+                miseprintln!();
+            }
+            miseprintln!("Project: {}", project.id);
+            print_provenance("  ", &project.provenance)?;
+            if !project.dependencies.is_empty() {
+                miseprintln!("  Dependencies:");
+                for dependency in &project.dependencies {
+                    miseprint!("    {dependency}")?;
+                    print_inline_provenance(project.dependency_provenance.get(dependency))?;
+                }
+            }
+            if !project.tasks.is_empty() {
+                miseprintln!("  Tasks:");
+                for (name, task) in &project.tasks {
+                    miseprintln!("    {name}");
+                    print_provenance("      ", &task.provenance)?;
+                    let suggestions = &task.suggestions.provenance;
+                    for input in &task.suggestions.inputs {
+                        miseprint!("      Input: {input}")?;
+                        print_inline_provenance(suggestions.inputs.as_ref())?;
+                    }
+                    if let Some(outputs) = &task.suggestions.outputs {
+                        if outputs.is_empty() {
+                            miseprint!("      Outputs: no files")?;
+                            print_inline_provenance(suggestions.outputs.as_ref())?;
+                        } else {
+                            for output in outputs {
+                                miseprint!("      Output: {output}")?;
+                                print_inline_provenance(suggestions.outputs.as_ref())?;
+                            }
+                        }
+                    }
+                    if let Some(cache) = task.suggestions.cache {
+                        miseprint!(
+                            "      Cache: {}",
+                            if cache { "enabled" } else { "disabled" }
+                        )?;
+                        print_inline_provenance(suggestions.cache.as_ref())?;
+                    }
+                    for dependency in &task.suggestions.depends {
+                        miseprint!("      Task dependency: {dependency}")?;
+                        print_inline_provenance(suggestions.depends.as_ref())?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn print_provenance(
+    indent: &str,
+    provenance: &crate::task::workspace::WorkspaceProvenance,
+) -> Result<()> {
+    miseprintln!(
+        "{indent}Provider: {}",
+        provenance.provider.as_deref().unwrap_or("configuration")
+    );
+    if let Some(source) = &provenance.source {
+        miseprintln!("{indent}Source: {}", source.display());
+    }
+    Ok(())
+}
+
+fn print_inline_provenance(
+    provenance: Option<&crate::task::workspace::WorkspaceProvenance>,
+) -> Result<()> {
+    let provider = provenance
+        .and_then(|provenance| provenance.provider.as_deref())
+        .unwrap_or("configuration");
+    if let Some(source) = provenance.and_then(|provenance| provenance.source.as_ref()) {
+        miseprintln!(" — {provider} ({})", source.display());
+    } else {
+        miseprintln!(" — {provider}");
+    }
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -79,5 +165,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Emit the project graph as JSON
     $ <bold>mise tasks graph --json</bold>
+
+    # Explain where inferred projects and task fields came from
+    $ <bold>mise tasks graph --explain</bold>
 "#
 );

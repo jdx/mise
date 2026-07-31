@@ -55,7 +55,7 @@ outside this tracker.
       templates, and project-local configuration
 - [x] Allow providers to suggest inputs, outputs, cacheability, and task dependencies when they can
       derive them confidently
-- [ ] Explain which provider inferred each project, task, input, output, and dependency
+- [x] Explain which provider inferred each project, task, input, output, and dependency
 - [ ] Add Cargo workspace and path-dependency inference
 - [ ] Add uv workspace and local/path-dependency inference
 - [ ] Add Go workspace discovery, with explicit dependency overrides where module metadata is
