@@ -290,7 +290,7 @@ async fn create_device_code() -> Result<DeviceCodeResponse> {
         form.push(("scope", scopes));
     }
     Ok(crate::http::HTTP
-        .reqwest()
+        .reqwest()?
         .post(url)
         .header("Accept", "application/json")
         .form(&form)
@@ -310,7 +310,7 @@ async fn poll_access_token(device: &DeviceCodeResponse) -> Result<TokenResponse>
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
     let client_id = settings.github.oauth_client_id.trim();
-    let client = crate::http::HTTP.reqwest();
+    let client = crate::http::HTTP.reqwest()?;
 
     loop {
         if chrono::Utc::now() >= deadline {
@@ -379,7 +379,7 @@ async fn refresh_token(cached: &CachedToken) -> Result<Option<CachedToken>> {
         settings.github.oauth_auth_url.trim_end_matches('/')
     );
     let response = crate::http::HTTP
-        .reqwest()
+        .reqwest()?
         .post(url)
         .header("Accept", "application/json")
         .form(&[

@@ -25,14 +25,13 @@ use crate::ui::time::format_duration;
 use crate::{env, file};
 
 pub static HTTP: Lazy<Client> =
-    Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
+    Lazy::new(|| Client::new_shared(Settings::get().http_timeout(), ClientKind::Http));
 
 pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
-    Client::new(
+    Client::new_shared(
         Settings::get().configured_fetch_remote_versions_timeout(),
         ClientKind::Fetch,
     )
-    .unwrap()
 });
 
 /// In-memory cache for HTTP text responses, useful for requests that are repeated
@@ -107,7 +106,7 @@ impl SendOnceOptions {
 
 #[derive(Debug)]
 pub struct Client {
-    reqwest: reqwest::Client,
+    reqwest: Result<reqwest::Client, String>,
     timeout: Duration,
     kind: ClientKind,
 }
@@ -119,15 +118,37 @@ enum ClientKind {
 }
 
 impl Client {
+    #[cfg(test)]
     fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
-            reqwest: Self::_new()
-                .read_timeout(timeout)
-                .connect_timeout(timeout)
-                .build()?,
+            reqwest: Ok(Self::build(timeout)?),
             timeout,
             kind,
         })
+    }
+
+    fn new_shared(timeout: Duration, kind: ClientKind) -> Self {
+        Self {
+            reqwest: Self::build(timeout).map_err(|err| format!("{err:#}")),
+            timeout,
+            kind,
+        }
+    }
+
+    fn build(timeout: Duration) -> Result<reqwest::Client> {
+        Ok(Self::_new()
+            .read_timeout(timeout)
+            .connect_timeout(timeout)
+            .build()?)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_init_error(error: impl Into<String>) -> Self {
+        Self {
+            reqwest: Err(error.into()),
+            timeout: Duration::from_secs(1),
+            kind: ClientKind::Http,
+        }
     }
 
     /// Underlying reqwest client. Use sparingly — most callers should reach for
@@ -135,8 +156,10 @@ impl Client {
     /// exists for callers that need request shapes those helpers don't cover
     /// (e.g. form-encoded POST in the GitHub OAuth flow) but still want the
     /// shared timeouts, gzip, and user-agent.
-    pub fn reqwest(&self) -> &reqwest::Client {
-        &self.reqwest
+    pub fn reqwest(&self) -> Result<&reqwest::Client> {
+        self.reqwest
+            .as_ref()
+            .map_err(|err| eyre!("Could not initialize the HTTP client: {err}"))
     }
 
     fn _new() -> ClientBuilder {
@@ -360,7 +383,7 @@ impl Client {
         let url = url.into_url()?;
         debug!("POST {}", &url);
         let resp = self
-            .reqwest
+            .reqwest()?
             .post(url)
             .header("Content-Type", "application/json")
             .headers(headers.clone())
@@ -663,7 +686,7 @@ impl Client {
         }
 
         let request_timeout = self.request_timeout();
-        let mut req = self.reqwest.request(method.clone(), url.clone());
+        let mut req = self.reqwest()?.request(method.clone(), url.clone());
         if matches!(self.kind, ClientKind::Fetch) {
             req = req.timeout(request_timeout);
         }
@@ -1425,6 +1448,16 @@ mod tests {
         assert!(client.head("").await.is_err());
         assert!(client.get_text("").await.is_err());
         assert!(client.get_text_request("").send().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_client_initialization_error_is_returned_not_panicked() {
+        let client = Client::with_init_error("builder error: OpenSSL error");
+
+        let err = client.get_text("https://example.com").await.unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("Could not initialize the HTTP client"));
+        assert!(message.contains("builder error: OpenSSL error"));
     }
 
     #[tokio::test]
@@ -2201,12 +2234,12 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let _settings_guard = set_test_prefer_offline(3);
         let timeout = Duration::from_secs(3);
         let client = Client {
-            reqwest: Client::_new()
+            reqwest: Ok(Client::_new()
                 .no_proxy()
                 .read_timeout(timeout)
                 .connect_timeout(timeout)
                 .build()
-                .unwrap(),
+                .unwrap()),
             timeout,
             kind: ClientKind::Fetch,
         };
