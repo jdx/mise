@@ -344,8 +344,20 @@ Inspect the inferred projects with:
 
 ```bash
 mise tasks graph
+mise tasks graph --explain
 mise tasks graph --json
 ```
+
+Use `--explain` to see which workspace provider inferred each project, dependency edge, and task.
+When a provider suggests task inputs, outputs, cacheability, or dependencies, the explanation also
+shows the provider and ecosystem metadata file for each suggested field. Values introduced by
+`[monorepo.projects]` overrides are labeled `configuration` instead of being attributed to a
+provider.
+
+The JSON output includes the same information in each project's `provenance`,
+`dependency_provenance`, and `tasks` fields. Task suggestions contain field-level provenance so
+other tooling can distinguish, for example, a `turbo.json` output declaration from a root mise task
+default.
 
 ### Node Workspace Discovery
 

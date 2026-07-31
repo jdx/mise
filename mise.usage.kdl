@@ -3743,8 +3743,12 @@ Examples:
     # Emit the project graph as JSON
     $ mise tasks graph --json
 
+    # Explain where inferred projects and task fields came from
+    $ mise tasks graph --explain
+
 """#
         flag "-J --json" help="Output the project graph as JSON"
+        flag --explain help="Explain provider attribution for inferred projects and tasks"
         flag --no-header help="Do not print table headers"
     }
     cmd info help="Get information about a task" effect=read {
