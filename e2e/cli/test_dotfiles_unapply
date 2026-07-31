@@ -90,6 +90,10 @@ assert "od -An -tx1 ~/.managed-rc | tr -d ' \n'" "6265666f72650d0a0d0a6166746572
 
 # symlink-each removes path-equivalent and stale exact mappings, but preserves
 # unrelated and excluded user-created links and their containing directory.
+mkdir ~/.managed-links/private
+chmod 000 ~/.managed-links/private
+assert_not_contains "MISE_DEBUG=1 mise bootstrap dotfiles unapply ~/.managed-links --dry-run 2>&1" "$HOME/.managed-links/private"
+chmod 700 ~/.managed-links/private
 ln -s "$PWD/dotfiles/links/one" ~/.managed-links/alias
 ln -s "$PWD/dotfiles/links/excluded" ~/.managed-links/excluded
 rm ~/.managed-links/one
@@ -101,6 +105,7 @@ assert_fail "test -e $HOME/.managed-links/one"
 assert_fail "test -e $HOME/.managed-links/stale"
 assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
 assert "readlink ~/.managed-links/excluded" "$PWD/dotfiles/links/excluded"
+assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "0"
 
 # Modified copies are refused unless forced.
 assert_fail "mise bootstrap dotfiles unapply ~/.managed-copy --yes" "use --force"

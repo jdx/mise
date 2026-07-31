@@ -25,11 +25,12 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, ConfigMap, Settings};
 use crate::dirs;
 use crate::file;
+use crate::hash::hash_to_str;
 use crate::path::PathExt;
 use crate::ui::prompt;
 
@@ -106,6 +107,27 @@ pub struct FileRequest {
     /// directory of the declaring config file — base dir for template
     /// functions like `exec` and `read_file`
     pub base: PathBuf,
+}
+
+const SYMLINK_EACH_STATE_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ManagedLink {
+    source: PathBuf,
+    target: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct SymlinkEachState {
+    version: u8,
+    target: PathBuf,
+    links: Vec<ManagedLink>,
+}
+
+enum LoadedSymlinkEachState {
+    Missing,
+    Invalid,
+    Present(SymlinkEachState),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -753,26 +775,108 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
     Ok(out.into_iter().collect())
 }
 
-/// symlinks under a symlink-each target that mise created for this entry but
-/// no longer manages, because the source file was deleted or is now covered
-/// by `exclude`. These are the entry's own leftovers — un-managing a source
-/// file has to un-manage its target, or the target keeps a link mise would
-/// never write again.
-///
-/// Ownership is the exact link this entry would have written: `<target>/rel`
-/// pointing at `<source>/rel`. There is no record of who created a link, so
-/// mirroring [`walk_source_files`] is what makes the claim checkable — a
-/// user's own link is only ever pruned if it sits at the same path *and*
-/// points at the same place mise would have, which is indistinguishable from
-/// a leftover. A link to any other path, and anything that isn't a symlink,
-/// is left alone.
-///
-/// On Windows file symlinks are applied as copies (see `link_path`), so a
-/// leftover there is a regular file, indistinguishable from one the user
-/// wrote. `check_symlink` already treats those targets as copies on that
-/// platform; pruning nothing keeps this consistent with it rather than
-/// reporting links stale that the per-file check considers copies.
-fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+fn symlink_each_state_path(target: &Path) -> PathBuf {
+    dirs::STATE
+        .join("dotfiles")
+        .join(format!("{}.toml", hash_to_str(&target)))
+}
+
+fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
+    Ok(SymlinkEachState {
+        version: SYMLINK_EACH_STATE_VERSION,
+        target: req.target.clone(),
+        links: walk_source_files(req)?
+            .into_iter()
+            .map(|(source, target)| ManagedLink { source, target })
+            .collect(),
+    })
+}
+
+fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
+    let path = symlink_each_state_path(&req.target);
+    if !path.exists() {
+        return LoadedSymlinkEachState::Missing;
+    }
+    let state = match file::read_to_string(&path)
+        .and_then(|contents| toml::from_str::<SymlinkEachState>(&contents).map_err(Into::into))
+    {
+        Ok(state) => state,
+        Err(err) => {
+            warn!(
+                "files: failed to read dotfiles state {}: {err}",
+                path.display_user()
+            );
+            return LoadedSymlinkEachState::Invalid;
+        }
+    };
+    let valid = state.version == SYMLINK_EACH_STATE_VERSION
+        && state.target == req.target
+        && state
+            .links
+            .iter()
+            .all(|link| link.target != req.target && link.target.starts_with(&req.target));
+    if valid {
+        LoadedSymlinkEachState::Present(state)
+    } else {
+        warn!(
+            "files: ignoring invalid dotfiles state {}",
+            path.display_user()
+        );
+        LoadedSymlinkEachState::Invalid
+    }
+}
+
+fn save_symlink_each_state(req: &FileRequest) -> Result<()> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    let path = symlink_each_state_path(&req.target);
+    file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
+    file::write(
+        &path,
+        toml::to_string_pretty(&desired_symlink_each_state(req)?)?,
+    )
+}
+
+fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
+    let path = symlink_each_state_path(&req.target);
+    if path.exists() {
+        file::remove_file(path)?;
+    }
+    Ok(())
+}
+
+fn link_points_to(source: &Path, target: &Path) -> bool {
+    if !target.is_symlink() {
+        return false;
+    }
+    std::fs::read_link(target)
+        .is_ok_and(|dest| dest == source || points_at_same_file(target, source))
+}
+
+fn tracked_stale_links(state: &SymlinkEachState, desired: &SymlinkEachState) -> Vec<PathBuf> {
+    let desired = desired
+        .links
+        .iter()
+        .map(|link| (&link.target, &link.source))
+        .collect::<std::collections::HashMap<_, _>>();
+    state
+        .links
+        .iter()
+        .filter(|link| {
+            desired
+                .get(&link.target)
+                .is_none_or(|source| **source != link.source)
+                && link_points_to(&link.source, &link.target)
+        })
+        .map(|link| link.target.clone())
+        .collect()
+}
+
+/// Legacy ownership discovery for installations that predate persistent
+/// symlink-each state. A successful apply records the exact links it owns, so
+/// this unbounded target walk happens at most once per target.
+fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
     if cfg!(windows) || !req.target.is_dir() || req.target.is_symlink() {
         return Ok(vec![]);
     }
@@ -808,6 +912,32 @@ fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(out)
+}
+
+/// Links recorded for this target that are no longer desired. Persistent
+/// ownership state keeps this proportional to the managed source tree instead
+/// of recursively walking a shared target such as the user's home directory.
+fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    match load_symlink_each_state(req) {
+        LoadedSymlinkEachState::Present(state) => Ok(tracked_stale_links(
+            &state,
+            &desired_symlink_each_state(req)?,
+        )),
+        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
+            legacy_stale_links(req)
+        }
+    }
+}
+
+fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
+    if cfg!(windows) {
+        return Ok(false);
+    }
+    let desired = desired_symlink_each_state(req)?;
+    Ok(!matches!(
+        load_symlink_each_state(req),
+        LoadedSymlinkEachState::Present(state) if state == desired
+    ))
 }
 
 /// Whether a source-relative path is dropped by the entry's `exclude`
@@ -865,6 +995,7 @@ pub struct ApplyOpts {
 
 pub struct ApplyPlan<'a> {
     todo: Vec<(&'a FileRequest, Option<String>)>,
+    record_symlink_each: Vec<&'a FileRequest>,
 }
 
 /// Apply all entries that aren't already in the desired state. Conflicting
@@ -878,6 +1009,11 @@ pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Res
 
 pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
     if plan.todo.is_empty() {
+        if !opts.dry_run {
+            for req in plan.record_symlink_each {
+                save_symlink_each_state(req)?;
+            }
+        }
         info!("files: all files are applied");
         return Ok(true);
     }
@@ -908,7 +1044,15 @@ pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
     }
     for (req, rendered) in &plan.todo {
         apply_one(req, rendered.as_deref())?;
+        if req.mode == FileMode::SymlinkEach {
+            save_symlink_each_state(req)?;
+        }
         info!("files: {}", describe_applied(req)?);
+    }
+    for req in plan.record_symlink_each {
+        if !plan.todo.iter().any(|(todo, _)| todo.target == req.target) {
+            save_symlink_each_state(req)?;
+        }
     }
     info!(
         "files: applied {}",
@@ -934,6 +1078,7 @@ pub fn plan_apply<'a>(
     let mut missing_sources = vec![];
     let mut broken = vec![];
     let mut conflicts = vec![];
+    let mut record_symlink_each = vec![];
     for req in requests {
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
@@ -964,7 +1109,12 @@ pub fn plan_apply<'a>(
             _ => None,
         };
         match check_rendered(req, rendered.as_deref()) {
-            Ok(FileState::Applied) => continue,
+            Ok(FileState::Applied) => {
+                if req.mode == FileMode::SymlinkEach && symlink_each_state_needs_update(req)? {
+                    record_symlink_each.push(req);
+                }
+                continue;
+            }
             Ok(_) => {}
             Err(err) => {
                 broken.push(format!("  [dotfiles].\"{}\": {err}", req.target_raw));
@@ -998,7 +1148,10 @@ pub fn plan_apply<'a>(
     if !problems.is_empty() {
         bail!("files: {}", problems.join("\nfiles: "));
     }
-    Ok(ApplyPlan { todo })
+    Ok(ApplyPlan {
+        todo,
+        record_symlink_each,
+    })
 }
 
 pub struct UnapplyOpts {
@@ -1020,6 +1173,8 @@ pub struct UnapplyPlan<'a> {
     cleanup_empty_dirs: bool,
     /// template dry-runs do not render, so the removal is conditional
     conditional: bool,
+    /// remove persistent symlink-each ownership after successful cleanup
+    clear_symlink_each_state: bool,
 }
 
 /// Remove configured whole-file entries without recursively deleting
@@ -1095,6 +1250,7 @@ pub fn resolve_unapply(
                         paths: paths.into_keys().collect(),
                         cleanup_empty_dirs: false,
                         conditional: false,
+                        clear_symlink_each_state: false,
                     })
                 },
             )
@@ -1157,6 +1313,9 @@ pub fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<
     }
     for plan in todo {
         unapply_one(plan)?;
+        if plan.clear_symlink_each_state {
+            remove_symlink_each_state(plan.req)?;
+        }
     }
     info!(
         "files: unapplied {}",
@@ -1174,6 +1333,7 @@ fn plan_unapply_one<'a>(
     let mut paths = IndexMap::<PathBuf, ()>::new();
     let mut cleanup_empty_dirs = false;
     let mut conditional = false;
+    let mut clear_symlink_each_state = false;
     match req.mode {
         FileMode::Symlink if !(cfg!(windows) && req.source.is_file()) => {
             if req.target.is_symlink() {
@@ -1196,6 +1356,7 @@ fn plan_unapply_one<'a>(
             }
         }
         FileMode::SymlinkEach if !cfg!(windows) => {
+            clear_symlink_each_state = symlink_each_state_path(&req.target).exists();
             if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
                 if opts.force {
                     paths.insert(req.target.clone(), ());
@@ -1256,7 +1417,7 @@ fn plan_unapply_one<'a>(
             }
         }
     }
-    if paths.is_empty() && !cleanup_empty_dirs && !conditional {
+    if paths.is_empty() && !cleanup_empty_dirs && !conditional && !clear_symlink_each_state {
         Ok(None)
     } else {
         Ok(Some(UnapplyPlan {
@@ -1264,6 +1425,7 @@ fn plan_unapply_one<'a>(
             paths: paths.into_keys().collect(),
             cleanup_empty_dirs,
             conditional,
+            clear_symlink_each_state,
         }))
     }
 }
@@ -1327,7 +1489,7 @@ fn plan_expected_content(
 /// entry maps that relative path. Unlike stale-link pruning this includes
 /// both current and deleted source files because unapply removes the entry's
 /// complete observable footprint.
-fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+fn legacy_owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
     if !req.target.is_dir() || req.target.is_symlink() {
         return Ok(vec![]);
     }
@@ -1364,6 +1526,29 @@ fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(out)
+}
+
+fn owned_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    let state = match load_symlink_each_state(req) {
+        LoadedSymlinkEachState::Present(state) => state,
+        LoadedSymlinkEachState::Missing | LoadedSymlinkEachState::Invalid => {
+            return legacy_owned_links(req);
+        }
+    };
+    let mut out = IndexMap::<PathBuf, ()>::new();
+    for link in state.links {
+        if link_points_to(&link.source, &link.target) {
+            out.insert(link.target, ());
+        }
+    }
+    // Include current mappings as a safe repair path for an incomplete older
+    // state file. Unlike the legacy fallback, this only walks the source.
+    for (source, target) in walk_source_files(req)? {
+        if link_points_to(&source, &target) {
+            out.insert(target, ());
+        }
+    }
+    Ok(out.into_keys().collect())
 }
 
 fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {

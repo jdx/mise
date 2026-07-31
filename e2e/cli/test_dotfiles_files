@@ -89,6 +89,18 @@ assert_contains "mise dotfiles status" "applied"
 assert_contains "mise dotfiles apply --yes 2>&1" "all files are applied"
 assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 
+# Existing symlink-each installations without ownership state are migrated by
+# the next real apply, even when every target is already converged. Once state
+# exists, status inspects managed paths instead of recursively walking a shared
+# target such as HOME.
+rm -rf "$MISE_STATE_DIR/dotfiles"
+assert_succeed "mise dotfiles apply --yes"
+assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "1"
+mkdir ~/.local/mybin/private
+chmod 000 ~/.local/mybin/private
+assert_not_contains "MISE_DEBUG=1 mise dotfiles status 2>&1" "$HOME/.local/mybin/private"
+chmod 700 ~/.local/mybin/private
+
 # symlink-each cleans up after itself: deleting a source file removes the
 # link it left behind (and any directory that emptied out), while files and
 # links mise didn't create stay put
