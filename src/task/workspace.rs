@@ -6,6 +6,8 @@ use std::str::FromStr;
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 
+use super::{Task, TaskCacheConfig, task_sources::TaskOutputs};
+
 pub mod node;
 
 /// A stable, provider-namespaced identifier for a workspace project.
@@ -100,6 +102,45 @@ pub struct WorkspaceTask {
     pub description: String,
     /// File relative to the workspace root that supplied the task.
     pub source: PathBuf,
+    /// Provider-derived task configuration applied before user defaults.
+    pub suggestions: WorkspaceTaskSuggestions,
+}
+
+/// Optional task configuration a workspace provider can derive confidently.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WorkspaceTaskSuggestions {
+    /// Project-relative input patterns, mapped to mise task sources.
+    pub inputs: Vec<String>,
+    /// Project-relative output patterns. An empty vector means the task has no file outputs.
+    pub outputs: Option<Vec<String>>,
+    /// Whether task output caching should be enabled or disabled.
+    pub cache: Option<bool>,
+    /// Task dependencies, including project-relative and `^task` dependencies.
+    pub depends: Vec<String>,
+}
+
+impl WorkspaceTaskSuggestions {
+    pub(crate) fn apply_to(&self, task: &mut Task) {
+        if !self.inputs.is_empty() {
+            task.sources.clone_from(&self.inputs);
+        }
+        if let Some(outputs) = &self.outputs {
+            task.outputs = if outputs.is_empty() {
+                TaskOutputs::NoFiles
+            } else {
+                TaskOutputs::Files(outputs.clone())
+            };
+        }
+        if let Some(enabled) = self.cache {
+            task.cache = Some(TaskCacheConfig {
+                enabled,
+                ..Default::default()
+            });
+        }
+        if !self.depends.is_empty() {
+            task.depends = self.depends.iter().cloned().map(Into::into).collect();
+        }
+    }
 }
 
 /// Explicit changes applied after workspace providers discover their projects.
@@ -574,6 +615,7 @@ mod tests {
                     command: "old build".to_string(),
                     description: "old build".to_string(),
                     source: "old/manifest".into(),
+                    suggestions: WorkspaceTaskSuggestions::default(),
                 },
             );
             Ok(vec![project])
@@ -607,6 +649,75 @@ mod tests {
         );
         assert!(ProjectId::new("", "app").is_err());
         assert!(ProjectId::new("node", " app").is_err());
+    }
+
+    #[test]
+    fn task_suggestions_map_to_inferred_task_configuration() {
+        let suggestions = WorkspaceTaskSuggestions {
+            inputs: vec!["src/**".to_string(), "package.json".to_string()],
+            outputs: Some(vec!["dist/**".to_string()]),
+            cache: Some(true),
+            depends: vec!["prepare".to_string(), "^build".to_string()],
+        };
+        let mut task = Task::default();
+
+        suggestions.apply_to(&mut task);
+
+        assert_eq!(task.sources, vec!["src/**", "package.json"]);
+        assert_eq!(
+            task.outputs,
+            TaskOutputs::Files(vec!["dist/**".to_string()])
+        );
+        assert!(task.cache.as_ref().is_some_and(|cache| cache.enabled));
+        assert_eq!(
+            task.depends
+                .iter()
+                .map(|dependency| dependency.task.as_str())
+                .collect::<Vec<_>>(),
+            vec!["prepare", "^build"]
+        );
+    }
+
+    #[test]
+    fn task_suggestions_distinguish_no_outputs_from_no_suggestion() {
+        let mut no_outputs = Task::default();
+        WorkspaceTaskSuggestions {
+            outputs: Some(Vec::new()),
+            cache: Some(false),
+            ..Default::default()
+        }
+        .apply_to(&mut no_outputs);
+        assert_eq!(no_outputs.outputs, TaskOutputs::NoFiles);
+        assert!(
+            no_outputs
+                .cache
+                .as_ref()
+                .is_some_and(|cache| !cache.enabled)
+        );
+
+        let mut unspecified = Task {
+            sources: vec!["existing".to_string()],
+            outputs: TaskOutputs::Files(vec!["existing".to_string()]),
+            cache: Some(TaskCacheConfig {
+                enabled: true,
+                ..Default::default()
+            }),
+            depends: vec!["existing".to_string().into()],
+            ..Default::default()
+        };
+        WorkspaceTaskSuggestions::default().apply_to(&mut unspecified);
+        assert_eq!(unspecified.sources, vec!["existing"]);
+        assert_eq!(
+            unspecified.outputs,
+            TaskOutputs::Files(vec!["existing".to_string()])
+        );
+        assert_eq!(unspecified.depends[0].task, "existing");
+        assert!(
+            unspecified
+                .cache
+                .as_ref()
+                .is_some_and(|cache| cache.enabled)
+        );
     }
 
     #[test]
@@ -765,6 +876,7 @@ mod tests {
                 command: "npm run build --".to_string(),
                 description: "vite build".to_string(),
                 source: "apps/app/package.json".into(),
+                suggestions: WorkspaceTaskSuggestions::default(),
             },
         );
         let node = TestProvider {

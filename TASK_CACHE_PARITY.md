@@ -53,7 +53,7 @@ outside this tracker.
       projects first
 - [x] Define deterministic precedence between provider inference, root task defaults, task
       templates, and project-local configuration
-- [ ] Allow providers to suggest inputs, outputs, cacheability, and task dependencies when they can
+- [x] Allow providers to suggest inputs, outputs, cacheability, and task dependencies when they can
       derive them confidently
 - [ ] Explain which provider inferred each project, task, input, output, and dependency
 - [ ] Add Cargo workspace and path-dependency inference

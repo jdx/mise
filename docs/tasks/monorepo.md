@@ -451,6 +451,23 @@ defines `run`, while still inheriting cache inputs or environment entries that t
 specify. If a project later defines that task explicitly, the explicit command replaces the package
 script; a named template fills its missing fields before the root default does.
 
+### Provider Task Suggestions
+
+Workspace providers can attach task configuration when ecosystem metadata describes it
+unambiguously. A provider can suggest:
+
+- project-relative input patterns, which become task `sources`
+- project-relative output patterns, including an explicit declaration that a task has no file
+  outputs
+- whether task output caching is enabled or disabled
+- project-relative task dependencies and `^task` dependencies
+
+Suggestions are part of the inferred task definition, so they have the same precedence as the
+provider command. A matching explicit project task replaces them. Otherwise, task templates and
+root task defaults fill only fields the provider did not suggest. Providers leave fields unset when
+their ecosystem metadata is not authoritative; mise does not guess outputs or cacheability from a
+command string.
+
 ### Upstream Task Dependencies
 
 Prefix a task dependency with `^` to run that task in upstream workspace projects first. A root

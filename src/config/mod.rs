@@ -2901,6 +2901,7 @@ async fn inferred_workspace_tasks(
                 run: vec![RunEntry::Script(inferred.command.clone())],
                 ..Default::default()
             };
+            inferred.suggestions.apply_to(&mut task);
             if let Err(err) = resolve_task_template(&mut task, task_definitions) {
                 warn!(
                     "Failed to resolve inferred task {} in {}: {err:#}. Task will not be available.",

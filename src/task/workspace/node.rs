@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
 use eyre::{Context, Result};
 
-use super::{ProjectId, WorkspaceProject, WorkspaceProvider, WorkspaceTask};
+use super::{
+    ProjectId, WorkspaceProject, WorkspaceProvider, WorkspaceTask, WorkspaceTaskSuggestions,
+};
 
 const PACKAGE_JSON: &str = "package.json";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
@@ -165,6 +167,7 @@ fn workspace_tasks(
                     command,
                     description: script.clone(),
                     source: source.to_path_buf(),
+                    suggestions: WorkspaceTaskSuggestions::default(),
                 },
             )
         })
@@ -307,6 +310,7 @@ mod tests {
                 command: "pnpm run build --".to_string(),
                 description: "vite build".to_string(),
                 source: PathBuf::from("packages/app/package.json"),
+                suggestions: WorkspaceTaskSuggestions::default(),
             })
         );
         assert_eq!(
@@ -357,6 +361,7 @@ mod tests {
                 command: "pnpm run new --".to_string(),
                 description: "new command".to_string(),
                 source: PathBuf::from("overrides/app/package.json"),
+                suggestions: WorkspaceTaskSuggestions::default(),
             })
         );
     }
