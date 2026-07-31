@@ -13,13 +13,13 @@ pub struct TasksGraph {
     #[clap(short = 'J', long, verbatim_doc_comment)]
     json: bool,
 
-    /// Do not print table headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
-    no_header: bool,
-
     /// Explain provider attribution for inferred projects and tasks
     #[clap(long, conflicts_with = "json", verbatim_doc_comment)]
     explain: bool,
+
+    /// Do not print table headers
+    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
+    no_header: bool,
 }
 
 #[derive(Serialize)]

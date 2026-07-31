@@ -3748,8 +3748,8 @@ Examples:
 
 """#
         flag "-J --json" help="Output the project graph as JSON"
-        flag --no-header help="Do not print table headers"
         flag --explain help="Explain provider attribution for inferred projects and tasks"
+        flag --no-header help="Do not print table headers"
     }
     cmd info help="Get information about a task" effect=read {
         after_long_help #"""

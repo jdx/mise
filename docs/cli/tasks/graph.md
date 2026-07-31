@@ -13,13 +13,13 @@
 
 Output the project graph as JSON
 
-### `--no-header`
-
-Do not print table headers
-
 ### `--explain`
 
 Explain provider attribution for inferred projects and tasks
+
+### `--no-header`
+
+Do not print table headers
 
 Examples:
 
