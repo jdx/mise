@@ -4,6 +4,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
+#[cfg(panic = "abort")]
+use std::sync::TryLockError;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
@@ -251,10 +253,52 @@ static RAW_LOCK: Lazy<tokio::sync::RwLock<()>> = Lazy::new(|| tokio::sync::RwLoc
 
 static RUNNING_PIDS: Lazy<Mutex<HashSet<u32>>> = Lazy::new(Default::default);
 
-struct RunningPidGuard(Option<u32>);
+#[cfg(all(panic = "abort", unix))]
+fn kill_pids_immediately(pids: &HashSet<u32>) {
+    let use_pgroup = should_use_pgroup();
+    for pid in pids {
+        let pid = nix::unistd::Pid::from_raw(*pid as i32);
+        if use_pgroup {
+            if nix::sys::signal::killpg(pid, nix::sys::signal::SIGKILL).is_err() {
+                let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL);
+            }
+        } else {
+            let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL);
+        }
+    }
+}
+
+#[cfg(all(panic = "abort", windows))]
+fn kill_pids_immediately(pids: &HashSet<u32>) {
+    for pid in pids {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+/// Best-effort synchronous cleanup for the panic hook.
+///
+/// An aborting panic does not run destructors, and there is no time for the
+/// normal TERM/grace-period/KILL sequence. Avoid blocking if the panic occurred
+/// while the PID registry was locked; a deadlocked panic hook would prevent the
+/// process from ever reaching abort.
+#[cfg(panic = "abort")]
+pub fn kill_all_on_panic() {
+    let pids = match RUNNING_PIDS.try_lock() {
+        Ok(pids) => pids,
+        Err(TryLockError::Poisoned(err)) => err.into_inner(),
+        Err(TryLockError::WouldBlock) => return,
+    };
+    kill_pids_immediately(&pids);
+}
+
+pub(crate) struct RunningPidGuard(Option<u32>);
 
 impl RunningPidGuard {
-    fn new(pid: Option<u32>) -> Self {
+    pub(crate) fn new(pid: Option<u32>) -> Self {
         if let Some(pid) = pid {
             RUNNING_PIDS.lock().unwrap().insert(pid);
         }
@@ -317,6 +361,25 @@ fn should_use_pgroup() -> bool {
         true
     });
     *CACHED
+}
+
+/// Put a non-interactive child in the process tree managed by mise.
+///
+/// Callers must retain a [`RunningPidGuard`] after spawning the command.
+pub(crate) fn prepare_noninteractive_child(_cmd: &mut std::process::Command) {
+    #[cfg(unix)]
+    if should_use_pgroup() {
+        _cmd.env(TASK_PGID_MANAGED_ENV, "1");
+        unsafe {
+            _cmd.pre_exec(|| {
+                let _ = nix::unistd::setpgid(
+                    nix::unistd::Pid::from_raw(0),
+                    nix::unistd::Pid::from_raw(0),
+                );
+                Ok(())
+            });
+        }
+    }
 }
 
 /// Grace period after a child's ExitStatus arrives during which we keep

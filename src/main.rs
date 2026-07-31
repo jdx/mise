@@ -257,6 +257,12 @@ static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
 pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
     panic::set_hook(Box::new(move |panic_info| {
+        // Serious release builds abort after this hook returns, so destructors
+        // and catch_unwind cleanup will not run. Terminate registered child
+        // process trees synchronously while we still can.
+        #[cfg(panic = "abort")]
+        cmd::kill_all_on_panic();
+
         if tokio::runtime::Handle::try_current().is_ok()
             && !ASYNC_PANIC_OCCURRED.swap(true, Ordering::SeqCst)
         {
@@ -270,7 +276,10 @@ pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
             } else {
                 bt_buffer.push_str("[no accessible async backtrace]");
             }
-            let all = async_backtrace::taskdump_tree(true);
+            // An aborting panic cannot wait for every running task to reach a
+            // frame boundary: some may be blocked on the panicking task, and
+            // the process must return from this hook to reach abort.
+            let all = async_backtrace::taskdump_tree(cfg!(panic = "unwind"));
             // A panic hook must never panic: a panic while the hook runs
             // aborts the process with SIGABRT.
             safe_eprintln!(

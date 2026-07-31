@@ -19,6 +19,7 @@ use eyre::{Context, Result, bail};
 use jdx_tar::{Builder, EntryType, Header};
 use serde::Serialize;
 
+use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{ImageIndex, ImageManifest};
 
@@ -60,13 +61,15 @@ pub fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
         crate::oci::layout::validate_sha256_digest(&layer.digest)?;
     }
 
-    let mut child = Command::new("docker")
+    let mut command = Command::new("docker");
+    command
         .args(["load", "--quiet"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .wrap_err("spawning `docker load`")?;
+        .stderr(Stdio::piped());
+    prepare_noninteractive_child(&mut command);
+    let mut child = command.spawn().wrap_err("spawning `docker load`")?;
+    let _running_pid = RunningPidGuard::new(Some(child.id()));
     let stdin = child.stdin.take().expect("stdin piped");
 
     // Write the archive on a separate thread so the parent can drain docker's
