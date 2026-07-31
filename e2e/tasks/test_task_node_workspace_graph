@@ -78,7 +78,8 @@ assert_json "mise tasks graph --json | jq '.projects[] | select(.id == \"node:@s
   inputs: .tasks.build.suggestions.provenance.inputs.provider,
   outputs: .tasks.build.suggestions.provenance.outputs.provider,
   cache: .tasks.build.suggestions.provenance.cache.provider,
-  depends: .tasks.build.suggestions.provenance.depends.provider
+  depends: .tasks.build.suggestions.provenance.depends.provider,
+  config_sources: (.tasks.build.suggestions | has(\"config_sources\"))
 }'" '{
   "project": "node",
   "dependency": "node",
@@ -86,5 +87,6 @@ assert_json "mise tasks graph --json | jq '.projects[] | select(.id == \"node:@s
   "inputs": "node",
   "outputs": "node",
   "cache": "node",
-  "depends": "node"
+  "depends": "node",
+  "config_sources": false
 }'

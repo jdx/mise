@@ -136,7 +136,10 @@ pub struct WorkspaceTaskSuggestions {
     /// Task dependencies, including project-relative and `^task` dependencies. An empty vector
     /// means the task has no dependencies.
     pub depends: Option<Vec<String>>,
-    /// Additional metadata files that contributed these suggestions.
+    /// Additional metadata files that contributed these suggestions. These paths are used
+    /// internally for cache invalidation and may be absolute, so provenance is the portable
+    /// representation exposed in graph JSON.
+    #[serde(skip)]
     pub config_sources: Vec<PathBuf>,
     /// Field-level attribution for provider suggestions.
     pub provenance: WorkspaceTaskSuggestionProvenance,
