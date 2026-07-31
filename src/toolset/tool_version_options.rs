@@ -1150,7 +1150,6 @@ mod tests {
                 .iter()
                 .cloned()
                 .collect(),
-                ..Default::default()
             },
             ..Default::default()
         };
@@ -1309,7 +1308,6 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
-                ..Default::default()
             },
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
@@ -1328,7 +1326,6 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
-                ..Default::default()
             },
             opts: [
                 ("api_url".to_string(), s("https://inline.example")),
