@@ -151,6 +151,14 @@ API_TOKEN = "token_123"
 PASSWORD = "my_password"
 ```
 
+Set `redact = false` on an individual variable to exclude it from matching `redactions` patterns,
+including patterns inherited from a global config:
+
+```toml
+[env]
+TEST_TOKEN = { value = "not-sensitive", redact = false }
+```
+
 ### Viewing Redacted Environment Variables
 
 The `mise env` command provides flags to work with redacted variables:

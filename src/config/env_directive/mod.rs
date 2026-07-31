@@ -320,6 +320,7 @@ pub struct EnvResults {
     pub env_paths: Vec<PathBuf>,
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
+    pub redaction_exclusions: BTreeSet<String>,
     pub tool_add_paths: Vec<PathBuf>,
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
@@ -370,6 +371,17 @@ pub struct EnvResolveOptions {
 }
 
 impl EnvResults {
+    fn track_redaction_override(&mut self, key: &str, redact: Option<bool>) {
+        match redact {
+            Some(false) => {
+                self.redaction_exclusions.insert(key.to_string());
+            }
+            Some(true) | None => {
+                self.redaction_exclusions.remove(key);
+            }
+        }
+    }
+
     pub async fn resolve(
         config: &Arc<Config>,
         mut ctx: tera::Context,
@@ -478,6 +490,7 @@ impl EnvResults {
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
+                    r.track_redaction_override(&k, redact);
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
@@ -517,6 +530,7 @@ impl EnvResults {
                         continue;
                     }
 
+                    r.track_redaction_override(&k, redact);
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
@@ -534,6 +548,7 @@ impl EnvResults {
                 }
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
+                    r.redaction_exclusions.remove(&k);
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, _opts) => {
@@ -546,6 +561,7 @@ impl EnvResults {
                         if !vars.contains_key(&k)
                             && let Some(v) = required_env.get(&k)
                         {
+                            r.track_redaction_override(&k, redact);
                             r.vars.insert(k, (v.clone(), source.clone()));
                         }
                     }
@@ -555,6 +571,7 @@ impl EnvResults {
                     ref options,
                     ..
                 } => {
+                    r.track_redaction_override(k, options.redact);
                     // Decrypt age-encrypted value
                     let res = crate::agecrypt::decrypt_age_directive(&directive).await;
                     let decrypted_v = match res {
@@ -644,6 +661,7 @@ impl EnvResults {
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
+                            r.track_redaction_override(&k, redact);
                             if resolve_opts.vars {
                                 if redact.unwrap_or(false) {
                                     r.redactions.push(k.clone());
@@ -673,6 +691,7 @@ impl EnvResults {
                     for (f, new_env) in files {
                         r.env_scripts.push(f.clone());
                         for (k, v) in new_env {
+                            r.track_redaction_override(&k, redact);
                             if resolve_opts.vars {
                                 if redact.unwrap_or(false) {
                                     r.redactions.push(k.clone());
@@ -1200,5 +1219,84 @@ mod tests {
         let keys: Vec<String> = results.env.keys().cloned().collect();
         assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
         assert!(results.env_paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_skipped_default_does_not_override_redaction() {
+        let env = EnvMap::from_iter([("SECRET_TOKEN".to_string(), "secret".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![(
+                EnvDirective::Default("SECRET_TOKEN".into(), "fallback".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.redaction_exclusions.contains("SECRET_TOKEN"));
+    }
+
+    #[tokio::test]
+    async fn test_reassignment_and_remove_clear_redaction_exclusion() {
+        let config = Config::get().await.unwrap();
+        let excluded = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let initial = EnvMap::new();
+        let resolve = |directives| {
+            EnvResults::resolve(
+                &config,
+                BASE_CONTEXT.clone(),
+                &initial,
+                directives,
+                EnvResolveOptions {
+                    vars: false,
+                    tools: ToolsFilter::Both,
+                    warn_on_missing_required: false,
+                },
+            )
+        };
+
+        let reassigned = resolve(vec![
+            (
+                EnvDirective::Val("TOKEN".into(), "first".into(), excluded.clone()),
+                PathBuf::from("/global"),
+            ),
+            (
+                EnvDirective::Val("TOKEN".into(), "second".into(), Default::default()),
+                PathBuf::from("/local"),
+            ),
+        ])
+        .await
+        .unwrap();
+        assert!(!reassigned.redaction_exclusions.contains("TOKEN"));
+
+        let removed = resolve(vec![
+            (
+                EnvDirective::Val("TOKEN".into(), "first".into(), excluded),
+                PathBuf::from("/global"),
+            ),
+            (
+                EnvDirective::Rm("TOKEN".into(), Default::default()),
+                PathBuf::from("/local"),
+            ),
+        ])
+        .await
+        .unwrap();
+        assert!(!removed.redaction_exclusions.contains("TOKEN"));
     }
 }

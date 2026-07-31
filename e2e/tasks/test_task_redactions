@@ -11,6 +11,29 @@ EOF
 
 assert "mise run a" "secret: [redacted]"
 
+# Test config-level redact=false exclusions survive task context construction
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[env]
+TEST_TOKEN = { value = "e", redact = false }
+
+[tasks.a]
+run = 'echo "secret value:$TEST_TOKEN"'
+TOML
+assert "mise run a" "secret value:e"
+
+# Test a task-level redact=true assignment overrides a config-level exclusion
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[env]
+TEST_TOKEN = { value = "e", redact = false }
+
+[tasks.a]
+run = 'echo "secret:$TEST_TOKEN"'
+env.TEST_TOKEN = { value = "task_secret", redact = true }
+TOML
+assert "mise run a" "secret:[redacted]"
+
 cat <<EOF >mise.toml
 redactions = ["secret"]
 [tasks.a]

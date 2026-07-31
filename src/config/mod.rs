@@ -248,12 +248,13 @@ impl Config {
         config.all_aliases = measure!("config::load all_aliases", { config.load_all_aliases() });
 
         measure!("config::load redactions", {
-            config.add_redactions(
+            config.add_redactions_excluding(
                 config
                     .redaction_keys()
                     .into_iter()
                     .chain(vars_results.redactions.iter().cloned()),
                 &config.vars.clone().into_iter().collect(),
+                &vars_results.redaction_exclusions,
             );
         });
 
@@ -977,6 +978,7 @@ impl Config {
                 env_paths: cached.env_paths.clone(),
                 env_scripts: cached.env_scripts.clone(),
                 redactions: cached.redactions.clone(),
+                redaction_exclusions: cached.redaction_exclusions.clone(),
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
@@ -986,13 +988,14 @@ impl Config {
                 .into_iter()
                 .chain(env_results.redactions.clone())
                 .collect_vec();
-            self.add_redactions(
+            self.add_redactions_excluding(
                 redact_keys,
                 &env_results
                     .env
                     .iter()
                     .map(|(k, v)| (k.clone(), v.0.clone()))
                     .collect(),
+                &env_results.redaction_exclusions,
             );
             if log::log_enabled!(log::Level::Trace) {
                 trace!("{env_results:#?}");
@@ -1052,13 +1055,14 @@ impl Config {
             .into_iter()
             .chain(env_results.redactions.clone())
             .collect_vec();
-        self.add_redactions(
+        self.add_redactions_excluding(
             redact_keys,
             &env_results
                 .env
                 .iter()
                 .map(|(k, v)| (k.clone(), v.0.clone()))
                 .collect(),
+            &env_results.redaction_exclusions,
         );
         if cache_enabled
             && !env_results.has_uncacheable
@@ -1082,6 +1086,7 @@ impl Config {
                 env_paths: env_results.env_paths.clone(),
                 env_scripts: env_results.env_scripts.clone(),
                 redactions: env_results.redactions.clone(),
+                redaction_exclusions: env_results.redaction_exclusions.clone(),
                 watch_files,
                 watch_file_mtimes,
                 created_at: now,
@@ -1193,12 +1198,20 @@ impl Config {
             .cloned()
             .collect()
     }
-    pub fn add_redactions(&self, redactions: impl IntoIterator<Item = String>, env: &EnvMap) {
+    pub fn add_redactions_excluding(
+        &self,
+        redactions: impl IntoIterator<Item = String>,
+        env: &EnvMap,
+        exclusions: &BTreeSet<String>,
+    ) {
         let mut r = _REDACTOR.lock().unwrap();
+        // Redactions are intentionally append-only. An exclusion prevents this key from
+        // contributing its value, but removing an already registered value could expose a
+        // different secret key (or concurrent task) that uses the same value.
         let new_redactions = redactions.into_iter().flat_map(|pattern| {
             let matcher = Wildcard::new(vec![pattern]);
             env.iter()
-                .filter(|(k, _)| matcher.match_any(k))
+                .filter(|(k, _)| !exclusions.contains(*k) && matcher.match_any(k))
                 .map(|(_, v)| v.clone())
                 .collect::<Vec<_>>()
         });

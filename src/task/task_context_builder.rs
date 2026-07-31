@@ -258,7 +258,11 @@ impl TaskContextBuilder {
 
         // Register config-level redactions resolved through the task context
         if !config_env_results.redactions.is_empty() {
-            config.add_redactions(config_env_results.redactions.iter().cloned(), &env);
+            config.add_redactions_excluding(
+                config_env_results.redactions.iter().cloned(),
+                &env,
+                &config_env_results.redaction_exclusions,
+            );
         }
 
         let task_env_directives = self.build_task_env_directives(task);
@@ -276,7 +280,12 @@ impl TaskContextBuilder {
             .redaction_keys()
             .into_iter()
             .chain(task_env_results.redactions.iter().cloned());
-        config.add_redactions(task_redact_keys, &env);
+        let mut redaction_exclusions = config_env_results.redaction_exclusions.clone();
+        for key in task_env_results.env.keys() {
+            redaction_exclusions.remove(key);
+        }
+        redaction_exclusions.extend(task_env_results.redaction_exclusions.iter().cloned());
+        config.add_redactions_excluding(task_redact_keys, &env, &redaction_exclusions);
 
         // Cache the result if no task-specific env directives or tools
         if task.env.0.is_empty()
@@ -373,9 +382,10 @@ impl TaskContextBuilder {
                 for (k, (v, _)) in &vars_results.vars {
                     vars.insert(k.clone(), v.clone());
                 }
-                config.add_redactions(
+                config.add_redactions_excluding(
                     vars_results.redactions.iter().cloned(),
                     &vars.clone().into_iter().collect(),
+                    &vars_results.redaction_exclusions,
                 );
                 tera_ctx.insert("vars", &vars);
                 resolved_vars = Some(vars);

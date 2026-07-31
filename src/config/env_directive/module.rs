@@ -51,6 +51,7 @@ impl EnvResults {
             // User's explicit redact setting takes priority, otherwise use plugin's preference
             let should_redact = redact.unwrap_or(response.redact);
             for (k, v) in response.env {
+                r.track_redaction_override(&k, redact);
                 if should_redact {
                     r.redactions.push(k.clone());
                 }

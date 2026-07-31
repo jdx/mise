@@ -120,6 +120,9 @@ pub struct CachedNonToolEnv {
     pub env_scripts: Vec<PathBuf>,
     /// redaction patterns contributed by env directives
     pub redactions: Vec<String>,
+    /// environment keys explicitly excluded from redaction
+    #[serde(default)]
+    pub redaction_exclusions: BTreeSet<String>,
     /// Files to watch for changes (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
     /// mtimes of watch files at cache creation time
