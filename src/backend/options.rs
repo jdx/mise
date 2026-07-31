@@ -8,8 +8,7 @@ use dashmap::DashMap;
 use eyre::{Result, bail};
 use std::sync::{Arc, LazyLock};
 
-static VERSION_ORDER_CACHE: LazyLock<DashMap<[u8; 32], Arc<[String]>>> =
-    LazyLock::new(DashMap::new);
+static VERSION_ORDER_CACHE: LazyLock<DashMap<[u8; 32], Arc<[usize]>>> = LazyLock::new(DashMap::new);
 
 /// The policy used to order version candidates before selecting a match.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -39,34 +38,55 @@ impl VersionOrder {
     /// Valid versions use semantic precedence, with source position breaking
     /// equal-precedence ties such as versions that differ only in build metadata.
     pub(crate) fn order(self, versions: Vec<String>) -> Vec<String> {
+        self.order_by(versions, String::as_str)
+    }
+
+    /// Apply the version ordering to arbitrary records without separating a
+    /// version string from its associated metadata.
+    pub(crate) fn order_by<T, F>(self, values: Vec<T>, version: F) -> Vec<T>
+    where
+        F: Fn(&T) -> &str,
+    {
         match self {
-            Self::Source => versions,
-            Self::Semver => self.order_cached(&versions).to_vec(),
+            Self::Source => values,
+            Self::Semver => {
+                let versions = values.iter().map(version).collect::<Vec<_>>();
+                let order = self.order_cached(&versions);
+                let mut values = values.into_iter().map(Some).collect::<Vec<_>>();
+                order
+                    .iter()
+                    .map(|index| {
+                        values[*index]
+                            .take()
+                            .expect("version ordering indices must be unique")
+                    })
+                    .collect()
+            }
         }
     }
 
-    fn order_cached(self, versions: &[String]) -> Arc<[String]> {
+    fn order_cached(self, versions: &[&str]) -> Arc<[usize]> {
         let key = version_order_cache_key(self, versions);
         if let Some(ordered) = VERSION_ORDER_CACHE.get(&key) {
             return ordered.clone();
         }
 
-        let ordered: Arc<[String]> = match self {
-            Self::Source => versions.to_vec().into(),
+        let ordered: Arc<[usize]> = match self {
+            Self::Source => (0..versions.len()).collect::<Vec<_>>().into(),
             Self::Semver => {
                 let mut invalid = Vec::new();
                 let mut valid = Vec::new();
                 for (source_index, version) in versions.iter().enumerate() {
                     match semver::Version::parse(version) {
-                        Ok(parsed) => valid.push((source_index, version.clone(), parsed)),
-                        Err(_) => invalid.push(version.clone()),
+                        Ok(parsed) => valid.push((source_index, parsed)),
+                        Err(_) => invalid.push(source_index),
                     }
                 }
-                valid.sort_by(|(left_index, _, left), (right_index, _, right)| {
+                valid.sort_by(|(left_index, left), (right_index, right)| {
                     left.cmp_precedence(right)
                         .then_with(|| left_index.cmp(right_index))
                 });
-                invalid.extend(valid.into_iter().map(|(_, version, _)| version));
+                invalid.extend(valid.into_iter().map(|(source_index, _)| source_index));
                 invalid.into()
             }
         };
@@ -78,7 +98,7 @@ impl VersionOrder {
     }
 }
 
-fn version_order_cache_key(order: VersionOrder, versions: &[String]) -> [u8; 32] {
+fn version_order_cache_key(order: VersionOrder, versions: &[&str]) -> [u8; 32] {
     fn update_field(hasher: &mut blake3::Hasher, value: &[u8]) {
         hasher.update(&(value.len() as u64).to_le_bytes());
         hasher.update(value);
@@ -476,17 +496,38 @@ mod tests {
     #[test]
     fn test_version_order_cache_reuses_only_complete_key_matches() {
         let versions = ["2.0.0", "1.0.0"].map(String::from).to_vec();
+        let versions = versions.iter().map(String::as_str).collect::<Vec<_>>();
         let cached = VersionOrder::Semver.order_cached(&versions);
         let reused = VersionOrder::Semver.order_cached(&versions);
         assert!(Arc::ptr_eq(&cached, &reused));
 
-        let reversed = ["1.0.0", "2.0.0"].map(String::from).to_vec();
+        let reversed = ["1.0.0", "2.0.0"];
         let different_input = VersionOrder::Semver.order_cached(&reversed);
         assert!(!Arc::ptr_eq(&cached, &different_input));
 
         assert_ne!(
             version_order_cache_key(VersionOrder::Semver, &versions),
             version_order_cache_key(VersionOrder::Source, &versions)
+        );
+    }
+
+    #[test]
+    fn test_semver_order_keeps_duplicate_records_and_metadata() {
+        let records = [
+            ("2.0.0", "first two"),
+            ("1.0.0", "one"),
+            ("2.0.0", "second two"),
+            ("nightly", "opaque"),
+        ];
+
+        assert_eq!(
+            VersionOrder::Semver.order_by(records.to_vec(), |record| record.0),
+            [
+                ("nightly", "opaque"),
+                ("1.0.0", "one"),
+                ("2.0.0", "first two"),
+                ("2.0.0", "second two"),
+            ]
         );
     }
 }

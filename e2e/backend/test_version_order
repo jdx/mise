@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Version ordering is a resolution policy. Remote listings remain in backend
-# source order so mise-versions can cache source data independently of policy.
+# Remote listings use the effective version ordering. Cache producers can ask
+# for the backend's source order explicitly.
 
 VERSION_LIST_DIR="$TMPDIR/version-order-list"
 mkdir -p "$VERSION_LIST_DIR"
@@ -10,6 +10,7 @@ mkdir -p "$VERSION_LIST_DIR"
 cat <<'EOF' >"$VERSION_LIST_DIR/versions.txt"
 11.11.0
 99
+10.99.0
 10.34.5
 EOF
 
@@ -43,6 +44,10 @@ version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
 EOF
 
 assert "mise latest http:version-order" "10.34.5"
+assert "mise ls-remote http:version-order" "11.11.0
+99
+10.99.0
+10.34.5"
 
 cat <<EOF >mise.toml
 [tools."http:version-order"]
@@ -53,8 +58,29 @@ version_order = "semver"
 EOF
 
 assert "mise latest http:version-order" "11.11.0"
-assert "mise ls-remote http:version-order" "11.11.0
+assert "mise ls-remote http:version-order" "99
+10.34.5
+10.99.0
+11.11.0"
+assert "mise ls-remote --source-order http:version-order" "11.11.0
 99
+10.99.0
+10.34.5"
+assert "MISE_LS_REMOTE_SOURCE_ORDER=true mise ls-remote http:version-order" "11.11.0
+99
+10.99.0
+10.34.5"
+assert "mise ls-remote http:version-order@10" "10.34.5
+10.99.0"
+assert "mise ls-remote --source-order http:version-order@10" "10.99.0
+10.34.5"
+assert "mise ls-remote --json http:version-order | jq -r '.[].version'" "99
+10.34.5
+10.99.0
+11.11.0"
+assert "mise ls-remote --source-order --json http:version-order | jq -r '.[].version'" "11.11.0
+99
+10.99.0
 10.34.5"
 
 # With no valid SemVer candidates, semantic ordering naturally falls back to
@@ -80,6 +106,8 @@ EOF
 
 assert "mise latest http:version-order-opaque" "legacy-new"
 assert "mise latest http:version-order-opaque legacy-old" "legacy-old"
+assert "mise ls-remote http:version-order-opaque" "legacy-old
+legacy-new"
 
 mkdir -p "$MISE_DATA_DIR/installs/http-version-order/10.34.5"
 mkdir -p "$MISE_DATA_DIR/installs/http-version-order/11.11.0"
@@ -87,3 +115,4 @@ mkdir -p "$MISE_DATA_DIR/installs/http-version-order/99"
 ln -s 10.34.5 "$MISE_DATA_DIR/installs/http-version-order/latest"
 
 assert "mise latest --installed http:version-order" "11.11.0"
+assert "mise latest --installed http:version-order@latest" "11.11.0"

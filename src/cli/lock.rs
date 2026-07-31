@@ -938,11 +938,8 @@ impl Lock {
                         let request_options = tv.request.options();
                         if let Some(latest_version) = crate::backend::get(&ba)
                             .and_then(|b| {
-                                b.latest_installed_version_with_opts(
-                                    Some("latest".to_string()),
-                                    &request_options,
-                                )
-                                .ok()
+                                b.latest_installed_version_with_opts(None, &request_options)
+                                    .ok()
                             })
                             .flatten()
                         {

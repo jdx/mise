@@ -167,7 +167,7 @@ With semantic ordering enabled, eligible valid [Semantic Versions](https://semve
 
 Semantic ordering applies only when mise must choose among candidates. An exact request for an opaque version such as `nightly` remains an exact request. Backend shortcuts such as a marked-latest release or package-manager dist-tag are bypassed for semantic ordering so the full candidate list can be compared.
 
-This option changes version resolution only. `mise ls-remote` and the remote-version data cached by `mise-versions` remain in source order.
+`mise ls-remote` displays the effective ordering after applying version prefix, prerelease, and release-age filters. Use `mise ls-remote --source-order` (or `MISE_LS_REMOTE_SOURCE_ORDER=true` in automation) to preserve the backend's canonical order while keeping those filters. Persistent remote-version caches, including the data produced by `mise-versions`, remain in source order.
 
 ### Tool postinstall commands
 

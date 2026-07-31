@@ -4,6 +4,7 @@ use eyre::Result;
 use jiff::Timestamp;
 use serde::Serialize;
 
+use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::ToolArg;
 use crate::config::Settings;
@@ -70,6 +71,13 @@ pub struct LsRemote {
     #[clap(long, verbatim_doc_comment)]
     pub prerelease: bool,
 
+    /// Preserve the order returned by the backend
+    ///
+    /// This overrides a configured `version_order` for this command's output.
+    /// Version prefix, prerelease, and release-age filters still apply.
+    #[clap(long, env = "MISE_LS_REMOTE_SOURCE_ORDER", verbatim_doc_comment)]
+    pub source_order: bool,
+
     /// Fail if release metadata fetches fail
     ///
     /// Requires --json and --no-versions-host.
@@ -128,6 +136,9 @@ impl LsRemote {
             .map(|before| VersionInfo::count_hidden_by_date(&versions_matching_prefix, before))
             .unwrap_or_default();
         let versions = filter_versions_by_date(versions_matching_prefix, before_date);
+        let versions = self
+            .order_versions(config, plugin.as_ref(), versions)
+            .await?;
 
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);
@@ -151,7 +162,11 @@ impl LsRemote {
             if let Some(before) = before_date {
                 hidden_versions += VersionInfo::count_hidden_by_date(&all_versions, before);
             }
-            for v in filter_versions_by_date(all_versions, before_date) {
+            let tool_versions = filter_versions_by_date(all_versions, before_date);
+            let tool_versions = self
+                .order_versions(config, b.as_ref(), tool_versions)
+                .await?;
+            for v in tool_versions {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
@@ -186,6 +201,21 @@ impl LsRemote {
             }
             None => Ok(None),
         }
+    }
+
+    async fn order_versions(
+        &self,
+        config: &Arc<Config>,
+        backend: &dyn Backend,
+        versions: Vec<VersionInfo>,
+    ) -> Result<Vec<VersionInfo>> {
+        let order = if self.source_order {
+            VersionOrder::Source
+        } else {
+            let options = config.get_tool_opts_with_overrides(backend.ba()).await?;
+            BackendOptions::new(&options).version_order()?
+        };
+        Ok(order.order_by(versions, |version| version.version.as_str()))
     }
 }
 

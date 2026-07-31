@@ -48,6 +48,7 @@ async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {
             json: false,
             prerelease: false,
             no_versions_host: false,
+            source_order: false,
             strict_metadata: false,
             minimum_release_age: None,
         }

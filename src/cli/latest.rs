@@ -68,6 +68,7 @@ impl Latest {
 
         let latest_version = if installed {
             let options = config.get_tool_opts_with_overrides(backend.ba()).await?;
+            let prefix = prefix.filter(|prefix| prefix != "latest");
             backend.latest_installed_version_with_opts(prefix, &options)?
         } else {
             backend.latest_version(&config, prefix, before_date).await?
