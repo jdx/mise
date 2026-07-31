@@ -87,7 +87,8 @@ The legacy `$1`/`${1}` hostname argument is deprecated. Use `MISE_CREDENTIAL_HOS
 mise can read tokens from the [`fj` CLI](https://codeberg.org/forgejo-contrib/forgejo-cli) (`keys.json`) as a fallback. It checks:
 
 1. `$XDG_DATA_HOME/forgejo-cli/keys.json` (defaults to `~/.local/share/forgejo-cli/keys.json`)
-2. `~/Library/Application Support/Cyborus.forgejo-cli/keys.json` (macOS)
+2. `~/Library/Application Support/forgejo-cli.forgejo-cli/keys.json` (macOS)
+3. `~/Library/Application Support/Cyborus.forgejo-cli/keys.json` (legacy macOS location)
 
 Disable this fallback with:
 
