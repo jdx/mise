@@ -1782,7 +1782,7 @@ impl AquaBackend {
         artifact_filename: &str,
         expected_checksum: Option<&str>,
     ) -> Result<()> {
-        let checksum_content = file::read_to_string(checksum_path)?;
+        let checksum_content = file::read_to_string_bom(checksum_path)?;
         let checksum_str = self.parse_checksum_from_content(
             &checksum_content,
             checksum_config,
@@ -2174,11 +2174,21 @@ impl AquaBackend {
             AquaChecksumType::Http => checksum_config.url(pkg, v, target_os, target_arch)?,
         };
 
-        // Download checksum file content
-        let checksum_content = match HTTP.get_text(&url).await {
-            Ok(content) => content,
+        // Download checksum file content. Read the bytes rather than `get_text`, which decodes with
+        // the response charset and silently replaces anything it cannot map — a UTF-16 checksum
+        // file would be recorded as mojibake instead of failing. `decode_text` honours a BOM, the
+        // same as the install path above.
+        let checksum_bytes = match HTTP.get_bytes(&url).await {
+            Ok(bytes) => bytes,
             Err(e) => {
                 debug!("Failed to download checksum file {}: {}", url, e);
+                return Ok(None);
+            }
+        };
+        let checksum_content = match file::decode_text(checksum_bytes.as_ref()) {
+            Ok(content) => content,
+            Err(e) => {
+                debug!("Failed to decode checksum file {}: {}", url, e);
                 return Ok(None);
             }
         };
@@ -2502,7 +2512,7 @@ impl AquaBackend {
             }
 
             if needs_verified_checksum_binding && checksum_path.exists() {
-                let checksum_content = file::read_to_string(&checksum_path)?;
+                let checksum_content = file::read_to_string_bom(&checksum_path)?;
                 let checksum_str =
                     self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
                 let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
@@ -4724,6 +4734,55 @@ mod lock_candidate_tests {
         assert!(same_checksum_algorithm("sha256:abc", "SHA256:def"));
         assert!(!same_checksum_algorithm("sha256:abc", "sha512:def"));
         assert!(same_checksum_algorithm("abc", "sha256:def"));
+    }
+
+    /// A UTF-16LE checksum file is read, not rejected.
+    ///
+    /// The fixture is the real line for the artifact in #5399, taken from PowerShell v7.4.10's
+    /// `hashes.sha256` — which that release published as UTF-16LE. Before this, the install died
+    /// at `read_to_string` with "stream did not contain valid UTF-8".
+    #[test]
+    fn test_verify_checksum_file_reads_utf16() {
+        const ARTIFACT: &str = "powershell-7.4.10-linux-x64.tar.gz";
+        const DIGEST: &str = "d91b9172668f4b6aef4abce8c780cd298872c7a0f4487cc47444d26877ba49f6";
+
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(
+            format!("{DIGEST} *{ARTIFACT}\n")
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        );
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("hashes.sha256");
+        std::fs::write(&path, bytes).unwrap();
+
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "powershell-core".to_string(),
+            Some("aqua:PowerShell/PowerShell".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha256"}"#).unwrap();
+
+        backend
+            .verify_checksum_file_matches_expected(
+                &checksum,
+                &path,
+                ARTIFACT,
+                Some(&format!("sha256:{DIGEST}")),
+            )
+            .unwrap();
+
+        // a wrong expectation must be caught — otherwise the assertion above would also pass on a
+        // file that was never actually parsed
+        let err = backend
+            .verify_checksum_file_matches_expected(
+                &checksum,
+                &path,
+                ARTIFACT,
+                Some(&format!("sha256:{}", "0".repeat(64))),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not match expected checksum"), "{err}");
     }
 
     #[test]

@@ -337,6 +337,50 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
 }
 
+/// Decode text that may begin with a byte-order mark.
+///
+/// `std`'s UTF-8-only readers reject UTF-16 outright, which is how a checksum file sank an install
+/// in #5399: PowerShell shipped `hashes.sha256` as UTF-16LE and mise stopped at "stream did not
+/// contain valid UTF-8". Windows PowerShell 5.1's `Out-File` writes UTF-16LE by default, so any
+/// project generating checksums that way produces the same thing.
+///
+/// Only a BOM switches the encoding. Detecting UTF-16 without one means guessing from the density
+/// of NUL bytes, which can misfire on binary input; `Out-File` always writes a BOM, so the guess
+/// buys nothing here. Input with no BOM is decoded as UTF-8, exactly as before.
+pub fn decode_text(bytes: &[u8]) -> Result<String> {
+    fn from_utf16(bytes: &[u8], to_u16: fn([u8; 2]) -> u16, label: &str) -> Result<String> {
+        if !bytes.len().is_multiple_of(2) {
+            bail!(
+                "truncated {label} text: {} bytes is not a whole number of code units",
+                bytes.len()
+            );
+        }
+        let units = bytes
+            .chunks_exact(2)
+            .map(|c| to_u16([c[0], c[1]]))
+            .collect_vec();
+        String::from_utf16(&units).wrap_err_with(|| format!("invalid {label} text"))
+    }
+
+    match bytes {
+        [0xef, 0xbb, 0xbf, rest @ ..] => {
+            String::from_utf8(rest.to_vec()).wrap_err("invalid UTF-8 text after a UTF-8 BOM")
+        }
+        [0xff, 0xfe, rest @ ..] => from_utf16(rest, u16::from_le_bytes, "UTF-16LE"),
+        [0xfe, 0xff, rest @ ..] => from_utf16(rest, u16::from_be_bytes, "UTF-16BE"),
+        _ => String::from_utf8(bytes.to_vec())
+            .wrap_err("invalid UTF-8 text, and no byte-order mark identifying another encoding"),
+    }
+}
+
+/// [`read_to_string`], but tolerant of a byte-order mark. See [`decode_text`].
+pub fn read_to_string_bom<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    let bytes = fs::read(path).wrap_err_with(|| format!("failed read: {}", path.display_user()))?;
+    decode_text(&bytes).wrap_err_with(|| format!("failed to decode {}", path.display_user()))
+}
+
 pub async fn read_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
     trace!("cat {}", path.display_user());
@@ -2022,6 +2066,63 @@ mod tests {
     fn test_run_blocking_outside_runtime() {
         // no tokio runtime at all — must run the closure inline, not panic
         assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    fn utf16le(s: &str) -> Vec<u8> {
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(s.encode_utf16().flat_map(u16::to_le_bytes));
+        bytes
+    }
+
+    #[test]
+    fn test_decode_text_honours_a_byte_order_mark() {
+        // the encoding that broke #5399 — PowerShell shipped hashes.sha256 as UTF-16LE
+        assert_eq!(decode_text(&utf16le("abc\n")).unwrap(), "abc\n");
+
+        let mut be = vec![0xfe, 0xff];
+        be.extend("abc\n".encode_utf16().flat_map(u16::to_be_bytes));
+        assert_eq!(decode_text(&be).unwrap(), "abc\n");
+
+        // a UTF-8 BOM is stripped rather than left to poison the first token
+        assert_eq!(decode_text(b"\xef\xbb\xbfabc\n").unwrap(), "abc\n");
+
+        // no BOM: unchanged from plain `read_to_string`
+        assert_eq!(decode_text(b"abc\n").unwrap(), "abc\n");
+        assert_eq!(decode_text(b"").unwrap(), "");
+    }
+
+    #[test]
+    fn test_decode_text_rejects_what_it_cannot_decode() {
+        // invalid UTF-8 with no BOM still fails, but says why rather than "stream did not
+        // contain valid UTF-8"
+        let err = decode_text(b"\xff\x00abc").unwrap_err().to_string();
+        assert!(err.contains("byte-order mark"), "{err}");
+
+        // an odd trailing byte cannot be a whole UTF-16 code unit
+        let mut truncated = utf16le("abc");
+        truncated.pop();
+        let err = decode_text(&truncated).unwrap_err().to_string();
+        assert!(err.contains("truncated UTF-16LE"), "{err}");
+
+        // an unpaired surrogate is well-formed UTF-16 bytes but not a valid string
+        let err = decode_text(&[0xff, 0xfe, 0x00, 0xd8])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("invalid UTF-16LE"), "{err}");
+    }
+
+    #[test]
+    fn test_read_to_string_bom_decodes_a_utf16_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("hashes.sha256");
+        fs::write(&path, utf16le("deadbeef *tool.tar.gz\n")).unwrap();
+
+        assert_eq!(
+            read_to_string_bom(&path).unwrap(),
+            "deadbeef *tool.tar.gz\n"
+        );
+        // the plain reader is what #5399 hit, and is deliberately left alone
+        assert!(read_to_string(&path).is_err());
     }
 
     #[test]
