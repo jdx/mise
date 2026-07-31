@@ -6,6 +6,9 @@ assert_fail "which dummy"
 
 mise i dummy@latest
 assert_contains "which dummy" "/mise/shims/dummy"
+assert \
+  "MISE_TIMINGS=1 dummy 2>&1 >/dev/null | grep -c 'toolset_builder::build::resolve'" \
+  "1"
 
 mise uninstall -a dummy
 assert_fail "which dummy"
