@@ -10,6 +10,7 @@ use super::{Task, TaskCacheConfig, task_sources::TaskOutputs};
 
 pub mod cargo;
 pub mod node;
+pub mod uv;
 
 /// A stable, provider-namespaced identifier for a workspace project.
 ///
