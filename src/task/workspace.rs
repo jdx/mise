@@ -439,9 +439,10 @@ impl WorkspaceProjectGraph {
                 .dependency_provenance
                 .retain(|dependency, _| !depends_remove.contains(dependency));
             let depends_add = parse_dependency_ids(&id, "depends_add", &config.depends_add)?;
-            project.dependencies.extend(depends_add.iter().cloned());
             for dependency in depends_add {
-                project.dependency_provenance.remove(&dependency);
+                if project.dependencies.insert(dependency.clone()) {
+                    project.dependency_provenance.remove(&dependency);
+                }
             }
         }
 
@@ -1152,6 +1153,37 @@ mod tests {
                 .unwrap()
                 .dependencies,
             BTreeSet::from([ProjectId::new("node", "explicit").unwrap()])
+        );
+    }
+
+    #[test]
+    fn depends_add_preserves_existing_provider_provenance() {
+        let dependency_id = ProjectId::new("node", "lib").unwrap();
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(dependency_id.clone());
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, project("node", "lib", "lib")],
+        };
+        let overrides = BTreeMap::from([(
+            "node:app".to_string(),
+            WorkspaceProjectOverride {
+                depends_add: BTreeSet::from(["node:lib".to_string()]),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace"))
+            .unwrap()
+            .with_overrides(&overrides)
+            .unwrap();
+        let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
+
+        assert_eq!(
+            app.dependency_provenance[&dependency_id]
+                .provider
+                .as_deref(),
+            Some("node")
         );
     }
 
