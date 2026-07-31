@@ -417,7 +417,9 @@ impl WorkspaceProjectGraph {
                 let root = normalize_project_root(&id, root)?;
                 if root != project.root {
                     project.tasks.clear();
-                    project.dependency_provenance.clear();
+                    for provenance in project.dependency_provenance.values_mut() {
+                        provenance.source = None;
+                    }
                     project.root = root;
                 }
                 project.provenance = WorkspaceProvenance::default();
@@ -1188,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn root_overrides_clear_stale_provider_provenance() {
+    fn root_overrides_clear_stale_sources_and_retain_edge_provider() {
         let dependency_id = ProjectId::new("node", "lib").unwrap();
         let mut app = project("node", "app", "packages/app");
         app.dependencies.insert(dependency_id.clone());
@@ -1219,7 +1221,13 @@ mod tests {
         let app = graph.get(&ProjectId::new("node", "app").unwrap()).unwrap();
 
         assert_eq!(app.provenance, WorkspaceProvenance::default());
-        assert!(app.dependency_provenance.is_empty());
+        assert_eq!(
+            app.dependency_provenance[&dependency_id]
+                .provider
+                .as_deref(),
+            Some("node")
+        );
+        assert_eq!(app.dependency_provenance[&dependency_id].source, None);
     }
 
     #[test]
