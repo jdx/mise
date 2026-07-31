@@ -196,65 +196,81 @@ impl TaskScriptParser {
                         continue;
                     }
 
-                    let pattern_path = Path::new(pattern);
-                    let is_relative = pattern_path.is_relative();
-                    let rooted_pattern = if is_relative {
-                        Path::new(&escaped_root)
-                            .join(pattern_path)
-                            .to_string_lossy()
-                            .to_string()
-                    } else {
-                        pattern.clone()
-                    };
-
-                    match glob::glob_with(
-                        &rooted_pattern,
-                        glob::MatchOptions {
-                            case_sensitive: false,
-                            require_literal_separator: false,
-                            require_literal_leading_dot: false,
-                        },
-                    ) {
+                    let expanded_patterns =
+                        crate::task::task_source_checker::expand_glob_braces(pattern);
+                    match expanded_patterns {
                         Err(error) => {
                             warn!(
                                 "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
                             );
                             resolved.push(pattern.clone());
                         }
-                        Ok(expanded) => {
+                        Ok(expanded_patterns) => {
                             let mut source_found = false;
-
-                            for path in expanded {
-                                source_found = true;
-
-                                match path {
-                                    Ok(path) => {
-                                        if !crate::task::task_source_checker::is_source(
-                                            &matcher, &path,
-                                        ) {
-                                            trace!(
-                                                "tera::render::resolve_task_sources excluded '{}' due to !-pattern",
-                                                path.display()
-                                            );
-                                            continue;
-                                        }
-                                        let source = if is_relative {
-                                            path.strip_prefix(&root).unwrap_or(&path)
-                                        } else {
-                                            &path
-                                        };
-                                        let source = source.display();
-                                        trace!(
-                                            "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
-                                        );
-                                        resolved.push(source.to_string());
-                                    }
+                            let mut pattern_preserved = false;
+                            for expanded_pattern in expanded_patterns {
+                                let pattern_path = Path::new(&expanded_pattern);
+                                let is_relative = pattern_path.is_relative();
+                                let rooted_pattern = if is_relative {
+                                    Path::new(&escaped_root)
+                                        .join(pattern_path)
+                                        .to_string_lossy()
+                                        .to_string()
+                                } else {
+                                    expanded_pattern
+                                };
+                                let expanded = match glob::glob_with(
+                                    &rooted_pattern,
+                                    glob::MatchOptions {
+                                        case_sensitive: false,
+                                        require_literal_separator: false,
+                                        require_literal_leading_dot: false,
+                                    },
+                                ) {
+                                    Ok(expanded) => expanded,
                                     Err(error) => {
-                                        let source = error.path().display();
                                         warn!(
-                                            "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
-                                            error.error()
+                                            "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
                                         );
+                                        if !pattern_preserved {
+                                            resolved.push(pattern.clone());
+                                            pattern_preserved = true;
+                                        }
+                                        source_found = true;
+                                        continue;
+                                    }
+                                };
+                                for path in expanded {
+                                    source_found = true;
+                                    match path {
+                                        Ok(path) => {
+                                            if !crate::task::task_source_checker::is_source(
+                                                &matcher, &path,
+                                            ) {
+                                                trace!(
+                                                    "tera::render::resolve_task_sources excluded '{}' due to !-pattern",
+                                                    path.display()
+                                                );
+                                                continue;
+                                            }
+                                            let source = if is_relative {
+                                                path.strip_prefix(&root).unwrap_or(&path)
+                                            } else {
+                                                &path
+                                            };
+                                            let source = source.display();
+                                            trace!(
+                                                "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
+                                            );
+                                            resolved.push(source.to_string());
+                                        }
+                                        Err(error) => {
+                                            let source = error.path().display();
+                                            warn!(
+                                                "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
+                                                error.error()
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1341,12 +1357,13 @@ mod tests {
         let root = temp.path().join("project[1]");
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("input.txt"), "test").unwrap();
+        std::fs::write(root.join("config.txt"), "test").unwrap();
         let task = Task {
-            sources: vec!["*.txt".to_string()],
+            sources: vec!["{input,config}.txt".to_string(), "!config.txt".to_string()],
             ..Default::default()
         };
         let parser = TaskScriptParser::new(Some(root));
-        let scripts = vec!["echo {{ task_source_files() | first }}".to_string()];
+        let scripts = vec!["echo {{ task_source_files() | join(sep=' ') }}".to_string()];
 
         let (parsed, _) = parser
             .parse_run_scripts(&config, &task, &scripts, &Default::default())
@@ -1354,6 +1371,25 @@ mod tests {
             .unwrap();
 
         assert_eq!(parsed, vec!["echo input.txt"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_source_files_preserves_invalid_brace_glob_once() {
+        let config = Config::get().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let task = Task {
+            sources: vec!["{a,b}/[invalid".to_string()],
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(Some(temp.path().to_path_buf()));
+        let scripts = vec!["echo {{ task_source_files() | join(sep=' ') }}".to_string()];
+
+        let (parsed, _) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+
+        assert_eq!(parsed, vec!["echo {a,b}/[invalid"]);
     }
 
     #[tokio::test]

@@ -88,3 +88,46 @@ EOF
 touch pen apple
 mkdir child && cd child || exit 1
 assert "mise run -q source-files test" "pen apple test"
+
+cd ../.. || exit 1
+mkdir brace-globs && cd brace-globs || exit 1
+cat <<'EOF' >mise.toml
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.build]
+sources = ["{a,b}.txt"]
+outputs = ["{a,b}.out"]
+run = "cp a.txt a.out; cp b.txt b.out; echo run"
+
+[tasks.list-sources]
+sources = ["{a,b}.txt"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+EOF
+touch a.txt b.txt
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+touch -r b.txt b.txt.mtime
+echo changed >b.txt
+touch -r b.txt.mtime b.txt
+rm b.txt.mtime
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+rm b.out
+assert "mise run -q build" "run"
+assert "mise run -q list-sources" "a.txt b.txt"
+
+cd .. || exit 1
+mkdir brace-globs-mtime && cd brace-globs-mtime || exit 1
+cat <<'EOF' >mise.toml
+[tasks.build]
+sources = ["{a,b}.txt"]
+outputs = ["{a,b}.out"]
+run = "cp a.txt a.out; cp b.txt b.out; echo run"
+EOF
+touch a.txt b.txt
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+sleep 1
+touch b.txt
+assert "mise run -q build" "run"
