@@ -64,6 +64,9 @@ cat <<'JSON' >turbo.json
       "outputs": ["result.txt"],
       "cache": true,
       "dependsOn": ["^prepare"]
+    },
+    "cache-only": {
+      "cache": true
     }
   }
 }
@@ -76,6 +79,7 @@ cat <<'JSON' >packages/app/package.json
   },
   "scripts": {
     "build": "printf inferred > result.txt",
+    "cache-only": "printf cached > cache-result.txt",
     "test:unit": "printf tested > test-result.txt"
   }
 }
@@ -119,6 +123,7 @@ assert_contains "mise task info 'node:@scope/app#build'" "Sources: src/**, packa
 assert_contains "mise task info 'node:@scope/app#build'" "Outputs: result.txt"
 assert_contains "mise task info 'node:@scope/app#build'" "Cache: enabled"
 assert "mise task info 'node:@scope/app#build' --json | jq -r '.cache.env[]'" "NODE_ENV"
+assert_contains "mise task info 'node:@scope/app#cache-only'" "Cache: enabled"
 
 mise -q run //packages/tool:build
 assert "cat packages/tool/config-root-default.txt" "from-root"
