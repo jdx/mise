@@ -80,6 +80,12 @@ Users can still install via any backend themselves with explicit syntax (`mise u
 - `mise --cd crates/vfox run lint-fix` - Run linting and fix issues for the vfox crate
 - `mise task ls` - List all available tasks
 
+### Clippy Exclusions
+
+- Do not add `#[allow(clippy::...)]`, `#[expect(clippy::...)]`, Cargo lint levels set to `allow`, or `-A clippy::...` command-line flags.
+- Refactor the code so `cargo clippy --workspace --all-features --all-targets -- -D warnings` passes without exclusions.
+- If a feature or fix needs a preparatory refactor to satisfy Clippy cleanly, put that refactor in a prerequisite PR and stack the behavior change on top of it.
+
 ### Documentation and Generation
 - `mise run render` - Generate all documentation and completions
 - `mise run render:usage` - Generate CLI usage documentation
