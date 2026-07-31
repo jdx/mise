@@ -118,6 +118,36 @@ assert "mise run -q build" "run"
 assert "mise run -q list-sources" "a.txt b.txt"
 
 cd .. || exit 1
+mkdir literal-braces && cd literal-braces || exit 1
+cat <<'EOF' >mise.toml
+[settings.task]
+source_freshness_hash_contents = true
+
+[tasks.build]
+sources = ["{generated}.txt"]
+outputs = ["{generated}.out"]
+run = "cp '{generated}.txt' '{generated}.out'; echo run"
+
+[tasks.list-sources]
+sources = ["{generated}.txt"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+
+[tasks.list-later-alternates]
+sources = ["{generated}.{txt,out}"]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+EOF
+touch '{generated}.txt'
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+echo changed >'{generated}.txt'
+assert "mise run -q build" "run"
+assert_empty "mise run -q build"
+rm '{generated}.out'
+assert "mise run -q build" "run"
+assert "mise run -q list-sources" "{generated}.txt"
+assert "mise run -q list-later-alternates" "{generated}.txt {generated}.out"
+
+cd .. || exit 1
 mkdir brace-globs-mtime && cd brace-globs-mtime || exit 1
 cat <<'EOF' >mise.toml
 [tasks.build]

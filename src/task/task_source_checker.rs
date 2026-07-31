@@ -51,8 +51,10 @@ const MAX_BRACE_EXPANSIONS: usize = 1024;
 ///
 /// `Override`/globset understands patterns such as `{a,b}.txt`, but the `glob`
 /// crate used to enumerate task sources and outputs treats braces literally.
-/// Expanding only the alternates lets both stages share the same syntax without
-/// returning to a recursive filesystem walker.
+/// Expanding only groups with comma-separated choices lets both stages share
+/// the same syntax without returning to a recursive filesystem walker. Balanced
+/// braces without a comma are encoded as character classes so they keep their
+/// literal meaning in both `glob` and globset.
 pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
     struct BraceGroup {
         start: usize,
@@ -100,12 +102,32 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
                     }
                     group_depth -= 1;
                     if group_depth == 0 {
-                        branches.push((branch_start, idx));
-                        return Ok(Some(BraceGroup {
-                            start: group_start.unwrap(),
-                            end: idx,
-                            branches,
-                        }));
+                        let start = group_start.unwrap();
+                        if !branches.is_empty() {
+                            branches.push((branch_start, idx));
+                            return Ok(Some(BraceGroup {
+                                start,
+                                end: idx,
+                                branches,
+                            }));
+                        }
+
+                        // A balanced group without a top-level comma is a
+                        // literal brace pair. It may still contain a nested
+                        // alternate, so look inside it before continuing with
+                        // the remainder of the pattern.
+                        if let Some(mut nested) = find_group(&pattern[start + 1..idx])? {
+                            let offset = start + 1;
+                            nested.start += offset;
+                            nested.end += offset;
+                            for (branch_start, branch_end) in &mut nested.branches {
+                                *branch_start += offset;
+                                *branch_end += offset;
+                            }
+                            return Ok(Some(nested));
+                        }
+                        group_start = None;
+                        branches.clear();
                     }
                 }
                 _ => {}
@@ -124,7 +146,35 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
                     "glob pattern expands to more than {MAX_BRACE_EXPANSIONS} alternatives: {pattern:?}"
                 );
             }
-            expanded.push(pattern.to_string());
+            let mut literal = String::with_capacity(pattern.len());
+            let mut escaped = false;
+            let mut class_depth = 0;
+            for ch in pattern.chars() {
+                if escaped {
+                    escaped = false;
+                    literal.push(ch);
+                    continue;
+                }
+                if ch == '\\' && !cfg!(windows) {
+                    escaped = true;
+                    literal.push(ch);
+                    continue;
+                }
+                match ch {
+                    '[' if class_depth == 0 => {
+                        class_depth = 1;
+                        literal.push(ch);
+                    }
+                    ']' if class_depth == 1 => {
+                        class_depth = 0;
+                        literal.push(ch);
+                    }
+                    '{' if class_depth == 0 => literal.push_str("[{]"),
+                    '}' if class_depth == 0 => literal.push_str("[}]"),
+                    _ => literal.push(ch),
+                }
+            }
+            expanded.push(literal);
             return Ok(());
         };
 
@@ -1188,6 +1238,26 @@ mod tests {
         assert_eq!(expand_glob_braces("{,a}.txt").unwrap(), ["a.txt"]);
         assert!(expand_glob_braces("src/{a,b.txt").is_err());
         assert!(expand_glob_braces(&"{a,b}".repeat(11)).is_err());
+    }
+
+    #[test]
+    fn glob_braces_preserve_literal_singleton_groups() {
+        assert_eq!(
+            expand_glob_braces("{generated}.txt").unwrap(),
+            ["[{]generated[}].txt"]
+        );
+        assert_eq!(
+            expand_glob_braces("{generated}/{a,b}.txt").unwrap(),
+            ["[{]generated[}]/a.txt", "[{]generated[}]/b.txt"]
+        );
+        assert_eq!(
+            expand_glob_braces("{generated}.{txt,out}").unwrap(),
+            ["[{]generated[}].txt", "[{]generated[}].out"]
+        );
+        assert_eq!(
+            expand_glob_braces("{prefix-{a,b}}.txt").unwrap(),
+            ["[{]prefix-a[}].txt", "[{]prefix-b[}].txt"]
+        );
     }
 
     #[cfg(not(windows))]
