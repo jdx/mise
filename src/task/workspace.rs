@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display};
+use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -226,6 +229,15 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
     /// sets determine the canonical graph order instead.
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>>;
 
+    /// Returns every project using filesystem results shared across providers.
+    fn discover_with_context(
+        &self,
+        workspace_root: &Path,
+        _context: &WorkspaceDiscoveryContext,
+    ) -> Result<Vec<WorkspaceProject>> {
+        self.discover(workspace_root)
+    }
+
     /// Re-discovers location-derived tasks after an explicit root override.
     fn discover_project_tasks(
         &self,
@@ -234,6 +246,162 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
     ) -> Result<BTreeMap<String, WorkspaceTask>> {
         Ok(BTreeMap::new())
     }
+
+    /// Re-discovers tasks using filesystem results shared across providers.
+    fn discover_project_tasks_with_context(
+        &self,
+        workspace_root: &Path,
+        project_root: &Path,
+        _context: &WorkspaceDiscoveryContext,
+    ) -> Result<BTreeMap<String, WorkspaceTask>> {
+        self.discover_project_tasks(workspace_root, project_root)
+    }
+}
+
+/// Filesystem results shared by every provider during one graph discovery.
+#[derive(Debug, Default)]
+pub struct WorkspaceDiscoveryContext {
+    cache: Mutex<WorkspaceDiscoveryCache>,
+    #[cfg(test)]
+    physical_accesses: WorkspaceDiscoveryAccessCounts,
+}
+
+#[derive(Debug, Default)]
+struct WorkspaceDiscoveryCache {
+    canonical_paths: BTreeMap<PathBuf, CachedIo<PathBuf>>,
+    file_kinds: BTreeMap<PathBuf, Option<CachedFileKind>>,
+    file_contents: BTreeMap<PathBuf, CachedIo<Arc<str>>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CachedFileKind {
+    File,
+    Directory,
+    Other,
+}
+
+#[derive(Clone, Debug)]
+enum CachedIo<T> {
+    Ok(T),
+    Err(io::ErrorKind, String),
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct WorkspaceDiscoveryAccessCounts {
+    canonicalize: std::sync::atomic::AtomicUsize,
+    metadata: std::sync::atomic::AtomicUsize,
+    read: std::sync::atomic::AtomicUsize,
+}
+
+impl WorkspaceDiscoveryContext {
+    /// Creates an empty cache scoped to one workspace graph discovery.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns a canonical path without repeating the filesystem operation.
+    pub fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        let key = self.cache_key(path);
+        let mut cache = self.cache.lock().expect("workspace discovery cache lock");
+        cache
+            .canonical_paths
+            .entry(key.clone())
+            .or_insert_with(|| {
+                #[cfg(test)]
+                self.physical_accesses
+                    .canonicalize
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                CachedIo::from_result(fs::canonicalize(key))
+            })
+            .to_result()
+    }
+
+    /// Returns whether a path is a regular file using a shared metadata probe.
+    pub fn is_file(&self, path: &Path) -> bool {
+        self.file_kind(path) == Some(CachedFileKind::File)
+    }
+
+    /// Returns whether a path is a directory using a shared metadata probe.
+    pub fn is_dir(&self, path: &Path) -> bool {
+        self.file_kind(path) == Some(CachedFileKind::Directory)
+    }
+
+    /// Returns whether a path exists using a shared metadata probe.
+    pub fn exists(&self, path: &Path) -> bool {
+        self.file_kind(path).is_some()
+    }
+
+    /// Reads UTF-8 file contents without repeating the filesystem operation.
+    pub fn read_to_string(&self, path: &Path) -> io::Result<Arc<str>> {
+        let key = self.cache_key(path);
+        let mut cache = self.cache.lock().expect("workspace discovery cache lock");
+        cache
+            .file_contents
+            .entry(key.clone())
+            .or_insert_with(|| {
+                #[cfg(test)]
+                self.physical_accesses
+                    .read
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                CachedIo::from_result(fs::read_to_string(key).map(Arc::<str>::from))
+            })
+            .to_result()
+    }
+
+    fn file_kind(&self, path: &Path) -> Option<CachedFileKind> {
+        let key = self.cache_key(path);
+        let mut cache = self.cache.lock().expect("workspace discovery cache lock");
+        *cache.file_kinds.entry(key.clone()).or_insert_with(|| {
+            #[cfg(test)]
+            self.physical_accesses
+                .metadata
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            fs::metadata(key).ok().map(|metadata| {
+                if metadata.is_file() {
+                    CachedFileKind::File
+                } else if metadata.is_dir() {
+                    CachedFileKind::Directory
+                } else {
+                    CachedFileKind::Other
+                }
+            })
+        })
+    }
+
+    fn cache_key(&self, path: &Path) -> PathBuf {
+        normalize_filesystem_path(path)
+    }
+}
+
+impl<T: Clone> CachedIo<T> {
+    fn from_result(result: io::Result<T>) -> Self {
+        match result {
+            Ok(value) => Self::Ok(value),
+            Err(error) => Self::Err(error.kind(), error.to_string()),
+        }
+    }
+
+    fn to_result(&self) -> io::Result<T> {
+        match self {
+            Self::Ok(value) => Ok(value.clone()),
+            Self::Err(kind, message) => Err(io::Error::new(*kind, message.clone())),
+        }
+    }
+}
+
+fn normalize_filesystem_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    if normalized.as_os_str().is_empty() && !path.as_os_str().is_empty() {
+        normalized.push(".");
+    }
+    normalized
 }
 
 /// A validated, deterministically ordered project graph from workspace providers.
@@ -295,7 +463,8 @@ impl WorkspaceProjectGraph {
         providers: &[&dyn WorkspaceProvider],
         workspace_root: &Path,
     ) -> Result<WorkspaceProjectGraph> {
-        let graph = Self::collect_provider_projects(providers, workspace_root, false)?;
+        let context = WorkspaceDiscoveryContext::new();
+        let graph = Self::collect_provider_projects(providers, workspace_root, &context, false)?;
         graph.validate()?;
         Ok(graph)
     }
@@ -331,9 +500,14 @@ impl WorkspaceProjectGraph {
         overrides: &BTreeMap<String, WorkspaceProjectOverride>,
         skip_provider_errors: bool,
     ) -> Result<WorkspaceProjectGraph> {
-        let mut graph =
-            Self::collect_provider_projects(providers, workspace_root, skip_provider_errors)?
-                .with_overrides(overrides)?;
+        let context = WorkspaceDiscoveryContext::new();
+        let mut graph = Self::collect_provider_projects(
+            providers,
+            workspace_root,
+            &context,
+            skip_provider_errors,
+        )?
+        .with_overrides(overrides)?;
         for (raw_id, config) in overrides {
             if config.remove || config.root.is_none() {
                 continue;
@@ -352,7 +526,11 @@ impl WorkspaceProjectGraph {
                 .projects
                 .get_mut(&id)
                 .expect("non-removed override project exists");
-            match provider.discover_project_tasks(workspace_root, project.root.as_path()) {
+            match provider.discover_project_tasks_with_context(
+                workspace_root,
+                project.root.as_path(),
+                &context,
+            ) {
                 Ok(mut tasks) => {
                     for task in tasks.values_mut() {
                         attach_task_provenance(task, provider_id);
@@ -374,6 +552,7 @@ impl WorkspaceProjectGraph {
     fn collect_provider_projects(
         providers: &[&dyn WorkspaceProvider],
         workspace_root: &Path,
+        context: &WorkspaceDiscoveryContext,
         skip_provider_errors: bool,
     ) -> Result<WorkspaceProjectGraph> {
         let mut providers = providers
@@ -392,7 +571,7 @@ impl WorkspaceProjectGraph {
         let mut projects = BTreeMap::new();
         let mut provider_errors = BTreeMap::new();
         for (provider_id, provider) in providers {
-            let discovered = match provider.discover(workspace_root) {
+            let discovered = match provider.discover_with_context(workspace_root, context) {
                 Ok(projects) => projects,
                 Err(error) if skip_provider_errors => {
                     let error = format!("{error:#}");
@@ -820,6 +999,34 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct ContextObservingProvider {
+        id: &'static str,
+        contents: Arc<Mutex<Vec<Arc<str>>>>,
+    }
+
+    impl WorkspaceProvider for ContextObservingProvider {
+        fn id(&self) -> &str {
+            self.id
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            bail!("graph discovery did not provide a shared context")
+        }
+
+        fn discover_with_context(
+            &self,
+            workspace_root: &Path,
+            context: &WorkspaceDiscoveryContext,
+        ) -> Result<Vec<WorkspaceProject>> {
+            self.contents
+                .lock()
+                .unwrap()
+                .push(context.read_to_string(&workspace_root.join("shared.txt"))?);
+            Ok(Vec::new())
+        }
+    }
+
     fn project(provider: &str, name: &str, root: &str) -> WorkspaceProject {
         WorkspaceProject::new(ProjectId::new(provider, name).unwrap(), root)
     }
@@ -829,6 +1036,94 @@ mod tests {
             id: "test",
             projects,
         }
+    }
+
+    #[test]
+    fn discovery_context_deduplicates_filesystem_accesses() {
+        use std::sync::atomic::Ordering;
+
+        let temp = tempfile::tempdir().unwrap();
+        let manifest = temp.path().join("manifest.txt");
+        std::fs::write(&manifest, "workspace").unwrap();
+        let context = WorkspaceDiscoveryContext::new();
+
+        assert!(context.is_file(&manifest));
+        assert!(context.exists(&temp.path().join("./manifest.txt")));
+        let first = context.read_to_string(&manifest).unwrap();
+        let second = context
+            .read_to_string(&temp.path().join("./manifest.txt"))
+            .unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(
+            context.canonicalize(temp.path()).unwrap(),
+            context.canonicalize(temp.path()).unwrap()
+        );
+
+        assert_eq!(
+            context.physical_accesses.metadata.load(Ordering::Relaxed),
+            1
+        );
+        assert_eq!(context.physical_accesses.read.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            context
+                .physical_accesses
+                .canonicalize
+                .load(Ordering::Relaxed),
+            1
+        );
+    }
+
+    #[test]
+    fn discovery_context_preserves_current_and_parent_components() {
+        let context = WorkspaceDiscoveryContext::new();
+
+        assert_eq!(
+            context.canonicalize(Path::new(".")).unwrap(),
+            std::fs::canonicalize(".").unwrap()
+        );
+        assert_eq!(
+            normalize_filesystem_path(Path::new("package/../manifest.txt")),
+            Path::new("package/../manifest.txt")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_context_preserves_symlink_parent_traversal() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir_all(real.join("nested")).unwrap();
+        std::fs::write(real.join("manifest.txt"), "workspace").unwrap();
+        std::os::unix::fs::symlink(real.join("nested"), temp.path().join("link")).unwrap();
+        let path = temp.path().join("link/../manifest.txt");
+        let context = WorkspaceDiscoveryContext::new();
+
+        assert!(context.is_file(&path));
+        assert_eq!(
+            context.canonicalize(&path).unwrap(),
+            std::fs::canonicalize(real.join("manifest.txt")).unwrap()
+        );
+    }
+
+    #[test]
+    fn graph_discovery_shares_context_between_providers() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("shared.txt"), "workspace").unwrap();
+        let contents = Arc::new(Mutex::new(Vec::new()));
+        let first = ContextObservingProvider {
+            id: "first",
+            contents: contents.clone(),
+        };
+        let second = ContextObservingProvider {
+            id: "second",
+            contents: contents.clone(),
+        };
+
+        WorkspaceProjectGraph::discover_all(&[&first, &second], temp.path()).unwrap();
+
+        let contents = contents.lock().unwrap();
+        assert_eq!(contents.len(), 2);
+        assert!(Arc::ptr_eq(&contents[0], &contents[1]));
     }
 
     #[test]

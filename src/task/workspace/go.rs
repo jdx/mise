@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use eyre::{Context, Result, bail};
 
-use super::{ProjectId, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider};
+use super::{
+    ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
+};
 
 const GO_MOD: &str = "go.mod";
 const GO_WORK: &str = "go.work";
@@ -19,18 +20,27 @@ impl WorkspaceProvider for GoWorkspaceProvider {
     }
 
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+        let context = WorkspaceDiscoveryContext::new();
+        self.discover_with_context(workspace_root, &context)
+    }
+
+    fn discover_with_context(
+        &self,
+        workspace_root: &Path,
+        context: &WorkspaceDiscoveryContext,
+    ) -> Result<Vec<WorkspaceProject>> {
         let workfile_path = workspace_root.join(GO_WORK);
-        if !workfile_path.is_file() {
+        if !context.is_file(&workfile_path) {
             return Ok(Vec::new());
         }
-        let canonical_root = workspace_root.canonicalize().wrap_err_with(|| {
+        let canonical_root = context.canonicalize(workspace_root).wrap_err_with(|| {
             format!(
                 "failed to resolve Go workspace root {}",
                 workspace_root.display()
             )
         })?;
         let lexical_root = lexical_absolute(workspace_root)?;
-        let module_directories = read_workfile(&workfile_path)?;
+        let module_directories = read_workfile(context, &workfile_path)?;
         let mut modules = BTreeMap::new();
 
         for directory in module_directories {
@@ -46,7 +56,7 @@ impl WorkspaceProvider for GoWorkspaceProvider {
                 continue;
             }
             let candidate = lexical_candidate;
-            if !candidate.exists() {
+            if !context.exists(&candidate) {
                 if missing_path_resolves_outside(&candidate, &lexical_root, &canonical_root)? {
                     continue;
                 }
@@ -55,7 +65,7 @@ impl WorkspaceProvider for GoWorkspaceProvider {
                     candidate.display()
                 );
             }
-            let canonical_module = candidate.canonicalize().wrap_err_with(|| {
+            let canonical_module = context.canonicalize(&candidate).wrap_err_with(|| {
                 format!(
                     "failed to resolve Go workspace module {}",
                     candidate.display()
@@ -64,14 +74,14 @@ impl WorkspaceProvider for GoWorkspaceProvider {
             let Ok(relative) = canonical_module.strip_prefix(&canonical_root) else {
                 continue;
             };
-            if !canonical_module.join(GO_MOD).is_file() {
+            if !context.is_file(&canonical_module.join(GO_MOD)) {
                 bail!(
                     "Go workspace module {} is missing {GO_MOD}",
                     candidate.display()
                 );
             }
             let relative = normalize_relative(relative);
-            let module_path = read_module_path(&canonical_module.join(GO_MOD))?;
+            let module_path = read_module_path(context, &canonical_module.join(GO_MOD))?;
             let id = ProjectId::new(self.id(), &module_path)?;
             let source = relative.join(GO_MOD);
             let provenance = WorkspaceProvenance {
@@ -90,8 +100,9 @@ impl WorkspaceProvider for GoWorkspaceProvider {
     }
 }
 
-fn read_workfile(path: &Path) -> Result<Vec<PathBuf>> {
-    let contents = fs::read_to_string(path)
+fn read_workfile(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<Vec<PathBuf>> {
+    let contents = context
+        .read_to_string(path)
         .wrap_err_with(|| format!("failed to read Go workspace metadata {}", path.display()))?;
     parse_workfile(&contents)
         .wrap_err_with(|| format!("failed to parse Go workspace metadata {}", path.display()))
@@ -136,8 +147,9 @@ fn parse_workfile(contents: &str) -> Result<Vec<PathBuf>> {
     Ok(directories)
 }
 
-fn read_module_path(path: &Path) -> Result<String> {
-    let contents = fs::read_to_string(path)
+fn read_module_path(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<String> {
+    let contents = context
+        .read_to_string(path)
         .wrap_err_with(|| format!("failed to read Go module metadata {}", path.display()))?;
     let mut module_path = None;
 
