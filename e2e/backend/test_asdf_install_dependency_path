@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+# An asdf plugin's bin/download and bin/install scripts must be able to execute a
+# dependency that was installed earlier in the same `mise install` (#4384).
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/asdf-asdf-path-dependent"
+DEPENDENCY_PLUGIN_DIR="$MISE_DATA_DIR/plugins/node"
+mkdir -p "$PLUGIN_DIR/bin" "$DEPENDENCY_PLUGIN_DIR/bin" "$HOME/bin"
+
+# A same-named executable already on the ambient PATH must not outrank the
+# dependency declared by the tool.
+export PATH="$HOME/bin:$PATH"
+cat >"$HOME/bin/node" <<'EOF'
+#!/usr/bin/env bash
+exit 99
+EOF
+chmod +x "$HOME/bin/node"
+
+cat >"$DEPENDENCY_PLUGIN_DIR/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+
+cat >"$DEPENDENCY_PLUGIN_DIR/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat >"$ASDF_INSTALL_PATH/bin/node" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "node dependency: $1"
+SCRIPT
+chmod +x "$ASDF_INSTALL_PATH/bin/node"
+EOF
+
+chmod +x "$DEPENDENCY_PLUGIN_DIR/bin/list-all" "$DEPENDENCY_PLUGIN_DIR/bin/install"
+
+cat >"$PLUGIN_DIR/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+
+cat >"$PLUGIN_DIR/bin/download" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+mkdir -p "$ASDF_DOWNLOAD_PATH"
+command -v node >"$ASDF_DOWNLOAD_PATH/dependency-path"
+node download >/dev/null
+EOF
+
+cat >"$PLUGIN_DIR/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cp "$ASDF_DOWNLOAD_PATH/dependency-path" "$ASDF_INSTALL_PATH/download-dependency-path"
+command -v node >"$ASDF_INSTALL_PATH/install-dependency-path"
+node install >/dev/null
+printf '%s\n' "$PATH" >"$ASDF_INSTALL_PATH/install-path"
+cat >"$ASDF_INSTALL_PATH/bin/asdf-path-dependent" <<'SCRIPT'
+#!/usr/bin/env bash
+echo installed
+SCRIPT
+chmod +x "$ASDF_INSTALL_PATH/bin/asdf-path-dependent"
+EOF
+
+chmod +x "$PLUGIN_DIR/bin/list-all" "$PLUGIN_DIR/bin/download" "$PLUGIN_DIR/bin/install"
+
+# List the dependent first and allow parallel jobs so the install graph, rather
+# than config order or serial execution, must enforce the dependency. Use the
+# supported `nodejs` alias to verify PATH resolution follows the same
+# normalization as dependency scheduling.
+cat >mise.toml <<'EOF'
+[tools]
+"asdf:asdf-path-dependent" = { version = "1.0.0", depends = ["nodejs"] }
+node = "1.0.0"
+EOF
+
+MISE_JOBS=4 mise install
+
+DEPENDENT_PATH="$(mise where asdf:asdf-path-dependent)"
+DEPENDENCY_BIN="$(mise which node)"
+
+assert "cat '$DEPENDENT_PATH/download-dependency-path'" "$DEPENDENCY_BIN"
+assert "cat '$DEPENDENT_PATH/install-dependency-path'" "$DEPENDENCY_BIN"
+assert "tr ':' '\n' <'$DEPENDENT_PATH/install-path' | grep -Fxc '$(dirname "$DEPENDENCY_BIN")'" "1"
+assert "mise exec -- asdf-path-dependent" "installed"

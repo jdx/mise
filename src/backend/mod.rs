@@ -2795,7 +2795,7 @@ pub trait Backend: Debug + Send + Sync {
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
         // hook, resolved against this tool's already-installed dependencies. The
         // config env added above is resolved without tools (`NonToolsOnly`), so it
-        // omits these; `install_value_toolset` is fully resolved (offline) so
+        // omits these; `install_dependency_toolset` is fully resolved (offline) so
         // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
         // unresolved install toolset during a combined install. PATH stays owned by
         // `path_env` below. Best-effort: any resolution error leaves the tool-less
@@ -2820,7 +2820,10 @@ pub trait Backend: Debug + Send + Sync {
                 .is_some_and(|deps| !deps.is_empty());
         if declares_deps {
             let base = env_vars.clone();
-            let tool_vals = match self.install_value_toolset(&ctx.config, &tv_exact).await {
+            let tool_vals = match self
+                .install_dependency_toolset(&ctx.config, &tv_exact)
+                .await
+            {
                 Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
                 Err(e) => Err(e),
             };
@@ -3132,11 +3135,13 @@ pub trait Backend: Debug + Send + Sync {
     /// Like [`Self::dependency_toolset`] but also includes this tool's per-instance
     /// mise.toml `depends` option (`tv.request.options().depends`). `get_dependencies`
     /// only covers backend/plugin-metadata deps, so a user-declared
-    /// `gcloud = { depends = ["python"] }` is invisible to `dependency_toolset`. Used
-    /// to resolve `tools = true` `[env]` value templates like `{{ tools.python.path }}`
-    /// at install time. Resolved offline; the declared deps are installed before the
-    /// dependent (depends ordering), so their install paths are present. (#10282)
-    async fn install_value_toolset(
+    /// `gcloud = { depends = ["python"] }` is invisible to `dependency_toolset`.
+    /// Used anywhere an install needs the concrete paths or values of its declared
+    /// dependencies, including `tools = true` `[env]` value templates and asdf
+    /// install scripts. Resolved offline; the declared deps are installed before the
+    /// dependent (depends ordering), so their install paths are present. (#10282,
+    /// #4384)
+    async fn install_dependency_toolset(
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
@@ -3148,7 +3153,11 @@ pub trait Backend: Debug + Send + Sync {
             .collect();
         let opts = tv.request.options();
         if let Some(user_deps) = opts.core.depends {
-            names.extend(user_deps);
+            names.extend(
+                user_deps
+                    .into_iter()
+                    .flat_map(|dep| BackendArg::from(dep).all_fulls()),
+            );
         }
         let mut ts: Toolset = config
             .get_tool_request_set()

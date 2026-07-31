@@ -73,3 +73,17 @@ Set environment variables for asdf plugin install scripts:
 [tools]
 "asdf:owner/plugin" = { version = "latest", install_env = { MAKEFLAGS = "-j8" } }
 ```
+
+### Install dependencies
+
+Tools declared with the [`depends` option](/dev-tools/#tool-dependencies) are installed before the
+asdf tool and added to the `PATH` used by its `bin/download` and `bin/install` scripts:
+
+```toml
+[tools]
+python = "3.12"
+"asdf:owner/plugin" = { version = "latest", depends = ["python"] }
+```
+
+This allows an asdf plugin to invoke an executable supplied by another mise-managed tool during
+the same `mise install`.

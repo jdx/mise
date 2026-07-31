@@ -198,7 +198,7 @@ impl Backend for VfoxBackend {
         // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
         // whose `.versions` are empty until `resolve()` runs *after* installs, so its
         // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
-        // `install_value_toolset` is resolved offline and includes both backend deps
+        // `install_dependency_toolset` is resolved offline and includes both backend deps
         // and the per-tool mise.toml `depends` option (`gcloud = { depends =
         // ["python"] }`) with real install paths, and is install-safe (it uses
         // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
@@ -207,7 +207,7 @@ impl Backend for VfoxBackend {
         // `dependency_env`. (#10282, follow-up to #10432)
         {
             let base: EnvMap = cmd_env.clone().into_iter().collect();
-            let tool_vals = match self.install_value_toolset(&ctx.config, &tv).await {
+            let tool_vals = match self.install_dependency_toolset(&ctx.config, &tv).await {
                 Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
                 Err(e) => Err(e),
             };
