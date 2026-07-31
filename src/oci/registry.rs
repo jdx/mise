@@ -340,15 +340,15 @@ impl AuthSession {
     /// any streamed body itself.
     async fn send<F>(&mut self, build: F) -> Result<reqwest::Response>
     where
-        F: Fn(Option<&str>) -> reqwest::RequestBuilder,
+        F: Fn(Option<&str>) -> Result<reqwest::RequestBuilder>,
     {
-        let resp = build(self.header()).send().await?;
+        let resp = build(self.header())?.send().await?;
         if resp.status() != StatusCode::UNAUTHORIZED {
             return Ok(resp);
         }
         let www_auth = header_str(&resp, "www-authenticate");
         if self.answer_challenge(&www_auth).await? {
-            return Ok(build(self.header()).send().await?);
+            return Ok(build(self.header())?.send().await?);
         }
         Ok(resp)
     }
@@ -380,7 +380,7 @@ async fn fetch_bearer_token(
             form.push(("service", s));
         }
         let resp = HTTP
-            .reqwest()
+            .reqwest()?
             .post(realm)
             .form(&form)
             .send()
@@ -433,11 +433,11 @@ async fn fetch_manifest_json(
     let accept_hdr = accept.join(", ");
     let resp = session
         .send(|auth| {
-            let mut rb = HTTP.reqwest().get(url).header("Accept", &accept_hdr);
+            let mut rb = HTTP.reqwest()?.get(url).header("Accept", &accept_hdr);
             if let Some(a) = auth {
                 rb = rb.header("Authorization", a);
             }
-            rb
+            Ok(rb)
         })
         .await
         .wrap_err_with(|| format!("fetching {url}"))?;
@@ -519,11 +519,11 @@ async fn download_blob_once(
 ) -> Result<Vec<u8>> {
     let resp = session
         .send(|auth| {
-            let mut rb = HTTP.reqwest().get(url);
+            let mut rb = HTTP.reqwest()?.get(url);
             if let Some(a) = auth {
                 rb = rb.header("Authorization", a);
             }
-            rb
+            Ok(rb)
         })
         .await
         .wrap_err_with(|| format!("GET {url}"))?;
@@ -768,13 +768,13 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
     let resp = session
         .send(|auth| {
             let mut rb = HTTP
-                .reqwest()
+                .reqwest()?
                 .get(&manifest_url)
                 .header("Accept", index_accept.join(", "));
             if let Some(a) = auth {
                 rb = rb.header("Authorization", a);
             }
-            rb
+            Ok(rb)
         })
         .await
         .wrap_err_with(|| format!("fetching {manifest_url}"))?;
@@ -1226,11 +1226,11 @@ impl Pusher {
         let resp = self
             .session
             .send(|auth| {
-                let mut rb = HTTP.reqwest().head(&url);
+                let mut rb = HTTP.reqwest()?.head(&url);
                 if let Some(a) = auth {
                     rb = rb.header("Authorization", a);
                 }
-                rb
+                Ok(rb)
             })
             .await
             .wrap_err_with(|| format!("HEAD {url}"))?;
@@ -1292,13 +1292,13 @@ impl Pusher {
             .session
             .send(|auth| {
                 let mut rb = HTTP
-                    .reqwest()
+                    .reqwest()?
                     .post(start_url.as_str())
                     .header("Content-Length", "0");
                 if let Some(a) = auth {
                     rb = rb.header("Authorization", a);
                 }
-                rb
+                Ok(rb)
             })
             .await
             .wrap_err_with(|| format!("POST {start_url}"))?;
@@ -1330,8 +1330,8 @@ impl Pusher {
                 let resp = self
                     .session
                     .send(|auth| {
-                        build_upload_request(
-                            HTTP.reqwest().patch(location.as_str()),
+                        Ok(build_upload_request(
+                            HTTP.reqwest()?.patch(location.as_str()),
                             auth,
                             path,
                             offset,
@@ -1340,7 +1340,7 @@ impl Pusher {
                             &err_slot,
                         )
                         // Content-Range is inclusive on both ends.
-                        .header("Content-Range", format!("{}-{}", offset, offset + len - 1))
+                        .header("Content-Range", format!("{}-{}", offset, offset + len - 1)))
                     })
                     .await
                     .wrap_err("PATCH blob chunk")?;
@@ -1369,13 +1369,13 @@ impl Pusher {
                 .session
                 .send(|auth| {
                     let mut rb = HTTP
-                        .reqwest()
+                        .reqwest()?
                         .put(put_url.as_str())
                         .header("Content-Length", "0");
                     if let Some(a) = auth {
                         rb = rb.header("Authorization", a);
                     }
-                    rb
+                    Ok(rb)
                 })
                 .await
                 .wrap_err("PUT blob upload (finalize)")?;
@@ -1398,15 +1398,15 @@ impl Pusher {
             let resp = self
                 .session
                 .send(|auth| {
-                    build_upload_request(
-                        HTTP.reqwest().put(put_url.as_str()),
+                    Ok(build_upload_request(
+                        HTTP.reqwest()?.put(put_url.as_str()),
                         auth,
                         path,
                         0,
                         size,
                         pr,
                         &err_slot,
-                    )
+                    ))
                 })
                 .await
                 .wrap_err("PUT blob upload")?;
@@ -1449,14 +1449,14 @@ impl Pusher {
             .session
             .send(|auth| {
                 let mut rb = HTTP
-                    .reqwest()
+                    .reqwest()?
                     .put(&url)
                     .header("Content-Type", media_type)
                     .body(body.clone());
                 if let Some(a) = auth {
                     rb = rb.header("Authorization", a);
                 }
-                rb
+                Ok(rb)
             })
             .await
             .wrap_err_with(|| format!("PUT {url}"))?;
@@ -1516,11 +1516,11 @@ impl Pusher {
         let resp = self
             .session
             .send(|auth| {
-                let mut rb = HTTP.reqwest().get(&url).header("Accept", &accept);
+                let mut rb = HTTP.reqwest()?.get(&url).header("Accept", &accept);
                 if let Some(a) = auth {
                     rb = rb.header("Authorization", a);
                 }
-                rb
+                Ok(rb)
             })
             .await
             .wrap_err_with(|| format!("GET {url}"))?;

@@ -199,9 +199,13 @@ async fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 async fn get_latest_version_call() -> Option<String> {
+    fetch_latest_version(&crate::http::HTTP).await
+}
+
+async fn fetch_latest_version(client: &crate::http::Client) -> Option<String> {
     let url = "https://mise.jdx.dev/VERSION";
     debug!("checking mise version from {}", url);
-    match crate::http::HTTP.get_text(url).await {
+    match client.get_text(url).await {
         Ok(text) => {
             debug!("got version {text}");
             Some(text.trim().to_string())
@@ -286,6 +290,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "2030.1.2\n");
         assert_eq!(cached_latest_version(&p, Duration::ZERO), Cached::Stale);
+    }
+
+    #[tokio::test]
+    async fn latest_version_ignores_http_client_initialization_errors() {
+        let client = crate::http::Client::with_init_error("builder error: OpenSSL error");
+
+        assert_eq!(fetch_latest_version(&client).await, None);
     }
 
     /// Regression: freshness must not depend on the cached version being newer
