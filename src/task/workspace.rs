@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::{Task, TaskCacheConfig, task_sources::TaskOutputs};
 
 pub mod cargo;
+pub mod go;
 pub mod node;
 pub mod uv;
 
