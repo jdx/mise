@@ -428,6 +428,29 @@ task uses `extends`, its template also takes precedence over the root default.
 
 Root task defaults are experimental and are ignored unless experimental features are enabled.
 
+### Task Definition Precedence
+
+Task definitions are resolved in two stages. First, an explicit project task replaces a
+provider-inferred task with the same project and task name. The provider task's project-ID name is
+kept as an alias for the explicit task, so either name runs the explicit definition.
+
+After selecting the task, mise fills unset fields in this order, from highest to lowest precedence:
+
+1. The selected task's own fields, whether they came from project-local configuration or provider
+   inference
+2. A task template named by `extends`, for explicit tasks that use one
+3. A matching `[monorepo.task_defaults.<name>]` definition from the workspace root
+
+Map fields such as `env`, `vars`, and `tools` merge across these layers, with entries from the
+higher-precedence layer winning. Collection fields such as `depends`, `sources`, and `outputs` use
+the complete value from the highest-precedence layer that defines them rather than concatenating
+values from multiple layers. These are the same merge rules used by [task templates](/tasks/templates).
+
+For example, an inferred package script keeps its provider command when the root default also
+defines `run`, while still inheriting cache inputs or environment entries that the provider did not
+specify. If a project later defines that task explicitly, the explicit command replaces the package
+script; a named template fills its missing fields before the root default does.
+
 ### Upstream Task Dependencies
 
 Prefix a task dependency with `^` to run that task in upstream workspace projects first. A root

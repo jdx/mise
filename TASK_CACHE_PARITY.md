@@ -51,7 +51,7 @@ outside this tracker.
 - [x] Add root task defaults that apply by task name across inferred and explicit projects
 - [x] Add dependency-scoped task relationships equivalent to building the same task in upstream
       projects first
-- [ ] Define deterministic precedence between provider inference, root task defaults, task
+- [x] Define deterministic precedence between provider inference, root task defaults, task
       templates, and project-local configuration
 - [ ] Allow providers to suggest inputs, outputs, cacheability, and task dependencies when they can
       derive them confidently

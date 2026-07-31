@@ -786,6 +786,8 @@ impl Config {
                 None => Vec::new(),
             };
             for task in inferred_tasks {
+                // Explicit project tasks replace provider inference. Preserve the provider-scoped
+                // name as an alias, but never merge provider fields into the explicit definition.
                 if tasks.contains_key(&task.name) {
                     let available_aliases = task
                         .aliases
@@ -2495,8 +2497,12 @@ fn collect_task_definitions(
     }
 }
 
-/// Resolve a task template and merge it into the task, then fill remaining fields from any
-/// workspace-root default matching the task's unscoped name.
+/// Resolve task definition layers from highest to lowest precedence.
+///
+/// The task already contains either project-local or provider-inferred fields. An explicitly named
+/// template fills gaps first, then the workspace-root task default fills anything still unset.
+/// Explicit tasks replace matching provider-inferred tasks separately when the final task map is
+/// assembled.
 /// Returns an error if the template is not found.
 fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Result<()> {
     if let Some(template_name) = &task.extends {
