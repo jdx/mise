@@ -509,7 +509,6 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Default(k, v, _opts) => {
-                    r.track_redaction_override(&k, redact);
                     if resolve_opts.vars {
                         if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
                             if redact.unwrap_or(false) {
@@ -532,6 +531,7 @@ impl EnvResults {
                         continue;
                     }
 
+                    r.track_redaction_override(&k, redact);
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
                     if resolve_opts.vars {
@@ -1219,5 +1219,33 @@ mod tests {
         let keys: Vec<String> = results.env.keys().cloned().collect();
         assert_eq!(keys, vec!["TOOLS_VAL".to_string()]);
         assert!(results.env_paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_skipped_default_does_not_override_redaction() {
+        let env = EnvMap::from_iter([("SECRET_TOKEN".to_string(), "secret".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![(
+                EnvDirective::Default("SECRET_TOKEN".into(), "fallback".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.redaction_exclusions.contains("SECRET_TOKEN"));
     }
 }

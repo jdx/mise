@@ -1205,6 +1205,9 @@ impl Config {
         exclusions: &BTreeSet<String>,
     ) {
         let mut r = _REDACTOR.lock().unwrap();
+        // Redactions are intentionally append-only. An exclusion prevents this key from
+        // contributing its value, but removing an already registered value could expose a
+        // different secret key (or concurrent task) that uses the same value.
         let new_redactions = redactions.into_iter().flat_map(|pattern| {
             let matcher = Wildcard::new(vec![pattern]);
             env.iter()
