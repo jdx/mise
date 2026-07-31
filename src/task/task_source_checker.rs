@@ -4,7 +4,7 @@ use crate::file::{self, display_path};
 use crate::hash;
 use crate::rand::random_string;
 use crate::task::Task;
-use eyre::Result;
+use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -45,6 +45,107 @@ pub fn is_glob_pattern(path: &str) -> bool {
     path.chars().any(|c| glob_chars.contains(&c))
 }
 
+const MAX_BRACE_EXPANSIONS: usize = 1024;
+
+/// Expand globset-style brace alternates before passing a pattern to `glob`.
+///
+/// `Override`/globset understands patterns such as `{a,b}.txt`, but the `glob`
+/// crate used to enumerate task sources and outputs treats braces literally.
+/// Expanding only the alternates lets both stages share the same syntax without
+/// returning to a recursive filesystem walker.
+pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
+    struct BraceGroup {
+        start: usize,
+        end: usize,
+        branches: Vec<(usize, usize)>,
+    }
+
+    fn find_group(pattern: &str) -> Result<Option<BraceGroup>> {
+        let mut escaped = false;
+        let mut class_depth = 0;
+        let mut group_start = None;
+        let mut group_depth = 0;
+        let mut branch_start = 0;
+        let mut branches = Vec::new();
+
+        for (idx, ch) in pattern.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            // On Windows, backslashes are path separators rather than glob
+            // escapes. Literal braces can still be expressed with a character
+            // class, e.g. `[{]` and `[}]`.
+            if ch == '\\' && !cfg!(windows) {
+                escaped = true;
+                continue;
+            }
+            match ch {
+                '[' if class_depth == 0 => class_depth = 1,
+                ']' if class_depth == 1 => class_depth = 0,
+                '{' if class_depth == 0 => {
+                    if group_depth == 0 {
+                        group_start = Some(idx);
+                        branch_start = idx + ch.len_utf8();
+                    }
+                    group_depth += 1;
+                }
+                ',' if class_depth == 0 && group_depth == 1 => {
+                    branches.push((branch_start, idx));
+                    branch_start = idx + ch.len_utf8();
+                }
+                '}' if class_depth == 0 => {
+                    if group_depth == 0 {
+                        bail!("unopened brace alternate in glob pattern {pattern:?}");
+                    }
+                    group_depth -= 1;
+                    if group_depth == 0 {
+                        branches.push((branch_start, idx));
+                        return Ok(Some(BraceGroup {
+                            start: group_start.unwrap(),
+                            end: idx,
+                            branches,
+                        }));
+                    }
+                }
+                _ => {}
+            }
+        }
+        if group_depth != 0 {
+            bail!("unclosed brace alternate in glob pattern {pattern:?}");
+        }
+        Ok(None)
+    }
+
+    fn expand(pattern: &str, expanded: &mut Vec<String>) -> Result<()> {
+        let Some(group) = find_group(pattern)? else {
+            if expanded.len() >= MAX_BRACE_EXPANSIONS {
+                bail!(
+                    "glob pattern expands to more than {MAX_BRACE_EXPANSIONS} alternatives: {pattern:?}"
+                );
+            }
+            expanded.push(pattern.to_string());
+            return Ok(());
+        };
+
+        let prefix = &pattern[..group.start];
+        let suffix = &pattern[group.end + 1..];
+        for (branch_start, branch_end) in group.branches {
+            let branch = &pattern[branch_start..branch_end];
+            // Match globset's default: empty alternatives are discarded.
+            if branch.is_empty() {
+                continue;
+            }
+            expand(&format!("{prefix}{branch}{suffix}"), expanded)?;
+        }
+        Ok(())
+    }
+
+    let mut expanded = Vec::new();
+    expand(pattern, &mut expanded)?;
+    Ok(expanded)
+}
+
 /// Build an [`Override`] matcher for a task's `sources` patterns.
 ///
 /// `match_root` is the directory the [`Override`] is anchored at (the workspace
@@ -65,8 +166,20 @@ pub(crate) fn build_source_matcher(
     let mut builder = OverrideBuilder::new(match_root);
     for s in sources {
         let normalized = normalize_pattern(match_root, task_cwd, s);
-        if let Err(e) = builder.add(&normalized) {
-            warn!("invalid source pattern {s:?}: {e}");
+        let expanded = match expand_glob_braces(&normalized) {
+            Ok(expanded) => expanded,
+            Err(e) => {
+                // Source matcher construction is infallible to callers. An
+                // invalid pattern is skipped so freshness falls back to stale
+                // when no sources can be enumerated.
+                warn!("invalid source pattern {s:?}: {e}");
+                continue;
+            }
+        };
+        for normalized in expanded {
+            if let Err(e) = builder.add(&normalized) {
+                warn!("invalid source pattern {s:?}: {e}");
+            }
         }
     }
     builder.build().unwrap_or_else(|e| {
@@ -161,16 +274,20 @@ pub(crate) fn build_output_matcher(root: &Path, outputs: &[String]) -> Result<Ov
     let mut builder = OverrideBuilder::new(root);
     for output in outputs {
         let output = normalize_pattern(root, root, output);
-        builder.add(&output)?;
-        let descendant = if let Some(body) = output.strip_prefix('!') {
-            format!("!{body}/**")
-        } else if let Some(body) = output.strip_prefix("\\!") {
-            format!("\\!{body}/**")
-        } else {
-            format!("{output}/**")
-        };
-        if !output.ends_with("/**") {
-            builder.add(&descendant)?;
+        // Output callers already propagate matcher errors and conservatively
+        // treat the task as stale, so keep malformed patterns visible here.
+        for output in expand_glob_braces(&output)? {
+            builder.add(&output)?;
+            let descendant = if let Some(body) = output.strip_prefix('!') {
+                format!("!{body}/**")
+            } else if let Some(body) = output.strip_prefix("\\!") {
+                format!("\\!{body}/**")
+            } else {
+                format!("{output}/**")
+            };
+            if !output.ends_with("/**") {
+                builder.add(&descendant)?;
+            }
         }
     }
     Ok(builder.build()?)
@@ -474,9 +591,15 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
         // Warn if any explicitly declared output was not generated.
         for output in output_glob_patterns(&task.outputs.paths(task, &root)) {
             let output_exists = if is_glob_pattern(&output) {
-                let pattern = root.join(&output);
-                glob(pattern.to_str().unwrap_or_default())
-                    .map(|paths| paths.flatten().next().is_some())
+                expand_glob_braces(&output)
+                    .map(|patterns| {
+                        patterns.into_iter().any(|pattern| {
+                            let pattern = resolve_task_path(&root, pattern);
+                            glob(pattern.to_str().unwrap_or_default())
+                                .map(|paths| paths.flatten().next().is_some())
+                                .unwrap_or(false)
+                        })
+                    })
                     .unwrap_or(false)
             } else {
                 let path = Path::new(&output);
@@ -684,38 +807,40 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
     }
 
     for pattern_str in glob_pats {
-        let full = root.join(pattern_str.as_str());
         let mut glob_matched = false;
-        for entry in glob(full.to_str().unwrap_or_default())? {
-            // Propagate glob resolution errors (OS errors during directory
-            // reads) rather than silently skipping them — a partial result
-            // could produce the same hash as a complete one.
-            let path = entry?;
-            glob_matched = true;
-            let metadata = match path.metadata() {
-                Ok(metadata) => metadata,
-                Err(_) => {
-                    if !is_output(&matcher, &path, false) && !is_output(&matcher, &path, true) {
-                        continue;
+        for expanded in expand_glob_braces(pattern_str)? {
+            let full = resolve_task_path(root, expanded);
+            for entry in glob(full.to_str().unwrap_or_default())? {
+                // Propagate glob resolution errors (OS errors during directory
+                // reads) rather than silently skipping them — a partial result
+                // could produce the same hash as a complete one.
+                let path = entry?;
+                glob_matched = true;
+                let metadata = match path.metadata() {
+                    Ok(metadata) => metadata,
+                    Err(_) => {
+                        if !is_output(&matcher, &path, false) && !is_output(&matcher, &path, true) {
+                            continue;
+                        }
+                        return Ok(None); // selected and unreadable → outputs incomplete
                     }
-                    return Ok(None); // selected and unreadable → outputs incomplete
+                };
+                if !is_output(&matcher, &path, metadata.is_dir()) {
+                    continue;
                 }
-            };
-            if !is_output(&matcher, &path, metadata.is_dir()) {
-                continue;
-            }
-            match metadata {
-                m if m.is_file() => {
-                    entries.push(hash_file(&path)?);
-                }
-                m if m.is_dir() => {
-                    let found = push_dir_entries(&path, &mut entries, &matcher)?;
-                    if !found {
-                        entries.push((path, "empty-dir".to_string()));
+                match metadata {
+                    m if m.is_file() => {
+                        entries.push(hash_file(&path)?);
                     }
-                }
-                _ => {
-                    entries.push((path, "other".to_string()));
+                    m if m.is_dir() => {
+                        let found = push_dir_entries(&path, &mut entries, &matcher)?;
+                        if !found {
+                            entries.push((path, "empty-dir".to_string()));
+                        }
+                    }
+                    _ => {
+                        entries.push((path, "other".to_string()));
+                    }
                 }
             }
         }
@@ -744,11 +869,13 @@ fn get_file_metadatas(
 
     let mut metadatas = BTreeMap::new();
     for pattern in patterns {
-        let pattern = resolve_task_path(root, pattern);
-        let files = glob(pattern.to_str().unwrap())?;
-        for file in files.flatten() {
-            if let Ok(metadata) = file.metadata() {
-                metadatas.insert(file, metadata);
+        for expanded in expand_glob_braces(pattern)? {
+            let pattern = resolve_task_path(root, expanded);
+            let files = glob(pattern.to_str().unwrap())?;
+            for file in files.flatten() {
+                if let Ok(metadata) = file.metadata() {
+                    metadatas.insert(file, metadata);
+                }
             }
         }
     }
@@ -904,12 +1031,14 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
     let mut directory_modified = Vec::new();
     for pattern in output_glob_patterns(patterns_or_paths) {
         let candidates = if is_glob_pattern(&pattern) {
-            glob(
-                resolve_task_path(root, &pattern)
-                    .to_str()
-                    .unwrap_or_default(),
-            )?
-            .collect::<Result<Vec<_>, _>>()?
+            let mut candidates = Vec::new();
+            for expanded in expand_glob_braces(&pattern)? {
+                let expanded = resolve_task_path(root, expanded);
+                candidates.extend(
+                    glob(expanded.to_str().unwrap_or_default())?.collect::<Result<Vec<_>, _>>()?,
+                );
+            }
+            candidates
         } else {
             vec![resolve_task_path(root, &pattern)]
         };
@@ -1041,6 +1170,82 @@ mod tests {
             ]),
             ["dist", "!important"]
         );
+    }
+
+    #[test]
+    fn glob_braces_expand_nested_and_multiple_alternates() {
+        assert_eq!(
+            expand_glob_braces("src/{a,{b,c}}/{one,two}.txt").unwrap(),
+            [
+                "src/a/one.txt",
+                "src/a/two.txt",
+                "src/b/one.txt",
+                "src/b/two.txt",
+                "src/c/one.txt",
+                "src/c/two.txt",
+            ]
+        );
+        assert_eq!(expand_glob_braces("{,a}.txt").unwrap(), ["a.txt"]);
+        assert!(expand_glob_braces("src/{a,b.txt").is_err());
+        assert!(expand_glob_braces(&"{a,b}".repeat(11)).is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn glob_braces_preserve_escaped_unix_braces() {
+        assert_eq!(
+            expand_glob_braces(r"src/\{literal\}/[{}].txt").unwrap(),
+            [r"src/\{literal\}/[{}].txt"]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn glob_braces_treat_windows_backslashes_as_separators() {
+        assert_eq!(
+            expand_glob_braces(r"C:\build\{debug,release}\*.exe").unwrap(),
+            [r"C:\build\debug\*.exe", r"C:\build\release\*.exe"]
+        );
+    }
+
+    #[test]
+    fn source_and_output_matchers_support_ordered_brace_globs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let source_matcher = build_source_matcher(
+            root,
+            root,
+            &[
+                "{Cargo.toml,README.md}".to_string(),
+                "!README.md".to_string(),
+                "README.md".to_string(),
+            ],
+        );
+        let output_matcher = build_output_matcher(
+            root,
+            &[
+                "{Cargo.toml,README.md}".to_string(),
+                "!README.md".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(is_source(&source_matcher, &root.join("Cargo.toml")));
+        assert!(is_source(&source_matcher, &root.join("README.md")));
+        assert!(is_output(&output_matcher, &root.join("Cargo.toml"), false));
+        assert!(!is_output(&output_matcher, &root.join("README.md"), false));
+    }
+
+    #[test]
+    fn output_hash_supports_brace_globs() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("a.out"), "a").unwrap();
+        fs::write(root.path().join("b.out"), "b").unwrap();
+        let task = Task {
+            outputs: crate::task::task_sources::TaskOutputs::Files(vec!["{a,b}.out".to_string()]),
+            ..Default::default()
+        };
+
+        assert!(compute_output_hash(&task, root.path()).unwrap().is_some());
     }
 
     #[test]

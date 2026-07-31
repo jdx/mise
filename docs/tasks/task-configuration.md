@@ -385,7 +385,9 @@ cause the task to be run.
 
 This is also used in `mise watch` to know which files/directories to watch.
 
-This can be specified with relative paths to the config file and/or with glob patterns, e.g.: `src/**/*.rs`.
+This can be specified with relative paths to the config file and/or with glob patterns, e.g.:
+`src/**/*.rs`. Brace alternatives such as `src/**/*.{js,ts}` are supported by freshness checks,
+`mise watch`, and `task_source_files()`.
 Ensure you don't go crazy with adding a ton of files in a glob though—mise has to scan each and every one to check
 the timestamp.
 
@@ -517,7 +519,8 @@ it executes.
 
 Entries prefixed with `!` exclude matching outputs. As with `sources`, entries
 are evaluated in order, a later entry can re-include a path, and `\!` escapes a
-literal leading bang.
+literal leading bang. Output globs also support brace alternatives such as
+`dist/{client,server}/**`.
 
 ```mise-toml
 [tasks.build]
