@@ -26,7 +26,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, plugins::PluginEnum, timeout};
 use crate::{dirs, env, file};
 use async_trait::async_trait;
-use color_eyre::eyre::{Result, WrapErr, eyre};
+use color_eyre::eyre::{Result, WrapErr, bail, eyre};
 use console::style;
 use heck::ToKebabCase;
 
@@ -464,6 +464,7 @@ impl Backend for AsdfBackend {
         }
         ctx.pr.set_message("bin/install".into());
         run_script(&Install)?;
+        verify_install_script_output(&self.ba.short, &tv.install_path())?;
         file::remove_dir(&self.ba.downloads_path)?;
 
         Ok(tv)
@@ -526,6 +527,31 @@ impl Backend for AsdfBackend {
     }
 }
 
+/// Verifies that `bin/install` actually put something in `$ASDF_INSTALL_PATH`.
+///
+/// `bin/install` is a plugin-supplied shell script, and one that installs nothing can still exit 0
+/// — a missing `set -e`, a build that fails inside a pipeline, a download that 404s. mise would
+/// otherwise report `✓ installed`, record the version in install state, and keep resolving to an
+/// empty directory afterwards (#5288).
+///
+/// Emptiness is exact rather than a guess: `Backend::create_install_dirs` recreates the install
+/// path immediately before the script runs, and the `incomplete` marker lives under the cache dir,
+/// so anything present afterwards came from the plugin. It is also all that can be checked — asdf
+/// plugins install into `bin/`, `libexec/`, an unpacked tarball root, or wherever the tool puts
+/// things, so a stricter test (spm requires an executable in `bin/`) would reject working plugins.
+///
+/// There is no `system` case to exclude: anything reaching here has already been through
+/// `script_man_for_tv`, which panics for `ToolRequest::System`.
+fn verify_install_script_output(tool: &str, install_path: &Path) -> Result<()> {
+    if file::ls(install_path)?.is_empty() {
+        bail!(
+            "{tool}'s bin/install exited successfully but installed nothing into {}; check that the plugin installs into $ASDF_INSTALL_PATH and that it fails when the build fails",
+            file::display_path(install_path)
+        );
+    }
+    Ok(())
+}
+
 impl Debug for AsdfBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AsdfPlugin")
@@ -544,6 +570,25 @@ mod tests {
 
     use super::*;
     use std::ffi::OsString;
+
+    #[test]
+    fn test_verify_install_script_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let install_path = temp.path().join("1.0.0");
+
+        // a missing install path is the same failure as an empty one: nothing was installed
+        let err = verify_install_script_output("tiny", &install_path)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("installed nothing into"), "{err}");
+        std::fs::create_dir_all(&install_path).unwrap();
+        assert!(verify_install_script_output("tiny", &install_path).is_err());
+
+        // anything at all is enough — deliberately not an executable and not `bin/`, because asdf
+        // plugins choose their own layout and this must not become spm's stricter check
+        std::fs::create_dir(install_path.join("libexec")).unwrap();
+        verify_install_script_output("tiny", &install_path).unwrap();
+    }
 
     fn env_results(entries: &[(&str, &str)], removals: &[&str], paths: &[&str]) -> EnvResults {
         let mut results = EnvResults::default();
