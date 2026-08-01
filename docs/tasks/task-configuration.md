@@ -696,6 +696,17 @@ the values (or absence) of variables named in `cache.env`, command-input output,
 versions, dependency artifact keys, and the operating system and architecture. Variables inherited
 from the ambient process are ignored unless listed in `cache.env`.
 
+Use `mise run --task-cache-explain <task>` to print a deterministic breakdown of the inputs that
+produced the cache key without printing the aggregate key itself. Environment variables are
+identified only by name and whether they are set, while mise variables are identified only by name,
+so the explanation does not publish their contents or per-value digests. Other potentially
+secret-derived inputs—including source contents, dependency keys, command output, task definitions,
+and resolved tool versions—are reported only by category and count. The target platform is listed
+directly.
+Combine the flag with `--dry-run` to inspect the key inputs without executing, restoring, or storing
+the task. Cache command inputs still run when the explanation is explicitly requested because their
+output hashes are part of the key.
+
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under
 `task_config.cache`, these names always compose with task-local `cache.env`.

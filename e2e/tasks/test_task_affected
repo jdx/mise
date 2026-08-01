@@ -131,6 +131,23 @@ assert "sort affected.log" $'app\ncore\nother\nother-prepare'
 mise run --affected --affected-base HEAD --affected-head HEAD --jobs 1 build
 assert "cat affected.log" ""
 
+# A pnpm lockfile in a workspace without Node projects falls back to ordinary
+# changed-path mapping instead of being swallowed as an empty provider result.
+cat <<'EOF' >pnpm-lock.yaml
+lockfileVersion: '9.0'
+EOF
+git add pnpm-lock.yaml
+git commit -qm add-unrelated-pnpm-lockfile
+cat <<'EOF' >pnpm-lock.yaml
+lockfileVersion: '9.1'
+EOF
+git add pnpm-lock.yaml
+git commit -qm change-unrelated-pnpm-lockfile
+: >affected.log
+output=$(mise run --affected --affected-explain --jobs 1 build)
+assert_contains "echo \"$output\"" "workspace-global path: pnpm-lock.yaml"
+assert "sort affected.log" $'app\ncore\nother\nother-prepare'
+
 mkdir node-case
 cd node-case
 export AFFECTED_LOG="$PWD/affected.log"
