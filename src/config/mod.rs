@@ -2,6 +2,7 @@ use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 pub use settings::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
@@ -1606,6 +1607,25 @@ fn is_conf_d_file(p: &Path) -> bool {
         .is_some_and(|d| d.file_name().is_some_and(|n| n == "conf.d"))
 }
 
+/// The config file to write to **inside `dir` itself**, or where one should be created.
+///
+/// `--path`/`--file` name a specific directory, so the answer has to be inside it: "if a directory
+/// is specified, it will look for a config file in that directory" (`mise use --help`). This
+/// deliberately does not walk up. [`config_file_from_dir`] is the walking one, and it is only ever
+/// asked about the cwd.
+pub fn config_file_in_dir(dir: &Path) -> PathBuf {
+    let files = config_files_in_dir(dir);
+    if let Some(cf) = first_config_file(&files)
+        && !is_global_config(cf)
+    {
+        return cf.clone();
+    }
+    match Settings::get().asdf_compat {
+        true => dir.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
+        false => dir.join(&*MISE_DEFAULT_CONFIG_FILENAME),
+    }
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
@@ -2160,12 +2180,16 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         None => env::current_dir()?,
     };
 
-    // If path is provided, handle it (file or directory) - explicit paths take precedence
+    // If path is provided, handle it (file or directory) - explicit paths take precedence.
+    // Absolutized once here so every arm returns an absolute path: a relative one would still
+    // resolve correctly against the cwd for reads, but it silently disables the monorepo lockfile
+    // redirection in `lockfile::lockfile_path_for_config`, which compares against an absolute root.
     if let Some(ref path) = opts.path {
+        let path = path.absolutize()?.to_path_buf();
         if path.is_file() {
-            return Ok(path.clone());
+            return Ok(path);
         } else if path.is_dir() {
-            let resolved = config_file_from_dir(path);
+            let resolved = config_file_in_dir(&path);
             if opts.prefer_toml && !resolved.to_string_lossy().ends_with(".toml") {
                 // For TOML-only commands, ensure we get a TOML file in the specified directory
                 return Ok(path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME));
@@ -2173,7 +2197,7 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
             return Ok(resolved);
         } else {
             // Path doesn't exist yet, return it as-is
-            return Ok(path.clone());
+            return Ok(path);
         }
     }
 

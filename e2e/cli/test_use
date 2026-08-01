@@ -163,6 +163,44 @@ assert_contains "mise use --path mise.path.toml dummy@1" "dummy@1."
 assert "cat mise.path.toml" '[tools]
 dummy = "1"'
 
+# --path <dir> writes inside that directory, never the cwd's config. This used to resolve from
+# the cwd and silently discard --path entirely.
+mkdir -p "$HOME/workdir/pathtarget/from" "$HOME/workdir/pathtarget/to"
+printf '[tools]\ndummy = "1"\n' >"$HOME/workdir/pathtarget/from/mise.toml"
+cd "$HOME/workdir/pathtarget/from" || exit 1
+
+mise use --path ../to dummy@2
+assert "cat ../to/mise.toml" '[tools]
+dummy = "2"'
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+# and with an absolute path
+mise use --path "$HOME/workdir/pathtarget/to" dummy@3
+assert "cat ../to/mise.toml" '[tools]
+dummy = "3"'
+assert "cat mise.toml" '[tools]
+dummy = "1"'
+
+# a directory whose only config is .tool-versions keeps using it rather than growing a mise.toml
+mkdir -p "$HOME/workdir/pathtarget/tv"
+printf 'dummy 1.0.0\n' >"$HOME/workdir/pathtarget/tv/.tool-versions"
+mise use --path ../tv dummy@2.0.0
+assert "cat ../tv/.tool-versions" "dummy 2.0.0"
+assert_fail "cat ../tv/mise.toml"
+
+# --path . still means "here"
+mise use --path . dummy@4
+assert "cat mise.toml" '[tools]
+dummy = "4"'
+
+# the same rule applies to `mise set --file <dir>`
+mise set --file ../to PATHTARGET=yes
+assert_contains "cat ../to/mise.toml" "PATHTARGET"
+assert_not_contains "cat mise.toml" "PATHTARGET"
+
+cd "$HOME/workdir" || exit 1
+
 # comments around a tool survive the version being replaced
 # See: https://github.com/jdx/mise/discussions/4797
 mkdir -p "$HOME/workdir/comments"

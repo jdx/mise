@@ -151,11 +151,11 @@ impl Unuse {
         let path = if self.global {
             config::global_config_path()
         } else if let Some(p) = &self.path {
-            let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
-            if from_dir.starts_with(&cwd) {
-                from_dir
+            let p = p.absolutize()?.to_path_buf();
+            if p.is_dir() {
+                config::config_file_in_dir(&p)
             } else {
-                p.clone()
+                p
             }
         } else if let Some(env) = &self.env {
             let p = cwd.join(format!(".mise.{env}.toml"));

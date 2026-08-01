@@ -90,3 +90,18 @@ EOF
 assert "mise unuse --no-prune --path .tool-versions dummy@1.0.0"
 assert "cat .tool-versions" "dummy 2.0.0 # keep me
 tiny  3.1.0"
+
+# --path <dir> removes from a config inside that directory and leaves the cwd's alone. This used
+# to resolve from the cwd, so `unuse --path <elsewhere>` deleted the tool from the wrong file.
+mkdir -p "$HOME/unusepath/from" "$HOME/unusepath/to"
+printf '[tools]\ndummy = "1.0.0"\n' >"$HOME/unusepath/from/mise.toml"
+printf '[tools]\ndummy = "1.0.0"\n' >"$HOME/unusepath/to/mise.toml"
+cd "$HOME/unusepath/from" || exit 1
+
+assert "mise unuse --no-prune --path ../to dummy@1.0.0"
+assert "cat mise.toml" '[tools]
+dummy = "1.0.0"'
+# removing the only tool empties the file, as it does everywhere else
+assert "cat ../to/mise.toml" ""
+
+cd "$HOME/workdir" || exit 1
