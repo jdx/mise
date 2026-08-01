@@ -7,7 +7,6 @@ use console::{Term, style};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use jiff::Timestamp;
-use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
@@ -248,26 +247,15 @@ impl Use {
 
     async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-
-        // Handle special case for --path that needs absolutize logic for compatibility
-        let path = if let Some(p) = &self.path {
-            let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
-            if from_dir.starts_with(&cwd) {
-                from_dir
-            } else {
-                p.clone()
-            }
-        } else {
-            let opts = ConfigPathOptions {
-                global: self.global,
-                path: None, // handled above
-                env: self.env.clone(),
-                cwd: Some(cwd),
-                prefer_toml: false, // mise use supports .tool-versions and other formats
-                prevent_home_local: true, // When in HOME, use global config
-            };
-            resolve_target_config_path(opts)?
+        let opts = ConfigPathOptions {
+            global: self.global,
+            path: self.path.clone(),
+            env: self.env.clone(),
+            cwd: Some(cwd),
+            prefer_toml: false, // mise use supports .tool-versions and other formats
+            prevent_home_local: true, // When in HOME, use global config
         };
+        let path = resolve_target_config_path(opts)?;
 
         config_file::parse_or_init(&path).await
     }
