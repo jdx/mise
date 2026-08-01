@@ -3161,6 +3161,7 @@ Set task output cache access for this run
         }
     }
     flag --task-cache-explain help="Explain the inputs that produced each task's output cache key"
+    flag --task-cache-explain-json help="Output cache-key input details as JSON Lines without running tasks"
     flag --timeout help=#"""
 Timeout for the task to complete
 e.g.: 30s, 5m
@@ -4012,6 +4013,7 @@ Set task output cache access for this run
             }
         }
         flag --task-cache-explain help="Explain the inputs that produced each task's output cache key"
+        flag --task-cache-explain-json help="Output cache-key input details as JSON Lines without running tasks"
         flag --timeout help=#"""
 Timeout for the task to complete
 e.g.: 30s, 5m

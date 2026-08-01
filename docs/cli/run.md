@@ -209,6 +209,10 @@ Set task output cache access for this run
 
 Explain the inputs that produced each task's output cache key
 
+### `--task-cache-explain-json`
+
+Output cache-key input details as JSON Lines without running tasks
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete

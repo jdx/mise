@@ -16,6 +16,11 @@ printf 'ran\n' >> runs.txt
 '''
 sources = ["input.txt"]
 outputs = ["dist", "dist/result.txt"]
+
+[tasks.inspect]
+run = "true"
+sources = ["input.txt"]
+outputs = []
 EOF
 
 printf 'one\n' >input.txt
@@ -39,6 +44,23 @@ assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "en
 assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "platform:"
 assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "cache key:"
 assert_contains "PROFILE=debug mise run --dry-run --task-cache-explain build 2>&1" "cache key inputs:"
+assert_json \
+  "PROFILE=debug mise run --dry-run --task-cache-explain-json build | jq '{task, cache_key_length: (.cache_key | length), format, source_paths, output_patterns, output_paths, environment}'" \
+  '{
+    "task": "build",
+    "cache_key_length": 64,
+    "format": 2,
+    "source_paths": ["input.txt", "mise.toml"],
+    "output_patterns": ["dist", "dist/result.txt"],
+    "output_paths": ["dist"],
+    "environment": {"PROFILE": true}
+  }'
+assert_json \
+  "PROFILE=debug mise run --dry-run --task-cache-explain-json build ::: inspect | jq -s 'map(.task) | sort'" \
+  '["build", "inspect"]'
+assert_fail_contains \
+  "mise run --task-cache-explain-json build 2>&1" \
+  "the following required arguments were not provided"
 assert "wc -l < runs.txt | tr -d ' '" "1"
 
 # Existing fresh outputs use the normal fast freshness path.
