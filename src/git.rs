@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -14,6 +14,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::file::touch_dir;
 use crate::ui::progress_report::SingleReport;
+
+#[cfg(unix)]
+use std::ffi::OsString;
 
 pub struct Git {
     pub dir: PathBuf,
@@ -394,6 +397,39 @@ impl Git {
             .into())
     }
 
+    /// Returns paths changed between the merge base of two revisions.
+    ///
+    /// Rename detection is disabled so moves report both the old and new path.
+    /// Paths are relative to `self.dir`, and changes outside it are excluded.
+    pub fn changed_paths(&self, base: &str, head: &str) -> Result<BTreeSet<PathBuf>> {
+        for (name, revision) in [("base", base), ("head", head)] {
+            if revision.is_empty() || revision.starts_with('-') || revision.contains('\0') {
+                return Err(eyre!("invalid Git {name} revision {revision:?}"));
+            }
+        }
+        let range = format!("{base}...{head}");
+        let output = git_cmd!(
+            &self.dir,
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--relative",
+            &range,
+            "--",
+            "."
+        )
+        .stdout_capture()
+        .run()
+        .wrap_err_with(|| format!("git diff for {range} failed"))?;
+        output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .map(path_from_git_bytes)
+            .collect()
+    }
+
     pub fn get_path<P: AsRef<Path>>(path: P) -> eyre::Result<PathBuf> {
         let root = Self::get_root()?;
         let path = cmd!("git", "-C", &root, "rev-parse", "--git-path", path.as_ref()).read()?;
@@ -403,6 +439,20 @@ impl Git {
         } else {
             root.join(path)
         })
+    }
+}
+
+fn path_from_git_bytes(path: &[u8]) -> Result<PathBuf> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        Ok(OsString::from_vec(path.to_vec()).into())
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(String::from_utf8(path.to_vec())
+            .wrap_err("Git returned a non-UTF-8 path")?
+            .into())
     }
 }
 
