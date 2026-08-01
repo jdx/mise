@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+printf '%s\n' "$MISE_CONCURRENT_VALUE" >"dist/$MISE_CONCURRENT_VALUE.txt"
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'input\n' >input.txt
+
+# All writers intentionally share a key while producing different valid
+# artifacts. Their final archive and manifest must always be one matching pair.
+pids=()
+for value in one two three four five six seven eight; do
+  MISE_CONCURRENT_VALUE="$value" mise run build >"writer-$value.log" 2>&1 &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid"
+done
+
+cache_dir="$MISE_CACHE_DIR/task-artifacts/v2"
+assert "find \"$cache_dir\" -maxdepth 1 -name '*.json' | wc -l | tr -d ' '" "1"
+assert "find \"$cache_dir\" -maxdepth 1 -name '*.tar.zst' | wc -l | tr -d ' '" "1"
+assert "find \"$cache_dir\" -maxdepth 1 -name '*.part-*' | wc -l | tr -d ' '" "0"
+
+# Readers share both the cache key and working directory. Entry locks protect
+# the archive/manifest pair, while the existing output lock serializes install.
+rm -rf dist
+pids=()
+for reader in 1 2 3 4 5 6 7 8; do
+  mise run --task-cache read-only build >"reader-$reader.log" 2>&1 &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid"
+done
+
+assert "test \"$(find dist -type f | wc -l | tr -d ' ')\" -ge 1 && echo restored" "restored"
+assert "if grep -q 'cache entry was corrupt' reader-*.log writer-*.log; then echo corrupt; else echo clean; fi" "clean"

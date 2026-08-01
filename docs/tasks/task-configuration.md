@@ -776,6 +776,10 @@ It covers the archived outputs and captured task result metadata, and mise verif
 extracting files or replaying output. Entries written before checksums were introduced remain
 readable. `mise cache task <task> --json` includes the checksum for cache inspection tooling.
 
+Readers, writers, inspection, and task-scoped deletion coordinate through a cross-process lock for
+each cache key. Concurrent processes therefore see a complete archive and manifest pair instead of
+mistaking an in-progress replacement for corruption; writers for unrelated keys remain independent.
+
 When a cache-enabled task executes instead of restoring a result, mise reports the reason: no
 matching entry, a corrupt entry, forced execution, disabled reads, or a dependency that completed
 without a stable cache key. Raw and dry-run cache bypasses retain their existing warning or preview
