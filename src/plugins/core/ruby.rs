@@ -445,17 +445,10 @@ impl RubyPlugin {
         Self::is_default_ruby_source(source)
     }
 
-    /// Check if precompiled binaries should be tried
-    /// Precompiled if: explicit opt-in (compile=false), or experimental + not opted out
-    /// TODO(2026.8.0): make precompiled the default when compile is unset, remove this debug_assert
+    /// Check if precompiled binaries should be tried.
+    /// Precompiled binaries are the default unless source compilation is explicitly requested.
     fn should_try_precompiled(&self) -> bool {
-        debug_assert!(
-            *crate::cli::version::V < versions::Versioning::new("2026.8.0").unwrap(),
-            "precompiled ruby should be the default now, update should_try_precompiled()"
-        );
-        let settings = Settings::get();
-        settings.ruby.compile == Some(false)
-            || (settings.experimental && settings.ruby.compile.is_none())
+        Settings::get().ruby.compile != Some(true)
     }
 
     /// Get platform identifier for precompiled binaries
@@ -966,16 +959,7 @@ impl Backend for RubyPlugin {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let mut tv = tv;
-        let settings = Settings::get();
-        if settings.ruby.compile.is_none() && !settings.experimental {
-            warn_once!(
-                "precompiled ruby will be the default in 2026.8.0.\n\
-                 To use precompiled binaries now: mise settings ruby.compile=false\n\
-                 To keep compiling from source: mise settings ruby.compile=true"
-            );
-        }
-
-        // Try precompiled if compile=false or experimental + not opted out
+        // Try precompiled unless source compilation was explicitly requested.
         if self.should_try_precompiled()
             && let Some(installed_tv) = self.install_precompiled(ctx, &mut tv).await?
         {
@@ -1420,9 +1404,8 @@ mod tests {
     }
 
     #[test]
-    fn test_ruby_lockfile_options_include_experimental_precompiled_default() {
+    fn test_ruby_lockfile_options_include_precompiled_default() {
         let opts = resolve_ruby_lockfile_options(|settings| {
-            settings.experimental = Some(true);
             settings.ruby.precompiled_url = Some("acme/ruby".to_string());
             settings.ruby.precompiled_arch = Some("arm64".to_string());
             settings.ruby.precompiled_os = Some("linux".to_string());

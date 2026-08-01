@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 
-# Test precompiled Ruby binaries from jdx/ruby
-export MISE_RUBY_COMPILE=false
-
-# Install precompiled Ruby 3.4.1
+# Test that precompiled Ruby binaries from jdx/ruby are the default
 assert_contains "mise use ruby@3.4.1 2>&1" "ruby@3.4.1"
 assert_contains "mise x -- ruby --version" "ruby 3.4.1"
 
