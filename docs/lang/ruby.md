@@ -26,7 +26,7 @@ settings and troubleshooting.
 
 ## Precompiled Binaries
 
-Mise downloads precompiled Ruby binaries by default. This significantly reduces installation time.
+mise downloads precompiled Ruby binaries by default. This significantly reduces installation time.
 
 Precompiled binaries are sourced from [jdx/ruby](https://github.com/jdx/ruby) and are available
 for the following platforms:
