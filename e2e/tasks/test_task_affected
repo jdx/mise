@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export AFFECTED_LOG="$PWD/affected.log"
+
+cat <<'EOF' >.gitignore
+affected.log
+Cargo.lock
+EOF
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["crates/*"]
+
+[task_config]
+global_inputs = ["crates/core/global.txt"]
+EOF
+
+cat <<'EOF' >Cargo.toml
+[workspace]
+members = ["crates/app", "crates/core", "crates/other"]
+resolver = "2"
+EOF
+
+mkdir -p crates/app/src crates/core/src crates/other/src
+cat <<'EOF' >crates/app/Cargo.toml
+[package]
+name = "app"
+version = "0.1.0"
+
+[dependencies]
+core = { path = "../core" }
+EOF
+
+for crate in core other; do
+  cat <<EOF >"crates/$crate/Cargo.toml"
+[package]
+name = "$crate"
+version = "0.1.0"
+EOF
+done
+
+for crate in app core other; do
+  cat <<EOF >"crates/$crate/mise.toml"
+[tasks.build]
+run = "echo $crate >> \"\$AFFECTED_LOG\""
+EOF
+  echo "$crate" >"crates/$crate/src/lib.rs"
+done
+cat <<'EOF' >>crates/app/mise.toml
+depends = ["//crates/other:prepare"]
+EOF
+cat <<'EOF' >>crates/other/mise.toml
+
+[tasks.prepare]
+run = "echo other-prepare >> \"$AFFECTED_LOG\""
+EOF
+echo initial >crates/core/global.txt
+
+git init -q
+git config user.email test@example.com
+git config user.name Test
+git add .
+git commit -qm initial
+
+echo changed >>crates/core/src/lib.rs
+git add .
+git commit -qm core-change
+mise run --affected --jobs 1 build
+assert "sort affected.log" $'app\ncore\nother-prepare'
+
+: >affected.log
+echo changed >>crates/app/src/lib.rs
+git add .
+git commit -qm app-change
+mise run --affected --affected-base HEAD~1 --affected-head HEAD --jobs 1 build
+assert "sort affected.log" $'app\nother-prepare'
+
+: >affected.log
+echo changed >>crates/core/global.txt
+git add .
+git commit -qm global-change
+mise run --affected --jobs 1 build
+assert "sort affected.log" $'app\ncore\nother\nother-prepare'
+
+: >affected.log
+mise run --affected --affected-base HEAD --affected-head HEAD --jobs 1 build
+assert "cat affected.log" ""
+
+mkdir node-case
+cd node-case
+export AFFECTED_LOG="$PWD/affected.log"
+
+cat <<'EOF' >.gitignore
+affected.log
+EOF
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat <<'EOF' >pnpm-workspace.yaml
+packages:
+  - packages/*
+EOF
+mkdir -p packages/app packages/lib packages/other
+cat <<'EOF' >packages/app/package.json
+{"name":"app","dependencies":{"lib":"workspace:*"}}
+EOF
+cat <<'EOF' >packages/lib/package.json
+{"name":"lib"}
+EOF
+cat <<'EOF' >packages/other/package.json
+{"name":"other"}
+EOF
+for package in app lib other; do
+  cat <<EOF >"packages/$package/mise.toml"
+[tasks.build]
+run = "echo $package >> \"\$AFFECTED_LOG\""
+EOF
+done
+cat <<'EOF' >pnpm-lock.yaml
+lockfileVersion: '9.0'
+importers:
+  packages/app: {}
+  packages/lib:
+    dependencies:
+      bar: {specifier: ^1.0.0, version: 1.0.0}
+  packages/other: {}
+packages:
+  bar@1.0.0: {}
+snapshots:
+  bar@1.0.0: {}
+EOF
+
+git init -q
+git config user.email test@example.com
+git config user.name Test
+git add .
+git commit -qm initial
+sed -i 's/1\.0\.0/2.0.0/g' pnpm-lock.yaml
+git add pnpm-lock.yaml
+git commit -qm lockfile-change
+
+mise run --affected --jobs 1 build
+assert "sort affected.log" $'app\nlib'

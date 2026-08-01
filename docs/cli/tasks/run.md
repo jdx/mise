@@ -51,6 +51,20 @@ Arguments to pass to the tasks. Use ":::" to separate tasks
 
 ## Flags
 
+### `--affected`
+
+Run matching tasks only for projects affected by Git changes
+
+### `--affected-base <REV>`
+
+Git base revision for --affected
+Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
+
+### `--affected-head <REV>`
+
+Git head revision for --affected
+Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
+
 ### `-c --continue-on-error`
 
 Continue running tasks even if one fails

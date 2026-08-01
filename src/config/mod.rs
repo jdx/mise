@@ -83,6 +83,10 @@ pub struct Config {
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
     tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
+    /// Lenient graph shared across task-loading and strict inspection contexts.
+    /// Provider errors remain on the graph so strict consumers can reject it.
+    workspace_project_graph_cache:
+        Mutex<Option<Arc<crate::task::workspace::WorkspaceProjectGraph>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_results: OnceCell<EnvResults>,
@@ -146,6 +150,7 @@ impl Config {
             shorthands: self.shorthands.clone(),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: self.all_aliases.clone(),
@@ -192,6 +197,7 @@ impl Config {
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -211,6 +217,7 @@ impl Config {
             shorthands: config.shorthands.clone(),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: config.all_aliases.clone(),
@@ -482,19 +489,53 @@ impl Config {
 
     /// Discovers the provider-neutral workspace project graph and applies the
     /// explicit overrides from the active monorepo root.
-    pub fn workspace_project_graph(&self) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
-        self.workspace_project_graph_with_provider_errors(false)
+    pub fn workspace_project_graph(
+        &self,
+    ) -> Result<Arc<crate::task::workspace::WorkspaceProjectGraph>> {
+        let graph = self.workspace_project_graph_for_task_loading()?;
+        if let Some(error) = graph.provider_discovery_error() {
+            bail!("failed to discover workspace providers: {error}");
+        }
+        Ok(graph)
+    }
+
+    /// Resolves workspace-global task inputs using the active monorepo root context.
+    pub(crate) async fn monorepo_global_task_inputs(self: &Arc<Self>) -> Result<Vec<String>> {
+        let monorepo_config = find_monorepo_config(&self.config_files)
+            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+        let monorepo_root = monorepo_config
+            .project_root()
+            .ok_or_else(|| eyre!("monorepo root config has no project root"))?
+            .to_path_buf();
+        let configs = self
+            .config_files
+            .values()
+            .filter(|cf| cf.config_root() == monorepo_root)
+            .collect::<Vec<_>>();
+        let task_inputs = ResolvedTaskInputs::from_configs(&configs);
+        let mut task = Task {
+            name: "affected".to_string(),
+            cf: Some(monorepo_config.clone()),
+            config_root: Some(monorepo_root),
+            ..Default::default()
+        };
+        apply_task_config_inputs(&mut task, self, &task_inputs).await?;
+        Ok(task.sources)
     }
 
     fn workspace_project_graph_for_task_loading(
         &self,
-    ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
-        self.workspace_project_graph_with_provider_errors(true)
+    ) -> Result<Arc<crate::task::workspace::WorkspaceProjectGraph>> {
+        if let Some(graph) = self.workspace_project_graph_cache.lock().unwrap().clone() {
+            return Ok(graph);
+        }
+        let graph = Arc::new(self.discover_workspace_project_graph()?);
+        *self.workspace_project_graph_cache.lock().unwrap() = Some(graph.clone());
+        Ok(graph)
     }
 
-    fn workspace_project_graph_with_provider_errors(
+    fn discover_workspace_project_graph(
         &self,
-        skip_provider_errors: bool,
     ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
@@ -511,19 +552,11 @@ impl Config {
         let node = crate::task::workspace::node::NodeWorkspaceProvider;
         let uv = crate::task::workspace::uv::UvWorkspaceProvider;
 
-        if skip_provider_errors {
-            crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
-                &[&cargo, &go, &node, &uv],
-                &monorepo_root,
-                &overrides,
-            )
-        } else {
-            crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides(
-                &[&cargo, &go, &node, &uv],
-                &monorepo_root,
-                &overrides,
-            )
-        }
+        crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+            &[&cargo, &go, &node, &uv],
+            &monorepo_root,
+            &overrides,
+        )
     }
 
     /// Returns the root lockfile directory when unified monorepo lockfiles are active.
@@ -773,7 +806,8 @@ impl Config {
             &config.config_files,
             workspace_graph
                 .as_ref()
-                .and_then(|graph| graph.as_ref().ok()),
+                .and_then(|graph| graph.as_ref().ok())
+                .map(Arc::as_ref),
         );
 
         let mut local_tasks =
@@ -4044,7 +4078,8 @@ pub async fn load_tasks_in_dir(
         config_files,
         workspace_graph
             .as_ref()
-            .and_then(|graph| graph.as_ref().ok()),
+            .and_then(|graph| graph.as_ref().ok())
+            .map(Arc::as_ref),
     );
     definitions.templates = templates.clone();
     load_tasks_in_dir_with_definitions(config, dir, config_files, &definitions).await
@@ -5006,6 +5041,7 @@ mod tests {
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -5083,6 +5119,7 @@ mod tests {
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases,
@@ -5164,6 +5201,7 @@ mod tests {
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -5247,6 +5285,7 @@ mod tests {
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -5305,6 +5344,7 @@ mod tests {
                 shorthands: get_shorthands(&Settings::get()),
                 hooks: OnceCell::new(),
                 tasks_cache: Arc::new(DashMap::new()),
+                workspace_project_graph_cache: Mutex::new(None),
                 tool_request_set: OnceCell::new(),
                 toolset: OnceCell::new(),
                 all_aliases,
@@ -5388,6 +5428,7 @@ config_roots = ["apps/api", "apps/web"]
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -5551,6 +5592,7 @@ config_roots = ["apps/api", "apps/web"]
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),

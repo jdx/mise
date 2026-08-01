@@ -3045,6 +3045,19 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
+    flag --affected help="Run matching tasks only for projects affected by Git changes"
+    flag --affected-base help=#"""
+Git base revision for --affected
+Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
+"""# {
+        arg <REV>
+    }
+    flag --affected-head help=#"""
+Git head revision for --affected
+Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
+"""# {
+        arg <REV>
+    }
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
@@ -3880,6 +3893,19 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
+        flag --affected help="Run matching tasks only for projects affected by Git changes"
+        flag --affected-base help=#"""
+Git base revision for --affected
+Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
+"""# {
+            arg <REV>
+        }
+        flag --affected-head help=#"""
+Git head revision for --affected
+Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
+"""# {
+            arg <REV>
+        }
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
