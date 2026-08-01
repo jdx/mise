@@ -708,6 +708,14 @@ Combine the flag with `--dry-run` to inspect the key inputs without executing, r
 the task. Cache command inputs still run when the explanation is explicitly requested because their
 output hashes are part of the key.
 
+Use `mise run --dry-run --task-cache-explain-json <task>` for machine-readable diagnostics. The
+command writes one compact JSON object per selected task to stdout, using the same redaction rules
+as the human explanation. Each object includes the opaque `cache_key` so consumers can distinguish
+separate invocations of the same task without exposing their arguments or dependency environment
+values. This JSON Lines format remains streamable when a pattern selects multiple tasks. Cache
+command inputs still run so their presence can be reported accurately, but their output and hashes
+are not included.
+
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under
 `task_config.cache`, these names always compose with task-local `cache.env`.

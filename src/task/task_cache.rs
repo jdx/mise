@@ -154,7 +154,7 @@ pub struct TaskArtifactCache {
     state_path: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub(crate) struct TaskCacheKeyExplanation {
     format: u8,
     source_paths: Vec<PathBuf>,
@@ -507,6 +507,22 @@ impl TaskArtifactCache {
 }
 
 impl TaskCacheKeyExplanation {
+    pub(crate) fn to_json(&self, task: &str, cache_key: &str) -> Result<String> {
+        #[derive(Serialize)]
+        struct Output<'a> {
+            task: &'a str,
+            cache_key: &'a str,
+            #[serde(flatten)]
+            explanation: &'a TaskCacheKeyExplanation,
+        }
+
+        Ok(serde_json::to_string(&Output {
+            task,
+            cache_key,
+            explanation: self,
+        })?)
+    }
+
     pub(crate) fn lines(&self) -> Vec<String> {
         let mut lines = vec![
             "cache key inputs:".to_string(),
@@ -1008,6 +1024,17 @@ mod tests {
         assert!(output.contains("tools: 4 resolved versions"));
         assert!(!output.contains("secret"));
         assert!(!output.contains("hunter2"));
+
+        let json = explanation.to_json("build", "cache-key").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["task"], "build");
+        assert_eq!(value["cache_key"], "cache-key");
+        assert_eq!(value["source_paths"][0], "input.txt");
+        assert_eq!(value["environment"]["TOKEN"], true);
+        assert_eq!(value["environment"]["MISSING"], false);
+        assert_eq!(value["command_input_count"], 2);
+        assert!(!json.contains("secret"));
+        assert!(!json.contains("hunter2"));
     }
 
     #[test]

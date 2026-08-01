@@ -257,6 +257,15 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment)]
     pub task_cache_explain: bool,
 
+    /// Output cache-key input details as JSON Lines without running tasks
+    #[clap(
+        long,
+        requires = "dry_run",
+        conflicts_with = "task_cache_explain",
+        verbatim_doc_comment
+    )]
+    pub task_cache_explain_json: bool,
+
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
     #[clap(long, verbatim_doc_comment)]
@@ -1176,6 +1185,7 @@ impl Run {
             skip_deps: self.skip_deps,
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
+            task_cache_explain_json: self.task_cache_explain_json,
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,

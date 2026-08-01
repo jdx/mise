@@ -212,6 +212,7 @@ pub struct TaskExecutorConfig {
     pub skip_deps: bool,
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
+    pub task_cache_explain_json: bool,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
@@ -234,6 +235,7 @@ pub struct TaskExecutor {
     pub skip_deps: bool,
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
+    pub task_cache_explain_json: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -264,6 +266,7 @@ impl TaskExecutor {
             skip_deps: config.skip_deps,
             task_cache: config.task_cache,
             task_cache_explain: config.task_cache_explain,
+            task_cache_explain_json: config.task_cache_explain_json,
             sandbox: config.sandbox,
         }
     }
@@ -612,8 +615,18 @@ impl TaskExecutor {
             && task.cache.as_ref().is_some_and(|cache| cache.enabled)
         {
             match TaskArtifactCache::prepare(task, config, self.dry_run).await? {
-                Some(_) if self.dry_run && !self.task_cache_explain => None,
-                Some(_) if self.raw(Some(task)) && !self.task_cache_explain => {
+                Some(_)
+                    if self.dry_run
+                        && !self.task_cache_explain
+                        && !self.task_cache_explain_json =>
+                {
+                    None
+                }
+                Some(_)
+                    if self.raw(Some(task))
+                        && !self.task_cache_explain
+                        && !self.task_cache_explain_json =>
+                {
                     warn!(
                         "task {} artifact caching disabled for raw or interactive execution",
                         task.name
@@ -633,14 +646,16 @@ impl TaskExecutor {
                             declared_env: &task_env,
                             dependency_keys: &dependency_state.cache_keys,
                             command_inputs,
-                            explain: self.task_cache_explain,
+                            explain: self.task_cache_explain || self.task_cache_explain_json,
                         })
                         .await?;
-                    if !self.quiet(Some(task))
-                        && let Some(explanation) = cache.explanation()
-                    {
-                        for line in explanation.lines() {
-                            self.eprint(task, &prefix, &line);
+                    if let Some(explanation) = cache.explanation() {
+                        if self.task_cache_explain_json {
+                            miseprintln!("{}", explanation.to_json(&task.name, cache.key())?);
+                        } else if !self.quiet(Some(task)) {
+                            for line in explanation.lines() {
+                                self.eprint(task, &prefix, &line);
+                            }
                         }
                     }
                     let raw = self.raw(Some(task));
