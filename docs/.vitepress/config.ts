@@ -113,6 +113,7 @@ export default withMermaid(
       plugins: [
         {
           name: "mise-schema-assets",
+          apply: "build",
           buildStart() {
             for (const filename of publicSchemas) {
               this.emitFile({
