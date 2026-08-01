@@ -4,13 +4,15 @@ use std::path::{Path, PathBuf};
 use aube::embed::{ManifestError, PackageJson, WorkspaceDiscoveryOptions};
 use eyre::{Context, Result};
 use serde::Deserialize;
+use serde_yaml::Value;
 
 use super::{
-    ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
-    WorkspaceTask, WorkspaceTaskSuggestions,
+    ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProjectGraph,
+    WorkspaceProvenance, WorkspaceProvider, WorkspaceTask, WorkspaceTaskSuggestions,
 };
 
 const PACKAGE_JSON: &str = "package.json";
+const PNPM_LOCKFILE: &str = "pnpm-lock.yaml";
 const PNPM_WORKSPACE: &str = "pnpm-workspace.yaml";
 const TURBO_JSON: &str = "turbo.json";
 
@@ -39,6 +41,18 @@ struct TurboTask {
     cache: Option<bool>,
     #[serde(rename = "dependsOn")]
     depends_on: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct PnpmLockfile {
+    importers: BTreeMap<String, Value>,
+    packages: BTreeMap<String, Value>,
+    snapshots: BTreeMap<String, Value>,
+    #[serde(rename = "time")]
+    _time: Value,
+    #[serde(flatten)]
+    other: BTreeMap<String, Value>,
 }
 
 impl WorkspaceProvider for NodeWorkspaceProvider {
@@ -234,6 +248,200 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             workspace_root,
         ))
     }
+
+    fn affected_projects_for_lockfile(
+        &self,
+        lockfile_path: &Path,
+        before: Option<&str>,
+        after: Option<&str>,
+        graph: &WorkspaceProjectGraph,
+    ) -> Result<Option<BTreeSet<ProjectId>>> {
+        if lockfile_path != Path::new(PNPM_LOCKFILE) {
+            return Ok(None);
+        }
+        Ok(Some(pnpm_affected_projects(before, after, graph)?))
+    }
+}
+
+fn pnpm_affected_projects(
+    before: Option<&str>,
+    after: Option<&str>,
+    graph: &WorkspaceProjectGraph,
+) -> Result<BTreeSet<ProjectId>> {
+    let all_projects = node_project_ids(graph);
+    let (Some(before), Some(after)) = (before, after) else {
+        return Ok(all_projects);
+    };
+    let (Ok(before), Ok(after)) = (
+        serde_yaml::from_str::<PnpmLockfile>(before),
+        serde_yaml::from_str::<PnpmLockfile>(after),
+    ) else {
+        return Ok(all_projects);
+    };
+    if before.importers.is_empty() || after.importers.is_empty() || before.other != after.other {
+        return Ok(all_projects);
+    }
+
+    let before_package_keys = package_keys(&before);
+    let after_package_keys = package_keys(&after);
+    let changed_nodes = before_package_keys
+        .union(&after_package_keys)
+        .filter(|key| package_node(&before, key) != package_node(&after, key))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let importer_roots = before
+        .importers
+        .keys()
+        .chain(after.importers.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let projects_by_root = graph
+        .projects()
+        .filter(|project| project.id.as_str().starts_with("node:"))
+        .map(|project| (project.root.clone(), project.id.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut affected = BTreeSet::new();
+    for importer_root in importer_roots {
+        let old = before.importers.get(&importer_root);
+        let new = after.importers.get(&importer_root);
+        let importer_changed = old != new;
+        let (Ok(old_packages), Ok(new_packages)) = (
+            old.map(|importer| reachable_packages(importer, &before, &before_package_keys))
+                .transpose(),
+            new.map(|importer| reachable_packages(importer, &after, &after_package_keys))
+                .transpose(),
+        ) else {
+            return Ok(all_projects);
+        };
+        let resolution_changed = old_packages
+            .iter()
+            .chain(&new_packages)
+            .any(|packages| !packages.is_disjoint(&changed_nodes));
+        if !importer_changed && !resolution_changed {
+            continue;
+        }
+
+        let root = if importer_root.is_empty() || importer_root == "." {
+            PathBuf::from(".")
+        } else {
+            PathBuf::from(&importer_root)
+        };
+        let Some(project) = projects_by_root.get(&root) else {
+            return Ok(all_projects);
+        };
+        affected.insert(project.clone());
+    }
+    Ok(affected)
+}
+
+fn node_project_ids(graph: &WorkspaceProjectGraph) -> BTreeSet<ProjectId> {
+    graph
+        .projects()
+        .filter(|project| project.id.as_str().starts_with("node:"))
+        .map(|project| project.id.clone())
+        .collect()
+}
+
+fn package_keys(lockfile: &PnpmLockfile) -> BTreeSet<String> {
+    lockfile
+        .packages
+        .keys()
+        .chain(lockfile.snapshots.keys())
+        .cloned()
+        .collect()
+}
+
+fn package_node<'a>(
+    lockfile: &'a PnpmLockfile,
+    key: &str,
+) -> (Option<&'a Value>, Option<&'a Value>) {
+    (lockfile.packages.get(key), lockfile.snapshots.get(key))
+}
+
+fn reachable_packages(
+    importer: &Value,
+    lockfile: &PnpmLockfile,
+    available: &BTreeSet<String>,
+) -> Result<BTreeSet<String>> {
+    let mut pending = dependency_package_keys(importer, available)?;
+    let mut reachable = BTreeSet::new();
+    while let Some(package) = pending.pop() {
+        if !reachable.insert(package.clone()) {
+            continue;
+        }
+        if let Some(node) = lockfile
+            .snapshots
+            .get(&package)
+            .or_else(|| lockfile.packages.get(&package))
+        {
+            pending.extend(dependency_package_keys(node, available)?);
+        }
+    }
+    Ok(reachable)
+}
+
+fn dependency_package_keys(node: &Value, available: &BTreeSet<String>) -> Result<Vec<String>> {
+    let mut packages = Vec::new();
+    for field in ["dependencies", "devDependencies", "optionalDependencies"] {
+        let Some(dependencies) = node.get(field).and_then(Value::as_mapping) else {
+            continue;
+        };
+        for (name, value) in dependencies {
+            let Some(name) = name.as_str() else {
+                continue;
+            };
+            let version = value
+                .as_str()
+                .or_else(|| value.get("version").and_then(Value::as_str));
+            let Some(version) = version else {
+                eyre::bail!("pnpm lockfile dependency {name:?} has no resolvable version");
+            };
+            packages.extend(resolve_package_keys(name, version, available)?);
+        }
+    }
+    Ok(packages)
+}
+
+fn resolve_package_keys(
+    name: &str,
+    version: &str,
+    available: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    if ["link:", "workspace:", "file:"]
+        .iter()
+        .any(|prefix| version.starts_with(prefix))
+    {
+        return Ok(Vec::new());
+    }
+    let mut candidates = Vec::new();
+    if let Some(alias) = version.strip_prefix("npm:") {
+        candidates.extend([alias.to_string(), format!("/{alias}")]);
+    } else {
+        candidates.extend([
+            version.to_string(),
+            format!("{name}@{version}"),
+            format!("/{name}@{version}"),
+            format!("/{name}/{version}"),
+        ]);
+    }
+    let packages = candidates
+        .into_iter()
+        .flat_map(|candidate| {
+            available
+                .iter()
+                .filter(move |package| {
+                    *package == &candidate
+                        || package
+                            .strip_prefix(&candidate)
+                            .is_some_and(|suffix| suffix.starts_with('('))
+                })
+                .cloned()
+        })
+        .collect::<BTreeSet<_>>();
+    if !packages.is_empty() {
+        return Ok(packages.into_iter().collect());
+    }
+    eyre::bail!("pnpm lockfile dependency {name:?} at {version:?} has no package snapshot")
 }
 
 fn workspace_tasks(
@@ -481,6 +689,227 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn pnpm_graph(root: &Path) -> WorkspaceProjectGraph {
+        write(&root.join(PNPM_WORKSPACE), "packages:\n  - packages/*\n");
+        write(&root.join(PACKAGE_JSON), r#"{"name":"root"}"#);
+        write(&root.join("packages/app/package.json"), r#"{"name":"app"}"#);
+        write(&root.join("packages/lib/package.json"), r#"{"name":"lib"}"#);
+        WorkspaceProjectGraph::discover(&NodeWorkspaceProvider, root).unwrap()
+    }
+
+    fn affected_from_pnpm_lockfile(
+        graph: &WorkspaceProjectGraph,
+        before: &str,
+        after: &str,
+    ) -> BTreeSet<ProjectId> {
+        graph
+            .affected_projects_for_lockfile(
+                &[&NodeWorkspaceProvider],
+                Path::new(PNPM_LOCKFILE),
+                Some(before),
+                Some(after),
+            )
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn pnpm_lockfile_changes_are_attributed_to_changed_importers() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+        let before = r#"
+lockfileVersion: '9.0'
+importers:
+  packages/app:
+    dependencies:
+      foo: {specifier: ^1.0.0, version: 1.0.0}
+  packages/lib:
+    dependencies:
+      bar: {specifier: ^1.0.0, version: 1.0.0}
+packages:
+  foo@1.0.0: {}
+  bar@1.0.0: {}
+snapshots:
+  foo@1.0.0: {}
+  bar@1.0.0: {}
+"#;
+        let after = before
+            .replace(
+                "foo: {specifier: ^1.0.0, version: 1.0.0}",
+                "foo: {specifier: ^2.0.0, version: 2.0.0}",
+            )
+            .replace("foo@1.0.0", "foo@2.0.0");
+
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, before, &after),
+            BTreeSet::from([ProjectId::new("node", "app").unwrap()])
+        );
+    }
+
+    #[test]
+    fn pnpm_time_metadata_does_not_force_workspace_wide_fallback() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+        let before = r#"
+lockfileVersion: '9.0'
+importers:
+  packages/app:
+    dependencies:
+      foo: {specifier: ^1.0.0, version: 1.0.0}
+  packages/lib:
+    dependencies:
+      bar: {specifier: ^1.0.0, version: 1.0.0}
+packages:
+  foo@1.0.0: {}
+  bar@1.0.0: {}
+snapshots:
+  foo@1.0.0: {}
+  bar@1.0.0: {}
+time:
+  foo@1.0.0: '2026-01-01T00:00:00.000Z'
+"#;
+        let after = before
+            .replace(
+                "foo: {specifier: ^1.0.0, version: 1.0.0}",
+                "foo: {specifier: ^2.0.0, version: 2.0.0}",
+            )
+            .replace("foo@1.0.0", "foo@2.0.0")
+            .replace("2026-01-01", "2026-02-01");
+
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, before, &after),
+            BTreeSet::from([ProjectId::new("node", "app").unwrap()])
+        );
+    }
+
+    #[test]
+    fn pnpm_lockfile_changes_follow_transitive_resolutions() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+        let before = r#"
+lockfileVersion: '9.0'
+importers:
+  packages/app:
+    dependencies:
+      foo: {specifier: ^1.0.0, version: 1.0.0}
+  packages/lib:
+    dependencies:
+      bar: {specifier: ^1.0.0, version: 1.0.0}
+packages:
+  foo@1.0.0: {}
+  bar@1.0.0: {}
+  transitive@1.0.0: {}
+snapshots:
+  foo@1.0.0:
+    dependencies:
+      transitive: 1.0.0
+  bar@1.0.0: {}
+  transitive@1.0.0: {}
+"#;
+        let after = before
+            .replace("transitive: 1.0.0", "transitive: 2.0.0")
+            .replace("transitive@1.0.0", "transitive@2.0.0");
+
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, before, &after),
+            BTreeSet::from([ProjectId::new("node", "app").unwrap()])
+        );
+    }
+
+    #[test]
+    fn pnpm_lockfile_changes_include_peer_qualified_snapshots() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+        let before = r#"
+lockfileVersion: '9.0'
+importers:
+  packages/app:
+    dependencies:
+      foo: {specifier: ^1.0.0, version: 1.0.0}
+  packages/lib: {}
+packages:
+  foo@1.0.0: {}
+snapshots:
+  foo@1.0.0(peer@1.0.0): {}
+"#;
+        let after = before.replace("peer@1.0.0", "peer@2.0.0");
+
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, before, &after),
+            BTreeSet::from([ProjectId::new("node", "app").unwrap()])
+        );
+    }
+
+    #[test]
+    fn ambiguous_pnpm_lockfile_changes_fall_back_to_all_node_projects() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+        let before = r#"
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+importers:
+  packages/app: {}
+  packages/lib: {}
+"#;
+        let after = before.replace("autoInstallPeers: true", "autoInstallPeers: false");
+
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, before, &after),
+            BTreeSet::from([
+                ProjectId::new("node", "app").unwrap(),
+                ProjectId::new("node", "lib").unwrap(),
+                ProjectId::new("node", "root").unwrap(),
+            ])
+        );
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, "not: [valid", before),
+            graph.projects().map(|project| project.id.clone()).collect()
+        );
+    }
+
+    #[test]
+    fn pnpm_dependencies_without_versions_fall_back_to_all_node_projects() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+        let before = r#"
+lockfileVersion: '9.0'
+importers:
+  packages/app:
+    dependencies:
+      foo: {specifier: ^1.0.0}
+  packages/lib: {}
+packages:
+  foo@1.0.0: {}
+snapshots:
+  foo@1.0.0: {}
+"#;
+        let after = before.replace("foo@1.0.0", "foo@2.0.0");
+
+        assert_eq!(
+            affected_from_pnpm_lockfile(&graph, before, &after),
+            graph.projects().map(|project| project.id.clone()).collect()
+        );
+    }
+
+    #[test]
+    fn node_provider_ignores_other_lockfiles() {
+        let temp = tempdir().unwrap();
+        let graph = pnpm_graph(temp.path());
+
+        assert_eq!(
+            graph
+                .affected_projects_for_lockfile(
+                    &[&NodeWorkspaceProvider],
+                    Path::new("Cargo.lock"),
+                    Some(""),
+                    Some(""),
+                )
+                .unwrap(),
+            None
+        );
     }
 
     #[test]
