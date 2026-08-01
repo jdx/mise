@@ -1155,7 +1155,7 @@ vars = { target = "linux" }
 
 :::
 
-If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.en.dev/schema/mise-task.json>
+If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
 #### Remote Git Includes <Badge type="warning" text="experimental" />
 

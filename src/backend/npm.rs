@@ -695,7 +695,7 @@ impl NPMBackend {
                 .await
         else {
             warn!(
-                "minimum_release_age is set for npm:{} but could not determine {} version required to verify {} support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.en.dev/dev-tools/backends/npm.html",
+                "minimum_release_age is set for npm:{} but could not determine {} version required to verify {} support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/npm.html",
                 self.tool_name(),
                 tool,
                 flag
@@ -705,7 +705,7 @@ impl NPMBackend {
 
         if semver_is_older_than(&version, required_version).unwrap_or(false) {
             warn!(
-                "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.en.dev/dev-tools/backends/npm.html",
+                "minimum_release_age is set for npm:{} but {}@{} is older than the documented minimum {}@{} required for {}. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/npm.html",
                 self.tool_name(),
                 tool,
                 version,

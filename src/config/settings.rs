@@ -1160,7 +1160,7 @@ impl Settings {
     pub fn ensure_not_safe(operation: &str) -> Result<()> {
         if Settings::safe_mode() {
             bail!(
-                "{operation} is disabled in safe mode (MISE_SAFE=1)\nSee https://mise.en.dev/configuration/settings.html#safe"
+                "{operation} is disabled in safe mode (MISE_SAFE=1)\nSee https://mise.jdx.dev/configuration/settings.html#safe"
             );
         }
         Ok(())

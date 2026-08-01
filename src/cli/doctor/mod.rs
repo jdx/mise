@@ -440,7 +440,7 @@ impl Doctor {
                 ));
             } else {
                 let cmd = style::nyellow("mise help activate");
-                let url = style::nunderline("https://mise.en.dev");
+                let url = style::nunderline("https://mise.jdx.dev");
                 self.errors.push(formatdoc!(
                     r#"mise is not activated, run {cmd} or
                         read documentation at {url} for activation instructions.

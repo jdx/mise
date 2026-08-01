@@ -662,7 +662,7 @@ impl PIPXBackend {
                 .await
         else {
             warn!(
-                "minimum_release_age is set for pipx:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.en.dev/dev-tools/backends/pipx.html",
+                "minimum_release_age is set for pipx:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
                 self.tool_name(),
             );
             return;
@@ -670,7 +670,7 @@ impl PIPXBackend {
 
         if semver_is_older_than(&version, UV_EXCLUDE_NEWER_VERSION).unwrap_or(false) {
             warn!(
-                "minimum_release_age is set for pipx:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.en.dev/dev-tools/backends/pipx.html",
+                "minimum_release_age is set for pipx:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
                 self.tool_name(),
                 version,
                 UV_EXCLUDE_NEWER_VERSION,

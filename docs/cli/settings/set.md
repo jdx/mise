@@ -10,7 +10,7 @@ Add/update a setting
 
 This modifies the contents of ~/.config/mise/config.toml by default.
 With `--local`, modifies the local config file instead.
-See <https://mise.en.dev/configuration.html#target-file-for-write-operations>
+See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 
 ## Arguments
 

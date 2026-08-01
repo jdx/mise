@@ -67,7 +67,7 @@ fn run() -> Result<i32, String> {
         Err(err) => Err(format!(
             "mise-shim: failed to execute mise: {err}\n\
              Ensure `mise` is installed and available on your PATH.\n\
-             See https://mise.en.dev for installation instructions."
+             See https://mise.jdx.dev for installation instructions."
         )),
     }
 }

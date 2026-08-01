@@ -60,7 +60,7 @@ If you notice a tool offers security verification methods (gpg/slsa/cosign/minis
 
 ## `mise.lock`
 
-mise has support for [lockfiles](https://mise.en.dev/configuration/settings.html#lockfile) which will
+mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.html#lockfile) which will
 store/verify the checksum of tool tarballs. Committing this into your repository is a good way to ensure
 that the exact same version of a tool is installed across all developers and CI/CD systems.
 

@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1 align="center">
-  <a href="https://mise.en.dev">
+  <a href="https://mise.jdx.dev">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/public/logo-dark.svg" />
       <img src="docs/public/logo-light.svg" alt="mise" width="256" height="256" />
@@ -21,11 +21,11 @@
 <p><b>Dev tools, env vars, and tasks in one CLI</b></p>
 
 <p align="center">
-  <a href="https://mise.en.dev/getting-started.html">Getting Started</a> •
-  <a href="https://mise.en.dev">Documentation</a> •
-  <a href="https://mise.en.dev/dev-tools/">Dev Tools</a> •
-  <a href="https://mise.en.dev/environments/">Environments</a> •
-  <a href="https://mise.en.dev/tasks/">Tasks</a>
+  <a href="https://mise.jdx.dev/getting-started.html">Getting Started</a> •
+  <a href="https://mise.jdx.dev">Documentation</a> •
+  <a href="https://mise.jdx.dev/dev-tools/">Dev Tools</a> •
+  <a href="https://mise.jdx.dev/environments/">Environments</a> •
+  <a href="https://mise.jdx.dev/tasks/">Tasks</a>
 </p>
 
 <p align="center">
@@ -46,9 +46,9 @@
 project tools, environment variables, and tasks in one `mise.toml` file so new
 shells, checkouts, and CI jobs all start from the same setup.
 
-- Install and switch between [dev tools](https://mise.en.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.en.dev/registry.html).
-- Load [environment variables](https://mise.en.dev/environments/) per project directory, including values from `.env` files and other sources.
-- Define and run [tasks](https://mise.en.dev/tasks/) for building, testing, linting, and deploying projects.
+- Install and switch between [dev tools](https://mise.jdx.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.jdx.dev/registry.html).
+- Load [environment variables](https://mise.jdx.dev/environments/) per project directory, including values from `.env` files and other sources.
+- Define and run [tasks](https://mise.jdx.dev/tasks/) for building, testing, linting, and deploying projects.
 
 ## Demo
 
@@ -57,15 +57,15 @@ Note that calling `which node` gives us a real path to node, not a shim.
 
 It also shows that you can use `mise` to install and many other tools such as `jq`, `terraform`, or `go`.
 
-[![demo](./docs/tapes/demo.gif)](https://mise.en.dev/demo.html)
+[![demo](./docs/tapes/demo.gif)](https://mise.jdx.dev/demo.html)
 
-See [demo transcript](https://mise.en.dev/demo.html).
+See [demo transcript](https://mise.jdx.dev/demo.html).
 
 ## Quickstart
 
 ### Install mise
 
-See [Getting started](https://mise.en.dev/getting-started.html) for more options.
+See [Getting started](https://mise.jdx.dev/getting-started.html) for more options.
 
 ```sh-session
 $ curl https://mise.run | sh
@@ -108,7 +108,7 @@ $ go version
 go version go1.x.x macos/arm64
 ```
 
-See [dev tools](https://mise.en.dev/dev-tools/) for more examples.
+See [dev tools](https://mise.jdx.dev/dev-tools/) for more examples.
 
 ### Manage environment variables
 
@@ -124,7 +124,7 @@ $ echo $SOME_VAR
 bar
 ```
 
-Note that `mise` can also [load `.env` files](https://mise.en.dev/environments/#env-directives).
+Note that `mise` can also [load `.env` files](https://mise.jdx.dev/environments/#env-directives).
 
 ### Run tasks
 
@@ -140,7 +140,7 @@ $ mise run build
 building...
 ```
 
-See [tasks](https://mise.en.dev/tasks/) for more information.
+See [tasks](https://mise.jdx.dev/tasks/) for more information.
 
 ### Example mise project
 
@@ -185,11 +185,11 @@ mise install # install tools specified in mise.toml
 mise run deploy
 ```
 
-Find more examples in the [mise cookbook](https://mise.en.dev/mise-cookbook/).
+Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
 
 ## Full Documentation
 
-See [mise.en.dev](https://mise.en.dev)
+See [mise.jdx.dev](https://mise.jdx.dev)
 
 ## GitHub Issues & Discussions
 

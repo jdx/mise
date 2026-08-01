@@ -736,7 +736,7 @@ Effectively the same as:
     PATH="$HOME/.local/share/mise/shims:$PATH"
 
 `mise activate \-\-shims` does not support all the features of `mise activate`.
-See https://mise.en.dev/dev\-tools/shims.html#shims\-vs\-path for more information
+See https://mise.jdx.dev/dev\-tools/shims.html#shims\-vs\-path for more information
 .TP
 \fB\-\-status\fR
 Show "mise: <TOOL>@<VERSION>" message when changing directories
@@ -3203,7 +3203,7 @@ Uses mise's GitHub token resolution chain for authenticated requests.
 
 Packagers can disable this command so that mise is updated through the
 package manager instead. See
-https://mise.en.dev/contributing.html#packaging\-and\-self\-update\-instructions
+https://mise.jdx.dev/contributing.html#packaging\-and\-self\-update\-instructions
 .PP
 \fBUsage:\fR mise self\-update [OPTIONS] [<VERSION>]
 .PP
@@ -3229,7 +3229,7 @@ Set environment variables in mise.toml
 By default, this command modifies `mise.toml` in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 
 Use `\-E <env>` to create/modify environment\-specific config files like `mise.<env>.toml`.
 .PP
@@ -3269,8 +3269,8 @@ Render completions
 The TOML file to update
 
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
 \fB\-\-no\-redact\fR
 Show raw values instead of redacting secrets
@@ -3412,7 +3412,7 @@ Add/update a setting
 
 This modifies the contents of ~/.config/mise/config.toml by default.
 With `\-\-local`, modifies the local config file instead.
-See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
 \fBUsage:\fR mise settings set [OPTIONS] <SETTING> [<VALUE>]
 .PP
@@ -3632,7 +3632,7 @@ Task name to get info of
 Create a new task
 
 Adds a task to the local mise.toml file.
-See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
 \fBUsage:\fR mise tasks add [OPTIONS] <TASK> [<RUN>] ...
 .PP
@@ -4155,7 +4155,7 @@ tool = "node" version = "20.0.0" bin = "node"
 
 The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
 
-For more information, see: https://mise.en.dev/dev\-tools/tool\-stubs.html
+For more information, see: https://mise.jdx.dev/dev\-tools/tool\-stubs.html
 .PP
 \fBUsage:\fR mise tool\-stub <FILE> [<ARGS>] ...
 .PP
@@ -4255,7 +4255,7 @@ By default, this command modifies `mise.toml` in the current directory.
 \fB\-f, \-\-file\fR \fI<FILE>\fR
 Specify a file to use instead of `mise.toml`
 
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
 \fB\-g, \-\-global\fR
 Use the global config file
@@ -4281,17 +4281,17 @@ Removes installed tool versions from mise.toml
 By default, this will use the `mise.toml` file that has the tool defined.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 
 In the following order:
   \- If `\-\-global` is set, it will use the global config file.
   \- If `\-\-path` is set, it will use the config file at the given path.
   \- If `\-\-env` is set, it will use `mise.<env>.toml`.
-  \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
+  \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
   \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
   \- Otherwise just "mise.toml" or global config if cwd is home directory.
 
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
 Will also prune the installed version if no other configurations are using it.
 .PP
@@ -4325,7 +4325,7 @@ By default, this keeps the range specified in mise.toml. So if you have node@20 
 upgrade to the latest 20.x.x version available. See the `\-\-bump` flag to use the latest version
 and bump the version in mise.toml.
 
-This will update mise.lock if it is enabled, see https://mise.en.dev/configuration/settings.html#lockfile
+This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 .PP
 \fBUsage:\fR mise upgrade [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
@@ -4397,17 +4397,17 @@ This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
-See https://mise.en.dev/configuration.html#target\-file\-for\-write\-operations
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 
 In the following order:
   \- If `\-\-global` is set, it will use the global config file.
   \- If `\-\-path` is set, it will use the config file at the given path.
   \- If `\-\-env` is set, it will use `mise.<env>.toml`.
-  \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
+  \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
   \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
   \- Otherwise just "mise.toml" or global config if cwd is home directory.
 
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
 Use the `\-\-global` flag to use the global config file instead.
 .PP
@@ -4459,7 +4459,7 @@ e.g.: `mise use \-\-pin node@20` will save 20.0.0 as the version
 Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
-https://mise.en.dev/configuration/settings.html#lockfile
+https://mise.jdx.dev/configuration/settings.html#lockfile
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies `\-\-jobs=1`

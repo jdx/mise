@@ -13,7 +13,7 @@ Uses mise's GitHub token resolution chain for authenticated requests.
 
 Packagers can disable this command so that mise is updated through the
 package manager instead. See
-<https://mise.en.dev/contributing.html#packaging-and-self-update-instructions>
+<https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions>
 
 ## Arguments
 
