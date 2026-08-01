@@ -124,7 +124,21 @@ pub struct TaskArtifactCache {
     root: PathBuf,
     cache_dir: PathBuf,
     key: String,
+    explanation: Option<TaskCacheKeyExplanation>,
     state_path: PathBuf,
+}
+
+#[derive(Debug)]
+pub(crate) struct TaskCacheKeyExplanation {
+    format: u8,
+    source_count: usize,
+    dependency_count: usize,
+    environment: BTreeMap<String, bool>,
+    command_input_count: usize,
+    vars: Vec<String>,
+    tool_count: usize,
+    os: &'static str,
+    arch: &'static str,
 }
 
 pub(crate) struct TaskArtifactCacheBuilder {
@@ -140,6 +154,7 @@ pub(crate) struct TaskCacheContext<'a> {
     pub(crate) declared_env: &'a [(String, String)],
     pub(crate) dependency_keys: &'a [String],
     pub(crate) command_inputs: Vec<CommandInput>,
+    pub(crate) explain: bool,
 }
 
 impl TaskArtifactCache {
@@ -190,6 +205,7 @@ impl TaskArtifactCacheBuilder {
             declared_env,
             dependency_keys,
             command_inputs,
+            explain,
         } = ctx;
         let Self { root, inputs } = self;
         let mut environment = declared_env
@@ -213,6 +229,7 @@ impl TaskArtifactCacheBuilder {
             .map(|(_, tv)| tv.to_string())
             .collect::<Vec<_>>();
         tools.sort();
+        let source_count = inputs.source_paths.len();
         let material = CacheKeyMaterial {
             format: CACHE_FORMAT_VERSION,
             task: &task.name,
@@ -232,6 +249,25 @@ impl TaskArtifactCacheBuilder {
         };
         let encoded = serde_json::to_vec(&material)?;
         let key = hash::hash_blake3_to_str(std::str::from_utf8(&encoded)?);
+        let explanation = if explain {
+            Some(TaskCacheKeyExplanation {
+                format: material.format,
+                source_count,
+                dependency_count: material.dependency_keys.len(),
+                environment: material
+                    .environment
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.is_some()))
+                    .collect(),
+                command_input_count: material.command_inputs.len(),
+                vars: material.vars.keys().cloned().collect(),
+                tool_count: material.tools.len(),
+                os: material.os,
+                arch: material.arch,
+            })
+        } else {
+            None
+        };
         let state_identity = hash::hash_blake3_to_str(&format!(
             "{}\0{}\0{}",
             root.display(),
@@ -245,6 +281,7 @@ impl TaskArtifactCacheBuilder {
             root,
             cache_dir: task_cache_dir(),
             key,
+            explanation,
             state_path,
         })
     }
@@ -253,6 +290,10 @@ impl TaskArtifactCacheBuilder {
 impl TaskArtifactCache {
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    pub(crate) fn explanation(&self) -> Option<&TaskCacheKeyExplanation> {
+        self.explanation.as_ref()
     }
 
     pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
@@ -419,6 +460,27 @@ impl TaskArtifactCache {
             bail!("task cache manifest does not match cache key");
         }
         Ok(manifest)
+    }
+}
+
+impl TaskCacheKeyExplanation {
+    pub(crate) fn lines(&self) -> Vec<String> {
+        let mut lines = vec![
+            "cache key inputs:".to_string(),
+            format!("  format: {}", self.format),
+            "  task definition: included".to_string(),
+            format!("  sources: {} files", self.source_count),
+            format!("  dependencies: {} artifact keys", self.dependency_count),
+        ];
+        lines.extend(self.environment.iter().map(|(name, is_set)| {
+            let state = if *is_set { "set" } else { "unset" };
+            format!("  environment {name}: {state}")
+        }));
+        lines.push(format!("  command inputs: {}", self.command_input_count));
+        lines.extend(self.vars.iter().map(|name| format!("  variable: {name}")));
+        lines.push(format!("  tools: {} resolved versions", self.tool_count));
+        lines.push(format!("  platform: {}-{}", self.os, self.arch));
+        lines
     }
 }
 
@@ -840,6 +902,32 @@ mod tests {
         assert_eq!(config.env, ["PROFILE"]);
         assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
+    }
+
+    #[test]
+    fn cache_explanation_omits_environment_and_variable_values() {
+        let explanation = TaskCacheKeyExplanation {
+            format: 2,
+            source_count: 3,
+            dependency_count: 1,
+            environment: BTreeMap::from([("MISSING".into(), false), ("TOKEN".into(), true)]),
+            command_input_count: 2,
+            vars: vec!["password".into()],
+            tool_count: 4,
+            os: "linux",
+            arch: "x86_64",
+        };
+
+        let output = explanation.lines().join("\n");
+        assert!(output.contains("environment TOKEN: set"));
+        assert!(output.contains("environment MISSING: unset"));
+        assert!(output.contains("variable: password"));
+        assert!(output.contains("sources: 3 files"));
+        assert!(output.contains("dependencies: 1 artifact keys"));
+        assert!(output.contains("command inputs: 2"));
+        assert!(output.contains("tools: 4 resolved versions"));
+        assert!(!output.contains("secret"));
+        assert!(!output.contains("hunter2"));
     }
 
     #[test]

@@ -209,6 +209,7 @@ pub struct TaskExecutorConfig {
     pub dry_run: bool,
     pub skip_deps: bool,
     pub task_cache: TaskCacheMode,
+    pub task_cache_explain: bool,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
@@ -230,6 +231,7 @@ pub struct TaskExecutor {
     pub dry_run: bool,
     pub skip_deps: bool,
     pub task_cache: TaskCacheMode,
+    pub task_cache_explain: bool,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -259,6 +261,7 @@ impl TaskExecutor {
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
             task_cache: config.task_cache,
+            task_cache_explain: config.task_cache_explain,
             sandbox: config.sandbox,
         }
     }
@@ -607,8 +610,8 @@ impl TaskExecutor {
             && task.cache.as_ref().is_some_and(|cache| cache.enabled)
         {
             match TaskArtifactCache::prepare(task, config, self.dry_run).await? {
-                Some(_) if self.dry_run => None,
-                Some(_) if self.raw(Some(task)) => {
+                Some(_) if self.dry_run && !self.task_cache_explain => None,
+                Some(_) if self.raw(Some(task)) && !self.task_cache_explain => {
                     warn!(
                         "task {} artifact caching disabled for raw or interactive execution",
                         task.name
@@ -628,9 +631,26 @@ impl TaskExecutor {
                             declared_env: &task_env,
                             dependency_keys: &dependency_state.cache_keys,
                             command_inputs,
+                            explain: self.task_cache_explain,
                         })
                         .await?;
-                    let current_output = if self.task_cache.reads()
+                    if !self.quiet(Some(task))
+                        && let Some(explanation) = cache.explanation()
+                    {
+                        for line in explanation.lines() {
+                            self.eprint(task, &prefix, &line);
+                        }
+                    }
+                    let raw = self.raw(Some(task));
+                    if raw {
+                        warn!(
+                            "task {} artifact caching disabled for raw or interactive execution",
+                            task.name
+                        );
+                    }
+                    let bypass_cache = self.dry_run || raw;
+                    let current_output = if !bypass_cache
+                        && self.task_cache.reads()
                         && !self.force
                         && !dependency_state.any_unkeyed_did_work
                         && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
@@ -650,7 +670,8 @@ impl TaskExecutor {
                             cache_key: Some(cache.key().to_string()),
                         });
                     }
-                    if self.task_cache.reads()
+                    if !bypass_cache
+                        && self.task_cache.reads()
                         && !self.force
                         && !dependency_state.any_unkeyed_did_work
                     {
@@ -690,7 +711,7 @@ impl TaskExecutor {
                             });
                         }
                     }
-                    Some(cache)
+                    if bypass_cache { None } else { Some(cache) }
                 }
                 None => None,
             }

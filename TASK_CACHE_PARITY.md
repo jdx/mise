@@ -92,7 +92,7 @@ outside this tracker.
 
 ## Inspection and diagnostics
 
-- [ ] Explain the inputs that produced a task's cache key
+- [x] Explain the inputs that produced a task's cache key
 - [ ] Report the reason for each cache miss
 - [ ] Show resolved cache inputs and outputs
 - [ ] Add machine-readable cache details to dry-run or task-info output

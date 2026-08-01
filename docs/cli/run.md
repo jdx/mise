@@ -205,6 +205,10 @@ Set task output cache access for this run
 
 **Default:** `read-write`
 
+### `--task-cache-explain`
+
+Explain the inputs that produced each task's output cache key
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete

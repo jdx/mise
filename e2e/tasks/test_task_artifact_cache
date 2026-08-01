@@ -24,6 +24,17 @@ PROFILE=debug mise run build
 assert "wc -l < runs.txt | tr -d ' '" "1"
 assert "cat dist/result.txt" "debug:one"
 
+# Cache explanations show the contributing input groups without exposing values.
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "cache key inputs:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "task definition:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "sources:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "environment PROFILE: set"
+assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "environment PROFILE: debug"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "platform:"
+assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "cache key:"
+assert_contains "PROFILE=debug mise run --dry-run --task-cache-explain build 2>&1" "cache key inputs:"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
 # Existing fresh outputs use the normal fast freshness path.
 assert_contains "PROFILE=debug mise run build 2>&1" "sources up-to-date, skipping"
 assert "wc -l < runs.txt | tr -d ' '" "1"

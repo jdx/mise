@@ -253,6 +253,10 @@ pub struct Run {
     )]
     pub task_cache: TaskCacheMode,
 
+    /// Explain the inputs that produced each task's output cache key
+    #[clap(long, verbatim_doc_comment)]
+    pub task_cache_explain: bool,
+
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
     #[clap(long, verbatim_doc_comment)]
@@ -329,10 +333,13 @@ async fn get_affected_task_list(
     let mut comparison_base: Option<String> = None;
 
     for path in changed_paths {
-        if graph
-            .affected_projects_for_lockfile(&providers, &path, None, None)?
-            .is_none()
-        {
+        let Some(lockfile_candidates) =
+            graph.affected_projects_for_lockfile(&providers, &path, None, None)?
+        else {
+            regular_paths.insert(path);
+            continue;
+        };
+        if lockfile_candidates.is_empty() {
             regular_paths.insert(path);
             continue;
         }
@@ -1168,6 +1175,7 @@ impl Run {
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
             task_cache: self.task_cache,
+            task_cache_explain: self.task_cache_explain,
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,
