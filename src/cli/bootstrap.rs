@@ -902,6 +902,7 @@ impl Bootstrap {
             affected: false,
             affected_base: None,
             affected_head: None,
+            affected_explain: false,
             cd: None,
             continue_on_error: false,
             dry_run: self.dry_run,

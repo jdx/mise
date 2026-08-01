@@ -1,5 +1,5 @@
 use crate::errors::Error;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -82,6 +82,10 @@ pub struct Run {
     /// Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
     #[clap(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
     pub affected_base: Option<String>,
+
+    /// Explain why projects and tasks were selected by --affected
+    #[clap(long, requires = "affected", verbatim_doc_comment)]
+    pub affected_explain: bool,
 
     /// Git head revision for --affected
     /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
@@ -288,6 +292,7 @@ async fn get_affected_task_list(
     only: bool,
     base: Option<&str>,
     head: Option<&str>,
+    explain: bool,
 ) -> Result<Vec<Task>> {
     Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
@@ -304,7 +309,7 @@ async fn get_affected_task_list(
     let uv = crate::task::workspace::uv::UvWorkspaceProvider;
     let providers: [&dyn crate::task::workspace::WorkspaceProvider; 4] = [&cargo, &go, &node, &uv];
     let mut regular_paths = BTreeSet::new();
-    let mut lockfile_projects = BTreeSet::new();
+    let mut lockfile_projects = BTreeMap::<PathBuf, BTreeSet<_>>::new();
     let mut comparison_base: Option<String> = None;
 
     for path in changed_paths {
@@ -331,15 +336,19 @@ async fn get_affected_task_list(
             before.as_deref(),
             after.as_deref(),
         )? {
-            lockfile_projects.extend(projects);
+            lockfile_projects.entry(path).or_default().extend(projects);
         }
     }
 
-    let mut affected =
-        graph.affected_projects_for_paths(&workspace_root, regular_paths, &global_inputs)?;
-    affected.extend(graph.affected_projects(&lockfile_projects)?);
+    let affected = graph.affected_projects_for_changes(
+        &workspace_root,
+        regular_paths,
+        &global_inputs,
+        &lockfile_projects,
+    )?;
     let affected_roots = affected
-        .iter()
+        .projects()
+        .map(|(id, _)| id)
         .filter_map(|id| graph.get(id))
         .map(|project| crate::file::desymlink_path(&workspace_root.join(&project.root)))
         .collect::<BTreeSet<_>>();
@@ -356,7 +365,81 @@ async fn get_affected_task_list(
                 .map(crate::file::desymlink_path)
                 .is_some_and(|root| affected_roots.contains(&root))
     });
+    if explain {
+        display_affected_explanation(&revisions, &workspace_root, &graph, &affected, &tasks)?;
+    }
     Ok(tasks)
+}
+
+fn display_affected_explanation(
+    revisions: &crate::task::workspace::git::WorkspaceGitRevisions,
+    workspace_root: &std::path::Path,
+    graph: &crate::task::workspace::WorkspaceProjectGraph,
+    affected: &crate::task::workspace::AffectedProjects,
+    tasks: &[Task],
+) -> Result<()> {
+    use crate::task::workspace::AffectedProjectReason;
+
+    miseprintln!(
+        "Affected projects ({}...{}):{}",
+        revisions.base,
+        revisions.head,
+        if affected.is_empty() { " none" } else { "" }
+    );
+    let mut projects_by_root = BTreeMap::<PathBuf, Vec<_>>::new();
+    for (id, reasons) in affected.projects() {
+        let project = graph.get(id).expect("affected project exists in graph");
+        miseprintln!("  {} ({})", id, display_affected_path(&project.root));
+        for reason in reasons {
+            match reason {
+                AffectedProjectReason::ChangedPath { path } => {
+                    miseprintln!("    changed path: {}", display_affected_path(path));
+                }
+                AffectedProjectReason::GlobalPath { path } => {
+                    miseprintln!("    workspace-global path: {}", display_affected_path(path));
+                }
+                AffectedProjectReason::Lockfile { path } => {
+                    miseprintln!("    lockfile change: {}", display_affected_path(path));
+                }
+                AffectedProjectReason::Dependent { dependency } => {
+                    miseprintln!("    depends on affected project: {dependency}");
+                }
+            }
+        }
+        projects_by_root
+            .entry(crate::file::desymlink_path(
+                &workspace_root.join(&project.root),
+            ))
+            .or_default()
+            .push(id);
+    }
+
+    miseprintln!(
+        "Affected tasks:{}",
+        if tasks.is_empty() { " none" } else { "" }
+    );
+    for task in tasks {
+        miseprintln!("  {}", display_affected_text(&task.display_name));
+        if let Some(ids) = task
+            .config_root
+            .as_deref()
+            .map(crate::file::desymlink_path)
+            .and_then(|root| projects_by_root.get(&root))
+        {
+            for id in ids {
+                miseprintln!("    affected project: {id}");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn display_affected_path(path: &std::path::Path) -> String {
+    display_affected_text(&path.to_string_lossy())
+}
+
+fn display_affected_text(text: &str) -> String {
+    text.escape_debug().to_string()
 }
 
 impl Run {
@@ -448,6 +531,7 @@ impl Run {
                 self.skip_deps,
                 self.affected_base.as_deref(),
                 self.affected_head.as_deref(),
+                self.affected_explain,
             )
             .await?
         } else {
@@ -1296,6 +1380,18 @@ mod tests {
                 ":::",
                 "node:@scope/app#lint",
             ]
+        );
+    }
+
+    #[test]
+    fn affected_paths_escape_terminal_control_characters() {
+        assert_eq!(
+            display_affected_path(std::path::Path::new("src/\x1b[2J\nfile.rs")),
+            r"src/\u{1b}[2J\nfile.rs"
+        );
+        assert_eq!(
+            display_affected_text("//app:\x1b]8;;https://example.com\x1b\\build"),
+            r"//app:\u{1b}]8;;https://example.com\u{1b}\\build"
         );
     }
 }

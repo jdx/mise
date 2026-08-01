@@ -440,6 +440,40 @@ pub struct WorkspaceProjectPathMap {
     pub unowned_paths: BTreeSet<PathBuf>,
 }
 
+/// A direct or dependency-derived reason that a workspace project is affected.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum AffectedProjectReason {
+    /// A changed file is owned by this project.
+    ChangedPath { path: PathBuf },
+    /// A changed file affects every project in the workspace.
+    GlobalPath { path: PathBuf },
+    /// A provider attributed a changed lockfile to this project.
+    Lockfile { path: PathBuf },
+    /// This project depends on another affected project.
+    Dependent { dependency: ProjectId },
+}
+
+/// Affected workspace projects and the reasons each was selected.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct AffectedProjects {
+    projects: BTreeMap<ProjectId, BTreeSet<AffectedProjectReason>>,
+}
+
+impl AffectedProjects {
+    /// Returns affected projects and their reasons in stable project-ID order.
+    pub fn projects(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&ProjectId, &BTreeSet<AffectedProjectReason>)> {
+        self.projects.iter()
+    }
+
+    /// Returns whether no projects are affected.
+    pub fn is_empty(&self) -> bool {
+        self.projects.is_empty()
+    }
+}
+
 /// A deterministic dependency cycle found in the workspace project graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceProjectCycleError {
@@ -810,24 +844,99 @@ impl WorkspaceProjectGraph {
         paths: impl IntoIterator<Item = impl AsRef<Path>>,
         resolved_global_inputs: &[String],
     ) -> Result<BTreeSet<ProjectId>> {
+        Ok(self
+            .affected_projects_for_changes(
+                workspace_root,
+                paths,
+                resolved_global_inputs,
+                &BTreeMap::new(),
+            )?
+            .projects
+            .into_keys()
+            .collect())
+    }
+
+    /// Explains affected projects from ordinary paths and provider-attributed lockfiles.
+    pub fn affected_projects_for_changes(
+        &self,
+        workspace_root: &Path,
+        paths: impl IntoIterator<Item = impl AsRef<Path>>,
+        resolved_global_inputs: &[String],
+        lockfile_projects: &BTreeMap<PathBuf, BTreeSet<ProjectId>>,
+    ) -> Result<AffectedProjects> {
         let mapped = self.map_paths_to_projects(paths)?;
         let global_matcher =
             build_source_matcher(workspace_root, workspace_root, resolved_global_inputs);
-        let global_input_changed = mapped
+        let global_paths = mapped
             .projects_by_path
             .keys()
             .chain(&mapped.unowned_paths)
-            .any(|path| is_source(&global_matcher, &workspace_root.join(path)));
-        if !mapped.unowned_paths.is_empty() || global_input_changed {
-            return Ok(self.projects.keys().cloned().collect());
+            .filter(|path| {
+                mapped.unowned_paths.contains(*path)
+                    || is_source(&global_matcher, &workspace_root.join(path))
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut projects = BTreeMap::<ProjectId, BTreeSet<AffectedProjectReason>>::new();
+        if global_paths.is_empty() {
+            for (path, owners) in mapped.projects_by_path {
+                for id in owners {
+                    projects
+                        .entry(id)
+                        .or_default()
+                        .insert(AffectedProjectReason::ChangedPath { path: path.clone() });
+                }
+            }
+        } else {
+            for id in self.projects.keys() {
+                projects.entry(id.clone()).or_default().extend(
+                    global_paths
+                        .iter()
+                        .cloned()
+                        .map(|path| AffectedProjectReason::GlobalPath { path }),
+                );
+            }
         }
 
-        let changed = mapped
-            .projects_by_path
-            .values()
-            .flat_map(BTreeSet::iter)
-            .collect::<BTreeSet<_>>();
-        self.affected_projects(changed)
+        for (path, ids) in lockfile_projects {
+            for id in ids {
+                if !self.projects.contains_key(id) {
+                    bail!(
+                        "lockfile {:?} attributed to unknown workspace project {id:?}",
+                        path
+                    );
+                }
+                projects
+                    .entry(id.clone())
+                    .or_default()
+                    .insert(AffectedProjectReason::Lockfile { path: path.clone() });
+            }
+        }
+
+        let mut dependents = BTreeMap::<ProjectId, BTreeSet<ProjectId>>::new();
+        for project in self.projects() {
+            for dependency in &project.dependencies {
+                dependents
+                    .entry(dependency.clone())
+                    .or_default()
+                    .insert(project.id.clone());
+            }
+        }
+        let mut pending = projects.keys().rev().cloned().collect::<Vec<_>>();
+        while let Some(dependency) = pending.pop() {
+            for dependent in dependents.get(&dependency).into_iter().flatten() {
+                let is_new = !projects.contains_key(dependent);
+                projects.entry(dependent.clone()).or_default().insert(
+                    AffectedProjectReason::Dependent {
+                        dependency: dependency.clone(),
+                    },
+                );
+                if is_new {
+                    pending.push(dependent.clone());
+                }
+            }
+        }
+        Ok(AffectedProjects { projects })
     }
 
     /// Asks workspace providers to attribute a changed lockfile to projects.
@@ -2338,6 +2447,89 @@ mod tests {
         assert_eq!(
             graph.affected_projects([&app_id]).unwrap(),
             BTreeSet::from([app_id])
+        );
+    }
+
+    #[test]
+    fn affected_project_reasons_distinguish_changes_and_dependents() {
+        let lib_id = ProjectId::new("node", "lib").unwrap();
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let lib = project("node", "lib", "packages/lib");
+        let mut app = project("node", "app", "packages/app");
+        app.dependencies.insert(lib_id.clone());
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, lib],
+        };
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_changes(
+                Path::new("/workspace"),
+                ["packages/lib/src/lib.rs"],
+                &[],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        let reasons = affected
+            .projects()
+            .map(|(id, reasons)| (id.clone(), reasons.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            reasons[&lib_id],
+            BTreeSet::from([AffectedProjectReason::ChangedPath {
+                path: PathBuf::from("packages/lib/src/lib.rs"),
+            }])
+        );
+        assert_eq!(
+            reasons[&app_id],
+            BTreeSet::from([AffectedProjectReason::Dependent { dependency: lib_id }])
+        );
+    }
+
+    #[test]
+    fn affected_project_reasons_retain_every_dependency_cause() {
+        let core_id = ProjectId::new("node", "core").unwrap();
+        let left_id = ProjectId::new("node", "left").unwrap();
+        let right_id = ProjectId::new("node", "right").unwrap();
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let core = project("node", "core", "packages/core");
+        let mut left = project("node", "left", "packages/left");
+        left.dependencies.insert(core_id.clone());
+        let mut right = project("node", "right", "packages/right");
+        right.dependencies.insert(core_id.clone());
+        let mut app = project("node", "app", "apps/app");
+        app.dependencies = BTreeSet::from([left_id.clone(), right_id.clone()]);
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, core, left, right],
+        };
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_changes(
+                Path::new("/workspace"),
+                ["packages/core/src/lib.rs"],
+                &[],
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        let app_reasons = affected
+            .projects()
+            .find_map(|(id, reasons)| (id == &app_id).then_some(reasons))
+            .unwrap();
+
+        assert_eq!(
+            app_reasons,
+            &BTreeSet::from([
+                AffectedProjectReason::Dependent {
+                    dependency: left_id,
+                },
+                AffectedProjectReason::Dependent {
+                    dependency: right_id,
+                },
+            ])
         );
     }
 

@@ -3052,6 +3052,7 @@ Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
 """# {
         arg <REV>
     }
+    flag --affected-explain help="Explain why projects and tasks were selected by --affected"
     flag --affected-head help=#"""
 Git head revision for --affected
 Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
@@ -3900,6 +3901,7 @@ Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
 """# {
             arg <REV>
         }
+        flag --affected-explain help="Explain why projects and tasks were selected by --affected"
         flag --affected-head help=#"""
 Git head revision for --affected
 Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD

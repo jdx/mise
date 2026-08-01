@@ -46,6 +46,10 @@ Run matching tasks only for projects affected by Git changes
 Git base revision for --affected
 Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
 
+### `--affected-explain`
+
+Explain why projects and tasks were selected by --affected
+
 ### `--affected-head <REV>`
 
 Git head revision for --affected
