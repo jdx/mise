@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Task, TaskCacheConfig, task_sources::TaskOutputs};
 
+pub mod cargo;
 pub mod node;
 
 /// A stable, provider-namespaced identifier for a workspace project.
@@ -237,6 +238,7 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WorkspaceProjectGraph {
     projects: BTreeMap<ProjectId, WorkspaceProject>,
+    provider_errors: BTreeMap<String, String>,
 }
 
 /// A deterministic dependency cycle found in the workspace project graph.
@@ -291,7 +293,7 @@ impl WorkspaceProjectGraph {
         providers: &[&dyn WorkspaceProvider],
         workspace_root: &Path,
     ) -> Result<WorkspaceProjectGraph> {
-        let graph = Self::collect_provider_projects(providers, workspace_root)?;
+        let graph = Self::collect_provider_projects(providers, workspace_root, false)?;
         graph.validate()?;
         Ok(graph)
     }
@@ -305,8 +307,31 @@ impl WorkspaceProjectGraph {
         workspace_root: &Path,
         overrides: &BTreeMap<String, WorkspaceProjectOverride>,
     ) -> Result<WorkspaceProjectGraph> {
-        let mut graph = Self::collect_provider_projects(providers, workspace_root)?
-            .with_overrides(overrides)?;
+        Self::discover_all_with_overrides_inner(providers, workspace_root, overrides, false)
+    }
+
+    /// Discovers projects for task loading while isolating provider failures.
+    ///
+    /// A malformed manifest in one ecosystem must not disable inferred tasks
+    /// from another ecosystem. Explicit overrides and successfully discovered
+    /// provider results remain fully validated.
+    pub fn discover_all_with_overrides_lenient(
+        providers: &[&dyn WorkspaceProvider],
+        workspace_root: &Path,
+        overrides: &BTreeMap<String, WorkspaceProjectOverride>,
+    ) -> Result<WorkspaceProjectGraph> {
+        Self::discover_all_with_overrides_inner(providers, workspace_root, overrides, true)
+    }
+
+    fn discover_all_with_overrides_inner(
+        providers: &[&dyn WorkspaceProvider],
+        workspace_root: &Path,
+        overrides: &BTreeMap<String, WorkspaceProjectOverride>,
+        skip_provider_errors: bool,
+    ) -> Result<WorkspaceProjectGraph> {
+        let mut graph =
+            Self::collect_provider_projects(providers, workspace_root, skip_provider_errors)?
+                .with_overrides(overrides)?;
         for (raw_id, config) in overrides {
             if config.remove || config.root.is_none() {
                 continue;
@@ -347,6 +372,7 @@ impl WorkspaceProjectGraph {
     fn collect_provider_projects(
         providers: &[&dyn WorkspaceProvider],
         workspace_root: &Path,
+        skip_provider_errors: bool,
     ) -> Result<WorkspaceProjectGraph> {
         let mut providers = providers
             .iter()
@@ -362,8 +388,23 @@ impl WorkspaceProjectGraph {
         }
 
         let mut projects = BTreeMap::new();
+        let mut provider_errors = BTreeMap::new();
         for (provider_id, provider) in providers {
-            for mut project in provider.discover(workspace_root)? {
+            let discovered = match provider.discover(workspace_root) {
+                Ok(projects) => projects,
+                Err(error) if skip_provider_errors => {
+                    let error = format!("{error:#}");
+                    warn!(
+                        "failed to discover {provider_id} workspace projects at {}; inferred tasks \
+                         and upstream task dependencies from this provider are unavailable: {error}",
+                        workspace_root.display(),
+                    );
+                    provider_errors.insert(provider_id, error);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            for mut project in discovered {
                 let expected_prefix = format!("{provider_id}:");
                 let Some(local_id) = project.id.as_str().strip_prefix(&expected_prefix) else {
                     bail!(
@@ -383,7 +424,10 @@ impl WorkspaceProjectGraph {
             }
         }
 
-        Ok(Self { projects })
+        Ok(Self {
+            projects,
+            provider_errors,
+        })
     }
 
     /// Applies explicit project and dependency changes after provider discovery.
@@ -470,6 +514,17 @@ impl WorkspaceProjectGraph {
     /// Finds a project by its stable ID.
     pub fn get(&self, id: &ProjectId) -> Option<&WorkspaceProject> {
         self.projects.get(id)
+    }
+
+    /// Summarizes provider failures retained during lenient task discovery.
+    pub(crate) fn provider_discovery_error(&self) -> Option<String> {
+        (!self.provider_errors.is_empty()).then(|| {
+            self.provider_errors
+                .iter()
+                .map(|(provider, error)| format!("{provider}: {error}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
     }
 
     /// Returns matching projects in the transitive dependency closure.
@@ -750,6 +805,19 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct FailingDiscoveryProvider;
+
+    impl WorkspaceProvider for FailingDiscoveryProvider {
+        fn id(&self) -> &str {
+            "broken"
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            bail!("broken workspace metadata")
+        }
+    }
+
     fn project(provider: &str, name: &str, root: &str) -> WorkspaceProject {
         WorkspaceProject::new(ProjectId::new(provider, name).unwrap(), root)
     }
@@ -1027,6 +1095,38 @@ mod tests {
             WorkspaceProjectGraph::discover_all(&[&node, &cargo], Path::new("/workspace")).unwrap();
 
         assert_eq!(forward, reverse);
+    }
+
+    #[test]
+    fn lenient_discovery_isolates_provider_errors() {
+        let working = TestProvider {
+            id: "node",
+            projects: vec![project("node", "app", "apps/app")],
+        };
+
+        assert!(
+            WorkspaceProjectGraph::discover_all_with_overrides(
+                &[&FailingDiscoveryProvider, &working],
+                Path::new("/workspace"),
+                &BTreeMap::new(),
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("broken workspace metadata")
+        );
+
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+            &[&FailingDiscoveryProvider, &working],
+            Path::new("/workspace"),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+
+        assert!(graph.get(&ProjectId::new("node", "app").unwrap()).is_some());
+        assert_eq!(
+            graph.provider_discovery_error().as_deref(),
+            Some("broken: broken workspace metadata")
+        );
     }
 
     #[test]

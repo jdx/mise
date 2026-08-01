@@ -482,6 +482,19 @@ impl Config {
     /// Discovers the provider-neutral workspace project graph and applies the
     /// explicit overrides from the active monorepo root.
     pub fn workspace_project_graph(&self) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
+        self.workspace_project_graph_with_provider_errors(false)
+    }
+
+    fn workspace_project_graph_for_task_loading(
+        &self,
+    ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
+        self.workspace_project_graph_with_provider_errors(true)
+    }
+
+    fn workspace_project_graph_with_provider_errors(
+        &self,
+        skip_provider_errors: bool,
+    ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
         let monorepo_root = monorepo_config
@@ -492,13 +505,22 @@ impl Config {
             .map(|config| &config.projects)
             .cloned()
             .unwrap_or_default();
+        let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
         let node = crate::task::workspace::node::NodeWorkspaceProvider;
 
-        crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides(
-            &[&node],
-            &monorepo_root,
-            &overrides,
-        )
+        if skip_provider_errors {
+            crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+                &[&cargo, &node],
+                &monorepo_root,
+                &overrides,
+            )
+        } else {
+            crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides(
+                &[&cargo, &node],
+                &monorepo_root,
+                &overrides,
+            )
+        }
     }
 
     /// Returns the root lockfile directory when unified monorepo lockfiles are active.
@@ -743,7 +765,7 @@ impl Config {
         time!("load_all_tasks");
 
         let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
-            .then(|| config.workspace_project_graph());
+            .then(|| config.workspace_project_graph_for_task_loading());
         let task_definitions = collect_task_definitions(
             &config.config_files,
             workspace_graph
@@ -3991,7 +4013,7 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
-        .then(|| config.workspace_project_graph());
+        .then(|| config.workspace_project_graph_for_task_loading());
     let mut definitions = collect_task_definitions(
         config_files,
         workspace_graph

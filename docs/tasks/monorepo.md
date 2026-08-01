@@ -359,6 +359,31 @@ The JSON output includes the same information in each project's `provenance`,
 other tooling can distinguish, for example, a `turbo.json` output declaration from a root mise task
 default.
 
+### Cargo Workspace Discovery
+
+The Cargo provider discovers packages when the root `Cargo.toml` contains a `[workspace]` table.
+It expands the workspace's `members` patterns, honors `exclude`, and includes the root package when
+the workspace manifest also contains `[package]`. Path dependencies inside the workspace root are
+included as implicit members, matching Cargo's workspace membership behavior. A path outside the
+workspace remains an external dependency and is not added to the graph.
+
+Each discovered package must have a `[package].name`. mise uses that stable ecosystem identity to
+create an ID such as `cargo:my-crate`; moving the crate to another directory does not change its ID.
+`mise tasks graph` also reports the package root and `Cargo.toml` as the workspace-definition source.
+Discovery parses manifests directly and does not require the `cargo` executable to be installed.
+
+### Cargo Dependency Inference
+
+For every discovered Cargo package, mise infers internal edges from dependencies with a local
+`path`. Normal, development, build, and target-specific dependency tables all participate. Renamed
+dependencies are resolved by their path, and declarations with `workspace = true` inherit paths
+from the root `[workspace.dependencies]` table.
+
+Version-only and registry dependencies are ignored, as are path dependencies outside the workspace
+or beneath an excluded path. Declarations that resolve back to the same package do not create a
+self-edge. If the inferred internal edges produce a cycle, `mise tasks graph` reports the cycle;
+project overrides can replace or adjust the inferred dependencies when needed.
+
 ### Node Workspace Discovery
 
 The Node provider discovers npm, pnpm, Yarn, and Bun workspace packages from:
