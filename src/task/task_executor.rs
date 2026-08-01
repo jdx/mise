@@ -6,7 +6,9 @@ use crate::env_diff::EnvDiff;
 use crate::file::{can_execute_directly, display_path, replace_path};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
-use crate::task::task_cache::{CommandInput, TaskCacheContext};
+use crate::task::task_cache::{
+    CommandInput, TaskCacheContext, TaskCacheMissReason, TaskCacheRestore,
+};
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -670,48 +672,60 @@ impl TaskExecutor {
                             cache_key: Some(cache.key().to_string()),
                         });
                     }
-                    if !bypass_cache
-                        && self.task_cache.reads()
-                        && !self.force
-                        && !dependency_state.any_unkeyed_did_work
-                    {
-                        Self::check_interruption(allow_during_interruption)?;
-                        if let Some(output) = cache.restore(task)? {
-                            if !self.quiet(Some(task)) {
-                                let kind = if task.outputs.is_no_files() {
-                                    "result"
-                                } else {
-                                    "outputs"
-                                };
-                                self.eprint(
-                                    task,
-                                    &prefix,
-                                    &format!("restored {kind} from cache {}", cache.key()),
-                                );
+                    if bypass_cache {
+                        None
+                    } else {
+                        let miss_reason = if !self.task_cache.reads() {
+                            TaskCacheMissReason::ReadDisabled
+                        } else if self.force {
+                            TaskCacheMissReason::Forced
+                        } else if dependency_state.any_unkeyed_did_work {
+                            TaskCacheMissReason::DependencyWithoutKey
+                        } else {
+                            Self::check_interruption(allow_during_interruption)?;
+                            match cache.restore(task)? {
+                                TaskCacheRestore::Hit(output) => {
+                                    if !self.quiet(Some(task)) {
+                                        let kind = if task.outputs.is_no_files() {
+                                            "result"
+                                        } else {
+                                            "outputs"
+                                        };
+                                        self.eprint(
+                                            task,
+                                            &prefix,
+                                            &format!("restored {kind} from cache {}", cache.key()),
+                                        );
+                                    }
+                                    self.output_handler
+                                        .replay_cached_output(task, &prefix, &output);
+                                    if let Err(err) = save_checksum(task, config).await {
+                                        warn!(
+                                            "task {} artifact cache checksum update failed: {err}",
+                                            task.name
+                                        );
+                                    }
+                                    if self.task_cache.writes()
+                                        && let Err(err) = cache.mark_current()
+                                    {
+                                        warn!(
+                                            "task {} artifact cache state update failed: {err}",
+                                            task.name
+                                        );
+                                    }
+                                    return Ok(TaskRunOutcome {
+                                        did_work: true,
+                                        cache_key: Some(cache.key().to_string()),
+                                    });
+                                }
+                                TaskCacheRestore::Miss(reason) => reason,
                             }
-                            self.output_handler
-                                .replay_cached_output(task, &prefix, &output);
-                            if let Err(err) = save_checksum(task, config).await {
-                                warn!(
-                                    "task {} artifact cache checksum update failed: {err}",
-                                    task.name
-                                );
-                            }
-                            if self.task_cache.writes()
-                                && let Err(err) = cache.mark_current()
-                            {
-                                warn!(
-                                    "task {} artifact cache state update failed: {err}",
-                                    task.name
-                                );
-                            }
-                            return Ok(TaskRunOutcome {
-                                did_work: true,
-                                cache_key: Some(cache.key().to_string()),
-                            });
+                        };
+                        if !self.quiet(Some(task)) {
+                            self.eprint(task, &prefix, &format!("cache miss: {miss_reason}"));
                         }
+                        Some(cache)
                     }
-                    if bypass_cache { None } else { Some(cache) }
                 }
                 None => None,
             }
