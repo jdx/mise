@@ -21,6 +21,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task, TaskCacheMode};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
+use bytesize::ByteSize;
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
 use futures_util::FutureExt;
@@ -265,6 +266,10 @@ pub struct Run {
         verbatim_doc_comment
     )]
     pub task_cache_explain_json: bool,
+
+    /// Report task output cache hits, restored bytes, and time saved
+    #[clap(long, conflicts_with = "dry_run", verbatim_doc_comment)]
+    pub task_cache_stats: bool,
 
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
@@ -907,7 +912,11 @@ impl Run {
             this.timings(),
             this.is_interrupted(),
         );
-        results_display.display_results(num_tasks, timer)?;
+        let result = results_display.display_results(num_tasks, timer);
+        if this.task_cache_stats {
+            this.display_task_cache_stats();
+        }
+        result?;
         time!("parallelize_tasks done");
 
         Ok(())
@@ -1314,6 +1323,30 @@ impl Run {
 
     fn timings(&self) -> bool {
         !self.quiet(None) && !self.no_timings
+    }
+
+    fn display_task_cache_stats(&self) {
+        let stats = *self
+            .executor
+            .as_ref()
+            .expect("executor must be initialized before displaying cache stats")
+            .cache_stats
+            .lock()
+            .unwrap();
+        let lookups = stats.hits.saturating_add(stats.misses);
+        if lookups == 0 {
+            safe_eprintln!("Task cache: no lookups");
+            return;
+        }
+        let hit_rate = stats.hits.saturating_mul(100) / lookups;
+        safe_eprintln!(
+            "Task cache: {}/{} hits ({}%), {} restored, {} saved",
+            stats.hits,
+            lookups,
+            hit_rate,
+            ByteSize::b(stats.restored_bytes).display().iec(),
+            crate::ui::time::format_duration(stats.time_saved),
+        );
     }
 
     fn quiet(&self, task: Option<&Task>) -> bool {

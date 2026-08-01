@@ -112,6 +112,10 @@ struct CacheManifest {
     key: String,
     roots: Vec<PathBuf>,
     output: Vec<TaskCacheOutput>,
+    #[serde(default)]
+    restored_bytes: u64,
+    #[serde(default)]
+    execution_duration_ns: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,8 +126,14 @@ pub(crate) enum TaskCacheOutput {
 }
 
 pub(crate) enum TaskCacheRestore {
-    Hit(Vec<TaskCacheOutput>),
+    Hit(TaskCacheHit),
     Miss(TaskCacheMissReason),
+}
+
+pub(crate) struct TaskCacheHit {
+    pub(crate) output: Vec<TaskCacheOutput>,
+    pub(crate) restored_bytes: u64,
+    pub(crate) saved_duration: std::time::Duration,
 }
 
 pub(crate) enum TaskCacheMissReason {
@@ -365,7 +375,7 @@ impl TaskArtifactCache {
         if !manifest_path.is_file() {
             return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
         }
-        let restore = || -> Result<Vec<TaskCacheOutput>> {
+        let restore = || -> Result<TaskCacheHit> {
             let manifest = self.read_manifest()?;
             for root in &manifest.roots {
                 ensure_safe_relative(root)?;
@@ -377,7 +387,11 @@ impl TaskArtifactCache {
                 if let Err(err) = file::touch_file(&manifest_path) {
                     warn!("failed to update task cache manifest access time: {err}");
                 }
-                return Ok(manifest.output);
+                return Ok(TaskCacheHit {
+                    output: manifest.output,
+                    restored_bytes: manifest.restored_bytes,
+                    saved_duration: std::time::Duration::from_nanos(manifest.execution_duration_ns),
+                });
             }
             // Serialize restores targeting the same working directory across
             // mise processes so validation and renames form one cooperative
@@ -431,7 +445,11 @@ impl TaskArtifactCache {
             if let Err(err) = file::touch_file(&manifest_path) {
                 warn!("failed to update task cache manifest access time: {err}");
             }
-            Ok(manifest.output)
+            Ok(TaskCacheHit {
+                output: manifest.output,
+                restored_bytes: manifest.restored_bytes,
+                saved_duration: std::time::Duration::from_nanos(manifest.execution_duration_ns),
+            })
         };
 
         match restore() {
@@ -446,7 +464,12 @@ impl TaskArtifactCache {
     }
 
     /// Stores a successful task's declared outputs and captured logs.
-    pub(crate) fn store(&self, task: &Task, output: &[TaskCacheOutput]) -> Result<()> {
+    pub(crate) fn store(
+        &self,
+        task: &Task,
+        output: &[TaskCacheOutput],
+        execution_duration: std::time::Duration,
+    ) -> Result<()> {
         let roots = resolve_output_roots(task, &self.root, true)?;
         let roots = remove_nested_roots(roots);
         for root in &roots {
@@ -463,21 +486,26 @@ impl TaskArtifactCache {
             .cache_dir
             .join(format!("{}.part-{nonce}.json", self.key));
 
+        let output_bytes = output.iter().fold(0_u64, |total, line| {
+            let bytes = match line {
+                TaskCacheOutput::Stdout(line) | TaskCacheOutput::Stderr(line) => line.len() as u64,
+            };
+            total.saturating_add(bytes)
+        });
+        let archive_bytes = if !roots.is_empty() {
+            let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
+            write_archive(&archive_partial, &self.root, &roots, &output_matcher)?
+        } else {
+            0
+        };
         let manifest = CacheManifest {
             format: CACHE_FORMAT_VERSION,
             key: self.key.clone(),
             roots,
             output: output.to_vec(),
+            restored_bytes: archive_bytes.saturating_add(output_bytes),
+            execution_duration_ns: execution_duration.as_nanos().min(u64::MAX as u128) as u64,
         };
-        if !manifest.roots.is_empty() {
-            let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
-            write_archive(
-                &archive_partial,
-                &self.root,
-                &manifest.roots,
-                &output_matcher,
-            )?;
-        }
         fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
         if !manifest.roots.is_empty() {
             file::rename(&archive_partial, &archive_path)?;
@@ -906,7 +934,7 @@ fn write_archive(
     root: &Path,
     roots: &[PathBuf],
     output_matcher: &Override,
-) -> Result<()> {
+) -> Result<u64> {
     let file = File::create(path)?;
     let encoder = zstd::Encoder::new(file, 0)?;
     let mut archive = Builder::new(encoder);
@@ -924,6 +952,7 @@ fn write_archive(
         }
     }
 
+    let mut restored_bytes = 0_u64;
     for (rel, abs) in entries {
         let metadata = fs::symlink_metadata(&abs)?;
         let mut header = Header::new_gnu(if metadata.file_type().is_symlink() {
@@ -951,13 +980,14 @@ fn write_archive(
         } else if metadata.is_file() {
             header.set_size(metadata.len());
             archive.append_data(&mut header, &rel, File::open(&abs)?)?;
+            restored_bytes = restored_bytes.saturating_add(metadata.len());
         } else {
             bail!("unsupported output file type: {}", rel.display());
         }
     }
     let encoder = archive.into_inner()?;
     encoder.finish()?;
-    Ok(())
+    Ok(restored_bytes)
 }
 
 #[cfg(unix)]
@@ -989,6 +1019,20 @@ mod tests {
         assert_eq!(config.env, ["PROFILE"]);
         assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
+    }
+
+    #[test]
+    fn older_manifests_default_stats_metadata() {
+        let manifest: CacheManifest = serde_json::from_value(serde_json::json!({
+            "format": 2,
+            "key": "cache-key",
+            "roots": [],
+            "output": [],
+        }))
+        .unwrap();
+
+        assert_eq!(manifest.restored_bytes, 0);
+        assert_eq!(manifest.execution_duration_ns, 0);
     }
 
     #[test]
