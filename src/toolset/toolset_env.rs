@@ -451,7 +451,7 @@ impl Toolset {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(
+        let env_results = EnvResults::resolve_with_toolset(
             config,
             ctx,
             env,
@@ -461,6 +461,9 @@ impl Toolset {
                 tools: tools_filter,
                 warn_on_missing_required: *WARN_ON_MISSING_REQUIRED_ENV,
             },
+            // `_.python.venv` needs the *active* python, which is only knowable here: a
+            // `--tool python@3.12` override lives in this toolset and never reaches `Config`.
+            Some(self),
         )
         .await?;
         if log::log_enabled!(log::Level::Trace) {

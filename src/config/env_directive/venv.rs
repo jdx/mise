@@ -24,7 +24,13 @@ pub struct Venv {
 
 #[derive(Default)]
 pub(crate) struct PythonVenvOptions {
+    /// `_.python.venv.python` — the user asked for this version by name, so a miss is an error
+    /// they should see rather than something to paper over.
     pub(crate) python: Option<String>,
+    /// The python the caller's toolset has active, filled in by [`EnvResults::venv`]. A
+    /// *preference*, not a request: if the config-derived toolset cannot offer it we fall back to
+    /// the previous behaviour instead of failing, because the user never named this version.
+    pub(crate) active_python: Option<String>,
     pub(crate) uv_create_args: Option<Vec<String>>,
     pub(crate) python_create_args: Option<Vec<String>>,
     pub(crate) require_uv: bool,
@@ -109,6 +115,7 @@ pub(crate) async fn create_python_venv(
 ) -> Result<bool> {
     let PythonVenvOptions {
         python,
+        active_python,
         uv_create_args,
         python_create_args,
         require_uv,
@@ -120,6 +127,18 @@ pub(crate) async fn create_python_venv(
         // otherwise use the first since that's what `python3` will refer to
         if let Some(v) = python {
             tv.versions.iter().find(|t| t.version.starts_with(v))
+        } else if let Some(v) = &active_python {
+            // the caller's active python, which this toolset may not list at all — it was rebuilt
+            // from the config files. Falling back keeps a `--tool` version that is absent from
+            // `[tools]` working exactly as it did before (#5281).
+            //
+            // Matched exactly, unlike the branch above: that one compares against whatever partial
+            // version the user wrote in `_.python.venv.python`, while this is already resolved on
+            // both sides. A prefix match here would let `3.12.0` select a configured `3.12.0a1`.
+            tv.versions
+                .iter()
+                .find(|t| t.version == *v)
+                .or_else(|| tv.versions.first())
         } else {
             tv.versions.first()
         }
@@ -179,19 +198,35 @@ pub(crate) async fn create_python_venv(
     Ok(true)
 }
 
+/// The version of the python the caller's toolset has active, if any.
+///
+/// `create_python_venv` resolves its own python/uv-only toolset to avoid a circular wait (see
+/// below), and that toolset is built from the config files — so it lists every `[tools] python`
+/// entry in config order and knows nothing about `--tool`. Feeding this back in as the `python`
+/// option makes it select the same interpreter the rest of the run is using, and costs nothing
+/// when there is no override: the caller's toolset then holds the same first entry.
+fn active_python_version(toolset: Option<&Toolset>) -> Option<String> {
+    let tvl = toolset?.versions.get(&BackendArg::from("python"))?;
+    Some(tvl.versions.first()?.version.clone())
+}
+
 impl EnvResults {
     pub(super) async fn venv(
         ctx: &mut EnvDirectiveContext<'_>,
         env: &mut IndexMap<String, (String, Option<PathBuf>)>,
         path: String,
         create: bool,
-        options: PythonVenvOptions,
+        mut options: PythonVenvOptions,
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
         trust_check(ctx.source)?;
         let venv = ctx.parse_template(&path)?;
         let venv = ctx.normalize_path(venv.into());
         let venv_lock = LockFile::new(&venv).lock()?;
+        // Record whichever python the caller actually has active. The toolset rebuilt below comes
+        // from the config files, so on its own it cannot see a CLI override — `mise run --tool
+        // python@3.12` would silently build the venv from the first `[tools] python` entry (#5281).
+        options.active_python = active_python_version(ctx.toolset);
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
             // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
