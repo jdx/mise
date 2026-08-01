@@ -27,6 +27,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  TAK_RUNNER: bamboo-v1-ubuntu24.04-x64-rust1.97.1
 
 jobs:
   measure:
@@ -35,7 +36,7 @@ jobs:
     # between machine types by more than a real regression does, so a comparison
     # across runner classes is not a comparison — tak refuses to make one, and
     # the report would say "nothing was compared" instead of anything useful.
-    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: bamboo-perf
     timeout-minutes: 40
     permissions:
       # Read only. This job builds and runs code from the pull request, so it
@@ -55,9 +56,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1.6.1
-        with:
-          cache: rust
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
