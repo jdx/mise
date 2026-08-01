@@ -21,6 +21,13 @@ if (!versionMatch) {
   console.warn("Unable to find package version in Cargo.toml");
 }
 const latestVersion = versionMatch?.[1] ?? "0.0.0";
+const publicSchemas = [
+  "mise.json",
+  "mise.plugin.json",
+  "mise-task.json",
+  "mise-settings.json",
+  "mise-registry-tool.json",
+];
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -104,6 +111,20 @@ export default withMermaid(
         target: "es2022",
       },
       plugins: [
+        {
+          name: "mise-schema-assets",
+          buildStart() {
+            for (const filename of publicSchemas) {
+              this.emitFile({
+                type: "asset",
+                fileName: `schema/${filename}`,
+                source: readFileSync(
+                  resolve(configDir, "../../schema", filename),
+                ),
+              });
+            }
+          },
+        },
         groupIconVitePlugin({
           customIcon: {
             ".toml": "vscode-icons:file-type-toml",
