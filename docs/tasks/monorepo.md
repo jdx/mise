@@ -359,6 +359,35 @@ The JSON output includes the same information in each project's `provenance`,
 other tooling can distinguish, for example, a `turbo.json` output declaration from a root mise task
 default.
 
+### Affected Tasks
+
+Use `mise run --affected <task-pattern>` to run a task only in projects changed between two Git
+revisions. mise selects projects that own changed paths, then follows reverse project dependencies
+so downstream projects are included. Workspace-global paths and `task_config.global_inputs` select
+the whole workspace. Providers may narrow lockfile changes to the projects whose external
+dependencies changed.
+
+```bash
+# Compare HEAD to its first parent and run affected build tasks
+mise run --affected build
+
+# Inspect the selection while preserving normal dry-run behavior
+mise run --affected --affected-explain --dry-run build
+
+# Compare explicit revisions
+mise run --affected --affected-base origin/main --affected-head HEAD test
+```
+
+`--affected-explain` lists each selected project and its cause: an owned changed path, a
+workspace-global path, a provider-attributed lockfile, or a dependency on another affected project.
+It also lists the task-pattern matches associated with those projects. Normal task dependencies are
+expanded afterward, so a selected task can still run a required prerequisite from an unchanged
+project.
+
+The revision defaults are `HEAD~1` and `HEAD` locally. `MISE_AFFECTED_BASE` and
+`MISE_AFFECTED_HEAD` override them. GitHub Actions and GitLab merge-request metadata provide CI
+defaults when those variables are not set; explicit CLI options take highest precedence.
+
 ### Cargo Workspace Discovery
 
 The Cargo provider discovers packages when the root `Cargo.toml` contains a `[workspace]` table.

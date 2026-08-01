@@ -68,7 +68,12 @@ git commit -qm initial
 echo changed >>crates/core/src/lib.rs
 git add .
 git commit -qm core-change
-mise run --affected --jobs 1 build
+output=$(mise run --affected --affected-explain --jobs 1 build)
+assert_contains "echo \"$output\"" "Affected projects (HEAD~1...HEAD):"
+assert_contains "echo \"$output\"" "changed path: crates/core/src/lib.rs"
+assert_contains "echo \"$output\"" "depends on affected project: cargo:core"
+assert_contains "echo \"$output\"" "Affected tasks:"
+assert_contains "echo \"$output\"" "affected project: cargo:app"
 assert "sort affected.log" $'app\ncore\nother-prepare'
 
 : >affected.log
@@ -145,5 +150,7 @@ sed -i 's/1\.0\.0/2.0.0/g' pnpm-lock.yaml
 git add pnpm-lock.yaml
 git commit -qm lockfile-change
 
-mise run --affected --jobs 1 build
+output=$(mise run --affected --affected-explain --jobs 1 build)
+assert_contains "echo \"$output\"" "lockfile change: pnpm-lock.yaml"
+assert_contains "echo \"$output\"" "depends on affected project: node:lib"
 assert "sort affected.log" $'app\nlib'

@@ -778,6 +778,7 @@ impl Cli {
                         affected: false,
                         affected_base: None,
                         affected_head: None,
+                        affected_explain: false,
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
