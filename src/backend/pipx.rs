@@ -693,16 +693,22 @@ impl PipxRequest {
     fn pipx_request(&self, v: &str, opts: &PipxOptions<'_>) -> String {
         let extras = self.extras_from_opts(opts);
 
-        if v == "latest" {
-            match self {
-                PipxRequest::Git(url) => format!("git+{url}.git"),
-                PipxRequest::Pypi(package) => format!("{package}{extras}"),
+        match self {
+            PipxRequest::Git(url) => {
+                let git_url = if v == "latest" {
+                    format!("git+{url}.git")
+                } else {
+                    format!("git+{url}.git@{v}")
+                };
+                if extras.is_empty() {
+                    git_url
+                } else {
+                    let package = url.rsplit('/').next().unwrap_or(url);
+                    format!("{package}{extras} @ {git_url}")
+                }
             }
-        } else {
-            match self {
-                PipxRequest::Git(url) => format!("git+{url}.git@{v}"),
-                PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
-            }
+            PipxRequest::Pypi(package) if v == "latest" => format!("{package}{extras}"),
+            PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
         }
     }
 }
@@ -995,6 +1001,15 @@ mod tests {
             PipxRequest::Pypi("harlequin".to_string())
                 .pipx_request("latest", &PipxOptions::new(&array_opts)),
             "harlequin[postgres,s3]"
+        );
+        let git_request = PipxRequest::Git("https://github.com/psf/black".to_string());
+        assert_eq!(
+            git_request.pipx_request("latest", &PipxOptions::new(&array_opts)),
+            "black[postgres,s3] @ git+https://github.com/psf/black.git"
+        );
+        assert_eq!(
+            git_request.pipx_request("24.3.0", &PipxOptions::new(&array_opts)),
+            "black[postgres,s3] @ git+https://github.com/psf/black.git@24.3.0"
         );
         assert_eq!(
             PipxOptions::new(&array_opts)
