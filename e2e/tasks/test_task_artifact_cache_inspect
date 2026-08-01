@@ -51,12 +51,13 @@ mise run build
 mise run other
 
 assert_json \
-  "mise cache task build --json | jq '.[0] | {task, entries: (.entries | length), current_entries: ([.entries[] | select(.current)] | length), key_lengths: [.entries[].key | length], outputs: [.entries[].outputs]}'" \
+  "mise cache task build --json | jq '.[0] | {task, entries: (.entries | length), current_entries: ([.entries[] | select(.current)] | length), key_lengths: [.entries[].key | length], checksums: [.entries[].artifact_checksum | startswith(\"blake3:\")], outputs: [.entries[].outputs]}'" \
   '{
     "task": "build",
     "entries": 2,
     "current_entries": 1,
     "key_lengths": [64, 64],
+    "checksums": [true, true],
     "outputs": [["dist"], ["dist"]]
   }'
 cache_key="$(mise cache task build --json | jq -r '.[0].entries[0].key')"

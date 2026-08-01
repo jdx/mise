@@ -101,7 +101,7 @@ outside this tracker.
 
 ## Integrity and portability
 
-- [ ] Add an artifact checksum independent of the cache key
+- [x] Add an artifact checksum independent of the cache key
 - [ ] Test and harden concurrent readers and writers for the same key
 - [ ] Clean up interrupted and abandoned partial writes
 - [ ] Add configurable cache size and age limits
