@@ -169,7 +169,11 @@ impl Toolset {
     ) -> Result<Option<CachedEnv>> {
         config.env_results().await?;
         let cache_key = self.compute_env_cache_key(config)?;
-        CachedEnv::load(&cache_key)
+        let cached = CachedEnv::load(&cache_key)?;
+        if let Some(cached) = &cached {
+            config.track_tera_env_vars(cached.get_env_vars.iter().cloned());
+        }
+        Ok(cached)
     }
 
     /// Try to load environment from cache (returns reconstructed EnvMap)
@@ -232,6 +236,8 @@ impl Toolset {
             .filter(|(k, _)| k.as_str() != PATH_KEY.as_str())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        let get_env_vars = config.tera_env_vars();
+        let get_env_hash = crate::tera::tera_env_vars_hash(&get_env_vars, &env::PRISTINE_ENV);
 
         let cached = CachedEnv {
             env: env_without_path,
@@ -240,6 +246,8 @@ impl Toolset {
             created_at: now,
             watch_files,
             watch_file_mtimes,
+            get_env_vars,
+            get_env_hash,
             mise_version: env!("CARGO_PKG_VERSION").to_string(),
             cache_key_debug: cache_key.clone(),
         };
@@ -317,17 +325,21 @@ impl Toolset {
             .collect();
 
         let envs = parallel::parallel(items, |(config, this, b, tv)| async move {
-            let backend_id = b.id().to_string();
-            match b.exec_env(&config, &this, &tv).await {
-                Ok(env) => Ok(env
-                    .into_iter()
-                    .map(|(k, v)| (k, v, backend_id.clone()))
-                    .collect::<Vec<_>>()),
-                Err(e) => {
-                    warn!("Error running exec-env: {:#}", e);
-                    Ok(Vec::new())
+            let tracker = config.tera_env_tracker();
+            crate::tera::with_tera_env_tracker(tracker, async move {
+                let backend_id = b.id().to_string();
+                match b.exec_env(&config, &this, &tv).await {
+                    Ok(env) => Ok(env
+                        .into_iter()
+                        .map(|(k, v)| (k, v, backend_id.clone()))
+                        .collect::<Vec<_>>()),
+                    Err(e) => {
+                        warn!("Error running exec-env: {:#}", e);
+                        Ok(Vec::new())
+                    }
                 }
-            }
+            })
+            .await
         })
         .await
         .unwrap_or_default();
@@ -451,19 +463,22 @@ impl Toolset {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve_with_toolset(
-            config,
-            ctx,
-            env,
-            entries,
-            EnvResolveOptions {
-                vars: false,
-                tools: tools_filter,
-                warn_on_missing_required: *WARN_ON_MISSING_REQUIRED_ENV,
-            },
-            // `_.python.venv` needs the *active* python, which is only knowable here: a
-            // `--tool python@3.12` override lives in this toolset and never reaches `Config`.
-            Some(self),
+        let env_results = crate::tera::with_tera_env_tracker(
+            config.tera_env_tracker(),
+            EnvResults::resolve_with_toolset(
+                config,
+                ctx,
+                env,
+                entries,
+                EnvResolveOptions {
+                    vars: false,
+                    tools: tools_filter,
+                    warn_on_missing_required: *WARN_ON_MISSING_REQUIRED_ENV,
+                },
+                // `_.python.venv` needs the *active* python, which is only knowable here: a
+                // `--tool python@3.12` override lives in this toolset and never reaches `Config`.
+                Some(self),
+            ),
         )
         .await?;
         if log::log_enabled!(log::Level::Trace) {

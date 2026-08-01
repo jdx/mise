@@ -21,7 +21,7 @@ use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::errors::Error;
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
-use crate::{dirs, duration, env, file, hooks, watch_files};
+use crate::{dirs, duration, env, file, hooks, tera, watch_files};
 
 /// Directory to store per-directory last check timestamps.
 /// Timestamps are stored per-directory (using a hash of CWD) so that
@@ -252,6 +252,11 @@ pub fn should_exit_early_fast() -> bool {
     if have_mise_env_vars_been_modified() {
         return false;
     }
+    // `get_env()` reads the pristine process environment. Only compare names
+    // that the previous config render actually accessed.
+    if have_get_env_vars_been_modified() {
+        return false;
+    }
 
     // chpwd_only mode: skip on precmd if directory hasn't changed
     // This significantly reduces stat operations on slow filesystems like NFS
@@ -374,6 +379,9 @@ pub fn should_exit_early(
     if have_mise_env_vars_been_modified() {
         return false;
     }
+    if have_get_env_vars_been_modified() {
+        return false;
+    }
     // The fast path already decided this run is necessary. Check it only after
     // the slow-path checks above, since they also record modified watch files
     // and schedule hooks as side effects.
@@ -452,6 +460,12 @@ fn have_mise_env_vars_been_modified() -> bool {
     get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash
 }
 
+fn have_get_env_vars_been_modified() -> bool {
+    !PREV_SESSION.get_env_vars.is_empty()
+        && tera::tera_env_vars_hash(&PREV_SESSION.get_env_vars, &env::PRISTINE_ENV)
+            != PREV_SESSION.get_env_hash
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct HookEnvSession {
     pub loaded_tools: IndexSet<String>,
@@ -468,6 +482,12 @@ pub struct HookEnvSession {
     /// Stored so the fast-path can detect changes without loading config.
     #[serde(default)]
     pub watch_files: Vec<PathBuf>,
+    /// Environment variable names read through `get_env()` during config rendering.
+    #[serde(default)]
+    pub get_env_vars: Vec<String>,
+    /// Hash of the corresponding values in the pristine process environment.
+    #[serde(default)]
+    get_env_hash: String,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -564,6 +584,9 @@ pub async fn build_session(
         write_last_full_check(now);
     }
 
+    let get_env_vars = config.tera_env_vars();
+    let get_env_hash = tera::tera_env_vars_hash(&get_env_vars, &env::PRISTINE_ENV);
+
     Ok(HookEnvSession {
         dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
@@ -571,6 +594,8 @@ pub async fn build_session(
         aliases,
         tera_files: config.tera_files.clone(),
         watch_files: resolved_watch_files.into_iter().collect(),
+        get_env_vars,
+        get_env_hash,
         loaded_configs,
         loaded_tools,
         config_paths,

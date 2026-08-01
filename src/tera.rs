@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::future::Future;
 use std::iter::once;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
@@ -27,6 +28,45 @@ use crate::{dirs, duration, env, hash};
 /// push paths here so that hook-env can watch them for changes.
 static TERA_ACCESSED_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
+/// Environment variables read through `get_env()` while rendering one config.
+/// Values are never stored here.
+#[derive(Clone, Default)]
+pub(crate) struct TeraEnvTracker(Arc<Mutex<BTreeSet<String>>>);
+
+impl TeraEnvTracker {
+    fn track(&self, name: String) {
+        if let Ok(mut vars) = self.0.lock() {
+            vars.insert(name);
+        }
+    }
+
+    pub(crate) fn track_all(&self, vars: impl IntoIterator<Item = String>) {
+        if let Ok(mut tracked) = self.0.lock() {
+            tracked.extend(vars);
+        }
+    }
+
+    pub(crate) fn vars(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .map(|vars| vars.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+tokio::task_local! {
+    static TERA_ENV_TRACKER: TeraEnvTracker;
+}
+
+pub(crate) async fn with_tera_env_tracker<T>(
+    tracker: TeraEnvTracker,
+    future: impl Future<Output = T>,
+) -> T {
+    // Config and environment resolution produce large futures. Keep their
+    // storage off the executor thread stack before adding the task-local scope.
+    TERA_ENV_TRACKER.scope(tracker, Box::pin(future)).await
+}
+
 fn track_tera_file(path: &Path) {
     if let Ok(mut files) = TERA_ACCESSED_FILES.lock() {
         files.push(path.to_path_buf());
@@ -42,6 +82,32 @@ pub fn take_tera_accessed_files() -> Vec<PathBuf> {
     files.sort();
     files.dedup();
     files
+}
+
+fn track_tera_env_var(name: &str) {
+    let _ = TERA_ENV_TRACKER.try_with(|tracker| tracker.track(name.to_string()));
+}
+
+/// Restore dependencies when a rendered environment is loaded from cache.
+pub fn track_tera_env_vars(vars: impl IntoIterator<Item = String>) {
+    let vars = vars.into_iter().collect::<Vec<_>>();
+    let _ = TERA_ENV_TRACKER.try_with(|tracker| tracker.track_all(vars));
+}
+
+/// Hash the current values of tracked `get_env()` inputs without persisting
+/// their values. Missing and empty values remain distinct in the serialized
+/// hash input.
+pub fn tera_env_vars_hash(vars: &[String], env: &EnvMap) -> String {
+    let mut vars = vars.to_vec();
+    vars.sort();
+    vars.dedup();
+    let values = vars
+        .iter()
+        .map(|name| (name.as_str(), env.get(name).map(String::as_str)))
+        .collect::<Vec<_>>();
+    hash::hash_blake3_to_str(
+        &serde_json::to_string(&values).expect("get_env dependency values are serializable"),
+    )
 }
 
 /// Fast marker check for Tera 1.x syntax.
@@ -892,6 +958,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
 fn tera_get_env(env: EnvMap) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |args: Kwargs, _: &State| -> TeraResult<Value> {
         let name = args.must_get::<&str>("name")?;
+        track_tera_env_var(name);
         if let Some(value) = env.get(name) {
             return Ok(Value::from(value.clone()));
         }
@@ -1794,6 +1861,57 @@ mod tests {
         assert!(
             tera.render_str("{{ get_env(name='MISE_TEST_MISSING_ENV') }}", &ctx, false)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn get_env_dependency_hash_is_deterministic_and_value_sensitive() {
+        let vars = vec!["SECOND".to_string(), "FIRST".to_string()];
+        let reordered = vec!["FIRST".to_string(), "SECOND".to_string()];
+        let env = EnvMap::from([
+            ("FIRST".to_string(), "value".to_string()),
+            ("SECOND".to_string(), String::new()),
+        ]);
+
+        let hash = tera_env_vars_hash(&vars, &env);
+        assert_eq!(hash, tera_env_vars_hash(&reordered, &env));
+
+        let changed = EnvMap::from([
+            ("FIRST".to_string(), "changed".to_string()),
+            ("SECOND".to_string(), String::new()),
+        ]);
+        assert_ne!(hash, tera_env_vars_hash(&vars, &changed));
+
+        let missing = EnvMap::from([("FIRST".to_string(), "value".to_string())]);
+        assert_ne!(hash, tera_env_vars_hash(&vars, &missing));
+    }
+
+    #[tokio::test]
+    async fn get_env_dependency_tracking_is_scoped() {
+        let first = TeraEnvTracker::default();
+        let second = TeraEnvTracker::default();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+
+        tokio::join!(
+            with_tera_env_tracker(first.clone(), async {
+                track_tera_env_vars(["FIRST".to_string()]);
+                barrier.wait().await;
+                track_tera_env_vars(["FIRST_AFTER_WAIT".to_string()]);
+            }),
+            with_tera_env_tracker(second.clone(), async {
+                track_tera_env_vars(["SECOND".to_string()]);
+                barrier.wait().await;
+                track_tera_env_vars(["SECOND_AFTER_WAIT".to_string()]);
+            })
+        );
+
+        assert_eq!(
+            first.vars(),
+            vec!["FIRST".to_string(), "FIRST_AFTER_WAIT".to_string()]
+        );
+        assert_eq!(
+            second.vars(),
+            vec!["SECOND".to_string(), "SECOND_AFTER_WAIT".to_string()]
         );
     }
 

@@ -277,7 +277,10 @@ across task definition(s).
   variable value by name. This helper is provided by mise for compatibility with
   older Tera templates. Prefer the `env` variable in new templates when possible.
   The `default` value is used when the environment variable is not present; empty
-  environment variables are returned as-is.
+  environment variables are returned as-is. In an activated shell, mise tracks
+  variables read through `get_env()` and refreshes the rendered environment when
+  they change. Use `get_env()` when a template must react to changes made after
+  activation; direct access through `env.NAME` is not tracked.
 - `arch() -> String` – Retrieves the system architecture, such as `x64` or `arm64`.
 - `os() -> String` – Returns the name of the operating system,
   e.g. linux, macos, windows.

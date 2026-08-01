@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export TRACKED_INPUT=first
+export DIRECT_INPUT=direct-first
+export POST_TOOL_INPUT=post-tool-first
+export PLUGIN_CACHE_INPUT=plugin-first
+unset MISSING_INPUT
+
+# Exercise get_env() from an asdf exec-env cache key. Backend environments are
+# resolved in spawned tasks, so their tracker scope must be propagated.
+plugin_dir="$MISE_DATA_DIR/plugins/tracked-env"
+mkdir -p "$plugin_dir/bin" "$MISE_DATA_DIR/installs/tracked-env/1.0.0"
+cat >"$plugin_dir/mise.plugin.toml" <<'EOF'
+[exec-env]
+cache-key = ["{{ get_env(name='PLUGIN_CACHE_INPUT', default='plugin-fallback') }}"]
+EOF
+cat >"$plugin_dir/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+cat >"$plugin_dir/bin/exec-env" <<'EOF'
+#!/usr/bin/env bash
+export PLUGIN_EXEC_VALUE="${PLUGIN_CACHE_INPUT:-plugin-fallback}"
+EOF
+chmod +x "$plugin_dir/bin/list-all" "$plugin_dir/bin/exec-env"
+
+cat >mise.toml <<'EOF'
+[vars]
+from_input = "{{ get_env(name='TRACKED_INPUT', default='fallback') }}"
+
+[env]
+TRACKED_VALUE = "{{ vars.from_input }}"
+DIRECT_VALUE = "{{ get_env(name='DIRECT_INPUT', default='direct-fallback') }}"
+MISSING_VALUE = "{{ get_env(name='MISSING_INPUT', default='missing-fallback') }}"
+POST_TOOL_VALUE = { value = "{{ get_env(name='POST_TOOL_INPUT', default='post-tool-fallback') }}", tools = true }
+
+[tools]
+tracked-env = "1.0.0"
+
+[settings]
+env_cache = true
+hook_env.cache_ttl = "1h"
+hook_env.chpwd_only = true
+EOF
+
+eval "$(mise activate bash)"
+assert "printf '%s' \"$TRACKED_VALUE\"" "first"
+assert "printf '%s' \"$DIRECT_VALUE\"" "direct-first"
+assert "printf '%s' \"$MISSING_VALUE\"" "missing-fallback"
+assert "printf '%s' \"$POST_TOOL_VALUE\"" "post-tool-first"
+assert "printf '%s' \"$PLUGIN_EXEC_VALUE\"" "plugin-first"
+assert_directory_exists "$HOME/.local/state/mise/env-cache"
+
+# A get_env() input used indirectly through [vars] invalidates both hook-env's
+# fast path and the rendered environment cache.
+export TRACKED_INPUT=second
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export TRACKED_VALUE=second"* ]] ||
+  fail "changed get_env input was not rendered: $output"
+eval "$output"
+assert "printf '%s' \"$TRACKED_VALUE\"" "second"
+
+# Empty strings are distinct tracked inputs rather than missing values.
+export TRACKED_INPUT=
+output=$(mise hook-env -s bash --reason precmd)
+[[ -n $output ]] || fail "empty get_env input did not invalidate hook-env"
+eval "$output"
+assert "printf '<%s>' \"$TRACKED_VALUE\"" "<>"
+
+# Direct use in [env] is tracked as well, including the transition to missing.
+export DIRECT_INPUT=direct-second
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export DIRECT_VALUE=direct-second"* ]] ||
+  fail "changed direct get_env input was not rendered: $output"
+eval "$output"
+
+unset DIRECT_INPUT
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export DIRECT_VALUE=direct-fallback"* ]] ||
+  fail "unset get_env input did not use its default: $output"
+eval "$output"
+assert "printf '%s' \"$DIRECT_VALUE\"" "direct-fallback"
+
+# A variable that was missing during the previous render is tracked when it
+# later becomes set.
+export MISSING_INPUT=now-set
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export MISSING_VALUE=now-set"* ]] ||
+  fail "newly set get_env input was not rendered: $output"
+eval "$output"
+assert "printf '%s' \"$MISSING_VALUE\"" "now-set"
+
+# tools=true directives are rendered after tool resolution, but their get_env()
+# inputs must still invalidate the full env cache and prompt fast path.
+export POST_TOOL_INPUT=post-tool-second
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export POST_TOOL_VALUE=post-tool-second"* ]] ||
+  fail "changed tools=true get_env input was not rendered: $output"
+eval "$output"
+assert "printf '%s' \"$POST_TOOL_VALUE\"" "post-tool-second"
+
+# get_env() calls made by spawned backend exec-env work must also invalidate
+# the prompt fast path and select a fresh plugin cache entry.
+export PLUGIN_CACHE_INPUT=plugin-second
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export PLUGIN_EXEC_VALUE=plugin-second"* ]] ||
+  fail "changed plugin cache-key get_env input was not rendered: $output"
+eval "$output"
+assert "printf '%s' \"$PLUGIN_EXEC_VALUE\"" "plugin-second"
+
+# Environment variables that no rendered get_env() call referenced do not
+# invalidate the prompt fast path.
+export UNRELATED_INPUT=changed
+output=$(mise hook-env -s bash --reason precmd)
+assert "printf '%s' \"$output\"" ""

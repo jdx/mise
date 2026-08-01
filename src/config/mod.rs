@@ -31,7 +31,10 @@ use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{RunEntry, Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
-use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
+use crate::tera::{
+    TeraEnvTracker, contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files,
+    tera_env_vars_hash,
+};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
@@ -77,6 +80,7 @@ pub struct Config {
     /// Files accessed by tera template functions (read_file, hash_file, etc.)
     /// during shell alias template rendering, used to watch for changes in hook-env.
     pub tera_files: Vec<PathBuf>,
+    tera_env_tracker: TeraEnvTracker,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
@@ -153,6 +157,7 @@ impl Config {
             repo_urls,
             shell_aliases: self.shell_aliases.clone(),
             tera_files: self.tera_files.clone(),
+            tera_env_tracker: self.tera_env_tracker.clone(),
             vars: self.vars.clone(),
             vars_results: OnceCell::new(),
         })
@@ -166,6 +171,11 @@ impl Config {
 
     #[async_backtrace::framed]
     pub async fn load() -> Result<Arc<Self>> {
+        let tracker = TeraEnvTracker::default();
+        crate::tera::with_tera_env_tracker(tracker.clone(), Self::load_inner(tracker)).await
+    }
+
+    async fn load_inner(tera_env_tracker: TeraEnvTracker) -> Result<Arc<Self>> {
         backend::load_tools().await?;
         let idiomatic_files = measure!("config::load idiomatic_files", {
             load_idiomatic_filenames().await
@@ -199,6 +209,7 @@ impl Config {
             repo_urls: Default::default(),
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: tera_env_tracker.clone(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };
@@ -218,6 +229,7 @@ impl Config {
             repo_urls: config.repo_urls.clone(),
             shell_aliases: config.shell_aliases.clone(),
             tera_files: config.tera_files.clone(),
+            tera_env_tracker,
             vars: config.vars.clone(),
             vars_results: OnceCell::new(),
         });
@@ -944,6 +956,11 @@ impl Config {
     }
 
     async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
+        crate::tera::with_tera_env_tracker(self.tera_env_tracker.clone(), self.load_env_inner())
+            .await
+    }
+
+    async fn load_env_inner(self: &Arc<Self>) -> Result<EnvResults> {
         if Settings::no_env() || Settings::get().no_env.unwrap_or(false) {
             return Ok(EnvResults::default());
         }
@@ -1079,6 +1096,8 @@ impl Config {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
+            let get_env_vars = self.tera_env_vars();
+            let get_env_hash = tera_env_vars_hash(&get_env_vars, &env::PRISTINE_ENV);
             let cached = CachedNonToolEnv {
                 env: env_results.env.clone(),
                 env_remove: env_results.env_remove.clone(),
@@ -1089,6 +1108,8 @@ impl Config {
                 redaction_exclusions: env_results.redaction_exclusions.clone(),
                 watch_files,
                 watch_file_mtimes,
+                get_env_vars,
+                get_env_hash,
                 created_at: now,
                 mise_version: env!("CARGO_PKG_VERSION").to_string(),
                 cache_key_debug: cache_key.clone(),
@@ -1103,6 +1124,18 @@ impl Config {
             debug!("{env_results:?}");
         }
         Ok(env_results)
+    }
+
+    pub(crate) fn tera_env_vars(&self) -> Vec<String> {
+        self.tera_env_tracker.vars()
+    }
+
+    pub(crate) fn tera_env_tracker(&self) -> TeraEnvTracker {
+        self.tera_env_tracker.clone()
+    }
+
+    pub(crate) fn track_tera_env_vars(&self, vars: impl IntoIterator<Item = String>) {
+        self.tera_env_tracker.track_all(vars);
     }
 
     pub async fn hooks(&self) -> Result<&Vec<(PathBuf, Hook)>> {
@@ -4966,6 +4999,7 @@ mod tests {
             repo_urls,
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };
@@ -5043,6 +5077,7 @@ mod tests {
             repo_urls: Default::default(),
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };
@@ -5124,6 +5159,7 @@ mod tests {
             repo_urls: Default::default(),
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };
@@ -5207,6 +5243,7 @@ mod tests {
             repo_urls: Default::default(),
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };
@@ -5265,6 +5302,7 @@ mod tests {
                 repo_urls: Default::default(),
                 shell_aliases: Default::default(),
                 tera_files: Default::default(),
+                tera_env_tracker: Default::default(),
                 vars: Default::default(),
                 vars_results: OnceCell::new(),
             };
@@ -5348,6 +5386,7 @@ config_roots = ["apps/api", "apps/web"]
             repo_urls: Default::default(),
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };
@@ -5511,6 +5550,7 @@ config_roots = ["apps/api", "apps/web"]
             repo_urls,
             shell_aliases: Default::default(),
             tera_files: Default::default(),
+            tera_env_tracker: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
         };

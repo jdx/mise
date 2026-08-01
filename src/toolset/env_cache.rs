@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Settings;
 use crate::dirs;
+use crate::env;
+use crate::env_diff::EnvMap;
 use crate::file;
 
 fn get_encryption_key() -> Option<[u8; 32]> {
@@ -85,7 +87,7 @@ fn validate_watch_files(watch_files: &[PathBuf], expected_mtimes: &[u64]) -> Res
 }
 
 /// Represents the cached environment data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CachedEnv {
     /// Cached environment variables
     pub env: BTreeMap<String, String>,
@@ -99,6 +101,12 @@ pub struct CachedEnv {
     pub watch_files: Vec<PathBuf>,
     /// mtimes of watch files at cache creation time
     pub watch_file_mtimes: Vec<u64>,
+    /// Environment variable names read through `get_env()` while rendering.
+    #[serde(default)]
+    pub get_env_vars: Vec<String>,
+    /// Hash of the corresponding values in the pristine process environment.
+    #[serde(default)]
+    pub get_env_hash: String,
     /// mise version when cache was created
     pub mise_version: String,
     /// SHA256 of the original cache key inputs (for debugging)
@@ -106,7 +114,7 @@ pub struct CachedEnv {
 }
 
 /// Cached environment data for non-tool env results (config-time env resolution)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CachedNonToolEnv {
     /// Environment variables resolved from non-tool directives
     pub env: IndexMap<String, (String, PathBuf)>,
@@ -127,6 +135,12 @@ pub struct CachedNonToolEnv {
     pub watch_files: Vec<PathBuf>,
     /// mtimes of watch files at cache creation time
     pub watch_file_mtimes: Vec<u64>,
+    /// Environment variable names read through `get_env()` while rendering.
+    #[serde(default)]
+    pub get_env_vars: Vec<String>,
+    /// Hash of the corresponding values in the pristine process environment.
+    #[serde(default)]
+    pub get_env_hash: String,
     /// Time when the cache was created
     pub created_at: u64,
     /// mise version when cache was created
@@ -232,6 +246,16 @@ impl CachedEnv {
                 cached.mise_version,
                 env!("CARGO_PKG_VERSION")
             );
+            let _ = file::remove_file(&cache_file);
+            return Ok(None);
+        }
+
+        if !get_env_inputs_match(
+            &cached.get_env_vars,
+            &cached.get_env_hash,
+            &env::PRISTINE_ENV,
+        ) {
+            debug!("env_cache: get_env input changed");
             let _ = file::remove_file(&cache_file);
             return Ok(None);
         }
@@ -383,6 +407,12 @@ impl CachedNonToolEnv {
             return Ok(None);
         }
 
+        if !cached.get_env_inputs_match(&env::PRISTINE_ENV) {
+            debug!("env_cache: get_env input changed");
+            let _ = file::remove_file(&cache_file);
+            return Ok(None);
+        }
+
         // Check TTL
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -403,8 +433,13 @@ impl CachedNonToolEnv {
             return Ok(None);
         }
 
+        crate::tera::track_tera_env_vars(cached.get_env_vars.iter().cloned());
         trace!("env_cache: loaded non-tool env cache for key {}", cache_key);
         Ok(Some(cached))
+    }
+
+    fn get_env_inputs_match(&self, env: &EnvMap) -> bool {
+        get_env_inputs_match(&self.get_env_vars, &self.get_env_hash, env)
     }
 
     /// Saves cached non-tool env data to disk
@@ -434,6 +469,10 @@ impl CachedNonToolEnv {
     pub fn is_enabled() -> bool {
         Settings::get().env_cache && get_encryption_key().is_some()
     }
+}
+
+fn get_env_inputs_match(vars: &[String], expected_hash: &str, env: &EnvMap) -> bool {
+    vars.is_empty() || crate::tera::tera_env_vars_hash(vars, env) == expected_hash
 }
 
 /// Helper to get the mtime of a file as seconds since UNIX epoch
@@ -495,6 +534,43 @@ mod tests {
             base_path,
         );
         assert_ne!(key1, key3);
+    }
+
+    #[test]
+    fn non_tool_cache_matches_only_same_get_env_inputs() {
+        let vars = vec!["TOKEN".to_string()];
+        let original = EnvMap::from([("TOKEN".to_string(), "secret-one".to_string())]);
+        let cache = CachedNonToolEnv {
+            get_env_hash: crate::tera::tera_env_vars_hash(&vars, &original),
+            get_env_vars: vars,
+            ..Default::default()
+        };
+
+        assert!(cache.get_env_inputs_match(&original));
+        assert!(!cache.get_env_inputs_match(&EnvMap::from([(
+            "TOKEN".to_string(),
+            "secret-two".to_string(),
+        )])));
+        assert!(!cache.get_env_inputs_match(&EnvMap::new()));
+    }
+
+    #[test]
+    fn non_tool_cache_does_not_serialize_get_env_values() {
+        let secret = "not-stored-secret";
+        let vars = vec!["TOKEN".to_string()];
+        let env = EnvMap::from([("TOKEN".to_string(), secret.to_string())]);
+        let cache = CachedNonToolEnv {
+            get_env_hash: crate::tera::tera_env_vars_hash(&vars, &env),
+            get_env_vars: vars,
+            ..Default::default()
+        };
+
+        let serialized = rmp_serde::to_vec_named(&cache).unwrap();
+        assert!(
+            !serialized
+                .windows(secret.len())
+                .any(|window| window == secret.as_bytes())
+        );
     }
 
     #[test]
