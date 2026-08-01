@@ -1742,6 +1742,25 @@ packages:
         supported_envs:
           - darwin
           - linux
+      - version_constraint: semver("<= 2.39.0")
+        asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: dua
+            src: "{{.AssetWithoutExt}}/dua"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -1761,6 +1780,8 @@ packages:
               arm64: aarch64
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: Byron/dua-cli/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: ByteNess
     repo_name: aws-vault
@@ -6753,6 +6774,23 @@ packages:
           - goos: windows
             format: zip
             asset: PowerShell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+  - type: http
+    name: ProtonDriveApps/sdk/cli
+    repo_owner: ProtonDriveApps
+    repo_name: sdk
+    description: Manage your Proton Drive files from the CLI
+    link: https://proton.me/support/drive-cli
+    version_source: github_tag
+    version_prefix: cli/
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://proton.me/download/drive/cli/{{trimV .SemVer}}/{{.OS}}-{{.Arch}}/proton-drive
+        format: raw
+        files:
+          - name: proton-drive
+        replacements:
+          amd64: x64
   - type: github_release
     repo_owner: Qovery
     repo_name: Replibyte
@@ -16516,6 +16554,29 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: asmz
+    repo_name: agedir
+    description: A CLI tool to bulk-encrypt, decrypt, and place multiple secret files across a project using age encryption and a simple YAML mapping config
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        asset: agedir-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: agedir_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: assetnote
     repo_name: surf
@@ -47432,6 +47493,17 @@ packages:
           type: github_release
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
+      - version_constraint: semver("<= 2.14.0")
+        asset: hadolint-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
       - version_constraint: "true"
         asset: hadolint-{{.OS}}-{{.Arch}}
         format: raw
@@ -47443,6 +47515,8 @@ packages:
           type: github_release
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: hadolint/hadolint/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: hairyhenderson
     repo_name: gomplate
@@ -48047,7 +48121,7 @@ packages:
             format: zip
             url: https://downloads.haskell.org/~cabal/cabal-install-{{.SemVer}}/cabal-install-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
             replacements: {}
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.16.1.0")
         url: https://downloads.haskell.org/~cabal/cabal-install-{{.SemVer}}/cabal-install-{{.SemVer}}-{{.Arch}}-{{.OS}}-alpine3_12.{{.Format}}
         format: tar.xz
         windows_arm_emulation: true
@@ -48068,6 +48142,23 @@ packages:
             format: zip
             url: https://downloads.haskell.org/~cabal/cabal-install-{{.SemVer}}/cabal-install-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
             replacements: {}
+      - version_constraint: "true"
+        url: https://downloads.haskell.org/~cabal/cabal-install-{{.SemVer}}/cabal-install-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: linux-unknown
+          windows: mingw64
+        checksum:
+          type: http
+          url: https://downloads.haskell.org/~cabal/cabal-install-{{.SemVer}}/SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: http
     repo_owner: haskell
     repo_name: ghcup-hs
@@ -51267,9 +51358,20 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.14.4")
         asset: mitamae-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        github_artifact_attestations:
+          signer_workflow: itamae-kitchen/mitamae/.github/workflows/build.yml
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: mitamae-{{.Arch}}-{{.OS}}
+        format: raw
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -62083,6 +62185,29 @@ packages:
     description: General Linter powered by Jsonnet
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.4.8-1")
+        asset: lintnet_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        checksum:
+          type: github_release
+          asset: lintnet_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --signature
+              - https://github.com/lintnet/lintnet/releases/download/{{.Version}}/lintnet_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/lintnet/lintnet/releases/download/{{.Version}}/lintnet_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
       - version_constraint: semver("<= 0.4.11")
         asset: lintnet_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -62106,6 +62231,8 @@ packages:
               - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
               - --certificate-oidc-issuer
               - "https://token.actions.githubusercontent.com"
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/\.github/workflows/release\.yaml
       - version_constraint: "true"
         asset: lintnet_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -62128,6 +62255,8 @@ packages:
               - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
               - --certificate-oidc-issuer
               - "https://token.actions.githubusercontent.com"
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/\.github/workflows/release\.yaml
   - type: github_release
     repo_owner: linuxkit
     repo_name: linuxkit
@@ -88449,12 +88578,19 @@ packages:
           type: github_release
           asset: supabase_{{trimV .Version}}_checksums.txt
           algorithm: sha256
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.98.0")
         asset: supabase_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
           type: github_release
           asset: supabase_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: supabase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
           algorithm: sha256
   - type: github_release
     repo_owner: superbrothers

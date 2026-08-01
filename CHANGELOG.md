@@ -1,5 +1,98 @@
 # Changelog
 
+## [2026.8.0](https://github.com/jdx/mise/compare/v2026.7.18..v2026.8.0) - 2026-08-01
+
+### 🚀 Features
+
+- **(ruby)** make precompiled binaries the default by @jdx in [#11584](https://github.com/jdx/mise/pull/11584)
+- **(task)** configure vcs ignores for watch by @Marukome0743 in [#11535](https://github.com/jdx/mise/pull/11535)
+- **(task)** add provider task suggestions by @jdx in [#11543](https://github.com/jdx/mise/pull/11543)
+- **(task)** explain workspace inference provenance by @jdx in [#11547](https://github.com/jdx/mise/pull/11547)
+- **(task)** infer Cargo workspace dependencies by @jdx in [#11554](https://github.com/jdx/mise/pull/11554)
+- **(task)** infer uv workspace dependencies by @jdx in [#11556](https://github.com/jdx/mise/pull/11556)
+- **(task)** discover Go workspaces by @jdx in [#11559](https://github.com/jdx/mise/pull/11559)
+- **(task)** map changed files to workspace projects by @jdx in [#11569](https://github.com/jdx/mise/pull/11569)
+- **(task)** expand affected workspace projects by @jdx in [#11583](https://github.com/jdx/mise/pull/11583)
+- **(task)** resolve affected Git revisions by @jdx in [#11585](https://github.com/jdx/mise/pull/11585)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** read checksum files that carry a byte-order mark by @JamBalaya56562 in [#11552](https://github.com/jdx/mise/pull/11552)
+- **(aqua)** fetch the checksum manifest with get_text again by @JamBalaya56562 in [#11558](https://github.com/jdx/mise/pull/11558)
+- **(asdf)** expose dependencies to install scripts by @Marukome0743 in [#11531](https://github.com/jdx/mise/pull/11531)
+- **(asdf)** fail when bin/install installs nothing by @JamBalaya56562 in [#11553](https://github.com/jdx/mise/pull/11553)
+- **(brew-cask)** harden direct cask pours by @donbeave in [#11215](https://github.com/jdx/mise/pull/11215)
+- **(config)** make --path <dir> target that directory by @JamBalaya56562 in [#11575](https://github.com/jdx/mise/pull/11575)
+- **(dotfiles)** avoid scanning symlink-each targets by @jdx in [#11549](https://github.com/jdx/mise/pull/11549)
+- **(env)** allow redact false to override patterns by @jdx in [#11564](https://github.com/jdx/mise/pull/11564)
+- **(forgejo)** support new fj macos key path by @jdx in [#11545](https://github.com/jdx/mise/pull/11545)
+- **(github,gitlab)** find gh/glab config on Windows by @JamBalaya56562 in [#11508](https://github.com/jdx/mise/pull/11508)
+- **(hook-env)** restore modified managed environment by @Marukome0743 in [#11568](https://github.com/jdx/mise/pull/11568)
+- **(http)** handle client initialization failures by @Marukome0743 in [#11561](https://github.com/jdx/mise/pull/11561)
+- **(python)** honour --tool when creating a venv by @JamBalaya56562 in [#11567](https://github.com/jdx/mise/pull/11567)
+- **(task)** handle ctrl-c as task interruption by @Marukome0743 in [#11511](https://github.com/jdx/mise/pull/11511)
+- **(task)** support brace globs in sources and outputs by @Marukome0743 in [#11555](https://github.com/jdx/mise/pull/11555)
+- **(task)** preserve literal singleton braces in globs by @Marukome0743 in [#11565](https://github.com/jdx/mise/pull/11565)
+- **(unuse)** preserve unselected tool versions by @Marukome0743 in [#11563](https://github.com/jdx/mise/pull/11563)
+- **(vfox)** verify sha1 and md5 checksums instead of panicking by @JamBalaya56562 in [#11536](https://github.com/jdx/mise/pull/11536)
+
+### 🚜 Refactor
+
+- **(backend)** group clippy-heavy call contexts by @jdx in [#11525](https://github.com/jdx/mise/pull/11525)
+- **(config)** centralize interactive render options by @jdx in [#11522](https://github.com/jdx/mise/pull/11522)
+- **(env)** centralize directive resolution context by @jdx in [#11521](https://github.com/jdx/mise/pull/11521)
+- **(task)** group scheduler and cache state by @jdx in [#11527](https://github.com/jdx/mise/pull/11527)
+- **(task)** centralize execution context by @jdx in [#11528](https://github.com/jdx/mise/pull/11528)
+- clean up obsolete clippy exceptions by @jdx in [#11519](https://github.com/jdx/mise/pull/11519)
+- remove targeted clippy exceptions by @jdx in [#11524](https://github.com/jdx/mise/pull/11524)
+
+### 📚 Documentation
+
+- **(task)** define workspace task precedence by @jdx in [#11542](https://github.com/jdx/mise/pull/11542)
+- discourage clippy exclusions by @jdx in [#11529](https://github.com/jdx/mise/pull/11529)
+
+### ⚡ Performance
+
+- **(ci)** reduce repeated test setup by @jdx in [#11514](https://github.com/jdx/mise/pull/11514)
+- **(release)** optimize linux x64 binary with BOLT by @jdx in [#11533](https://github.com/jdx/mise/pull/11533)
+- **(shim)** reuse resolved toolset and config roots by @jdx in [#11534](https://github.com/jdx/mise/pull/11534)
+- **(task)** cache workspace discovery filesystem access by @jdx in [#11562](https://github.com/jdx/mise/pull/11562)
+- reduce release binary size by @jdx in [#11520](https://github.com/jdx/mise/pull/11520)
+
+### 🧪 Testing
+
+- **(parallel)** pin cancel-and-drain against the join_all panic by @JamBalaya56562 in [#11532](https://github.com/jdx/mise/pull/11532)
+
+### 📦️ Dependency Updates
+
+- bump aube to 1.37.0 by @jdx in [#11539](https://github.com/jdx/mise/pull/11539)
+
+### 📦 Registry
+
+- update herdr repository by @ogulcancelik in [#11518](https://github.com/jdx/mise/pull/11518)
+
+### Chore
+
+- **(clippy)** fix warnings surfaced by clippy 0.1.97 by @JamBalaya56562 in [#11516](https://github.com/jdx/mise/pull/11516)
+- **(clippy)** gate an already-unix-only binding in vfox by @JamBalaya56562 in [#11517](https://github.com/jdx/mise/pull/11517)
+- **(lint)** remove stale template exclusions by @jdx in [#11526](https://github.com/jdx/mise/pull/11526)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`ProtonDriveApps/sdk/cli`](https://github.com/ProtonDriveApps/sdk)
+- [`asmz/agedir`](https://github.com/asmz/agedir)
+
+#### Updated Packages (6)
+
+- [`Byron/dua-cli`](https://github.com/Byron/dua-cli)
+- [`hadolint/hadolint`](https://github.com/hadolint/hadolint)
+- [`haskell/cabal/cabal-install`](https://github.com/haskell/cabal)
+- [`itamae-kitchen/mitamae`](https://github.com/itamae-kitchen/mitamae)
+- [`lintnet/lintnet`](https://github.com/lintnet/lintnet)
+- [`supabase/cli`](https://github.com/supabase/cli)
+
 ## [2026.7.18](https://github.com/jdx/mise/compare/v2026.7.17..v2026.7.18) - 2026-07-30
 
 ### 🚀 Features
