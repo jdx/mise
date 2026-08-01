@@ -125,6 +125,22 @@ Install additional components.
 "pipx:harlequin" = { version = "latest", extras = "postgres,s3" }
 # equivalent array form:
 # "pipx:harlequin" = { version = "latest", extras = ["postgres", "s3"] }
+# extras also work with Git sources:
+# "pipx:psf/black" = { version = "latest", extras = ["jupyter"] }
+```
+
+When passing extras inline, use mise's `key=value` tool-option syntax:
+
+```bash
+mise use 'pipx:psf/black[extras=jupyter]@latest'
+```
+
+For Git repositories whose name differs from the Python distribution name, set `package_name` so
+mise can build the requirement used to select extras:
+
+```toml
+[tools]
+"pipx:owner/repository" = { version = "latest", package_name = "distribution", extras = ["feature"] }
 ```
 
 ### `pipx_args`
