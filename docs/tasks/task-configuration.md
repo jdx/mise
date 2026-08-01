@@ -701,8 +701,9 @@ produced the cache key without printing the aggregate key itself. Environment va
 identified only by name and whether they are set, while mise variables are identified only by name,
 so the explanation does not publish their contents or per-value digests. Other potentially
 secret-derived inputs—including source contents, dependency keys, command output, task definitions,
-and resolved tool versions—are reported only by category and count. The target platform is listed
-directly.
+and resolved tool versions—are reported only by category and count. Matched source paths, declared
+output patterns, currently resolved output roots, and the target platform are listed directly.
+
 Combine the flag with `--dry-run` to inspect the key inputs without executing, restoring, or storing
 the task. Cache command inputs still run when the explanation is explicitly requested because their
 output hashes are part of the key.
