@@ -227,6 +227,10 @@ Explain the inputs that produced each task's output cache key
 
 Output cache-key input details as JSON Lines without running tasks
 
+### `--task-cache-stats`
+
+Report task output cache hits, restored bytes, and time saved
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete

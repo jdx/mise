@@ -716,6 +716,12 @@ values. This JSON Lines format remains streamable when a pattern selects multipl
 command inputs still run so their presence can be reported accurately, but their output and hashes
 are not included.
 
+Use `mise run --task-cache-stats <task>` to print a run summary with the number and percentage of
+artifact cache hits, the uncompressed output and log bytes restored, and the execution time recorded
+when each restored entry was created. Entries written before this metadata was added remain readable
+and contribute zero bytes and time when restored. Freshness skips that do not perform a cache lookup
+are not counted as hits or misses.
+
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under
 `task_config.cache`, these names always compose with task-local `cache.env`.

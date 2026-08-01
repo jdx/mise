@@ -926,6 +926,7 @@ impl Bootstrap {
             task_cache: crate::task::TaskCacheMode::from_env()?,
             task_cache_explain: false,
             task_cache_explain_json: false,
+            task_cache_stats: false,
             timeout: None,
             skip_deps: false,
             // a dry run must not auto-install tools before the (not actually

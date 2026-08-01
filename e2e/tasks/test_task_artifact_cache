@@ -21,6 +21,11 @@ outputs = ["dist", "dist/result.txt"]
 run = "true"
 sources = ["input.txt"]
 outputs = []
+
+[tasks.fail]
+run = "false"
+sources = ["input.txt"]
+outputs = []
 EOF
 
 printf 'one\n' >input.txt
@@ -64,12 +69,18 @@ assert_fail_contains \
 assert "wc -l < runs.txt | tr -d ' '" "1"
 
 # Existing fresh outputs use the normal fast freshness path.
-assert_contains "PROFILE=debug mise run build 2>&1" "sources up-to-date, skipping"
+cache_stats="$(PROFILE=debug mise run --task-cache-stats build 2>&1)"
+assert_contains "echo \"$cache_stats\"" "sources up-to-date, skipping"
+assert_contains "echo \"$cache_stats\"" "Task cache: no lookups"
 assert "wc -l < runs.txt | tr -d ' '" "1"
 
 # Missing outputs are restored from the local artifact cache without executing.
 rm -rf dist
-assert_contains "PROFILE=debug mise run build 2>&1" "restored outputs from cache"
+cache_stats="$(PROFILE=debug mise run --task-cache-stats build 2>&1)"
+assert_contains "echo \"$cache_stats\"" "restored outputs from cache"
+assert_contains "echo \"$cache_stats\"" "Task cache: 1/1 hits (100%)"
+assert_contains "echo \"$cache_stats\"" "10 B restored"
+assert_not_contains "echo \"$cache_stats\"" "0ns saved"
 assert "wc -l < runs.txt | tr -d ' '" "1"
 assert "cat dist/result.txt" "debug:one"
 assert_succeed "test -d dist/empty"
@@ -77,8 +88,13 @@ assert_succeed "test -d dist/empty"
 # Clearing the artifact cache invalidates the fast freshness skip even when
 # outputs remain, so the task executes once to repopulate the cache.
 mise cache clear
-assert_not_contains "PROFILE=debug mise run build 2>&1" "sources up-to-date, skipping"
+cache_stats="$(PROFILE=debug mise run --task-cache-stats build 2>&1)"
+assert_not_contains "echo \"$cache_stats\"" "sources up-to-date, skipping"
+assert_contains "echo \"$cache_stats\"" "Task cache: 0/1 hits (0%), 0 B restored, 0ns saved"
 assert "wc -l < runs.txt | tr -d ' '" "2"
+assert_fail_contains \
+  "mise run --task-cache-stats fail 2>&1" \
+  "Task cache: 0/1 hits (0%), 0 B restored, 0ns saved"
 rm -rf dist
 assert_contains "PROFILE=debug mise run build 2>&1" "restored outputs from cache"
 assert "wc -l < runs.txt | tr -d ' '" "2"
@@ -102,6 +118,9 @@ assert "cat dist/result.txt" "release:two"
 
 # Dry runs must not restore outputs or mutate artifact cache state.
 rm -rf dist
+assert_fail_contains \
+  "mise run --dry-run --task-cache-stats build 2>&1" \
+  "cannot be used with"
 PROFILE=release mise run --dry-run build
 assert_fail "test -e dist"
 assert "wc -l < runs.txt | tr -d ' '" "4"

@@ -96,7 +96,7 @@ outside this tracker.
 - [x] Report the reason for each cache miss
 - [x] Show resolved cache inputs and outputs
 - [x] Add machine-readable cache details to dry-run or task-info output
-- [ ] Report hit rate, bytes restored, and time saved
+- [x] Report hit rate, bytes restored, and time saved
 - [ ] Add per-task cache inspection and deletion
 
 ## Integrity and portability

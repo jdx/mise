@@ -222,6 +222,7 @@ pub struct TaskExecutor {
     pub context_builder: TaskContextBuilder,
     pub output_handler: OutputHandler,
     pub failed_tasks: FailedTasks,
+    pub(crate) cache_stats: Arc<StdMutex<TaskCacheStats>>,
     interrupted: AtomicBool,
 
     // CLI flags
@@ -245,6 +246,26 @@ pub struct TaskRunOutcome {
     pub cache_key: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TaskCacheStats {
+    pub(crate) hits: u64,
+    pub(crate) misses: u64,
+    pub(crate) restored_bytes: u64,
+    pub(crate) time_saved: Duration,
+}
+
+impl TaskCacheStats {
+    fn record_hit(&mut self, restored_bytes: u64, time_saved: Duration) {
+        self.hits = self.hits.saturating_add(1);
+        self.restored_bytes = self.restored_bytes.saturating_add(restored_bytes);
+        self.time_saved = self.time_saved.saturating_add(time_saved);
+    }
+
+    fn record_miss(&mut self) {
+        self.misses = self.misses.saturating_add(1);
+    }
+}
+
 impl TaskExecutor {
     pub fn new(
         context_builder: TaskContextBuilder,
@@ -255,6 +276,7 @@ impl TaskExecutor {
             context_builder,
             output_handler,
             failed_tasks: Arc::new(StdMutex::new(Vec::new())),
+            cache_stats: Arc::new(StdMutex::new(TaskCacheStats::default())),
             interrupted: AtomicBool::new(false),
             force: config.force,
             cd: config.cd,
@@ -699,7 +721,11 @@ impl TaskExecutor {
                         } else {
                             Self::check_interruption(allow_during_interruption)?;
                             match cache.restore(task)? {
-                                TaskCacheRestore::Hit(output) => {
+                                TaskCacheRestore::Hit(hit) => {
+                                    self.cache_stats
+                                        .lock()
+                                        .unwrap()
+                                        .record_hit(hit.restored_bytes, hit.saved_duration);
                                     if !self.quiet(Some(task)) {
                                         let kind = if task.outputs.is_no_files() {
                                             "result"
@@ -712,8 +738,11 @@ impl TaskExecutor {
                                             &format!("restored {kind} from cache {}", cache.key()),
                                         );
                                     }
-                                    self.output_handler
-                                        .replay_cached_output(task, &prefix, &output);
+                                    self.output_handler.replay_cached_output(
+                                        task,
+                                        &prefix,
+                                        &hit.output,
+                                    );
                                     if let Err(err) = save_checksum(task, config).await {
                                         warn!(
                                             "task {} artifact cache checksum update failed: {err}",
@@ -736,6 +765,7 @@ impl TaskExecutor {
                                 TaskCacheRestore::Miss(reason) => reason,
                             }
                         };
+                        self.cache_stats.lock().unwrap().record_miss();
                         if !self.quiet(Some(task)) {
                             self.eprint(task, &prefix, &format!("cache miss: {miss_reason}"));
                         }
@@ -809,13 +839,14 @@ impl TaskExecutor {
             );
         }
 
+        let execution_duration = timer.elapsed();
         if self.task_timings(Some(task))
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
         {
             self.eprint(
                 task,
                 &prefix,
-                &format!("Finished in {}", time::format_duration(timer.elapsed())),
+                &format!("Finished in {}", time::format_duration(execution_duration)),
             );
         }
 
@@ -827,7 +858,7 @@ impl TaskExecutor {
                 .as_ref()
                 .map(|output| output.lock().unwrap().clone())
                 .unwrap_or_default();
-            match cache.store(task, &output) {
+            match cache.store(task, &output, execution_duration) {
                 Ok(()) => {
                     if let Err(err) = cache.mark_current() {
                         warn!(
@@ -2051,6 +2082,19 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_cache_stats_saturate_and_accumulate() {
+        let mut stats = TaskCacheStats::default();
+        stats.record_miss();
+        stats.record_hit(512, Duration::from_millis(25));
+        stats.record_hit(256, Duration::from_millis(15));
+
+        assert_eq!(stats.hits, 2);
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.restored_bytes, 768);
+        assert_eq!(stats.time_saved, Duration::from_millis(40));
+    }
 
     fn env_with_path(path: &str) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
