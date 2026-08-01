@@ -743,6 +743,42 @@ impl WorkspaceProjectGraph {
         Ok(mapped)
     }
 
+    /// Returns changed projects and every project that transitively depends on them.
+    pub fn affected_projects<'a>(
+        &self,
+        changed: impl IntoIterator<Item = &'a ProjectId>,
+    ) -> Result<BTreeSet<ProjectId>> {
+        let mut dependents = BTreeMap::<ProjectId, BTreeSet<ProjectId>>::new();
+        for project in self.projects() {
+            for dependency in &project.dependencies {
+                dependents
+                    .entry(dependency.clone())
+                    .or_default()
+                    .insert(project.id.clone());
+            }
+        }
+
+        let mut affected = BTreeSet::new();
+        let mut pending = Vec::new();
+        for id in changed {
+            if !self.projects.contains_key(id) {
+                bail!("unknown workspace project {id:?}");
+            }
+            if affected.insert(id.clone()) {
+                pending.push(id.clone());
+            }
+        }
+
+        while let Some(id) = pending.pop() {
+            for dependent in dependents.get(&id).into_iter().flatten() {
+                if affected.insert(dependent.clone()) {
+                    pending.push(dependent.clone());
+                }
+            }
+        }
+        Ok(affected)
+    }
+
     /// Summarizes provider failures retained during lenient task discovery.
     pub(crate) fn provider_discovery_error(&self) -> Option<String> {
         (!self.provider_errors.is_empty()).then(|| {
@@ -2112,6 +2148,67 @@ mod tests {
                 .map(|project| project.id.as_str())
                 .collect::<Vec<_>>(),
             vec!["node:core"]
+        );
+    }
+
+    #[test]
+    fn affected_projects_include_transitive_cross_provider_dependents() {
+        let core_id = ProjectId::new("cargo", "core").unwrap();
+        let left_id = ProjectId::new("node", "left").unwrap();
+        let right_id = ProjectId::new("node", "right").unwrap();
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let cargo = TestProvider {
+            id: "cargo",
+            projects: vec![project("cargo", "core", "crates/core")],
+        };
+        let mut left = project("node", "left", "packages/left");
+        left.dependencies.insert(core_id.clone());
+        let mut right = project("node", "right", "packages/right");
+        right.dependencies.insert(core_id.clone());
+        let mut app = project("node", "app", "apps/app");
+        app.dependencies = BTreeSet::from([left_id.clone(), right_id.clone()]);
+        let node = TestProvider {
+            id: "node",
+            projects: vec![app, left, right, project("node", "unrelated", "other")],
+        };
+        let graph =
+            WorkspaceProjectGraph::discover_all(&[&node, &cargo], Path::new("/workspace")).unwrap();
+
+        assert_eq!(
+            graph.affected_projects([&core_id]).unwrap(),
+            BTreeSet::from([core_id, left_id, right_id, app_id])
+        );
+    }
+
+    #[test]
+    fn affected_projects_only_walk_reverse_dependency_edges() {
+        let lib_id = ProjectId::new("node", "lib").unwrap();
+        let app_id = ProjectId::new("node", "app").unwrap();
+        let lib = project("node", "lib", "lib");
+        let mut app = project("node", "app", "app");
+        app.dependencies.insert(lib_id);
+        let provider = TestProvider {
+            id: "node",
+            projects: vec![app, lib],
+        };
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        assert_eq!(
+            graph.affected_projects([&app_id]).unwrap(),
+            BTreeSet::from([app_id])
+        );
+    }
+
+    #[test]
+    fn affected_projects_reject_unknown_changed_projects() {
+        let graph = WorkspaceProjectGraph::default();
+        let missing = ProjectId::new("node", "missing").unwrap();
+
+        let err = graph.affected_projects([&missing]).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "unknown workspace project ProjectId(\"node:missing\")"
         );
     }
 
