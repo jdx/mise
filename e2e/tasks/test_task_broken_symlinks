@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+mkdir -p .mise/tasks "$HOME/.config/mise/tasks"
+
+cat <<'EOF' >.mise/tasks/healthy
+#!/usr/bin/env bash
+echo "healthy ran"
+EOF
+chmod +x .mise/tasks/healthy
+
+cat <<'EOF' >"$HOME/.config/mise/tasks/global-ok"
+#!/usr/bin/env bash
+echo "global ran"
+EOF
+chmod +x "$HOME/.config/mise/tasks/global-ok"
+
+# Emacs creates .#-prefixed symlinks that may deliberately point at a
+# non-existent lock owner. Following the link must not abort task discovery.
+ln -s missing-target .mise/tasks/.#healthy
+
+# A repository containing linked global tasks may be moved or deleted, leaving
+# the task group dangling while other local and global tasks remain usable.
+ln -s "$MISE_TMP_DIR/missing-global-task-dir" "$HOME/.config/mise/tasks/global"
+
+assert "mise tasks ls --name-only" "global-ok
+healthy"
+assert_contains "mise run healthy" "healthy ran"
+assert_contains "mise run global-ok" "global ran"
+assert_contains "mise tasks --usage" '"healthy"'
+assert_contains "mise tasks --usage" '"global-ok"'
