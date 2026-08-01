@@ -27,7 +27,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  TAK_RUNNER: bamboo-v1-ubuntu24.04-x64-rust1.97.1
+  TAK_RUNNER: bamboo-v2-ubuntu24.04-x64-30vcpu-24gb-rust1.97.1
 
 jobs:
   measure:
