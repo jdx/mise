@@ -25,6 +25,7 @@ use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
 use futures_util::FutureExt;
 use itertools::Itertools;
+use serde::Serialize;
 use std::panic::AssertUnwindSafe;
 use tokio::sync::Mutex;
 
@@ -84,13 +85,27 @@ pub struct Run {
     pub affected_base: Option<String>,
 
     /// Explain why projects and tasks were selected by --affected
-    #[clap(long, requires = "affected", verbatim_doc_comment)]
+    #[clap(
+        long,
+        requires = "affected",
+        conflicts_with = "affected_json",
+        verbatim_doc_comment
+    )]
     pub affected_explain: bool,
 
     /// Git head revision for --affected
     /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
     #[clap(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
     pub affected_head: Option<String>,
+
+    /// Output affected projects and tasks as JSON without running tasks
+    #[clap(
+        long,
+        requires = "affected",
+        conflicts_with = "affected_explain",
+        verbatim_doc_comment
+    )]
+    pub affected_json: bool,
 
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', verbatim_doc_comment)]
@@ -293,6 +308,7 @@ async fn get_affected_task_list(
     base: Option<&str>,
     head: Option<&str>,
     explain: bool,
+    json: bool,
 ) -> Result<Vec<Task>> {
     Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
@@ -365,10 +381,82 @@ async fn get_affected_task_list(
                 .map(crate::file::desymlink_path)
                 .is_some_and(|root| affected_roots.contains(&root))
     });
-    if explain {
+    if json {
+        display_affected_json(&revisions, &workspace_root, &graph, &affected, &tasks)?;
+    } else if explain {
         display_affected_explanation(&revisions, &workspace_root, &graph, &affected, &tasks)?;
     }
     Ok(tasks)
+}
+
+#[derive(Serialize)]
+struct AffectedSelectionOutput<'a> {
+    base: &'a str,
+    head: &'a str,
+    projects: Vec<AffectedProjectOutput<'a>>,
+    tasks: Vec<AffectedTaskOutput<'a>>,
+}
+
+#[derive(Serialize)]
+struct AffectedProjectOutput<'a> {
+    id: &'a crate::task::workspace::ProjectId,
+    root: &'a std::path::Path,
+    reasons: &'a BTreeSet<crate::task::workspace::AffectedProjectReason>,
+}
+
+#[derive(Serialize)]
+struct AffectedTaskOutput<'a> {
+    name: &'a str,
+    projects: Vec<&'a crate::task::workspace::ProjectId>,
+}
+
+fn display_affected_json(
+    revisions: &crate::task::workspace::git::WorkspaceGitRevisions,
+    workspace_root: &std::path::Path,
+    graph: &crate::task::workspace::WorkspaceProjectGraph,
+    affected: &crate::task::workspace::AffectedProjects,
+    tasks: &[Task],
+) -> Result<()> {
+    let mut projects_by_root = BTreeMap::<PathBuf, Vec<_>>::new();
+    let projects = affected
+        .projects()
+        .map(|(id, reasons)| {
+            let project = graph.get(id).expect("affected project exists in graph");
+            projects_by_root
+                .entry(crate::file::desymlink_path(
+                    &workspace_root.join(&project.root),
+                ))
+                .or_default()
+                .push(id);
+            AffectedProjectOutput {
+                id,
+                root: &project.root,
+                reasons,
+            }
+        })
+        .collect();
+    let mut tasks = tasks
+        .iter()
+        .map(|task| AffectedTaskOutput {
+            name: &task.display_name,
+            projects: task
+                .config_root
+                .as_deref()
+                .map(crate::file::desymlink_path)
+                .and_then(|root| projects_by_root.get(&root))
+                .cloned()
+                .unwrap_or_default(),
+        })
+        .collect::<Vec<_>>();
+    tasks.sort_by(|left, right| left.name.cmp(right.name));
+    let output = AffectedSelectionOutput {
+        base: &revisions.base,
+        head: &revisions.head,
+        projects,
+        tasks,
+    };
+    miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
 }
 
 fn display_affected_explanation(
@@ -532,11 +620,15 @@ impl Run {
                 self.affected_base.as_deref(),
                 self.affected_head.as_deref(),
                 self.affected_explain,
+                self.affected_json,
             )
             .await?
         } else {
             get_task_lists(&config, &args, true, self.skip_deps).await?
         };
+        if self.affected_json {
+            return Ok(());
+        }
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect

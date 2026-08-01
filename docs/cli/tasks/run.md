@@ -69,6 +69,10 @@ Explain why projects and tasks were selected by --affected
 Git head revision for --affected
 Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 
+### `--affected-json`
+
+Output affected projects and tasks as JSON without running tasks
+
 ### `-c --continue-on-error`
 
 Continue running tasks even if one fails

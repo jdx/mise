@@ -68,6 +68,43 @@ git commit -qm initial
 echo changed >>crates/core/src/lib.rs
 git add .
 git commit -qm core-change
+assert_json "mise run --affected --affected-json build" '{
+  "base": "HEAD~1",
+  "head": "HEAD",
+  "projects": [
+    {
+      "id": "cargo:app",
+      "root": "crates/app",
+      "reasons": [
+        {
+          "type": "dependent",
+          "dependency": "cargo:core"
+        }
+      ]
+    },
+    {
+      "id": "cargo:core",
+      "root": "crates/core",
+      "reasons": [
+        {
+          "type": "changed-path",
+          "path": "crates/core/src/lib.rs"
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "name": "//crates/app:build",
+      "projects": ["cargo:app"]
+    },
+    {
+      "name": "//crates/core:build",
+      "projects": ["cargo:core"]
+    }
+  ]
+}'
+assert "test ! -e affected.log"
 output=$(mise run --affected --affected-explain --jobs 1 build)
 assert_contains "echo \"$output\"" "Affected projects (HEAD~1...HEAD):"
 assert_contains "echo \"$output\"" "changed path: crates/core/src/lib.rs"
