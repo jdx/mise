@@ -10,7 +10,7 @@ use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
 use eyre::{Result, bail, eyre};
-use globset::GlobBuilder;
+use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
@@ -2940,6 +2940,23 @@ pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
+/// Compile a task-name glob with `:` treated as a group separator.
+///
+/// globset only assigns recursive semantics to `**` around path separators, so
+/// task groups are normalized to `/` before matching. This makes `*` stay
+/// within one group while `**` can span zero or more groups.
+fn task_name_glob(pattern: &str) -> std::result::Result<GlobMatcher, globset::Error> {
+    GlobBuilder::new(&pattern.replace(':', "/"))
+        .literal_separator(true)
+        .build()
+        .map(|glob| glob.compile_matcher())
+}
+
+fn task_name_matches(matcher: &GlobMatcher, name: &str, allow_ext_strip: bool) -> bool {
+    matcher.is_match(name.replace(':', "/"))
+        || (allow_ext_strip && matcher.is_match(strip_extension(name).replace(':', "/")))
+}
+
 /// Helper function to strip file extension from a task name
 /// e.g., "test.js" -> "test", "build" -> "build"
 /// Special case: hidden files like ".hidden" are preserved to avoid empty strings
@@ -2961,14 +2978,22 @@ where
             return Ok(vec![exact]);
         }
         if is_workspace_project_task(pat) {
-            let matcher = GlobBuilder::new(pat)
+            let (project_pattern, task_pattern) = pat.split_once('#').unwrap();
+            let project_matcher = GlobBuilder::new(project_pattern)
                 .literal_separator(false)
                 .build()
                 .map_err(|err| eyre!("invalid workspace task pattern {pat:?}: {err}"))?
                 .compile_matcher();
+            let task_matcher = task_name_glob(task_pattern)
+                .map_err(|err| eyre!("invalid workspace task pattern {pat:?}: {err}"))?;
             return Ok(self
                 .iter()
-                .filter(|(name, _)| matcher.is_match(name))
+                .filter(|(name, _)| {
+                    name.split_once('#').is_some_and(|(project, task)| {
+                        project_matcher.is_match(project)
+                            && task_name_matches(&task_matcher, task, false)
+                    })
+                })
                 .map(|(_, task)| task)
                 .unique()
                 .collect());
@@ -2986,8 +3011,8 @@ where
                     pat
                 )
             }
-            // If it doesn't contain wildcards or ':', it's a simple task name
-            if !pat.contains('*') && !pat.contains("...") && !pat.contains(':') {
+            // If it doesn't contain glob syntax or ':', it's a simple task name
+            if !pat.contains(['*', '?', '[', '{']) && !pat.contains("...") && !pat.contains(':') {
                 // Prefer exact name matches; only fall back to extension-stripped
                 // matches when there is no exact match. Otherwise a TOML task
                 // "hello" and an auto-discovered file task "hello.sh" would both
@@ -3006,8 +3031,27 @@ where
                     .map(|(_, v)| v)
                     .collect());
             }
-            // Has wildcards or colon but no /, so it's a regular task pattern like "render:*" or "build:linux"
-            // Process with glob matching below
+            // Regular task patterns use `:` as their group separator. Match the
+            // entire task identity here rather than treating the first group as
+            // a monorepo path.
+            let Some(matcher) = task_name_glob(pat).ok() else {
+                return Ok(vec![]);
+            };
+            let exact: Vec<&T> = self
+                .iter()
+                .filter(|(name, _)| task_name_matches(&matcher, name, false))
+                .map(|(_, task)| task)
+                .unique()
+                .collect();
+            if !exact.is_empty() {
+                return Ok(exact);
+            }
+            return Ok(self
+                .iter()
+                .filter(|(name, _)| task_name_matches(&matcher, name, true))
+                .map(|(_, task)| task)
+                .unique()
+                .collect());
         }
 
         // === Parse monorepo pattern ===
@@ -3032,7 +3076,6 @@ where
                 pat
             );
         }
-        let has_explicit_task_glob = parts.len() > 1;
         let (path_pattern, task_pattern) = match parts.as_slice() {
             [path, task] => (*path, *task),
             [path] => (*path, "*"),
@@ -3047,8 +3090,8 @@ where
             .strip_suffix("/...")
             .map(|base| if base == "/" { "//" } else { base });
 
-        // For task patterns, * only matches within the task name portion (after final :)
-        // e.g., test:* matches test:unit, test:integration, etc.
+        // Task groups use `:` as their separator. The task matcher normalizes
+        // that separator so `*` matches one group and `**` matches recursively.
         let task_glob = task_pattern;
 
         // === Build glob matchers once (performance optimization) ===
@@ -3062,42 +3105,7 @@ where
             .and_then(|base| GlobBuilder::new(base).literal_separator(true).build().ok())
             .map(|glob| glob.compile_matcher());
 
-        // Build task matcher if not wildcard
-        let task_matcher = if task_glob != "*" {
-            GlobBuilder::new(task_glob)
-                .literal_separator(false) // Allow * to match : in task names
-                .build()
-                .ok()
-                .map(|b| b.compile_matcher())
-        } else {
-            None
-        };
-
-        // Build relative pattern matchers if needed
-        let (rel_path_matcher, rel_task_matcher) = if !pat.starts_with("//") {
-            let rel_path_pattern = path_pattern.strip_prefix("//").unwrap_or(path_pattern);
-            let rel_path_glob = rel_path_pattern.replace("...", "**");
-
-            let rel_path = GlobBuilder::new(&rel_path_glob)
-                .literal_separator(true)
-                .build()
-                .ok()
-                .map(|b| b.compile_matcher());
-
-            let rel_task = if task_glob != "*" {
-                GlobBuilder::new(task_glob)
-                    .literal_separator(false)
-                    .build()
-                    .ok()
-                    .map(|b| b.compile_matcher())
-            } else {
-                None
-            };
-
-            (rel_path, rel_task)
-        } else {
-            (None, None)
-        };
+        let task_matcher = task_name_glob(task_glob).ok();
 
         // === Match tasks ===
         // Whether a key matches the pattern. `allow_ext_strip` enables the
@@ -3125,52 +3133,11 @@ where
                 false
             };
 
-            // Match task part with asterisk support and (optional) extension stripping.
-            // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
-            // require the key to actually have a task part (i.e., contain a `:`
-            // separator). This prevents "test" from matching "test:*", which would
-            // cause circular dependencies. Implicit wildcards (bare names like "test")
-            // should still match the exact task.
-            let task_matches = if task_glob == "*" {
-                !has_explicit_task_glob || !key_task.is_empty()
-            } else if let Some(ref matcher) = task_matcher {
-                matcher.is_match(key_task)
-                    || (allow_ext_strip && matcher.is_match(strip_extension(key_task)))
-            } else {
-                false
-            };
+            let task_matches = task_matcher
+                .as_ref()
+                .is_some_and(|matcher| task_name_matches(matcher, key_task, allow_ext_strip));
 
-            // Try matching without // prefix for relative patterns
-            let relative_match = if !pat.starts_with("//") {
-                let stripped_key = k.strip_prefix("//").unwrap_or(k);
-                let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
-                let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
-                    [path, task] => (*path, *task),
-                    [path] => (*path, ""),
-                    _ => (stripped_key, ""),
-                };
-
-                let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
-                    matcher.is_match(stripped_path)
-                } else {
-                    false
-                };
-
-                let rel_task_matches = if task_glob == "*" {
-                    !has_explicit_task_glob || !stripped_task.is_empty()
-                } else if let Some(ref matcher) = rel_task_matcher {
-                    matcher.is_match(stripped_task)
-                        || (allow_ext_strip && matcher.is_match(strip_extension(stripped_task)))
-                } else {
-                    false
-                };
-
-                rel_path_matches && rel_task_matches
-            } else {
-                false
-            };
-
-            (path_matches && task_matches) || relative_match
+            path_matches && task_matches
         };
 
         // Prefer exact task-name matches; fall back to extension-stripped matches
@@ -5408,6 +5375,149 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_respects_task_group_boundaries() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            ("test".to_string(), "test".to_string()),
+            ("test:local".to_string(), "test:local".to_string()),
+            (
+                "test:units:local".to_string(),
+                "test:units:local".to_string(),
+            ),
+            (
+                "test:integration:local".to_string(),
+                "test:integration:local".to_string(),
+            ),
+            (
+                "test:e2e:happy:local".to_string(),
+                "test:e2e:happy:local".to_string(),
+            ),
+        ]);
+
+        assert_eq!(
+            tasks.get_matching("test:*:local").unwrap(),
+            vec![
+                &"test:integration:local".to_string(),
+                &"test:units:local".to_string(),
+            ]
+        );
+        assert_eq!(
+            tasks.get_matching("test:**:local").unwrap(),
+            vec![
+                &"test:e2e:happy:local".to_string(),
+                &"test:integration:local".to_string(),
+                &"test:local".to_string(),
+                &"test:units:local".to_string(),
+            ]
+        );
+        assert!(
+            tasks
+                .get_matching("test:*")
+                .unwrap()
+                .contains(&&"test:local".to_string())
+        );
+        assert!(
+            !tasks
+                .get_matching("test:*")
+                .unwrap()
+                .contains(&&"test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_matching_group_globs_support_other_glob_syntax() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            (
+                "generate:completions".to_string(),
+                "generate:completions".to_string(),
+            ),
+            (
+                "generate:docs:api".to_string(),
+                "generate:docs:api".to_string(),
+            ),
+            (
+                "generate:docs:api:deep".to_string(),
+                "generate:docs:api:deep".to_string(),
+            ),
+            ("check:a".to_string(), "check:a".to_string()),
+            ("check:b".to_string(), "check:b".to_string()),
+            ("check:ab".to_string(), "check:ab".to_string()),
+        ]);
+
+        assert_eq!(
+            tasks.get_matching("generate:{completions,docs:*}").unwrap(),
+            vec![
+                &"generate:completions".to_string(),
+                &"generate:docs:api".to_string(),
+            ]
+        );
+        assert_eq!(
+            tasks.get_matching("check:?").unwrap(),
+            vec![&"check:a".to_string(), &"check:b".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("check:[ab]").unwrap(),
+            vec![&"check:a".to_string(), &"check:b".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_get_matching_group_boundaries_in_monorepo_and_workspace_tasks() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            (
+                "//pkg:test:units:local".to_string(),
+                "//pkg:test:units:local".to_string(),
+            ),
+            (
+                "//pkg:test:e2e:happy:local".to_string(),
+                "//pkg:test:e2e:happy:local".to_string(),
+            ),
+            (
+                "node:@scope/app#test:units:local".to_string(),
+                "node:@scope/app#test:units:local".to_string(),
+            ),
+            (
+                "node:@scope/app#test:e2e:happy:local".to_string(),
+                "node:@scope/app#test:e2e:happy:local".to_string(),
+            ),
+        ]);
+
+        assert_eq!(
+            tasks.get_matching("//pkg:test:*:local").unwrap(),
+            vec![&"//pkg:test:units:local".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("//pkg:test:**:local").unwrap(),
+            vec![
+                &"//pkg:test:e2e:happy:local".to_string(),
+                &"//pkg:test:units:local".to_string(),
+            ]
+        );
+        assert_eq!(
+            tasks.get_matching("node:@scope/app#test:*:local").unwrap(),
+            vec![&"node:@scope/app#test:units:local".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("node:@scope/app#test:**:local").unwrap(),
+            vec![
+                &"node:@scope/app#test:e2e:happy:local".to_string(),
+                &"node:@scope/app#test:units:local".to_string(),
+            ]
+        );
     }
 
     #[test]

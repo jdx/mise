@@ -97,8 +97,8 @@ dependencies.
 Available Wildcard Patterns:
 
 - `?` matches any single character
-- `*` matches 0 or more characters
-- `**` matches 0 or more groups
+- `*` matches 0 or more characters within a single `:`-delimited group
+- `**` matches 0 or more complete `:`-delimited groups
 - `{glob1,glob2,...}` matches any of the comma-separated glob patterns
 - `[ab,...]` matches any of the characters or ranges `[a-z]`
 - `[!ab,...]` matches any character not in the character set
@@ -106,6 +106,20 @@ Available Wildcard Patterns:
 ### Examples
 
 `mise run generate:{completions,docs:*}`
+
+For grouped tasks, use `*` when exactly one group may vary and `**` when the
+match may cross multiple groups:
+
+```bash
+# Matches test:units:local, but not test:e2e:happy:local
+mise run 'test:*:local'
+
+# Matches both test:units:local and test:e2e:happy:local
+mise run 'test:**:local'
+```
+
+If a pattern relied on `*` matching nested task groups in an older mise
+version, replace it with `**` to keep the recursive behavior.
 
 And with dependencies:
 
