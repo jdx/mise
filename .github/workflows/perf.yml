@@ -27,6 +27,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  TAK_RUNNER: bamboo-v2-ubuntu24.04-x64-30vcpu-24gb-rust1.97.1
 
 jobs:
   measure:
@@ -34,11 +35,9 @@ jobs:
     # Pinned to one runner class on purpose. Absolute instruction counts shift
     # between machine types by more than a real regression does, so a series
     # that wanders between runners is unreadable.
-    # A cache tag of its own. Namespace shares a volume across jobs in a
-    # repository by default, so this job — which holds a write token and pushes
-    # notes — must not read a cache that perf-pr.yml, running pull-request
-    # code, can write to.
-    runs-on: namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-perf-main
+    # The disposable runner and cache key isolate this main-only job from
+    # perf-pr.yml, which executes pull-request code with read-only permissions.
+    runs-on: bamboo-perf
     timeout-minutes: 30
     permissions:
       contents: write # pushing refs/notes/tak is a write to this repository
@@ -47,9 +46,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1.6.1
-        with:
-          cache: rust
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:

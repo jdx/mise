@@ -1,6 +1,7 @@
 self-hosted-runner:
   # Labels of self-hosted runner in array of strings.
   labels:
+    - bamboo-perf
     - macos-14
     - namespace-profile-endev-macos-arm64
     - namespace-profile-endev-macos-arm64-large
