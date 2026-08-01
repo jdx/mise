@@ -18,23 +18,15 @@ installed) and makes it the global default:
 mise use -g ruby@3.2
 ```
 
-Behind the scenes, mise uses [`ruby-build`](https://github.com/rbenv/ruby-build) to compile ruby
-from source. Ensure that you have the necessary
-[dependencies](https://github.com/rbenv/ruby-build/wiki#suggested-build-environment) installed.
-You can check its [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional settings and some
-troubleshooting.
+By default, mise installs a precompiled Ruby binary when one is available and falls back to
+compiling from source with [`ruby-build`](https://github.com/rbenv/ruby-build). Source builds require
+the necessary [dependencies](https://github.com/rbenv/ruby-build/wiki#suggested-build-environment).
+See the ruby-build [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional
+settings and troubleshooting.
 
 ## Precompiled Binaries
 
-Mise can download precompiled Ruby binaries instead of
-compiling from source. This significantly reduces installation time.
-
-Precompiled binaries will become the default in 2026.8.0. To opt in now:
-
-```sh
-mise settings ruby.compile=false
-mise use ruby@3.4.1
-```
+Mise downloads precompiled Ruby binaries by default. This significantly reduces installation time.
 
 Precompiled binaries are sourced from [jdx/ruby](https://github.com/jdx/ruby) and are available
 for the following platforms:
