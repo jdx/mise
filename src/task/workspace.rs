@@ -261,6 +261,21 @@ pub trait WorkspaceProvider: Debug + Send + Sync {
     ) -> Result<BTreeMap<String, WorkspaceTask>> {
         self.discover_project_tasks(workspace_root, project_root)
     }
+
+    /// Attributes a changed ecosystem lockfile to workspace projects.
+    ///
+    /// `lockfile_path` is workspace-relative. `None` means this provider does
+    /// not recognize the lockfile; a recognized but ambiguous change should
+    /// conservatively return all projects owned by the provider.
+    fn affected_projects_for_lockfile(
+        &self,
+        _lockfile_path: &Path,
+        _before: Option<&str>,
+        _after: Option<&str>,
+        _graph: &WorkspaceProjectGraph,
+    ) -> Result<Option<BTreeSet<ProjectId>>> {
+        Ok(None)
+    }
 }
 
 /// Filesystem results shared by every provider during one graph discovery.
@@ -815,6 +830,47 @@ impl WorkspaceProjectGraph {
         self.affected_projects(changed)
     }
 
+    /// Asks workspace providers to attribute a changed lockfile to projects.
+    pub fn affected_projects_for_lockfile(
+        &self,
+        providers: &[&dyn WorkspaceProvider],
+        lockfile_path: &Path,
+        before: Option<&str>,
+        after: Option<&str>,
+    ) -> Result<Option<BTreeSet<ProjectId>>> {
+        let mut providers = providers.to_vec();
+        providers.sort_by(|left, right| left.id().cmp(right.id()));
+        let mut recognized = false;
+        let mut affected = BTreeSet::new();
+        for provider in providers {
+            let Some(projects) =
+                provider.affected_projects_for_lockfile(lockfile_path, before, after, self)?
+            else {
+                continue;
+            };
+            recognized = true;
+            let expected_prefix = format!("{}:", provider.id());
+            for id in projects {
+                if !id.as_str().starts_with(&expected_prefix) {
+                    bail!(
+                        "workspace provider {:?} attributed lockfile {:?} to foreign project {id:?}",
+                        provider.id(),
+                        lockfile_path
+                    );
+                }
+                if !self.projects.contains_key(&id) {
+                    bail!(
+                        "workspace provider {:?} attributed lockfile {:?} to unknown project {id:?}",
+                        provider.id(),
+                        lockfile_path
+                    );
+                }
+                affected.insert(id);
+            }
+        }
+        Ok(recognized.then_some(affected))
+    }
+
     /// Summarizes provider failures retained during lenient task discovery.
     pub(crate) fn provider_discovery_error(&self) -> Option<String> {
         (!self.provider_errors.is_empty()).then(|| {
@@ -1088,6 +1144,32 @@ mod tests {
         projects: Vec<WorkspaceProject>,
     }
 
+    #[derive(Debug)]
+    struct LockfileProvider {
+        id: &'static str,
+        projects: BTreeSet<ProjectId>,
+    }
+
+    impl WorkspaceProvider for LockfileProvider {
+        fn id(&self) -> &str {
+            self.id
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            Ok(Vec::new())
+        }
+
+        fn affected_projects_for_lockfile(
+            &self,
+            _lockfile_path: &Path,
+            _before: Option<&str>,
+            _after: Option<&str>,
+            _graph: &WorkspaceProjectGraph,
+        ) -> Result<Option<BTreeSet<ProjectId>>> {
+            Ok(Some(self.projects.clone()))
+        }
+    }
+
     impl WorkspaceProvider for TestProvider {
         fn id(&self) -> &str {
             self.id
@@ -1278,6 +1360,30 @@ mod tests {
         );
         assert!(ProjectId::new("", "app").is_err());
         assert!(ProjectId::new("node", " app").is_err());
+    }
+
+    #[test]
+    fn lockfile_attribution_rejects_foreign_project_ids() {
+        let node = TestProvider {
+            id: "node",
+            projects: vec![project("node", "app", "app")],
+        };
+        let graph = WorkspaceProjectGraph::discover(&node, Path::new("/workspace")).unwrap();
+        let cargo = LockfileProvider {
+            id: "cargo",
+            projects: BTreeSet::from([ProjectId::new("node", "app").unwrap()]),
+        };
+
+        let err = graph
+            .affected_projects_for_lockfile(
+                &[&cargo],
+                Path::new("Cargo.lock"),
+                Some("before"),
+                Some("after"),
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("to foreign project"));
     }
 
     #[test]
