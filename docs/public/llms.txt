@@ -170,6 +170,7 @@
 - [mise cache clear](https://mise.jdx.dev/cli/cache/clear.html): Deletes all cache files in mise
 - [mise cache path](https://mise.jdx.dev/cli/cache/path.html): Show the cache directory path
 - [mise cache prune](https://mise.jdx.dev/cli/cache/prune.html): Removes stale mise cache files
+- [mise cache task](https://mise.jdx.dev/cli/cache/task.html): Inspect output cache entries for a task
 - [mise completion](https://mise.jdx.dev/cli/completion.html): Generate shell completions
 - [mise config](https://mise.jdx.dev/cli/config.html): Manage config files
 - [mise config get](https://mise.jdx.dev/cli/config/get.html): Display the value of a setting in a mise.toml file

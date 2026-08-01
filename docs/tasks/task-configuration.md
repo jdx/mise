@@ -722,6 +722,16 @@ when each restored entry was created. Entries written before this metadata was a
 and contribute zero bytes and time when restored. Freshness skips that do not perform a cache lookup
 are not counted as hits or misses.
 
+Use `mise cache task <task>` to inspect every local output-cache entry associated with a configured
+task. The table shows each key, whether it is the current freshness entry, its stored and restorable
+sizes, recorded execution time, last access time, and output roots. Add `--json` for structured
+output. Entries created before task identity metadata was added can be inspected when they are the
+task's current entry; older historical entries become discoverable after they are rewritten.
+
+Use `mise cache clear --task <task>` to delete only that task's local output-cache entries and
+freshness pointer. Declared outputs in the working directory and entries belonging to other tasks
+are not removed.
+
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under
 `task_config.cache`, these names always compose with task-local `cache.env`.

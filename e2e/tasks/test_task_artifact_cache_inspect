@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+cp input.txt dist/result.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+
+[tasks.other]
+run = '''
+mkdir -p other-dist
+cp other.txt other-dist/result.txt
+'''
+sources = ["other.txt"]
+outputs = ["other-dist"]
+
+[tasks."group:one"]
+run = "mkdir -p group-one && cp input.txt group-one/result.txt"
+sources = ["input.txt"]
+outputs = ["group-one"]
+
+[tasks."group:two"]
+run = "mkdir -p group-two && cp input.txt group-two/result.txt"
+sources = ["input.txt"]
+outputs = ["group-two"]
+
+[tasks.twin]
+run = '''
+mkdir -p dist
+cp input.txt dist/result.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'one\n' >input.txt
+printf 'other\n' >other.txt
+mise run build
+printf 'two\n' >input.txt
+mise run build
+mise run other
+
+assert_json \
+  "mise cache task build --json | jq '{task, entries: (.entries | length), current_entries: ([.entries[] | select(.current)] | length), key_lengths: [.entries[].key | length], outputs: [.entries[].outputs]}'" \
+  '{
+    "task": "build",
+    "entries": 2,
+    "current_entries": 1,
+    "key_lengths": [64, 64],
+    "outputs": [["dist"], ["dist"]]
+  }'
+cache_key="$(mise cache task build --json | jq -r '.entries[0].key')"
+assert_contains "mise cache task build" "$cache_key"
+
+# In-progress or abandoned partial manifests are not inspectable entries, but
+# task-scoped clearing removes partial files that belong to the task.
+cache_dir="$MISE_CACHE_DIR/task-artifacts/v2"
+cp "$cache_dir/$cache_key.json" "$cache_dir/$cache_key.part-deadbeef.json"
+cp "$cache_dir/$cache_key.tar.zst" "$cache_dir/$cache_key.part-deadbeef.tar.zst"
+assert "mise cache task build --json | jq '.entries | length'" "2"
+
+mise cache clear --task build
+assert_json "mise cache task build --json | jq '.entries'" '[]'
+assert "find \"$cache_dir\" -name '*.part-*' | wc -l | tr -d ' '" "0"
+assert "mise cache task other --json | jq '.entries | length'" "1"
+assert "cat dist/result.txt" "two"
+assert "cat other-dist/result.txt" "other"
+
+# Task expressions inspect and clear every matching task rather than silently
+# selecting the first match.
+mise run 'group:*'
+assert "mise cache task 'group:*' --json | jq 'length'" "2"
+mise cache clear --task 'group:*'
+assert "mise cache task 'group:*' --json | jq '[.[].entries | length] | add'" "0"
+assert_contains "mise cache task 'group:*'" "No output cache entries for group:one, group:two"
+
+# A stale state pointer can reference another task's artifact key. Clearing the
+# stale task must not remove the owning task's manifest/archive.
+mise run build
+mise run twin
+build_key="$(mise cache task build --json | jq -r '.entries[] | select(.current).key')"
+twin_key="$(mise cache task twin --json | jq -r '.entries[] | select(.current).key')"
+twin_state="$(grep -rl "^${twin_key}$" "$MISE_STATE_DIR/task-artifacts")"
+printf '%s\n' "$build_key" >"$twin_state"
+mise cache clear --task twin
+assert "mise cache task build --json | jq '.entries | length'" "1"
+
+assert_fail_contains "mise cache task missing" "Task not found: missing"

@@ -287,7 +287,7 @@ impl Commands {
             Self::Backends(cmd) => cmd.run().await,
             Self::BinPaths(cmd) => cmd.run().await,
             Self::Bootstrap(cmd) => cmd.run().await,
-            Self::Cache(cmd) => cmd.run(),
+            Self::Cache(cmd) => cmd.run().await,
             Self::Completion(cmd) => cmd.run().await,
             Self::Config(cmd) => cmd.run().await,
             Self::Current(cmd) => cmd.run().await,

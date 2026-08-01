@@ -110,6 +110,8 @@ pub(crate) struct CommandInput {
 struct CacheManifest {
     format: u8,
     key: String,
+    #[serde(default)]
+    task_identity: String,
     roots: Vec<PathBuf>,
     output: Vec<TaskCacheOutput>,
     #[serde(default)]
@@ -134,6 +136,22 @@ pub(crate) struct TaskCacheHit {
     pub(crate) output: Vec<TaskCacheOutput>,
     pub(crate) restored_bytes: u64,
     pub(crate) saved_duration: std::time::Duration,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct TaskCacheEntry {
+    pub(crate) key: String,
+    pub(crate) current: bool,
+    pub(crate) size_bytes: u64,
+    pub(crate) restored_bytes: u64,
+    pub(crate) execution_duration_ns: u64,
+    pub(crate) last_accessed: u64,
+    pub(crate) outputs: Vec<PathBuf>,
+}
+
+pub(crate) struct TaskCacheClearResult {
+    pub(crate) entries: usize,
+    pub(crate) size_bytes: u64,
 }
 
 pub(crate) enum TaskCacheMissReason {
@@ -321,15 +339,7 @@ impl TaskArtifactCacheBuilder {
         } else {
             None
         };
-        let state_identity = hash::hash_blake3_to_str(&format!(
-            "{}\0{}\0{}",
-            root.display(),
-            task.name,
-            task.config_source.display()
-        ));
-        let state_path = dirs::STATE
-            .join("task-artifacts")
-            .join(format!("{state_identity}.key"));
+        let state_path = task_cache_state_path(task, &root);
         Ok(TaskArtifactCache {
             root,
             cache_dir: task_cache_dir(),
@@ -501,6 +511,7 @@ impl TaskArtifactCache {
         let manifest = CacheManifest {
             format: CACHE_FORMAT_VERSION,
             key: self.key.clone(),
+            task_identity: task_cache_identity(task, &self.root),
             roots,
             output: output.to_vec(),
             restored_bytes: archive_bytes.saturating_add(output_bytes),
@@ -532,6 +543,153 @@ impl TaskArtifactCache {
         }
         Ok(manifest)
     }
+}
+
+pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry>> {
+    Settings::get().ensure_experimental("task artifact caching")?;
+    let cache_dir = task_cache_dir();
+    if !cache_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let identity = task_cache_identity(task, root);
+    let current_key = file::read_to_string(task_cache_state_path(task, root))
+        .ok()
+        .map(|key| key.trim().to_string());
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(&cache_dir)? {
+        let entry = entry?;
+        let manifest_path = entry.path();
+        if manifest_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        if manifest_path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| stem.contains(".part-"))
+        {
+            continue;
+        }
+        let manifest: CacheManifest = match fs::read(&manifest_path)
+            .map_err(Report::from)
+            .and_then(|contents| serde_json::from_slice(&contents).map_err(Report::from))
+        {
+            Ok(manifest) => manifest,
+            Err(err) => {
+                warn!(
+                    "ignoring unreadable task cache manifest {}: {err}",
+                    manifest_path.display()
+                );
+                continue;
+            }
+        };
+        let matches_identity = manifest.task_identity == identity;
+        let matches_legacy_current = manifest.task_identity.is_empty()
+            && current_key.as_deref() == Some(manifest.key.as_str());
+        if !matches_identity && !matches_legacy_current {
+            continue;
+        }
+        let archive_path = cache_dir.join(format!("{}.tar.zst", manifest.key));
+        let manifest_metadata = fs::metadata(&manifest_path)?;
+        let archive_metadata = fs::metadata(&archive_path).ok();
+        let last_accessed = archive_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.modified().ok())
+            .into_iter()
+            .chain(manifest_metadata.modified().ok())
+            .filter_map(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .max()
+            .unwrap_or_default();
+        entries.push(TaskCacheEntry {
+            current: current_key.as_deref() == Some(manifest.key.as_str()),
+            key: manifest.key,
+            size_bytes: manifest_metadata
+                .len()
+                .saturating_add(archive_metadata.map_or(0, |metadata| metadata.len())),
+            restored_bytes: manifest.restored_bytes,
+            execution_duration_ns: manifest.execution_duration_ns,
+            last_accessed,
+            outputs: manifest.roots,
+        });
+    }
+    entries.sort_by(|a, b| {
+        b.last_accessed
+            .cmp(&a.last_accessed)
+            .then_with(|| a.key.cmp(&b.key))
+    });
+    Ok(entries)
+}
+
+pub(crate) fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult> {
+    let entries = task_cache_entries(task, root)?;
+    let cache_dir = task_cache_dir();
+    let mut size_bytes = entries
+        .iter()
+        .fold(0_u64, |total, entry| total.saturating_add(entry.size_bytes));
+    for entry in &entries {
+        remove_cache_file(&cache_dir.join(format!("{}.tar.zst", entry.key)))?;
+        remove_cache_file(&cache_dir.join(format!("{}.json", entry.key)))?;
+    }
+    let identity = task_cache_identity(task, root);
+    let mut entry_count = entries.len();
+    for entry in fs::read_dir(&cache_dir)? {
+        let entry = entry?;
+        let manifest_path = entry.path();
+        let Some(stem) = manifest_path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .filter(|stem| stem.contains(".part-"))
+        else {
+            continue;
+        };
+        if manifest_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(contents) = fs::read(&manifest_path) else {
+            continue;
+        };
+        let Ok(manifest) = serde_json::from_slice::<CacheManifest>(&contents) else {
+            continue;
+        };
+        if manifest.task_identity != identity {
+            continue;
+        }
+        let archive_path = cache_dir.join(format!("{stem}.tar.zst"));
+        size_bytes = size_bytes
+            .saturating_add(fs::metadata(&manifest_path).map_or(0, |metadata| metadata.len()))
+            .saturating_add(fs::metadata(&archive_path).map_or(0, |metadata| metadata.len()));
+        entry_count += 1;
+        remove_cache_file(&manifest_path)?;
+        remove_cache_file(&archive_path)?;
+    }
+    remove_cache_file(&task_cache_state_path(task, root))?;
+    Ok(TaskCacheClearResult {
+        entries: entry_count,
+        size_bytes,
+    })
+}
+
+fn remove_cache_file(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn task_cache_identity(task: &Task, root: &Path) -> String {
+    hash::hash_blake3_to_str(&format!(
+        "{}\0{}\0{}",
+        root.display(),
+        task.name,
+        task.config_source.display()
+    ))
+}
+
+fn task_cache_state_path(task: &Task, root: &Path) -> PathBuf {
+    dirs::STATE
+        .join("task-artifacts")
+        .join(format!("{}.key", task_cache_identity(task, root)))
 }
 
 impl TaskCacheKeyExplanation {
@@ -1033,6 +1191,7 @@ mod tests {
 
         assert_eq!(manifest.restored_bytes, 0);
         assert_eq!(manifest.execution_duration_ns, 0);
+        assert_eq!(manifest.task_identity, "");
     }
 
     #[test]

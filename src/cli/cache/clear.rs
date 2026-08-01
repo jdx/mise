@@ -5,6 +5,7 @@ use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
 use heck::ToKebabCase;
+use itertools::Itertools;
 use walkdir::WalkDir;
 
 /// Deletes all cache files in mise
@@ -18,10 +19,32 @@ pub struct CacheClear {
     /// Mark all cache files as old
     #[clap(long, hide = true)]
     outdate: bool,
+
+    /// Clear output cache entries for a task name or pattern
+    #[clap(long, conflicts_with_all = ["tool", "outdate"])]
+    task: Option<String>,
 }
 
 impl CacheClear {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
+        if let Some(task_name) = &self.task {
+            let (config, tasks) = super::task::resolve_tasks(task_name).await?;
+            let mut entries = 0;
+            let mut size_bytes = 0_u64;
+            for task in &tasks {
+                let root = crate::task::task_source_checker::task_cwd(task, &config).await?;
+                let result = crate::task::task_cache::clear_task_cache(task, &root)?;
+                entries += result.entries;
+                size_bytes = size_bytes.saturating_add(result.size_bytes);
+            }
+            info!(
+                "task cache cleared for {}: {} entries, {}",
+                tasks.iter().map(|task| &task.display_name).join(", "),
+                entries,
+                bytesize::ByteSize::b(size_bytes).display().iec()
+            );
+            return Ok(());
+        }
         let cache_dirs = match &self.tool {
             Some(tools) => tools
                 .iter()
