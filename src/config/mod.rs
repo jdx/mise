@@ -507,16 +507,17 @@ impl Config {
             .unwrap_or_default();
         let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
         let node = crate::task::workspace::node::NodeWorkspaceProvider;
+        let uv = crate::task::workspace::uv::UvWorkspaceProvider;
 
         if skip_provider_errors {
             crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
-                &[&cargo, &node],
+                &[&cargo, &node, &uv],
                 &monorepo_root,
                 &overrides,
             )
         } else {
             crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides(
-                &[&cargo, &node],
+                &[&cargo, &node, &uv],
                 &monorepo_root,
                 &overrides,
             )

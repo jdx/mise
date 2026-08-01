@@ -384,6 +384,33 @@ or beneath an excluded path. Declarations that resolve back to the same package 
 self-edge. If the inferred internal edges produce a cycle, `mise tasks graph` reports the cycle;
 project overrides can replace or adjust the inferred dependencies when needed.
 
+### uv Workspace Discovery
+
+The uv provider discovers Python projects when the root `pyproject.toml` contains a
+`[tool.uv.workspace]` table. The root project is always included, and mise expands `members` globs
+and honors `exclude` for the remaining workspace members. Each project must define
+`[project].name`; mise normalizes equivalent Python package spellings such as `my_package`,
+`my.package`, and `my-package` to a stable ID such as `uv:my-package`.
+
+Local directory sources under the configured monorepo root are also represented as projects, even
+when they are excluded from uv workspace membership. This preserves dependency edges for uv's
+path-dependency alternative to workspaces. Local metadata is parsed directly, so neither `uv` nor
+Python needs to be installed for graph discovery.
+
+### uv Dependency Inference
+
+mise reads dependencies from `[project].dependencies`, optional dependency groups,
+`[dependency-groups]`, and uv's legacy `dev-dependencies`. An internal edge is added only when the
+corresponding `[tool.uv.sources]` entry selects a workspace member with `workspace = true` or points
+to an in-repository project directory with `path`. Root source declarations apply to workspace
+members unless a member overrides that dependency's source.
+
+Source arrays with environment markers are treated conservatively: any local alternative adds the
+edge because the graph is platform-independent. Registry, Git, URL, wheel, source archive, and
+external-workspace sources do not add projects or edges. Self-dependencies are ignored, while
+cycles among projects are reported by `mise tasks graph` and can be corrected with project
+overrides.
+
 ### Node Workspace Discovery
 
 The Node provider discovers npm, pnpm, Yarn, and Bun workspace packages from:
