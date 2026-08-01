@@ -66,7 +66,7 @@ outside this tracker.
 - [x] Map changed files to their owning projects
 - [x] Compute affected projects from changed projects and reverse project dependency edges
 - [x] Add configurable Git base and head revisions with sensible local and CI defaults
-- [ ] Treat workspace-global files and explicitly declared global inputs as affecting the
+- [x] Treat workspace-global files and explicitly declared global inputs as affecting the
       appropriate project set
 - [ ] Account for lockfile changes at project granularity when a provider can determine the affected
       external dependencies

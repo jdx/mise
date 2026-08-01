@@ -9,7 +9,11 @@ use std::sync::{Arc, Mutex};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 
-use super::{Task, TaskCacheConfig, task_sources::TaskOutputs};
+use super::{
+    Task, TaskCacheConfig,
+    task_source_checker::{build_source_matcher, is_source},
+    task_sources::TaskOutputs,
+};
 
 pub mod cargo;
 pub mod git;
@@ -778,6 +782,37 @@ impl WorkspaceProjectGraph {
             }
         }
         Ok(affected)
+    }
+
+    /// Maps changed paths to affected projects, including workspace-global inputs.
+    ///
+    /// Paths outside every project root are workspace-global and affect every
+    /// project. A changed path selected by the resolved `task_config.global_inputs`
+    /// patterns does the same, even when that path is owned by a project.
+    pub fn affected_projects_for_paths(
+        &self,
+        workspace_root: &Path,
+        paths: impl IntoIterator<Item = impl AsRef<Path>>,
+        resolved_global_inputs: &[String],
+    ) -> Result<BTreeSet<ProjectId>> {
+        let mapped = self.map_paths_to_projects(paths)?;
+        let global_matcher =
+            build_source_matcher(workspace_root, workspace_root, resolved_global_inputs);
+        let global_input_changed = mapped
+            .projects_by_path
+            .keys()
+            .chain(&mapped.unowned_paths)
+            .any(|path| is_source(&global_matcher, &workspace_root.join(path)));
+        if !mapped.unowned_paths.is_empty() || global_input_changed {
+            return Ok(self.projects.keys().cloned().collect());
+        }
+
+        let changed = mapped
+            .projects_by_path
+            .values()
+            .flat_map(BTreeSet::iter)
+            .collect::<BTreeSet<_>>();
+        self.affected_projects(changed)
     }
 
     /// Summarizes provider failures retained during lenient task discovery.
@@ -2210,6 +2245,98 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "unknown workspace project ProjectId(\"node:missing\")"
+        );
+    }
+
+    #[test]
+    fn unowned_workspace_paths_affect_every_project() {
+        let provider = test_provider(vec![
+            project("test", "app", "apps/app"),
+            project("test", "lib", "packages/lib"),
+            project("test", "docs", "docs"),
+        ]);
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_paths(Path::new("/workspace"), ["workspace.toml"], &[])
+            .unwrap();
+
+        assert_eq!(
+            affected,
+            BTreeSet::from([
+                ProjectId::new("test", "app").unwrap(),
+                ProjectId::new("test", "docs").unwrap(),
+                ProjectId::new("test", "lib").unwrap(),
+            ])
+        );
+    }
+
+    #[test]
+    fn declared_global_inputs_affect_every_project() {
+        let provider = test_provider(vec![
+            project("test", "app", "apps/app"),
+            project("test", "lib", "packages/lib"),
+            project("test", "docs", "docs"),
+        ]);
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_paths(
+                Path::new("/workspace"),
+                ["apps/app/toolchain.toml"],
+                &["**/toolchain.toml".to_string()],
+            )
+            .unwrap();
+
+        assert_eq!(
+            affected,
+            graph.projects().map(|project| project.id.clone()).collect()
+        );
+    }
+
+    #[test]
+    fn ordinary_owned_paths_affect_only_their_reverse_dependency_closure() {
+        let lib_id = ProjectId::new("test", "lib").unwrap();
+        let app_id = ProjectId::new("test", "app").unwrap();
+        let mut app = project("test", "app", "apps/app");
+        app.dependencies.insert(lib_id.clone());
+        let provider = test_provider(vec![
+            app,
+            project("test", "lib", "packages/lib"),
+            project("test", "docs", "docs"),
+        ]);
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_paths(
+                Path::new("/workspace"),
+                ["packages/lib/src/lib.rs"],
+                &["**/toolchain.toml".to_string()],
+            )
+            .unwrap();
+
+        assert_eq!(affected, BTreeSet::from([lib_id, app_id]));
+    }
+
+    #[test]
+    fn global_input_exclusions_preserve_project_scoping() {
+        let provider = test_provider(vec![
+            project("test", "app", "apps/app"),
+            project("test", "docs", "docs"),
+        ]);
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_paths(
+                Path::new("/workspace"),
+                ["docs/config.json"],
+                &["**/*.json".to_string(), "!docs/**".to_string()],
+            )
+            .unwrap();
+
+        assert_eq!(
+            affected,
+            BTreeSet::from([ProjectId::new("test", "docs").unwrap()])
         );
     }
 
