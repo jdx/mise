@@ -6,8 +6,8 @@ use eyre::{Context, Result};
 use serde::Deserialize;
 
 use super::{
-    ProjectId, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider, WorkspaceTask,
-    WorkspaceTaskSuggestions,
+    ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
+    WorkspaceTask, WorkspaceTaskSuggestions,
 };
 
 const PACKAGE_JSON: &str = "package.json";
@@ -22,6 +22,7 @@ struct WorkspaceDefinition {
     source: &'static str,
     package_manager: Option<String>,
     include_named_root: bool,
+    root_manifest: Option<PackageJson>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -46,16 +47,25 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
     }
 
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
-        let Some(definition) = workspace_definition(workspace_root)? else {
+        let context = WorkspaceDiscoveryContext::new();
+        self.discover_with_context(workspace_root, &context)
+    }
+
+    fn discover_with_context(
+        &self,
+        workspace_root: &Path,
+        context: &WorkspaceDiscoveryContext,
+    ) -> Result<Vec<WorkspaceProject>> {
+        let Some(definition) = workspace_definition(workspace_root, context)? else {
             return Ok(Vec::new());
         };
-        let canonical_root = workspace_root.canonicalize().wrap_err_with(|| {
+        let canonical_root = context.canonicalize(workspace_root).wrap_err_with(|| {
             format!(
                 "failed to resolve Node workspace root {}",
                 workspace_root.display()
             )
         })?;
-        let turbo = read_turbo_json(workspace_root)?;
+        let turbo = read_turbo_json(workspace_root, context)?;
         let mut roots = aube::embed::discover_workspace_packages(
             &canonical_root,
             WorkspaceDiscoveryOptions::confined_to_root(),
@@ -89,22 +99,36 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
             }
         })
         .collect::<Result<BTreeSet<_>>>()?;
-        if definition.include_named_root {
+        let mut root_manifest = definition.root_manifest.clone();
+        if definition.include_named_root && root_manifest.is_none() {
             let root_manifest_path = workspace_root.join(PACKAGE_JSON);
-            if root_manifest_path.is_file()
-                && read_package_json_if_valid(&root_manifest_path)?
-                    .and_then(|manifest| manifest.name)
-                    .is_some()
-            {
-                roots.insert(PathBuf::from("."));
-            }
+            root_manifest = context
+                .is_file(&root_manifest_path)
+                .then(|| read_package_json_if_valid(context, &root_manifest_path))
+                .transpose()?
+                .flatten();
+        }
+        if definition.include_named_root
+            && root_manifest
+                .as_ref()
+                .and_then(|manifest| manifest.name.as_ref())
+                .is_some()
+        {
+            roots.insert(PathBuf::from("."));
         }
 
         let manifests = roots
             .into_iter()
             .map(|root| {
                 let manifest_path = workspace_root.join(&root).join(PACKAGE_JSON);
-                let manifest = read_package_json(&manifest_path)?;
+                let manifest = if root == Path::new(".") {
+                    match root_manifest.clone() {
+                        Some(manifest) => manifest,
+                        None => read_package_json(context, &manifest_path)?,
+                    }
+                } else {
+                    read_package_json(context, &manifest_path)?
+                };
                 let name = manifest.name.clone().ok_or_else(|| {
                     eyre::eyre!(
                         "Node workspace package at {} is missing the package.json \"name\" field",
@@ -179,19 +203,29 @@ impl WorkspaceProvider for NodeWorkspaceProvider {
         workspace_root: &Path,
         project_root: &Path,
     ) -> Result<BTreeMap<String, WorkspaceTask>> {
-        let Some(definition) = workspace_definition(workspace_root)? else {
+        let context = WorkspaceDiscoveryContext::new();
+        self.discover_project_tasks_with_context(workspace_root, project_root, &context)
+    }
+
+    fn discover_project_tasks_with_context(
+        &self,
+        workspace_root: &Path,
+        project_root: &Path,
+        context: &WorkspaceDiscoveryContext,
+    ) -> Result<BTreeMap<String, WorkspaceTask>> {
+        let Some(definition) = workspace_definition(workspace_root, context)? else {
             return Ok(BTreeMap::new());
         };
         let source = project_root.join(PACKAGE_JSON);
         let manifest_path = workspace_root.join(&source);
-        if !manifest_path.is_file() {
+        if !context.is_file(&manifest_path) {
             return Ok(BTreeMap::new());
         }
-        let Some(manifest) = read_package_json_if_valid(&manifest_path)? else {
+        let Some(manifest) = read_package_json_if_valid(context, &manifest_path)? else {
             return Ok(BTreeMap::new());
         };
         let package_manager = definition.package_manager.as_deref().unwrap_or("npm");
-        let turbo = read_turbo_json(workspace_root)?;
+        let turbo = read_turbo_json(workspace_root, context)?;
         Ok(workspace_tasks(
             &manifest,
             package_manager,
@@ -285,12 +319,15 @@ impl TurboTask {
     }
 }
 
-fn read_turbo_json(workspace_root: &Path) -> Result<Option<TurboJson>> {
+fn read_turbo_json(
+    workspace_root: &Path,
+    context: &WorkspaceDiscoveryContext,
+) -> Result<Option<TurboJson>> {
     let path = workspace_root.join(TURBO_JSON);
-    if !path.is_file() {
+    if !context.is_file(&path) {
         return Ok(None);
     }
-    let contents = match std::fs::read_to_string(&path) {
+    let contents = match context.read_to_string(&path) {
         Ok(contents) => contents,
         Err(error) => {
             warn!("failed to read optional {}: {error}", path.display());
@@ -306,20 +343,24 @@ fn read_turbo_json(workspace_root: &Path) -> Result<Option<TurboJson>> {
     }
 }
 
-fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinition>> {
+fn workspace_definition(
+    workspace_root: &Path,
+    context: &WorkspaceDiscoveryContext,
+) -> Result<Option<WorkspaceDefinition>> {
     let pnpm_workspace_path = workspace_root.join(PNPM_WORKSPACE);
-    if pnpm_workspace_path.is_file() {
+    if context.is_file(&pnpm_workspace_path) {
         return Ok(Some(WorkspaceDefinition {
             source: PNPM_WORKSPACE,
             package_manager: Some("pnpm".to_string()),
             include_named_root: true,
+            root_manifest: None,
         }));
     }
 
     let root_manifest_path = workspace_root.join(PACKAGE_JSON);
-    let root_manifest = root_manifest_path
-        .is_file()
-        .then(|| read_package_json_if_valid(&root_manifest_path))
+    let root_manifest = context
+        .is_file(&root_manifest_path)
+        .then(|| read_package_json_if_valid(context, &root_manifest_path))
         .transpose()?
         .flatten();
     let Some(root_manifest) = root_manifest else {
@@ -338,17 +379,25 @@ fn workspace_definition(workspace_root: &Path) -> Result<Option<WorkspaceDefinit
             .get("packageManager")
             .and_then(serde_json::Value::as_str)
             .map(str::to_string),
+        context,
     );
     let include_named_root = package_manager.as_deref() == Some("yarn");
     Ok(Some(WorkspaceDefinition {
         source: PACKAGE_JSON,
         package_manager,
         include_named_root,
+        root_manifest: Some(root_manifest),
     }))
 }
 
-fn read_package_json(path: &Path) -> Result<PackageJson> {
-    PackageJson::from_path(path).map_err(|error| {
+fn read_package_json(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<PackageJson> {
+    let contents = context.read_to_string(path).map_err(|error| {
+        eyre::eyre!(
+            "failed to read Node package manifest {}: {error}",
+            path.display()
+        )
+    })?;
+    PackageJson::parse(path, contents.to_string()).map_err(|error| {
         eyre::eyre!(
             "failed to parse Node package manifest {}: {error}",
             path.display()
@@ -356,8 +405,17 @@ fn read_package_json(path: &Path) -> Result<PackageJson> {
     })
 }
 
-fn read_package_json_if_valid(path: &Path) -> Result<Option<PackageJson>> {
-    match PackageJson::from_path(path) {
+fn read_package_json_if_valid(
+    context: &WorkspaceDiscoveryContext,
+    path: &Path,
+) -> Result<Option<PackageJson>> {
+    let contents = context.read_to_string(path).map_err(|error| {
+        eyre::eyre!(
+            "failed to read Node package manifest {}: {error}",
+            path.display()
+        )
+    })?;
+    match PackageJson::parse(path, contents.to_string()) {
         Ok(manifest) => Ok(Some(manifest)),
         Err(ManifestError::Parse(_)) => Ok(None),
         Err(error) => Err(eyre::eyre!(
@@ -367,7 +425,11 @@ fn read_package_json_if_valid(path: &Path) -> Result<Option<PackageJson>> {
     }
 }
 
-fn detect_package_manager(workspace_root: &Path, configured: Option<String>) -> Option<String> {
+fn detect_package_manager(
+    workspace_root: &Path,
+    configured: Option<String>,
+    context: &WorkspaceDiscoveryContext,
+) -> Option<String> {
     configured
         .as_deref()
         .map(|value| value.split_once('@').map_or(value, |(name, _)| name))
@@ -387,7 +449,7 @@ fn detect_package_manager(workspace_root: &Path, configured: Option<String>) -> 
             .find_map(|(manager, lockfiles)| {
                 lockfiles
                     .iter()
-                    .any(|lockfile| workspace_root.join(lockfile).is_file())
+                    .any(|lockfile| context.is_file(&workspace_root.join(lockfile)))
                     .then(|| manager.to_string())
             })
         })
@@ -903,6 +965,21 @@ mod tests {
         assert_eq!(
             project_summary(&projects),
             vec![("node:app", Path::new("packages/app"), Some("pnpm"))]
+        );
+    }
+
+    #[test]
+    fn pnpm_root_package_parse_errors_do_not_panic() {
+        let temp = tempdir().unwrap();
+        write(&temp.path().join(PACKAGE_JSON), "{");
+        write(&temp.path().join(PNPM_WORKSPACE), "packages:\n  - .\n");
+
+        let error = NodeWorkspaceProvider.discover(temp.path()).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse Node package manifest")
         );
     }
 

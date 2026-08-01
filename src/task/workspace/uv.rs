@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{Context, Result, bail};
 use glob::{MatchOptions, Pattern};
 use serde::Deserialize;
 
-use super::{ProjectId, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider};
+use super::{
+    ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
+};
 
 const PYPROJECT_TOML: &str = "pyproject.toml";
 
@@ -14,7 +15,7 @@ const PYPROJECT_TOML: &str = "pyproject.toml";
 #[derive(Debug, Default)]
 pub struct UvWorkspaceProvider;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct PyProject {
     project: Option<PythonProject>,
@@ -23,7 +24,7 @@ struct PyProject {
     tool: ToolTable,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct PythonProject {
     name: String,
@@ -32,13 +33,13 @@ struct PythonProject {
     optional_dependencies: BTreeMap<String, Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct ToolTable {
     uv: UvTable,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct UvTable {
     workspace: Option<UvWorkspace>,
@@ -47,7 +48,7 @@ struct UvTable {
     dev_dependencies: Vec<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct UvWorkspace {
     members: Vec<String>,
@@ -68,15 +69,24 @@ impl WorkspaceProvider for UvWorkspaceProvider {
     }
 
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+        let context = WorkspaceDiscoveryContext::new();
+        self.discover_with_context(workspace_root, &context)
+    }
+
+    fn discover_with_context(
+        &self,
+        workspace_root: &Path,
+        context: &WorkspaceDiscoveryContext,
+    ) -> Result<Vec<WorkspaceProject>> {
         let root_pyproject_path = workspace_root.join(PYPROJECT_TOML);
-        if !root_pyproject_path.is_file() {
+        if !context.is_file(&root_pyproject_path) {
             return Ok(Vec::new());
         }
-        let root_pyproject = read_pyproject(&root_pyproject_path)?;
+        let root_pyproject = read_pyproject(context, &root_pyproject_path)?;
         let Some(workspace) = root_pyproject.tool.uv.workspace.as_ref() else {
             return Ok(Vec::new());
         };
-        let canonical_root = workspace_root.canonicalize().wrap_err_with(|| {
+        let canonical_root = context.canonicalize(workspace_root).wrap_err_with(|| {
             format!(
                 "failed to resolve uv workspace root {}",
                 workspace_root.display()
@@ -88,6 +98,7 @@ impl WorkspaceProvider for UvWorkspaceProvider {
             &canonical_root,
             &workspace.members,
             &excludes,
+            context,
         )?;
         if root_pyproject.project.is_some() {
             workspace_roots.insert(canonical_root.clone());
@@ -102,7 +113,11 @@ impl WorkspaceProvider for UvWorkspaceProvider {
             }
             let relative = relative_root(&canonical_root, &project_root)?;
             let pyproject_path = project_root.join(PYPROJECT_TOML);
-            let pyproject = read_pyproject(&pyproject_path)?;
+            let pyproject = if project_root == canonical_root {
+                root_pyproject.clone()
+            } else {
+                read_pyproject(context, &pyproject_path)?
+            };
             let project = pyproject.project.as_ref().ok_or_else(|| {
                 eyre::eyre!("uv project at {} is missing [project]", relative.display())
             })?;
@@ -131,10 +146,10 @@ impl WorkspaceProvider for UvWorkspaceProvider {
                         continue;
                     };
                     let candidate = source_base.join(path);
-                    if !candidate.join(PYPROJECT_TOML).is_file() {
+                    if !context.is_file(&candidate.join(PYPROJECT_TOML)) {
                         continue;
                     }
-                    let candidate = candidate.canonicalize().wrap_err_with(|| {
+                    let candidate = context.canonicalize(&candidate).wrap_err_with(|| {
                         format!(
                             "failed to resolve uv path dependency {}",
                             candidate.display()
@@ -206,10 +221,10 @@ impl WorkspaceProvider for UvWorkspaceProvider {
                             continue;
                         };
                         let candidate = source_base.join(path);
-                        if !candidate.join(PYPROJECT_TOML).is_file() {
+                        if !context.is_file(&candidate.join(PYPROJECT_TOML)) {
                             continue;
                         }
-                        let candidate = candidate.canonicalize().wrap_err_with(|| {
+                        let candidate = context.canonicalize(&candidate).wrap_err_with(|| {
                             format!(
                                 "failed to resolve uv path dependency {}",
                                 candidate.display()
@@ -244,8 +259,9 @@ impl WorkspaceProvider for UvWorkspaceProvider {
     }
 }
 
-fn read_pyproject(path: &Path) -> Result<PyProject> {
-    let contents = fs::read_to_string(path)
+fn read_pyproject(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<PyProject> {
+    let contents = context
+        .read_to_string(path)
         .wrap_err_with(|| format!("failed to read uv project metadata {}", path.display()))?;
     toml::from_str(&contents)
         .wrap_err_with(|| format!("failed to parse uv project metadata {}", path.display()))
@@ -266,6 +282,7 @@ fn discover_members(
     canonical_root: &Path,
     members: &[String],
     excludes: &[Pattern],
+    context: &WorkspaceDiscoveryContext,
 ) -> Result<BTreeSet<PathBuf>> {
     let options = match_options();
     // Avoid canonical Windows roots here because their verbatim `\\?\` prefix
@@ -283,10 +300,10 @@ fn discover_members(
             let candidate = candidate.wrap_err_with(|| {
                 format!("failed to evaluate uv workspace member pattern {member:?}")
             })?;
-            if !candidate.is_dir() {
+            if !context.is_dir(&candidate) {
                 continue;
             }
-            let candidate = candidate.canonicalize().wrap_err_with(|| {
+            let candidate = context.canonicalize(&candidate).wrap_err_with(|| {
                 format!(
                     "failed to resolve uv workspace member {}",
                     candidate.display()
@@ -296,7 +313,7 @@ fn discover_members(
             if is_excluded(&relative, excludes) {
                 continue;
             }
-            if !candidate.join(PYPROJECT_TOML).is_file() {
+            if !context.is_file(&candidate.join(PYPROJECT_TOML)) {
                 bail!(
                     "uv workspace member at {} is missing {PYPROJECT_TOML}",
                     relative.display()

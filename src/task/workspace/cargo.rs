@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{Context, Result, bail};
 use glob::{MatchOptions, Pattern};
 use serde::Deserialize;
 
-use super::{ProjectId, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider};
+use super::{
+    ProjectId, WorkspaceDiscoveryContext, WorkspaceProject, WorkspaceProvenance, WorkspaceProvider,
+};
 
 const CARGO_TOML: &str = "Cargo.toml";
 
@@ -14,7 +15,7 @@ const CARGO_TOML: &str = "Cargo.toml";
 #[derive(Debug, Default)]
 pub struct CargoWorkspaceProvider;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct CargoManifest {
     package: Option<CargoPackage>,
@@ -27,12 +28,12 @@ struct CargoManifest {
     target: BTreeMap<String, TargetDependencies>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct CargoPackage {
     name: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct CargoWorkspace {
     members: Vec<String>,
@@ -40,7 +41,7 @@ struct CargoWorkspace {
     dependencies: DependencyMap,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 struct TargetDependencies {
     dependencies: DependencyMap,
@@ -65,15 +66,24 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
     }
 
     fn discover(&self, workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+        let context = WorkspaceDiscoveryContext::new();
+        self.discover_with_context(workspace_root, &context)
+    }
+
+    fn discover_with_context(
+        &self,
+        workspace_root: &Path,
+        context: &WorkspaceDiscoveryContext,
+    ) -> Result<Vec<WorkspaceProject>> {
         let root_manifest_path = workspace_root.join(CARGO_TOML);
-        if !root_manifest_path.is_file() {
+        if !context.is_file(&root_manifest_path) {
             return Ok(Vec::new());
         }
-        let root_manifest = read_manifest(&root_manifest_path)?;
+        let root_manifest = read_manifest(context, &root_manifest_path)?;
         let Some(workspace) = root_manifest.workspace.as_ref() else {
             return Ok(Vec::new());
         };
-        let canonical_root = workspace_root.canonicalize().wrap_err_with(|| {
+        let canonical_root = context.canonicalize(workspace_root).wrap_err_with(|| {
             format!(
                 "failed to resolve Cargo workspace root {}",
                 workspace_root.display()
@@ -94,6 +104,7 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
             &canonical_root,
             &workspace.members,
             &excludes,
+            context,
         )?;
         if root_manifest.package.is_some() && !is_excluded(Path::new("."), &excludes) {
             roots.insert(canonical_root.clone());
@@ -109,9 +120,9 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
             let relative = relative_root(&canonical_root, &package_root)?;
             let manifest_path = package_root.join(CARGO_TOML);
             let manifest = if package_root == canonical_root {
-                read_manifest(&root_manifest_path)?
+                root_manifest.clone()
             } else {
-                read_manifest(&manifest_path)?
+                read_manifest(context, &manifest_path)?
             };
             let package = manifest.package.as_ref().ok_or_else(|| {
                 eyre::eyre!(
@@ -128,10 +139,10 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
                     continue;
                 };
                 let candidate = base.join(path);
-                if !candidate.join(CARGO_TOML).is_file() {
+                if !context.is_file(&candidate.join(CARGO_TOML)) {
                     continue;
                 }
-                let candidate = candidate.canonicalize().wrap_err_with(|| {
+                let candidate = context.canonicalize(&candidate).wrap_err_with(|| {
                     format!(
                         "failed to resolve Cargo path dependency {}",
                         candidate.display()
@@ -177,10 +188,10 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
                         continue;
                     };
                     let candidate = base.join(path);
-                    if !candidate.join(CARGO_TOML).is_file() {
+                    if !context.is_file(&candidate.join(CARGO_TOML)) {
                         continue;
                     }
-                    let candidate = candidate.canonicalize().wrap_err_with(|| {
+                    let candidate = context.canonicalize(&candidate).wrap_err_with(|| {
                         format!(
                             "failed to resolve Cargo path dependency {}",
                             candidate.display()
@@ -214,8 +225,9 @@ impl WorkspaceProvider for CargoWorkspaceProvider {
     }
 }
 
-fn read_manifest(path: &Path) -> Result<CargoManifest> {
-    let contents = fs::read_to_string(path)
+fn read_manifest(context: &WorkspaceDiscoveryContext, path: &Path) -> Result<CargoManifest> {
+    let contents = context
+        .read_to_string(path)
         .wrap_err_with(|| format!("failed to read Cargo manifest {}", path.display()))?;
     toml::from_str(&contents)
         .wrap_err_with(|| format!("failed to parse Cargo manifest {}", path.display()))
@@ -226,6 +238,7 @@ fn discover_members(
     canonical_root: &Path,
     members: &[String],
     excludes: &[Pattern],
+    context: &WorkspaceDiscoveryContext,
 ) -> Result<BTreeSet<PathBuf>> {
     let options = MatchOptions {
         case_sensitive: true,
@@ -247,10 +260,10 @@ fn discover_members(
             let candidate = candidate.wrap_err_with(|| {
                 format!("failed to evaluate Cargo workspace member pattern {member:?}")
             })?;
-            if !candidate.join(CARGO_TOML).is_file() {
+            if !context.is_file(&candidate.join(CARGO_TOML)) {
                 continue;
             }
-            let candidate = candidate.canonicalize().wrap_err_with(|| {
+            let candidate = context.canonicalize(&candidate).wrap_err_with(|| {
                 format!(
                     "failed to resolve Cargo workspace member {}",
                     candidate.display()
