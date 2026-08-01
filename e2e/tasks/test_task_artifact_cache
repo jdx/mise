@@ -15,7 +15,7 @@ printf '%s:%s\n' "$PROFILE" "$(cat input.txt)" > dist/result.txt
 printf 'ran\n' >> runs.txt
 '''
 sources = ["input.txt"]
-outputs = ["dist"]
+outputs = ["dist", "dist/result.txt"]
 EOF
 
 printf 'one\n' >input.txt
@@ -28,6 +28,12 @@ assert "cat dist/result.txt" "debug:one"
 assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "cache key inputs:"
 assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "task definition:"
 assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "sources:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "source: input.txt"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "pattern: dist"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "pattern: dist/result.txt"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "resolved outputs: 1"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "output: dist"
+assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "output: dist/result.txt"
 assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "environment PROFILE: set"
 assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "environment PROFILE: debug"
 assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "platform:"

@@ -157,7 +157,9 @@ pub struct TaskArtifactCache {
 #[derive(Debug)]
 pub(crate) struct TaskCacheKeyExplanation {
     format: u8,
-    source_count: usize,
+    source_paths: Vec<PathBuf>,
+    output_patterns: Vec<String>,
+    output_paths: Vec<PathBuf>,
     dependency_count: usize,
     environment: BTreeMap<String, bool>,
     command_input_count: usize,
@@ -170,6 +172,7 @@ pub(crate) struct TaskCacheKeyExplanation {
 pub(crate) struct TaskArtifactCacheBuilder {
     root: PathBuf,
     inputs: TaskCacheInputs,
+    output_roots: Vec<PathBuf>,
 }
 
 pub(crate) struct TaskCacheContext<'a> {
@@ -215,7 +218,11 @@ impl TaskArtifactCache {
                 );
             }
         }
-        Ok(Some(TaskArtifactCacheBuilder { root, inputs }))
+        Ok(Some(TaskArtifactCacheBuilder {
+            root,
+            inputs,
+            output_roots,
+        }))
     }
 }
 
@@ -233,7 +240,11 @@ impl TaskArtifactCacheBuilder {
             command_inputs,
             explain,
         } = ctx;
-        let Self { root, inputs } = self;
+        let Self {
+            root,
+            inputs,
+            output_roots,
+        } = self;
         let mut environment = declared_env
             .iter()
             .map(|(key, _)| (key.clone(), resolved_env.get(key).cloned()))
@@ -255,7 +266,11 @@ impl TaskArtifactCacheBuilder {
             .map(|(_, tv)| tv.to_string())
             .collect::<Vec<_>>();
         tools.sort();
-        let source_count = inputs.source_paths.len();
+        let source_paths = if explain {
+            inputs.source_paths.clone()
+        } else {
+            Vec::new()
+        };
         let material = CacheKeyMaterial {
             format: CACHE_FORMAT_VERSION,
             task: &task.name,
@@ -278,7 +293,9 @@ impl TaskArtifactCacheBuilder {
         let explanation = if explain {
             Some(TaskCacheKeyExplanation {
                 format: material.format,
-                source_count,
+                source_paths,
+                output_patterns: material.outputs.clone(),
+                output_paths: remove_nested_roots(output_roots),
                 dependency_count: material.dependency_keys.len(),
                 environment: material
                     .environment
@@ -495,9 +512,29 @@ impl TaskCacheKeyExplanation {
             "cache key inputs:".to_string(),
             format!("  format: {}", self.format),
             "  task definition: included".to_string(),
-            format!("  sources: {} files", self.source_count),
-            format!("  dependencies: {} artifact keys", self.dependency_count),
+            format!("  sources: {} files", self.source_paths.len()),
         ];
+        lines.extend(
+            self.source_paths
+                .iter()
+                .map(|path| format!("    source: {}", display_cache_path(path))),
+        );
+        lines.push(format!("  output patterns: {}", self.output_patterns.len()));
+        lines.extend(
+            self.output_patterns
+                .iter()
+                .map(|pattern| format!("    pattern: {}", display_cache_text(pattern))),
+        );
+        lines.push(format!("  resolved outputs: {}", self.output_paths.len()));
+        lines.extend(
+            self.output_paths
+                .iter()
+                .map(|path| format!("    output: {}", display_cache_path(path))),
+        );
+        lines.push(format!(
+            "  dependencies: {} artifact keys",
+            self.dependency_count
+        ));
         lines.extend(self.environment.iter().map(|(name, is_set)| {
             let state = if *is_set { "set" } else { "unset" };
             format!("  environment {name}: {state}")
@@ -508,6 +545,14 @@ impl TaskCacheKeyExplanation {
         lines.push(format!("  platform: {}-{}", self.os, self.arch));
         lines
     }
+}
+
+fn display_cache_path(path: &Path) -> String {
+    display_cache_text(&crate::file::display_path(path))
+}
+
+fn display_cache_text(text: &str) -> String {
+    text.escape_debug().to_string()
 }
 
 /// Returns the versioned directory containing task artifact cache entries.
@@ -934,7 +979,12 @@ mod tests {
     fn cache_explanation_omits_environment_and_variable_values() {
         let explanation = TaskCacheKeyExplanation {
             format: 2,
-            source_count: 3,
+            source_paths: vec![
+                PathBuf::from("input.txt"),
+                PathBuf::from("src/\x1b[2J\nfile.rs"),
+            ],
+            output_patterns: vec!["dist".into(), "!dist/private/**".into()],
+            output_paths: vec![PathBuf::from("dist")],
             dependency_count: 1,
             environment: BTreeMap::from([("MISSING".into(), false), ("TOKEN".into(), true)]),
             command_input_count: 2,
@@ -948,7 +998,11 @@ mod tests {
         assert!(output.contains("environment TOKEN: set"));
         assert!(output.contains("environment MISSING: unset"));
         assert!(output.contains("variable: password"));
-        assert!(output.contains("sources: 3 files"));
+        assert!(output.contains("sources: 2 files"));
+        assert!(output.contains("source: input.txt"));
+        assert!(output.contains(r"source: src/\u{1b}[2J\nfile.rs"));
+        assert!(output.contains("pattern: !dist/private/**"));
+        assert!(output.contains("output: dist"));
         assert!(output.contains("dependencies: 1 artifact keys"));
         assert!(output.contains("command inputs: 2"));
         assert!(output.contains("tools: 4 resolved versions"));
