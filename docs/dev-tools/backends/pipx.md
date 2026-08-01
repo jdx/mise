@@ -135,6 +135,14 @@ When passing extras inline, use mise's `key=value` tool-option syntax:
 mise use 'pipx:psf/black[extras=jupyter]@latest'
 ```
 
+For Git repositories whose name differs from the Python distribution name, set `package_name` so
+mise can build the requirement used to select extras:
+
+```toml
+[tools]
+"pipx:owner/repository" = { version = "latest", package_name = "distribution", extras = ["feature"] }
+```
+
 ### `pipx_args`
 
 Additional arguments to pass to `pipx` when installing the package.

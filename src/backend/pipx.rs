@@ -61,6 +61,10 @@ impl<'a> PipxOptions<'a> {
         self.values.comma_joined("extras")
     }
 
+    fn package_name(&self) -> Option<&'a str> {
+        self.values.str("package_name")
+    }
+
     fn pipx_args(&self) -> Option<&'a str> {
         self.values.str("pipx_args")
     }
@@ -351,19 +355,17 @@ impl Backend for PIPXBackend {
             }
         }
 
-        let pipx_request = self
-            .tool_name()
-            .parse::<PipxRequest>()?
-            .pipx_request(&tv.version, &options);
+        let request = self.tool_name().parse::<PipxRequest>()?;
 
         if let Some(uv_program) = uv_program {
+            let package_request = request.uvx_request(&tv.version, &options);
             self.warn_if_uv_may_not_support_exclude_newer(ctx).await;
             ctx.pr
-                .set_message(format!("uv tool install {pipx_request}"));
+                .set_message(format!("uv tool install {package_request}"));
             let mut cmd = Self::uvx_cmd(
                 &uv_program,
                 &ctx.config,
-                &["tool", "install", &pipx_request],
+                &["tool", "install", &package_request],
                 self,
                 &tv,
                 &ctx.ts,
@@ -402,10 +404,12 @@ impl Backend for PIPXBackend {
                 }
             }
 
-            ctx.pr.set_message(format!("pipx install {pipx_request}"));
+            let package_request = request.pipx_request(&tv.version, &options);
+            ctx.pr
+                .set_message(format!("pipx install {package_request}"));
             let mut cmd = Self::pipx_cmd(
                 &ctx.config,
-                &["install", &pipx_request],
+                &["install", &package_request],
                 self,
                 &tv,
                 &ctx.ts,
@@ -441,6 +445,7 @@ impl Backend for PIPXBackend {
 pub fn install_time_option_keys() -> Vec<String> {
     vec![
         "extras".into(),
+        "package_name".into(),
         "pipx_args".into(),
         "uvx_args".into(),
         "uvx".into(),
@@ -690,21 +695,50 @@ impl PipxRequest {
         }
     }
 
+    fn git_url(url: &str, v: &str) -> String {
+        if v == "latest" {
+            format!("git+{url}.git")
+        } else {
+            format!("git+{url}.git@{v}")
+        }
+    }
+
+    fn git_package_name<'a>(url: &'a str, opts: &PipxOptions<'a>) -> &'a str {
+        opts.package_name()
+            .unwrap_or_else(|| url.rsplit('/').next().unwrap_or(url))
+    }
+
+    fn uvx_request(&self, v: &str, opts: &PipxOptions<'_>) -> String {
+        let extras = self.extras_from_opts(opts);
+
+        match self {
+            PipxRequest::Git(url) => {
+                let git_url = Self::git_url(url, v);
+                if extras.is_empty() {
+                    git_url
+                } else {
+                    let package = Self::git_package_name(url, opts);
+                    format!("{package}{extras} @ {git_url}")
+                }
+            }
+            PipxRequest::Pypi(package) if v == "latest" => format!("{package}{extras}"),
+            PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
+        }
+    }
+
     fn pipx_request(&self, v: &str, opts: &PipxOptions<'_>) -> String {
         let extras = self.extras_from_opts(opts);
 
         match self {
             PipxRequest::Git(url) => {
-                let git_url = if v == "latest" {
-                    format!("git+{url}.git")
-                } else {
-                    format!("git+{url}.git@{v}")
-                };
+                let git_url = Self::git_url(url, v);
                 if extras.is_empty() {
                     git_url
                 } else {
-                    let package = url.rsplit('/').next().unwrap_or(url);
-                    format!("{package}{extras} @ {git_url}")
+                    // pipx ignored extras on PEP 508 URL requirements before 0.15.6.0.
+                    // Its VCS `egg` form works across the supported pipx version range.
+                    let package = Self::git_package_name(url, opts);
+                    format!("{git_url}#egg={package}{extras}")
                 }
             }
             PipxRequest::Pypi(package) if v == "latest" => format!("{package}{extras}"),
@@ -1002,20 +1036,63 @@ mod tests {
                 .pipx_request("latest", &PipxOptions::new(&array_opts)),
             "harlequin[postgres,s3]"
         );
-        let git_request = PipxRequest::Git("https://github.com/psf/black".to_string());
-        assert_eq!(
-            git_request.pipx_request("latest", &PipxOptions::new(&array_opts)),
-            "black[postgres,s3] @ git+https://github.com/psf/black.git"
-        );
-        assert_eq!(
-            git_request.pipx_request("24.3.0", &PipxOptions::new(&array_opts)),
-            "black[postgres,s3] @ git+https://github.com/psf/black.git@24.3.0"
-        );
         assert_eq!(
             PipxOptions::new(&array_opts)
                 .lockfile_options()
                 .get("extras"),
             Some(&"postgres,s3".to_string())
+        );
+    }
+
+    #[test]
+    fn test_git_extras_use_frontend_compatible_requests() {
+        let mut inferred_opts = ToolVersionOptions::default();
+        inferred_opts.opts.insert(
+            "extras".to_string(),
+            toml::Value::Array(vec![toml::Value::String("jupyter".to_string())]),
+        );
+        let inferred_opts = PipxOptions::new(&inferred_opts);
+        let inferred_request = PipxRequest::Git("https://github.com/psf/black".to_string());
+        assert_eq!(
+            inferred_request.uvx_request("latest", &inferred_opts),
+            "black[jupyter] @ git+https://github.com/psf/black.git"
+        );
+        assert_eq!(
+            inferred_request.pipx_request("latest", &inferred_opts),
+            "git+https://github.com/psf/black.git#egg=black[jupyter]"
+        );
+
+        let mut named_opts = ToolVersionOptions::default();
+        named_opts.opts.insert(
+            "extras".to_string(),
+            toml::Value::Array(vec![toml::Value::String("jupyter".to_string())]),
+        );
+        named_opts.opts.insert(
+            "package_name".to_string(),
+            toml::Value::String("black".to_string()),
+        );
+        let named_opts = PipxOptions::new(&named_opts);
+        let request = PipxRequest::Git("https://github.com/psf/black-repository".to_string());
+
+        assert_eq!(
+            request.uvx_request("latest", &named_opts),
+            "black[jupyter] @ git+https://github.com/psf/black-repository.git"
+        );
+        assert_eq!(
+            request.uvx_request("24.3.0", &named_opts),
+            "black[jupyter] @ git+https://github.com/psf/black-repository.git@24.3.0"
+        );
+        assert_eq!(
+            request.pipx_request("latest", &named_opts),
+            "git+https://github.com/psf/black-repository.git#egg=black[jupyter]"
+        );
+        assert_eq!(
+            request.pipx_request("24.3.0", &named_opts),
+            "git+https://github.com/psf/black-repository.git@24.3.0#egg=black[jupyter]"
+        );
+        assert_eq!(
+            named_opts.lockfile_options().get("package_name"),
+            Some(&"black".to_string())
         );
     }
 
