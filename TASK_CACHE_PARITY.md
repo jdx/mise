@@ -58,7 +58,7 @@ outside this tracker.
 - [x] Explain which provider inferred each project, task, input, output, and dependency
 - [x] Add Cargo workspace and path-dependency inference
 - [x] Add uv workspace and local/path-dependency inference
-- [ ] Add Go workspace discovery, with explicit dependency overrides where module metadata is
+- [x] Add Go workspace discovery, with explicit dependency overrides where module metadata is
       insufficient
 
 ## Affected project execution

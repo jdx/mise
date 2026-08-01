@@ -411,6 +411,27 @@ external-workspace sources do not add projects or edges. Self-dependencies are i
 cycles among projects are reported by `mise tasks graph` and can be corrected with project
 overrides.
 
+### Go Workspace Discovery
+
+The Go provider discovers modules listed by `use` directives in the root `go.work`. Both individual
+directives and `use` blocks are supported. Each listed directory must contain a `go.mod` with a
+`module` directive; mise uses that stable module path to create an ID such as
+`go:example.com/acme/api`. Modules listed outside the configured monorepo root are ignored because
+project roots in the mise graph are always repository-relative.
+
+Discovery parses `go.work` and `go.mod` directly and does not require the `go` executable. It does
+not infer dependency edges from `require` or `replace`: those directives describe module selection,
+not necessarily the source-level relationship needed by a task graph. Add the edges that matter to
+your build with project overrides:
+
+```toml
+[monorepo.projects."go:example.com/acme/api"]
+depends_add = ["go:example.com/acme/lib"]
+```
+
+Use `depends` to replace the complete dependency set, or `depends_add` and `depends_remove` for
+targeted adjustments. The graph explanation attributes these configured edges to `configuration`.
+
 ### Node Workspace Discovery
 
 The Node provider discovers npm, pnpm, Yarn, and Bun workspace packages from:
