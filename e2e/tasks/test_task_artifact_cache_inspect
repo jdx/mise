@@ -94,4 +94,15 @@ printf '%s\n' "$build_key" >"$twin_state"
 mise cache clear --task twin
 assert "mise cache task build --json | jq '.entries | length'" "1"
 
+# Legacy manifests can only be associated through a freshness pointer. If a
+# second task has a stale pointer to the same key, scoped clearing must warn and
+# leave the unverifiable entry for its actual task.
+build_manifest="$cache_dir/$build_key.json"
+jq '.task_identity = ""' "$build_manifest" >"$build_manifest.tmp"
+mv "$build_manifest.tmp" "$build_manifest"
+printf '%s\n' "$build_key" >"$twin_state"
+assert_contains "mise cache clear --task twin 2>&1" "ownership cannot be verified"
+assert "test -f \"$build_manifest\" && echo present" "present"
+assert "mise cache task build --json | jq '.entries | length'" "1"
+
 assert_fail_contains "mise cache task missing" "Task not found: missing"

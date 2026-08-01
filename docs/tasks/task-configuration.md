@@ -730,7 +730,8 @@ task's current entry; older historical entries become discoverable after they ar
 
 Use `mise cache clear --task <task>` to delete only that task's local output-cache entries and
 freshness pointer. Declared outputs in the working directory and entries belonging to other tasks
-are not removed.
+are not removed. Legacy current entries without identity metadata are detached but retained because
+their ownership cannot be verified; mise warns when this occurs, and `mise cache clear` removes them.
 
 `task_config.global_env` adds ambient variable names to every enabled task cache in the config
 scope, including tasks with a task-local `cache` value. Unlike the default values under

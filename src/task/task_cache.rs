@@ -141,6 +141,8 @@ pub(crate) struct TaskCacheHit {
 #[derive(Debug, Serialize)]
 pub(crate) struct TaskCacheEntry {
     pub(crate) key: String,
+    #[serde(skip)]
+    pub(crate) identity_verified: bool,
     pub(crate) current: bool,
     pub(crate) size_bytes: u64,
     pub(crate) restored_bytes: u64,
@@ -603,6 +605,7 @@ pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCac
         entries.push(TaskCacheEntry {
             current: current_key.as_deref() == Some(manifest.key.as_str()),
             key: manifest.key,
+            identity_verified: matches_identity,
             size_bytes: manifest_metadata
                 .len()
                 .saturating_add(archive_metadata.map_or(0, |metadata| metadata.len())),
@@ -623,15 +626,24 @@ pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCac
 pub(crate) fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClearResult> {
     let entries = task_cache_entries(task, root)?;
     let cache_dir = task_cache_dir();
-    let mut size_bytes = entries
-        .iter()
+    let identified_entries = entries.iter().filter(|entry| entry.identity_verified);
+    let mut size_bytes = identified_entries
+        .clone()
         .fold(0_u64, |total, entry| total.saturating_add(entry.size_bytes));
-    for entry in &entries {
+    for entry in identified_entries.clone() {
         remove_cache_file(&cache_dir.join(format!("{}.tar.zst", entry.key)))?;
         remove_cache_file(&cache_dir.join(format!("{}.json", entry.key)))?;
     }
+    let legacy_entries = entries
+        .len()
+        .saturating_sub(identified_entries.clone().count());
+    if legacy_entries > 0 {
+        warn!(
+            "skipping {legacy_entries} legacy task cache entries because ownership cannot be verified; use `mise cache clear` to remove them"
+        );
+    }
     let identity = task_cache_identity(task, root);
-    let mut entry_count = entries.len();
+    let mut entry_count = identified_entries.count();
     for entry in fs::read_dir(&cache_dir)? {
         let entry = entry?;
         let manifest_path = entry.path();
