@@ -402,11 +402,7 @@ impl Git {
     /// Rename detection is disabled so moves report both the old and new path.
     /// Paths are relative to `self.dir`, and changes outside it are excluded.
     pub fn changed_paths(&self, base: &str, head: &str) -> Result<BTreeSet<PathBuf>> {
-        for (name, revision) in [("base", base), ("head", head)] {
-            if revision.is_empty() || revision.starts_with('-') || revision.contains('\0') {
-                return Err(eyre!("invalid Git {name} revision {revision:?}"));
-            }
-        }
+        validate_revisions(base, head)?;
         let range = format!("{base}...{head}");
         let output = git_cmd!(
             &self.dir,
@@ -430,6 +426,35 @@ impl Git {
             .collect()
     }
 
+    /// Returns the merge base used by a triple-dot comparison.
+    pub fn merge_base(&self, base: &str, head: &str) -> Result<String> {
+        validate_revisions(base, head)?;
+        Ok(git_cmd_read!(&self.dir, "merge-base", "--", base, head)?
+            .trim()
+            .to_string())
+    }
+
+    /// Reads a UTF-8 file at a Git revision, returning `None` when it does not exist there.
+    pub fn file_at_revision(&self, revision: &str, path: &Path) -> Result<Option<String>> {
+        validate_revision("revision", revision)?;
+        let Some(path) = path.to_str() else {
+            return Ok(None);
+        };
+        let object = format!("{revision}:{}", path.replace('\\', "/"));
+        let output = git_cmd!(&self.dir, "show", "--no-textconv", &object)
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .wrap_err_with(|| format!("git show for {object:?} failed"))?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        Ok(Some(String::from_utf8(output.stdout).wrap_err_with(
+            || format!("Git file {path:?} at {revision:?} is not UTF-8"),
+        )?))
+    }
+
     pub fn get_path<P: AsRef<Path>>(path: P) -> eyre::Result<PathBuf> {
         let root = Self::get_root()?;
         let path = cmd!("git", "-C", &root, "rev-parse", "--git-path", path.as_ref()).read()?;
@@ -440,6 +465,18 @@ impl Git {
             root.join(path)
         })
     }
+}
+
+fn validate_revisions(base: &str, head: &str) -> Result<()> {
+    validate_revision("base", base)?;
+    validate_revision("head", head)
+}
+
+fn validate_revision(name: &str, revision: &str) -> Result<()> {
+    if revision.is_empty() || revision.starts_with('-') || revision.contains('\0') {
+        return Err(eyre!("invalid Git {name} revision {revision:?}"));
+    }
+    Ok(())
 }
 
 fn path_from_git_bytes(path: &[u8]) -> Result<PathBuf> {
@@ -664,6 +701,55 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         );
         assert_eq!(
             super::remote_ref_kind(output, "refs/heads/missing", "refs/tags/missing"),
+            None
+        );
+    }
+
+    #[test]
+    fn reads_files_from_the_merge_base_and_head() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_string()
+        };
+        git(&["-c", "init.defaultBranch=main", "init", "-q"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        std::fs::write(root.join("lockfile"), "before\n").unwrap();
+        git(&["add", "lockfile"]);
+        git(&["commit", "-q", "-m", "before"]);
+        let base = git(&["rev-parse", "HEAD"]);
+        std::fs::write(root.join("lockfile"), "after\n").unwrap();
+        git(&["commit", "-q", "-am", "after"]);
+        let head = git(&["rev-parse", "HEAD"]);
+
+        let repo = Git::new(root);
+        assert_eq!(repo.merge_base(&base, &head).unwrap(), base);
+        assert_eq!(
+            repo.file_at_revision(&base, std::path::Path::new("lockfile"))
+                .unwrap()
+                .as_deref(),
+            Some("before\n")
+        );
+        assert_eq!(
+            repo.file_at_revision(&head, std::path::Path::new("lockfile"))
+                .unwrap()
+                .as_deref(),
+            Some("after\n")
+        );
+        assert_eq!(
+            repo.file_at_revision(&head, std::path::Path::new("missing"))
+                .unwrap(),
             None
         );
     }

@@ -1,5 +1,5 @@
 use crate::errors::Error;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -73,6 +73,20 @@ pub struct Run {
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
+
+    /// Run matching tasks only for projects affected by Git changes
+    #[clap(long, verbatim_doc_comment)]
+    pub affected: bool,
+
+    /// Git base revision for --affected
+    /// Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
+    #[clap(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    pub affected_base: Option<String>,
+
+    /// Git head revision for --affected
+    /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
+    #[clap(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    pub affected_head: Option<String>,
 
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', verbatim_doc_comment)]
@@ -244,6 +258,107 @@ pub struct Run {
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
 }
 
+fn affected_task_args(args: &[String]) -> Vec<String> {
+    let mut task = true;
+    args.iter()
+        .map(|arg| {
+            if arg == ":::" {
+                task = true;
+                return arg.clone();
+            }
+            if !task {
+                return arg.clone();
+            }
+            task = false;
+            if arg.starts_with("//")
+                || arg.starts_with(':')
+                || crate::task::is_workspace_project_task(arg)
+            {
+                arg.clone()
+            } else {
+                format!("//...:{arg}")
+            }
+        })
+        .collect()
+}
+
+async fn get_affected_task_list(
+    config: &Arc<Config>,
+    args: &[String],
+    only: bool,
+    base: Option<&str>,
+    head: Option<&str>,
+) -> Result<Vec<Task>> {
+    Settings::get().ensure_experimental("affected tasks")?;
+    let workspace_root = config
+        .monorepo_root()
+        .ok_or_else(|| eyre!("--affected requires a monorepo root configuration"))?;
+    let graph = config.workspace_project_graph()?;
+    let revisions = crate::task::workspace::git::WorkspaceGitRevisions::resolve(base, head);
+    let changed_paths = revisions.changed_paths(&workspace_root)?;
+    let global_inputs = config.monorepo_global_task_inputs().await?;
+    let git = crate::git::Git::new(&workspace_root);
+    let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
+    let go = crate::task::workspace::go::GoWorkspaceProvider;
+    let node = crate::task::workspace::node::NodeWorkspaceProvider;
+    let uv = crate::task::workspace::uv::UvWorkspaceProvider;
+    let providers: [&dyn crate::task::workspace::WorkspaceProvider; 4] = [&cargo, &go, &node, &uv];
+    let mut regular_paths = BTreeSet::new();
+    let mut lockfile_projects = BTreeSet::new();
+    let mut comparison_base: Option<String> = None;
+
+    for path in changed_paths {
+        if graph
+            .affected_projects_for_lockfile(&providers, &path, None, None)?
+            .is_none()
+        {
+            regular_paths.insert(path);
+            continue;
+        }
+        let comparison_base = match &comparison_base {
+            Some(base) => base.clone(),
+            None => {
+                let base = git.merge_base(&revisions.base, &revisions.head)?;
+                comparison_base = Some(base.clone());
+                base
+            }
+        };
+        let before = git.file_at_revision(&comparison_base, &path)?;
+        let after = git.file_at_revision(&revisions.head, &path)?;
+        if let Some(projects) = graph.affected_projects_for_lockfile(
+            &providers,
+            &path,
+            before.as_deref(),
+            after.as_deref(),
+        )? {
+            lockfile_projects.extend(projects);
+        }
+    }
+
+    let mut affected =
+        graph.affected_projects_for_paths(&workspace_root, regular_paths, &global_inputs)?;
+    affected.extend(graph.affected_projects(&lockfile_projects)?);
+    let affected_roots = affected
+        .iter()
+        .filter_map(|id| graph.get(id))
+        .map(|project| crate::file::desymlink_path(&workspace_root.join(&project.root)))
+        .collect::<BTreeSet<_>>();
+
+    let args = affected_task_args(args);
+    let mut tasks = get_task_lists(config, &args, true, only).await?;
+    // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
+    // after this returns, so prerequisites from unaffected projects remain intact.
+    tasks.retain(|task| {
+        !task.global
+            && task
+                .config_root
+                .as_deref()
+                .map(crate::file::desymlink_path)
+                .is_some_and(|root| affected_roots.contains(&root))
+    });
+    Ok(tasks)
+}
+
 impl Run {
     pub async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
@@ -326,7 +441,18 @@ impl Run {
             .chain(self.args.clone())
             .collect_vec();
 
-        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
+        let mut task_list = if self.affected {
+            get_affected_task_list(
+                &config,
+                &args,
+                self.skip_deps,
+                self.affected_base.as_deref(),
+                self.affected_head.as_deref(),
+            )
+            .await?
+        } else {
+            get_task_lists(&config, &args, true, self.skip_deps).await?
+        };
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -1147,5 +1273,29 @@ mod tests {
     fn test_panic_payload_message_from_unknown_payload() {
         let payload: Box<dyn std::any::Any + Send> = Box::new(123usize);
         assert_eq!(panic_payload_message(&*payload), "unknown panic payload");
+    }
+
+    #[test]
+    fn affected_patterns_expand_across_projects_and_preserve_arguments() {
+        assert_eq!(
+            affected_task_args(&[
+                "build".into(),
+                "--release".into(),
+                ":::".into(),
+                "//apps/...:test".into(),
+                "unit".into(),
+                ":::".into(),
+                "node:@scope/app#lint".into(),
+            ]),
+            vec![
+                "//...:build",
+                "--release",
+                ":::",
+                "//apps/...:test",
+                "unit",
+                ":::",
+                "node:@scope/app#lint",
+            ]
+        );
     }
 }

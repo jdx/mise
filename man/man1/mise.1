@@ -3025,6 +3025,17 @@ The name of the script will be the name of the tasks.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-\-affected\fR
+Run matching tasks only for projects affected by Git changes
+.TP
+\fB\-\-affected\-base\fR \fI<REV>\fR
+Git base revision for \-\-affected
+Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
+.TP
+\fB\-\-affected\-head\fR \fI<REV>\fR
+Git head revision for \-\-affected
+Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
+.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
@@ -3819,6 +3830,17 @@ The name of the script will be the name of the tasks.
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-affected\fR
+Run matching tasks only for projects affected by Git changes
+.TP
+\fB\-\-affected\-base\fR \fI<REV>\fR
+Git base revision for \-\-affected
+Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
+.TP
+\fB\-\-affected\-head\fR \fI<REV>\fR
+Git head revision for \-\-affected
+Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 .TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
