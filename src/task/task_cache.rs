@@ -14,6 +14,7 @@ use ignore::overrides::Override;
 use jdx_tar::{Builder, EntryType, Header};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -118,6 +119,31 @@ struct CacheManifest {
 pub(crate) enum TaskCacheOutput {
     Stdout(String),
     Stderr(String),
+}
+
+pub(crate) enum TaskCacheRestore {
+    Hit(Vec<TaskCacheOutput>),
+    Miss(TaskCacheMissReason),
+}
+
+pub(crate) enum TaskCacheMissReason {
+    CorruptEntry,
+    DependencyWithoutKey,
+    EntryNotFound,
+    Forced,
+    ReadDisabled,
+}
+
+impl fmt::Display for TaskCacheMissReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::CorruptEntry => "cache entry was corrupt",
+            Self::DependencyWithoutKey => "dependency completed without a cache key",
+            Self::EntryNotFound => "no matching cache entry",
+            Self::Forced => "forced execution",
+            Self::ReadDisabled => "cache reads are disabled",
+        })
+    }
 }
 
 pub struct TaskArtifactCache {
@@ -317,10 +343,10 @@ impl TaskArtifactCache {
         file::write(&self.state_path, &self.key)
     }
 
-    pub(crate) fn restore(&self, task: &Task) -> Result<Option<Vec<TaskCacheOutput>>> {
+    pub(crate) fn restore(&self, task: &Task) -> Result<TaskCacheRestore> {
         let (archive_path, manifest_path) = self.paths();
         if !manifest_path.is_file() {
-            return Ok(None);
+            return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
         }
         let restore = || -> Result<Vec<TaskCacheOutput>> {
             let manifest = self.read_manifest()?;
@@ -392,12 +418,12 @@ impl TaskArtifactCache {
         };
 
         match restore() {
-            Ok(output) => Ok(Some(output)),
+            Ok(output) => Ok(TaskCacheRestore::Hit(output)),
             Err(err) => {
                 warn!("ignoring corrupt task cache entry {}: {err}", self.key);
                 let _ = file::remove_file(&archive_path);
                 let _ = file::remove_file(&manifest_path);
-                Ok(None)
+                Ok(TaskCacheRestore::Miss(TaskCacheMissReason::CorruptEntry))
             }
         }
     }
@@ -928,6 +954,27 @@ mod tests {
         assert!(output.contains("tools: 4 resolved versions"));
         assert!(!output.contains("secret"));
         assert!(!output.contains("hunter2"));
+    }
+
+    #[test]
+    fn cache_miss_reasons_are_human_readable() {
+        assert_eq!(
+            TaskCacheMissReason::CorruptEntry.to_string(),
+            "cache entry was corrupt"
+        );
+        assert_eq!(
+            TaskCacheMissReason::DependencyWithoutKey.to_string(),
+            "dependency completed without a cache key"
+        );
+        assert_eq!(
+            TaskCacheMissReason::EntryNotFound.to_string(),
+            "no matching cache entry"
+        );
+        assert_eq!(TaskCacheMissReason::Forced.to_string(), "forced execution");
+        assert_eq!(
+            TaskCacheMissReason::ReadDisabled.to_string(),
+            "cache reads are disabled"
+        );
     }
 
     #[test]

@@ -744,6 +744,11 @@ Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Se
 manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
 are treated as misses and never turn a successful task run into a failure.
 
+When a cache-enabled task executes instead of restoring a result, mise reports the reason: no
+matching entry, a corrupt entry, forced execution, disabled reads, or a dependency that completed
+without a stable cache key. Raw and dry-run cache bypasses retain their existing warning or preview
+behavior and are not reported as cache misses.
+
 Stdout and stderr are stored as ordered, redacted streams and replayed using the output mode selected
 for the cache hit. Prefix, interleave, keep-order, timed, replacing, quiet, silent, and per-stream
 silence therefore apply to replayed output just as they do to live output. Raw and interactive tasks

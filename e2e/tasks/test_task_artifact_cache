@@ -20,7 +20,7 @@ EOF
 
 printf 'one\n' >input.txt
 
-PROFILE=debug mise run build
+assert_contains "PROFILE=debug mise run build 2>&1" "cache miss: no matching cache entry"
 assert "wc -l < runs.txt | tr -d ' '" "1"
 assert "cat dist/result.txt" "debug:one"
 

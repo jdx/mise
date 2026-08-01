@@ -112,7 +112,7 @@ assert "cat app-dist/result.txt" $'lib-one\napp'
 
 # A dependency that executes without a stable cache identity still forces
 # conservative downstream execution.
-mise run consume
+assert_contains "mise run consume 2>&1" "cache miss: dependency completed without a cache key"
 assert "wc -l < prepare-runs.txt | tr -d ' '" "1"
 assert "wc -l < consume-runs.txt | tr -d ' '" "1"
 printf 'prepare-two\n' >prepare.txt

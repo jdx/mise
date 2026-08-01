@@ -35,7 +35,7 @@ printf 'stdin\n' >stdin.txt
 mise run build
 manifest="$(find "$MISE_CACHE_DIR/task-artifacts/v2" -type f -name '*.json' -print -quit)"
 printf 'invalid manifest\n' >"$manifest"
-mise run build
+assert_contains "mise run build 2>&1" "cache miss: cache entry was corrupt"
 assert "wc -l < runs.txt | tr -d ' '" "2"
 
 # Capturing output for a cacheable interleave task must not disconnect stdin.
