@@ -107,12 +107,12 @@ function crawlReferencedDefs(schema: JsonObject, root: unknown) {
 
 function buildTaskSchema(schema: JsonObject) {
   const taskSchema: JsonObject = {
-    $id: "https://mise.en.dev/schema/mise-task.json",
+    $id: "https://mise.jdx.dev/schema/mise-task.json",
     $schema: schema["$schema"],
     title: "mise-task-schema",
     type: "object",
     description:
-      "Config file for included mise tasks (https://mise.en.dev/tasks/#task-configuration)",
+      "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
     additionalProperties: {
       $ref: "#/$defs/task",
     },

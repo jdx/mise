@@ -1,6 +1,6 @@
 # aqua-registry
 
-Aqua registry primitives for [mise](https://mise.en.dev).
+Aqua registry primitives for [mise](https://mise.jdx.dev).
 
 This crate provides support for the [Aqua](https://aquaproj.github.io/) registry format.
 It owns parsing, package lookup, package serialization codecs, and the on-disk source/compiled cache layout. mise owns remote fetching policy, baked registry fallback, settings, and integration behavior.
@@ -16,7 +16,7 @@ It owns parsing, package lookup, package serialization codecs, and the on-disk s
 
 ## Usage
 
-This crate is primarily used internally by mise. For more information about mise, visit [mise.en.dev](https://mise.en.dev).
+This crate is primarily used internally by mise. For more information about mise, visit [mise.jdx.dev](https://mise.jdx.dev).
 
 ## License
 

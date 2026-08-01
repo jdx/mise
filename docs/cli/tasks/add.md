@@ -8,7 +8,7 @@
 Create a new task
 
 Adds a task to the local mise.toml file.
-See <https://mise.en.dev/configuration.html#target-file-for-write-operations>
+See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 
 ## Arguments
 

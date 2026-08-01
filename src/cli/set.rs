@@ -20,7 +20,7 @@ use tabled::Tabled;
 /// By default, this command modifies `mise.toml` in the current directory.
 /// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 /// the lowest precedence file (`mise.toml`) will be used.
-/// See https://mise.en.dev/configuration.html#target-file-for-write-operations
+/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 ///
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, clap::Args)]
@@ -68,8 +68,8 @@ pub struct Set {
     /// The TOML file to update
     ///
     /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-    /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.en.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-    /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.en.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+    /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+    /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
     #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
     file: Option<PathBuf>,
 

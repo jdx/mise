@@ -561,7 +561,7 @@ impl PythonPlugin {
                 "2026.7.0",
                 "2027.7.0",
                 "python.virtualenv",
-                "the python `virtualenv` tool option is deprecated. Use `_.python.venv` in the `[env]` section instead: https://mise.en.dev/lang/python.html#automatic-virtualenv-activation"
+                "the python `virtualenv` tool option is deprecated. Use `_.python.venv` in the `[env]` section instead: https://mise.jdx.dev/lang/python.html#automatic-virtualenv-activation"
             );
             let mut virtualenv: PathBuf = file::replace_path(Path::new(virtualenv));
             if !virtualenv.is_absolute()

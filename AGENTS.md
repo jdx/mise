@@ -36,7 +36,7 @@ Before touching `registry/`, ALWAYS do the following:
 
    This is non-negotiable — it lets the maintainer evaluate the submission without re-doing the research. PRs without it look speculative and are more likely to be rejected.
 5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
-6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.en.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
+6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.jdx.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
 
 ### Backend choice: aqua (preferred) or github
 
@@ -271,10 +271,10 @@ Use the exact model and version identifiers exposed by the runtime. Never infer 
 ### URL Structure
 When referencing mise documentation URLs, use the correct path structure based on the `docs/` directory layout:
 
-- **Dev tools & backends**: `mise.en.dev/dev-tools/backends/<backend>.html` (e.g., `mise.en.dev/dev-tools/backends/s3.html`)
-- **Configuration**: `mise.en.dev/configuration/...`
-- **Tasks**: `mise.en.dev/tasks/...`
-- **Environments**: `mise.en.dev/environments/...`
-- **CLI reference**: `mise.en.dev/cli/...`
+- **Dev tools & backends**: `mise.jdx.dev/dev-tools/backends/<backend>.html` (e.g., `mise.jdx.dev/dev-tools/backends/s3.html`)
+- **Configuration**: `mise.jdx.dev/configuration/...`
+- **Tasks**: `mise.jdx.dev/tasks/...`
+- **Environments**: `mise.jdx.dev/environments/...`
+- **CLI reference**: `mise.jdx.dev/cli/...`
 
-Do NOT use shortened paths like `mise.en.dev/backends/...` - always include the full path matching the `docs/` directory structure.
+Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.

@@ -186,7 +186,7 @@ Release:        1%{?dist}
 Summary:        Dev tools, env vars, and tasks in one CLI
 
 License:        MIT
-URL:            https://mise.en.dev
+URL:            https://mise.jdx.dev
 Source0:        https://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1:        mise-vendor-%{version}.tar.gz
 

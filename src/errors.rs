@@ -24,7 +24,7 @@ pub enum Error {
     #[error("task interrupted before process start")]
     TaskInterrupted,
     #[error(
-        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.en.dev/cli/trust.html for more information.",
+        "Config files in {} are not trusted.\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
         display_path(.0)
     )]
     UntrustedConfig(PathBuf),

@@ -64,7 +64,7 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
             Then create task files in subdirectories that will be automatically discovered.\n\
             See {} for more information.",
             style::eyellow("  monorepo_root = true"),
-            style::eunderline("https://mise.en.dev/tasks/task-configuration.html#monorepo-support")
+            style::eunderline("https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support")
         );
     }
 
@@ -292,7 +292,7 @@ async fn err_no_task(
                     .collect::<Vec<_>>()
                     .join(", ");
                 bail!(
-                    "Config file(s) in {} are not trusted: {}\nTrust them with `mise trust`. See https://mise.en.dev/cli/trust.html for more information.",
+                    "Config file(s) in {} are not trusted: {}\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
                     display_path(cwd),
                     paths
                 );
@@ -371,7 +371,7 @@ async fn prompt_for_task() -> Result<Task> {
     ensure!(
         !tasks.is_empty(),
         "no tasks defined. see {url}",
-        url = style::eunderline("https://mise.en.dev/tasks/")
+        url = style::eunderline("https://mise.jdx.dev/tasks/")
     );
     let theme = crate::ui::theme::get_theme();
     let mut s = Select::new("Tasks")

@@ -80,7 +80,7 @@ pub fn append_self_update_instructions(mut message: String) -> String {
 ///
 /// Packagers can disable this command so that mise is updated through the
 /// package manager instead. See
-/// https://mise.en.dev/contributing.html#packaging-and-self-update-instructions
+/// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 #[derive(Debug, Default, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {
