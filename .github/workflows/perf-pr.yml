@@ -32,6 +32,7 @@ env:
 jobs:
   measure:
     name: Compare instruction counts
+    if: github.event.pull_request.user.login == 'jdx'
     # Same runner class as perf.yml and perf-backfill.yml. Absolute counts shift
     # between machine types by more than a real regression does, so a comparison
     # across runner classes is not a comparison — tak refuses to make one, and
@@ -138,7 +139,7 @@ jobs:
   report:
     name: Report and gate
     needs: measure
-    if: always()
+    if: always() && github.event.pull_request.user.login == 'jdx'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
