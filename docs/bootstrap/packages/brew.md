@@ -82,12 +82,22 @@ cleanup metadata, not install receipts. For casks with lifecycle hooks, mise
 fetches the sha256-verified cask Ruby source pinned by the API metadata and runs
 supported `preflight`/`postflight` hooks through its own Cask DSL shim, without
 delegating to Homebrew. mise also supports structured `preflight_steps` and
-`postflight_steps` for `move`/`remove` operations against `staged_path` and
-`run` operations using Homebrew's serialized command bases, arguments,
-environment, guards, and sudo setting. Casks that require custom installer
+`postflight_steps` for `move`/`remove` operations against `staged_path`, `run`
+operations using Homebrew's serialized command bases, arguments, environment,
+guards, and sudo setting, and `terminate_process` operations with
+Homebrew-compatible name/full matching, retries, notices, and failure policy.
+Casks that require custom installer
 choices, services, unsupported hook DSL, unsupported structured lifecycle
 steps, or other cask artifact types fail with a clear unsupported artifact
 error instead of delegating to Homebrew.
+
+Direct cask pours remain mise-owned. Their completed state is recorded in
+`.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
+receipts. If Homebrew metadata already exists for a cask, mise preserves it and
+fails before mutation rather than taking over Homebrew's lifecycle state.
+Status uses recorded installation facts rather than reconstructing them from a
+newer cask definition; missing or unknown receipts and pending transactions are
+reported as unhealthy so the next apply can reconcile them.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
