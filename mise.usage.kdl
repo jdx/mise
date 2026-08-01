@@ -3059,6 +3059,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 """# {
         arg <REV>
     }
+    flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
@@ -3908,6 +3909,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 """# {
             arg <REV>
         }
+        flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>

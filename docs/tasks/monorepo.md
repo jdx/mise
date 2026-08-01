@@ -374,6 +374,9 @@ mise run --affected build
 # Inspect the selection while preserving normal dry-run behavior
 mise run --affected --affected-explain --dry-run build
 
+# Emit the selection as JSON without running tasks
+mise run --affected --affected-json build
+
 # Compare explicit revisions
 mise run --affected --affected-base origin/main --affected-head HEAD test
 ```
@@ -383,6 +386,10 @@ workspace-global path, a provider-attributed lockfile, or a dependency on anothe
 It also lists the task-pattern matches associated with those projects. Normal task dependencies are
 expanded afterward, so a selected task can still run a required prerequisite from an unchanged
 project.
+
+`--affected-json` emits the same pre-expansion selection without running tasks. Its stable JSON
+object contains the base and head revisions, affected projects with their roots and reasons, and
+task-pattern matches with their associated project IDs.
 
 The revision defaults are `HEAD~1` and `HEAD` locally. `MISE_AFFECTED_BASE` and
 `MISE_AFFECTED_HEAD` override them. GitHub Actions and GitLab merge-request metadata provide CI

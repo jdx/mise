@@ -73,7 +73,7 @@ outside this tracker.
 - [x] Allow affected selection to feed existing task patterns, dependency expansion, scheduling, and
       caching
 - [x] Show why each project and task was considered affected
-- [ ] Add machine-readable affected-project and affected-task output
+- [x] Add machine-readable affected-project and affected-task output
 
 ## Local cache parity
 
