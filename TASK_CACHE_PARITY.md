@@ -63,7 +63,7 @@ outside this tracker.
 
 ## Affected project execution
 
-- [ ] Map changed files to their owning projects
+- [x] Map changed files to their owning projects
 - [ ] Compute affected projects from changed projects and reverse project dependency edges
 - [ ] Add configurable Git base and head revisions with sensible local and CI defaults
 - [ ] Treat workspace-global files and explicitly declared global inputs as affecting the

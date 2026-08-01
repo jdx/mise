@@ -411,6 +411,15 @@ pub struct WorkspaceProjectGraph {
     provider_errors: BTreeMap<String, String>,
 }
 
+/// Workspace-relative paths grouped with the projects that own them.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WorkspaceProjectPathMap {
+    /// Owned paths and every project at the deepest matching project root.
+    pub projects_by_path: BTreeMap<PathBuf, BTreeSet<ProjectId>>,
+    /// Paths that are not contained by any project root.
+    pub unowned_paths: BTreeSet<PathBuf>,
+}
+
 /// A deterministic dependency cycle found in the workspace project graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceProjectCycleError {
@@ -697,6 +706,43 @@ impl WorkspaceProjectGraph {
         self.projects.get(id)
     }
 
+    /// Maps workspace-relative paths to their owning projects.
+    ///
+    /// A path belongs to every project at its deepest matching project root.
+    /// This preserves overlapping projects from different providers while
+    /// preventing a parent project from also claiming files in a nested one.
+    pub fn map_paths_to_projects(
+        &self,
+        paths: impl IntoIterator<Item = impl AsRef<Path>>,
+    ) -> Result<WorkspaceProjectPathMap> {
+        let mut projects_by_root = BTreeMap::<&Path, BTreeSet<ProjectId>>::new();
+        for project in self.projects() {
+            projects_by_root
+                .entry(project.root.as_path())
+                .or_default()
+                .insert(project.id.clone());
+        }
+
+        let mut mapped = WorkspaceProjectPathMap::default();
+        for path in paths {
+            let path = normalize_workspace_path(path.as_ref())?;
+            let owners = path.ancestors().find_map(|ancestor| {
+                let root = if ancestor.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    ancestor
+                };
+                projects_by_root.get(root)
+            });
+            if let Some(owners) = owners {
+                mapped.projects_by_path.insert(path, owners.clone());
+            } else {
+                mapped.unowned_paths.insert(path);
+            }
+        }
+        Ok(mapped)
+    }
+
     /// Summarizes provider failures retained during lenient task discovery.
     pub(crate) fn provider_discovery_error(&self) -> Option<String> {
         (!self.provider_errors.is_empty()).then(|| {
@@ -925,6 +971,32 @@ fn normalize_project_root(id: &ProjectId, root: &Path) -> Result<PathBuf> {
                 bail!(
                     "workspace project {id:?} has absolute root {root:?}; roots must be workspace-relative"
                 );
+            }
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        normalized.push(".");
+    }
+    Ok(normalized)
+}
+
+fn normalize_workspace_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        bail!("workspace path {path:?} is absolute; paths must be workspace-relative");
+    }
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(component) => normalized.push(component),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    bail!("workspace path {path:?} escapes the workspace root");
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                bail!("workspace path {path:?} is absolute; paths must be workspace-relative");
             }
         }
     }
@@ -1316,6 +1388,102 @@ mod tests {
         assert_eq!(
             graph.projects().next().unwrap().root,
             Path::new("packages/app")
+        );
+    }
+
+    #[test]
+    fn paths_map_to_projects_at_the_deepest_root() {
+        let first = TestProvider {
+            id: "first",
+            projects: vec![
+                project("first", "root", "."),
+                project("first", "app", "apps/app"),
+                project("first", "nested", "apps/app/packages/nested"),
+            ],
+        };
+        let second = TestProvider {
+            id: "second",
+            projects: vec![project("second", "app", "apps/app")],
+        };
+        let graph =
+            WorkspaceProjectGraph::discover_all(&[&first, &second], Path::new("/workspace"))
+                .unwrap();
+
+        let mapped = graph
+            .map_paths_to_projects([
+                "README.md",
+                "apps/app/src/main.rs",
+                "apps/app/packages/nested/src/lib.rs",
+            ])
+            .unwrap();
+
+        assert_eq!(
+            mapped.projects_by_path,
+            BTreeMap::from([
+                (
+                    PathBuf::from("README.md"),
+                    BTreeSet::from([ProjectId::new("first", "root").unwrap()]),
+                ),
+                (
+                    PathBuf::from("apps/app/packages/nested/src/lib.rs"),
+                    BTreeSet::from([ProjectId::new("first", "nested").unwrap()]),
+                ),
+                (
+                    PathBuf::from("apps/app/src/main.rs"),
+                    BTreeSet::from([
+                        ProjectId::new("first", "app").unwrap(),
+                        ProjectId::new("second", "app").unwrap(),
+                    ]),
+                ),
+            ])
+        );
+        assert!(mapped.unowned_paths.is_empty());
+    }
+
+    #[test]
+    fn path_mapping_normalizes_deduplicates_and_retains_unowned_paths() {
+        let provider = test_provider(vec![project("test", "app", "apps/app")]);
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let mapped = graph
+            .map_paths_to_projects([
+                "./apps/app/src/main.rs",
+                "apps/tmp/../app/src/main.rs",
+                "workspace.toml",
+                "./workspace.toml",
+            ])
+            .unwrap();
+
+        assert_eq!(
+            mapped.projects_by_path,
+            BTreeMap::from([(
+                PathBuf::from("apps/app/src/main.rs"),
+                BTreeSet::from([ProjectId::new("test", "app").unwrap()]),
+            )])
+        );
+        assert_eq!(
+            mapped.unowned_paths,
+            BTreeSet::from([PathBuf::from("workspace.toml")])
+        );
+    }
+
+    #[test]
+    fn path_mapping_rejects_paths_outside_the_workspace() {
+        let graph = WorkspaceProjectGraph::default();
+
+        assert!(
+            graph
+                .map_paths_to_projects(["/outside"])
+                .unwrap_err()
+                .to_string()
+                .contains("must be workspace-relative")
+        );
+        assert!(
+            graph
+                .map_paths_to_projects(["../outside"])
+                .unwrap_err()
+                .to_string()
+                .contains("escapes the workspace root")
         );
     }
 
