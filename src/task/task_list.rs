@@ -64,7 +64,9 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
             Then create task files in subdirectories that will be automatically discovered.\n\
             See {} for more information.",
             style::eyellow("  monorepo_root = true"),
-            style::eunderline("https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support")
+            style::eunderline(
+                "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
+            )
         );
     }
 
