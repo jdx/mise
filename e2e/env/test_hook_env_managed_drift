@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p managed-bin user-bin
+managed_bin="$PWD/managed-bin"
+user_bin="$PWD/user-bin"
+
+cat >mise.toml <<EOF
+[env]
+MANAGED_VALUE = "expected"
+_.path = ["$managed_bin"]
+
+[settings]
+hook_env.cache_ttl = "1h"
+hook_env.chpwd_only = true
+EOF
+
+eval "$(mise activate bash)"
+
+# Managed values are repaired even when the filesystem fast path is cached.
+export MANAGED_VALUE=changed
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export MANAGED_VALUE=expected"* ]] ||
+  fail "changed managed value was not repaired: $output"
+eval "$output"
+assert "printf '%s' \"$MANAGED_VALUE\"" "expected"
+
+unset MANAGED_VALUE
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"export MANAGED_VALUE=expected"* ]] ||
+  fail "unset managed value was not repaired: $output"
+eval "$output"
+assert "printf '%s' \"$MANAGED_VALUE\"" "expected"
+
+# Removing a mise-owned PATH entry restores it while preserving user additions.
+PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -Fvx "$managed_bin" | paste -sd ':' -)
+export PATH="$user_bin:$PATH"
+output=$(mise hook-env -s bash --reason precmd)
+[[ $output == *"$managed_bin"* ]] || fail "managed PATH was not repaired: $output"
+eval "$output"
+assert_succeed "printf '%s' \"$PATH\" | tr ':' '\n' | grep -Fx '$managed_bin'"
+assert_succeed "printf '%s' \"$PATH\" | tr ':' '\n' | grep -Fx '$user_bin'"
+
+# Unmanaged changes alone do not invalidate the fast path.
+export UNMANAGED_VALUE=changed
+PATH="$PATH:$PWD/another-user-bin"
+export PATH
+output=$(mise hook-env -s bash --reason precmd)
+assert "printf '%s' \"$output\"" ""
