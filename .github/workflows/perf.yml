@@ -46,8 +46,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-
+      # Compile inside this disposable VM. Restoring target/ can relabel a
+      # binary built on a different runner class as a Bamboo measurement.
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
         with:
           cache: false
