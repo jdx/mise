@@ -63,14 +63,18 @@ impl Tasks {
                 }
                 cmd
             }
-            None => task
-                .map(|task| {
+            None => match task {
+                Some(task) => {
+                    if ls.has_non_json_options() {
+                        bail!("task list options cannot be used with task info");
+                    }
                     Commands::Info(info::TasksInfo {
                         task,
                         json: ls.json,
                     })
-                })
-                .unwrap_or(Commands::Ls(ls)),
+                }
+                None => Commands::Ls(ls),
+            },
         };
 
         cmd.run().await

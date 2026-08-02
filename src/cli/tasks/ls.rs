@@ -112,8 +112,11 @@ impl TasksLs {
     }
 
     pub fn has_options(&self) -> bool {
+        self.json || self.has_non_json_options()
+    }
+
+    pub fn has_non_json_options(&self) -> bool {
         self.global
-            || self.json
             || self.local
             || self.extended
             || self.all
