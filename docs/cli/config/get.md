@@ -17,7 +17,9 @@ The path of the config to display
 
 ### `-f --file <FILE>`
 
-The path to the mise.toml file to edit
+The path to the mise.toml file to read
+
+Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
 If not provided, the nearest mise.toml file will be used
 

@@ -1571,8 +1571,10 @@ Display the value of a setting in a mise.toml file
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-file\fR \fI<FILE>\fR
-The path to the mise.toml file to edit
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
+The path to the mise.toml file to read
+
+Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
 If not provided, the nearest mise.toml file will be used
 \fBArguments:\fR
@@ -1604,8 +1606,10 @@ Set the value of a setting in a mise.toml file
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-file\fR \fI<FILE>\fR
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 The path to the mise.toml file to edit
+
+Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
 If not provided, the nearest mise.toml file will be used
 .TP

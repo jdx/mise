@@ -999,6 +999,8 @@ mod tests {
             (&["unuse"], "path", "file", true),
             (&["set"], "file", "path", true),
             (&["unset"], "file", "path", true),
+            (&["config", "get"], "file", "path", true),
+            (&["config", "set"], "file", "path", true),
             (&["dotfiles", "add"], "path", "file", true),
             (&["bootstrap", "packages", "use"], "path", "file", true),
             (&["bootstrap", "packages", "import"], "path", "file", true),

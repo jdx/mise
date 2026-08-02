@@ -70,3 +70,26 @@ mise bootstrap packages brew tap acme/tools --path tap-alias.toml
 assert_contains "cat tap-alias.toml" "acme/tools"
 mise bootstrap packages brew untap acme/tools --path tap-alias.toml
 assert_not_contains "cat tap-alias.toml" "acme/tools"
+
+# `mise config get` and `mise config set` name the option --file; both take --path too
+printf '[tools]\ndummy = "1"\n' >cfg.toml
+mise config set --path cfg.toml tools.dummy 2
+assert "mise config get --file cfg.toml tools.dummy" "2"
+mise config set --file cfg.toml tools.dummy 3
+assert "mise config get --path cfg.toml tools.dummy" "3"
+
+# and a directory resolves to the config file inside it, as it does for the commands above
+mkdir -p cfgdir
+printf '[tools]\ndummy = "1"\n' >cfgdir/mise.toml
+mise config set --path cfgdir tools.dummy 2
+assert "mise config get -f cfgdir tools.dummy" "2"
+assert_contains "cat cfgdir/mise.toml" 'dummy = "2"'
+
+# unlike the write commands above, these two do not create the file — a target that resolves to
+# nothing names itself instead of surfacing a bare io error. The resolved path is asserted and not
+# just the message, since for a directory that is what shows the argument reached the config file
+# inside it rather than being used as-is.
+mkdir -p emptydir
+assert_fail "mise config get --path ./nope.toml tools.dummy" "config file not found: ~/workdir/aliases/nope.toml"
+assert_fail "mise config get --path ./emptydir tools.dummy" "config file not found: ~/workdir/aliases/emptydir/mise.toml"
+assert_fail "mise config set --path ./emptydir tools.dummy 1" "config file not found: ~/workdir/aliases/emptydir/mise.toml"
