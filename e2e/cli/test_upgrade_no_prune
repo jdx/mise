@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# `mise upgrade --no-prune` keeps the version it upgraded away from.
+#
+# By default that version is uninstalled outright — its install directory is
+# deleted — which breaks anything outside of mise that points at that path, such
+# as a virtualenv built from a mise-managed interpreter. The existing protection
+# only covers versions another tracked config or tool stub still asks for.
+#
+# See: https://github.com/jdx/mise/discussions/5840
+
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+EOF
+
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
+# --dry-run announces the removal, and --no-prune withdraws it while still
+# reporting the install
+assert_contains "mise up dummy -n" "Would uninstall dummy@1.0.0"
+assert_not_contains "mise up dummy -n --no-prune" "Would uninstall"
+assert_contains "mise up dummy -n --no-prune" "Would install dummy@1.1.0"
+
+mise upgrade dummy --no-prune
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_contains "mise ls --installed dummy" "1.0.0"
+# the install directory itself has to survive — that is what an outside
+# reference resolves through
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# the default is unchanged
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise upgrade dummy
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+
+# --bump rewrites the config and still honors the flag
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise upgrade dummy --bump --no-prune
+assert_contains "mise ls --installed dummy" "2.0.0"
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "cat mise.toml" 'dummy = "2"'
+
+rm -f mise.toml
