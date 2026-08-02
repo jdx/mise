@@ -48,6 +48,9 @@ pub(crate) trait TaskCacheStore: Send + Sync {
         has_artifact: bool,
     ) -> Result<()>;
     fn remove(&self, key: &str) -> Result<()>;
+    fn remove_local(&self, key: &str) -> Result<()> {
+        self.remove(key)
+    }
     fn touch(&self, key: &str);
 }
 
@@ -147,6 +150,10 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         // entry to be promoted back after its local copy was removed.
         self.remote.remove(key)?;
         self.local.remove(key)
+    }
+
+    fn remove_local(&self, key: &str) -> Result<()> {
+        self.local.remove_local(key)
     }
 
     fn touch(&self, key: &str) {
@@ -386,5 +393,28 @@ mod tests {
         seed(local.as_ref(), "remove", b"local", None);
         assert!(composite.remove("remove").is_err());
         assert!(local.get("remove").unwrap().is_some());
+    }
+
+    #[test]
+    fn composite_store_local_removal_preserves_and_repromotes_remote_entry() {
+        let local_root = tempfile::tempdir().unwrap();
+        let remote_root = tempfile::tempdir().unwrap();
+        let local: Arc<dyn TaskCacheStore> =
+            Arc::new(LocalTaskCacheStore::new(local_root.path().to_path_buf()));
+        let remote: Arc<dyn TaskCacheStore> =
+            Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
+        seed(local.as_ref(), "expired", b"local", None);
+        seed(remote.as_ref(), "expired", b"remote", None);
+        let composite = CompositeTaskCacheStore::new(local.clone(), remote.clone()).unwrap();
+
+        composite.remove_local("expired").unwrap();
+
+        assert!(local.get("expired").unwrap().is_none());
+        assert!(remote.get("expired").unwrap().is_some());
+        assert_eq!(
+            composite.get("expired").unwrap().unwrap().manifest,
+            b"remote"
+        );
+        assert!(local.get("expired").unwrap().is_some());
     }
 }

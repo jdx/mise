@@ -445,9 +445,9 @@ impl TaskArtifactCache {
             }
         };
         if self.exceeded_max_age()? {
-            if let Err(err) = self.store.remove(&self.key) {
+            if let Err(err) = self.store.remove_local(&self.key) {
                 warn!(
-                    "failed to remove expired task cache entry {}: {err}",
+                    "failed to remove expired local task cache entry {}: {err}",
                     self.key
                 );
             }
