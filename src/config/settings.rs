@@ -903,7 +903,8 @@ impl Settings {
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
         let s = toml::to_string(self)?;
-        let table = toml::from_str(&s)?;
+        let mut table = toml::from_str(&s)?;
+        redact_settings_table(&mut table);
         Ok(table)
     }
 
@@ -1026,7 +1027,8 @@ impl Settings {
 
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
         let s = toml::to_string(partial)?;
-        let table = toml::from_str(&s)?;
+        let mut table = toml::from_str(&s)?;
+        redact_settings_table(&mut table);
         Ok(table)
     }
 
@@ -1173,6 +1175,18 @@ fn redacted_settings_for_debug(settings: &Settings) -> Settings {
         debug_settings.task.cache_remote_token = Some("[redacted]".to_string());
     }
     debug_settings
+}
+
+fn redact_settings_table(table: &mut toml::Table) {
+    let Some(task) = table.get_mut("task").and_then(toml::Value::as_table_mut) else {
+        return;
+    };
+    if task.contains_key("cache_remote_token") {
+        task.insert(
+            "cache_remote_token".to_string(),
+            toml::Value::String("[redacted]".to_string()),
+        );
+    }
 }
 
 impl Display for Settings {
@@ -1376,6 +1390,18 @@ mod tests {
 
         assert!(!debug.contains("super-secret-token"));
         assert!(debug.contains("[redacted]"));
+    }
+
+    #[test]
+    fn settings_dictionary_redacts_remote_cache_token() {
+        let mut settings = Settings::default();
+        settings.task.cache_remote_token = Some("super-secret-token".to_string());
+
+        let table = settings.as_dict().unwrap();
+        let encoded = toml::to_string(&table).unwrap();
+
+        assert!(!encoded.contains("super-secret-token"));
+        assert!(encoded.contains("[redacted]"));
     }
 
     fn credential_command_settings_table() -> toml::Table {

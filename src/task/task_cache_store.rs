@@ -506,7 +506,7 @@ pub(crate) fn compose_task_cache_stores(
     match remote {
         Some(remote_config) => {
             let authorization = authorization_header(remote_config.token.as_deref())?;
-            validate_remote_url(&remote_config.base_url)?;
+            validate_remote_url(&remote_config.base_url, authorization.is_some())?;
             let remote = Arc::new(HttpTaskCacheStore {
                 base_url: normalized_base_url(remote_config.base_url),
                 namespace: remote_config.namespace,
@@ -533,7 +533,7 @@ fn authorization_header(token: Option<&str>) -> Result<Option<HeaderValue>> {
     Ok(Some(value))
 }
 
-fn validate_remote_url(base_url: &Url) -> Result<()> {
+fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result<()> {
     if base_url.scheme() == "https" {
         return Ok(());
     }
@@ -545,8 +545,14 @@ fn validate_remote_url(base_url: &Url) -> Result<()> {
         Host::Ipv4(address) => address.is_loopback(),
         Host::Ipv6(address) => address.is_loopback(),
     });
-    if !is_loopback {
+    if !is_loopback && authenticated {
         bail!("task.cache_remote_url must use HTTPS except for loopback development servers");
+    }
+    if !is_loopback {
+        warn!(
+            "using an unauthenticated remote task cache over plain HTTP; cache traffic can be read \
+             or modified in transit"
+        );
     }
     Ok(())
 }
@@ -1296,16 +1302,18 @@ mod tests {
     }
 
     #[test]
-    fn remote_urls_require_https_except_for_loopback() {
+    fn remote_urls_require_https_for_authenticated_requests() {
         for url in [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "http://[::1]:3000",
             "https://cache.example.com",
         ] {
-            validate_remote_url(&url.parse().unwrap()).unwrap();
+            validate_remote_url(&url.parse().unwrap(), true).unwrap();
         }
-        assert!(validate_remote_url(&"http://cache.example.com".parse().unwrap()).is_err());
+        let insecure: Url = "http://cache.example.com".parse().unwrap();
+        assert!(validate_remote_url(&insecure, true).is_err());
+        validate_remote_url(&insecure, false).unwrap();
     }
 
     struct FailingTaskCacheStore {
