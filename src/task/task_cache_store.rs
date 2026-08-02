@@ -1374,7 +1374,12 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> =
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "remote-hit", b"remote", Some(b"artifact")).await;
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote.clone()).unwrap();
+        let composite = CompositeTaskCacheStore::new(
+            local.clone(),
+            remote.clone(),
+            TaskCacheRemoteMode::ReadWrite,
+        )
+        .unwrap();
 
         let hit = composite.get("remote-hit", 6).await.unwrap().unwrap();
         assert_eq!(hit.manifest, b"remote");
@@ -1416,7 +1421,9 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> = Arc::new(FailingTaskCacheStore {
             inner: remote_inner,
         });
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+                .unwrap();
 
         assert!(composite.get("unavailable", 6).await.unwrap().is_none());
 
