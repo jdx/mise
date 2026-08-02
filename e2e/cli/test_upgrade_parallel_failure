@@ -5,6 +5,9 @@
 # - Successful tools are still installed
 # - Failed tools don't get installed
 
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-local"
+
 # Clean up any existing installations
 mise uninstall dummy --all 2>/dev/null || true
 mise uninstall tiny --all 2>/dev/null || true
@@ -39,3 +42,19 @@ assert_contains "mise ls --installed tiny" "3.1.0"
 # Verify dummy failed to install the bad version (should still show 1.0.0)
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_not_contains "mise ls --installed dummy" "other-dummy"
+
+# Successful bumps should still be saved when another tool from the same config fails.
+mise uninstall dummy tiny --all 2>/dev/null || true
+cat <<'EOF' >mise.toml
+[tools]
+dummy = { version = "1.0.0", postinstall = "false" }
+tiny-local = "1.0.0"
+EOF
+mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
+echo "1.0.0" >"$MISE_DATA_DIR/installs/dummy/1.0.0/version"
+mkdir -p "$MISE_DATA_DIR/installs/tiny-local/1.0.0"
+echo "1.0.0" >"$MISE_DATA_DIR/installs/tiny-local/1.0.0/version"
+
+assert_fail "mise up --bump"
+assert_contains "cat mise.toml" 'dummy = { version = "1.0.0", postinstall = "false" }'
+assert_contains "cat mise.toml" 'tiny-local = "3.1.0"'

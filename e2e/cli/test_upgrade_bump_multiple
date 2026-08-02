@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/5686
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-local"
+
+cat <<'EOF' >.tool-versions
+dummy 1.0.0
+tiny-local 1.0.0
+EOF
+mise install dummy@1.0.0 tiny-local@1.0.0
+before=$(cat .tool-versions)
+output=$(mise upgrade --bump --dry-run)
+assert_contains "echo '$output'" "Would bump dummy@2.0.0"
+assert_contains "echo '$output'" "Would bump tiny-local@3.1.0"
+assert "cat .tool-versions" "$before"
+mise upgrade --bump
+assert "awk '\$1 == \"dummy\" { print \$2 }' .tool-versions" "2.0.0"
+assert "awk '\$1 == \"tiny-local\" { print \$2 }' .tool-versions" "3.1.0"
+rm .tool-versions
+
+cat <<'EOF' >mise.toml
+# keep this comment
+[tools]
+dummy = "1.0.0"
+tiny-local = "1.0.0"
+EOF
+mise uninstall dummy tiny-local --all
+mise install dummy@1.0.0 tiny-local@1.0.0
+mise upgrade --bump
+assert_contains "cat mise.toml" '# keep this comment'
+assert_contains "cat mise.toml" 'dummy = "2.0.0"'
+assert_contains "cat mise.toml" 'tiny-local = "3.1.0"'
+
+# A later read-only config update must not discard an earlier writable config bump.
+mise uninstall dummy tiny-local --all 2>/dev/null || true
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+
+[tools]
+tiny-local = "1.0.0"
+EOF
+echo "1.0.0" >.dummy-version
+mise install
+assert_fail "mise upgrade --bump" "cannot update idiomatic version file"
+assert_contains "cat mise.toml" 'tiny-local = "3.1.0"'
+assert "cat .dummy-version" "1.0.0"
+
+# A read-only child config must not prevent a later writable parent config bump.
+mise uninstall dummy tiny-local --all 2>/dev/null || true
+rm .dummy-version
+cat <<'EOF' >mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+
+[tools]
+tiny-local = "1.0.0"
+EOF
+mkdir child
+echo "1.0.0" >child/.dummy-version
+cd child
+mise install
+assert_fail "mise upgrade --bump" "cannot update idiomatic version file"
+assert_contains "cat ../mise.toml" 'tiny-local = "3.1.0"'
+assert "cat .dummy-version" "1.0.0"

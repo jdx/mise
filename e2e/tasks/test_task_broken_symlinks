@@ -26,5 +26,5 @@ assert "mise tasks ls --name-only" "global-ok
 healthy"
 assert_contains "mise run healthy" "healthy ran"
 assert_contains "mise run global-ok" "global ran"
-assert_contains "mise tasks --usage" '"healthy"'
-assert_contains "mise tasks --usage" '"global-ok"'
+assert_contains "mise tasks --usage" 'cmd healthy help="" {'
+assert_contains "mise tasks --usage" 'cmd global-ok help="" {'
