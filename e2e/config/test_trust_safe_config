@@ -92,6 +92,16 @@ output=$(MISE_YES=0 mise ls 2>&1 || true)
 [[ ! -f marker ]] || fail "template executed in untrusted config"
 echo "$output" | grep -qi "trust" || fail "expected trust error for template, got: $output"
 
+# the same holds when the template contains a colon. that used to be rejected earlier, by the
+# version parser rather than by the trust check, so pin that trust is still what stops it.
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "{{ exec(command='echo PWNED: 1 > marker') }}"
+EOF
+output=$(MISE_YES=0 mise ls 2>&1 || true)
+[[ ! -f marker ]] || fail "colon template executed in untrusted config"
+echo "$output" | grep -qi "trust" || fail "expected trust error for colon template, got: $output"
+
 # a template in a task renders at load time, so it requires trust
 cat <<'EOF' >mise.toml
 [tasks.hi]

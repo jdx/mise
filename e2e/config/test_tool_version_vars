@@ -101,3 +101,35 @@ url = "{{vars.BASE_URL}}/{{ version }}/tool-{{ os() }}-{{ arch() }}.tar.gz"
 EOF
 
 assert_contains "mise tool http:nested-options --tool-options" 'https://example.com/releases/{{ version }}/tool-{{ os() }}-{{ arch() }}.tar.gz'
+
+# A `:` inside a template belongs to the template, not to a version selector. This used to fail
+# during TOML deserialization with `invalid prefix: {{ exec(command='echo VER`, because the
+# selector was parsed before the template was rendered.
+# See: https://github.com/jdx/mise/discussions/5531
+cat <<EOF >mise.toml
+[tools]
+tiny = "{{ exec(command='echo VER: 3.1.0') | split(pat=': ') | last | trim }}"
+EOF
+
+assert_contains "mise ls tiny" "3.1.0"
+
+# Selectors still work when they come out of a template
+cat <<EOF >mise.toml
+[env]
+TINY_PREFIX = "3"
+
+[tools]
+tiny = "prefix:{{ env.TINY_PREFIX }}"
+EOF
+
+assert_contains "mise ls tiny" "3."
+
+# ...and a template rendering to an unknown selector is still an error, naming the file, the
+# template, and what it rendered to.
+cat <<EOF >mise.toml
+[tools]
+tiny = "{{ exec(command='echo bogus:1.0') | trim }}"
+EOF
+
+assert_fail "mise ls tiny" "invalid version for tiny"
+assert_fail "mise ls tiny" 'rendered to "bogus:1.0"'
