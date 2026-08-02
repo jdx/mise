@@ -401,7 +401,7 @@ impl TaskArtifactCacheBuilder {
     }
 }
 
-fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>> {
+pub(super) fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>> {
     fn write(value: &serde_json::Value, output: &mut Vec<u8>) -> Result<()> {
         match value {
             serde_json::Value::Null => output.extend_from_slice(b"null"),

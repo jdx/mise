@@ -1,6 +1,7 @@
 use crate::file;
 use crate::task::task_cache::{
     CACHE_FORMAT_VERSION, CacheManifest, TaskCacheOutput, calculate_artifact_checksum,
+    canonical_json,
 };
 use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
@@ -8,6 +9,7 @@ use jdx_tar::{Archive, Builder, EntryType, Header};
 use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, IF_NONE_MATCH};
 use serde::{Deserialize, Serialize};
+use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -46,26 +48,6 @@ impl CacheDigest {
         }
     }
 
-    fn blake3_file(path: &Path) -> Result<Self> {
-        let mut file = File::open(path)?;
-        let mut hasher = blake3::Hasher::new();
-        let mut size = 0_u64;
-        let mut buffer = [0_u8; 64 * 1024];
-        loop {
-            let read = file.read(&mut buffer)?;
-            if read == 0 {
-                break;
-            }
-            hasher.update(&buffer[..read]);
-            size = size.saturating_add(read as u64);
-        }
-        Ok(Self {
-            algorithm: "blake3".into(),
-            hash: hasher.finalize().to_hex().to_string(),
-            size,
-        })
-    }
-
     fn validate(&self) -> Result<()> {
         if self.algorithm != "blake3" && self.algorithm != "sha256" {
             bail!("unsupported remote cache digest algorithm");
@@ -79,6 +61,32 @@ impl CacheDigest {
             bail!("invalid remote cache digest");
         }
         Ok(())
+    }
+
+    fn matches_bytes(&self, bytes: &[u8]) -> Result<bool> {
+        self.validate()?;
+        if self.size != bytes.len() as u64 {
+            return Ok(false);
+        }
+        let hash = match self.algorithm.as_str() {
+            "blake3" => blake3::hash(bytes).to_hex().to_string(),
+            "sha256" => hex::encode(sha2::Sha256::digest(bytes)),
+            _ => unreachable!("digest algorithm was validated"),
+        };
+        Ok(self.hash == hash)
+    }
+
+    fn matches_file(&self, path: &Path) -> Result<bool> {
+        self.validate()?;
+        if self.size != fs::metadata(path)?.len() {
+            return Ok(false);
+        }
+        let hash = match self.algorithm.as_str() {
+            "blake3" => crate::hash::file_hash_blake3(path, None)?,
+            "sha256" => crate::hash::file_hash_sha256(path, None)?,
+            _ => unreachable!("digest algorithm was validated"),
+        };
+        Ok(self.hash == hash)
     }
 }
 
@@ -498,7 +506,7 @@ impl HttpTaskCacheStore {
             .await?
             .error_for_status()?;
         let bytes = response.bytes().await?.to_vec();
-        if CacheDigest::blake3(&bytes) != *digest {
+        if !digest.matches_bytes(&bytes)? {
             bail!("remote cache blob failed digest verification");
         }
         Ok(bytes)
@@ -522,7 +530,7 @@ impl HttpTaskCacheStore {
         }
         output.flush().await?;
         drop(output);
-        if CacheDigest::blake3_file(temporary.path())? != *digest {
+        if !digest.matches_file(temporary.path())? {
             bail!("remote cache blob failed digest verification");
         }
         Ok(temporary)
@@ -615,7 +623,7 @@ impl TaskCacheStore for HttpTaskCacheStore {
             .get_blob(metadata, REMOTE_CACHE_CLIENT_METADATA_MEDIA_TYPE)
             .await?;
         let metadata: RemoteClientMetadata = serde_json::from_slice(&metadata_bytes)?;
-        if serde_json::to_vec(&metadata)? != metadata_bytes {
+        if canonical_json(&serde_json::to_value(&metadata)?)? != metadata_bytes {
             bail!("remote cache client metadata is not canonical JSON");
         }
         let mut manifest = metadata.into_manifest(key)?;
@@ -667,7 +675,9 @@ impl TaskCacheStore for HttpTaskCacheStore {
         if manifest.key != key {
             bail!("local task cache manifest does not match remote action");
         }
-        let metadata = serde_json::to_vec(&RemoteClientMetadata::from_manifest(&manifest))?;
+        let metadata = canonical_json(&serde_json::to_value(
+            RemoteClientMetadata::from_manifest(&manifest),
+        )?)?;
         let mut uploads = vec![
             CasBlobUpload {
                 digest: action_digest.clone(),
@@ -757,6 +767,26 @@ fn validate_cache_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_cache_symlink_target(path: &Path, target: &Path) -> Result<()> {
+    if target.is_absolute() {
+        bail!("remote cache symlink target must be relative");
+    }
+    let resolved = path.parent().unwrap_or(Path::new("")).join(target);
+    let mut depth = 0_i64;
+    for component in resolved.components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::ParentDir => depth -= 1,
+            Component::CurDir => {}
+            _ => bail!("remote cache symlink target is unsafe"),
+        }
+        if depth < 0 {
+            bail!("remote cache symlink target escapes its output root");
+        }
+    }
+    Ok(())
+}
+
 fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<CasBlobUpload>)> {
     file::create_dir_all(staging_dir)?;
     let decoder = zstd::Decoder::new(File::open(path)?)?;
@@ -803,9 +833,7 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<C
                 .link_name()
                 .ok_or_else(|| eyre!("remote cache symlink is missing its target"))?
                 .into_owned();
-            if target.is_absolute() {
-                bail!("remote cache symlink target must be relative");
-            }
+            validate_cache_symlink_target(&entry_path, &target)?;
             ArchiveNode::Symlink { mode, target }
         } else {
             bail!("unsupported task cache archive entry type");
@@ -862,12 +890,13 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<C
                 }),
             }
         }
-        let bytes = serde_json::to_vec(&RemoteDirectory {
+        let directory = serde_json::to_value(RemoteDirectory {
             directories,
             files,
             symlinks,
             version: 1,
         })?;
+        let bytes = canonical_json(&directory)?;
         let digest = CacheDigest::blake3(&bytes);
         directory_uploads.push(CasBlobUpload {
             digest: digest.clone(),
@@ -918,7 +947,7 @@ async fn materialize_remote_tree(
             .get_blob(&digest, REMOTE_CACHE_DIRECTORY_MEDIA_TYPE)
             .await?;
         let directory: RemoteDirectory = serde_json::from_slice(&bytes)?;
-        if serde_json::to_vec(&directory)? != bytes {
+        if canonical_json(&serde_json::to_value(&directory)?)? != bytes {
             bail!("remote cache directory is not canonical JSON");
         }
         if directory.version != 1 {
@@ -964,22 +993,7 @@ async fn materialize_remote_tree(
             let child = path.join(&symlink.name);
             validate_cache_path(&child)?;
             let target = PathBuf::from(symlink.target);
-            if target.is_absolute() {
-                bail!("remote cache symlink target must be relative");
-            }
-            let resolved = child.parent().unwrap_or(Path::new("")).join(&target);
-            let mut depth = 0_i64;
-            for component in resolved.components() {
-                match component {
-                    Component::Normal(_) => depth += 1,
-                    Component::ParentDir => depth -= 1,
-                    Component::CurDir => {}
-                    _ => bail!("remote cache symlink target is unsafe"),
-                }
-                if depth < 0 {
-                    bail!("remote cache symlink target escapes its output root");
-                }
-            }
+            validate_cache_symlink_target(&child, &target)?;
             nodes.insert(
                 child,
                 RestoredNode::Symlink {
@@ -1156,6 +1170,22 @@ fn remove_file(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_digest_verifies_its_declared_algorithm() {
+        let bytes = b"remote cache blob";
+        let sha256 = CacheDigest {
+            algorithm: "sha256".into(),
+            hash: hex::encode(sha2::Sha256::digest(bytes)),
+            size: bytes.len() as u64,
+        };
+        assert!(sha256.matches_bytes(bytes).unwrap());
+        assert!(!sha256.matches_bytes(b"different").unwrap());
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(file.path(), bytes).unwrap();
+        assert!(sha256.matches_file(file.path()).unwrap());
+    }
 
     struct FailingTaskCacheStore {
         inner: LocalTaskCacheStore,
@@ -1394,6 +1424,19 @@ mod tests {
         assert!(dist.files[0].executable);
     }
 
+    #[test]
+    fn cache_symlink_targets_remain_within_output_root() {
+        assert!(
+            validate_cache_symlink_target(Path::new("dist/link"), Path::new("../artifact")).is_ok()
+        );
+        assert!(
+            validate_cache_symlink_target(Path::new("dist/link"), Path::new("../../outside"))
+                .is_err()
+        );
+        assert!(validate_cache_symlink_target(Path::new("link"), Path::new("..")).is_err());
+        assert!(validate_cache_symlink_target(Path::new("link"), Path::new("/outside")).is_err());
+    }
+
     #[tokio::test]
     async fn http_store_publishes_cas_before_action_result_and_reads_it_back() {
         let mut server = mockito::Server::new_async().await;
@@ -1404,8 +1447,10 @@ mod tests {
             r#"{{"format":2,"key":"{key}","task_identity":"build","artifact_checksum":null,"roots":[],"output":[],"restored_bytes":0,"execution_duration_ns":1}}"#
         );
         let local_manifest: CacheManifest = serde_json::from_str(&manifest).unwrap();
-        let metadata =
-            serde_json::to_vec(&RemoteClientMetadata::from_manifest(&local_manifest)).unwrap();
+        let metadata = canonical_json(
+            &serde_json::to_value(RemoteClientMetadata::from_manifest(&local_manifest)).unwrap(),
+        )
+        .unwrap();
         let metadata_digest = CacheDigest::blake3(&metadata);
         let envelope = RemoteActionResultEnvelope {
             result: RemoteActionResult {
