@@ -35,3 +35,20 @@ assert_not_contains "mise config ls" ".config/mise/config.toml"
 # Verify the correct tool version is used (1.0.0 from custom, not 2.0.0 from default)
 mise install
 assert_contains "mise x -- dummy" "1.0.0"
+
+# The write target has to respect the same exclusion. `mise use` used to pick
+# ~/.config/mise/config.toml here -- the very file the assertions above prove is not
+# loaded -- so the tool landed somewhere mise would never read it back.
+mkdir -p "$HOME/writetarget"
+cd "$HOME/writetarget" || exit 1
+
+mise use dummy@1.0.0
+assert "cat mise.toml" '[tools]
+dummy = "1.0.0"'
+assert "cat $HOME/.config/mise/config.toml" '[tools]
+dummy = "2.0.0"'
+
+# `mise set` already resolved this correctly; it shares the resolver now, so pin it.
+mise set WRITE_TARGET=local
+assert_contains "cat mise.toml" "WRITE_TARGET"
+assert_not_contains "cat $HOME/.config/mise/config.toml" "WRITE_TARGET"
