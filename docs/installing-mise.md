@@ -29,7 +29,7 @@ mise connects to many external registries and backends, such as aqua, GitHub rel
 Projects and organizations should generally set a [`min_version`](/configuration.html#minimum-mise-version) when they need a newer mise feature instead of locking every user to a specific mise executable. While there are ways to pin or bootstrap a particular mise version, locking users to one mise version is generally discouraged. Pinning mise back is like preventing `apt update` or `brew update` from refreshing package metadata: it can hide deprecation messages and cause bit rot with upstream integrations like aqua-registry. Breaking changes are avoided unless they go through a long deprecation process, so staying current should usually be low risk.
 :::
 
-### <https://mise.run>
+### <https://mise.run> {#mise-run}
 
 Note that it isn't necessary for `mise` to be on `PATH`. If you run the activate script in your
 shell's rc
@@ -234,7 +234,7 @@ RUN mise trust -a && mise install
 ::: warning
 The Homebrew formula is convenient, but it is not the preferred installation method. Homebrew builds
 mise separately from the official, more optimized release binaries. For the best performance and
-fastest access to new releases, use the [`mise.run`](#https-mise-run) installer instead.
+fastest access to new releases, use the [`mise.run`](#mise-run) installer instead.
 :::
 
 ```sh
