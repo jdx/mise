@@ -822,6 +822,9 @@ Run `mise cache` with no args to view the current cache directory.
         alias c
         alias clean hide=#true
         flag --outdate help="Mark all cache files as old" hide=#true
+        flag --task help="Clear output cache entries for a task name or pattern" {
+            arg <TASK>
+        }
         arg "[TOOL]…" help="Tool(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
     cmd path help="Show the cache directory path" effect=read {
@@ -838,6 +841,10 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
         flag "-v --verbose" help="Show pruned files" var=#true count=#true
         flag --dry-run help="Just show what would be pruned"
         arg "[TOOL]…" help="Tool(s) to prune cache for e.g.: node, python" required=#false var=#true
+    }
+    cmd task help="Inspect output cache entries for a task" effect=read {
+        flag "-J --json" help="Output in JSON format"
+        arg <TASK> help="Task name or pattern to inspect"
     }
 }
 cmd completion help="Generate shell completions" effect=read {

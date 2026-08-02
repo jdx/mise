@@ -300,6 +300,9 @@ Removes stale mise cache files
 \fIAliases: \fRp
 .RE
 .TP
+\fBcache task\fR
+Inspect output cache entries for a task
+.TP
 \fBcompletion\fR
 Generate shell completions
 .TP
@@ -1471,6 +1474,9 @@ Deletes all cache files in mise
 .TP
 \fB\-\-outdate\fR
 Mark all cache files as old
+.TP
+\fB\-\-task\fR \fI<TASK>\fR
+Clear output cache entries for a task name or pattern
 \fBArguments:\fR
 .PP
 .TP
@@ -1497,6 +1503,21 @@ Just show what would be pruned
 .TP
 \fB<TOOL>\fR
 Tool(s) to prune cache for e.g.: node, python
+.SH "MISE CACHE TASK"
+Inspect output cache entries for a task
+.PP
+\fBUsage:\fR mise cache task [OPTIONS] <TASK>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+\fBArguments:\fR
+.PP
+.TP
+\fB<TASK>\fR
+Task name or pattern to inspect
 .SH "MISE COMPLETION"
 Generate shell completions
 .PP

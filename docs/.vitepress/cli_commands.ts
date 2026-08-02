@@ -225,6 +225,9 @@ export const commands: { [key: string]: Command } = {
       prune: {
         hide: false,
       },
+      task: {
+        hide: false,
+      },
     },
   },
   completion: {

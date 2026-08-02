@@ -6,6 +6,7 @@ use crate::env;
 mod clear;
 mod path;
 mod prune;
+mod task;
 
 /// Manage the mise cache
 ///
@@ -22,22 +23,24 @@ enum Commands {
     Clear(clear::CacheClear),
     Path(path::CachePath),
     Prune(prune::CachePrune),
+    Task(task::CacheTask),
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self {
-            Self::Clear(cmd) => cmd.run(),
+            Self::Clear(cmd) => cmd.run().await,
             Self::Path(cmd) => cmd.run(),
             Self::Prune(cmd) => cmd.run(),
+            Self::Task(cmd) => cmd.run().await,
         }
     }
 }
 
 impl Cache {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self.command {
-            Some(cmd) => cmd.run(),
+            Some(cmd) => cmd.run().await,
             None => {
                 // just show the cache dir
                 miseprintln!("{}", env::MISE_CACHE_DIR.display());

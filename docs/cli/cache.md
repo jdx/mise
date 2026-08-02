@@ -11,6 +11,7 @@ Run `mise cache` with no args to view the current cache directory.
 
 ## Subcommands
 
-- [`mise cache clear [TOOL]…`](/cli/cache/clear.md)
+- [`mise cache clear [--task <TASK>] [TOOL]…`](/cli/cache/clear.md)
 - [`mise cache path`](/cli/cache/path.md)
 - [`mise cache prune [-v --verbose…] [--dry-run] [TOOL]…`](/cli/cache/prune.md)
+- [`mise cache task [-J --json] <TASK>`](/cli/cache/task.md)
