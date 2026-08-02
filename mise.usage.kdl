@@ -391,7 +391,7 @@ Examples:
             }
             flag "-n --dry-run" help="Print the config/source updates without writing anything"
             flag --no-apply help="Add the entry without applying it"
-            flag "-p --path" help="Write to this config file or directory" {
+            flag "-p --path --file" help="Write to this config file or directory" {
                 arg <PATH>
             }
             flag "-s --source" help="Source path to use for a single target" {
@@ -598,7 +598,7 @@ Examples:
 """#
                 flag "-l --local" help="Write to the local config instead of the global config"
                 flag "-n --dry-run" help="Print the config change without writing it"
-                flag "-p --path" help="Write to this config file or directory" {
+                flag "-p --path --file" help="Write to this config file or directory" {
                     arg <PATH>
                 }
                 arg <TAP> help="Tap name, e.g. `owner/repo`"
@@ -614,7 +614,7 @@ Examples:
 """#
                 flag "-l --local" help="Write to the local config instead of the global config"
                 flag "-n --dry-run" help="Print the config change without writing it"
-                flag "-p --path" help="Write to this config file or directory" {
+                flag "-p --path --file" help="Write to this config file or directory" {
                     arg <PATH>
                 }
                 arg <TAPS>… help="Tap name(s), e.g. `owner/repo`" var=#true
@@ -648,7 +648,7 @@ Examples:
             }
             flag --all help="Import every linked formula, including dependencies"
             flag "-n --dry-run" help="Print the config change without writing config"
-            flag "-p --path" help="Write to this config file or directory" {
+            flag "-p --path --file" help="Write to this config file or directory" {
                 arg <PATH>
             }
         }
@@ -750,7 +750,7 @@ Examples:
             }
             flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
             flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
-            flag "-p --path" help="Write to this config file or directory" {
+            flag "-p --path --file" help="Write to this config file or directory" {
                 arg <PATH>
             }
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -1075,7 +1075,7 @@ Examples:
         }
         flag "-n --dry-run" help="Print the config/source updates without writing anything"
         flag --no-apply help="Add the entry without applying it"
-        flag "-p --path" help="Write to this config file or directory" {
+        flag "-p --path --file" help="Write to this config file or directory" {
             arg <PATH>
         }
         flag "-s --source" help="Source path to use for a single target" {

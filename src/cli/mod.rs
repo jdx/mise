@@ -985,6 +985,63 @@ mod tests {
         }
     }
 
+    /// Commands that name a config file to write to accept both spellings, so it
+    /// does not matter which one you remember. See
+    /// <https://github.com/jdx/mise/discussions/4881>.
+    ///
+    /// Asserted through clap rather than end-to-end because several of these
+    /// commands install or apply something when actually run.
+    #[test]
+    fn test_config_target_options_accept_both_names() {
+        // (command path, argument id, expected alias, available on this platform)
+        let cases: &[(&[&str], &str, &str, bool)] = &[
+            (&["use"], "path", "file", true),
+            (&["unuse"], "path", "file", true),
+            (&["set"], "file", "path", true),
+            (&["unset"], "file", "path", true),
+            (&["dotfiles", "add"], "path", "file", true),
+            (&["bootstrap", "packages", "use"], "path", "file", true),
+            (&["bootstrap", "packages", "import"], "path", "file", true),
+            // the brew manager is not registered on Windows
+            (
+                &["bootstrap", "packages", "brew", "tap"],
+                "path",
+                "file",
+                cfg!(not(windows)),
+            ),
+            (
+                &["bootstrap", "packages", "brew", "untap"],
+                "path",
+                "file",
+                cfg!(not(windows)),
+            ),
+        ];
+        let root = Cli::command();
+
+        for (path, arg_name, alias, available) in cases {
+            if !available {
+                continue;
+            }
+            let command = path.iter().fold(&root, |command, name| {
+                command
+                    .get_subcommands()
+                    .find(|subcommand| subcommand.get_name() == *name)
+                    .unwrap_or_else(|| panic!("missing command path {}", path.join(" ")))
+            });
+            let arg = command
+                .get_arguments()
+                .find(|arg| arg.get_id() == *arg_name)
+                .unwrap_or_else(|| panic!("missing --{arg_name} on {}", path.join(" ")));
+
+            assert!(
+                arg.get_visible_aliases()
+                    .is_some_and(|aliases| aliases.contains(alias)),
+                "missing visible --{alias} alias for --{arg_name} on {}",
+                path.join(" ")
+            );
+        }
+    }
+
     #[test]
     fn test_escape_task_args_preserves_task_separator_tail() {
         let cmd = Cli::command();

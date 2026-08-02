@@ -947,7 +947,7 @@ Print the config/source updates without writing anything
 \fB\-\-no\-apply\fR
 Add the entry without applying it
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 .TP
 \fB\-s, \-\-source\fR \fI<PATH>\fR
@@ -1189,7 +1189,7 @@ Write to the local config instead of the global config
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing it
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 \fBArguments:\fR
 .PP
@@ -1213,7 +1213,7 @@ Write to the local config instead of the global config
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing it
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 \fBArguments:\fR
 .PP
@@ -1250,7 +1250,7 @@ Import every linked formula, including dependencies
 \fB\-n, \-\-dry\-run\fR
 Print the config change without writing config
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
@@ -1346,7 +1346,7 @@ Write to the global config (~/.config/mise/config.toml) instead of the local one
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without writing config or installing
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
 .TP
 \fB\-y, \-\-yes\fR

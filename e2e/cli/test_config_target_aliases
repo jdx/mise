@@ -54,3 +54,19 @@ mise unuse --no-prune --file subdir dummy@1
 assert_not_contains "cat subdir/mise.toml" "dummy"
 mise unset --path subdir SUBDIR_VAR
 assert_not_contains "cat subdir/mise.toml" "SUBDIR_VAR"
+
+# the commands that write to a config under `--path` take --file too. `brew tap`/`untap` only
+# edit `[bootstrap.brew.taps]` — they do not touch a Homebrew installation — so they are the
+# cheap way to exercise this end to end; the rest are covered by the clap assertions in
+# src/cli/mod.rs, since running them installs or applies something.
+mise bootstrap packages brew tap acme/tools --file tap-alias.toml
+assert_contains "cat tap-alias.toml" "acme/tools"
+
+mise bootstrap packages brew untap acme/tools --file tap-alias.toml
+assert_not_contains "cat tap-alias.toml" "acme/tools"
+
+# and the canonical name is unaffected
+mise bootstrap packages brew tap acme/tools --path tap-alias.toml
+assert_contains "cat tap-alias.toml" "acme/tools"
+mise bootstrap packages brew untap acme/tools --path tap-alias.toml
+assert_not_contains "cat tap-alias.toml" "acme/tools"
