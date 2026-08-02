@@ -110,6 +110,10 @@ Lint HK files
 
 - **Usage**: `perf:record`
 
+## `perf:task-cache`
+
+- **Usage**: `perf:task-cache`
+
 ## `pre-commit`
 
 - **Usage**: `pre-commit`
