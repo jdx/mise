@@ -23,3 +23,34 @@ mise use --path alias.toml dummy@2
 assert_contains "cat alias.toml" 'dummy = "2"'
 mise set --file alias.toml ALIAS_VAR=set-via-file
 assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-file"'
+
+# the commands that undo those two take the same pair of names
+# `mise unuse --file` is `mise unuse --path`
+mise unuse --no-prune --file alias.toml dummy@2
+assert_not_contains "cat alias.toml" "dummy"
+
+# `mise unset --path` is `mise unset --file`
+mise unset --path alias.toml ALIAS_VAR
+assert_not_contains "cat alias.toml" "ALIAS_VAR"
+
+# and their canonical names are unaffected
+mise use --path alias.toml dummy@3
+mise set --file alias.toml ALIAS_VAR=again
+mise unuse --no-prune --path alias.toml dummy@3
+assert_not_contains "cat alias.toml" "dummy"
+mise unset --file alias.toml ALIAS_VAR
+assert_not_contains "cat alias.toml" "ALIAS_VAR"
+
+# all four accept a directory as well as a file, under either name: the argument resolves to
+# the config file inside that directory
+mkdir -p subdir
+
+mise use --file subdir dummy@1
+assert_contains "cat subdir/mise.toml" 'dummy = "1"'
+mise set --path subdir SUBDIR_VAR=via-dir
+assert_contains "cat subdir/mise.toml" 'SUBDIR_VAR = "via-dir"'
+
+mise unuse --no-prune --file subdir dummy@1
+assert_not_contains "cat subdir/mise.toml" "dummy"
+mise unset --path subdir SUBDIR_VAR
+assert_not_contains "cat subdir/mise.toml" "SUBDIR_VAR"

@@ -47,7 +47,7 @@ pub struct Unuse {
     ///
     /// If a directory is specified, it will look for a config file in that directory following
     /// the rules above.
-    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, visible_alias = "file", overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Do not also prune the installed version

@@ -4307,9 +4307,11 @@ Examples:
     $ mise unset NODE_ENV -g
 
 """#
-    flag "-f --file" help="Specify a file to use instead of `mise.toml`" {
+    flag "-f --file --path" help="Specify a file to use instead of `mise.toml`" {
         long_help #"""
 Specify a file to use instead of `mise.toml`
+
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
 
 Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 """#
@@ -4366,7 +4368,7 @@ Examples:
         arg <ENV>
     }
     flag "-g --global" help="Use the global config file (`~/.config/mise/config.toml`) instead of the local one"
-    flag "-p --path" help="Specify a path to a config file or directory" {
+    flag "-p --path --file" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 
