@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Writing to the global config must never land in a `conf.d` drop-in.
+#
+# `first_config_file` skips conf.d entries while choosing, but falls back to the
+# first candidate when nothing else qualifies — and `config_files_from_dir`
+# inserts conf.d entries first. A config dir holding only drop-ins therefore
+# handed one back as the write target.
+#
+# See: https://github.com/jdx/mise/discussions/5842
+
+mkdir -p "$HOME/.config/mise/conf.d"
+cat >"$HOME/.config/mise/conf.d/10-drop-in.toml" <<'TOML'
+[env]
+FROM_CONFD = "yes"
+TOML
+
+# the reported state: drop-ins exist, the global config itself does not
+assert_fail "test -f $HOME/.config/mise/config.toml"
+
+# the drop-in is loaded — the filter is about writing, not reading
+assert_contains "mise env -s bash" "FROM_CONFD"
+
+# A `.tool-versions` global config still wins over a drop-in, and skipping
+# drop-ins must not divert those writes. This holds because
+# `global_config_files()` inserts ~/.tool-versions ahead of the conf.d entries,
+# so it — not a drop-in — is what the fallback returns; pin that ordering here.
+printf 'dummy 1.0.0\n' >"$HOME/.tool-versions"
+MISE_USE_TOML=false mise use -g dummy@system
+assert_contains "cat $HOME/.tool-versions" "dummy"
+assert_not_contains "cat $HOME/.config/mise/conf.d/10-drop-in.toml" "dummy"
+assert_fail "test -f $HOME/.config/mise/config.toml"
+rm "$HOME/.tool-versions"
+
+# `mise use --global` creates the global config rather than editing the drop-in
+mise use -g dummy@system
+assert_contains "cat $HOME/.config/mise/config.toml" 'dummy = "system"'
+assert_not_contains "cat $HOME/.config/mise/conf.d/10-drop-in.toml" "dummy"
+
+# `mise set --global` and `mise settings set` resolve through the same function
+mise set -g CONFD_GUARD=set
+assert_contains "cat $HOME/.config/mise/config.toml" "CONFD_GUARD"
+assert_not_contains "cat $HOME/.config/mise/conf.d/10-drop-in.toml" "CONFD_GUARD"
+
+mise settings set jobs 3
+assert_contains "cat $HOME/.config/mise/config.toml" "jobs"
+assert_not_contains "cat $HOME/.config/mise/conf.d/10-drop-in.toml" "jobs"
+
+# removal goes to the same place, and the drop-in is still intact and loaded
+mise unuse -y dummy@system
+assert_not_contains "cat $HOME/.config/mise/config.toml" "dummy"
+assert_contains "cat $HOME/.config/mise/conf.d/10-drop-in.toml" "FROM_CONFD"
+assert_contains "mise env -s bash" "FROM_CONFD"

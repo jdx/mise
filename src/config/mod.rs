@@ -2225,6 +2225,11 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
 pub fn global_config_path() -> PathBuf {
     let files = global_config_files();
     first_config_file(&files)
+        // Never write into a `conf.d` drop-in. `first_config_file` skips them
+        // while choosing, but falls back to `files.first()` when nothing else
+        // qualifies — and `config_files_from_dir` inserts conf.d entries first,
+        // so a config dir holding only drop-ins would hand one back here.
+        .filter(|p| !is_conf_d_file(p.as_path()))
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
