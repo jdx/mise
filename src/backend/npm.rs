@@ -277,9 +277,11 @@ impl Backend for NPMBackend {
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         // Version queries hit the npm registry over HTTP and installs use the
         // embedded aube package manager, so by default neither needs a
-        // package-manager binary. `node` is still listed because installed JS
-        // tools (and any lifecycle scripts) need a runtime. Explicit non-aube
-        // package managers — or `npm.shell_out` — need their CLI on PATH.
+        // package-manager binary. `node` is listed so an already-configured node
+        // installs first when a package or lifecycle script needs it; backend
+        // dependencies do not add missing tools, and not every package needs node.
+        // Explicit non-aube package managers — or `npm.shell_out` — need their CLI
+        // on PATH.
         let settings = Settings::get();
         let shell_out = settings.npm.shell_out;
         let tool_name = self.tool_name();
@@ -1052,9 +1054,9 @@ impl NPMBackend {
         eyre::eyre!(build_aube_install_error_message(&err, &self.ba().full()))
     }
 
-    /// The `node` mise resolved as a dependency, handed to the embedded aube
-    /// installer so lifecycle scripts spawn on it. `None` (no node dependency
-    /// resolved) lets aube fall back to an ambient `node`.
+    /// A configured `node`, when available, is handed to the embedded aube
+    /// installer so lifecycle scripts spawn on it. `None` lets aube fall back
+    /// to an ambient `node`.
     ///
     /// `selector` is the version-manager shape: mise hands over a real bin dir
     /// holding `node`/`npm`/`npx`, aube prepends it to PATH and uses that node
@@ -1601,8 +1603,8 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_for_npm_itself() {
-        // When the tool is npm itself (npm:npm) with default settings (npm as package manager),
-        // it should only depend on node. With bun/pnpm configured, it would include those too.
+        // The node dependency only orders a node that is already in the install
+        // set; it does not cause node to be installed automatically.
         let backend = create_npm_backend("npm");
         let deps = backend.get_dependencies().unwrap();
         assert_eq!(deps, vec!["node"]);
@@ -1610,8 +1612,8 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_default_package_manager() {
-        // Default (auto) installs via the embedded aube package manager, so a
-        // package only needs node at runtime — no npm/aube/bun/pnpm binary.
+        // Default (auto) needs no external installer. Node remains an ordering
+        // dependency for configured packages that need it at runtime.
         let backend = create_npm_backend("prettier");
         let deps = backend.get_dependencies().unwrap();
         assert_eq!(deps, vec!["node"]);
