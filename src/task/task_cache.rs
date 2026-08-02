@@ -23,6 +23,7 @@ use walkdir::WalkDir;
 
 const CACHE_FORMAT_VERSION: u8 = 2;
 const CACHE_DIR_VERSION: &str = "v2";
+const ARTIFACT_CHECKSUM_FORMAT: u8 = 1;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -112,6 +113,8 @@ struct CacheManifest {
     key: String,
     #[serde(default)]
     task_identity: String,
+    #[serde(default)]
+    artifact_checksum: Option<String>,
     roots: Vec<PathBuf>,
     output: Vec<TaskCacheOutput>,
     #[serde(default)]
@@ -143,6 +146,7 @@ pub(crate) struct TaskCacheEntry {
     pub(crate) key: String,
     #[serde(skip)]
     pub(crate) identity_verified: bool,
+    pub(crate) artifact_checksum: Option<String>,
     pub(crate) current: bool,
     pub(crate) size_bytes: u64,
     pub(crate) restored_bytes: u64,
@@ -372,6 +376,7 @@ impl TaskArtifactCache {
         if !manifest.roots.is_empty() && !archive_path.is_file() {
             return None;
         }
+        verify_artifact_checksum(&manifest, &archive_path).ok()?;
         Some(manifest.output)
     }
 
@@ -395,6 +400,7 @@ impl TaskArtifactCache {
             if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
                 bail!("task cache manifest contains duplicate or nested roots");
             }
+            verify_artifact_checksum(&manifest, &archive_path)?;
             if manifest.roots.is_empty() {
                 if let Err(err) = file::touch_file(&manifest_path) {
                     warn!("failed to update task cache manifest access time: {err}");
@@ -510,15 +516,20 @@ impl TaskArtifactCache {
         } else {
             0
         };
-        let manifest = CacheManifest {
+        let mut manifest = CacheManifest {
             format: CACHE_FORMAT_VERSION,
             key: self.key.clone(),
             task_identity: task_cache_identity(task, &self.root),
+            artifact_checksum: None,
             roots,
             output: output.to_vec(),
             restored_bytes: archive_bytes.saturating_add(output_bytes),
             execution_duration_ns: execution_duration.as_nanos().min(u64::MAX as u128) as u64,
         };
+        manifest.artifact_checksum = Some(calculate_artifact_checksum(
+            &manifest,
+            (!manifest.roots.is_empty()).then_some(archive_partial.as_path()),
+        )?);
         fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
         if !manifest.roots.is_empty() {
             file::rename(&archive_partial, &archive_path)?;
@@ -545,6 +556,49 @@ impl TaskArtifactCache {
         }
         Ok(manifest)
     }
+}
+
+fn calculate_artifact_checksum(
+    manifest: &CacheManifest,
+    archive_path: Option<&Path>,
+) -> Result<String> {
+    #[derive(Serialize)]
+    struct ArtifactChecksumMaterial<'a> {
+        format: u8,
+        roots: &'a [PathBuf],
+        output: &'a [TaskCacheOutput],
+        restored_bytes: u64,
+        execution_duration_ns: u64,
+        archive_checksum: Option<String>,
+    }
+
+    let archive_checksum = archive_path
+        .map(|path| hash::file_hash_blake3(path, None))
+        .transpose()?;
+    let material = ArtifactChecksumMaterial {
+        format: ARTIFACT_CHECKSUM_FORMAT,
+        roots: &manifest.roots,
+        output: &manifest.output,
+        restored_bytes: manifest.restored_bytes,
+        execution_duration_ns: manifest.execution_duration_ns,
+        archive_checksum,
+    };
+    let encoded = serde_json::to_string(&material)?;
+    Ok(format!("blake3:{}", hash::hash_blake3_to_str(&encoded)))
+}
+
+fn verify_artifact_checksum(manifest: &CacheManifest, archive_path: &Path) -> Result<()> {
+    let Some(expected) = &manifest.artifact_checksum else {
+        return Ok(());
+    };
+    let actual = calculate_artifact_checksum(
+        manifest,
+        (!manifest.roots.is_empty()).then_some(archive_path),
+    )?;
+    if actual != *expected {
+        bail!("task cache artifact checksum mismatch");
+    }
+    Ok(())
 }
 
 pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry>> {
@@ -608,6 +662,7 @@ pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCac
             current: current_key.as_deref() == Some(manifest.key.as_str()),
             key: manifest.key,
             identity_verified: matches_identity,
+            artifact_checksum: manifest.artifact_checksum,
             size_bytes: manifest_metadata
                 .len()
                 .saturating_add(archive_metadata.map_or(0, |metadata| metadata.len())),
@@ -1211,6 +1266,28 @@ mod tests {
         assert_eq!(manifest.restored_bytes, 0);
         assert_eq!(manifest.execution_duration_ns, 0);
         assert_eq!(manifest.task_identity, "");
+        assert_eq!(manifest.artifact_checksum, None);
+    }
+
+    #[test]
+    fn artifact_checksum_is_independent_of_cache_key_and_task_identity() {
+        let mut manifest = CacheManifest {
+            format: CACHE_FORMAT_VERSION,
+            key: "first-key".into(),
+            task_identity: "first-task".into(),
+            artifact_checksum: None,
+            roots: Vec::new(),
+            output: vec![TaskCacheOutput::Stdout("result\n".into())],
+            restored_bytes: 7,
+            execution_duration_ns: 42,
+        };
+        let first = calculate_artifact_checksum(&manifest, None).unwrap();
+        manifest.key = "second-key".into();
+        manifest.task_identity = "second-task".into();
+        let second = calculate_artifact_checksum(&manifest, None).unwrap();
+
+        assert_eq!(first, second);
+        assert!(first.starts_with("blake3:"));
     }
 
     #[test]

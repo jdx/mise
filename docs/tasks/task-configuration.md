@@ -771,6 +771,11 @@ Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Se
 manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
 are treated as misses and never turn a successful task run into a failure.
 
+New cache entries include a BLAKE3 artifact checksum that is independent of the cache lookup key.
+It covers the archived outputs and captured task result metadata, and mise verifies it before
+extracting files or replaying output. Entries written before checksums were introduced remain
+readable. `mise cache task <task> --json` includes the checksum for cache inspection tooling.
+
 When a cache-enabled task executes instead of restoring a result, mise reports the reason: no
 matching entry, a corrupt entry, forced execution, disabled reads, or a dependency that completed
 without a stable cache key. Raw and dry-run cache bypasses retain their existing warning or preview
