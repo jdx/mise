@@ -68,6 +68,9 @@ myglobalfile
 relative-meta
 systemglobalfile
 templated-meta"
+assert "mise tasks ls --local" "mylocal"
+assert_fail "mise tasks deps --local" "unexpected argument '--local'"
+assert_fail "mise tasks --global deps" "task list options cannot be used with subcommands"
 assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"

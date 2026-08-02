@@ -1,5 +1,5 @@
 use clap::Subcommand;
-use eyre::Result;
+use eyre::{Result, bail};
 
 use crate::cli::run;
 
@@ -54,6 +54,10 @@ impl Commands {
 
 impl Tasks {
     pub async fn run(self) -> Result<()> {
+        if self.command.is_some() && self.ls.has_options() {
+            bail!("task list options cannot be used with subcommands");
+        }
+
         let cmd = self
             .command
             .or(self.task.map(|t| {

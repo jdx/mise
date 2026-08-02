@@ -14,7 +14,7 @@ Manage tasks
 
 Task name to get info of
 
-## Global Flags
+## Flags
 
 ### `-g --global`
 

@@ -23,36 +23,24 @@ use serde_json::json;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksLs {
     /// Only show global tasks
-    #[clap(
-        short,
-        long,
-        global = true,
-        overrides_with = "local",
-        verbatim_doc_comment
-    )]
+    #[clap(short, long, overrides_with = "local", verbatim_doc_comment)]
     pub global: bool,
 
     /// Output in JSON format
-    #[clap(short = 'J', global = true, long, verbatim_doc_comment)]
+    #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Only show non-global tasks
-    #[clap(
-        short,
-        long,
-        global = true,
-        overrides_with = "global",
-        verbatim_doc_comment
-    )]
+    #[clap(short, long, overrides_with = "global", verbatim_doc_comment)]
     pub local: bool,
 
     /// Show all columns
-    #[clap(short = 'x', long, global = true, verbatim_doc_comment)]
+    #[clap(short = 'x', long, verbatim_doc_comment)]
     pub extended: bool,
 
     /// Load all tasks from the entire monorepo, including sibling directories.
     /// By default, only tasks from the current directory hierarchy are loaded.
-    #[clap(long, global = true, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment)]
     pub all: bool,
 
     /// Display tasks for usage completion
@@ -60,31 +48,30 @@ pub struct TasksLs {
     pub complete: bool,
 
     /// Show hidden tasks
-    #[clap(long, global = true, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment)]
     pub hidden: bool,
 
     /// Only show task names, one per line. Useful for piping to fzf and similar tools.
     #[clap(
         long,
-        global = true,
         verbatim_doc_comment,
         conflicts_with_all = ["json", "extended", "usage"]
     )]
     pub name_only: bool,
 
     /// Do not print table header
-    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
+    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
     /// Sort by column. Default is name.
-    #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
+    #[clap(long, value_name = "COLUMN", verbatim_doc_comment)]
     pub sort: Option<SortColumn>,
 
     /// Sort order. Default is asc.
-    #[clap(long, global = true, verbatim_doc_comment)]
+    #[clap(long, verbatim_doc_comment)]
     pub sort_order: Option<SortOrder>,
 
-    #[clap(long, global = true, hide = true)]
+    #[clap(long, hide = true)]
     pub usage: bool,
 }
 
@@ -103,6 +90,21 @@ pub enum SortOrder {
 }
 
 impl TasksLs {
+    pub fn has_options(&self) -> bool {
+        self.global
+            || self.json
+            || self.local
+            || self.extended
+            || self.all
+            || self.complete
+            || self.hidden
+            || self.name_only
+            || self.no_header
+            || self.sort.is_some()
+            || self.sort_order.is_some()
+            || self.usage
+    }
+
     pub async fn run(self) -> Result<()> {
         use crate::task::TaskLoadContext;
 

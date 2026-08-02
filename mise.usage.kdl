@@ -3641,29 +3641,29 @@ Examples:
     $ mise tasks ls
 
 """#
-    flag "-g --global" help="Only show global tasks" global=#true
-    flag "-J --json" help="Output in JSON format" global=#true
-    flag "-l --local" help="Only show non-global tasks" global=#true
-    flag "-x --extended" help="Show all columns" global=#true
+    flag "-g --global" help="Only show global tasks"
+    flag "-J --json" help="Output in JSON format"
+    flag "-l --local" help="Only show non-global tasks"
+    flag "-x --extended" help="Show all columns"
     flag --all help=#"""
 Load all tasks from the entire monorepo, including sibling directories.
 By default, only tasks from the current directory hierarchy are loaded.
-"""# global=#true
+"""#
     flag --complete help="Display tasks for usage completion" hide=#true
-    flag --hidden help="Show hidden tasks" global=#true
-    flag --name-only help="Only show task names, one per line. Useful for piping to fzf and similar tools." global=#true
-    flag --no-header help="Do not print table header" global=#true
-    flag --sort help="Sort by column. Default is name." global=#true {
+    flag --hidden help="Show hidden tasks"
+    flag --name-only help="Only show task names, one per line. Useful for piping to fzf and similar tools."
+    flag --no-header help="Do not print table header"
+    flag --sort help="Sort by column. Default is name." {
         arg <COLUMN> {
             choices name alias description source
         }
     }
-    flag --sort-order help="Sort order. Default is asc." global=#true {
+    flag --sort-order help="Sort order. Default is asc." {
         arg <SORT_ORDER> {
             choices asc desc
         }
     }
-    flag --usage hide=#true global=#true
+    flag --usage hide=#true
     arg "[TASK]" help="Task name to get info of" required=#false
     cmd add help="Create a new task" effect=write {
         long_help #"""
@@ -3831,29 +3831,29 @@ Examples:
     $ mise tasks ls
 
 """#
-        flag "-g --global" help="Only show global tasks" global=#true
-        flag "-J --json" help="Output in JSON format" global=#true
-        flag "-l --local" help="Only show non-global tasks" global=#true
-        flag "-x --extended" help="Show all columns" global=#true
+        flag "-g --global" help="Only show global tasks"
+        flag "-J --json" help="Output in JSON format"
+        flag "-l --local" help="Only show non-global tasks"
+        flag "-x --extended" help="Show all columns"
         flag --all help=#"""
 Load all tasks from the entire monorepo, including sibling directories.
 By default, only tasks from the current directory hierarchy are loaded.
-"""# global=#true
+"""#
         flag --complete help="Display tasks for usage completion" hide=#true
-        flag --hidden help="Show hidden tasks" global=#true
-        flag --name-only help="Only show task names, one per line. Useful for piping to fzf and similar tools." global=#true
-        flag --no-header help="Do not print table header" global=#true
-        flag --sort help="Sort by column. Default is name." global=#true {
+        flag --hidden help="Show hidden tasks"
+        flag --name-only help="Only show task names, one per line. Useful for piping to fzf and similar tools."
+        flag --no-header help="Do not print table header"
+        flag --sort help="Sort by column. Default is name." {
             arg <COLUMN> {
                 choices name alias description source
             }
         }
-        flag --sort-order help="Sort order. Default is asc." global=#true {
+        flag --sort-order help="Sort order. Default is asc." {
             arg <SORT_ORDER> {
                 choices asc desc
             }
         }
-        flag --usage hide=#true global=#true
+        flag --usage hide=#true
     }
     cmd run restart_token=::: help="Run task(s)" {
         alias r
