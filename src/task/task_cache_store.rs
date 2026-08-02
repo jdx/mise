@@ -1,10 +1,15 @@
 use crate::file;
+use crate::task::task_cache::{CacheManifest, calculate_artifact_checksum};
 use async_trait::async_trait;
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
+use jdx_tar::{Archive, Builder, EntryType, Header};
 use reqwest::StatusCode;
-use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
-use std::fs;
-use std::path::{Path, PathBuf};
+use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, IF_NONE_MATCH};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use url::Url;
@@ -12,12 +17,146 @@ use url::Url;
 const REMOTE_CACHE_PROTOCOL_VERSION: u8 = 1;
 const REMOTE_CACHE_PROTOCOL_HEADER: &str = "Mise-Cache-Protocol";
 const REMOTE_CACHE_NAMESPACE_HEADER: &str = "Mise-Cache-Namespace";
-const REMOTE_CACHE_MANIFEST_MEDIA_TYPE: &str = "application/vnd.mise.task-cache-manifest.v2+json";
-const REMOTE_CACHE_ARTIFACT_MEDIA_TYPE: &str = "application/vnd.mise.task-cache-artifact.v1+zstd";
+const REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE: &str =
+    "application/vnd.mise.cache-action-result.v1+json";
+const REMOTE_CACHE_DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
+const REMOTE_CACHE_BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 
 /// Version of the cache-store contract. This is independent of the artifact
 /// manifest format so stores and transports can evolve without changing keys.
 pub(crate) const TASK_CACHE_STORE_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+struct CacheDigest {
+    algorithm: String,
+    hash: String,
+    size: u64,
+}
+
+impl CacheDigest {
+    fn blake3(bytes: &[u8]) -> Self {
+        Self {
+            algorithm: "blake3".into(),
+            hash: blake3::hash(bytes).to_hex().to_string(),
+            size: bytes.len() as u64,
+        }
+    }
+
+    fn blake3_file(path: &Path) -> Result<Self> {
+        let mut file = File::open(path)?;
+        let mut hasher = blake3::Hasher::new();
+        let mut size = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = file.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            size = size.saturating_add(read as u64);
+        }
+        Ok(Self {
+            algorithm: "blake3".into(),
+            hash: hasher.finalize().to_hex().to_string(),
+            size,
+        })
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.algorithm != "blake3" && self.algorithm != "sha256" {
+            bail!("unsupported remote cache digest algorithm");
+        }
+        if self.hash.len() != 64
+            || !self
+                .hash
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            bail!("invalid remote cache digest");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteActionResultEnvelope {
+    result: RemoteActionResult,
+    #[serde(default)]
+    signatures: Vec<RemoteSignature>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteActionResult {
+    action: CacheDigest,
+    #[serde(default)]
+    metadata: Option<CacheDigest>,
+    #[serde(default)]
+    output_root: Option<CacheDigest>,
+    version: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteSignature {
+    algorithm: String,
+    key_id: String,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteDirectory {
+    directories: Vec<RemoteDirectoryNode>,
+    files: Vec<RemoteFileNode>,
+    symlinks: Vec<RemoteSymlinkNode>,
+    version: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteDirectoryNode {
+    digest: CacheDigest,
+    mode: u32,
+    name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteFileNode {
+    digest: CacheDigest,
+    executable: bool,
+    mode: u32,
+    name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteSymlinkNode {
+    mode: u32,
+    name: String,
+    target: String,
+}
+
+enum CasBlobSource {
+    Bytes(Vec<u8>),
+    File(tempfile::NamedTempFile),
+}
+
+struct CasBlobUpload {
+    digest: CacheDigest,
+    source: CasBlobSource,
+}
+
+enum ArchiveNode {
+    Directory {
+        mode: u32,
+    },
+    File {
+        digest: CacheDigest,
+        executable: bool,
+        mode: u32,
+        file: tempfile::NamedTempFile,
+    },
+    Symlink {
+        mode: u32,
+        target: PathBuf,
+    },
+}
 
 pub(crate) struct TaskCacheStoreEntry {
     pub(crate) manifest: Vec<u8>,
@@ -76,17 +215,18 @@ impl Drop for TaskCacheStoreWrite {
 #[async_trait]
 pub(crate) trait TaskCacheStore: Send + Sync {
     fn version(&self) -> u8;
-    async fn get(&self, key: &str) -> Result<Option<TaskCacheStoreEntry>>;
+    async fn get(&self, key: &str, action_size: u64) -> Result<Option<TaskCacheStoreEntry>>;
     fn begin_write(&self, key: &str) -> Result<TaskCacheStoreWrite>;
     async fn commit(
         &self,
         key: &str,
+        action: &[u8],
         write: &TaskCacheStoreWrite,
         manifest: &[u8],
         has_artifact: bool,
     ) -> Result<()>;
     async fn remove(&self, key: &str) -> Result<()>;
-    async fn remove_local(&self, key: &str) -> Result<()> {
+    async fn remove_local(&self, key: &str, _action_size: u64) -> Result<()> {
         self.remove(key).await
     }
     fn touch(&self, key: &str);
@@ -120,7 +260,12 @@ impl CompositeTaskCacheStore {
         Ok(true)
     }
 
-    async fn promote(&self, key: &str, entry: &TaskCacheStoreEntry) -> Result<TaskCacheStoreEntry> {
+    async fn promote(
+        &self,
+        key: &str,
+        action_size: u64,
+        entry: &TaskCacheStoreEntry,
+    ) -> Result<TaskCacheStoreEntry> {
         // A remote lookup is an access, so promotion intentionally starts a
         // fresh local inactivity window for task.cache_max_age.
         let write = self.local.begin_write(key)?;
@@ -129,10 +274,10 @@ impl CompositeTaskCacheStore {
             &write,
         )?;
         self.local
-            .commit(key, &write, &entry.manifest, has_artifact)
+            .commit(key, &[], &write, &entry.manifest, has_artifact)
             .await?;
         self.local
-            .get(key)
+            .get(key, action_size)
             .await?
             .ok_or_else(|| eyre::eyre!("promoted task cache entry disappeared"))
     }
@@ -144,11 +289,11 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         self.local.version()
     }
 
-    async fn get(&self, key: &str) -> Result<Option<TaskCacheStoreEntry>> {
-        if let Some(entry) = self.local.get(key).await? {
+    async fn get(&self, key: &str, action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
+        if let Some(entry) = self.local.get(key, action_size).await? {
             return Ok(Some(entry));
         }
-        let entry = match self.remote.get(key).await {
+        let entry = match self.remote.get(key, action_size).await {
             Ok(Some(entry)) => entry,
             Ok(None) => return Ok(None),
             Err(err) => {
@@ -156,7 +301,7 @@ impl TaskCacheStore for CompositeTaskCacheStore {
                 return Ok(None);
             }
         };
-        match self.promote(key, &entry).await {
+        match self.promote(key, action_size, &entry).await {
             Ok(entry) => Ok(Some(entry)),
             Err(err) => {
                 warn!("failed to promote remote task cache entry {key} locally: {err}");
@@ -172,17 +317,18 @@ impl TaskCacheStore for CompositeTaskCacheStore {
     async fn commit(
         &self,
         key: &str,
+        action: &[u8],
         write: &TaskCacheStoreWrite,
         manifest: &[u8],
         has_artifact: bool,
     ) -> Result<()> {
         self.local
-            .commit(key, write, manifest, has_artifact)
+            .commit(key, action, write, manifest, has_artifact)
             .await?;
         let mirror: Result<()> = async {
             let entry = self
                 .local
-                .get(key)
+                .get(key, action.len() as u64)
                 .await?
                 .ok_or_else(|| eyre::eyre!("published local task cache entry disappeared"))?;
             let remote_write = self.remote.begin_write(key)?;
@@ -191,7 +337,13 @@ impl TaskCacheStore for CompositeTaskCacheStore {
                 &remote_write,
             )?;
             self.remote
-                .commit(key, &remote_write, &entry.manifest, remote_has_artifact)
+                .commit(
+                    key,
+                    action,
+                    &remote_write,
+                    &entry.manifest,
+                    remote_has_artifact,
+                )
                 .await
         }
         .await;
@@ -208,14 +360,14 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         self.local.remove(key).await
     }
 
-    async fn remove_local(&self, key: &str) -> Result<()> {
-        let Err(remove_err) = self.local.remove_local(key).await else {
+    async fn remove_local(&self, key: &str, action_size: u64) -> Result<()> {
+        let Err(remove_err) = self.local.remove_local(key, action_size).await else {
             return Ok(());
         };
-        let Some(entry) = self.remote.get(key).await? else {
+        let Some(entry) = self.remote.get(key, action_size).await? else {
             return Err(remove_err);
         };
-        self.promote(key, &entry)
+        self.promote(key, action_size, &entry)
             .await
             .map(|_| ())
             .map_err(|promote_err| {
@@ -258,11 +410,18 @@ struct HttpTaskCacheStore {
 }
 
 impl HttpTaskCacheStore {
-    fn endpoint(&self, key: &str, artifact: bool) -> Result<Url> {
+    fn action_result_endpoint(&self, key: &str, action_size: u64) -> Result<Url> {
         validate_remote_key(key)?;
-        let suffix = if artifact { "/artifact" } else { "" };
         Ok(self.base_url.join(&format!(
-            "v{REMOTE_CACHE_PROTOCOL_VERSION}/cache/{key}{suffix}"
+            "v{REMOTE_CACHE_PROTOCOL_VERSION}/action-results/blake3/{key}/{action_size}"
+        ))?)
+    }
+
+    fn blob_endpoint(&self, digest: &CacheDigest) -> Result<Url> {
+        digest.validate()?;
+        Ok(self.base_url.join(&format!(
+            "v{REMOTE_CACHE_PROTOCOL_VERSION}/blobs/{}/{}/{}",
+            digest.algorithm, digest.hash, digest.size
         ))?)
     }
 
@@ -279,52 +438,33 @@ impl HttpTaskCacheStore {
             .header(ACCEPT, media_type)
     }
 
-    async fn put_artifact(&self, key: &str, path: &Path) -> Result<()> {
-        let file = tokio::fs::File::open(path).await?;
-        let length = file.metadata().await?.len();
-        let stream = tokio_util::io::ReaderStream::new(file);
+    async fn get_blob(&self, digest: &CacheDigest, media_type: &'static str) -> Result<Vec<u8>> {
+        digest.validate()?;
         let response = self
             .request(
-                reqwest::Method::PUT,
-                self.endpoint(key, true)?,
-                REMOTE_CACHE_ARTIFACT_MEDIA_TYPE,
+                reqwest::Method::GET,
+                self.blob_endpoint(digest)?,
+                media_type,
             )
-            .header(CONTENT_TYPE, REMOTE_CACHE_ARTIFACT_MEDIA_TYPE)
-            .header(CONTENT_LENGTH, length)
-            .body(reqwest::Body::wrap_stream(stream))
             .send()
-            .await?;
-        response.error_for_status()?;
-        Ok(())
+            .await?
+            .error_for_status()?;
+        let bytes = response.bytes().await?.to_vec();
+        if CacheDigest::blake3(&bytes) != *digest {
+            bail!("remote cache blob failed digest verification");
+        }
+        Ok(bytes)
     }
 
-    async fn put_manifest(&self, key: &str, manifest: &[u8]) -> Result<()> {
-        let response = self
-            .request(
-                reqwest::Method::PUT,
-                self.endpoint(key, false)?,
-                REMOTE_CACHE_MANIFEST_MEDIA_TYPE,
-            )
-            .header(CONTENT_TYPE, REMOTE_CACHE_MANIFEST_MEDIA_TYPE)
-            .body(manifest.to_vec())
-            .send()
-            .await?;
-        response.error_for_status()?;
-        Ok(())
-    }
-
-    async fn get_artifact(&self, key: &str) -> Result<Option<TaskCacheStoreArtifact>> {
+    async fn get_blob_file(&self, digest: &CacheDigest) -> Result<tempfile::NamedTempFile> {
         let mut response = self
             .request(
                 reqwest::Method::GET,
-                self.endpoint(key, true)?,
-                REMOTE_CACHE_ARTIFACT_MEDIA_TYPE,
+                self.blob_endpoint(digest)?,
+                REMOTE_CACHE_BLOB_MEDIA_TYPE,
             )
             .send()
             .await?;
-        if response.status() == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
         response.error_for_status_ref()?;
         file::create_dir_all(&self.staging_dir)?;
         let temporary = tempfile::NamedTempFile::new_in(&self.staging_dir)?;
@@ -334,24 +474,58 @@ impl HttpTaskCacheStore {
         }
         output.flush().await?;
         drop(output);
-        Ok(Some(TaskCacheStoreArtifact::temporary(temporary)))
+        if CacheDigest::blake3_file(temporary.path())? != *digest {
+            bail!("remote cache blob failed digest verification");
+        }
+        Ok(temporary)
     }
 
-    async fn delete_object(&self, key: &str, artifact: bool) -> Result<()> {
-        let media_type = if artifact {
-            REMOTE_CACHE_ARTIFACT_MEDIA_TYPE
-        } else {
-            REMOTE_CACHE_MANIFEST_MEDIA_TYPE
+    async fn put_blob(&self, upload: &CasBlobUpload) -> Result<()> {
+        let (length, body) = match &upload.source {
+            CasBlobSource::Bytes(bytes) => (bytes.len() as u64, reqwest::Body::from(bytes.clone())),
+            CasBlobSource::File(file) => {
+                let file = tokio::fs::File::open(file.path()).await?;
+                let length = file.metadata().await?.len();
+                let stream = tokio_util::io::ReaderStream::new(file);
+                (length, reqwest::Body::wrap_stream(stream))
+            }
         };
         let response = self
             .request(
-                reqwest::Method::DELETE,
-                self.endpoint(key, artifact)?,
-                media_type,
+                reqwest::Method::PUT,
+                self.blob_endpoint(&upload.digest)?,
+                REMOTE_CACHE_BLOB_MEDIA_TYPE,
             )
+            .header(CONTENT_TYPE, REMOTE_CACHE_BLOB_MEDIA_TYPE)
+            .header(CONTENT_LENGTH, length)
+            .header(IF_NONE_MATCH, "*")
+            .body(body)
             .send()
             .await?;
-        if response.status() != StatusCode::NOT_FOUND {
+        if response.status() != StatusCode::PRECONDITION_FAILED {
+            response.error_for_status()?;
+        }
+        Ok(())
+    }
+
+    async fn put_action_result(
+        &self,
+        key: &str,
+        action_size: u64,
+        result: &RemoteActionResultEnvelope,
+    ) -> Result<()> {
+        let response = self
+            .request(
+                reqwest::Method::PUT,
+                self.action_result_endpoint(key, action_size)?,
+                REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
+            )
+            .header(CONTENT_TYPE, REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
+            .header(IF_NONE_MATCH, "*")
+            .body(serde_json::to_vec(result)?)
+            .send()
+            .await?;
+        if response.status() != StatusCode::PRECONDITION_FAILED {
             response.error_for_status()?;
         }
         Ok(())
@@ -364,39 +538,55 @@ impl TaskCacheStore for HttpTaskCacheStore {
         TASK_CACHE_STORE_VERSION
     }
 
-    async fn get(&self, key: &str) -> Result<Option<TaskCacheStoreEntry>> {
+    async fn get(&self, key: &str, action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
         let response = self
             .request(
                 reqwest::Method::GET,
-                self.endpoint(key, false)?,
-                REMOTE_CACHE_MANIFEST_MEDIA_TYPE,
+                self.action_result_endpoint(key, action_size)?,
+                REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
             )
             .send()
             .await?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        let manifest = response.error_for_status()?.bytes().await?.to_vec();
-        #[derive(serde::Deserialize)]
-        struct ManifestRoots {
-            roots: Vec<PathBuf>,
+        let envelope: RemoteActionResultEnvelope = response.error_for_status()?.json().await?;
+        if envelope.result.version != 1
+            || envelope.result.action.algorithm != "blake3"
+            || envelope.result.action.hash != key
+            || envelope.result.action.size != action_size
+        {
+            bail!("remote action result does not match requested action");
         }
-        let has_artifact = match serde_json::from_slice::<ManifestRoots>(&manifest) {
-            Ok(manifest) => !manifest.roots.is_empty(),
-            Err(err) => {
-                warn!("ignoring malformed remote task cache manifest for {key}: {err}");
-                return Ok(None);
+        let metadata = envelope
+            .result
+            .metadata
+            .as_ref()
+            .ok_or_else(|| eyre!("remote action result is missing client metadata"))?;
+        let manifest_bytes = self
+            .get_blob(metadata, REMOTE_CACHE_BLOB_MEDIA_TYPE)
+            .await?;
+        let mut manifest: CacheManifest = serde_json::from_slice(&manifest_bytes)?;
+        if manifest.key != key {
+            bail!("remote cache metadata does not match requested action");
+        }
+        let artifact = match &envelope.result.output_root {
+            Some(root) => {
+                let temporary = materialize_remote_tree(self, root).await?;
+                manifest.artifact_checksum = None;
+                manifest.artifact_checksum = Some(calculate_artifact_checksum(
+                    &manifest,
+                    Some(temporary.path()),
+                )?);
+                Some(TaskCacheStoreArtifact::temporary(temporary))
             }
+            None if manifest.roots.is_empty() => None,
+            None => bail!("remote action result is missing its output root"),
         };
-        let artifact = if has_artifact {
-            let Some(artifact) = self.get_artifact(key).await? else {
-                return Ok(None);
-            };
-            Some(artifact)
-        } else {
-            None
-        };
-        Ok(Some(TaskCacheStoreEntry { manifest, artifact }))
+        Ok(Some(TaskCacheStoreEntry {
+            manifest: serde_json::to_vec(&manifest)?,
+            artifact,
+        }))
     }
 
     fn begin_write(&self, key: &str) -> Result<TaskCacheStoreWrite> {
@@ -412,22 +602,388 @@ impl TaskCacheStore for HttpTaskCacheStore {
     async fn commit(
         &self,
         key: &str,
+        action: &[u8],
         write: &TaskCacheStoreWrite,
         manifest: &[u8],
         has_artifact: bool,
     ) -> Result<()> {
-        if has_artifact {
-            self.put_artifact(key, write.artifact_path()).await?;
+        validate_remote_key(key)?;
+        let action_digest = CacheDigest::blake3(action);
+        if action_digest.hash != key {
+            bail!("remote cache action bytes do not match cache key");
         }
-        self.put_manifest(key, manifest).await
+        let mut uploads = vec![
+            CasBlobUpload {
+                digest: action_digest.clone(),
+                source: CasBlobSource::Bytes(action.to_vec()),
+            },
+            CasBlobUpload {
+                digest: CacheDigest::blake3(manifest),
+                source: CasBlobSource::Bytes(manifest.to_vec()),
+            },
+        ];
+        let metadata = uploads[1].digest.clone();
+        let output_root = if has_artifact {
+            let (root, mut artifact_uploads) =
+                archive_to_cas(write.artifact_path(), &self.staging_dir)?;
+            uploads.append(&mut artifact_uploads);
+            Some(root)
+        } else {
+            None
+        };
+        let mut published = BTreeSet::new();
+        for upload in &uploads {
+            if published.insert(upload.digest.clone()) {
+                self.put_blob(upload).await?;
+            }
+        }
+        self.put_action_result(
+            key,
+            action.len() as u64,
+            &RemoteActionResultEnvelope {
+                result: RemoteActionResult {
+                    action: action_digest,
+                    metadata: Some(metadata),
+                    output_root,
+                    version: 1,
+                },
+                signatures: Vec::new(),
+            },
+        )
+        .await
     }
 
-    async fn remove(&self, key: &str) -> Result<()> {
-        self.delete_object(key, false).await?;
-        self.delete_object(key, true).await
+    async fn remove(&self, _key: &str) -> Result<()> {
+        // Ordinary cache writers intentionally have no remote-delete authority.
+        Ok(())
     }
 
     fn touch(&self, _key: &str) {}
+}
+
+fn validate_cache_path(path: &Path) -> Result<()> {
+    if path.as_os_str().is_empty() || path.is_absolute() {
+        bail!("remote cache path must be relative");
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        bail!("remote cache path escapes its output root");
+    }
+    Ok(())
+}
+
+fn cache_name(path: &Path) -> Result<String> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| eyre!("remote cache paths must be valid UTF-8"))?;
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        bail!("invalid remote cache path component");
+    }
+    Ok(name.to_string())
+}
+
+fn validate_cache_name(name: &str) -> Result<()> {
+    let path = Path::new(name);
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains(['/', '\\', '\0'])
+        || path.components().count() != 1
+        || !matches!(path.components().next(), Some(Component::Normal(_)))
+    {
+        bail!("invalid remote cache path component");
+    }
+    Ok(())
+}
+
+fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<CasBlobUpload>)> {
+    file::create_dir_all(staging_dir)?;
+    let decoder = zstd::Decoder::new(File::open(path)?)?;
+    let mut archive = Archive::new(decoder);
+    let mut nodes = BTreeMap::<PathBuf, ArchiveNode>::new();
+    nodes.insert(PathBuf::new(), ArchiveNode::Directory { mode: 0o755 });
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let entry_path = entry.path()?.into_owned();
+        validate_cache_path(&entry_path)?;
+        let mode = entry.header().mode();
+        let entry_type = entry.entry_type();
+        let node = if entry_type == EntryType::Directory {
+            ArchiveNode::Directory { mode }
+        } else if entry_type == EntryType::File {
+            let mut temporary = tempfile::NamedTempFile::new_in(staging_dir)?;
+            let mut hasher = blake3::Hasher::new();
+            let mut size = 0_u64;
+            let mut buffer = [0_u8; 64 * 1024];
+            loop {
+                let read = entry.read(&mut buffer)?;
+                if read == 0 {
+                    break;
+                }
+                temporary.write_all(&buffer[..read])?;
+                hasher.update(&buffer[..read]);
+                size = size.saturating_add(read as u64);
+            }
+            temporary.flush()?;
+            ArchiveNode::File {
+                digest: CacheDigest {
+                    algorithm: "blake3".into(),
+                    hash: hasher.finalize().to_hex().to_string(),
+                    size,
+                },
+                executable: mode & 0o111 != 0,
+                mode,
+                file: temporary,
+            }
+        } else if entry_type == EntryType::Symlink {
+            let target = entry
+                .header()
+                .link_name()
+                .ok_or_else(|| eyre!("remote cache symlink is missing its target"))?
+                .into_owned();
+            if target.is_absolute() {
+                bail!("remote cache symlink target must be relative");
+            }
+            ArchiveNode::Symlink { mode, target }
+        } else {
+            bail!("unsupported task cache archive entry type");
+        };
+        if nodes.insert(entry_path.clone(), node).is_some() {
+            bail!("task cache archive contains duplicate paths");
+        }
+        let mut parent = entry_path.parent();
+        while let Some(path) = parent {
+            nodes
+                .entry(path.to_path_buf())
+                .or_insert(ArchiveNode::Directory { mode: 0o755 });
+            parent = path.parent();
+        }
+    }
+
+    fn build_directory(
+        path: &Path,
+        nodes: &BTreeMap<PathBuf, ArchiveNode>,
+        directory_uploads: &mut Vec<CasBlobUpload>,
+    ) -> Result<CacheDigest> {
+        let mut directories = Vec::new();
+        let mut files = Vec::new();
+        let mut symlinks = Vec::new();
+        for (entry_path, node) in nodes {
+            if entry_path.as_os_str().is_empty() || entry_path.parent() != Some(path) {
+                continue;
+            }
+            let name = cache_name(entry_path)?;
+            match node {
+                ArchiveNode::Directory { mode } => directories.push(RemoteDirectoryNode {
+                    digest: build_directory(entry_path, nodes, directory_uploads)?,
+                    mode: *mode,
+                    name,
+                }),
+                ArchiveNode::File {
+                    digest,
+                    executable,
+                    mode,
+                    ..
+                } => files.push(RemoteFileNode {
+                    digest: digest.clone(),
+                    executable: *executable,
+                    mode: *mode,
+                    name,
+                }),
+                ArchiveNode::Symlink { mode, target } => symlinks.push(RemoteSymlinkNode {
+                    mode: *mode,
+                    name,
+                    target: target
+                        .to_str()
+                        .ok_or_else(|| eyre!("remote cache symlink target must be valid UTF-8"))?
+                        .to_string(),
+                }),
+            }
+        }
+        let bytes = serde_json::to_vec(&RemoteDirectory {
+            directories,
+            files,
+            symlinks,
+            version: 1,
+        })?;
+        let digest = CacheDigest::blake3(&bytes);
+        directory_uploads.push(CasBlobUpload {
+            digest: digest.clone(),
+            source: CasBlobSource::Bytes(bytes),
+        });
+        Ok(digest)
+    }
+
+    let mut uploads = Vec::new();
+    let root = build_directory(Path::new(""), &nodes, &mut uploads)?;
+    for node in nodes.into_values() {
+        if let ArchiveNode::File { digest, file, .. } = node {
+            uploads.push(CasBlobUpload {
+                digest,
+                source: CasBlobSource::File(file),
+            });
+        }
+    }
+    Ok((root, uploads))
+}
+
+enum RestoredNode {
+    Directory {
+        mode: u32,
+    },
+    File {
+        digest: CacheDigest,
+        executable: bool,
+        mode: u32,
+    },
+    Symlink {
+        mode: u32,
+        target: PathBuf,
+    },
+}
+
+async fn materialize_remote_tree(
+    store: &HttpTaskCacheStore,
+    root: &CacheDigest,
+) -> Result<tempfile::NamedTempFile> {
+    let mut pending = vec![(PathBuf::new(), root.clone(), BTreeSet::new())];
+    let mut nodes = BTreeMap::<PathBuf, RestoredNode>::new();
+    while let Some((path, digest, mut ancestors)) = pending.pop() {
+        if !ancestors.insert(digest.clone()) {
+            bail!("remote cache directory graph contains a cycle");
+        }
+        let bytes = store
+            .get_blob(&digest, REMOTE_CACHE_DIRECTORY_MEDIA_TYPE)
+            .await?;
+        let directory: RemoteDirectory = serde_json::from_slice(&bytes)?;
+        if serde_json::to_vec(&directory)? != bytes {
+            bail!("remote cache directory is not canonical JSON");
+        }
+        if directory.version != 1 {
+            bail!("unsupported remote cache directory version");
+        }
+        let mut names = BTreeSet::new();
+        for directory in directory.directories {
+            validate_cache_name(&directory.name)?;
+            if !names.insert(directory.name.clone()) {
+                bail!("remote cache directory contains duplicate names");
+            }
+            let child = path.join(&directory.name);
+            validate_cache_path(&child)?;
+            nodes.insert(
+                child.clone(),
+                RestoredNode::Directory {
+                    mode: directory.mode,
+                },
+            );
+            pending.push((child, directory.digest, ancestors.clone()));
+        }
+        for file in directory.files {
+            validate_cache_name(&file.name)?;
+            if !names.insert(file.name.clone()) {
+                bail!("remote cache directory contains duplicate names");
+            }
+            let child = path.join(&file.name);
+            validate_cache_path(&child)?;
+            nodes.insert(
+                child,
+                RestoredNode::File {
+                    digest: file.digest,
+                    executable: file.executable,
+                    mode: file.mode,
+                },
+            );
+        }
+        for symlink in directory.symlinks {
+            validate_cache_name(&symlink.name)?;
+            if !names.insert(symlink.name.clone()) {
+                bail!("remote cache directory contains duplicate names");
+            }
+            let child = path.join(&symlink.name);
+            validate_cache_path(&child)?;
+            let target = PathBuf::from(symlink.target);
+            if target.is_absolute() {
+                bail!("remote cache symlink target must be relative");
+            }
+            let resolved = child.parent().unwrap_or(Path::new("")).join(&target);
+            let mut depth = 0_i64;
+            for component in resolved.components() {
+                match component {
+                    Component::Normal(_) => depth += 1,
+                    Component::ParentDir => depth -= 1,
+                    Component::CurDir => {}
+                    _ => bail!("remote cache symlink target is unsafe"),
+                }
+                if depth < 0 {
+                    bail!("remote cache symlink target escapes its output root");
+                }
+            }
+            nodes.insert(
+                child,
+                RestoredNode::Symlink {
+                    mode: symlink.mode,
+                    target,
+                },
+            );
+        }
+    }
+
+    file::create_dir_all(&store.staging_dir)?;
+    let mut downloaded = BTreeMap::new();
+    for (path, node) in &nodes {
+        if let RestoredNode::File { digest, .. } = node {
+            downloaded.insert(path.clone(), store.get_blob_file(digest).await?);
+        }
+    }
+
+    let archive_file = tempfile::NamedTempFile::new_in(&store.staging_dir)?;
+    let encoder = zstd::Encoder::new(archive_file.reopen()?, 0)?;
+    let mut archive = Builder::new(encoder);
+    for (path, node) in nodes {
+        let (entry_type, mode) = match &node {
+            RestoredNode::Directory { mode } => (EntryType::Directory, *mode),
+            RestoredNode::File {
+                executable, mode, ..
+            } => {
+                let mode = if *executable {
+                    *mode | 0o111
+                } else {
+                    *mode & !0o111
+                };
+                (EntryType::File, mode)
+            }
+            RestoredNode::Symlink { mode, .. } => (EntryType::Symlink, *mode),
+        };
+        let mut header = Header::new_gnu(entry_type);
+        header.set_mode(mode);
+        header.set_mtime(0);
+        match node {
+            RestoredNode::Directory { .. } => {
+                header.set_size(0);
+                archive.append_data(&mut header, path, std::io::empty())?;
+            }
+            RestoredNode::File { digest, .. } => {
+                header.set_size(digest.size);
+                let file = downloaded
+                    .get(&path)
+                    .ok_or_else(|| eyre!("remote cache file was not downloaded"))?;
+                archive.append_data(&mut header, path, File::open(file.path())?)?;
+            }
+            RestoredNode::Symlink { target, .. } => {
+                header.set_size(0);
+                archive.append_link(&mut header, path, target)?;
+            }
+        }
+    }
+    let encoder = archive.into_inner()?;
+    encoder.finish()?;
+    Ok(archive_file)
 }
 
 fn normalized_base_url(mut url: Url) -> Url {
@@ -472,7 +1028,7 @@ impl TaskCacheStore for LocalTaskCacheStore {
         TASK_CACHE_STORE_VERSION
     }
 
-    async fn get(&self, key: &str) -> Result<Option<TaskCacheStoreEntry>> {
+    async fn get(&self, key: &str, _action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
         let (artifact_path, manifest_path) = self.paths(key);
         let manifest = match fs::read(&manifest_path) {
             Ok(manifest) => manifest,
@@ -499,6 +1055,7 @@ impl TaskCacheStore for LocalTaskCacheStore {
     async fn commit(
         &self,
         key: &str,
+        _action: &[u8],
         write: &TaskCacheStoreWrite,
         manifest: &[u8],
         has_artifact: bool,
@@ -558,8 +1115,8 @@ mod tests {
             self.inner.version()
         }
 
-        async fn get(&self, key: &str) -> Result<Option<TaskCacheStoreEntry>> {
-            self.inner.get(key).await
+        async fn get(&self, key: &str, action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
+            self.inner.get(key, action_size).await
         }
 
         fn begin_write(&self, key: &str) -> Result<TaskCacheStoreWrite> {
@@ -569,11 +1126,14 @@ mod tests {
         async fn commit(
             &self,
             key: &str,
+            action: &[u8],
             write: &TaskCacheStoreWrite,
             manifest: &[u8],
             has_artifact: bool,
         ) -> Result<()> {
-            self.inner.commit(key, write, manifest, has_artifact).await
+            self.inner
+                .commit(key, action, write, manifest, has_artifact)
+                .await
         }
 
         async fn remove(&self, _key: &str) -> Result<()> {
@@ -591,7 +1151,7 @@ mod tests {
             self.inner.version()
         }
 
-        async fn get(&self, _key: &str) -> Result<Option<TaskCacheStoreEntry>> {
+        async fn get(&self, _key: &str, _action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
             bail!("remote get failed")
         }
 
@@ -602,6 +1162,7 @@ mod tests {
         async fn commit(
             &self,
             _key: &str,
+            _action: &[u8],
             _write: &TaskCacheStoreWrite,
             _manifest: &[u8],
             _has_artifact: bool,
@@ -626,20 +1187,20 @@ mod tests {
 
         let write = store.begin_write("result").unwrap();
         store
-            .commit("result", &write, b"manifest", false)
+            .commit("result", b"action", &write, b"manifest", false)
             .await
             .unwrap();
-        let entry = store.get("result").await.unwrap().unwrap();
+        let entry = store.get("result", 6).await.unwrap().unwrap();
         assert_eq!(entry.manifest, b"manifest");
         assert!(entry.artifact.is_none());
 
         let write = store.begin_write("artifact").unwrap();
         fs::write(write.artifact_path(), b"archive").unwrap();
         store
-            .commit("artifact", &write, b"manifest-2", true)
+            .commit("artifact", b"action", &write, b"manifest-2", true)
             .await
             .unwrap();
-        let entry = store.get("artifact").await.unwrap().unwrap();
+        let entry = store.get("artifact", 6).await.unwrap().unwrap();
         assert_eq!(entry.manifest, b"manifest-2");
         assert_eq!(
             fs::read(entry.artifact.unwrap().path()).unwrap(),
@@ -647,7 +1208,7 @@ mod tests {
         );
 
         store.remove("artifact").await.unwrap();
-        assert!(store.get("artifact").await.unwrap().is_none());
+        assert!(store.get("artifact", 6).await.unwrap().is_none());
     }
 
     async fn seed(store: &dyn TaskCacheStore, key: &str, manifest: &[u8], artifact: Option<&[u8]>) {
@@ -656,7 +1217,7 @@ mod tests {
             fs::write(write.artifact_path(), artifact).unwrap();
         }
         store
-            .commit(key, &write, manifest, artifact.is_some())
+            .commit(key, b"action", &write, manifest, artifact.is_some())
             .await
             .unwrap();
     }
@@ -672,17 +1233,17 @@ mod tests {
         seed(remote.as_ref(), "remote-hit", b"remote", Some(b"artifact")).await;
         let composite = CompositeTaskCacheStore::new(local.clone(), remote.clone()).unwrap();
 
-        let hit = composite.get("remote-hit").await.unwrap().unwrap();
+        let hit = composite.get("remote-hit", 6).await.unwrap().unwrap();
         assert_eq!(hit.manifest, b"remote");
         assert_eq!(fs::read(hit.artifact.unwrap().path()).unwrap(), b"artifact");
-        assert!(local.get("remote-hit").await.unwrap().is_some());
+        assert!(local.get("remote-hit", 6).await.unwrap().is_some());
 
         seed(&composite, "mirrored", b"manifest", Some(b"output")).await;
         assert_eq!(
-            local.get("mirrored").await.unwrap().unwrap().manifest,
+            local.get("mirrored", 6).await.unwrap().unwrap().manifest,
             b"manifest"
         );
-        let mirrored = remote.get("mirrored").await.unwrap().unwrap();
+        let mirrored = remote.get("mirrored", 6).await.unwrap().unwrap();
         assert_eq!(mirrored.manifest, b"manifest");
         assert_eq!(
             fs::read(mirrored.artifact.unwrap().path()).unwrap(),
@@ -692,7 +1253,7 @@ mod tests {
         seed(&composite, "result-only", b"result", None).await;
         assert!(
             remote
-                .get("result-only")
+                .get("result-only", 6)
                 .await
                 .unwrap()
                 .unwrap()
@@ -714,81 +1275,140 @@ mod tests {
         });
         let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
 
-        assert!(composite.get("unavailable").await.unwrap().is_none());
+        assert!(composite.get("unavailable", 6).await.unwrap().is_none());
 
         seed(&composite, "commit", b"local", None).await;
         assert_eq!(
-            local.get("commit").await.unwrap().unwrap().manifest,
+            local.get("commit", 6).await.unwrap().unwrap().manifest,
             b"local"
         );
 
         seed(local.as_ref(), "remove", b"local", None).await;
         assert!(composite.remove("remove").await.is_err());
-        assert!(local.get("remove").await.unwrap().is_some());
+        assert!(local.get("remove", 6).await.unwrap().is_some());
+    }
+
+    #[test]
+    fn archive_is_split_into_directory_and_file_cas_objects() {
+        let staging = tempfile::tempdir().unwrap();
+        let archive_path = staging.path().join("output.tar.zst");
+        let encoder = zstd::Encoder::new(File::create(&archive_path).unwrap(), 0).unwrap();
+        let mut archive = Builder::new(encoder);
+        let mut directory_header = Header::new_gnu(EntryType::Directory);
+        directory_header.set_mode(0o755);
+        directory_header.set_size(0);
+        archive
+            .append_data(&mut directory_header, "dist", std::io::empty())
+            .unwrap();
+        let mut file_header = Header::new_gnu(EntryType::File);
+        file_header.set_mode(0o755);
+        file_header.set_size(5);
+        archive
+            .append_data(&mut file_header, "dist/app", b"hello".as_slice())
+            .unwrap();
+        archive.into_inner().unwrap().finish().unwrap();
+
+        let (root, uploads) = archive_to_cas(&archive_path, staging.path()).unwrap();
+        let root_bytes = uploads
+            .iter()
+            .find_map(|upload| {
+                (upload.digest == root).then(|| match &upload.source {
+                    CasBlobSource::Bytes(bytes) => bytes.as_slice(),
+                    CasBlobSource::File(_) => panic!("directory object must be in memory"),
+                })
+            })
+            .unwrap();
+        let root_directory: RemoteDirectory = serde_json::from_slice(root_bytes).unwrap();
+        assert_eq!(root_directory.directories.len(), 1);
+        assert_eq!(root_directory.directories[0].name, "dist");
+        let dist_digest = &root_directory.directories[0].digest;
+        let dist_bytes = uploads
+            .iter()
+            .find_map(|upload| {
+                (&upload.digest == dist_digest).then(|| match &upload.source {
+                    CasBlobSource::Bytes(bytes) => bytes.as_slice(),
+                    CasBlobSource::File(_) => panic!("directory object must be in memory"),
+                })
+            })
+            .unwrap();
+        let dist: RemoteDirectory = serde_json::from_slice(dist_bytes).unwrap();
+        assert_eq!(dist.files.len(), 1);
+        assert_eq!(dist.files[0].name, "app");
+        assert_eq!(dist.files[0].digest, CacheDigest::blake3(b"hello"));
+        assert!(dist.files[0].executable);
     }
 
     #[tokio::test]
-    async fn http_store_streams_artifact_downloads_to_temporary_files() {
+    async fn http_store_publishes_cas_before_action_result_and_reads_it_back() {
         let mut server = mockito::Server::new_async().await;
-        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let artifact = "artifact-data\n".repeat(16 * 1024);
-        let manifest = format!(r#"{{"format":2,"key":"{key}","roots":["dist"]}}"#);
-        let manifest_mock = server
-            .mock("GET", format!("/v1/cache/{key}").as_str())
+        let action = br#"{"task":"build"}"#;
+        let action_digest = CacheDigest::blake3(action);
+        let key = action_digest.hash.as_str();
+        let manifest = format!(
+            r#"{{"format":2,"key":"{key}","task_identity":"build","artifact_checksum":null,"roots":[],"output":[],"restored_bytes":0,"execution_duration_ns":1}}"#
+        );
+        let metadata_digest = CacheDigest::blake3(manifest.as_bytes());
+        let envelope = RemoteActionResultEnvelope {
+            result: RemoteActionResult {
+                action: action_digest.clone(),
+                metadata: Some(metadata_digest.clone()),
+                output_root: None,
+                version: 1,
+            },
+            signatures: Vec::new(),
+        };
+        let action_path = format!(
+            "/v1/blobs/blake3/{}/{}",
+            action_digest.hash, action_digest.size
+        );
+        let metadata_path = format!(
+            "/v1/blobs/blake3/{}/{}",
+            metadata_digest.hash, metadata_digest.size
+        );
+        let result_path = format!(
+            "/v1/action-results/blake3/{}/{}",
+            action_digest.hash, action_digest.size
+        );
+        let action_put = server
+            .mock("PUT", action_path.as_str())
             .match_header("mise-cache-protocol", "1")
             .match_header("mise-cache-namespace", "test-namespace")
+            .match_header("if-none-match", "*")
+            .match_body(action.to_vec())
+            .with_status(201)
+            .expect(1)
+            .create_async()
+            .await;
+        let metadata_put = server
+            .mock("PUT", metadata_path.as_str())
+            .match_header("if-none-match", "*")
+            .match_body(manifest.as_bytes().to_vec())
+            .with_status(201)
+            .expect(1)
+            .create_async()
+            .await;
+        let result_body = serde_json::to_vec(&envelope).unwrap();
+        let result_put = server
+            .mock("PUT", result_path.as_str())
+            .match_header("content-type", REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
+            .match_header("if-none-match", "*")
+            .match_body(result_body.clone())
+            .with_status(201)
+            .expect(1)
+            .create_async()
+            .await;
+        let result_get = server
+            .mock("GET", result_path.as_str())
+            .match_header("accept", REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
+            .with_status(200)
+            .with_body(result_body)
+            .expect(1)
+            .create_async()
+            .await;
+        let metadata_get = server
+            .mock("GET", metadata_path.as_str())
             .with_status(200)
             .with_body(manifest.as_bytes())
-            .expect(1)
-            .create_async()
-            .await;
-        let artifact_mock = server
-            .mock("GET", format!("/v1/cache/{key}/artifact").as_str())
-            .match_header("accept", REMOTE_CACHE_ARTIFACT_MEDIA_TYPE)
-            .with_status(200)
-            .with_body(artifact.as_bytes())
-            .expect(1)
-            .create_async()
-            .await;
-        let staging = tempfile::tempdir().unwrap();
-        let store = HttpTaskCacheStore {
-            base_url: normalized_base_url(server.url().parse().unwrap()),
-            namespace: "test-namespace".into(),
-            staging_dir: staging.path().to_path_buf(),
-            client: reqwest::Client::new(),
-        };
-
-        let entry = store.get(key).await.unwrap().unwrap();
-        assert_eq!(entry.manifest, manifest.as_bytes());
-        let artifact_path = entry.artifact.as_ref().unwrap().path().to_path_buf();
-        assert_eq!(fs::read(&artifact_path).unwrap(), artifact.as_bytes());
-        drop(entry);
-        assert!(!artifact_path.exists());
-        manifest_mock.assert_async().await;
-        artifact_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn http_store_streams_artifact_before_publishing_manifest() {
-        let mut server = mockito::Server::new_async().await;
-        let key = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-        let artifact = "upload-data\n".repeat(16 * 1024);
-        let manifest = br#"{"format":2,"roots":["dist"]}"#;
-        let artifact_length = artifact.len().to_string();
-        let artifact_mock = server
-            .mock("PUT", format!("/v1/cache/{key}/artifact").as_str())
-            .match_header("content-type", REMOTE_CACHE_ARTIFACT_MEDIA_TYPE)
-            .match_header("content-length", artifact_length.as_str())
-            .match_body(artifact.as_str())
-            .with_status(201)
-            .expect(1)
-            .create_async()
-            .await;
-        let manifest_mock = server
-            .mock("PUT", format!("/v1/cache/{key}").as_str())
-            .match_header("content-type", REMOTE_CACHE_MANIFEST_MEDIA_TYPE)
-            .match_body(manifest.to_vec())
-            .with_status(201)
             .expect(1)
             .create_async()
             .await;
@@ -800,65 +1420,19 @@ mod tests {
             client: reqwest::Client::new(),
         };
         let write = store.begin_write(key).unwrap();
-        fs::write(write.artifact_path(), artifact.as_bytes()).unwrap();
 
-        store.commit(key, &write, manifest, true).await.unwrap();
-        artifact_mock.assert_async().await;
-        manifest_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn http_store_treats_missing_required_artifact_as_a_miss() {
-        let mut server = mockito::Server::new_async().await;
-        let key = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
-        let manifest = format!(r#"{{"format":2,"key":"{key}","roots":["dist"]}}"#);
-        let manifest_mock = server
-            .mock("GET", format!("/v1/cache/{key}").as_str())
-            .with_status(200)
-            .with_body(manifest)
-            .expect(1)
-            .create_async()
-            .await;
-        let artifact_mock = server
-            .mock("GET", format!("/v1/cache/{key}/artifact").as_str())
-            .with_status(404)
-            .expect(1)
-            .create_async()
-            .await;
-        let staging = tempfile::tempdir().unwrap();
-        let store = HttpTaskCacheStore {
-            base_url: normalized_base_url(server.url().parse().unwrap()),
-            namespace: "test-namespace".into(),
-            staging_dir: staging.path().to_path_buf(),
-            client: reqwest::Client::new(),
-        };
-
-        assert!(store.get(key).await.unwrap().is_none());
-        manifest_mock.assert_async().await;
-        artifact_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn http_store_treats_malformed_manifest_as_a_miss() {
-        let mut server = mockito::Server::new_async().await;
-        let key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let manifest_mock = server
-            .mock("GET", format!("/v1/cache/{key}").as_str())
-            .with_status(200)
-            .with_body("not-json")
-            .expect(1)
-            .create_async()
-            .await;
-        let staging = tempfile::tempdir().unwrap();
-        let store = HttpTaskCacheStore {
-            base_url: normalized_base_url(server.url().parse().unwrap()),
-            namespace: "test-namespace".into(),
-            staging_dir: staging.path().to_path_buf(),
-            client: reqwest::Client::new(),
-        };
-
-        assert!(store.get(key).await.unwrap().is_none());
-        manifest_mock.assert_async().await;
+        store
+            .commit(key, action, &write, manifest.as_bytes(), false)
+            .await
+            .unwrap();
+        let entry = store.get(key, action.len() as u64).await.unwrap().unwrap();
+        assert_eq!(entry.manifest, manifest.as_bytes());
+        assert!(entry.artifact.is_none());
+        action_put.assert_async().await;
+        metadata_put.assert_async().await;
+        result_put.assert_async().await;
+        result_get.assert_async().await;
+        metadata_get.assert_async().await;
     }
 
     #[tokio::test]
@@ -873,15 +1447,15 @@ mod tests {
         seed(remote.as_ref(), "expired", b"remote", None).await;
         let composite = CompositeTaskCacheStore::new(local.clone(), remote.clone()).unwrap();
 
-        composite.remove_local("expired").await.unwrap();
+        composite.remove_local("expired", 6).await.unwrap();
 
-        assert!(local.get("expired").await.unwrap().is_none());
-        assert!(remote.get("expired").await.unwrap().is_some());
+        assert!(local.get("expired", 6).await.unwrap().is_none());
+        assert!(remote.get("expired", 6).await.unwrap().is_some());
         assert_eq!(
-            composite.get("expired").await.unwrap().unwrap().manifest,
+            composite.get("expired", 6).await.unwrap().unwrap().manifest,
             b"remote"
         );
-        assert!(local.get("expired").await.unwrap().is_some());
+        assert!(local.get("expired", 6).await.unwrap().is_some());
     }
 
     #[tokio::test]
@@ -897,10 +1471,10 @@ mod tests {
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
         let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
 
-        composite.remove_local("expired").await.unwrap();
+        composite.remove_local("expired", 6).await.unwrap();
 
         assert_eq!(
-            local.get("expired").await.unwrap().unwrap().manifest,
+            local.get("expired", 6).await.unwrap().unwrap().manifest,
             b"fresh-remote"
         );
     }
