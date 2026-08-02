@@ -1,5 +1,6 @@
 use crate::config::{Config, Settings};
 use crate::dirs;
+use crate::duration;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::task::task_source_checker::{
@@ -8,6 +9,7 @@ use crate::task::task_source_checker::{
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
+use bytesize::ByteSize;
 use eyre::{Context, Report, Result, bail, eyre};
 use glob::glob;
 use ignore::overrides::Override;
@@ -18,7 +20,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
 const CACHE_FORMAT_VERSION: u8 = 2;
@@ -168,6 +170,7 @@ pub(crate) enum TaskCacheMissReason {
     CorruptEntry,
     DependencyWithoutKey,
     EntryNotFound,
+    Expired,
     Forced,
     ReadDisabled,
 }
@@ -178,6 +181,7 @@ impl fmt::Display for TaskCacheMissReason {
             Self::CorruptEntry => "cache entry was corrupt",
             Self::DependencyWithoutKey => "dependency completed without a cache key",
             Self::EntryNotFound => "no matching cache entry",
+            Self::Expired => "cache entry exceeded its age limit",
             Self::Forced => "forced execution",
             Self::ReadDisabled => "cache reads are disabled",
         })
@@ -190,6 +194,19 @@ pub struct TaskArtifactCache {
     key: String,
     explanation: Option<TaskCacheKeyExplanation>,
     state_path: PathBuf,
+    limits: TaskCacheLimits,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TaskCacheLimits {
+    max_size: Option<u64>,
+    max_age: Option<Duration>,
+}
+
+impl TaskCacheLimits {
+    fn configured(self) -> bool {
+        self.max_size.is_some() || self.max_age.is_some()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -352,6 +369,7 @@ impl TaskArtifactCacheBuilder {
         };
         let state_path = task_cache_state_path(task, &root);
         let cache_dir = task_cache_dir();
+        let limits = task_cache_limits()?;
         cleanup_abandoned_partial_writes_once(&cache_dir);
         Ok(TaskArtifactCache {
             root,
@@ -359,6 +377,7 @@ impl TaskArtifactCacheBuilder {
             key,
             explanation,
             state_path,
+            limits,
         })
     }
 }
@@ -377,6 +396,7 @@ impl TaskArtifactCache {
         let (archive_path, manifest_path) = self.paths();
         if !manifest_path.is_file()
             || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+            || self.exceeded_max_age().ok()?
         {
             return None;
         }
@@ -385,6 +405,7 @@ impl TaskArtifactCache {
             return None;
         }
         verify_artifact_checksum(&manifest, &archive_path).ok()?;
+        Self::touch_access_time(&archive_path, &manifest_path);
         Some(manifest.output)
     }
 
@@ -401,6 +422,11 @@ impl TaskArtifactCache {
         if !manifest_path.is_file() {
             return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
         }
+        if self.exceeded_max_age()? {
+            remove_cache_file(&archive_path)?;
+            remove_cache_file(&manifest_path)?;
+            return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::Expired));
+        }
         let restore = || -> Result<TaskCacheHit> {
             let manifest = self.read_manifest()?;
             for root in &manifest.roots {
@@ -411,9 +437,7 @@ impl TaskArtifactCache {
             }
             verify_artifact_checksum(&manifest, &archive_path)?;
             if manifest.roots.is_empty() {
-                if let Err(err) = file::touch_file(&manifest_path) {
-                    warn!("failed to update task cache manifest access time: {err}");
-                }
+                Self::touch_access_time(&archive_path, &manifest_path);
                 return Ok(TaskCacheHit {
                     output: manifest.output,
                     restored_bytes: manifest.restored_bytes,
@@ -466,12 +490,7 @@ impl TaskArtifactCache {
                 &remove,
                 Some(&output_matcher),
             )?;
-            if let Err(err) = file::touch_file(&archive_path) {
-                warn!("failed to update task cache archive access time: {err}");
-            }
-            if let Err(err) = file::touch_file(&manifest_path) {
-                warn!("failed to update task cache manifest access time: {err}");
-            }
+            Self::touch_access_time(&archive_path, &manifest_path);
             Ok(TaskCacheHit {
                 output: manifest.output,
                 restored_bytes: manifest.restored_bytes,
@@ -490,6 +509,24 @@ impl TaskArtifactCache {
         }
     }
 
+    fn exceeded_max_age(&self) -> Result<bool> {
+        let Some(max_age) = self.limits.max_age else {
+            return Ok(false);
+        };
+        Ok(task_cache_limit_entry(&self.cache_dir, &self.key)?
+            .is_some_and(|entry| entry.last_accessed.elapsed().unwrap_or_default() > max_age))
+    }
+
+    fn touch_access_time(archive_path: &Path, manifest_path: &Path) {
+        for (kind, path) in [("archive", archive_path), ("manifest", manifest_path)] {
+            if path.is_file()
+                && let Err(err) = file::touch_file(path)
+            {
+                warn!("failed to update task cache {kind} access time: {err}");
+            }
+        }
+    }
+
     /// Stores a successful task's declared outputs and captured logs.
     pub(crate) fn store(
         &self,
@@ -504,7 +541,7 @@ impl TaskArtifactCache {
         }
 
         file::create_dir_all(&self.cache_dir)?;
-        let _entry_lock = self.entry_lock()?;
+        let entry_lock = self.entry_lock()?;
         let (archive_path, manifest_path) = self.paths();
         let nonce = crate::rand::random_string(8);
         let archive_partial = self
@@ -547,6 +584,15 @@ impl TaskArtifactCache {
             file::rename(&archive_partial, &archive_path)?;
         } else {
             let _ = file::remove_file(&archive_path);
+        }
+        drop(entry_lock);
+        if self.limits.configured()
+            && let Err(err) = enforce_task_cache_limits(&self.cache_dir, self.limits)
+        {
+            warn!(
+                "failed to enforce task cache limits in {}: {err}",
+                self.cache_dir.display()
+            );
         }
         Ok(())
     }
@@ -634,6 +680,123 @@ fn partial_cache_key(path: &Path) -> Option<&str> {
         .or_else(|| filename.strip_suffix(".json"))?;
     let (key, nonce) = stem.split_once(".part-")?;
     (!key.is_empty() && !nonce.is_empty()).then_some(key)
+}
+
+fn task_cache_limits() -> Result<TaskCacheLimits> {
+    let settings = Settings::get();
+    let max_age = settings
+        .task
+        .cache_max_age
+        .as_deref()
+        .map(duration::parse_duration)
+        .transpose()
+        .wrap_err("invalid task.cache_max_age")?
+        .filter(|age| !age.is_zero());
+    let max_size = settings
+        .task
+        .cache_max_size
+        .as_deref()
+        .map(|size| {
+            size.parse::<ByteSize>()
+                .map(|size| size.as_u64())
+                .map_err(|err| eyre!(err))
+        })
+        .transpose()
+        .wrap_err("invalid task.cache_max_size")?
+        .filter(|size| *size > 0);
+    Ok(TaskCacheLimits { max_size, max_age })
+}
+
+struct TaskCacheLimitEntry {
+    key: String,
+    size: u64,
+    last_accessed: SystemTime,
+}
+
+fn enforce_task_cache_limits(cache_dir: &Path, limits: TaskCacheLimits) -> Result<()> {
+    let mut entries = task_cache_limit_entries(cache_dir)?;
+    entries.sort_by(|a, b| {
+        a.last_accessed
+            .cmp(&b.last_accessed)
+            .then_with(|| a.key.cmp(&b.key))
+    });
+    let mut total_size = entries
+        .iter()
+        .fold(0_u64, |total, entry| total.saturating_add(entry.size));
+    let mut remove = BTreeSet::new();
+    if let Some(max_age) = limits.max_age {
+        for entry in &entries {
+            if entry.last_accessed.elapsed().unwrap_or_default() > max_age {
+                remove.insert(entry.key.clone());
+                total_size = total_size.saturating_sub(entry.size);
+            }
+        }
+    }
+    if let Some(max_size) = limits.max_size {
+        for entry in &entries {
+            if total_size <= max_size {
+                break;
+            }
+            if remove.insert(entry.key.clone()) {
+                total_size = total_size.saturating_sub(entry.size);
+            }
+        }
+    }
+    for entry in entries.iter().filter(|entry| remove.contains(&entry.key)) {
+        let _entry_lock = task_cache_entry_lock(cache_dir, &entry.key)?;
+        let Some(current) = task_cache_limit_entry(cache_dir, &entry.key)? else {
+            continue;
+        };
+        if current.last_accessed > entry.last_accessed {
+            continue;
+        }
+        remove_cache_file(&cache_dir.join(format!("{}.tar.zst", entry.key)))?;
+        remove_cache_file(&cache_dir.join(format!("{}.json", entry.key)))?;
+    }
+    Ok(())
+}
+
+fn task_cache_limit_entries(cache_dir: &Path) -> Result<Vec<TaskCacheLimitEntry>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(cache_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json")
+            || partial_cache_key(&path).is_some()
+        {
+            continue;
+        }
+        let Some(key) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        if let Some(entry) = task_cache_limit_entry(cache_dir, key)? {
+            entries.push(entry);
+        }
+    }
+    Ok(entries)
+}
+
+fn task_cache_limit_entry(cache_dir: &Path, key: &str) -> Result<Option<TaskCacheLimitEntry>> {
+    let manifest_path = cache_dir.join(format!("{key}.json"));
+    let manifest = match fs::metadata(&manifest_path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+    let archive = fs::metadata(cache_dir.join(format!("{key}.tar.zst"))).ok();
+    let last_accessed = archive
+        .as_ref()
+        .and_then(|metadata| metadata.modified().ok())
+        .into_iter()
+        .chain(manifest.modified().ok())
+        .max()
+        .unwrap_or(UNIX_EPOCH);
+    Ok(Some(TaskCacheLimitEntry {
+        key: key.to_string(),
+        size: manifest
+            .len()
+            .saturating_add(archive.map_or(0, |metadata| metadata.len())),
+        last_accessed,
+    }))
 }
 
 fn calculate_artifact_checksum(
@@ -1436,6 +1599,47 @@ mod tests {
     }
 
     #[test]
+    fn cache_limits_remove_oldest_entries_by_size_and_age() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let write_entry = |key: &str, modified: filetime::FileTime| {
+            let manifest = cache_dir.path().join(format!("{key}.json"));
+            let archive = cache_dir.path().join(format!("{key}.tar.zst"));
+            fs::write(&manifest, [0_u8; 10]).unwrap();
+            fs::write(&archive, [0_u8; 5]).unwrap();
+            filetime::set_file_mtime(&manifest, modified).unwrap();
+            filetime::set_file_mtime(&archive, modified).unwrap();
+        };
+        write_entry("oldest", filetime::FileTime::from_unix_time(100, 0));
+        write_entry("middle", filetime::FileTime::from_unix_time(200, 0));
+        write_entry("newest", filetime::FileTime::now());
+
+        enforce_task_cache_limits(
+            cache_dir.path(),
+            TaskCacheLimits {
+                max_size: Some(30),
+                max_age: None,
+            },
+        )
+        .unwrap();
+
+        assert!(!cache_dir.path().join("oldest.json").exists());
+        assert!(cache_dir.path().join("middle.json").exists());
+        assert!(cache_dir.path().join("newest.json").exists());
+
+        enforce_task_cache_limits(
+            cache_dir.path(),
+            TaskCacheLimits {
+                max_size: None,
+                max_age: Some(Duration::from_secs(24 * 60 * 60)),
+            },
+        )
+        .unwrap();
+
+        assert!(!cache_dir.path().join("middle.json").exists());
+        assert!(cache_dir.path().join("newest.json").exists());
+    }
+
+    #[test]
     fn older_manifests_default_stats_metadata() {
         let manifest: CacheManifest = serde_json::from_value(serde_json::json!({
             "format": 2,
@@ -1531,6 +1735,10 @@ mod tests {
         assert_eq!(
             TaskCacheMissReason::EntryNotFound.to_string(),
             "no matching cache entry"
+        );
+        assert_eq!(
+            TaskCacheMissReason::Expired.to_string(),
+            "cache entry exceeded its age limit"
         );
         assert_eq!(TaskCacheMissReason::Forced.to_string(), "forced execution");
         assert_eq!(

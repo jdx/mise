@@ -1792,6 +1792,14 @@
               "description": "[experimental] Directory for task output cache artifacts.",
               "type": "string"
             },
+            "cache_max_age": {
+              "description": "[experimental] Maximum age of task output cache entries since their last access.",
+              "type": "string"
+            },
+            "cache_max_size": {
+              "description": "[experimental] Maximum total size of task output cache entries.",
+              "type": "string"
+            },
             "disable_paths": {
               "default": [],
               "description": "Paths that mise will not look for tasks in.",
