@@ -119,7 +119,7 @@ outside this tracker.
 - [x] Stream artifact uploads and downloads
 - [x] Add remote read-only, write-only, and read/write modes
 - [x] Add authentication and repository or organization namespaces
-- [ ] Add timeouts, retries, request deduplication, and offline fallback
+- [x] Add timeouts, retries, request deduplication, and offline fallback
 - [ ] Verify remote artifact integrity and authenticity
 - [ ] Document secret handling for cached logs and artifacts
 - [ ] Provide a self-hosting reference or compatibility test suite
