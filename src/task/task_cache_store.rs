@@ -1638,7 +1638,9 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> =
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+                .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
 
