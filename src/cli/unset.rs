@@ -19,9 +19,11 @@ pub struct Unset {
 
     /// Specify a file to use instead of `mise.toml`
     ///
+    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+    ///
     /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
     /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-    #[clap(short, long, value_hint = clap::ValueHint::FilePath)]
+    #[clap(short, long, visible_alias = "path", value_hint = clap::ValueHint::FilePath)]
     file: Option<PathBuf>,
 
     /// Use the global config file

@@ -4285,8 +4285,10 @@ By default, this command modifies `mise.toml` in the current directory.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-file\fR \fI<FILE>\fR
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 Specify a file to use instead of `mise.toml`
+
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
 
 Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
@@ -4339,7 +4341,7 @@ Create/modify an environment\-specific config file like .mise.<env>.toml
 \fB\-g, \-\-global\fR
 Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 .TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
+\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.
