@@ -4475,6 +4475,15 @@ Explicitly pinned versions like "22.5.0" are not filtered.
         arg <MINIMUM_RELEASE_AGE>
     }
     flag --monorepo help="Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet."
+    flag --no-prune help="Do not uninstall the versions that were upgraded away from" {
+        long_help #"""
+Do not uninstall the versions that were upgraded away from
+
+By default the old version is removed once the new one installs, unless another
+tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
+something outside of mise points at the old install directory.
+"""#
+    }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade

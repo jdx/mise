@@ -102,6 +102,14 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     monorepo: bool,
 
+    /// Do not uninstall the versions that were upgraded away from
+    ///
+    /// By default the old version is removed once the new one installs, unless another
+    /// tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
+    /// something outside of mise points at the old install directory.
+    #[clap(long, verbatim_doc_comment)]
+    no_prune: bool,
+
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -244,19 +252,23 @@ impl Upgrade {
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
-        let to_remove: Vec<_> = outdated
-            .iter()
-            .filter_map(|o| {
-                o.current.as_ref().and_then(|current| {
-                    // Skip if current and latest version strings are identical
-                    // This handles channels like "nightly", "stable", "beta" that update in-place
-                    if &o.latest == current {
-                        return None;
-                    }
-                    Some((o, current.clone()))
+        let to_remove: Vec<_> = if self.no_prune {
+            vec![]
+        } else {
+            outdated
+                .iter()
+                .filter_map(|o| {
+                    o.current.as_ref().and_then(|current| {
+                        // Skip if current and latest version strings are identical
+                        // This handles channels like "nightly", "stable", "beta" that update in-place
+                        if &o.latest == current {
+                            return None;
+                        }
+                        Some((o, current.clone()))
+                    })
                 })
-            })
-            .collect();
+                .collect()
+        };
 
         if self.is_dry_run() {
             for (o, current) in &to_remove {
@@ -456,15 +468,22 @@ impl Upgrade {
                 upgraded_config_paths.insert(path.clone());
             }
         }
-        let mut versions_needed_by_tracked =
-            get_versions_needed_by_tracked_configs_excluding_locks(
+        // Resolving every tracked config and stub is only worth doing when something is
+        // actually up for removal — with --no-prune, or when every upgrade was in-place,
+        // the answer would be discarded.
+        let versions_needed_by_tracked = if to_remove.is_empty() {
+            HashSet::new()
+        } else {
+            let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
                 config,
                 true,
                 false,
                 &upgraded_config_paths,
             )
             .await?;
-        versions_needed_by_tracked.extend(get_versions_needed_by_tracked_stubs(config).await?);
+            needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
+            needed
+        };
 
         // Only uninstall old versions of tools that were successfully upgraded
         // and are not needed by any tracked config

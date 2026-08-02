@@ -83,6 +83,14 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 
 Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
 
+### `--no-prune`
+
+Do not uninstall the versions that were upgraded away from
+
+By default the old version is removed once the new one installs, unless another
+tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
+something outside of mise points at the old install directory.
+
 ### `--raw`
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
