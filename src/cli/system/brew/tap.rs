@@ -28,7 +28,13 @@ pub struct SystemBrewTap {
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[clap(long, short, value_name = "PATH", conflicts_with = "local")]
+    #[clap(
+        long,
+        short,
+        visible_alias = "file",
+        value_name = "PATH",
+        conflicts_with = "local"
+    )]
     path: Option<PathBuf>,
 }
 
