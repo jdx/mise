@@ -67,26 +67,31 @@ expect_code "$code" '^200$' 'status discovery'
 jq -e '.protocol == 1 and .store == 1' "$response" >/dev/null
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-artifact.v1+zstd' \
 	-H 'Content-Type: application/vnd.mise.task-cache-artifact.v1+zstd' \
 	--data-binary "@$artifact" "$base_url/v1/cache/$key/artifact")
 expect_code "$code" '^201$' 'artifact upload'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-manifest.v2+json' \
 	-H 'Content-Type: application/vnd.mise.task-cache-manifest.v2+json' \
 	--data-binary "@$manifest" "$base_url/v1/cache/$key")
 expect_code "$code" '^201$' 'manifest upload'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-manifest.v2+json' \
 	-H 'Content-Type: application/vnd.mise.task-cache-manifest.v2+json' \
 	--data-binary "@$manifest" "$base_url/v1/cache/$key")
 expect_code "$code" '^204$' 'identical manifest upload'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-artifact.v1+zstd' \
 	-H 'Content-Type: application/vnd.mise.task-cache-artifact.v1+zstd' \
 	--data-binary "@$artifact" "$base_url/v1/cache/$key/artifact")
 expect_code "$code" '^204$' 'identical artifact upload'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-artifact.v1+zstd' \
 	-H 'Content-Type: application/vnd.mise.task-cache-artifact.v1+zstd' \
 	--data-binary "@$conflicting_artifact" "$base_url/v1/cache/$key/artifact")
 expect_code "$code" '^409$' 'immutable artifact replacement'
@@ -116,6 +121,7 @@ code=$(curl -sS -o "$response" -w '%{http_code}' \
 expect_code "$code" '^404$' 'cross-namespace artifact lookup'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-manifest.v2+json' \
 	-H 'Content-Type: application/vnd.mise.task-cache-manifest.v2+json' \
 	--data-binary "@$conflict" "$base_url/v1/cache/$key")
 expect_code "$code" '^409$' 'immutable manifest replacement'
