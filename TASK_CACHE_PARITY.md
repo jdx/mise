@@ -115,7 +115,7 @@ outside this tracker.
 
 - [x] Extract a versioned cache-store interface from the local filesystem implementation
 - [x] Define and document a versioned remote cache protocol
-- [ ] Add a composite local and remote cache store
+- [x] Add a composite local and remote cache store
 - [ ] Stream artifact uploads and downloads
 - [ ] Add remote read-only, write-only, and read/write modes
 - [ ] Add authentication and repository or organization namespaces

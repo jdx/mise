@@ -4,7 +4,7 @@ use crate::duration;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::task::task_cache_store::{
-    LocalTaskCacheStore, TASK_CACHE_STORE_VERSION, TaskCacheStore,
+    LocalTaskCacheStore, TASK_CACHE_STORE_VERSION, TaskCacheStore, compose_task_cache_stores,
 };
 use crate::task::task_source_checker::{
     TaskCacheInputs, build_output_matcher, expand_glob_braces, is_output, output_glob_patterns,
@@ -377,7 +377,8 @@ impl TaskArtifactCacheBuilder {
         let cache_dir = task_cache_dir();
         let limits = task_cache_limits()?;
         cleanup_abandoned_partial_writes_once(&cache_dir);
-        let store: Arc<dyn TaskCacheStore> = Arc::new(LocalTaskCacheStore::new(cache_dir.clone()));
+        let local: Arc<dyn TaskCacheStore> = Arc::new(LocalTaskCacheStore::new(cache_dir.clone()));
+        let store = compose_task_cache_stores(local, None)?;
         if store.version() != TASK_CACHE_STORE_VERSION {
             bail!(
                 "unsupported task cache store version {}; expected {}",
@@ -444,7 +445,12 @@ impl TaskArtifactCache {
             }
         };
         if self.exceeded_max_age()? {
-            self.store.remove(&self.key)?;
+            if let Err(err) = self.store.remove(&self.key) {
+                warn!(
+                    "failed to remove expired task cache entry {}: {err}",
+                    self.key
+                );
+            }
             return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::Expired));
         }
         let restore = || -> Result<TaskCacheHit> {
