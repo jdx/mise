@@ -689,7 +689,8 @@ impl Run {
         // Resolve transitive dependencies once upfront so we can:
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
-        // 3. Reuse the resolved list for execution (avoiding duplicate work)
+        // 3. Validate and install tools for the complete dependency set before execution
+        let execution_tasks = task_list.clone();
         let resolved_tasks = resolve_depends(&config, task_list).await?;
 
         // Collect subdirectory config files from all resolved tasks. In
@@ -818,12 +819,12 @@ impl Run {
         if let Some(timeout) = timeout {
             tokio::time::timeout(
                 timeout,
-                self.parallelize_tasks(config, resolved_tasks, previewed_tools),
+                self.parallelize_tasks(config, execution_tasks, previewed_tools),
             )
             .await
             .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
         } else {
-            self.parallelize_tasks(config, resolved_tasks, previewed_tools)
+            self.parallelize_tasks(config, execution_tasks, previewed_tools)
                 .await?
         }
 

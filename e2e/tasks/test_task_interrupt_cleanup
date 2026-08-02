@@ -9,7 +9,11 @@ sleep 30
 depends_post = ["cleanup"]
 
 [tasks.cleanup]
+depends = ["cleanup-prerequisite"]
 run = [{ task = "cleanup-child" }]
+
+[tasks.cleanup-prerequisite]
+run = 'touch "$CLEANUP_PREREQUISITE_FILE"'
 
 [tasks.cleanup-child]
 run = 'touch "$CLEANUP_FILE"'
@@ -17,8 +21,10 @@ EOF
 
 ready_file="$TMPDIR/task-interrupt-cleanup-ready"
 cleanup_file="$TMPDIR/task-interrupt-cleanup-ran"
+cleanup_prerequisite_file="$TMPDIR/task-interrupt-cleanup-prerequisite-ran"
 output_file="$TMPDIR/task-interrupt-cleanup-output"
 READY_FILE="$ready_file" CLEANUP_FILE="$cleanup_file" \
+  CLEANUP_PREREQUISITE_FILE="$cleanup_prerequisite_file" \
   mise run interrupt >"$output_file" 2>&1 &
 mise_pid=$!
 wait_for_file "$ready_file" "interruptible task child" 30 "$mise_pid"
@@ -32,4 +38,7 @@ if [[ $status -ne 130 ]]; then
 fi
 if [[ ! -e $cleanup_file ]]; then
   fail "post-dependency cleanup did not run after Ctrl-C: $output"
+fi
+if [[ ! -e $cleanup_prerequisite_file ]]; then
+  fail "post-dependency prerequisite did not run after Ctrl-C: $output"
 fi

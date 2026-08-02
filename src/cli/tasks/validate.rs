@@ -849,6 +849,7 @@ mod tests {
             name.to_string(),
             Vec::new(),
             vec![("TARGET".to_string(), value.to_string())],
+            crate::task::TaskRunPhase::Normal,
         )
     }
 

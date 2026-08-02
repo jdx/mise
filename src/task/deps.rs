@@ -1,21 +1,33 @@
 use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
-use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
+use crate::task::{Task, TaskRunPhase, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::algo::kosaraju_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fmt,
     sync::Arc,
 };
 use tokio::sync::mpsc;
 
-/// Unique key for a task instance, including name, args, and env vars
-pub type TaskKey = (String, Vec<String>, Vec<(String, String)>);
+/// Unique key for a task occurrence, including name, args, env vars, and phase.
+pub type TaskKey = (String, Vec<String>, Vec<(String, String)>, TaskRunPhase);
+
+fn env_key(task: &Task) -> Vec<(String, String)> {
+    task.env
+        .0
+        .iter()
+        .filter_map(|d| match d {
+            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+            _ => None,
+        })
+        .sorted()
+        .collect()
+}
 
 pub struct TaskCycleError {
     paths: Vec<Vec<String>>,
@@ -93,26 +105,23 @@ pub struct Deps {
     did_work: HashSet<TaskKey>, // tasks that executed or restored outputs (not freshness-skipped)
     cache_keys: HashMap<TaskKey, String>, // stable artifact identities published by completed tasks
     dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys
-    post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-dep to its parent tasks
+    post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-subtree task to its triggering parents
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
 }
 
 /// Extract a hashable key from a task, including env vars set via dependencies
 pub fn task_key(task: &Task) -> TaskKey {
-    // Extract simple key-value env vars for deduplication
-    // This ensures tasks with same name/args but different env are treated as distinct
-    let env_key: Vec<(String, String)> = task
-        .env
-        .0
-        .iter()
-        .filter_map(|d| match d {
-            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
-            _ => None,
-        })
-        .sorted()
-        .collect();
-    (task.name.clone(), task.args.clone(), env_key)
+    (
+        task.name.clone(),
+        task.args.clone(),
+        env_key(task),
+        task.run_phase,
+    )
+}
+
+fn same_task_without_phase(task: &Task, other: &Task) -> bool {
+    task.name == other.name && task.args == other.args && env_key(task) == env_key(other)
 }
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
@@ -137,8 +146,9 @@ impl Deps {
         let mut indexes = HashMap::new();
         let mut stack = vec![];
         let mut seen = HashSet::new();
-        let mut post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
+        let mut direct_post_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
         let mut dep_edges: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
+        let mut wait_edges = Vec::new();
 
         let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
             *indexes
@@ -149,8 +159,9 @@ impl Deps {
         // first we add all tasks to the graph, create a stack of work for this function, and
         // store the index of each task in the graph
         for t in &tasks {
+            let t = t.clone().with_run_phase(TaskRunPhase::Normal);
             stack.push(t.clone());
-            add_idx(t, &mut graph);
+            add_idx(&t, &mut graph);
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
         let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
@@ -189,8 +200,9 @@ impl Deps {
             // Update the graph node with the fetched version of the task
             // (add_idx may have returned an existing index with an unfetched task)
             graph[a_idx] = a.clone();
-            let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
-            for b in pre {
+            let resolved = a.resolve_depends(config, &all_tasks_to_run).await?;
+            for b in resolved.depends {
+                let b = b.with_run_phase(a.run_phase);
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());
                 dep_edges
@@ -199,16 +211,77 @@ impl Deps {
                     .insert(task_key(&b));
                 stack.push(b.clone());
             }
-            for b in post {
-                let b_idx = add_idx(&b, &mut graph);
-                graph.update_edge(b_idx, a_idx, ());
-                post_dep_parents
+            for b in resolved.wait_for {
+                wait_edges.push((task_key(&a), b));
+            }
+            for b in resolved.depends_post {
+                let b = b.with_run_phase(TaskRunPhase::Post);
+                add_idx(&b, &mut graph);
+                direct_post_parents
                     .entry(task_key(&b))
                     .or_default()
                     .insert(task_key(&a));
                 stack.push(b.clone());
             }
             seen.insert(a);
+        }
+
+        // A post task's regular dependencies are part of the same cleanup
+        // subtree. Propagate the triggering parents through those edges so
+        // every prerequisite waits for the parent before it can start.
+        let mut post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
+        let mut pending = VecDeque::new();
+        for (post_key, parents) in direct_post_parents {
+            for parent in parents {
+                if post_dep_parents
+                    .entry(post_key.clone())
+                    .or_default()
+                    .insert(parent.clone())
+                {
+                    pending.push_back((post_key.clone(), parent));
+                }
+            }
+        }
+        while let Some((post_key, parent)) = pending.pop_front() {
+            for dependency in dep_edges.get(&post_key).into_iter().flatten() {
+                if dependency.3 != TaskRunPhase::Post || dependency == &parent {
+                    continue;
+                }
+                if post_dep_parents
+                    .entry(dependency.clone())
+                    .or_default()
+                    .insert(parent.clone())
+                {
+                    pending.push_back((dependency.clone(), parent.clone()));
+                }
+            }
+        }
+
+        // Add the parent-completion barrier to the entire post subtree.
+        for (post_key, parents) in &post_dep_parents {
+            let post_idx = indexes[post_key];
+            for parent in parents {
+                graph.update_edge(post_idx, indexes[parent], ());
+            }
+        }
+
+        // wait_for only links occurrences already introduced by a root or a
+        // real dependency. Prefer the current phase, but never create another
+        // occurrence solely to satisfy a wait_for declaration.
+        for (waiting_key, target) in wait_edges {
+            let waiting_idx = indexes[&waiting_key];
+            let target_idx = graph
+                .node_indices()
+                .filter(|&idx| same_task_without_phase(&graph[idx], &target))
+                .find(|&idx| graph[idx].run_phase == waiting_key.3)
+                .or_else(|| {
+                    graph
+                        .node_indices()
+                        .find(|&idx| same_task_without_phase(&graph[idx], &target))
+                });
+            if let Some(target_idx) = target_idx {
+                graph.update_edge(waiting_idx, target_idx, ());
+            }
         }
         let cycles = find_cycles(&graph, cycle_limit);
         if !cycles.is_empty() {
@@ -469,11 +542,14 @@ fn leaves(graph: &DiGraph<Task, ()>) -> Vec<Task> {
 }
 
 pub(crate) fn task_cycle_label(task: &Task) -> String {
-    let label = if task.args.is_empty() {
+    let mut label = if task.args.is_empty() {
         task.name.clone()
     } else {
         format!("{} {}", task.name, task.args.join(" "))
     };
+    if task.run_phase == TaskRunPhase::Post {
+        label.push_str(" (post)");
+    }
     let env_keys = task
         .env
         .0
@@ -575,6 +651,10 @@ mod tests {
             name: name.to_string(),
             ..Default::default()
         }
+    }
+
+    fn post_task(name: &str) -> Task {
+        task(name).with_run_phase(TaskRunPhase::Post)
     }
 
     fn deps_with_relationships(
@@ -688,6 +768,40 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn wait_for_falls_back_to_post_occurrence_without_tracking_dependency_state() {
+        let config = Config::get().await.unwrap();
+        let tasks = config.tasks().await.unwrap();
+        let mut parent = tasks["configtask"].clone();
+        parent.depends_post = vec!["lint".parse().unwrap()];
+        let mut waiter = tasks["test"].clone();
+        waiter.wait_for = vec!["lint".parse().unwrap()];
+        let mut deps = Deps::new(&config, vec![parent, waiter.clone()])
+            .await
+            .unwrap();
+
+        let waiter_idx = deps.node_idx(&waiter).unwrap();
+        let post_target_idx = deps
+            .graph
+            .node_indices()
+            .find(|&idx| {
+                deps.graph[idx].name == "lint" && deps.graph[idx].run_phase == TaskRunPhase::Post
+            })
+            .unwrap();
+        assert!(deps.graph.find_edge(waiter_idx, post_target_idx).is_some());
+        assert!(!deps.graph.node_indices().any(|idx| {
+            deps.graph[idx].name == "lint" && deps.graph[idx].run_phase == TaskRunPhase::Normal
+        }));
+
+        let post_target = deps.graph[post_target_idx].clone();
+        deps.mark_did_work(&post_target);
+        deps.mark_cache_key(&post_target, "post-key".to_string());
+        assert_eq!(
+            deps.dependency_state(&waiter),
+            TaskDependencyState::default()
+        );
+    }
+
     #[test]
     fn finds_cycle_path() {
         let mut graph = DiGraph::new();
@@ -714,6 +828,55 @@ mod tests {
         graph.update_edge(b, a, ());
 
         assert!(find_cycles(&graph, None).is_empty());
+    }
+
+    #[test]
+    fn normal_and_post_occurrences_have_distinct_identity() {
+        let normal = task("shared");
+        let post = post_task("shared");
+        assert_ne!(normal, post);
+        assert_ne!(task_key(&normal), task_key(&post));
+
+        let mut graph = DiGraph::new();
+        let normal_idx = graph.add_node(normal);
+        let parent_idx = graph.add_node(task("parent"));
+        let post_idx = graph.add_node(post);
+        graph.update_edge(parent_idx, normal_idx, ());
+        graph.update_edge(post_idx, parent_idx, ());
+        assert!(find_cycles(&graph, None).is_empty());
+    }
+
+    #[test]
+    fn post_subtree_waits_for_parent() {
+        let mut graph = DiGraph::new();
+        let parent = graph.add_node(task("parent"));
+        let prerequisite = graph.add_node(post_task("prerequisite"));
+        let post = graph.add_node(post_task("post"));
+        graph.update_edge(post, prerequisite, ());
+        graph.update_edge(prerequisite, parent, ());
+        graph.update_edge(post, parent, ());
+
+        assert_eq!(leaves(&graph), [task("parent")]);
+        graph.remove_node(parent);
+        assert_eq!(leaves(&graph), [post_task("prerequisite")]);
+        graph.remove_node(prerequisite);
+        assert_eq!(leaves(&graph), [post_task("post")]);
+    }
+
+    #[test]
+    fn shared_post_occurrence_waits_for_all_parents() {
+        let mut graph = DiGraph::new();
+        let parent_a = graph.add_node(task("parent-a"));
+        let parent_b = graph.add_node(task("parent-b"));
+        let post = graph.add_node(post_task("post"));
+        graph.update_edge(post, parent_a, ());
+        graph.update_edge(post, parent_b, ());
+
+        assert_eq!(leaves(&graph).len(), 2);
+        graph.remove_node(parent_a);
+        assert_eq!(leaves(&graph), [task("parent-b")]);
+        graph.remove_node(parent_b);
+        assert_eq!(leaves(&graph), [post_task("post")]);
     }
 
     #[test]

@@ -75,6 +75,35 @@ pub use task_output::TaskOutput;
 pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
 pub use task_template::TaskTemplate;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[doc(hidden)]
+pub enum TaskRunPhase {
+    #[default]
+    Normal,
+    Post,
+}
+
+pub(crate) struct ResolvedTaskDependencies {
+    pub depends: Vec<Task>,
+    pub wait_for: Vec<Task>,
+    pub depends_post: Vec<Task>,
+}
+
+impl Task {
+    pub(crate) fn with_run_phase(mut self, phase: TaskRunPhase) -> Self {
+        self.run_phase = phase;
+        self
+    }
+
+    pub(crate) fn graph_display_name(&self) -> String {
+        match self.run_phase {
+            TaskRunPhase::Normal => self.display_name.clone(),
+            TaskRunPhase::Post => format!("{} (post)", self.display_name),
+        }
+    }
+}
+
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
@@ -537,6 +566,10 @@ pub struct TaskWatchOptions {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
+    /// Internal execution occurrence. A task referenced as both a regular and
+    /// post dependency must run once in each phase.
+    #[serde(skip)]
+    pub(crate) run_phase: TaskRunPhase,
     #[serde(skip)]
     pub name: String,
     #[serde(skip)]
@@ -1416,7 +1449,7 @@ impl Task {
         &self,
         config: &Arc<Config>,
         tasks_to_run: &[Task],
-    ) -> Result<(Vec<Task>, Vec<Task>)> {
+    ) -> Result<ResolvedTaskDependencies> {
         use crate::task::TaskLoadContext;
 
         if let Some(err) = &self.workspace_dependency_error {
@@ -1495,10 +1528,17 @@ impl Task {
             .collect::<Result<Vec<_>>>()?;
         let depends = depends
             .into_iter()
-            .chain(wait_for)
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<_>>()?;
-        Ok((depends, depends_post))
+        let wait_for = wait_for
+            .into_iter()
+            .filter_ok(|t| t.name != self.name)
+            .collect::<Result<_>>()?;
+        Ok(ResolvedTaskDependencies {
+            depends,
+            wait_for,
+            depends_post,
+        })
     }
 
     /// Expands `^task` dependencies to the matching task in every upstream workspace project.
@@ -2790,6 +2830,7 @@ fn match_tasks_with_context(
 impl Default for Task {
     fn default() -> Self {
         Task {
+            run_phase: TaskRunPhase::Normal,
             name: "".to_string(),
             display_name: "".to_string(),
             description: "".to_string(),
@@ -2900,7 +2941,10 @@ impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.name.cmp(&other.name) {
             Ordering::Equal => match self.args.cmp(&other.args) {
-                Ordering::Equal => env_key(self).cmp(&env_key(other)),
+                Ordering::Equal => match env_key(self).cmp(&env_key(other)) {
+                    Ordering::Equal => self.run_phase.cmp(&other.run_phase),
+                    o => o,
+                },
                 o => o,
             },
             o => o,
@@ -2917,13 +2961,17 @@ impl Hash for Task {
             k.hash(state);
             v.hash(state);
         }
+        self.run_phase.hash(state);
     }
 }
 
 impl Eq for Task {}
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.args == other.args && env_key(self) == env_key(other)
+        self.name == other.name
+            && self.args == other.args
+            && env_key(self) == env_key(other)
+            && self.run_phase == other.run_phase
     }
 }
 
@@ -2932,7 +2980,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
 
     fn write_self(&self) -> std::io::Result<()> {
         if let Some(w) = self.0.node_weight(self.1) {
-            miseprint!("{}", w.display_name)?;
+            miseprint!("{}", w.graph_display_name())?;
         }
         Ok(())
     }

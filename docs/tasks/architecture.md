@@ -52,6 +52,11 @@ depends_post = ["cleanup", "notify"]
 run = "kubectl apply -f deployment.yaml"
 ```
 
+Regular dependencies of cleanup tasks belong to the same post-phase subtree and do not start until
+the parent task has completed. Mise runs that subtree if the parent started, even when the parent
+fails, but skips the entire subtree when a regular dependency fails before the parent can start. A
+task used as both a regular and post-dependency is a separate execution occurrence in each phase.
+
 #### `wait_for` - Soft Dependencies
 
 Tasks that should run first if they're in the current execution, but don't fail if they're not available:

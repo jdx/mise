@@ -16,17 +16,63 @@ EOF
 assert "mise tasks deps" "one
 three
 two
+└── one
+two (post)
 ├── three
-└── one"
+└── one (post)
+    └── three
+one (post)
+└── three"
 assert "mise run three"
 
-# TODO: this does not work with how mise is designed currently. Tasks can only ever be run once per run session. This will require hefty refactoring if it is ever supported
-# uses depends and depends_post on the same task
-#cat <<EOF >mise.toml
-#tasks."util:donothing" = ""
-#[tasks.hi]
-#depends = "util:donothing"
-#run = "echo hi"
-#depends_post = "util:donothing"
-#EOF
-#assert "mise run hi"
+# A task referenced in both phases runs once before and once after its parent.
+cat <<'EOF' >mise.toml
+tasks."util:donothing" = "echo util"
+
+[tasks.hi]
+depends = "util:donothing"
+run = "echo hi"
+depends_post = "util:donothing"
+EOF
+assert "mise run hi" "util
+hi
+util"
+
+# Regular dependencies of a post task stay behind the parent's completion
+# barrier, even when the scheduler has multiple workers available.
+cat <<'EOF' >mise.toml
+[tasks.parent]
+run = 'sleep 0.2; echo parent >> "$ORDER_FILE"'
+depends_post = ["post"]
+
+[tasks.prerequisite]
+run = 'echo prerequisite >> "$ORDER_FILE"'
+
+[tasks.post]
+depends = ["prerequisite"]
+run = 'echo post >> "$ORDER_FILE"'
+EOF
+order_file="$TMPDIR/depends-post-order"
+ORDER_FILE="$order_file" mise run --jobs 4 parent
+assert "cat '$order_file'" "parent
+prerequisite
+post"
+
+# The full post subtree is cleanup and still runs after its parent fails.
+cat <<'EOF' >mise.toml
+[tasks.parent]
+run = 'echo parent >> "$ORDER_FILE"; exit 1'
+depends_post = ["post"]
+
+[tasks.prerequisite]
+run = 'echo prerequisite >> "$ORDER_FILE"'
+
+[tasks.post]
+depends = ["prerequisite"]
+run = 'echo post >> "$ORDER_FILE"'
+EOF
+failure_order_file="$TMPDIR/depends-post-failure-order"
+assert_fail "ORDER_FILE='$failure_order_file' mise run --jobs 4 parent"
+assert "cat '$failure_order_file'" "parent
+prerequisite
+post"
