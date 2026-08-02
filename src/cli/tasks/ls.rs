@@ -90,6 +90,24 @@ pub enum SortOrder {
 }
 
 impl TasksLs {
+    pub fn merge(mut self, later: Self) -> Self {
+        if later.global || later.local {
+            self.global = later.global;
+            self.local = later.local;
+        }
+        self.json |= later.json;
+        self.extended |= later.extended;
+        self.all |= later.all;
+        self.complete |= later.complete;
+        self.hidden |= later.hidden;
+        self.name_only |= later.name_only;
+        self.no_header |= later.no_header;
+        self.sort = later.sort.or(self.sort);
+        self.sort_order = later.sort_order.or(self.sort_order);
+        self.usage |= later.usage;
+        self
+    }
+
     pub fn has_options(&self) -> bool {
         self.global
             || self.json

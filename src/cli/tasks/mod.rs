@@ -54,19 +54,24 @@ impl Commands {
 
 impl Tasks {
     pub async fn run(self) -> Result<()> {
-        if self.command.is_some() && self.ls.has_options() {
-            bail!("task list options cannot be used with subcommands");
-        }
-
-        let cmd = self
-            .command
-            .or(self.task.map(|t| {
-                Commands::Info(info::TasksInfo {
-                    task: t,
-                    json: self.ls.json,
+        let Self { command, task, ls } = self;
+        let cmd = match command {
+            Some(Commands::Ls(cmd)) => Commands::Ls(ls.merge(cmd)),
+            Some(cmd) => {
+                if ls.has_options() {
+                    bail!("task list options cannot be used with subcommands");
+                }
+                cmd
+            }
+            None => task
+                .map(|task| {
+                    Commands::Info(info::TasksInfo {
+                        task,
+                        json: ls.json,
+                    })
                 })
-            }))
-            .unwrap_or(Commands::Ls(self.ls));
+                .unwrap_or(Commands::Ls(ls)),
+        };
 
         cmd.run().await
     }
