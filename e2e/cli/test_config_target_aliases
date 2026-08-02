@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# `mise use` names its config-file option --path while `mise set` names it --file, so which one
+# works depends on the command. Each now accepts the other's name.
+# See: https://github.com/jdx/mise/discussions/4881
+
+mkdir -p "$HOME/workdir/aliases"
+cd "$HOME/workdir/aliases" || exit 1
+
+# `mise use --file` is `mise use --path`
+mise use --file alias.toml dummy@1
+assert "cat alias.toml" '[tools]
+dummy = "1"'
+
+# `mise set --path` is `mise set --file`
+mise set --path alias.toml ALIAS_VAR=set-via-path
+assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-path"'
+
+# both names reach the same argument, so the cwd's own config is untouched either way
+assert_fail "test -f mise.toml"
+
+# the canonical names still work
+mise use --path alias.toml dummy@2
+assert_contains "cat alias.toml" 'dummy = "2"'
+mise set --file alias.toml ALIAS_VAR=set-via-file
+assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-file"'

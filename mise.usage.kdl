@@ -3308,7 +3308,7 @@ Can be used multiple times. Requires --age-encrypt.
         arg <PATH_OR_PUBKEY>
     }
     flag --complete help="Render completions" hide=#true
-    flag --file help="The TOML file to update" {
+    flag "--file --path" help="The TOML file to update" {
         long_help #"""
 The TOML file to update
 
@@ -4536,7 +4536,7 @@ Number of jobs to run in parallel
         arg <JOBS>
     }
     flag "-n --dry-run" help="Perform a dry run, showing what would be installed and modified without making changes"
-    flag "-p --path" help="Specify a path to a config file or directory" {
+    flag "-p --path --file" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 
