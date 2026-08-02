@@ -134,25 +134,32 @@ Windows.
 
 If you have many tools defined in your `mise.toml` hierarchy, then it is possible that `mise x` will produce a `Path` environment variable that is too long for certain tools to handle, most notably, `cmd.exe`. This will affect `mise` tools that invoke `cmd.exe` (like `npm install`).
 
+The limit is **8191 characters**, and `cmd.exe` does not truncate a longer `Path` — it [ignores the variable entirely](https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation). So the symptom is not that one tool goes missing: everything that was found through `Path` stops resolving at once and reports `is not recognized`. Programs in `C:\Windows\System32` keep working, because `cmd.exe` finds those without consulting `Path` — which is what makes the failure look arbitrary, and why the test below matters.
+
 You have a few options:
 
 1. Set the `MISE_INSTALLS_DIR` environment variable to a shorter location, e.g. `C:\.mise-installs`.
 1. Use `powershell.exe` or `pwsh.exe` instead of `cmd.exe`, since they can handle a longer `Path`.
 1. Re-organise the `mise.toml` files in your monorepo, to specify only the tools they need.
+1. [Shims](/dev-tools/shims.html) keep your **shell's** `Path` from growing with your toolset — `mise activate --shims` adds one directory rather than one per tool. Be aware of what this does not cover: running a tool through a shim still builds an environment containing every active tool's directory, so a mise-managed tool that itself invokes `cmd.exe` (like `npm`) sees the same long `Path` either way. Shims also [do not support all the features](/dev-tools/shims.html#shims-vs-path) of `mise activate`.
 
 You can run the following command to test whether you have hit the `cmd.exe` `Path` limitation:
 
 ```powershell
 # Path is within limits
-❯ mise x -- cmd.exe /d /s /c "where.exe where"
-C:\Windows\System32\where.exe
+❯ mise x -- cmd.exe /d /s /c "git --version"
+git version 2.55.0.windows.3
 # Path exceeds cmd.exe limits
-❯ mise x -- cmd.exe /d /s /c "where.exe where"
-'where.exe' is not recognized as an internal or external command,
+❯ mise x -- cmd.exe /d /s /c "git --version"
+'git' is not recognized as an internal or external command,
 operable program or batch file.
 mise ERROR command failed: exit code 1
 mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
 ```
+
+Two things to get right about that test. Pick a program that is **not** in `C:\Windows\System32` and not in the directory you run the test from: `cmd.exe` searches the current directory before `Path`, and finds system-directory programs without consulting `Path` at all, so a probe in either place succeeds however long `Path` is. That is exactly why `where.exe` tells you nothing. Then check that your chosen program runs normally first (`git --version` in your shell), since a program you simply do not have produces the same `is not recognized` that the limit does.
+
+Duplicate `Path` entries are less of a factor than they used to be: on reactivation mise now drops the stale install directories it finds on the inherited `Path` before adding the current toolset's (v2026.5.18), and it collapses exact duplicates in the environments it computes (`mise x`, `mise run`, `mise env`, `mise doctor`) as of v2026.7.18. That lowers what mise contributes, but it does not raise the ceiling — enough distinct tools will still reach 8191.
 
 ### Shims leaking into WSL
 
