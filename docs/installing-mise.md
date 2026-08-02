@@ -6,13 +6,13 @@ If you are new to `mise`, follow the [Getting Started](/getting-started) guide f
 
 This page lists various ways to install `mise` on your system.
 
-| Platform              | Recommended | Alternative     |
-| --------------------- | ----------- | --------------- |
-| macOS                 | mise.run    | Homebrew        |
-| Linux                 | mise.run    | System packages |
-| Windows               | Scoop       | winget          |
-| Any (Rust users)      | mise.run    | cargo binstall  |
-| CI/Docker             | mise.run    | GitHub Releases |
+| Platform         | Recommended    | Alternative     |
+| ---------------- | -------------- | --------------- |
+| macOS            | mise.run       | Homebrew        |
+| Linux            | mise.run       | System packages |
+| Windows          | Scoop          | winget          |
+| Any (Rust users) | cargo binstall | cargo install   |
+| CI/Docker        | mise.run       | GitHub Releases |
 
 The official single-binary release installed by `mise.run` is the preferred method on macOS and
 Linux. These binaries are built with mise's optimized release profile and can be updated immediately
