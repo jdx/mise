@@ -11,7 +11,7 @@ use crate::toolset::{
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt;
-use crate::{backend::Backend, config, exit};
+use crate::{backend::Backend, config, env, exit};
 use console::style;
 use eyre::Result;
 
@@ -120,6 +120,11 @@ pub async fn prunable_tools(
         .list_installed_versions(config)
         .await?
         .into_iter()
+        // System and shared installs are read-only fallback locations. Prune only
+        // manages versions in the user's primary install directory.
+        .filter(|(_, tv)| {
+            env::install_path_category(&tv.install_path()) == env::InstallPathCategory::Local
+        })
         .map(|(p, tv)| ((tv.ba().short.to_string(), tv.tv_pathname()), (p, tv)))
         .collect::<BTreeMap<(String, String), (Arc<dyn Backend>, ToolVersion)>>();
 
