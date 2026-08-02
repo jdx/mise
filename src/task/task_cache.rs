@@ -591,7 +591,9 @@ pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCac
             continue;
         }
         let archive_path = cache_dir.join(format!("{}.tar.zst", manifest.key));
-        let manifest_metadata = fs::metadata(&manifest_path)?;
+        let Ok(manifest_metadata) = fs::metadata(&manifest_path) else {
+            continue;
+        };
         let archive_metadata = fs::metadata(&archive_path).ok();
         let last_accessed = archive_metadata
             .as_ref()
@@ -644,7 +646,12 @@ pub(crate) fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClea
     }
     let identity = task_cache_identity(task, root);
     let mut entry_count = identified_entries.count();
-    for entry in fs::read_dir(&cache_dir)? {
+    let partial_entries = match fs::read_dir(&cache_dir) {
+        Ok(entries) => Some(entries),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err.into()),
+    };
+    for entry in partial_entries.into_iter().flatten() {
         let entry = entry?;
         let manifest_path = entry.path();
         let Some(stem) = manifest_path

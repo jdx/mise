@@ -51,11 +51,7 @@ impl CacheTask {
                     entries,
                 })
                 .collect_vec();
-            if output.len() == 1 {
-                miseprintln!("{}", serde_json::to_string_pretty(&output[0])?);
-            } else {
-                miseprintln!("{}", serde_json::to_string_pretty(&output)?);
-            }
+            miseprintln!("{}", serde_json::to_string_pretty(&output)?);
             return Ok(());
         }
         if task_entries
@@ -125,8 +121,7 @@ pub(super) async fn resolve_tasks(task_spec: &str) -> Result<(Arc<Config>, Vec<T
     };
     let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
     let mut tasks = tasks_with_aliases
-        .get_matching(&task_name)
-        .unwrap_or_default()
+        .get_matching(&task_name)?
         .into_iter()
         .map(|task| (**task).clone())
         .collect_vec();

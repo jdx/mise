@@ -87,6 +87,8 @@ impl CacheClear {
             // Also clear env cache when clearing all caches
             if self.tool.is_none() {
                 CachedEnv::clear()?;
+                let task_cache_state = crate::dirs::STATE.join("task-artifacts");
+                handle_remove_result(&task_cache_state, remove_all_with_retry(&task_cache_state))?;
             }
             match &self.tool {
                 Some(tools) => info!("cache cleared for {}", tools.join(", ")),

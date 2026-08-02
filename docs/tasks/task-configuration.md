@@ -725,8 +725,9 @@ are not counted as hits or misses.
 Use `mise cache task <task>` to inspect every local output-cache entry associated with a configured
 task. The table shows each key, whether it is the current freshness entry, its stored and restorable
 sizes, recorded execution time, last access time, and output roots. Add `--json` for structured
-output. Entries created before task identity metadata was added can be inspected when they are the
-task's current entry; older historical entries become discoverable after they are rewritten.
+output as an array, including when only one task matches. Entries created before task identity
+metadata was added can be inspected when they are the task's current entry; older historical entries
+become discoverable after they are rewritten.
 
 Use `mise cache clear --task <task>` to delete only that task's local output-cache entries and
 freshness pointer. Declared outputs in the working directory and entries belonging to other tasks

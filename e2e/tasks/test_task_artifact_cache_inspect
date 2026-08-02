@@ -44,13 +44,14 @@ EOF
 
 printf 'one\n' >input.txt
 printf 'other\n' >other.txt
+mise cache clear --task build
 mise run build
 printf 'two\n' >input.txt
 mise run build
 mise run other
 
 assert_json \
-  "mise cache task build --json | jq '{task, entries: (.entries | length), current_entries: ([.entries[] | select(.current)] | length), key_lengths: [.entries[].key | length], outputs: [.entries[].outputs]}'" \
+  "mise cache task build --json | jq '.[0] | {task, entries: (.entries | length), current_entries: ([.entries[] | select(.current)] | length), key_lengths: [.entries[].key | length], outputs: [.entries[].outputs]}'" \
   '{
     "task": "build",
     "entries": 2,
@@ -58,20 +59,22 @@ assert_json \
     "key_lengths": [64, 64],
     "outputs": [["dist"], ["dist"]]
   }'
-cache_key="$(mise cache task build --json | jq -r '.entries[0].key')"
+cache_key="$(mise cache task build --json | jq -r '.[0].entries[0].key')"
 assert_contains "mise cache task build" "$cache_key"
 
 # In-progress or abandoned partial manifests are not inspectable entries, but
 # task-scoped clearing removes partial files that belong to the task.
-cache_dir="$MISE_CACHE_DIR/task-artifacts/v2"
+manifest="$(find "$MISE_CACHE_DIR/task-artifacts" -type f -name "$cache_key.json" -print -quit)"
+assert "test -n \"$manifest\" && echo found" "found"
+cache_dir="$(dirname "$manifest")"
 cp "$cache_dir/$cache_key.json" "$cache_dir/$cache_key.part-deadbeef.json"
 cp "$cache_dir/$cache_key.tar.zst" "$cache_dir/$cache_key.part-deadbeef.tar.zst"
-assert "mise cache task build --json | jq '.entries | length'" "2"
+assert "mise cache task build --json | jq '.[0].entries | length'" "2"
 
 mise cache clear --task build
-assert_json "mise cache task build --json | jq '.entries'" '[]'
+assert_json "mise cache task build --json | jq '.[0].entries'" '[]'
 assert "find \"$cache_dir\" -name '*.part-*' | wc -l | tr -d ' '" "0"
-assert "mise cache task other --json | jq '.entries | length'" "1"
+assert "mise cache task other --json | jq '.[0].entries | length'" "1"
 assert "cat dist/result.txt" "two"
 assert "cat other-dist/result.txt" "other"
 
@@ -87,12 +90,12 @@ assert_contains "mise cache task 'group:*'" "No output cache entries for group:o
 # stale task must not remove the owning task's manifest/archive.
 mise run build
 mise run twin
-build_key="$(mise cache task build --json | jq -r '.entries[] | select(.current).key')"
-twin_key="$(mise cache task twin --json | jq -r '.entries[] | select(.current).key')"
+build_key="$(mise cache task build --json | jq -r '.[0].entries[] | select(.current).key')"
+twin_key="$(mise cache task twin --json | jq -r '.[0].entries[] | select(.current).key')"
 twin_state="$(grep -rl "^${twin_key}$" "$MISE_STATE_DIR/task-artifacts")"
 printf '%s\n' "$build_key" >"$twin_state"
 mise cache clear --task twin
-assert "mise cache task build --json | jq '.entries | length'" "1"
+assert "mise cache task build --json | jq '.[0].entries | length'" "1"
 
 # Legacy manifests can only be associated through a freshness pointer. If a
 # second task has a stale pointer to the same key, scoped clearing must warn and
@@ -103,6 +106,12 @@ mv "$build_manifest.tmp" "$build_manifest"
 printf '%s\n' "$build_key" >"$twin_state"
 assert_contains "mise cache clear --task twin 2>&1" "ownership cannot be verified"
 assert "test -f \"$build_manifest\" && echo present" "present"
-assert "mise cache task build --json | jq '.entries | length'" "1"
+assert "mise cache task build --json | jq '.[0].entries | length'" "1"
 
 assert_fail_contains "mise cache task missing" "Task not found: missing"
+assert_fail_contains "mise cache task '//missing'" "missing task name in monorepo path"
+
+# Whole-cache clearing removes freshness pointers as well as artifact files.
+assert "find \"$MISE_STATE_DIR/task-artifacts\" -name '*.key' | wc -l | tr -d ' '" "2"
+mise cache clear
+assert "find \"$MISE_STATE_DIR/task-artifacts\" -name '*.key' 2>/dev/null | wc -l | tr -d ' '" "0"
