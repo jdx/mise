@@ -90,6 +90,8 @@ protocol semantics.
 - Requests and responses may stream; implementations must not require complete artifacts in memory.
 - Redirects are not part of version 1 and clients need not follow them.
 - `401 Unauthorized` and `403 Forbidden` are authentication or authorization failures, not misses.
+- `426 Upgrade Required` is a protocol-negotiation response; clients should retry with a supported
+  `Mise-Cache-Protocol` version when possible.
 - `429 Too Many Requests` and `5xx` responses are transient server failures.
 - Other `4xx` responses are permanent request failures.
 - Servers must treat `(namespace, key)` as immutable and make object replacement atomic.
