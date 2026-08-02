@@ -1698,7 +1698,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         // Test Windows URL
         let url =
-            "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_windows_amd64.zip";
+            "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_windows_amd64.zip";
         let platform = detect_platform_from_url(url).unwrap();
         assert_eq!(platform.os, AssetOs::Windows);
         assert_eq!(platform.arch, AssetArch::X64);
