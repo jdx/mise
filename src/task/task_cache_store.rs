@@ -153,7 +153,20 @@ impl TaskCacheStore for CompositeTaskCacheStore {
     }
 
     fn remove_local(&self, key: &str) -> Result<()> {
-        self.local.remove_local(key)
+        let Err(remove_err) = self.local.remove_local(key) else {
+            return Ok(());
+        };
+        let Some(entry) = self.remote.get(key)? else {
+            return Err(remove_err);
+        };
+        self.promote(key, &entry)
+            .map(|_| ())
+            .map_err(|promote_err| {
+                eyre::eyre!(
+                    "failed to remove expired local cache entry: {remove_err}; \
+                 failed to refresh it from remote: {promote_err}"
+                )
+            })
     }
 
     fn touch(&self, key: &str) {
@@ -266,6 +279,42 @@ mod tests {
 
     struct FailingTaskCacheStore {
         inner: LocalTaskCacheStore,
+    }
+
+    struct RemoveFailingTaskCacheStore {
+        inner: LocalTaskCacheStore,
+    }
+
+    impl TaskCacheStore for RemoveFailingTaskCacheStore {
+        fn version(&self) -> u8 {
+            self.inner.version()
+        }
+
+        fn get(&self, key: &str) -> Result<Option<TaskCacheStoreEntry>> {
+            self.inner.get(key)
+        }
+
+        fn begin_write(&self, key: &str) -> Result<TaskCacheStoreWrite> {
+            self.inner.begin_write(key)
+        }
+
+        fn commit(
+            &self,
+            key: &str,
+            write: &TaskCacheStoreWrite,
+            manifest: &[u8],
+            has_artifact: bool,
+        ) -> Result<()> {
+            self.inner.commit(key, write, manifest, has_artifact)
+        }
+
+        fn remove(&self, _key: &str) -> Result<()> {
+            bail!("local remove failed")
+        }
+
+        fn touch(&self, key: &str) {
+            self.inner.touch(key);
+        }
     }
 
     impl TaskCacheStore for FailingTaskCacheStore {
@@ -416,5 +465,26 @@ mod tests {
             b"remote"
         );
         assert!(local.get("expired").unwrap().is_some());
+    }
+
+    #[test]
+    fn composite_store_repairs_failed_local_removal_from_remote() {
+        let local_root = tempfile::tempdir().unwrap();
+        let remote_root = tempfile::tempdir().unwrap();
+        let local_inner = LocalTaskCacheStore::new(local_root.path().to_path_buf());
+        seed(&local_inner, "expired", b"stale-local", None);
+        let local: Arc<dyn TaskCacheStore> =
+            Arc::new(RemoveFailingTaskCacheStore { inner: local_inner });
+        let remote: Arc<dyn TaskCacheStore> =
+            Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
+        seed(remote.as_ref(), "expired", b"fresh-remote", None);
+        let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
+
+        composite.remove_local("expired").unwrap();
+
+        assert_eq!(
+            local.get("expired").unwrap().unwrap().manifest,
+            b"fresh-remote"
+        );
     }
 }
