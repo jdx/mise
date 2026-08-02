@@ -470,9 +470,14 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
 });
 
 /// Returns true if the given binary name refers to mise itself (not a shim).
-/// Handles "mise", "mise.exe", "mise.bat", "mise.cmd", "mise-doctor", etc.
+/// Handles "mise", "mise.exe", "mise.bat", "mise.cmd", "mise-doctor", and
+/// the legacy "rtx" executable name.
 pub fn is_mise_binary(bin_name: &str) -> bool {
-    bin_name == "mise" || bin_name.starts_with("mise.") || bin_name.starts_with("mise-")
+    bin_name == "mise"
+        || bin_name.starts_with("mise.")
+        || bin_name.starts_with("mise-")
+        || bin_name == "rtx"
+        || bin_name.starts_with("rtx.")
 }
 
 /// Explicit terminal-width override: `MISE_TERM_WIDTH` takes precedence, then the
@@ -993,6 +998,27 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[test]
+    fn test_is_mise_binary_includes_legacy_rtx_name() {
+        for bin_name in [
+            "mise",
+            "mise.exe",
+            "mise-doctor",
+            "rtx",
+            "rtx.exe",
+            "rtx.cmd",
+        ] {
+            assert!(is_mise_binary(bin_name), "expected {bin_name} to be mise");
+        }
+
+        for bin_name in ["rtx-tiny", "rtx_tiny", "node"] {
+            assert!(
+                !is_mise_binary(bin_name),
+                "expected {bin_name} to remain a shim"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn test_apply_patches() {

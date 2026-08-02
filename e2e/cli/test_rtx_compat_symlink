@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# `rtx` is mise's former executable name. The migration documentation supports
+# keeping old scripts working by symlinking that name to the mise binary.
+mise_bin="$(command -v mise)"
+rtx="$PWD/rtx"
+ln -s "$mise_bin" "$rtx"
+
+assert "$rtx --version" "$(mise --version)"
+assert_contains "$rtx activate bash" "export __MISE_EXE=$rtx"
+assert_succeed "$rtx reshim"
