@@ -111,31 +111,21 @@ An action descriptor contains everything declared to affect a task result:
 ```json
 {
   "version": 1,
-  "task": {
-    "name": "build",
-    "command": ["cargo", "build", "--release"],
-    "working_directory": "crates/widget"
-  },
-  "environment": [{ "name": "PROFILE", "value": "release" }],
-  "input_root": {
-    "algorithm": "blake3",
-    "hash": "...",
-    "size": 456
-  },
-  "tools": [
-    {
-      "name": "rust",
-      "backend": "core:rust",
-      "version": "1.92.0",
-      "identity": "..."
-    }
-  ],
-  "platform": {
-    "os": "linux",
-    "arch": "x86_64"
-  },
+  "task": "build",
+  "phase": "run",
+  "run": [{ "task": "cargo build --release" }],
+  "args": [],
+  "shell": null,
   "outputs": ["target/release/widget"],
-  "cache_schema": 1
+  "root": "crates/widget",
+  "source_hash": "blake3:...",
+  "dependency_keys": [],
+  "environment": { "PROFILE": "release" },
+  "command_inputs": [],
+  "vars": {},
+  "tools": ["core:rust@1.92.0"],
+  "os": "linux",
+  "arch": "x86_64"
 }
 ```
 
@@ -143,8 +133,10 @@ Arrays whose order has no task meaning must be sorted by the field defined by th
 strings are opaque and are never semantically ordered. Secrets must not appear in an action
 descriptor. Environment variables are included only when the task declares them as cache inputs.
 
-The canonical descriptor is stored in CAS. Its digest is the action digest and the action-result URL
-key. Two clients that describe the same action must produce identical canonical bytes.
+`source_hash` binds the declared source paths and contents without uploading task inputs that are not
+needed for cache-only operation. The canonical descriptor is stored in CAS. Its digest is the action
+digest and the action-result URL key. Two clients that describe the same action must produce
+identical canonical bytes.
 
 ### Directory object
 
@@ -156,7 +148,8 @@ A directory object has media type `application/vnd.mise.cache-directory.v1+json`
   "directories": [
     {
       "name": "assets",
-      "digest": { "algorithm": "blake3", "hash": "...", "size": 321 }
+      "digest": { "algorithm": "blake3", "hash": "...", "size": 321 },
+      "mode": 493
     }
   ],
   "files": [
@@ -167,7 +160,7 @@ A directory object has media type `application/vnd.mise.cache-directory.v1+json`
       "mode": 493
     }
   ],
-  "symlinks": [{ "name": "current", "target": "widget" }]
+  "symlinks": [{ "name": "current", "target": "widget", "mode": 511 }]
 }
 ```
 
@@ -190,22 +183,34 @@ An action result has media type `application/vnd.mise.cache-action-result.v1+jso
   "version": 1,
   "action": { "algorithm": "blake3", "hash": "...", "size": 789 },
   "output_root": { "algorithm": "blake3", "hash": "...", "size": 456 },
-  "stdout": null,
-  "stderr": null,
-  "exit_code": 0,
-  "producer": {
-    "subject": "repo:acme/widgets:ref:refs/heads/main",
-    "repository": "acme/widgets",
-    "revision": "0123456789abcdef",
-    "run_id": "12345"
-  },
-  "created_at": "2026-08-02T00:00:00Z"
+  "metadata": { "algorithm": "blake3", "hash": "...", "size": 234 }
 }
 ```
 
-Only successful, cacheable task executions may be published. `output_root`, `stdout`, and `stderr`
-are optional CAS references. The action descriptor and every object reachable from the result must
-exist and validate before the result becomes readable.
+Only successful, cacheable task executions may be published. `output_root` is absent when a task has
+no declared output files. `metadata` references canonical
+`application/vnd.mise.cache-client-metadata.v1+json` containing the output roots, captured output,
+task identity, restored-byte estimate, and execution duration needed by mise clients. The metadata
+schema is part of the remote protocol and is independent of mise's local cache manifest.
+
+```json
+{
+  "version": 1,
+  "task_identity": "build:crates/widget",
+  "roots": ["target/release/widget"],
+  "output": [{ "stream": "stdout", "line": "built widget" }],
+  "restored_bytes": 123456,
+  "execution_duration_ns": 900000000
+}
+```
+
+Root paths use forward slashes, are relative to the task working directory, and must satisfy the same
+path-safety rules as directory nodes. Output entries preserve their declared order.
+
+The action descriptor and every object reachable from the result must exist and validate before the
+result becomes readable. Authenticated producer identity, repository, revision, CI run, and commit
+time are recorded by the server alongside the immutable result and included in signed receipts; a
+client cannot establish its own trusted provenance by placing claims in the result body.
 
 Retention, last-access time, quota accounting, internal storage location, and server annotations are
 not part of the immutable action result.
