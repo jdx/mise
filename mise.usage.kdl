@@ -912,9 +912,11 @@ Examples:
     3.12
 
 """#
-        flag "-f --file" help="The path to the mise.toml file to edit" {
+        flag "-f --file --path" help="The path to the mise.toml file to read" {
             long_help #"""
-The path to the mise.toml file to edit
+The path to the mise.toml file to read
+
+Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
 If not provided, the nearest mise.toml file will be used
 """#
@@ -950,9 +952,11 @@ Examples:
     $ mise config set settings.jobs 4
 
 """#
-        flag "-f --file" help="The path to the mise.toml file to edit" {
+        flag "-f --file --path" help="The path to the mise.toml file to edit" {
             long_help #"""
 The path to the mise.toml file to edit
+
+Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
 If not provided, the nearest mise.toml file will be used
 """#

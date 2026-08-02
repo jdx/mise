@@ -23,6 +23,8 @@ The value to set the key to (optional if provided as KEY=VALUE)
 
 The path to the mise.toml file to edit
 
+Can be a file path or directory. If a directory is provided, the config file in that directory is used.
+
 If not provided, the nearest mise.toml file will be used
 
 ### `-t --type <TYPE>`

@@ -1,4 +1,4 @@
-use crate::config::top_toml_config;
+use crate::config::{ConfigPathOptions, resolve_target_config_path, top_toml_config};
 use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
@@ -10,20 +10,31 @@ pub struct ConfigGet {
     /// The path of the config to display
     pub key: Option<String>,
 
-    /// The path to the mise.toml file to edit
+    /// The path to the mise.toml file to read
+    ///
+    /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
     ///
     /// If not provided, the nearest mise.toml file will be used
-    #[clap(short, long)]
+    #[clap(short, long, visible_alias = "path", value_hint = clap::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 }
 
 impl ConfigGet {
     pub fn run(self) -> eyre::Result<()> {
-        let mut file = self.file;
-        if file.is_none() {
-            file = top_toml_config();
-        }
+        // Only an explicitly named target goes through the shared resolver — the default is a
+        // different rule (the top TOML config of the loaded set, not the nearest writable one).
+        let file = match self.file {
+            Some(path) => Some(resolve_target_config_path(ConfigPathOptions {
+                path: Some(path),
+                prefer_toml: true,
+                ..Default::default()
+            })?),
+            None => top_toml_config(),
+        };
         if let Some(file) = file {
+            if !file.exists() {
+                bail!("config file not found: {}", display_path(&file));
+            }
             let content = std::fs::read_to_string(&file)?;
             let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
