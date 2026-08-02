@@ -3775,6 +3775,29 @@ struct LoadTaskIncludesOptions<'a> {
     rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
 }
 
+fn collect_task_files(root: &Path) -> Result<Vec<PathBuf>> {
+    WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        // skip hidden directories (if the root is hidden that's ok)
+        .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.file_type().is_file() => Some(Ok(entry.path().to_path_buf())),
+            Ok(_) => None,
+            Err(err)
+                if err
+                    .io_error()
+                    .is_some_and(|err| err.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                debug!("skipping missing task entry: {err}");
+                None
+            }
+            Err(err) => Some(Err(err)),
+        })
+        .try_collect::<_, Vec<PathBuf>, _>()
+        .map_err(Into::into)
+}
+
 async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
@@ -3801,14 +3824,7 @@ async fn load_tasks_includes(
         )
         .await
     } else if root.is_dir() {
-        let all_files = WalkDir::new(root)
-            .follow_links(true)
-            .into_iter()
-            // skip hidden directories (if the root is hidden that's ok)
-            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
-            .filter_ok(|e| e.file_type().is_file())
-            .map_ok(|e| e.path().to_path_buf())
-            .try_collect::<_, Vec<PathBuf>, _>()?
+        let all_files = collect_task_files(root)?
             .into_iter()
             .filter(|p| {
                 !Settings::get()
@@ -4490,6 +4506,43 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_collect_task_files_skips_dangling_symlinks() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let task = tmp.path().join("task");
+        fs::write(&task, "echo ok")?;
+        std::os::unix::fs::symlink("missing", tmp.path().join("dangling"))?;
+
+        assert_eq!(collect_task_files(tmp.path())?, vec![task]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collect_task_files_follows_valid_directory_symlinks() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let target = tmp.path().join("target");
+        fs::create_dir(&target)?;
+        fs::write(target.join("task"), "echo ok")?;
+        let root = tmp.path().join("root");
+        fs::create_dir(&root)?;
+        std::os::unix::fs::symlink(&target, root.join("linked"))?;
+
+        assert_eq!(collect_task_files(&root)?, vec![root.join("linked/task")]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collect_task_files_preserves_symlink_loop_errors() -> Result<()> {
+        let tmp = TempDir::new()?;
+        std::os::unix::fs::symlink("loop", tmp.path().join("loop"))?;
+
+        assert!(collect_task_files(tmp.path()).is_err());
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_load() {
