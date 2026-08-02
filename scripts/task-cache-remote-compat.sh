@@ -135,6 +135,11 @@ code=$(curl -sS -o "$response" -w '%{http_code}' "${request_headers[@]}" \
 	"$base_url/v1/cache/$key")
 expect_code "$code" '^404$' 'lookup after deletion'
 
+code=$(curl -sS -o "$response" -w '%{http_code}' "${request_headers[@]}" \
+	-H 'Accept: application/vnd.mise.task-cache-artifact.v1+zstd' \
+	"$base_url/v1/cache/$key/artifact")
+expect_code "$code" '^404$' 'artifact lookup after deletion'
+
 trap - EXIT
 rm -rf "${temp_dir:?}"
 printf 'remote task cache protocol v1 compatibility checks passed\n'
