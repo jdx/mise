@@ -2308,6 +2308,11 @@
               "description": "store and restore eligible task outputs from the local mise cache",
               "type": "boolean"
             },
+            "audit": {
+              "default": false,
+              "description": "report project files read or written outside declared cache sources and outputs",
+              "type": "boolean"
+            },
             "env": {
               "description": "ambient environment variable names whose values affect eligible task cache keys",
               "items": {
@@ -3059,6 +3064,11 @@
             "enabled": {
               "default": false,
               "description": "store and restore task outputs from the local mise cache",
+              "type": "boolean"
+            },
+            "audit": {
+              "default": false,
+              "description": "report project files read or written outside declared cache sources and outputs",
               "type": "boolean"
             },
             "env": {

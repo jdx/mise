@@ -552,8 +552,8 @@ outputs = { auto = true } # this is the default when sources is defined
 
 ### `cache` <Badge type="warning" text="experimental" />
 
-- **Type**: `{ enabled = bool, env = string[], command_inputs = string[] }`
-- **Default**: `{ enabled = false, env = [], command_inputs = [] }`
+- **Type**: `{ enabled = bool, audit = bool, env = string[], command_inputs = string[] }`
+- **Default**: `{ enabled = false, audit = false, env = [], command_inputs = [] }`
 
 Stores successful task results in a content-addressed local cache and reuses them when the same task
 inputs are seen again. Declared filesystem outputs are restored after deletion. Tasks with
@@ -597,6 +597,25 @@ or retained. Command inputs inherit the task timeout, or have a 30-second timeou
 none, and may emit at most 16 MiB across stdout and stderr. They should be fast, deterministic, and
 free of side effects because they run whenever mise computes the task's cache key. Command inputs
 are not run during dry runs or when caching is disabled for raw or interactive execution.
+
+Set `cache.audit = true` to diagnose incomplete cache declarations on Linux. When a task executes,
+mise uses `strace` to report reads beneath the workspace root that do not match `sources` and writes
+beneath the task directory that do not match `outputs`. The audit is advisory and does not block the
+task or prevent a successful result from being cached. Access outside those roots and directory
+metadata reads are ignored to keep system libraries, executables, and path traversal out of the
+report.
+
+Audit mode requires `strace` on `PATH`. Mise warns and runs the task normally when tracing is not
+available; other platforms are not currently supported. Cached tasks are not executed and therefore
+produce no audit report, so use `mise run --force <task>` when checking an existing cache entry.
+
+```mise-toml
+[tasks.build]
+run = "npm run build"
+sources = ["package.json", "src/**"]
+outputs = ["dist"]
+cache = { enabled = true, audit = true }
+```
 
 #### External dependencies and lockfiles
 

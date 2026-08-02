@@ -43,6 +43,7 @@ pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
 pub mod task_cache;
+mod task_cache_audit;
 pub mod task_confirm;
 pub mod task_context_builder;
 mod task_dep;
@@ -68,6 +69,7 @@ pub mod workspace;
 
 pub(crate) use task_cache::TaskCacheOutput;
 pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
+pub(crate) use task_cache_audit::TaskCacheAudit;
 pub use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};
@@ -4674,6 +4676,7 @@ echo "test"
             task.cache,
             Some(TaskCacheConfig {
                 enabled: true,
+                audit: false,
                 env: vec!["PROFILE".to_string()],
                 command_inputs: vec![],
             })

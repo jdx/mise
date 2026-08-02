@@ -109,7 +109,7 @@ outside this tracker.
 - [x] Test executable bits, symlinks, empty directories, and case-sensitive path edge cases
 - [x] Benchmark hashing, archive creation, and restoration for large task graphs and artifacts
 - [x] Avoid rehashing unchanged source files when reliable metadata is available
-- [ ] Add an optional audit mode for undeclared task reads and writes
+- [x] Add an optional audit mode for undeclared task reads and writes
 
 ## Remote cache
 

@@ -34,6 +34,8 @@ static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
 #[serde(default, deny_unknown_fields)]
 pub struct TaskCacheConfig {
     pub enabled: bool,
+    /// Report project files read or written outside the declared cache contract.
+    pub audit: bool,
     /// Ambient environment variables whose resolved values affect the cache key.
     pub env: Vec<String>,
     /// Commands whose stdout and stderr affect the cache key.
@@ -1504,10 +1506,11 @@ mod tests {
     #[test]
     fn config_deserializes_and_rejects_unknown_fields() {
         let config: TaskCacheConfig = toml::from_str(
-            "enabled = true\nenv = ['PROFILE']\ncommand_inputs = ['node --version']",
+            "enabled = true\naudit = true\nenv = ['PROFILE']\ncommand_inputs = ['node --version']",
         )
         .unwrap();
         assert!(config.enabled);
+        assert!(config.audit);
         assert_eq!(config.env, ["PROFILE"]);
         assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());

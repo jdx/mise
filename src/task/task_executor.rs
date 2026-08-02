@@ -18,7 +18,9 @@ use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
-use crate::task::{Deps, FailedTasks, GetMatchingExt, Task, TaskCacheMode, TaskCacheOutput};
+use crate::task::{
+    Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
+};
 use crate::task::{TaskCompletionState, TaskDependencyState};
 use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::env_cache::CachedEnv;
@@ -1563,6 +1565,16 @@ impl TaskExecutor {
         let program =
             crate::path::resolve_posix_shell_program_path(&program, env).unwrap_or(program);
         let env = maybe_convert_env_for_msys_shell(Path::new(&program), env);
+        let audit = if raw || self.dry_run {
+            None
+        } else {
+            TaskCacheAudit::prepare(task, &config).await?
+        };
+        let (program, args) = if let Some(audit) = &audit {
+            audit.wrap(program, args)
+        } else {
+            (program, args.to_vec())
+        };
         let runner = CmdLineRunner::new(program.clone());
         // On Windows, `cmd_verbatim` means `args` are already wrapped for cmd.exe
         // and must be appended to the command line without std's MSVCRT-style
@@ -1572,10 +1584,10 @@ impl TaskExecutor {
         let runner = if cmd_verbatim {
             args.iter().fold(runner, |r, a| r.raw_arg(a))
         } else {
-            runner.args(args)
+            runner.args(&args)
         };
         #[cfg(not(windows))]
-        let runner = runner.args(args);
+        let runner = runner.args(&args);
         // Command inherits the current process environment in addition to the
         // explicit task env, so remove usage_* keys that argument parsing
         // intentionally cleared from the task env.
@@ -1803,10 +1815,15 @@ impl TaskExecutor {
         }
         // Apply sandbox async (DNS resolution for macOS) before spawning.
         cmd.apply_sandbox().await?;
-        cmd.execute_async_with_cancel_check(|| {
-            !allow_during_interruption && crate::ui::ctrlc::is_cancelled()
-        })
-        .await?;
+        let result = cmd
+            .execute_async_with_cancel_check(|| {
+                !allow_during_interruption && crate::ui::ctrlc::is_cancelled()
+            })
+            .await;
+        if let Some(audit) = audit {
+            audit.report(task);
+        }
+        result?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
