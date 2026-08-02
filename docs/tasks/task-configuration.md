@@ -578,6 +578,33 @@ outputs = ["dist"]
 cache = { enabled = true, env = ["NODE_ENV"] }
 ```
 
+#### Experimental contract and migration
+
+No task-cache configuration name is promoted to stable in this development cycle. The task `cache`
+property, `task_config.cache` defaults and input groups, `task.cache_*` settings, remote-cache
+settings, and task-cache CLI flags retain their current names but remain experimental. The
+`experimental` setting is still required. Keeping that gate allows the configuration and storage
+contracts to evolve together while remote implementations gain operational experience.
+
+There are no configuration renames in the current contract, so existing TOML and command lines do
+not need a syntactic migration. These compatibility rules apply to cache data and remote services:
+
+- Local entries use artifact manifest format `v2`. Older local entries without artifact checksums
+  remain readable and are replaced naturally after a miss or cache write; do not copy raw files
+  between format-version directories.
+- Remote clients require a `v2` manifest with an artifact checksum before promoting an entry. A
+  hand-authored or previously uploaded manifest without one is now a miss and should be repopulated
+  by running the task with remote writes enabled.
+- Non-loopback remote URLs must use HTTPS. Replace an `http://` service URL with its TLS endpoint;
+  plain HTTP remains available for `localhost` and IP loopback compatibility testing only.
+- The remote HTTP protocol and store contract remain version `1`. Servers continue to store
+  manifest and artifact bytes opaquely, so the stricter client validation does not require a server
+  data migration.
+
+Because the feature remains experimental, future incompatible changes will be documented here with
+the affected configuration, local format, or remote protocol version before any name is declared
+stable.
+
 Commands listed in `cache.command_inputs` run before cache lookup. Their command text, stdout, and
 stderr are included in the cache key. Commands use the same inline shell (including a CLI `--shell`
 override), resolved environment and tools, working directory, and sandbox policy as the task. This
