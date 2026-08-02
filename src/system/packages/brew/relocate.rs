@@ -6,12 +6,14 @@
 //!   @@HOMEBREW_PREFIX@@ (19) -> /opt/homebrew (13)
 //!   @@HOMEBREW_CELLAR@@ (19) -> /opt/homebrew/Cellar (20)
 //!
-//! Text files get plain string replacement. Mach-O binaries get in-place
-//! C-string replacement: the new string must fit in the existing string's
-//! slot (its bytes plus any trailing NUL padding, keeping one terminator).
-//! Replacements that shrink always fit; the +1-byte Cellar case fits unless
-//! the original string ended exactly at its slot boundary, which we detect
-//! and report as an error rather than corrupt the binary.
+//! Text files get plain string replacement. For shebang executables with binary
+//! payloads, such as zipapps, only the shebang is replaced so offsets and
+//! checksums in the payload remain intact. Mach-O binaries get in-place C-string
+//! replacement: the new string must fit in the existing string's slot (its
+//! bytes plus any trailing NUL padding, keeping one terminator). Replacements
+//! that shrink always fit; the +1-byte Cellar case fits unless the original
+//! string ended exactly at its slot boundary, which we detect and report as an
+//! error rather than corrupt the binary.
 
 use std::path::{Path, PathBuf};
 
@@ -85,6 +87,20 @@ fn is_macho(content: &[u8]) -> bool {
     )
 }
 
+/// Return the end of a valid shebang interpreter within Homebrew's 1 KiB
+/// inspection window. The line ending is excluded from the returned range.
+fn text_executable_shebang_end(content: &[u8]) -> Option<usize> {
+    let prefix = content.get(..1024.min(content.len()))?;
+    let rest = prefix.strip_prefix(b"#!")?;
+    let line_end = rest
+        .iter()
+        .position(|&b| b == b'\n' || b == b'\r')
+        .unwrap_or(rest.len());
+    let interpreter = &rest[..line_end];
+    (!interpreter.contains(&0) && interpreter.iter().any(|b| !b.is_ascii_whitespace()))
+        .then_some(2 + line_end)
+}
+
 fn contains_any_placeholder(content: &[u8], replacements: &[Replacement]) -> bool {
     replacements
         .iter()
@@ -111,6 +127,17 @@ fn replace_text(content: &[u8], replacements: &[Replacement]) -> Vec<u8> {
         result.extend_from_slice(rest);
         out = result;
     }
+    out
+}
+
+/// Replace placeholders only in the shebang preamble of a binary-backed text
+/// executable. ZIP readers permit a variable-length preamble, while keeping
+/// the archive bytes untouched preserves its offsets, sizes, and checksums.
+fn replace_shebang(content: &[u8], shebang_end: usize, replacements: &[Replacement]) -> Vec<u8> {
+    let shebang = replace_text(&content[..shebang_end], replacements);
+    let mut out = Vec::with_capacity(shebang.len() + content.len() - shebang_end);
+    out.extend_from_slice(&shebang);
+    out.extend_from_slice(&content[shebang_end..]);
     out
 }
 
@@ -193,12 +220,14 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
         std::fs::set_permissions(path, writable)?;
         let macho = is_macho(&content);
         let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
-        if macho || (!elf && content.contains(&0)) {
-            // any file containing NUL bytes is treated as binary: in-place
-            // replacement that can't shift offsets. Mach-O load commands
+        let shebang_end = text_executable_shebang_end(&content);
+        if macho || (!elf && content.contains(&0) && shebang_end.is_none()) {
+            // Non-ELF files containing NUL bytes are treated as binaries unless
+            // their shebang makes them text executables (for example zipapps).
+            // Binary replacement cannot shift offsets. Mach-O load commands
             // first: proper rewriting that can grow a command when the
             // replacement is longer; then the generic in-place pass for
-            // strings in data sections
+            // strings in data sections.
             let mut content = content;
             let mut changed = macho && super::macho::patch(&mut content, &replacements, path)?;
             changed |= replace_in_binary(&mut content, &replacements, path)?;
@@ -222,7 +251,13 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
                 }
             }
         } else {
-            let new_content = replace_text(&content, &replacements);
+            let new_content = if content.contains(&0) {
+                // A valid shebang is the only way a NUL-backed file reaches
+                // this branch. Preserve the opaque binary payload byte-for-byte.
+                replace_shebang(&content, shebang_end.unwrap(), &replacements)
+            } else {
+                replace_text(&content, &replacements)
+            };
             if new_content != content {
                 crate::file::write(path, &new_content)?;
                 report.changed_files.push(path.to_path_buf());
@@ -265,6 +300,7 @@ pub fn codesign(files: &[PathBuf]) -> Result<()> {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use std::io::{Cursor, Read, Write};
 
     /// fixed macOS-style replacements so tests behave the same on all hosts
     pub(in super::super) fn test_replacements() -> Vec<Replacement> {
@@ -289,6 +325,61 @@ pub(super) mod tests {
             String::from_utf8_lossy(&out),
             "#!/opt/homebrew/bin/bash\nCELLAR=/opt/homebrew/Cellar/foo\n"
         );
+    }
+
+    #[test]
+    fn test_replace_text_executable_zipapp_with_long_prefix() {
+        let shebang = b"#!@@HOMEBREW_PREFIX@@/opt/python@3.14/bin/python3.14\n";
+        let mut cursor = Cursor::new(shebang.to_vec());
+        cursor.set_position(shebang.len() as u64);
+        let mut writer = zip::ZipWriter::new(cursor);
+        writer
+            .start_file(
+                "__main__.py",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        let script = b"print('@@HOMEBREW_PREFIX@@ watchman-diag')\n";
+        writer.write_all(script).unwrap();
+        let content = writer.finish().unwrap().into_inner();
+
+        assert!(content.contains(&0));
+        let shebang_end = text_executable_shebang_end(&content).unwrap();
+        let archive_before = &content[shebang_end..];
+
+        let replacements = vec![Replacement {
+            placeholder: b"@@HOMEBREW_PREFIX@@",
+            value: b"/home/linuxbrew/.linuxbrew".to_vec(),
+        }];
+        let relocated = replace_shebang(&content, shebang_end, &replacements);
+        assert!(
+            relocated.starts_with(b"#!/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14\n")
+        );
+        assert_eq!(relocated.len(), content.len() + 7);
+        assert_eq!(&relocated[shebang_end + 7..], archive_before);
+
+        let mut archive = zip::ZipArchive::new(Cursor::new(relocated)).unwrap();
+        let mut relocated_script = Vec::new();
+        archive
+            .by_name("__main__.py")
+            .unwrap()
+            .read_to_end(&mut relocated_script)
+            .unwrap();
+        assert_eq!(relocated_script, script);
+    }
+
+    #[test]
+    fn test_text_executable_requires_shebang_interpreter() {
+        assert_eq!(
+            text_executable_shebang_end(b"#!/bin/sh\n\0payload"),
+            Some(9)
+        );
+        assert!(text_executable_shebang_end(b"#!  /usr/bin/env python\n").is_some());
+        assert!(text_executable_shebang_end(b"plain text\n").is_none());
+        assert!(text_executable_shebang_end(b"#!   \t").is_none());
+        assert!(text_executable_shebang_end(b"#!\n\0payload").is_none());
+        assert!(text_executable_shebang_end(b"#!/bin/\0python\npayload").is_none());
     }
 
     #[test]
