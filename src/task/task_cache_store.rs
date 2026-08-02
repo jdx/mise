@@ -789,10 +789,16 @@ impl TaskCacheStore for HttpTaskCacheStore {
             &manifest,
             artifact.as_ref().map(TaskCacheStoreArtifact::path),
         )?);
-        Ok(Some(TaskCacheStoreEntry {
-            manifest: serde_json::to_vec(&manifest)?,
-            artifact,
-        }))
+        let manifest = serde_json::to_vec(&manifest)?;
+        if let Err(err) = super::task_cache::verify_remote_cache_entry(
+            key,
+            &manifest,
+            artifact.as_ref().map(TaskCacheStoreArtifact::path),
+        ) {
+            warn!("ignoring invalid remote task cache entry for {key}: {err}");
+            return Ok(None);
+        }
+        Ok(Some(TaskCacheStoreEntry { manifest, artifact }))
     }
 
     fn begin_write(&self, key: &str) -> Result<TaskCacheStoreWrite> {
@@ -1353,6 +1359,7 @@ mod tests {
             validate_remote_url(&url.parse().unwrap()).unwrap();
         }
         assert!(validate_remote_url(&"http://cache.example.com".parse().unwrap()).is_err());
+        assert!(validate_remote_url(&"ftp://localhost/cache".parse().unwrap()).is_err());
     }
 
     struct FailingTaskCacheStore {
