@@ -27,15 +27,6 @@ Verify the installation:
 - `~/.local/bin` does not need to be in `PATH`. mise will automatically add its own directory to `PATH`
   when [activated](#activate-mise).
 
-== Homebrew (alternative)
-
-The official single binary installed by `mise.run` is preferred because it is more optimized than
-the Homebrew build. Use Homebrew when package-manager installation is more important than performance.
-
-```shell
-brew install mise
-```
-
 == Windows
 ::: code-group
 
