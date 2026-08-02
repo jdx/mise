@@ -6,16 +6,18 @@ If you are new to `mise`, follow the [Getting Started](/getting-started) guide f
 
 This page lists various ways to install `mise` on your system.
 
-| Platform              | Recommended    | Alternative     |
-| --------------------- | -------------- | --------------- |
-| macOS                 | Homebrew       | mise.run        |
-| Linux (Debian/Ubuntu) | apt            | mise.run        |
-| Linux (Fedora/RHEL)   | dnf            | mise.run        |
-| Linux (Arch)          | pacman         | mise.run        |
-| Linux (Alpine)        | apk            | mise.run        |
-| Windows               | Scoop          | winget          |
-| Any (Rust users)      | cargo binstall | cargo install   |
-| CI/Docker             | mise.run       | GitHub Releases |
+| Platform              | Recommended | Alternative     |
+| --------------------- | ----------- | --------------- |
+| macOS                 | mise.run    | Homebrew        |
+| Linux                 | mise.run    | System packages |
+| Windows               | Scoop       | winget          |
+| Any (Rust users)      | mise.run    | cargo binstall  |
+| CI/Docker             | mise.run    | GitHub Releases |
+
+The official single-binary release installed by `mise.run` is the preferred method on macOS and
+Linux. These binaries are built with mise's optimized release profile and can be updated immediately
+with `mise self-update`. Package-manager builds, including Homebrew, may be less optimized and may
+not become available as quickly after a mise release.
 
 ::: tip Which methods auto-update?
 Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Other methods can be updated with `mise self-update`.
@@ -228,6 +230,12 @@ RUN mise trust -a && mise install
 :::
 
 ### Homebrew
+
+::: warning
+The Homebrew formula is convenient, but it is not the preferred installation method. Homebrew builds
+mise separately from the official, more optimized release binaries. For the best performance and
+fastest access to new releases, use the [`mise.run`](#https-mise-run) installer instead.
+:::
 
 ```sh
 brew install mise
