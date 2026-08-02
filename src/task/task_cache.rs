@@ -26,7 +26,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
-const CACHE_FORMAT_VERSION: u8 = 2;
+pub(crate) const CACHE_FORMAT_VERSION: u8 = 2;
 const CACHE_DIR_VERSION: &str = "v2";
 const ARTIFACT_CHECKSUM_FORMAT: u8 = 1;
 
@@ -91,6 +91,7 @@ impl TaskCacheMode {
 
 #[derive(Debug, Serialize)]
 struct CacheKeyMaterial<'a> {
+    #[serde(rename = "version")]
     format: u8,
     task: &'a str,
     phase: crate::task::TaskRunPhase,

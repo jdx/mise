@@ -1,5 +1,7 @@
 use crate::file;
-use crate::task::task_cache::{CacheManifest, calculate_artifact_checksum};
+use crate::task::task_cache::{
+    CACHE_FORMAT_VERSION, CacheManifest, TaskCacheOutput, calculate_artifact_checksum,
+};
 use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
@@ -20,6 +22,8 @@ const REMOTE_CACHE_NAMESPACE_HEADER: &str = "Mise-Cache-Namespace";
 const REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE: &str =
     "application/vnd.mise.cache-action-result.v1+json";
 const REMOTE_CACHE_DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
+const REMOTE_CACHE_CLIENT_METADATA_MEDIA_TYPE: &str =
+    "application/vnd.mise.cache-client-metadata.v1+json";
 const REMOTE_CACHE_BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 
 /// Version of the cache-store contract. This is independent of the artifact
@@ -100,6 +104,50 @@ struct RemoteSignature {
     algorithm: String,
     key_id: String,
     signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RemoteClientMetadata {
+    execution_duration_ns: u64,
+    output: Vec<TaskCacheOutput>,
+    restored_bytes: u64,
+    roots: Vec<String>,
+    task_identity: String,
+    version: u8,
+}
+
+impl RemoteClientMetadata {
+    fn from_manifest(manifest: &CacheManifest) -> Self {
+        Self {
+            execution_duration_ns: manifest.execution_duration_ns,
+            output: manifest.output.clone(),
+            restored_bytes: manifest.restored_bytes,
+            roots: manifest
+                .roots
+                .iter()
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+                .collect(),
+            task_identity: manifest.task_identity.clone(),
+            version: 1,
+        }
+    }
+
+    fn into_manifest(self, key: &str) -> Result<CacheManifest> {
+        if self.version != 1 {
+            bail!("unsupported remote cache client metadata version");
+        }
+        let roots = self.roots.into_iter().map(PathBuf::from).collect();
+        Ok(CacheManifest {
+            format: CACHE_FORMAT_VERSION,
+            key: key.to_string(),
+            task_identity: self.task_identity,
+            artifact_checksum: None,
+            roots,
+            output: self.output,
+            restored_bytes: self.restored_bytes,
+            execution_duration_ns: self.execution_duration_ns,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -563,26 +611,29 @@ impl TaskCacheStore for HttpTaskCacheStore {
             .metadata
             .as_ref()
             .ok_or_else(|| eyre!("remote action result is missing client metadata"))?;
-        let manifest_bytes = self
-            .get_blob(metadata, REMOTE_CACHE_BLOB_MEDIA_TYPE)
+        let metadata_bytes = self
+            .get_blob(metadata, REMOTE_CACHE_CLIENT_METADATA_MEDIA_TYPE)
             .await?;
-        let mut manifest: CacheManifest = serde_json::from_slice(&manifest_bytes)?;
-        if manifest.key != key {
-            bail!("remote cache metadata does not match requested action");
+        let metadata: RemoteClientMetadata = serde_json::from_slice(&metadata_bytes)?;
+        if serde_json::to_vec(&metadata)? != metadata_bytes {
+            bail!("remote cache client metadata is not canonical JSON");
+        }
+        let mut manifest = metadata.into_manifest(key)?;
+        for root in &manifest.roots {
+            validate_cache_path(root)?;
         }
         let artifact = match &envelope.result.output_root {
             Some(root) => {
                 let temporary = materialize_remote_tree(self, root).await?;
-                manifest.artifact_checksum = None;
-                manifest.artifact_checksum = Some(calculate_artifact_checksum(
-                    &manifest,
-                    Some(temporary.path()),
-                )?);
                 Some(TaskCacheStoreArtifact::temporary(temporary))
             }
             None if manifest.roots.is_empty() => None,
             None => bail!("remote action result is missing its output root"),
         };
+        manifest.artifact_checksum = Some(calculate_artifact_checksum(
+            &manifest,
+            artifact.as_ref().map(TaskCacheStoreArtifact::path),
+        )?);
         Ok(Some(TaskCacheStoreEntry {
             manifest: serde_json::to_vec(&manifest)?,
             artifact,
@@ -612,14 +663,19 @@ impl TaskCacheStore for HttpTaskCacheStore {
         if action_digest.hash != key {
             bail!("remote cache action bytes do not match cache key");
         }
+        let manifest: CacheManifest = serde_json::from_slice(manifest)?;
+        if manifest.key != key {
+            bail!("local task cache manifest does not match remote action");
+        }
+        let metadata = serde_json::to_vec(&RemoteClientMetadata::from_manifest(&manifest))?;
         let mut uploads = vec![
             CasBlobUpload {
                 digest: action_digest.clone(),
                 source: CasBlobSource::Bytes(action.to_vec()),
             },
             CasBlobUpload {
-                digest: CacheDigest::blake3(manifest),
-                source: CasBlobSource::Bytes(manifest.to_vec()),
+                digest: CacheDigest::blake3(&metadata),
+                source: CasBlobSource::Bytes(metadata),
             },
         ];
         let metadata = uploads[1].digest.clone();
@@ -1347,7 +1403,10 @@ mod tests {
         let manifest = format!(
             r#"{{"format":2,"key":"{key}","task_identity":"build","artifact_checksum":null,"roots":[],"output":[],"restored_bytes":0,"execution_duration_ns":1}}"#
         );
-        let metadata_digest = CacheDigest::blake3(manifest.as_bytes());
+        let local_manifest: CacheManifest = serde_json::from_str(&manifest).unwrap();
+        let metadata =
+            serde_json::to_vec(&RemoteClientMetadata::from_manifest(&local_manifest)).unwrap();
+        let metadata_digest = CacheDigest::blake3(&metadata);
         let envelope = RemoteActionResultEnvelope {
             result: RemoteActionResult {
                 action: action_digest.clone(),
@@ -1382,7 +1441,7 @@ mod tests {
         let metadata_put = server
             .mock("PUT", metadata_path.as_str())
             .match_header("if-none-match", "*")
-            .match_body(manifest.as_bytes().to_vec())
+            .match_body(metadata.clone())
             .with_status(201)
             .expect(1)
             .create_async()
@@ -1408,7 +1467,7 @@ mod tests {
         let metadata_get = server
             .mock("GET", metadata_path.as_str())
             .with_status(200)
-            .with_body(manifest.as_bytes())
+            .with_body(metadata)
             .expect(1)
             .create_async()
             .await;
@@ -1426,7 +1485,10 @@ mod tests {
             .await
             .unwrap();
         let entry = store.get(key, action.len() as u64).await.unwrap().unwrap();
-        assert_eq!(entry.manifest, manifest.as_bytes());
+        let restored: CacheManifest = serde_json::from_slice(&entry.manifest).unwrap();
+        assert_eq!(restored.key, key);
+        assert!(restored.roots.is_empty());
+        assert!(restored.artifact_checksum.is_some());
         assert!(entry.artifact.is_none());
         action_put.assert_async().await;
         metadata_put.assert_async().await;
