@@ -18,7 +18,7 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value}
 use versions::Versioning;
 
 use crate::backend::unalias_backend;
-use crate::cli::args::{BackendArg, ToolVersionType};
+use crate::cli::args::BackendArg;
 use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
 };
@@ -269,7 +269,18 @@ pub struct MiseTomlToolList(Vec<MiseTomlTool>);
 
 #[derive(Debug, Clone)]
 pub struct MiseTomlTool {
-    pub tt: ToolVersionType,
+    /// The version request exactly as written, still un-rendered.
+    ///
+    /// Deliberately not parsed into a [`ToolVersionType`] here: a `:` inside a template belongs to
+    /// the template, not to a version selector, and templates are not rendered until
+    /// [`MiseToml::to_tool_request_set`]. Parsing at deserialize time made
+    /// `{{ exec(command='echo VER: 1.2.3') | split(pat=': ') | last }}` fail as
+    /// `invalid prefix: {{ exec(command='echo VER`. `ToolRequest::new` parses the rendered string,
+    /// so selectors like `prefix:` and `ref:` are still honoured — just later. This matches what
+    /// `[tasks.*.tools]` and `.tool-versions` already do.
+    ///
+    /// See: <https://github.com/jdx/mise/discussions/5531>
+    pub request: String,
     pub options: Option<ToolVersionOptions>,
 }
 
@@ -277,13 +288,12 @@ fn parse_mise_toml_tool_map<E>(parsed: ParsedToolMap) -> std::result::Result<Mis
 where
     E: de::Error,
 {
-    let tt = parsed.request.parse().map_err(de::Error::custom)?;
     let mut options = ToolVersionOptions::default();
     for (key, value) in parsed.options {
         insert_tool_option(&mut options, key, value)?;
     }
     Ok(MiseTomlTool {
-        tt,
+        request: parsed.request,
         options: Some(options),
     })
 }
@@ -805,6 +815,28 @@ impl MiseToml {
         self.parse_template_with_context(&self.template_context(), input)
     }
 
+    /// Context for a version request that only became invalid after its template was rendered.
+    ///
+    /// Deserialization no longer validates the version, so this is the first place such a failure
+    /// can surface — and it is far from the file that caused it. Name the file, and show the
+    /// template alongside what it produced, since neither alone explains the error.
+    fn tool_request_error_context(
+        &self,
+        short: &str,
+        tool: &MiseTomlTool,
+        rendered: &str,
+    ) -> String {
+        let where_ = format!("{short} in {}", display_path(&self.path));
+        if tool.request == rendered {
+            format!("invalid version for {where_}")
+        } else {
+            format!(
+                "invalid version for {where_}: {} rendered to {rendered:?}",
+                tool.request
+            )
+        }
+    }
+
     fn parse_template_with_context(
         &self,
         context: &TeraContext,
@@ -1161,7 +1193,9 @@ impl ConfigFile for MiseToml {
         Self::insert_resolved_vars(&mut context);
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
+                let version = self.parse_template_with_context(&context, &tool.request)?;
+                // taken before `ba` is consumed below
+                let short = ba.short.clone();
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     // Add placeholder for version since it's not available at config load time
                     // This preserves {{ version }} in the output for install-time rendering
@@ -1228,9 +1262,11 @@ impl ConfigFile for MiseToml {
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
                     ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())?
+                    ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())
+                        .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
                 } else {
-                    ToolRequest::new(ba.clone().into(), &version, source.clone())?
+                    ToolRequest::new(ba.clone().into(), &version, source.clone())
+                        .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
                 };
                 trs.add_version(tvr, &source);
             }
@@ -1558,85 +1594,16 @@ impl Clone for MiseToml {
 
 impl From<ToolRequest> for MiseTomlTool {
     fn from(tr: ToolRequest) -> Self {
-        match tr {
-            ToolRequest::Version {
-                version,
-                options,
-                backend: _backend,
-                source: _source,
-            } => Self {
-                tt: ToolVersionType::Version(version),
-                options: if options.is_empty() {
-                    None
-                } else {
-                    Some(options)
-                },
-            },
-            ToolRequest::Path {
-                path,
-                options,
-                backend: _backend,
-                source: _source,
-            } => Self {
-                tt: ToolVersionType::Path(path),
-                options: if options.is_empty() {
-                    None
-                } else {
-                    Some(options)
-                },
-            },
-            ToolRequest::Prefix {
-                prefix,
-                options,
-                backend: _backend,
-                source: _source,
-            } => Self {
-                tt: ToolVersionType::Prefix(prefix),
-                options: if options.is_empty() {
-                    None
-                } else {
-                    Some(options)
-                },
-            },
-            ToolRequest::Ref {
-                ref_,
-                ref_type,
-                options,
-                backend: _backend,
-                source: _source,
-            } => Self {
-                tt: ToolVersionType::Ref(ref_, ref_type),
-                options: if options.is_empty() {
-                    None
-                } else {
-                    Some(options)
-                },
-            },
-            ToolRequest::Sub {
-                sub,
-                options,
-                orig_version,
-                backend: _backend,
-                source: _source,
-            } => Self {
-                tt: ToolVersionType::Sub { sub, orig_version },
-                options: if options.is_empty() {
-                    None
-                } else {
-                    Some(options)
-                },
-            },
-            ToolRequest::System {
-                options,
-                backend: _backend,
-                source: _source,
-            } => Self {
-                tt: ToolVersionType::System,
-                options: if options.is_empty() {
-                    None
-                } else {
-                    Some(options)
-                },
+        // `ToolRequest::version()` re-emits the selector prefix (`prefix:`, `ref:`, `path:`,
+        // `sub-N:`, `system`), which is the same string this would have been written from, so the
+        // per-variant reconstruction that used to live here is redundant.
+        let options = tr.options();
+        Self {
+            request: tr.version(),
+            options: if options.is_empty() {
+                None
+            } else {
+                Some(options)
             },
         }
     }
@@ -2283,10 +2250,10 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
             where
                 E: de::Error,
             {
-                let tt: ToolVersionType = v
-                    .parse()
-                    .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlToolList(vec![MiseTomlTool { tt, options: None }]))
+                Ok(MiseTomlToolList(vec![MiseTomlTool {
+                    request: v.to_string(),
+                    options: None,
+                }]))
             }
 
             fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
@@ -2333,10 +2300,10 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
             where
                 E: de::Error,
             {
-                let tt: ToolVersionType = v
-                    .parse()
-                    .map_err(|e| de::Error::custom(format!("invalid tool: {e}")))?;
-                Ok(MiseTomlTool { tt, options: None })
+                Ok(MiseTomlTool {
+                    request: v.to_string(),
+                    options: None,
+                })
             }
 
             fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
@@ -2894,6 +2861,64 @@ mod tests {
             "{:#?}",
             cf.to_tool_request_set().unwrap().tools
         )));
+    }
+
+    /// A `:` inside a template belongs to the template, not to a version selector, and the
+    /// template has not been rendered yet when the config is deserialized. Selectors must still
+    /// come out the other side, so this pins the rendered `ToolRequest`, not the raw string.
+    ///
+    /// See: <https://github.com/jdx/mise/discussions/5531>
+    #[tokio::test]
+    async fn test_colon_in_templated_tool_version() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        BRANCH = 'main'
+
+        [tools]
+        terraform = "{{ exec(command='echo VER: 1.0.0') | split(pat=': ') | last | trim }}"
+        jq = { ref = "{{ env.BRANCH }}" }
+        node = "{% if true %}20.0.0{% else %}18.0.0{% endif %}"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let version_of = |short: &str| {
+            trs.tools
+                .iter()
+                .find(|(ba, _)| ba.short == short)
+                .unwrap_or_else(|| panic!("{short} missing"))
+                .1[0]
+                .version()
+        };
+        // the colon belonged to the template, not to a selector
+        assert_eq!(version_of("terraform"), "1.0.0");
+        // ...and a real selector still survives being rendered late
+        assert_eq!(version_of("jq"), "ref:main");
+        assert_eq!(version_of("node"), "20.0.0");
+    }
+
+    /// The version is no longer validated at deserialize time, so a template that renders to an
+    /// unknown selector fails later and further from the config. Pin that the error still names
+    /// the file, the template, and what it became.
+    #[tokio::test]
+    async fn test_templated_tool_version_rendering_to_bad_selector() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            "[tools]\nterraform = \"{{ exec(command='echo bogus:1.0') | trim }}\"\n",
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let err = cf.to_tool_request_set().unwrap_err().to_string();
+        assert!(err.contains("invalid version for terraform"), "{err}");
+        assert!(err.contains(".test.mise.toml"), "{err}");
+        assert!(err.contains("rendered to \"bogus:1.0\""), "{err}");
     }
 
     #[test]

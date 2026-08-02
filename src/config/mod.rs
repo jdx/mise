@@ -1684,17 +1684,47 @@ pub fn config_file_in_dir(dir: &Path) -> PathBuf {
     }
 }
 
+/// The nearest local config file walking up from `start`: the highest-precedence directory
+/// that has one, then the lowest-precedence file inside it.
+///
+/// Both write-target resolvers share this. They were separate implementations of the same
+/// rule, and only one of them was kept current — the ignore filter added for
+/// <https://github.com/jdx/mise/discussions/7015> reached `local_toml_config_path_from_dir`
+/// and not `config_file_from_dir`, so `mise use` picked a file that config loading
+/// deliberately skips and wrote a tool into it that mise would never read back.
+fn nearest_local_config_file(start: &Path, filenames: &[String]) -> Option<PathBuf> {
+    if Settings::no_config() {
+        return None;
+    }
+    for dir in all_dirs_from(start).unwrap_or_default() {
+        if config_dir_is_ignored(&dir, false) {
+            continue;
+        }
+        let files: IndexSet<PathBuf> = filenames
+            .iter()
+            .flat_map(|f| glob(&dir, f).unwrap_or_default())
+            .unique_by(|p| file::desymlink_path(p))
+            .filter(|p| !config_path_is_ignored(p, false))
+            .collect();
+        if let Some(cf) = first_config_file(&files)
+            && !is_global_config(cf)
+        {
+            return Some(cf.clone());
+        }
+    }
+    None
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    for dir in all_dirs().unwrap_or_default() {
-        let files = self::config_files_in_dir(&dir);
-        if let Some(cf) = first_config_file(&files)
-            && !is_global_config(cf)
-        {
-            return cf.clone();
-        }
+    // Walk from the cwd rather than from `p`, which is what this has always done.
+    if let Some(cf) = env::current_dir()
+        .ok()
+        .and_then(|cwd| nearest_local_config_file(&cwd, &DEFAULT_CONFIG_FILENAMES))
+    {
+        return cf;
     }
     match Settings::get().asdf_compat {
         true => p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
@@ -2196,25 +2226,8 @@ pub fn local_toml_config_path() -> PathBuf {
 /// This matches the write-target rule from the docs: choose the highest-precedence
 /// directory first, then the lowest-precedence file inside that directory.
 pub fn local_toml_config_path_from_dir(cwd: &Path) -> PathBuf {
-    if !Settings::no_config() {
-        for dir in all_dirs_from(cwd).unwrap_or_default() {
-            if config_dir_is_ignored(&dir, false) {
-                continue;
-            }
-            let files = TOML_CONFIG_FILENAMES
-                .iter()
-                .flat_map(|f| glob(&dir, f).unwrap_or_default())
-                .unique_by(|p| file::desymlink_path(p))
-                .filter(|p| !config_path_is_ignored(p, false))
-                .collect();
-            if let Some(cf) = first_config_file(&files)
-                && !is_global_config(cf)
-            {
-                return cf.clone();
-            }
-        }
-    }
-    cwd.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
+    nearest_local_config_file(cwd, &TOML_CONFIG_FILENAMES)
+        .unwrap_or_else(|| cwd.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
 }
 
 /// Options for resolving target config file path

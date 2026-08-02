@@ -113,11 +113,12 @@ assert_not_contains "mise run '//projects/frontend:test:*'" "frontend build"
 # Test that relative patterns (without //) are not supported
 assert_fail "mise run 'projects/...:build'" "relative path syntax"
 
-# Test combined patterns - ellipsis in path, asterisk in task
-assert_contains "mise run '//projects/...:test*'" "frontend test"
-assert_contains "mise run '//projects/...:test*'" "frontend test:unit"
-assert_contains "mise run '//projects/...:test*'" "frontend test:integration"
-assert_contains "mise run '//projects/...:test*'" "backend test"
+# Test combined patterns - ellipsis in path and recursive task groups. Include
+# the ungrouped `test` name explicitly because `test:**` starts after `test:`.
+assert_contains "mise run '//projects/...:{test,test:**}'" "frontend test"
+assert_contains "mise run '//projects/...:{test,test:**}'" "frontend test:unit"
+assert_contains "mise run '//projects/...:{test,test:**}'" "frontend test:integration"
+assert_contains "mise run '//projects/...:{test,test:**}'" "backend test"
 
 # Test ellipsis wildcard in different positions
 # Create test structure with nested directories
