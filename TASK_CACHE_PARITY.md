@@ -121,13 +121,13 @@ outside this tracker.
 - [x] Add authentication and repository or organization namespaces
 - [x] Add timeouts, retries, request deduplication, and offline fallback
 - [x] Verify remote artifact integrity and authenticity
-- [ ] Document secret handling for cached logs and artifacts
+- [x] Document secret handling for cached logs and artifacts
 - [ ] Provide a self-hosting reference or compatibility test suite
 
 ## Stabilization
 
 - [ ] Decide which experimental configuration names become stable
-- [ ] Document cache correctness requirements and deterministic-task expectations
+- [x] Document cache correctness requirements and deterministic-task expectations
 - [ ] Publish migration notes if the experimental configuration or artifact format changes
 - [ ] Remove the experimental gate
 - [ ] Delete this tracker
