@@ -83,6 +83,7 @@ impl TaskCacheMode {
 struct CacheKeyMaterial<'a> {
     format: u8,
     task: &'a str,
+    phase: crate::task::TaskRunPhase,
     run: &'a [RunEntry],
     args: &'a [String],
     shell: &'a Option<String>,
@@ -308,6 +309,7 @@ impl TaskArtifactCacheBuilder {
         let material = CacheKeyMaterial {
             format: CACHE_FORMAT_VERSION,
             task: &task.name,
+            phase: task.run_phase,
             run: task.run(),
             args: &task.args,
             shell: &task.shell,
@@ -775,9 +777,10 @@ fn task_cache_entry_lock(cache_dir: &Path, key: &str) -> Result<fslock::LockFile
 
 fn task_cache_identity(task: &Task, root: &Path) -> String {
     hash::hash_blake3_to_str(&format!(
-        "{}\0{}\0{}",
+        "{}\0{}\0{:?}\0{}",
         root.display(),
         task.name,
+        task.run_phase,
         task.config_source.display()
     ))
 }

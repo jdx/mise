@@ -191,7 +191,7 @@ impl TasksDeps {
                     petgraph::dot::Config::EdgeNoLabel
                 ],
                 &|_, _| String::new(),
-                &|_, nr| format!("label = \"{}\"", nr.1.name),
+                &|_, nr| format!("label = \"{}\"", nr.1.graph_display_name()),
             ),
         );
         Ok(())

@@ -133,8 +133,8 @@ assert "echo $graph_error_count" "2"
 cycle_error_count=$(mise tasks validate --json 2>&1 | grep -c '"category": "circular-dependency"' || true)
 assert "echo $cycle_error_count" "6"
 
-# A depends_post reference reverses the scheduling edge, so this is acyclic:
-# a runs before b both because a schedules b afterward and b depends on a.
+# A depends_post reference creates a separate post phase, so this is acyclic:
+# a runs normally, then again as b's post-phase prerequisite, followed by b.
 cat <<EOF >mise.toml
 [tasks.a]
 run = "echo a"
@@ -147,6 +147,7 @@ EOF
 
 assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
 assert "mise run a" "a
+a
 b"
 
 # Test missing dependency

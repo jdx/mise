@@ -16,9 +16,11 @@ EOF
 # Test that task dependencies are resolved correctly
 # With depends_post, the dependencies appear as children in the tree
 assert "mise tasks deps" "bar
-└── baz
 baz
 foo
+foo (post)
+└── baz
+bar (post)
 └── baz"
 
 # Test that the task runs successfully (just check it doesn't hang)
@@ -42,10 +44,32 @@ EOF
 
 assert "mise tasks deps" "main
 one
-└── main
 three
-└── main
 two
+one (post)
+└── main
+two (post)
+└── main
+three (post)
 └── main"
 
 assert "mise run main"
+
+# A shared post occurrence waits for every selected parent and runs once.
+cat <<'EOF' >mise.toml
+[tasks.parent-a]
+run = 'sleep 0.1; echo parent-a >> "$ORDER_FILE"'
+depends_post = ["cleanup"]
+
+[tasks.parent-b]
+run = 'sleep 0.2; echo parent-b >> "$ORDER_FILE"'
+depends_post = ["cleanup"]
+
+[tasks.cleanup]
+run = 'echo cleanup >> "$ORDER_FILE"'
+EOF
+order_file="$TMPDIR/shared-depends-post-order"
+ORDER_FILE="$order_file" mise run --jobs 4 parent-a ::: parent-b
+assert "tail -n 1 '$order_file'" "cleanup"
+assert "grep -c '^cleanup$' '$order_file'" "1"
+assert "grep -c '^parent-' '$order_file'" "2"

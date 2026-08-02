@@ -8,7 +8,11 @@ cat <<EOF >mise.toml
 run = "echo check-failed && exit 1"
 
 [tasks.cleanup]
+depends = ["cleanup-pre"]
 run = "echo cleanup-should-not-run"
+
+[tasks.cleanup-pre]
+run = "echo cleanup-pre-should-not-run"
 
 [tasks.deploy]
 depends = ["check"]
@@ -20,6 +24,9 @@ EOF
 output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise run deploy 2>&1)" || true
 if [[ $output == *"cleanup-should-not-run"* ]]; then
   fail "depends_post ran even though pre-dependency failed and main task never executed"
+fi
+if [[ $output == *"cleanup-pre-should-not-run"* ]]; then
+  fail "depends_post prerequisite ran even though the parent task never executed"
 fi
 if [[ $output == *"deploying"* ]]; then
   fail "main task ran even though pre-dependency failed"

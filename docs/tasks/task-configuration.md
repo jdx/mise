@@ -212,6 +212,11 @@ run = "echo 'linting complete'"
 ```
 
 Supports the same argument, environment variable, and optional dependency syntax as `depends`.
+Dependencies of a `depends_post` task also wait until the parent task finishes, so an entire cleanup
+chain runs after the main work. Mise runs the full subtree if the parent started, even when the
+parent fails, but skips it when a regular dependency fails before the parent can start. The same
+task may be referenced by both `depends` and `depends_post`; in that case it runs once before the
+parent and once afterward.
 
 ### `wait_for`
 
