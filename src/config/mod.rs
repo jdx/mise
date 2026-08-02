@@ -1665,23 +1665,53 @@ fn is_conf_d_file(p: &Path) -> bool {
         .is_some_and(|d| d.file_name().is_some_and(|n| n == "conf.d"))
 }
 
+/// The config files in `dir` that config loading would actually read, with the same
+/// exclusions `load_config_paths` applies.
+///
+/// [`config_files_in_dir`] deliberately does **not** filter — `mise trust` has to see a
+/// file in order to un-ignore it, and `mise fmt` and task discovery want everything on
+/// disk. Choosing a file to *write* to is the one case that must not.
+fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<PathBuf> {
+    if config_dir_is_ignored(dir, false) {
+        return IndexSet::new();
+    }
+    filenames
+        .iter()
+        .flat_map(|f| glob(dir, f).unwrap_or_default())
+        .unique_by(|p| file::desymlink_path(p))
+        .filter(|p| !config_path_is_ignored(p, false))
+        .collect()
+}
+
 /// The config file to write to **inside `dir` itself**, or where one should be created.
 ///
 /// `--path`/`--file` name a specific directory, so the answer has to be inside it: "if a directory
 /// is specified, it will look for a config file in that directory" (`mise use --help`). This
 /// deliberately does not walk up. [`config_file_from_dir`] is the walking one, and it is only ever
 /// asked about the cwd.
+///
+/// Candidates that config loading skips are skipped here too: writing into one produces a
+/// file mise will never read back. When nothing in `dir` is loadable the default name is
+/// still returned — the directory was named explicitly, so mise creates what was asked for
+/// — but the caller is warned that it will not be read.
 pub fn config_file_in_dir(dir: &Path) -> PathBuf {
-    let files = config_files_in_dir(dir);
+    let files = loadable_config_files_in_dir(dir, &DEFAULT_CONFIG_FILENAMES);
     if let Some(cf) = first_config_file(&files)
         && !is_global_config(cf)
     {
         return cf.clone();
     }
-    match Settings::get().asdf_compat {
+    let fallback = match Settings::get().asdf_compat {
         true => dir.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
         false => dir.join(&*MISE_DEFAULT_CONFIG_FILENAME),
+    };
+    if config_dir_is_ignored(dir, false) || config_path_is_ignored(&fallback, false) {
+        warn_once!(
+            "{p} is excluded from config loading, so mise will not read back what it writes there",
+            p = display_path(&fallback)
+        );
     }
+    fallback
 }
 
 /// The nearest local config file walking up from `start`: the highest-precedence directory
