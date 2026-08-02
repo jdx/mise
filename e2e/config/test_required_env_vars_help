@@ -5,10 +5,11 @@ set -euo pipefail
 
 assert_contains() {
   local output
+  local expected
   output="${1}"
-  shift
-  if ! echo "${output}" | grep -q "$@"; then
-    echo "Expected to find '$*' in:"
+  expected="${2}"
+  if ! grep -Fq -- "${expected}" <<<"${output}"; then
+    echo "Expected to find '${expected}' in:"
     echo "${output}"
     exit 1
   fi
