@@ -943,7 +943,7 @@ pub(crate) fn verify_remote_cache_entry(
     for root in &manifest.roots {
         ensure_safe_relative(root)?;
     }
-    if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
+    if remove_nested_roots(manifest.roots.clone()).len() != manifest.roots.len() {
         bail!("remote task cache manifest contains duplicate or nested roots");
     }
     if manifest.roots.is_empty() && archive_path.is_some() {
@@ -1809,6 +1809,31 @@ mod tests {
             verify_remote_cache_entry("remote-key", &serde_json::to_vec(&manifest).unwrap(), None,)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn remote_entries_accept_noncanonical_root_order() {
+        let archive = tempfile::NamedTempFile::new().unwrap();
+        fs::write(archive.path(), "archive").unwrap();
+        let mut manifest = CacheManifest {
+            format: CACHE_FORMAT_VERSION,
+            key: "remote-key".into(),
+            task_identity: "task".into(),
+            artifact_checksum: None,
+            roots: vec![PathBuf::from("z"), PathBuf::from("a")],
+            output: Vec::new(),
+            restored_bytes: 0,
+            execution_duration_ns: 0,
+        };
+        manifest.artifact_checksum =
+            Some(calculate_artifact_checksum(&manifest, Some(archive.path())).unwrap());
+
+        verify_remote_cache_entry(
+            "remote-key",
+            &serde_json::to_vec(&manifest).unwrap(),
+            Some(archive.path()),
+        )
+        .unwrap();
     }
 
     #[test]
