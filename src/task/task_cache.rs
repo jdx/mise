@@ -4,7 +4,8 @@ use crate::duration;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::task::task_cache_store::{
-    LocalTaskCacheStore, TASK_CACHE_STORE_VERSION, TaskCacheStore, compose_task_cache_stores,
+    LocalTaskCacheStore, RemoteTaskCacheConfig, TASK_CACHE_STORE_VERSION, TaskCacheStore,
+    compose_task_cache_stores,
 };
 use crate::task::task_source_checker::{
     TaskCacheInputs, build_output_matcher, expand_glob_braces, is_output, output_glob_patterns,
@@ -247,6 +248,7 @@ pub(crate) struct TaskCacheContext<'a> {
     pub(crate) dependency_keys: &'a [String],
     pub(crate) command_inputs: Vec<CommandInput>,
     pub(crate) explain: bool,
+    pub(crate) mode: TaskCacheMode,
 }
 
 impl TaskArtifactCache {
@@ -302,6 +304,7 @@ impl TaskArtifactCacheBuilder {
             dependency_keys,
             command_inputs,
             explain,
+            mode,
         } = ctx;
         let Self {
             root,
@@ -380,7 +383,32 @@ impl TaskArtifactCacheBuilder {
         let limits = task_cache_limits()?;
         cleanup_abandoned_partial_writes_once(&cache_dir);
         let local: Arc<dyn TaskCacheStore> = Arc::new(LocalTaskCacheStore::new(cache_dir.clone()));
-        let store = compose_task_cache_stores(local, None)?;
+        let settings = Settings::get();
+        let remote = if mode == TaskCacheMode::LocalOnly {
+            None
+        } else if let Some(base_url) = settings.task.cache_remote_url.clone() {
+            let namespace = settings
+                .task
+                .cache_remote_namespace
+                .as_deref()
+                .map(str::trim)
+                .filter(|namespace| !namespace.is_empty())
+                .ok_or_else(|| {
+                    eyre!(
+                        "task.cache_remote_namespace is required when task.cache_remote_url is set"
+                    )
+                })?
+                .to_string();
+            Some(RemoteTaskCacheConfig {
+                base_url: base_url.parse().wrap_err("invalid task.cache_remote_url")?,
+                namespace,
+                staging_dir: cache_dir.join("remote"),
+                mode: settings.task.cache_remote_mode,
+            })
+        } else {
+            None
+        };
+        let store = compose_task_cache_stores(local, remote)?;
         if store.version() != TASK_CACHE_STORE_VERSION {
             bail!(
                 "unsupported task cache store version {}; expected {}",

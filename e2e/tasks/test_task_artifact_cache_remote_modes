@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+task.cache_remote_url = "http://127.0.0.1:9/cache"
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = "printf 'ran\\n' >> runs.txt"
+sources = ["input.txt"]
+outputs = []
+EOF
+
+printf 'input\n' >input.txt
+
+assert_fail_contains "mise run build" "task.cache_remote_namespace is required"
+
+# local-only must bypass remote configuration completely.
+MISE_TASK_CACHE=local-only mise run build
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+assert_fail_contains "MISE_TASK_CACHE_REMOTE_MODE=invalid mise run build" "unknown variant"

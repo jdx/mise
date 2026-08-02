@@ -71,6 +71,7 @@ pub mod workspace;
 pub(crate) use task_cache::TaskCacheOutput;
 pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
 pub(crate) use task_cache_audit::TaskCacheAudit;
+pub use task_cache_store::TaskCacheRemoteMode;
 pub use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};

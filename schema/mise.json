@@ -1800,6 +1800,20 @@
               "description": "[experimental] Maximum total size of task output cache entries.",
               "type": "string"
             },
+            "cache_remote_mode": {
+              "default": "read-write",
+              "description": "[experimental] Remote task cache access mode.",
+              "type": "string",
+              "enum": ["read-write", "read-only", "write-only"]
+            },
+            "cache_remote_namespace": {
+              "description": "[experimental] Namespace sent to the remote task cache.",
+              "type": "string"
+            },
+            "cache_remote_url": {
+              "description": "[experimental] Base URL for the remote task cache service.",
+              "type": "string"
+            },
             "disable_paths": {
               "default": [],
               "description": "Paths that mise will not look for tasks in.",

@@ -671,6 +671,7 @@ impl TaskExecutor {
                             dependency_keys: &dependency_state.cache_keys,
                             command_inputs,
                             explain: self.task_cache_explain || self.task_cache_explain_json,
+                            mode: self.task_cache,
                         })
                         .await?;
                     if let Some(explanation) = cache.explanation() {

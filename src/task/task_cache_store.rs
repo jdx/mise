@@ -32,6 +32,44 @@ const REMOTE_CACHE_BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 /// manifest format so stores and transports can evolve without changing keys.
 pub(crate) const TASK_CACHE_STORE_VERSION: u8 = 1;
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum TaskCacheRemoteMode {
+    #[default]
+    ReadWrite,
+    ReadOnly,
+    WriteOnly,
+}
+
+impl TaskCacheRemoteMode {
+    fn reads(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::ReadOnly)
+    }
+
+    fn writes(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::WriteOnly)
+    }
+}
+
+pub(crate) struct RemoteTaskCacheConfig {
+    pub(crate) base_url: Url,
+    pub(crate) namespace: String,
+    pub(crate) staging_dir: PathBuf,
+    pub(crate) mode: TaskCacheRemoteMode,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 struct CacheDigest {
     algorithm: String,
@@ -291,12 +329,14 @@ pub(crate) trait TaskCacheStore: Send + Sync {
 pub(crate) struct CompositeTaskCacheStore {
     local: Arc<dyn TaskCacheStore>,
     remote: Arc<dyn TaskCacheStore>,
+    remote_mode: TaskCacheRemoteMode,
 }
 
 impl CompositeTaskCacheStore {
     pub(crate) fn new(
         local: Arc<dyn TaskCacheStore>,
         remote: Arc<dyn TaskCacheStore>,
+        remote_mode: TaskCacheRemoteMode,
     ) -> Result<Self> {
         if local.version() != remote.version() {
             bail!(
@@ -305,7 +345,11 @@ impl CompositeTaskCacheStore {
                 remote.version()
             );
         }
-        Ok(Self { local, remote })
+        Ok(Self {
+            local,
+            remote,
+            remote_mode,
+        })
     }
 
     fn copy_artifact(source: Option<&Path>, write: &TaskCacheStoreWrite) -> Result<bool> {
@@ -349,6 +393,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         if let Some(entry) = self.local.get(key, action_size).await? {
             return Ok(Some(entry));
         }
+        if !self.remote_mode.reads() {
+            return Ok(None);
+        }
         let entry = match self.remote.get(key, action_size).await {
             Ok(Some(entry)) => entry,
             Ok(None) => return Ok(None),
@@ -381,6 +428,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         self.local
             .commit(key, action, write, manifest, has_artifact)
             .await?;
+        if !self.remote_mode.writes() {
+            return Ok(());
+        }
         let mirror: Result<()> = async {
             let entry = self
                 .local
@@ -410,6 +460,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
     }
 
     async fn remove(&self, key: &str) -> Result<()> {
+        if !self.remote_mode.writes() {
+            return self.local.remove(key).await;
+        }
         // Delete remotely first so a failed remote delete cannot allow the
         // entry to be promoted back after its local copy was removed.
         self.remote.remove(key).await?;
@@ -442,17 +495,21 @@ impl TaskCacheStore for CompositeTaskCacheStore {
 
 pub(crate) fn compose_task_cache_stores(
     local: Arc<dyn TaskCacheStore>,
-    remote: Option<(Url, String, PathBuf)>,
+    remote: Option<RemoteTaskCacheConfig>,
 ) -> Result<Arc<dyn TaskCacheStore>> {
     match remote {
-        Some((base_url, namespace, staging_dir)) => {
+        Some(remote_config) => {
             let remote = Arc::new(HttpTaskCacheStore {
-                base_url: normalized_base_url(base_url),
-                namespace,
-                staging_dir,
+                base_url: normalized_base_url(remote_config.base_url),
+                namespace: remote_config.namespace,
+                staging_dir: remote_config.staging_dir,
                 client: reqwest::Client::new(),
             });
-            Ok(Arc::new(CompositeTaskCacheStore::new(local, remote)?))
+            Ok(Arc::new(CompositeTaskCacheStore::new(
+                local,
+                remote,
+                remote_config.mode,
+            )?))
         }
         None => Ok(local),
     }
