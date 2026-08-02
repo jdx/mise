@@ -122,7 +122,7 @@ outside this tracker.
 - [x] Add timeouts, retries, request deduplication, and offline fallback
 - [x] Verify remote artifact integrity and authenticity
 - [x] Document secret handling for cached logs and artifacts
-- [ ] Provide a self-hosting reference or compatibility test suite
+- [x] Provide a self-hosting reference or compatibility test suite
 
 ## Stabilization
 
