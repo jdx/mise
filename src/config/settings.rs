@@ -588,11 +588,11 @@ impl Settings {
         if cfg!(test) {
             settings.experimental = true;
         }
+        trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
         let settings = Arc::new(settings);
         LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         time!("try_get done");
-        trace!("Settings: {:#?}", settings);
         Ok(settings)
     }
 
@@ -1167,6 +1167,14 @@ impl Settings {
     }
 }
 
+fn redacted_settings_for_debug(settings: &Settings) -> Settings {
+    let mut debug_settings = settings.clone();
+    if debug_settings.task.cache_remote_token.is_some() {
+        debug_settings.task.cache_remote_token = Some("[redacted]".to_string());
+    }
+    debug_settings
+}
+
 impl Display for Settings {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match toml::to_string_pretty(self) {
@@ -1358,6 +1366,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_settings_redact_remote_cache_token() {
+        let mut settings = Settings::default();
+        settings.task.cache_remote_token = Some("super-secret-token".to_string());
+
+        let debug = format!("{:?}", redacted_settings_for_debug(&settings));
+
+        assert!(!debug.contains("super-secret-token"));
+        assert!(debug.contains("[redacted]"));
+    }
 
     fn credential_command_settings_table() -> toml::Table {
         toml::from_str::<toml::Value>(

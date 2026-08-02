@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
 use reqwest::StatusCode;
-use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, IF_NONE_MATCH};
+use reqwest::header::{
+    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue, IF_NONE_MATCH,
+};
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,7 +18,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
-use url::Url;
+use url::{Host, Url};
 
 const REMOTE_CACHE_PROTOCOL_VERSION: u8 = 1;
 const REMOTE_CACHE_PROTOCOL_HEADER: &str = "Mise-Cache-Protocol";
@@ -68,6 +70,7 @@ pub(crate) struct RemoteTaskCacheConfig {
     pub(crate) namespace: String,
     pub(crate) staging_dir: PathBuf,
     pub(crate) mode: TaskCacheRemoteMode,
+    pub(crate) token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -502,11 +505,14 @@ pub(crate) fn compose_task_cache_stores(
 ) -> Result<Arc<dyn TaskCacheStore>> {
     match remote {
         Some(remote_config) => {
+            let authorization = authorization_header(remote_config.token.as_deref())?;
+            validate_remote_url(&remote_config.base_url)?;
             let remote = Arc::new(HttpTaskCacheStore {
                 base_url: normalized_base_url(remote_config.base_url),
                 namespace: remote_config.namespace,
                 staging_dir: remote_config.staging_dir,
                 client: reqwest::Client::new(),
+                authorization,
             });
             Ok(Arc::new(CompositeTaskCacheStore::new(
                 local,
@@ -518,11 +524,39 @@ pub(crate) fn compose_task_cache_stores(
     }
 }
 
+fn authorization_header(token: Option<&str>) -> Result<Option<HeaderValue>> {
+    let Some(token) = token.map(str::trim).filter(|token| !token.is_empty()) else {
+        return Ok(None);
+    };
+    let mut value = HeaderValue::from_str(&format!("Bearer {token}"))?;
+    value.set_sensitive(true);
+    Ok(Some(value))
+}
+
+fn validate_remote_url(base_url: &Url) -> Result<()> {
+    if base_url.scheme() == "https" {
+        return Ok(());
+    }
+    if base_url.scheme() != "http" {
+        bail!("task.cache_remote_url must use HTTPS");
+    }
+    let is_loopback = base_url.host().is_some_and(|host| match host {
+        Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
+        Host::Ipv4(address) => address.is_loopback(),
+        Host::Ipv6(address) => address.is_loopback(),
+    });
+    if !is_loopback {
+        bail!("task.cache_remote_url must use HTTPS except for loopback development servers");
+    }
+    Ok(())
+}
+
 struct HttpTaskCacheStore {
     base_url: Url,
     namespace: String,
     staging_dir: PathBuf,
     client: reqwest::Client,
+    authorization: Option<HeaderValue>,
 }
 
 impl HttpTaskCacheStore {
@@ -547,11 +581,17 @@ impl HttpTaskCacheStore {
         url: Url,
         media_type: &'static str,
     ) -> reqwest::RequestBuilder {
-        self.client
+        let request = self
+            .client
             .request(method, url)
             .header(REMOTE_CACHE_PROTOCOL_HEADER, "1")
             .header(REMOTE_CACHE_NAMESPACE_HEADER, &self.namespace)
-            .header(ACCEPT, media_type)
+            .header(ACCEPT, media_type);
+        if let Some(authorization) = &self.authorization {
+            request.header(AUTHORIZATION, authorization)
+        } else {
+            request
+        }
     }
 
     async fn get_blob(&self, digest: &CacheDigest, media_type: &'static str) -> Result<Vec<u8>> {
@@ -1247,6 +1287,27 @@ mod tests {
         assert!(sha256.matches_file(file.path()).unwrap());
     }
 
+    #[test]
+    fn bearer_authorization_headers_are_sensitive() {
+        let header = authorization_header(Some(" test-token ")).unwrap().unwrap();
+        assert_eq!(header, "Bearer test-token");
+        assert!(header.is_sensitive());
+        assert!(authorization_header(Some(" ")).unwrap().is_none());
+    }
+
+    #[test]
+    fn remote_urls_require_https_except_for_loopback() {
+        for url in [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://[::1]:3000",
+            "https://cache.example.com",
+        ] {
+            validate_remote_url(&url.parse().unwrap()).unwrap();
+        }
+        assert!(validate_remote_url(&"http://cache.example.com".parse().unwrap()).is_err());
+    }
+
     struct FailingTaskCacheStore {
         inner: LocalTaskCacheStore,
     }
@@ -1589,6 +1650,7 @@ mod tests {
             namespace: "test-namespace".into(),
             staging_dir: staging.path().to_path_buf(),
             client: reqwest::Client::new(),
+            authorization: Some(HeaderValue::from_static("Bearer test-token")),
         };
         let write = store.begin_write(key).unwrap();
 
