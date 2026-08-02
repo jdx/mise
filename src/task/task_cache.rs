@@ -926,32 +926,6 @@ fn verify_artifact_checksum(manifest: &CacheManifest, archive_path: Option<&Path
     Ok(())
 }
 
-/// Validate an untrusted remote entry before the composite store promotes it
-/// into the local cache.
-pub(crate) fn verify_remote_cache_entry(
-    key: &str,
-    manifest_bytes: &[u8],
-    archive_path: Option<&Path>,
-) -> Result<()> {
-    let manifest: CacheManifest = serde_json::from_slice(manifest_bytes)?;
-    if manifest.format != CACHE_FORMAT_VERSION || manifest.key != key {
-        bail!("remote task cache manifest does not match cache key");
-    }
-    if manifest.artifact_checksum.is_none() {
-        bail!("remote task cache manifest is missing its artifact checksum");
-    }
-    for root in &manifest.roots {
-        ensure_safe_relative(root)?;
-    }
-    if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
-        bail!("remote task cache manifest contains duplicate or nested roots");
-    }
-    if manifest.roots.is_empty() && archive_path.is_some() {
-        bail!("remote task cache entry has an unexpected artifact");
-    }
-    verify_artifact_checksum(&manifest, archive_path)
-}
-
 pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCacheEntry>> {
     Settings::get().ensure_experimental("task artifact caching")?;
     let cache_dir = task_cache_dir();
@@ -1790,25 +1764,6 @@ mod tests {
         let stale_archive = tempfile::NamedTempFile::new().unwrap();
         fs::write(stale_archive.path(), "stale archive").unwrap();
         verify_artifact_checksum(&manifest, Some(stale_archive.path())).unwrap();
-    }
-
-    #[test]
-    fn remote_entries_require_artifact_checksums() {
-        let manifest = CacheManifest {
-            format: CACHE_FORMAT_VERSION,
-            key: "remote-key".into(),
-            task_identity: "task".into(),
-            artifact_checksum: None,
-            roots: Vec::new(),
-            output: Vec::new(),
-            restored_bytes: 0,
-            execution_duration_ns: 0,
-        };
-
-        assert!(
-            verify_remote_cache_entry("remote-key", &serde_json::to_vec(&manifest).unwrap(), None,)
-                .is_err()
-        );
     }
 
     #[test]
