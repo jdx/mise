@@ -176,14 +176,19 @@ rather than being silently changed.
 
 ### Action result
 
-An action result has media type `application/vnd.mise.cache-action-result.v1+json`:
+An action-result response and commit body have media type
+`application/vnd.mise.cache-action-result.v1+json`. The wire object is always an envelope so an
+unsigned result and a signed result have the same schema:
 
 ```json
 {
-  "version": 1,
-  "action": { "algorithm": "blake3", "hash": "...", "size": 789 },
-  "output_root": { "algorithm": "blake3", "hash": "...", "size": 456 },
-  "metadata": { "algorithm": "blake3", "hash": "...", "size": 234 }
+  "result": {
+    "version": 1,
+    "action": { "algorithm": "blake3", "hash": "...", "size": 789 },
+    "output_root": { "algorithm": "blake3", "hash": "...", "size": 456 },
+    "metadata": { "algorithm": "blake3", "hash": "...", "size": 234 }
+  },
+  "signatures": []
 }
 ```
 
@@ -299,8 +304,8 @@ collected. A client-side cache clear operation must not imply authority to delet
 
 ## Signatures and provenance
 
-CAS digests provide integrity but do not prove who associated an action with an output. A result may
-therefore be wrapped in signatures:
+CAS digests provide integrity but do not prove who associated an action with an output. The
+action-result envelope may therefore contain signatures:
 
 ```json
 {
