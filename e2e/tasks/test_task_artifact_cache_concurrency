@@ -34,6 +34,13 @@ assert "find \"$cache_dir\" -maxdepth 1 -name '*.json' | wc -l | tr -d ' '" "1"
 assert "find \"$cache_dir\" -maxdepth 1 -name '*.tar.zst' | wc -l | tr -d ' '" "1"
 assert "find \"$cache_dir\" -maxdepth 1 -name '*.part-*' | wc -l | tr -d ' '" "0"
 
+# A later cache-enabled process cleans partial files left by an interrupted
+# writer, including entries unrelated to the task it is about to restore.
+printf 'abandoned archive\n' >"$cache_dir/abandoned.part-deadbeef.tar.zst"
+printf 'abandoned manifest\n' >"$cache_dir/abandoned.part-deadbeef.json"
+mise run --task-cache read-only build >/dev/null
+assert "find \"$cache_dir\" -maxdepth 1 -name '*.part-*' | wc -l | tr -d ' '" "0"
+
 # Readers share both the cache key and working directory. Entry locks protect
 # the archive/manifest pair, while the existing output lock serializes install.
 rm -rf dist
