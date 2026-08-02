@@ -70,9 +70,16 @@ cache_dir="$(dirname "$manifest")"
 cp "$cache_dir/$cache_key.json" "$cache_dir/$cache_key.part-deadbeef.json"
 cp "$cache_dir/$cache_key.tar.zst" "$cache_dir/$cache_key.part-deadbeef.tar.zst"
 assert "mise cache task build --json | jq '.[0].entries | length'" "2"
+mapfile -t build_keys < <(mise cache task build --json | jq -r '.[0].entries[].key')
+build_current_key="$(mise cache task build --json | jq -r '.[0].entries[] | select(.current).key')"
+build_state="$(grep -rl "^${build_current_key}$" "$MISE_STATE_DIR/task-artifacts")"
 
 mise cache clear --task build
 assert_json "mise cache task build --json | jq '.[0].entries'" '[]'
+for key in "${build_keys[@]}"; do
+  assert "test ! -e \"$cache_dir/$key.json\" && test ! -e \"$cache_dir/$key.tar.zst\" && echo removed" "removed"
+done
+assert "test ! -e \"$build_state\" && echo removed" "removed"
 assert "find \"$cache_dir\" -name '*.part-*' | wc -l | tr -d ' '" "0"
 assert "mise cache task other --json | jq '.[0].entries | length'" "1"
 assert "cat dist/result.txt" "two"
@@ -93,25 +100,32 @@ mise run twin
 build_key="$(mise cache task build --json | jq -r '.[0].entries[] | select(.current).key')"
 twin_key="$(mise cache task twin --json | jq -r '.[0].entries[] | select(.current).key')"
 twin_state="$(grep -rl "^${twin_key}$" "$MISE_STATE_DIR/task-artifacts")"
+build_manifest="$cache_dir/$build_key.json"
+build_archive="$cache_dir/$build_key.tar.zst"
 printf '%s\n' "$build_key" >"$twin_state"
 mise cache clear --task twin
 assert "mise cache task build --json | jq '.[0].entries | length'" "1"
+assert "test -f \"$build_manifest\" && test -f \"$build_archive\" && echo present" "present"
+assert "cat dist/result.txt" "two"
 
 # Legacy manifests can only be associated through a freshness pointer. If a
 # second task has a stale pointer to the same key, scoped clearing must warn and
 # leave the unverifiable entry for its actual task.
-build_manifest="$cache_dir/$build_key.json"
 jq '.task_identity = ""' "$build_manifest" >"$build_manifest.tmp"
 mv "$build_manifest.tmp" "$build_manifest"
 printf '%s\n' "$build_key" >"$twin_state"
 assert_contains "mise cache clear --task twin 2>&1" "ownership cannot be verified"
 assert "test -f \"$build_manifest\" && echo present" "present"
+assert "test -f \"$build_archive\" && echo present" "present"
 assert "mise cache task build --json | jq '.[0].entries | length'" "1"
 
 assert_fail_contains "mise cache task missing" "Task not found: missing"
 assert_fail_contains "mise cache task '//missing'" "missing task name in monorepo path"
 
 # Whole-cache clearing removes freshness pointers as well as artifact files.
+cp "$build_manifest" "$cache_dir/$build_key.part-abandoned.json"
+cp "$build_archive" "$cache_dir/$build_key.part-abandoned.tar.zst"
 assert "find \"$MISE_STATE_DIR/task-artifacts\" -name '*.key' | wc -l | tr -d ' '" "2"
 mise cache clear
 assert "find \"$MISE_STATE_DIR/task-artifacts\" -name '*.key' 2>/dev/null | wc -l | tr -d ' '" "0"
+assert "find \"$MISE_CACHE_DIR/task-artifacts\" -type f 2>/dev/null | wc -l | tr -d ' '" "0"
