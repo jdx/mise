@@ -369,7 +369,15 @@ Servers must bound their retention and scope them to the authenticated identity 
 
 A conforming self-hosted server may use a filesystem, S3-compatible object storage, or another blob
 store. Clients communicate with the cache service rather than receiving general object-store
-credentials. A server using S3 should:
+credentials.
+
+The official reference server is maintained separately at
+[`jdx/mise-cache`](https://github.com/jdx/mise-cache). It provides filesystem and S3-compatible blob
+storage, PostgreSQL metadata, namespace-scoped authorization, Docker Compose, and a Helm chart. The
+server remains a separate deployment and release lifecycle from the mise client while this document
+is the canonical protocol specification.
+
+A server using S3 should:
 
 - keep action metadata, authorization, provenance, access times, references, and quotas in a
   transactional metadata store;
