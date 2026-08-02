@@ -584,6 +584,9 @@ impl Drop for PartialCacheFiles {
 }
 
 fn cleanup_abandoned_partial_writes_once(cache_dir: &Path) {
+    if !cache_dir.is_dir() {
+        return;
+    }
     let should_clean = CLEANED_PARTIAL_CACHE_DIRS
         .lock()
         .unwrap_or_else(|err| err.into_inner())
@@ -1388,6 +1391,20 @@ mod tests {
         assert!(!abandoned_archive.exists());
         assert!(complete_manifest.exists());
         assert!(unrelated.exists());
+    }
+
+    #[test]
+    fn missing_cache_directory_remains_eligible_for_partial_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let cache_dir = root.path().join("later-cache");
+        cleanup_abandoned_partial_writes_once(&cache_dir);
+
+        fs::create_dir(&cache_dir).unwrap();
+        let abandoned = cache_dir.join("abandoned.part-deadbeef.json");
+        fs::write(&abandoned, "partial manifest").unwrap();
+        cleanup_abandoned_partial_writes_once(&cache_dir);
+
+        assert!(!abandoned.exists());
     }
 
     #[test]
