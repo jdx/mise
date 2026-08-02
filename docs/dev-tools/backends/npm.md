@@ -13,8 +13,10 @@ the npm registry directly over HTTP, and packages are installed with mise's
 embedded [aube](https://github.com/jdx/aube) package manager. The registry,
 scoped registries (`@scope:registry`), and auth tokens configured in `~/.npmrc`
 (or `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` environment variables are honored
-by both. `node` is only needed to _run_ the installed tools (and any package
-lifecycle scripts), not to install them.
+by both. An installed package may still require `node` at runtime, and enabled
+package lifecycle scripts may require it during installation. When `node` is
+already configured, mise orders its installation before `npm:` tools, but the
+npm backend does not add or install `node` automatically.
 
 To shell out to the npm CLI instead — `npm view` for metadata and
 `npm install -g` for installs — set
@@ -43,15 +45,6 @@ supporting its release-age flag:
 If you want transitive protection when shelling out, install and use a package
 manager version that meets the corresponding requirement above. Older versions
 may fail while processing the forwarded argument.
-
-`node` is installed automatically as a dependency. To use a specific package
-manager CLI instead of the embedded installer:
-
-```sh
-mise use -g pnpm
-# or
-mise use -g bun
-```
 
 ## Socket security
 
