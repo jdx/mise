@@ -366,6 +366,7 @@ impl TaskArtifactCache {
     }
 
     pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
+        let _entry_lock = self.entry_lock().ok()?;
         let (archive_path, manifest_path) = self.paths();
         if !manifest_path.is_file()
             || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
@@ -388,6 +389,7 @@ impl TaskArtifactCache {
     }
 
     pub(crate) fn restore(&self, task: &Task) -> Result<TaskCacheRestore> {
+        let _entry_lock = self.entry_lock()?;
         let (archive_path, manifest_path) = self.paths();
         if !manifest_path.is_file() {
             return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
@@ -495,6 +497,7 @@ impl TaskArtifactCache {
         }
 
         file::create_dir_all(&self.cache_dir)?;
+        let _entry_lock = self.entry_lock()?;
         let (archive_path, manifest_path) = self.paths();
         let nonce = crate::rand::random_string(8);
         let archive_partial = self
@@ -546,6 +549,10 @@ impl TaskArtifactCache {
             self.cache_dir.join(format!("{}.tar.zst", self.key)),
             self.cache_dir.join(format!("{}.json", self.key)),
         )
+    }
+
+    fn entry_lock(&self) -> Result<fslock::LockFile> {
+        task_cache_entry_lock(&self.cache_dir, &self.key)
     }
 
     fn read_manifest(&self) -> Result<CacheManifest> {
@@ -625,6 +632,10 @@ pub(crate) fn task_cache_entries(task: &Task, root: &Path) -> Result<Vec<TaskCac
         {
             continue;
         }
+        let Some(key) = manifest_path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let _entry_lock = task_cache_entry_lock(&cache_dir, key)?;
         let manifest: CacheManifest = match fs::read(&manifest_path)
             .map_err(Report::from)
             .and_then(|contents| serde_json::from_slice(&contents).map_err(Report::from))
@@ -688,6 +699,7 @@ pub(crate) fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClea
         .clone()
         .fold(0_u64, |total, entry| total.saturating_add(entry.size_bytes));
     for entry in identified_entries.clone() {
+        let _entry_lock = task_cache_entry_lock(&cache_dir, &entry.key)?;
         remove_cache_file(&cache_dir.join(format!("{}.tar.zst", entry.key)))?;
         remove_cache_file(&cache_dir.join(format!("{}.json", entry.key)))?;
     }
@@ -719,6 +731,10 @@ pub(crate) fn clear_task_cache(task: &Task, root: &Path) -> Result<TaskCacheClea
         if manifest_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }
+        let Some(key) = stem.split_once(".part-").map(|(key, _)| key) else {
+            continue;
+        };
+        let _entry_lock = task_cache_entry_lock(&cache_dir, key)?;
         let Ok(contents) = fs::read(&manifest_path) else {
             continue;
         };
@@ -749,6 +765,12 @@ fn remove_cache_file(path: &Path) -> Result<()> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err.into()),
     }
+}
+
+fn task_cache_entry_lock(cache_dir: &Path, key: &str) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::new(&cache_dir.join(format!("{key}.json")))
+        .with_callback(|path| debug!("waiting for task cache entry lock {}", path.display()))
+        .lock()
 }
 
 fn task_cache_identity(task: &Task, root: &Path) -> String {
@@ -1239,6 +1261,9 @@ fn metadata_mode(metadata: &fs::Metadata) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
     use super::*;
 
     #[test]
@@ -1251,6 +1276,28 @@ mod tests {
         assert_eq!(config.env, ["PROFILE"]);
         assert_eq!(config.command_inputs, ["node --version"]);
         assert!(toml::from_str::<TaskCacheConfig>("remote = true").is_err());
+    }
+
+    #[test]
+    fn entry_locks_serialize_same_key_without_blocking_other_keys() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let held = task_cache_entry_lock(cache_dir.path(), "shared").unwrap();
+        let _other = task_cache_entry_lock(cache_dir.path(), "independent").unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let cache_path = cache_dir.path().to_path_buf();
+
+        let waiter = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            let _lock = task_cache_entry_lock(&cache_path, "shared").unwrap();
+            acquired_tx.send(()).unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert!(acquired_rx.recv_timeout(Duration::from_millis(50)).is_err());
+        drop(held);
+        acquired_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        waiter.join().unwrap();
     }
 
     #[test]
