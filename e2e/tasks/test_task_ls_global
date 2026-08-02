@@ -68,6 +68,13 @@ myglobalfile
 relative-meta
 systemglobalfile
 templated-meta"
+assert "mise tasks ls --local" "mylocal"
+assert "mise tasks --local ls" "mylocal"
+assert_fail "mise tasks --name-only ls --json" "--name-only cannot be used with --json, --extended, or --usage"
+assert_contains "mise tasks mylocal --json" '"name": "mylocal"'
+assert_fail "mise tasks mylocal --local" "task list options cannot be used with task info"
+assert_fail "mise tasks deps --local" "unexpected argument '--local'"
+assert_fail "mise tasks --global deps" "task list options cannot be used with subcommands"
 assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"
