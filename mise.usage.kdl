@@ -3292,6 +3292,16 @@ Examples:
     flag "-E --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
     }
+    flag "-f --file --path" help="The TOML file to update" {
+        long_help #"""
+The TOML file to update
+
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+"""#
+        arg <FILE>
+    }
     flag "-g --global" help="Set the environment variable in the global config file"
     flag --age-encrypt help="[experimental] Encrypt the value with age before storing"
     flag --age-key-file help="[experimental] Age identity file for encryption" {
@@ -3319,16 +3329,6 @@ Can be used multiple times. Requires --age-encrypt.
         arg <PATH_OR_PUBKEY>
     }
     flag --complete help="Render completions" hide=#true
-    flag "--file --path" help="The TOML file to update" {
-        long_help #"""
-The TOML file to update
-
-Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-"""#
-        arg <FILE>
-    }
     flag --no-redact help="Show raw values instead of redacting secrets"
     flag --prompt help="Prompt for environment variable values"
     flag "--remove --rm --unset" help="Remove the environment variable from config file" var=#true hide=#true {

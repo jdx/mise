@@ -1041,6 +1041,16 @@ mod tests {
                 "missing visible --{alias} alias for --{arg_name} on {}",
                 path.join(" ")
             );
+
+            // The letter differs by canonical name — `-p` where it is `--path`, `-f` where
+            // it is `--file` — so only require that one exists. `mise set` was the single
+            // command without one, which is what https://github.com/jdx/mise/discussions/5501
+            // ran into: the option was reachable, just not the way every neighbour spells it.
+            assert!(
+                arg.get_short().is_some(),
+                "missing short flag for --{arg_name} on {}",
+                path.join(" ")
+            );
         }
     }
 

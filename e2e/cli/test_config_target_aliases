@@ -24,6 +24,10 @@ assert_contains "cat alias.toml" 'dummy = "2"'
 mise set --file alias.toml ALIAS_VAR=set-via-file
 assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-file"'
 
+# and so does the short form, which `mise set` was the last of these to gain
+mise set -f alias.toml ALIAS_VAR=set-via-short
+assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-short"'
+
 # the commands that undo those two take the same pair of names
 # `mise unuse --file` is `mise unuse --path`
 mise unuse --no-prune --file alias.toml dummy@2

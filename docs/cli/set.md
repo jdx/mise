@@ -27,6 +27,14 @@ e.g.: NODE_ENV=production
 
 Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
+### `-f --file <FILE>`
+
+The TOML file to update
+
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+
 ### `-g --global`
 
 Set the environment variable in the global config file
@@ -52,14 +60,6 @@ Can be used multiple times. Requires --age-encrypt.
 [experimental] SSH recipient (public key or path) for age encryption
 
 Can be used multiple times. Requires --age-encrypt.
-
-### `--file <FILE>`
-
-The TOML file to update
-
-Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
 ### `--no-redact`
 

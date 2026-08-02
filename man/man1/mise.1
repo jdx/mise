@@ -3272,6 +3272,13 @@ Use `\-E <env>` to create/modify environment\-specific config files like `mise.<
 \fB\-E, \-\-env\fR \fI<ENV>\fR
 Create/modify an environment\-specific config file like .mise.<env>.toml
 .TP
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
+The TOML file to update
+
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+.TP
 \fB\-g, \-\-global\fR
 Set the environment variable in the global config file
 .TP
@@ -3295,13 +3302,6 @@ Can be used multiple times. Requires \-\-age\-encrypt.
 .TP
 \fB\-\-complete\fR
 Render completions
-.TP
-\fB\-\-file, \-\-path\fR \fI<FILE>\fR
-The TOML file to update
-
-Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
 \fB\-\-no\-redact\fR
 Show raw values instead of redacting secrets

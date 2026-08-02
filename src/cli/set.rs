@@ -35,6 +35,14 @@ pub struct Set {
     #[clap(short = 'E', long, overrides_with_all = &["global", "file"])]
     env: Option<String>,
 
+    /// The TOML file to update
+    ///
+    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+    /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+    /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+    #[clap(long, short, visible_alias = "path", verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
+    file: Option<PathBuf>,
+
     /// Set the environment variable in the global config file
     #[clap(short, long, verbatim_doc_comment, overrides_with_all = &["file", "env"])]
     global: bool,
@@ -64,14 +72,6 @@ pub struct Set {
     /// Render completions
     #[clap(long, hide = true)]
     complete: bool,
-
-    /// The TOML file to update
-    ///
-    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-    /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-    /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-    #[clap(long, visible_alias = "path", verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
-    file: Option<PathBuf>,
 
     /// Show raw values instead of redacting secrets
     #[clap(long)]
