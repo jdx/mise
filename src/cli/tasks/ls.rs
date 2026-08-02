@@ -8,7 +8,7 @@ use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_list::find_non_executable_task_files;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_json::json;
 
@@ -90,7 +90,7 @@ pub enum SortOrder {
 }
 
 impl TasksLs {
-    pub fn merge(mut self, later: Self) -> Self {
+    pub fn merge(mut self, later: Self) -> Result<Self> {
         if later.global || later.local {
             self.global = later.global;
             self.local = later.local;
@@ -105,7 +105,10 @@ impl TasksLs {
         self.sort = later.sort.or(self.sort);
         self.sort_order = later.sort_order.or(self.sort_order);
         self.usage |= later.usage;
-        self
+        if self.name_only && (self.json || self.extended || self.usage) {
+            bail!("--name-only cannot be used with --json, --extended, or --usage");
+        }
+        Ok(self)
     }
 
     pub fn has_options(&self) -> bool {

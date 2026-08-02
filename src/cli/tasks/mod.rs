@@ -56,7 +56,7 @@ impl Tasks {
     pub async fn run(self) -> Result<()> {
         let Self { command, task, ls } = self;
         let cmd = match command {
-            Some(Commands::Ls(cmd)) => Commands::Ls(ls.merge(cmd)),
+            Some(Commands::Ls(cmd)) => Commands::Ls(ls.merge(cmd)?),
             Some(cmd) => {
                 if ls.has_options() {
                     bail!("task list options cannot be used with subcommands");
