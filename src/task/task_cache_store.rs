@@ -473,6 +473,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         let Err(remove_err) = self.local.remove_local(key, action_size).await else {
             return Ok(());
         };
+        if !self.remote_mode.reads() {
+            return Err(remove_err);
+        }
         let Some(entry) = self.remote.get(key, action_size).await? else {
             return Err(remove_err);
         };
@@ -1654,6 +1657,28 @@ mod tests {
         assert_eq!(
             local.get("expired", 6).await.unwrap().unwrap().manifest,
             b"fresh-remote"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_only_store_does_not_repair_local_removal_from_remote() {
+        let local_root = tempfile::tempdir().unwrap();
+        let remote_root = tempfile::tempdir().unwrap();
+        let local_inner = LocalTaskCacheStore::new(local_root.path().to_path_buf());
+        seed(&local_inner, "expired", b"stale-local", None).await;
+        let local: Arc<dyn TaskCacheStore> =
+            Arc::new(RemoveFailingTaskCacheStore { inner: local_inner });
+        let remote: Arc<dyn TaskCacheStore> =
+            Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
+        seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::WriteOnly)
+                .unwrap();
+
+        assert!(composite.remove_local("expired", 6).await.is_err());
+        assert_eq!(
+            local.get("expired", 6).await.unwrap().unwrap().manifest,
+            b"stale-local"
         );
     }
 }
