@@ -21,7 +21,7 @@ use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, config, hooks};
+use crate::{backend, config, hooks, runtime_symlinks};
 
 impl Toolset {
     #[async_backtrace::framed]
@@ -164,7 +164,13 @@ impl Toolset {
         preflight_system_deps(config, &versions, opts).await;
 
         // Build dependency graph and install using Kahn's algorithm
-        let (installed, failed) = self.install_with_deps(config, versions, opts).await;
+        let (installed, failed, attempted_failures) =
+            self.install_with_deps(config, versions, opts).await;
+        let failed_backends = attempted_failures
+            .iter()
+            .filter_map(|tr| tr.backend().ok())
+            .unique_by(|backend| backend.ba().installs_path.clone())
+            .collect_vec();
 
         // Update footer for errors found before install tasks are spawned.
         let pre_install_error_count = disabled_backend_errors.len() + plugin_errors.len();
@@ -185,6 +191,12 @@ impl Toolset {
             trace!("install: resolving");
             if let Err(err) = self.resolve(config).await {
                 debug!("error resolving versions after install: {err:#}");
+            }
+            if !failed_backends.is_empty()
+                && let Err(err) =
+                    runtime_symlinks::rebuild_for_backends(config, self, failed_backends).await
+            {
+                warn!("failed to restore runtime symlinks after install failure: {err:#}");
             }
         }
 
@@ -314,15 +326,20 @@ impl Toolset {
     }
 
     /// Install tools using Kahn's algorithm for dependency ordering.
-    /// Returns (successful_installations, failed_installations).
+    /// Returns (successful_installations, failed_installations, attempted_failures).
+    /// The final collection excludes tools blocked before their installer was spawned.
     async fn install_with_deps(
         &self,
         config: &Arc<Config>,
         versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> (Vec<ToolVersion>, Vec<(ToolRequest, eyre::Error)>) {
+    ) -> (
+        Vec<ToolVersion>,
+        Vec<(ToolRequest, eyre::Error)>,
+        Vec<ToolRequest>,
+    ) {
         if versions.is_empty() {
-            return (vec![], vec![]);
+            return (vec![], vec![], vec![]);
         }
 
         // Build index map to preserve original request order
@@ -341,7 +358,7 @@ impl Toolset {
                     .into_iter()
                     .map(|tr| (tr, eyre::eyre!("Failed to build dependency graph: {}", e)))
                     .collect();
-                return (vec![], failed);
+                return (vec![], failed, vec![]);
             }
         };
 
@@ -358,6 +375,7 @@ impl Toolset {
 
         let mut installed = vec![];
         let mut failed = vec![];
+        let mut attempted_failures = vec![];
         let mut jset: JoinSet<(ToolRequest, Result<ToolVersion>)> = JoinSet::new();
         // Track in-flight tools to recover from task panics
         let mut in_flight: HashMap<tokio::task::Id, ToolRequest> = HashMap::new();
@@ -380,6 +398,7 @@ impl Toolset {
                         }
                         Ok((tr, Err(e))) => {
                             mpr.footer_inc(1);
+                            attempted_failures.push(tr.clone());
                             failed.push((tr.clone(), e));
                             tool_deps.lock().await.complete_failure(&tr);
                         }
@@ -387,6 +406,7 @@ impl Toolset {
                             // Task panicked - try to recover the tool request from in_flight tracking
                             mpr.footer_inc(1);
                             if let Some(tr) = in_flight.remove(&e.id()) {
+                                attempted_failures.push(tr.clone());
                                 failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
                                 tool_deps.lock().await.complete_failure(&tr);
                             } else {
@@ -446,12 +466,14 @@ impl Toolset {
                 }
                 Ok((tr, Err(e))) => {
                     mpr.footer_inc(1);
+                    attempted_failures.push(tr.clone());
                     failed.push((tr.clone(), e));
                     tool_deps.lock().await.complete_failure(&tr);
                 }
                 Err(e) => {
                     mpr.footer_inc(1);
                     if let Some(tr) = in_flight.remove(&e.id()) {
+                        attempted_failures.push(tr.clone());
                         failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
                         tool_deps.lock().await.complete_failure(&tr);
                     } else {
@@ -474,7 +496,7 @@ impl Toolset {
             request_order.get(&key).copied().unwrap_or(usize::MAX)
         });
 
-        (installed, failed)
+        (installed, failed, attempted_failures)
     }
 
     /// Install a single tool
