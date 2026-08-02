@@ -1,0 +1,4 @@
+backends = ["github:uxlint-net/uxlint-cli"]
+description = "UX linter that audits a website in a real browser and reports issues with fixes"
+os = ["linux", "macos"]
+test = { cmd = "uxlint --version", expected = "uxlint {{version}}" }
