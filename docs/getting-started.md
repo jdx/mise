@@ -27,12 +27,6 @@ Verify the installation:
 - `~/.local/bin` does not need to be in `PATH`. mise will automatically add its own directory to `PATH`
   when [activated](#activate-mise).
 
-== Brew
-
-```shell
-brew install mise
-```
-
 == Windows
 ::: code-group
 
