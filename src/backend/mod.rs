@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -2200,6 +2200,66 @@ pub trait Backend: Debug + Send + Sync {
         file::create_dir_all(link.parent().unwrap())?;
         let link = file::make_symlink(target, &link)?;
         Ok(Some(link))
+    }
+    fn sync_symlinks(
+        &self,
+        target_prefix: &Path,
+        links: Vec<(String, PathBuf)>,
+    ) -> Result<BTreeSet<String>> {
+        let mut desired = BTreeMap::new();
+        for (version, target) in links {
+            // Preserve the first provider entry for a version, matching the
+            // previous create-if-missing loop when providers expose duplicates.
+            desired.entry(version).or_insert(target);
+        }
+        let installs_path = &self.ba().installs_path;
+        let mut versions = desired.keys().cloned().collect::<BTreeSet<_>>();
+
+        if installs_path.exists() {
+            for entry in installs_path.read_dir()? {
+                let path = entry?.path();
+                if !is_runtime_symlink(&path)
+                    && file::is_symlink_to_prefix(&path, target_prefix)?
+                    && let Some(version) = path.file_name().and_then(|v| v.to_str())
+                {
+                    versions.insert(version.to_string());
+                }
+            }
+        }
+
+        file::create_dir_all(installs_path)?;
+        let mut changed = BTreeSet::new();
+        for version in versions {
+            let _state_lock = install_state::lock_tool_version(&self.ba().short, &version)?;
+            let link = installs_path.join(&version);
+            let runtime_link = is_runtime_symlink(&link);
+            let provider_link = !runtime_link && file::is_symlink_to_prefix(&link, target_prefix)?;
+            let Some(target) = desired.get(&version) else {
+                if provider_link {
+                    file::remove_symlink_or_junction(&link)?;
+                }
+                continue;
+            };
+
+            if !runtime_link && target.exists() && file::is_symlink_to(&link, target) {
+                continue;
+            }
+
+            let entry_exists = std::fs::symlink_metadata(&link).is_ok();
+            if entry_exists && !provider_link {
+                // Never overwrite a managed install, runtime alias, or link
+                // owned by another sync provider.
+                continue;
+            }
+
+            if entry_exists {
+                file::make_symlink(target, &link)?;
+                changed.insert(version);
+            } else if self.create_symlink(&version, target)?.is_some() {
+                changed.insert(version);
+            }
+        }
+        Ok(changed)
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
