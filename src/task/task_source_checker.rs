@@ -378,6 +378,20 @@ pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
     }
 }
 
+/// Return the outermost config root that contains the task working directory.
+///
+/// Source patterns are anchored here so workspace-rooted patterns and task-CWD
+/// relative patterns use the same namespace.
+pub(crate) fn task_source_match_root(root: &Path, config: &Config) -> PathBuf {
+    config
+        .config_files
+        .values()
+        .filter_map(|cf| cf.project_root())
+        .filter(|pr| root.starts_with(pr) || *pr == root)
+        .min_by_key(|p| p.components().count())
+        .unwrap_or_else(|| root.to_path_buf())
+}
+
 /// Collect source file metadatas for a task, anchored at the correct workspace root.
 async fn collect_source_metadatas(
     task: &Task,
@@ -394,13 +408,7 @@ async fn collect_source_metadatas(
     // lexicographic path order, so a subproject config may be returned
     // before the workspace root config (mise.toml) even though
     // the workspace root has a shorter path.
-    let match_root_owned = config
-        .config_files
-        .values()
-        .filter_map(|cf| cf.project_root())
-        .filter(|pr| root.starts_with(pr) || *pr == root)
-        .min_by_key(|p| p.components().count())
-        .unwrap_or_else(|| root.clone());
+    let match_root_owned = task_source_match_root(&root, config);
     let match_root = match_root_owned.as_path();
     let matcher = build_source_matcher(match_root, &root, &task.sources);
     let glob_patterns = source_glob_patterns(&task.sources);

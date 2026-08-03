@@ -1613,6 +1613,7 @@ mod tests {
             task.cache,
             Some(TaskCacheConfig {
                 enabled: true,
+                audit: false,
                 env: vec!["NODE_ENV".to_string()],
                 command_inputs: vec!["node --version".to_string()],
             })

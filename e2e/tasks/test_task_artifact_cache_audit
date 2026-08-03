@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+mkdir -p bin
+cat <<'EOF' >bin/strace
+#!/usr/bin/env bash
+set -euo pipefail
+
+trace=
+while (($#)); do
+  case $1 in
+  -o)
+    trace=$2
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *) shift ;;
+  esac
+done
+if [[ -z $trace ]]; then
+  exec "$@"
+fi
+cat <<TRACE >"$trace"
+123 openat(AT_FDCWD<$PWD>, "input.txt", O_RDONLY) = 3
+123 openat(AT_FDCWD<$PWD>, "../shared.txt", O_RDONLY) = 3
+123 openat(AT_FDCWD<$PWD>, "secret.txt", O_RDONLY) = 3
+123 openat(AT_FDCWD<$PWD>, "dist/result.txt", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+123 openat(AT_FDCWD<$PWD>, "leak.txt", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+TRACE
+exec "$@"
+EOF
+chmod +x bin/strace
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+dir = "pkg"
+run = "mkdir -p dist && cat input.txt secret.txt ../shared.txt >dist/result.txt && touch leak.txt"
+sources = ["input.txt", "{{ config_root }}/shared.txt"]
+outputs = ["dist"]
+cache = { enabled = true, audit = true }
+EOF
+
+mkdir -p pkg
+printf 'declared\n' >pkg/input.txt
+printf 'workspace source\n' >shared.txt
+printf 'undeclared\n' >pkg/secret.txt
+
+output=$(PATH="$PWD/bin:$PATH" mise run --force build 2>&1)
+assert_contains "echo \"$output\"" "cache audit detected undeclared read: secret.txt"
+assert_contains "echo \"$output\"" "cache audit detected undeclared write: leak.txt"
+assert_not_contains "echo \"$output\"" "undeclared read: input.txt"
+assert_not_contains "echo \"$output\"" "undeclared read: shared.txt"
+assert_not_contains "echo \"$output\"" "undeclared write: dist/result.txt"
+
+# Audit mode is advisory: successful tasks still publish cache entries.
+rm -rf pkg/dist pkg/leak.txt
+assert_contains "PATH=\"$PWD/bin:$PATH\" mise run build 2>&1" "restored outputs from cache"

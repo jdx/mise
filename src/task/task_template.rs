@@ -381,6 +381,7 @@ mod tests {
         let template = TaskTemplate {
             cache: Some(TaskCacheConfig {
                 enabled: true,
+                audit: false,
                 env: vec!["PROFILE".to_string()],
                 command_inputs: vec![],
             }),
