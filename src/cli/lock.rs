@@ -112,6 +112,19 @@ struct LockChange {
     new_versions: Vec<String>,
 }
 
+struct LockTaskResult {
+    short: String,
+    version: String,
+    platform: String,
+    status: LockTaskStatus,
+}
+
+enum LockTaskStatus {
+    Updated,
+    Unresolved,
+    ProvenanceFailed,
+}
+
 impl Lock {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::get();
@@ -166,6 +179,7 @@ impl Lock {
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
         let mut has_lock_targets = false;
         let mut all_provenance_errors: Vec<String> = Vec::new();
+        let mut all_platform_regressions: Vec<String> = Vec::new();
         let mut all_changes: Vec<LockChange> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
@@ -303,6 +317,14 @@ impl Lock {
             let (results, provenance_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
+            all_provenance_errors.extend(provenance_errors);
+
+            let platform_regressions =
+                self.platform_regression_errors(&lockfile, &stale_versions, &results);
+            if !platform_regressions.is_empty() {
+                all_platform_regressions.extend(platform_regressions);
+                continue;
+            }
 
             // Prune stale versions AFTER provenance checks complete
             self.prune_stale_versions(&mut lockfile, &tools);
@@ -314,7 +336,10 @@ impl Lock {
 
             // Print summary
             if !self.json {
-                let successful = results.iter().filter(|(_, _, ok)| *ok).count();
+                let successful = results
+                    .iter()
+                    .filter(|result| matches!(result.status, LockTaskStatus::Updated))
+                    .count();
                 let skipped = results.len() - successful;
                 miseprintln!(
                     "{} Updated {} platform entries ({} skipped)",
@@ -328,8 +353,6 @@ impl Lock {
                     style(display_path(lockfile_path)).cyan()
                 );
             }
-
-            all_provenance_errors.extend(provenance_errors);
         }
 
         if !has_lock_targets && !self.json {
@@ -378,8 +401,9 @@ impl Lock {
             miseprintln!("{}", serde_json::to_string_pretty(&all_changes)?);
         }
 
-        if !all_provenance_errors.is_empty() {
-            return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
+        all_platform_regressions.extend(all_provenance_errors);
+        if !all_platform_regressions.is_empty() {
+            return Err(eyre::eyre!(all_platform_regressions.join("\n")));
         }
 
         Ok(())
@@ -511,6 +535,65 @@ impl Lock {
     ) -> BTreeMap<String, Vec<String>> {
         let current_versions = self.current_tool_versions(tools);
         self.stale_versions_for_current(lockfile, &current_versions)
+    }
+
+    fn platform_regression_errors(
+        &self,
+        lockfile: &Lockfile,
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        results: &[LockTaskResult],
+    ) -> Vec<String> {
+        // Cross-platform locking is best-effort because many tools intentionally
+        // support only a subset of the targeted platforms. A skipped platform is
+        // only fatal when pruning the stale version would remove an entry that was
+        // previously resolvable. Multiple current versions are ambiguous because
+        // an unresolved result cannot be paired reliably with a particular stale
+        // version, so preserve the best-effort behavior in that case.
+        let current_versions = results.iter().fold(
+            BTreeMap::<&str, BTreeSet<&str>>::new(),
+            |mut versions, result| {
+                versions
+                    .entry(&result.short)
+                    .or_default()
+                    .insert(&result.version);
+                versions
+            },
+        );
+        results
+            .iter()
+            .filter(|result| !matches!(result.status, LockTaskStatus::Updated))
+            .filter_map(|result| {
+                if current_versions.get(result.short.as_str())?.len() != 1 {
+                    return None;
+                }
+                let stale_versions = stale_versions.get(&result.short)?;
+                let locked_tools = lockfile.tools().get(&result.short)?;
+                if locked_tools.iter().any(|tool| {
+                    tool.version == result.version
+                        && tool.platforms.contains_key(&result.platform)
+                }) {
+                    return None;
+                }
+                let lost_versions = locked_tools
+                    .iter()
+                    .filter(|tool| {
+                        stale_versions.contains(&tool.version)
+                            && tool.platforms.contains_key(&result.platform)
+                    })
+                    .map(|tool| tool.version.as_str())
+                    .collect::<Vec<_>>();
+                if lost_versions.is_empty() {
+                    return None;
+                }
+                Some(format!(
+                    "failed to resolve {}@{} for {}; refusing to replace locked version(s) {} that support this platform",
+                    result.short,
+                    result.version,
+                    result.platform,
+                    lost_versions.join(", ")
+                ))
+            })
+            .collect()
     }
 
     fn stale_versions_for_current(
@@ -990,7 +1073,7 @@ impl Lock {
         tools: &[LockTool],
         platforms: &[Platform],
         lockfile: &mut Lockfile,
-    ) -> Result<(Vec<(String, String, bool)>, Vec<String>)> {
+    ) -> Result<(Vec<LockTaskResult>, Vec<String>)> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -1055,12 +1138,26 @@ impl Lock {
                     match lockfile::apply_lock_result(lockfile, resolution) {
                         Err(e) => {
                             provenance_errors.push(e.to_string());
-                            results.push((short, platform_key, false));
+                            results.push(LockTaskResult {
+                                short,
+                                version,
+                                platform: platform_key,
+                                status: LockTaskStatus::ProvenanceFailed,
+                            });
                         }
                         // A resolution that wrote nothing is a skip, not an
                         // update — backends that can't resolve metadata without
                         // installing return empty info rather than an error.
-                        Ok(applied) => results.push((short, platform_key, ok && applied)),
+                        Ok(applied) => results.push(LockTaskResult {
+                            short,
+                            version,
+                            platform: platform_key,
+                            status: if ok && applied {
+                                LockTaskStatus::Updated
+                            } else {
+                                LockTaskStatus::Unresolved
+                            },
+                        }),
                     }
                 }
                 Err(e) => {
@@ -1070,7 +1167,10 @@ impl Lock {
         }
 
         // Report entries actually written, not tasks attempted
-        let updated = results.iter().filter(|(_, _, ok)| *ok).count();
+        let updated = results
+            .iter()
+            .filter(|result| matches!(result.status, LockTaskStatus::Updated))
+            .count();
         pr.finish_with_message(format!("{} platform entries", updated));
 
         Ok((results, provenance_errors))
@@ -1094,7 +1194,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::Lock;
+    use super::{Lock, LockTaskResult, LockTaskStatus};
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
@@ -1320,5 +1420,113 @@ mod tests {
             lockfile.all_platform_keys(),
             std::collections::BTreeSet::from(["linux-x64".to_string()])
         );
+    }
+
+    #[test]
+    fn test_platform_regression_rejects_unresolved_version_bump() {
+        let cmd = lock_cmd(&[]);
+        let lockfile = lockfile_with_dummy();
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
+            status: LockTaskStatus::Unresolved,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for linux-x64"));
+        assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_platform_regression_allows_new_unsupported_platform() {
+        let cmd = lock_cmd(&[]);
+        let lockfile = lockfile_with_dummy();
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "macos-arm64".to_string(),
+            status: LockTaskStatus::Unresolved,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_platform_regression_allows_existing_current_platform() {
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy();
+        lockfile.set_platform_info(
+            "dummy",
+            "2.0.0",
+            None,
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:current".to_string()),
+                ..Default::default()
+            },
+        );
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
+            status: LockTaskStatus::Unresolved,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_platform_regression_rejects_provenance_failure() {
+        let cmd = lock_cmd(&[]);
+        let lockfile = lockfile_with_dummy();
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
+            status: LockTaskStatus::ProvenanceFailed,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for linux-x64"));
+        assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_platform_regression_allows_ambiguous_multi_version_bump() {
+        let cmd = lock_cmd(&[]);
+        let lockfile = lockfile_with_dummy();
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![
+            LockTaskResult {
+                short: "dummy".to_string(),
+                version: "2.0.0".to_string(),
+                platform: "linux-x64".to_string(),
+                status: LockTaskStatus::Unresolved,
+            },
+            LockTaskResult {
+                short: "dummy".to_string(),
+                version: "3.0.0".to_string(),
+                platform: "linux-x64".to_string(),
+                status: LockTaskStatus::Updated,
+            },
+        ];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert!(errors.is_empty());
     }
 }
