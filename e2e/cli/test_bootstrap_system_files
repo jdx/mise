@@ -11,6 +11,17 @@ managed_file="$managed_nested/example.conf"
 managed_owner="$(id -un)"
 managed_group="$(id -gn)"
 
+# Dry runs validate ownership before claiming the plan can be applied.
+missing_owner="mise-bootstrap-missing-owner-$$"
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/missing-owner"]
+content = "unreachable"
+owner = "$missing_owner"
+EOF
+assert_fail "mise bootstrap files apply --dry-run --yes" "user '$missing_owner' does not exist"
+assert_fail "mise bootstrap plan" "user '$missing_owner' does not exist"
+assert_fail "test -e $PWD/missing-owner"
+
 cat <<EOF >mise.toml
 [bootstrap.directories."$managed_dir"]
 owner = "$managed_owner"

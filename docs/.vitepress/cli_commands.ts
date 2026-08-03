@@ -28,11 +28,25 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
+      "__apply-account-plan": {
+        hide: true,
+      },
       "__apply-system-plan": {
         hide: true,
       },
       "__inspect-system-files": {
         hide: true,
+      },
+      accounts: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
       },
       dotfiles: {
         hide: false,

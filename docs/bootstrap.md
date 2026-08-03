@@ -1,7 +1,7 @@
 # Bootstrap
 
-`mise bootstrap` sets up a machine for the current config in one command: OS
-packages, privileged files and directories, git repos, dotfiles, mise shell
+`mise bootstrap` sets up a machine for the current config in one command: Linux
+users and groups, OS packages, privileged files and directories, git repos, dotfiles, mise shell
 activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
 the user's login shell, tools, and any final project-specific task. It can
 consume declared secret inputs without storing their values in mise config. You
@@ -20,32 +20,34 @@ Before making changes, mise resolves any required
 [`[bootstrap.secrets]`](/bootstrap/secrets.html) used by the files phase. This
 preflight prevents a missing input from leaving a partially provisioned host.
 
-1. `mise bootstrap plugins apply` installs package manager plugins declared in
+1. `mise bootstrap accounts apply` converges
+   [`[bootstrap.users]` and `[bootstrap.groups]`](/bootstrap/accounts.html).
+2. `mise bootstrap plugins apply` installs package manager plugins declared in
    [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
-2. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
-3. `mise bootstrap files apply` converges
+3. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
+4. `mise bootstrap files apply` converges
    [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
-4. `mise bootstrap repos apply` clones or updates
+5. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-5. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
-6. `mise bootstrap mise-shell-activate apply` configures shell activation from
+6. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+7. `mise bootstrap mise-shell-activate apply` configures shell activation from
    [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
-7. `mise bootstrap macos defaults apply` writes
+8. `mise bootstrap macos defaults apply` writes
    [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
-8. `mise bootstrap macos launchd-agents apply` writes and loads
+9. `mise bootstrap macos launchd-agents apply` writes and loads
    [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
-9. `mise bootstrap linux systemd-units apply` converges
-   [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
-   by writing unit files, enabling/disabling them, and starting/stopping them
-   as configured.
-10. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
-11. `mise install` installs missing `[tools]`.
-12. Plugin package managers apply after their host tools are available.
-13. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-14. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+10. `mise bootstrap linux systemd-units apply` converges
+    [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
+    by writing unit files, enabling/disabling them, and starting/stopping them
+    as configured.
+11. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
+12. `mise install` installs missing `[tools]`.
+13. Plugin package managers apply after their host tools are available.
+14. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+15. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`plugins`, `packages`, `files`, `repos`, `dotfiles`, `mise-shell-activate`,
+`accounts`, `plugins`, `packages`, `files`, `repos`, `dotfiles`, `mise-shell-activate`,
 `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`,
 `task`, and `final-hook`. The old shorter names `shell`, `defaults`, `launchd`,
 and `systemd` are still accepted as aliases. The flag can be repeated or
@@ -78,6 +80,15 @@ set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
 
 [bootstrap.secrets]
 service_token = "EXAMPLE_SERVICE_TOKEN"
+
+[bootstrap.groups.example]
+system = true
+
+[bootstrap.users.example]
+system = true
+group = "example"
+home = "/var/lib/example"
+create_home = true
 
 [bootstrap.directories."/opt/example"]
 owner = "root"

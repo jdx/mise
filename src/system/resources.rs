@@ -221,6 +221,52 @@ pub async fn plan(
     secrets: &super::secrets::SecretValues,
 ) -> Result<BootstrapPlan> {
     let mut plan = BootstrapPlan::default();
+    let accounts = super::accounts::prepare_requests_from_config(config)?;
+    let group_states = accounts
+        .groups
+        .iter()
+        .map(|group| (group.name.clone(), group.state))
+        .collect::<HashMap<_, _>>();
+    let user_states = accounts
+        .users
+        .iter()
+        .map(|user| (user.name.clone(), user.state))
+        .collect::<HashMap<_, _>>();
+    for group in &accounts.groups {
+        plan.insert(group.plan())?;
+    }
+    for user in &accounts.users {
+        plan.insert(user.plan())?;
+        if user.state == super::accounts::AccountState::Present {
+            for group in user
+                .group
+                .iter()
+                .chain(user.groups.iter().flat_map(|groups| groups.iter()))
+            {
+                if group_states.get(group) == Some(&super::accounts::AccountState::Present) {
+                    plan.add_dependency(
+                        &ResourceId::new("user", &user.name),
+                        ResourceId::new("group", group),
+                    )?;
+                }
+            }
+        }
+    }
+    for group in accounts
+        .groups
+        .iter()
+        .filter(|group| group.state == super::accounts::AccountState::Absent)
+    {
+        for user in accounts.users.iter().filter(|user| {
+            user.state == super::accounts::AccountState::Absent
+                || user.current_primary_group() == Some(group.name.as_str())
+        }) {
+            plan.add_dependency(
+                &ResourceId::new("group", &group.name),
+                ResourceId::new("user", &user.name),
+            )?;
+        }
+    }
     for manager_packages in super::packages_from_config(config) {
         let manager = manager_packages.manager;
         let manager_name = manager.name().to_string();
@@ -270,12 +316,27 @@ pub async fn plan(
     }
     let (files, directories, unavailable_files) =
         super::managed_files::status_requests_from_config(config, secrets)?;
+    super::managed_files::validate_principals(
+        &files,
+        &directories,
+        cfg!(target_os = "linux").then_some(&accounts),
+        cfg!(target_os = "linux"),
+    )?;
     let directory_states = directories
         .iter()
         .map(|directory| (directory.path.clone(), directory.state))
         .collect::<std::collections::HashMap<_, _>>();
     for directory in &directories {
         plan.insert(directory.plan()?)?;
+        add_account_dependencies(
+            &mut plan,
+            &ResourceId::new("directory", directory.path.to_string_lossy()),
+            directory.state,
+            directory.owner.as_deref(),
+            directory.group.as_deref(),
+            &user_states,
+            &group_states,
+        )?;
     }
     for directory in &directories {
         let Some((parent, parent_state)) = directory
@@ -321,6 +382,15 @@ pub async fn plan(
         let resource = file.plan()?;
         let id = resource.id.clone();
         plan.insert(resource)?;
+        add_account_dependencies(
+            &mut plan,
+            &id,
+            file.state,
+            file.owner.as_deref(),
+            file.group.as_deref(),
+            &user_states,
+            &group_states,
+        )?;
         if let Some((parent, parent_state)) = file
             .path
             .ancestors()
@@ -364,6 +434,43 @@ pub async fn plan(
     // Validate dependency references and cycles even when callers only need JSON.
     plan.output()?;
     Ok(plan)
+}
+
+fn add_account_dependencies(
+    plan: &mut BootstrapPlan,
+    resource: &ResourceId,
+    state: super::managed_files::ManagedState,
+    owner: Option<&str>,
+    group: Option<&str>,
+    user_states: &HashMap<String, super::accounts::AccountState>,
+    group_states: &HashMap<String, super::accounts::AccountState>,
+) -> Result<()> {
+    if state != super::managed_files::ManagedState::Present {
+        return Ok(());
+    }
+    if let Some(owner) = owner {
+        match user_states.get(owner) {
+            Some(super::accounts::AccountState::Present) => {
+                plan.add_dependency(resource, ResourceId::new("user", owner))?;
+            }
+            Some(super::accounts::AccountState::Absent) => bail!(
+                "bootstrap resource '{resource}' requires owner '{owner}', but that user is absent"
+            ),
+            None => {}
+        }
+    }
+    if let Some(group) = group {
+        match group_states.get(group) {
+            Some(super::accounts::AccountState::Present) => {
+                plan.add_dependency(resource, ResourceId::new("group", group))?;
+            }
+            Some(super::accounts::AccountState::Absent) => bail!(
+                "bootstrap resource '{resource}' requires group '{group}', but that group is absent"
+            ),
+            None => {}
+        }
+    }
+    Ok(())
 }
 
 fn desired_package(request: &super::packages::PackageRequest) -> String {

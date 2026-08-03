@@ -121,31 +121,35 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
-/// 0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
-///    0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
-/// 1. Install built-in-manager entries from `[bootstrap.packages]`
-/// 2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+/// 0. `mise bootstrap accounts apply` — converge `[bootstrap.users]` and
+///    `[bootstrap.groups]` (Linux)
+/// 1. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+///    1.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+/// 2. Install built-in-manager entries from `[bootstrap.packages]`
+/// 3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
+///    `[bootstrap.directories]`
+/// 4. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
-/// 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 5. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 4. `mise bootstrap mise-shell-activate apply` — configure shell activation
+/// 6. `mise bootstrap mise-shell-activate apply` — configure shell activation
 ///    from `[bootstrap.mise_shell_activate]`
-/// 5. `mise bootstrap macos defaults apply` — write
+/// 7. `mise bootstrap macos defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 6. `mise bootstrap macos launchd-agents apply` — install/load
+/// 8. `mise bootstrap macos launchd-agents apply` — install/load
 ///    `[bootstrap.macos.launchd.agents]`
-/// 7. `mise bootstrap linux systemd-units apply` — install/start
+/// 9. `mise bootstrap linux systemd-units apply` — install/start
 ///    `[bootstrap.linux.systemd.units]`
-/// 8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
-///    (Unix)
-///    surrounded by `pre-user`/`post-user` hooks
-/// 9. `mise install` — install missing tools from `[tools]`
-///    surrounded by `pre-tools`/`post-tools` hooks
-///    9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
-///    `[bootstrap.hooks.post-packages]`
-/// 10. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 11. `[bootstrap.hooks.final]` — optional final hook
+/// 10. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+///     (Unix)
+///     surrounded by `pre-user`/`post-user` hooks
+/// 11. `mise install` — install missing tools from `[tools]`
+///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
+///     from `[bootstrap.packages]` install afterward, followed by
+///     `[bootstrap.hooks.post-packages]`
+/// 12. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 13. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -203,6 +207,7 @@ pub struct Bootstrap {
 enum BootstrapPart {
     Plugins,
     Packages,
+    Accounts,
     Files,
     Repos,
     Dotfiles,
@@ -223,9 +228,10 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 14] = [
         Self::Plugins,
         Self::Packages,
+        Self::Accounts,
         Self::Files,
         Self::Repos,
         Self::Dotfiles,
@@ -242,10 +248,13 @@ impl BootstrapPart {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[clap(name = "__apply-account-plan", hide = true)]
+    ApplyAccountPlan(BootstrapApplyAccountPlan),
     #[clap(name = "__apply-system-plan", hide = true)]
     ApplySystemPlan(BootstrapApplySystemPlan),
     #[clap(name = "__inspect-system-files", hide = true)]
     InspectSystemFiles(BootstrapInspectSystemFiles),
+    Accounts(BootstrapAccounts),
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
     #[clap(hide = true)]
@@ -305,7 +314,48 @@ struct BootstrapPlan {
 struct BootstrapApplySystemPlan {}
 
 #[derive(Debug, clap::Args)]
+struct BootstrapApplyAccountPlan {}
+
+#[derive(Debug, clap::Args)]
 struct BootstrapInspectSystemFiles {}
+
+/// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapAccounts {
+    #[clap(subcommand)]
+    command: BootstrapAccountsCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapAccountsCommands {
+    Apply(BootstrapAccountsApply),
+    Status(BootstrapAccountsStatus),
+}
+
+/// Apply configured Linux users and groups
+#[derive(Debug, clap::Args)]
+struct BootstrapAccountsApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux user and group state
+#[derive(Debug, clap::Args)]
+struct BootstrapAccountsStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any account is not converged
+    #[clap(long)]
+    missing: bool,
+}
 
 /// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
 #[derive(Debug, clap::Args)]
@@ -778,17 +828,51 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
-        let managed_system_files = if skip.contains(&BootstrapPart::Files) {
+        let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
+        let files_enabled = !skip.contains(&BootstrapPart::Files);
+        let configured_accounts =
+            if accounts_enabled || (cfg!(target_os = "linux") && files_enabled) {
+                Some(system::accounts::prepare_requests_from_config(&config)?)
+            } else {
+                None
+            };
+        let managed_accounts = accounts_enabled.then(|| {
+            configured_accounts
+                .as_ref()
+                .expect("enabled accounts were prepared")
+        });
+        let managed_system_files = if !files_enabled {
             None
         } else {
             let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
-            Some(system::managed_files::requests_from_config(
+            Some(system::managed_files::prepare_requests_from_config(
                 &config, &secrets,
             )?)
         };
+        if let Some((files, directories)) = &managed_system_files {
+            system::managed_files::validate_principals(
+                files,
+                directories,
+                configured_accounts.as_ref(),
+                accounts_enabled,
+            )?;
+        }
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
         let mut dry_run_config_files = None;
         let mut post_packages_ran = false;
+
+        let allow_pending_accounts = if let Some(accounts) = managed_accounts {
+            if accounts.groups.is_empty() && accounts.users.is_empty() {
+                debug!("bootstrap: no [bootstrap.groups] or [bootstrap.users] configured");
+                true
+            } else {
+                info!("bootstrap: accounts");
+                system::accounts::apply(accounts, self.dry_run, self.yes)?
+            }
+        } else {
+            debug!("bootstrap: accounts skipped");
+            false
+        };
 
         if skip.contains(&BootstrapPart::Plugins) {
             debug!("bootstrap: package plugins skipped");
@@ -835,14 +919,23 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Files) {
             debug!("bootstrap: system files skipped");
         } else {
-            let (files, directories) = managed_system_files
+            let (mut files, mut directories) = managed_system_files
                 .as_ref()
-                .expect("system files were preflighted when not skipped");
+                .expect("system files were preflighted when not skipped")
+                .clone();
+            system::managed_files::inspect_requests(&mut files, &mut directories)?;
             if files.is_empty() && directories.is_empty() {
                 debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
             } else {
                 info!("bootstrap: system files");
-                system::managed_files::apply(files, directories, self.dry_run, self.yes)?;
+                system::managed_files::apply_with_accounts(
+                    &files,
+                    &directories,
+                    configured_accounts.as_ref(),
+                    allow_pending_accounts,
+                    self.dry_run,
+                    self.yes,
+                )?;
             }
         }
 
@@ -1389,8 +1482,10 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
+            Self::ApplyAccountPlan(cmd) => cmd.run(),
             Self::ApplySystemPlan(cmd) => cmd.run(),
             Self::InspectSystemFiles(cmd) => cmd.run(),
+            Self::Accounts(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Files(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
@@ -1458,9 +1553,64 @@ impl BootstrapApplySystemPlan {
     }
 }
 
+impl BootstrapApplyAccountPlan {
+    fn run(self) -> Result<()> {
+        system::accounts::apply_privileged_plan_from_stdin()
+    }
+}
+
 impl BootstrapInspectSystemFiles {
     fn run(self) -> Result<()> {
         system::managed_files::inspect_privileged_files_from_stdin()
+    }
+}
+
+impl BootstrapAccounts {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapAccountsCommands::Apply(command) => command.run().await,
+            BootstrapAccountsCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapAccountsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::accounts::requests_from_config(&config)?;
+        system::accounts::apply(&requests, self.dry_run, self.yes)?;
+        Ok(())
+    }
+}
+
+impl BootstrapAccountsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::accounts::requests_from_config(&config)?;
+        let resources = system::accounts::plans(&requests);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap users or groups configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
     }
 }
 
@@ -1478,7 +1628,19 @@ impl BootstrapFilesApply {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
-        system::managed_files::apply(&files, &directories, self.dry_run, self.yes)
+        let accounts = if cfg!(target_os = "linux") {
+            Some(system::accounts::requests_from_config(&config)?)
+        } else {
+            None
+        };
+        system::managed_files::apply_with_accounts(
+            &files,
+            &directories,
+            accounts.as_ref(),
+            false,
+            self.dry_run,
+            self.yes,
+        )
     }
 }
 
@@ -1488,6 +1650,13 @@ impl BootstrapFilesStatus {
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, directories, mut unavailable) =
             system::managed_files::status_requests_from_config(&config, &secrets)?;
+        let accounts = system::accounts::prepare_requests_from_config(&config)?;
+        system::managed_files::validate_principals(
+            &files,
+            &directories,
+            cfg!(target_os = "linux").then_some(&accounts),
+            false,
+        )?;
         let mut resources = directories
             .into_iter()
             .map(|request| request.plan())
@@ -1617,8 +1786,16 @@ impl BootstrapStatus {
         let mut report = BootstrapStatusReport::new();
         let (files, directories, unavailable_files) =
             system::managed_files::status_requests_from_config(config, secrets)?;
+        let accounts = system::accounts::prepare_requests_from_config(config)?;
+        system::managed_files::validate_principals(
+            &files,
+            &directories,
+            cfg!(target_os = "linux").then_some(&accounts),
+            false,
+        )?;
         self.collect_secrets(&secrets.used_statuses()?, &mut report);
         self.collect_packages(config, &mut report).await?;
+        self.collect_accounts(&accounts, &mut report);
         self.collect_files(files, directories, unavailable_files, &mut report)?;
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
@@ -1647,6 +1824,24 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("secrets".to_string(), json!(statuses));
+    }
+
+    fn collect_accounts(
+        &self,
+        requests: &system::accounts::AccountRequests,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::accounts::plans(requests);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("accounts".to_string(), json!(resources));
     }
 
     fn collect_files(
