@@ -26,7 +26,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
-const CACHE_FORMAT_VERSION: u8 = 2;
+pub(crate) const CACHE_FORMAT_VERSION: u8 = 2;
 const CACHE_DIR_VERSION: &str = "v2";
 const ARTIFACT_CHECKSUM_FORMAT: u8 = 1;
 
@@ -91,6 +91,7 @@ impl TaskCacheMode {
 
 #[derive(Debug, Serialize)]
 struct CacheKeyMaterial<'a> {
+    #[serde(rename = "version")]
     format: u8,
     task: &'a str,
     phase: crate::task::TaskRunPhase,
@@ -119,19 +120,19 @@ pub(crate) struct CommandInput {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct CacheManifest {
-    format: u8,
-    key: String,
+pub(crate) struct CacheManifest {
+    pub(crate) format: u8,
+    pub(crate) key: String,
     #[serde(default)]
-    task_identity: String,
+    pub(crate) task_identity: String,
     #[serde(default)]
-    artifact_checksum: Option<String>,
-    roots: Vec<PathBuf>,
-    output: Vec<TaskCacheOutput>,
+    pub(crate) artifact_checksum: Option<String>,
+    pub(crate) roots: Vec<PathBuf>,
+    pub(crate) output: Vec<TaskCacheOutput>,
     #[serde(default)]
-    restored_bytes: u64,
+    pub(crate) restored_bytes: u64,
     #[serde(default)]
-    execution_duration_ns: u64,
+    pub(crate) execution_duration_ns: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +199,7 @@ pub struct TaskArtifactCache {
     cache_dir: PathBuf,
     store: Arc<dyn TaskCacheStore>,
     key: String,
+    action: Vec<u8>,
     explanation: Option<TaskCacheKeyExplanation>,
     state_path: PathBuf,
     limits: TaskCacheLimits,
@@ -350,7 +352,7 @@ impl TaskArtifactCacheBuilder {
             os: std::env::consts::OS,
             arch: std::env::consts::ARCH,
         };
-        let encoded = serde_json::to_vec(&material)?;
+        let encoded = canonical_json(&serde_json::to_value(&material)?)?;
         let key = hash::hash_blake3_to_str(std::str::from_utf8(&encoded)?);
         let explanation = if explain {
             Some(TaskCacheKeyExplanation {
@@ -391,11 +393,56 @@ impl TaskArtifactCacheBuilder {
             cache_dir,
             store,
             key,
+            action: encoded,
             explanation,
             state_path,
             limits,
         })
     }
+}
+
+pub(super) fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>> {
+    fn write(value: &serde_json::Value, output: &mut Vec<u8>) -> Result<()> {
+        match value {
+            serde_json::Value::Null => output.extend_from_slice(b"null"),
+            serde_json::Value::Bool(value) => {
+                output.extend_from_slice(if *value { b"true" } else { b"false" })
+            }
+            serde_json::Value::Number(value) => {
+                output.extend_from_slice(value.to_string().as_bytes())
+            }
+            serde_json::Value::String(value) => serde_json::to_writer(output, value)?,
+            serde_json::Value::Array(values) => {
+                output.push(b'[');
+                for (index, value) in values.iter().enumerate() {
+                    if index != 0 {
+                        output.push(b',');
+                    }
+                    write(value, output)?;
+                }
+                output.push(b']');
+            }
+            serde_json::Value::Object(values) => {
+                output.push(b'{');
+                let mut keys = values.keys().collect::<Vec<_>>();
+                keys.sort_unstable();
+                for (index, key) in keys.into_iter().enumerate() {
+                    if index != 0 {
+                        output.push(b',');
+                    }
+                    serde_json::to_writer(&mut *output, key)?;
+                    output.push(b':');
+                    write(&values[key], output)?;
+                }
+                output.push(b'}');
+            }
+        }
+        Ok(())
+    }
+
+    let mut output = Vec::new();
+    write(value, &mut output)?;
+    Ok(output)
 }
 
 impl TaskArtifactCache {
@@ -407,19 +454,27 @@ impl TaskArtifactCache {
         self.explanation.as_ref()
     }
 
-    pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
+    pub(crate) async fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
         let _entry_lock = self.entry_lock().ok()?;
         if !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
             || self.exceeded_max_age().ok()?
         {
             return None;
         }
-        let entry = self.store.get(&self.key).ok()??;
+        let entry = self
+            .store
+            .get(&self.key, self.action.len() as u64)
+            .await
+            .ok()??;
         let manifest = self.read_manifest(&entry.manifest).ok()?;
-        if !manifest.roots.is_empty() && entry.artifact_path.is_none() {
+        if !manifest.roots.is_empty() && entry.artifact.is_none() {
             return None;
         }
-        verify_artifact_checksum(&manifest, entry.artifact_path.as_deref()).ok()?;
+        verify_artifact_checksum(
+            &manifest,
+            entry.artifact.as_ref().map(|artifact| artifact.path()),
+        )
+        .ok()?;
         self.store.touch(&self.key);
         Some(manifest.output)
     }
@@ -431,21 +486,25 @@ impl TaskArtifactCache {
         file::write(&self.state_path, &self.key)
     }
 
-    pub(crate) fn restore(&self, task: &Task) -> Result<TaskCacheRestore> {
+    pub(crate) async fn restore(&self, task: &Task) -> Result<TaskCacheRestore> {
         let _entry_lock = self.entry_lock()?;
-        let entry = match self.store.get(&self.key) {
+        let entry = match self.store.get(&self.key, self.action.len() as u64).await {
             Ok(Some(entry)) => entry,
             Ok(None) => {
                 return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
             }
             Err(err) => {
                 warn!("ignoring unreadable task cache entry {}: {err}", self.key);
-                let _ = self.store.remove(&self.key);
+                let _ = self.store.remove(&self.key).await;
                 return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::CorruptEntry));
             }
         };
         if self.exceeded_max_age()? {
-            if let Err(err) = self.store.remove_local(&self.key) {
+            if let Err(err) = self
+                .store
+                .remove_local(&self.key, self.action.len() as u64)
+                .await
+            {
                 warn!(
                     "failed to remove expired local task cache entry {}: {err}",
                     self.key
@@ -461,7 +520,10 @@ impl TaskArtifactCache {
             if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
                 bail!("task cache manifest contains duplicate or nested roots");
             }
-            verify_artifact_checksum(&manifest, entry.artifact_path.as_deref())?;
+            verify_artifact_checksum(
+                &manifest,
+                entry.artifact.as_ref().map(|artifact| artifact.path()),
+            )?;
             if manifest.roots.is_empty() {
                 self.store.touch(&self.key);
                 return Ok(TaskCacheHit {
@@ -478,8 +540,9 @@ impl TaskArtifactCache {
             )
             .lock()?;
             let archive_path = entry
-                .artifact_path
-                .as_deref()
+                .artifact
+                .as_ref()
+                .map(|artifact| artifact.path())
                 .ok_or_else(|| eyre!("task cache archive is missing"))?;
 
             let staging = tempfile::Builder::new()
@@ -529,7 +592,7 @@ impl TaskArtifactCache {
             Ok(output) => Ok(TaskCacheRestore::Hit(output)),
             Err(err) => {
                 warn!("ignoring corrupt task cache entry {}: {err}", self.key);
-                let _ = self.store.remove(&self.key);
+                let _ = self.store.remove(&self.key).await;
                 Ok(TaskCacheRestore::Miss(TaskCacheMissReason::CorruptEntry))
             }
         }
@@ -544,7 +607,7 @@ impl TaskArtifactCache {
     }
 
     /// Stores a successful task's declared outputs and captured logs.
-    pub(crate) fn store(
+    pub(crate) async fn store(
         &self,
         task: &Task,
         output: &[TaskCacheOutput],
@@ -585,12 +648,15 @@ impl TaskArtifactCache {
             &manifest,
             (!manifest.roots.is_empty()).then_some(write.artifact_path()),
         )?);
-        self.store.commit(
-            &self.key,
-            &write,
-            &serde_json::to_vec(&manifest)?,
-            !manifest.roots.is_empty(),
-        )?;
+        self.store
+            .commit(
+                &self.key,
+                &self.action,
+                &write,
+                &serde_json::to_vec(&manifest)?,
+                !manifest.roots.is_empty(),
+            )
+            .await?;
         drop(entry_lock);
         if self.limits.configured()
             && let Err(err) = enforce_task_cache_limits(&self.cache_dir, self.limits)
@@ -786,7 +852,7 @@ fn task_cache_limit_entry(cache_dir: &Path, key: &str) -> Result<Option<TaskCach
     }))
 }
 
-fn calculate_artifact_checksum(
+pub(crate) fn calculate_artifact_checksum(
     manifest: &CacheManifest,
     archive_path: Option<&Path>,
 ) -> Result<String> {

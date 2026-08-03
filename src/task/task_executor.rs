@@ -696,7 +696,7 @@ impl TaskExecutor {
                         && !dependency_state.any_unkeyed_did_work
                         && (task.outputs.is_no_files() || sources_are_fresh(task, config).await?)
                     {
-                        cache.current_output()
+                        cache.current_output().await
                     } else {
                         None
                     };
@@ -722,7 +722,7 @@ impl TaskExecutor {
                             TaskCacheMissReason::DependencyWithoutKey
                         } else {
                             Self::check_interruption(allow_during_interruption)?;
-                            match cache.restore(task)? {
+                            match cache.restore(task).await? {
                                 TaskCacheRestore::Hit(hit) => {
                                     self.cache_stats
                                         .lock()
@@ -860,7 +860,7 @@ impl TaskExecutor {
                 .as_ref()
                 .map(|output| output.lock().unwrap().clone())
                 .unwrap_or_default();
-            match cache.store(task, &output, execution_duration) {
+            match cache.store(task, &output, execution_duration).await {
                 Ok(()) => {
                     if let Err(err) = cache.mark_current() {
                         warn!(
