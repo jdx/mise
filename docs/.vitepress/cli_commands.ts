@@ -28,6 +28,12 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
+      "__apply-system-plan": {
+        hide: true,
+      },
+      "__inspect-system-files": {
+        hide: true,
+      },
       dotfiles: {
         hide: false,
         subcommands: {
@@ -44,6 +50,17 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           unapply: {
+            hide: false,
+          },
+        },
+      },
+      files: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
             hide: false,
           },
         },

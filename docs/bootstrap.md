@@ -1,10 +1,10 @@
 # Bootstrap
 
 `mise bootstrap` sets up a machine for the current config in one command: OS
-packages, git repos, dotfiles, mise shell activation, macOS defaults, macOS
-LaunchAgents, Linux systemd user services, the user's login shell, tools, and
-any final project-specific task. You can also add hooks that run at named points
-in the bootstrap sequence.
+packages, privileged files and directories, git repos, dotfiles, mise shell
+activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
+the user's login shell, tools, and any final project-specific task. You can also
+add hooks that run at named points in the bootstrap sequence.
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
@@ -18,30 +18,32 @@ preferences, user services, and one-time machine setup.
 1. `mise bootstrap plugins apply` installs package manager plugins declared in
    [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
 2. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
-3. `mise bootstrap repos apply` clones or updates
+3. `mise bootstrap files apply` converges
+   [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
+4. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-4. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
-5. `mise bootstrap mise-shell-activate apply` configures shell activation from
+5. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+6. `mise bootstrap mise-shell-activate apply` configures shell activation from
    [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
-6. `mise bootstrap macos defaults apply` writes
+7. `mise bootstrap macos defaults apply` writes
    [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
-7. `mise bootstrap macos launchd-agents apply` writes and loads
+8. `mise bootstrap macos launchd-agents apply` writes and loads
    [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
-8. `mise bootstrap linux systemd-units apply` converges
+9. `mise bootstrap linux systemd-units apply` converges
    [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
    by writing unit files, enabling/disabling them, and starting/stopping them
    as configured.
-9. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
-10. `mise install` installs missing `[tools]`.
-11. Plugin package managers apply after their host tools are available.
-12. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-13. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+10. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
+11. `mise install` installs missing `[tools]`.
+12. Plugin package managers apply after their host tools are available.
+13. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+14. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`plugins`, `packages`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`,
-`macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, and
-`final-hook`. The old shorter names `shell`, `defaults`, `launchd`, and
-`systemd` are still accepted as aliases. The flag can be repeated or
+`plugins`, `packages`, `files`, `repos`, `dotfiles`, `mise-shell-activate`,
+`macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`,
+`task`, and `final-hook`. The old shorter names `shell`, `defaults`, `launchd`,
+and `systemd` are still accepted as aliases. The flag can be repeated or
 comma-separated, for example `mise bootstrap --skip tools,task`.
 
 Use `mise bootstrap --only <part>` to run only specific parts. It supports the
@@ -68,6 +70,17 @@ set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
 "apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
+
+[bootstrap.directories."/opt/example"]
+owner = "root"
+group = "root"
+mode = "0755"
+
+[bootstrap.files."/etc/example.conf"]
+source = "./files/example.conf"
+owner = "root"
+group = "root"
+mode = "0644"
 
 [bootstrap.repos]
 "~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }

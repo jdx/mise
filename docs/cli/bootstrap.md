@@ -3,7 +3,7 @@
 
 - **Usage**: `mise bootstrap [FLAGS] [SUBCOMMAND]`
 - **Aliases**: `bs`
-- **Effect**: modifies state
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Set up a machine for the current config in one command
@@ -70,6 +70,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 
 - `plugins`
 - `packages`
+- `files`
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
@@ -95,6 +96,7 @@ Can be passed multiple times or as a comma-separated list.
 
 - `plugins`
 - `packages`
+- `files`
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
@@ -113,10 +115,8 @@ Can be passed multiple times or as a comma-separated list.
 ### `--update`
 
 Refresh package manager metadata and update configured repos
-
-## Subcommands
-
 - [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
+- [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
 - [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
 - [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)

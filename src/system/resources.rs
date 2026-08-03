@@ -36,6 +36,7 @@ impl fmt::Display for ResourceId {
 pub enum ResourceAction {
     Create,
     Update,
+    Remove,
     Noop,
     Unknown,
 }
@@ -45,6 +46,7 @@ impl fmt::Display for ResourceAction {
         f.write_str(match self {
             Self::Create => "create",
             Self::Update => "update",
+            Self::Remove => "remove",
             Self::Noop => "unchanged",
             Self::Unknown => "unknown",
         })
@@ -83,6 +85,7 @@ impl ResourcePlan {
 pub struct PlanSummary {
     pub create: usize,
     pub update: usize,
+    pub remove: usize,
     pub unchanged: usize,
     pub unknown: usize,
 }
@@ -92,13 +95,14 @@ impl PlanSummary {
         match action {
             ResourceAction::Create => self.create += 1,
             ResourceAction::Update => self.update += 1,
+            ResourceAction::Remove => self.remove += 1,
             ResourceAction::Noop => self.unchanged += 1,
             ResourceAction::Unknown => self.unknown += 1,
         }
     }
 
     pub fn has_changes(self) -> bool {
-        self.create + self.update > 0
+        self.create + self.update + self.remove > 0
     }
 }
 
@@ -123,6 +127,16 @@ impl BootstrapPlan {
             );
         }
         self.resources.insert(resource.id.clone(), resource);
+        Ok(())
+    }
+
+    pub fn add_dependency(&mut self, resource: &ResourceId, dependency: ResourceId) -> Result<()> {
+        let Some(resource) = self.resources.get_mut(resource) else {
+            bail!("cannot add dependency to missing bootstrap resource '{resource}'");
+        };
+        if !resource.depends_on.contains(&dependency) {
+            resource.depends_on.push(dependency);
+        }
         Ok(())
     }
 
@@ -247,6 +261,95 @@ pub async fn plan(config: &Config) -> Result<BootstrapPlan> {
             ))?;
         }
     }
+    let (files, directories) = super::managed_files::requests_from_config(config)?;
+    let directory_states = directories
+        .iter()
+        .map(|directory| (directory.path.clone(), directory.state))
+        .collect::<std::collections::HashMap<_, _>>();
+    for directory in &directories {
+        plan.insert(directory.plan()?)?;
+    }
+    for directory in &directories {
+        let Some((parent, parent_state)) = directory
+            .path
+            .ancestors()
+            .skip(1)
+            .find_map(|parent| directory_states.get_key_value(parent))
+        else {
+            continue;
+        };
+        let id = ResourceId::new("directory", directory.path.to_string_lossy());
+        let parent_id = ResourceId::new("directory", parent.to_string_lossy());
+        match (directory.state, parent_state) {
+            (
+                super::managed_files::ManagedState::Present,
+                super::managed_files::ManagedState::Present,
+            ) => {
+                plan.add_dependency(&id, parent_id)?;
+            }
+            (
+                super::managed_files::ManagedState::Absent,
+                super::managed_files::ManagedState::Absent,
+            ) => {
+                plan.add_dependency(&parent_id, id)?;
+            }
+            (
+                super::managed_files::ManagedState::Present,
+                super::managed_files::ManagedState::Absent,
+            ) => {
+                bail!(
+                    "directory '{}' cannot be present while managed parent '{}' is absent",
+                    directory.path.display(),
+                    parent.display()
+                );
+            }
+            (
+                super::managed_files::ManagedState::Absent,
+                super::managed_files::ManagedState::Present,
+            ) => {}
+        }
+    }
+    for file in files {
+        let resource = file.plan()?;
+        let id = resource.id.clone();
+        plan.insert(resource)?;
+        if let Some((parent, parent_state)) = file
+            .path
+            .ancestors()
+            .skip(1)
+            .find_map(|parent| directory_states.get_key_value(parent))
+        {
+            let parent_id = ResourceId::new("directory", parent.to_string_lossy());
+            match (file.state, parent_state) {
+                (
+                    super::managed_files::ManagedState::Present,
+                    super::managed_files::ManagedState::Present,
+                ) => {
+                    plan.add_dependency(&id, parent_id)?;
+                }
+                (
+                    super::managed_files::ManagedState::Absent,
+                    super::managed_files::ManagedState::Absent,
+                ) => {
+                    plan.add_dependency(&parent_id, id)?;
+                }
+                (
+                    super::managed_files::ManagedState::Present,
+                    super::managed_files::ManagedState::Absent,
+                ) => {
+                    bail!(
+                        "file '{}' cannot be present while managed parent '{}' is absent",
+                        file.path.display(),
+                        parent.display()
+                    );
+                }
+                (
+                    super::managed_files::ManagedState::Absent,
+                    super::managed_files::ManagedState::Present,
+                ) => {}
+            }
+        }
+    }
     // Validate dependency references and cycles even when callers only need JSON.
     plan.output()?;
     Ok(plan)
@@ -368,6 +471,7 @@ mod tests {
         for (name, action) in [
             ("create", ResourceAction::Create),
             ("update", ResourceAction::Update),
+            ("remove", ResourceAction::Remove),
             ("noop", ResourceAction::Noop),
             ("unknown", ResourceAction::Unknown),
         ] {
@@ -384,6 +488,7 @@ mod tests {
             PlanSummary {
                 create: 1,
                 update: 1,
+                remove: 1,
                 unchanged: 1,
                 unknown: 1,
             }

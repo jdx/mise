@@ -120,6 +120,10 @@ export const sidebar: SidebarItem[] = [
         ],
       },
       {
+        text: "System Files",
+        link: "/bootstrap/files",
+      },
+      {
         text: "Repos",
         link: "/bootstrap/repos",
       },

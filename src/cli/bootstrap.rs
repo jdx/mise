@@ -199,6 +199,7 @@ pub struct Bootstrap {
 enum BootstrapPart {
     Plugins,
     Packages,
+    Files,
     Repos,
     Dotfiles,
     #[clap(name = "mise-shell-activate", alias = "shell")]
@@ -218,9 +219,10 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Plugins,
         Self::Packages,
+        Self::Files,
         Self::Repos,
         Self::Dotfiles,
         Self::Shell,
@@ -236,7 +238,12 @@ impl BootstrapPart {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[clap(name = "__apply-system-plan", hide = true)]
+    ApplySystemPlan(BootstrapApplySystemPlan),
+    #[clap(name = "__inspect-system-files", hide = true)]
+    InspectSystemFiles(BootstrapInspectSystemFiles),
     Dotfiles(BootstrapDotfiles),
+    Files(BootstrapFiles),
     #[clap(hide = true)]
     Launchd(BootstrapLaunchd),
     Linux(BootstrapLinux),
@@ -279,6 +286,50 @@ struct BootstrapPlan {
     /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
     #[clap(long, verbatim_doc_comment)]
     detailed_exitcode: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplySystemPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapInspectSystemFiles {}
+
+/// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapFiles {
+    #[clap(subcommand)]
+    command: BootstrapFilesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapFilesCommands {
+    Apply(BootstrapFilesApply),
+    Status(BootstrapFilesStatus),
+}
+
+/// Apply configured privileged files and directories
+#[derive(Debug, clap::Args)]
+struct BootstrapFilesApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured privileged file and directory state
+#[derive(Debug, clap::Args)]
+struct BootstrapFilesStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any resource is not converged
+    #[clap(long)]
+    missing: bool,
 }
 
 /// Manage dotfiles from `[dotfiles]`
@@ -724,6 +775,18 @@ impl Bootstrap {
                 self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
                     .await?;
                 post_packages_ran = true;
+            }
+        }
+
+        if skip.contains(&BootstrapPart::Files) {
+            debug!("bootstrap: system files skipped");
+        } else {
+            let (files, directories) = system::managed_files::requests_from_config(&config)?;
+            if files.is_empty() && directories.is_empty() {
+                debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
+            } else {
+                info!("bootstrap: system files");
+                system::managed_files::apply(&files, &directories, self.dry_run, self.yes)?;
             }
         }
 
@@ -1270,7 +1333,10 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
+            Self::ApplySystemPlan(cmd) => cmd.run(),
+            Self::InspectSystemFiles(cmd) => cmd.run(),
             Self::Dotfiles(cmd) => cmd.run().await,
+            Self::Files(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
             Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
@@ -1308,15 +1374,85 @@ impl BootstrapPlan {
             }
             table.print()?;
             miseprintln!(
-                "Plan: {} create, {} update, {} unchanged, {} unknown",
+                "Plan: {} create, {} update, {} unchanged, {} remove, {} unknown",
                 output.summary.create,
                 output.summary.update,
                 output.summary.unchanged,
+                output.summary.remove,
                 output.summary.unknown,
             );
         }
         if self.detailed_exitcode && output.summary.has_changes() {
             return Err(crate::request_exit(2));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapApplySystemPlan {
+    fn run(self) -> Result<()> {
+        system::managed_files::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapInspectSystemFiles {
+    fn run(self) -> Result<()> {
+        system::managed_files::inspect_privileged_files_from_stdin()
+    }
+}
+
+impl BootstrapFiles {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapFilesCommands::Apply(command) => command.run().await,
+            BootstrapFilesCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapFilesApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let (files, directories) = system::managed_files::requests_from_config(&config)?;
+        system::managed_files::apply(&files, &directories, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapFilesStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let (files, directories) = system::managed_files::requests_from_config(&config)?;
+        let mut resources = directories
+            .into_iter()
+            .map(|request| request.plan())
+            .collect::<Result<Vec<_>>>()?;
+        resources.extend(
+            files
+                .into_iter()
+                .map(|request| request.plan())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no system files or directories configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
         }
         Ok(())
     }
@@ -1375,6 +1511,7 @@ impl BootstrapStatus {
     async fn collect(&self, config: &Arc<Config>) -> Result<BootstrapStatusReport> {
         let mut report = BootstrapStatusReport::new();
         self.collect_packages(config, &mut report).await?;
+        self.collect_files(config, &mut report)?;
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
@@ -1385,6 +1522,35 @@ impl BootstrapStatus {
         self.collect_tools(config, &mut report).await?;
         self.collect_plugin_deps(config, &mut report).await?;
         Ok(report)
+    }
+
+    fn collect_files(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let (files, directories) = system::managed_files::requests_from_config(config)?;
+        let mut resources = directories
+            .into_iter()
+            .map(|request| request.plan())
+            .collect::<Result<Vec<_>>>()?;
+        resources.extend(
+            files
+                .into_iter()
+                .map(|request| request.plan())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("files".to_string(), json!(resources));
+        Ok(())
     }
 
     async fn collect_plugin_deps(
