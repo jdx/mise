@@ -355,6 +355,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
             choices plugins packages files repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
+    flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
     flag --skip help="Skip one or more bootstrap parts" var=#true {
         long_help #"""
 Skip one or more bootstrap parts
@@ -487,10 +488,12 @@ Examples:
         cmd apply help="Apply configured privileged files and directories" effect=destructive {
             flag "-n --dry-run" help="Print what would change without changing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         }
         cmd status help="Show configured privileged file and directory state" effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 when any resource is not converged"
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         }
     }
     cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {
@@ -772,6 +775,7 @@ Examples:
     cmd plan help="Show the changes declarative bootstrap resources would make" effect=read {
         flag "-J --json" help="Output a stable machine-readable plan in JSON format"
         flag --detailed-exitcode help="Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
     }
     cmd plugins subcommand_required=#true help="Manage package manager plugins declared in `[bootstrap.plugins]`" effect=read {
         cmd apply effect=write {
@@ -802,10 +806,17 @@ Examples:
             arg "[PATH]…" help="Update only matching configured or expanded paths" required=#false var=#true
         }
     }
+    cmd secrets subcommand_required=#true help="Inspect bootstrap secret inputs without revealing their values" effect=read {
+        cmd status help="Show whether declared bootstrap secret inputs are available" effect=read {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 if a declared secret input is unavailable"
+        }
+    }
     cmd status help="Show the aggregate bootstrap status" effect=read {
         alias ls
         flag "-J --json" help="Output in JSON format"
         flag --missing help="Exit with code 1 if any configured bootstrap state is not in its desired state"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
     }
     cmd systemd hide=#true subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" effect=read {
         cmd apply effect=write {

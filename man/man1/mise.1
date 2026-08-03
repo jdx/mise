@@ -278,6 +278,12 @@ Manage git repo checkouts from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos update\fR
 .TP
+\fBbootstrap secrets\fR
+Inspect bootstrap secret inputs without revealing their values
+.TP
+\fBbootstrap secrets status\fR
+Show whether declared bootstrap secret inputs are available
+.TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
 .RS
@@ -922,6 +928,9 @@ Run only one or more bootstrap parts
 
 Can be passed multiple times or as a comma\-separated list. Cannot be used with `\-\-skip`.
 .TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
+.TP
 \fB\-\-skip\fR \fI<SKIP>\fR
 Skip one or more bootstrap parts
 
@@ -1079,6 +1088,9 @@ Print what would change without changing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
 .SH "MISE BOOTSTRAP FILES STATUS"
 Show configured privileged file and directory state
 .PP
@@ -1092,6 +1104,9 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 when any resource is not converged
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
 \fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP
@@ -1407,6 +1422,9 @@ Output a stable machine\-readable plan in JSON format
 .TP
 \fB\-\-detailed\-exitcode\fR
 Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
 .SH "MISE BOOTSTRAP PLUGINS APPLY"
 \fBUsage:\fR mise bootstrap plugins apply [OPTIONS]
 .PP
@@ -1480,6 +1498,19 @@ Skip the confirmation prompt
 .TP
 \fB<PATH>\fR
 Update only matching configured or expanded paths
+.SH "MISE BOOTSTRAP SECRETS STATUS"
+Show whether declared bootstrap secret inputs are available
+.PP
+\fBUsage:\fR mise bootstrap secrets status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if a declared secret input is unavailable
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP
@@ -1493,6 +1524,9 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured bootstrap state is not in its desired state
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
 .SH "MISE BOOTSTRAP USER APPLY"
 \fBUsage:\fR mise bootstrap user apply [OPTIONS]
 .PP

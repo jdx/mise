@@ -3,8 +3,9 @@
 `mise bootstrap` sets up a machine for the current config in one command: OS
 packages, privileged files and directories, git repos, dotfiles, mise shell
 activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
-the user's login shell, tools, and any final project-specific task. You can also
-add hooks that run at named points in the bootstrap sequence.
+the user's login shell, tools, and any final project-specific task. It can
+consume declared secret inputs without storing their values in mise config. You
+can also add hooks that run at named points in the bootstrap sequence.
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
@@ -14,6 +15,10 @@ preferences, user services, and one-time machine setup.
 ## How it runs
 
 `mise bootstrap` runs these steps in order:
+
+Before making changes, mise resolves any required
+[`[bootstrap.secrets]`](/bootstrap/secrets.html) used by the files phase. This
+preflight prevents a missing input from leaving a partially provisioned host.
 
 1. `mise bootstrap plugins apply` installs package manager plugins declared in
    [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
@@ -71,13 +76,17 @@ set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
 
+[bootstrap.secrets]
+service_token = "EXAMPLE_SERVICE_TOKEN"
+
 [bootstrap.directories."/opt/example"]
 owner = "root"
 group = "root"
 mode = "0755"
 
 [bootstrap.files."/etc/example.conf"]
-source = "./files/example.conf"
+content = 'token={{ secret(name="service_token") }}'
+template = true
 owner = "root"
 group = "root"
 mode = "0644"
@@ -152,8 +161,9 @@ mise bootstrap --dry-run
 ```
 
 For a structured resource plan, use `mise bootstrap plan`. The provisioning
-planner currently reports system packages; other declarative bootstrap parts
-will join the same dependency-aware plan as they adopt the resource model.
+planner currently reports system packages and privileged files and
+directories; other declarative bootstrap parts will join the same
+dependency-aware plan as they adopt the resource model.
 
 ```sh
 mise bootstrap plan
@@ -162,11 +172,12 @@ mise bootstrap plan --detailed-exitcode
 ```
 
 With `--detailed-exitcode`, the command exits 0 when nothing would change, 2
-when the plan contains changes, and 1 when planning fails. Resources whose
-package manager is unavailable on the current platform, or whose requested
-version the manager cannot install, are reported as `unknown`; they do not
-count as changes. This matches apply behavior: unsupported pins remain visible
-for manual resolution instead of being reported as changes mise would skip.
+when the plan contains changes, and 1 when planning fails or any resource has
+an `unknown` state. Unknown resources do not count as changes, but they block a
+successful convergence result. A package is unknown when its manager is
+unavailable on the current platform or cannot install the requested version.
+This matches apply behavior: unsupported pins remain visible for manual
+resolution instead of being reported as changes mise would skip.
 
 When `mise bootstrap` applies or would apply something that needs user
 follow-up, it prints a final `bootstrap: follow-up` section after a successful

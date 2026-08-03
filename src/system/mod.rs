@@ -42,6 +42,7 @@ pub mod managed_files;
 pub mod packages;
 pub mod repos;
 pub mod resources;
+pub mod secrets;
 pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
@@ -49,6 +50,9 @@ pub mod systemd;
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapTomlConfig {
+    /// Logical secret name -> environment input declaration.
+    #[serde(default)]
+    pub secrets: IndexMap<String, secrets::SecretTomlConfig>,
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,

@@ -32,12 +32,20 @@ replace the conflicting type. Replacing a directory with a file only removes
 an empty directory; recursive destruction still requires an explicit
 `state = "absent"` directory declaration with `recursive = true`.
 
+Set `template = true` to render file content with mise's template engine. This
+is explicit so literal <span v-pre>`{{ ... }}`</span> content remains untouched
+by default. A template can consume a declared
+[bootstrap secret input](/bootstrap/secrets.html) with
+<span v-pre>`{{ secret(name="logical_name") }}`</span>. Secret values are never
+included in plans, dry-run descriptions, status output, or privileged helper
+output.
+
 Mise compares content, type, mode, owner, and group before applying changes.
 Writes use a temporary file in the target directory followed by an atomic
-rename. If configured files cannot be read by the current user, mise compares
-them in one privileged batch. Plans and file content are sent to narrowly
-scoped mise helpers over stdin, so file content does not appear in process
-arguments or logs.
+rename. If the current user cannot inspect a target or search one of its parent
+directories, mise compares its metadata and content in one privileged batch.
+Plans and file content are sent to narrowly scoped mise helpers over stdin, so
+file content does not appear in process arguments or logs.
 
 ## Removing resources
 

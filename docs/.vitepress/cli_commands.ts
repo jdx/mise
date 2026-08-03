@@ -206,6 +206,14 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      secrets: {
+        hide: false,
+        subcommands: {
+          status: {
+            hide: false,
+          },
+        },
+      },
       status: {
         hide: false,
       },

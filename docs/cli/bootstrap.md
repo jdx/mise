@@ -86,6 +86,10 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 - `task`
 - `final-hook`
 
+### `--prompt-secrets`
+
+Prompt securely for missing bootstrap secret inputs
+
 ### `--skip… <SKIP>`
 
 Skip one or more bootstrap parts
@@ -121,10 +125,11 @@ Refresh package manager metadata and update configured repos
 - [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
-- [`mise bootstrap plan [-J --json] [--detailed-exitcode]`](/cli/bootstrap/plan.md)
+- [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.md)
 - [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
-- [`mise bootstrap status [-J --json] [--missing]`](/cli/bootstrap/status.md)
+- [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.md)
+- [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 
 Examples:
