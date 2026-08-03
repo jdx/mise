@@ -113,7 +113,7 @@ outside this tracker.
 
 ## Remote cache
 
-- [ ] Extract a versioned cache-store interface from the local filesystem implementation
+- [x] Extract a versioned cache-store interface from the local filesystem implementation
 - [ ] Define and document a versioned remote cache protocol
 - [ ] Add a composite local and remote cache store
 - [ ] Stream artifact uploads and downloads

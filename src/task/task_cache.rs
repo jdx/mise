@@ -3,6 +3,9 @@ use crate::dirs;
 use crate::duration;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
 use crate::hash;
+use crate::task::task_cache_store::{
+    LocalTaskCacheStore, TASK_CACHE_STORE_VERSION, TaskCacheStore,
+};
 use crate::task::task_source_checker::{
     TaskCacheInputs, build_output_matcher, expand_glob_braces, is_output, output_glob_patterns,
     task_cache_inputs, task_cwd,
@@ -193,6 +196,7 @@ impl fmt::Display for TaskCacheMissReason {
 pub struct TaskArtifactCache {
     root: PathBuf,
     cache_dir: PathBuf,
+    store: Arc<dyn TaskCacheStore>,
     key: String,
     explanation: Option<TaskCacheKeyExplanation>,
     state_path: PathBuf,
@@ -373,9 +377,18 @@ impl TaskArtifactCacheBuilder {
         let cache_dir = task_cache_dir();
         let limits = task_cache_limits()?;
         cleanup_abandoned_partial_writes_once(&cache_dir);
+        let store: Arc<dyn TaskCacheStore> = Arc::new(LocalTaskCacheStore::new(cache_dir.clone()));
+        if store.version() != TASK_CACHE_STORE_VERSION {
+            bail!(
+                "unsupported task cache store version {}; expected {}",
+                store.version(),
+                TASK_CACHE_STORE_VERSION
+            );
+        }
         Ok(TaskArtifactCache {
             root,
             cache_dir,
+            store,
             key,
             explanation,
             state_path,
@@ -395,19 +408,18 @@ impl TaskArtifactCache {
 
     pub(crate) fn current_output(&self) -> Option<Vec<TaskCacheOutput>> {
         let _entry_lock = self.entry_lock().ok()?;
-        let (archive_path, manifest_path) = self.paths();
-        if !manifest_path.is_file()
-            || !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
+        if !file::read_to_string(&self.state_path).is_ok_and(|key| key.trim() == self.key)
             || self.exceeded_max_age().ok()?
         {
             return None;
         }
-        let manifest = self.read_manifest().ok()?;
-        if !manifest.roots.is_empty() && !archive_path.is_file() {
+        let entry = self.store.get(&self.key).ok()??;
+        let manifest = self.read_manifest(&entry.manifest).ok()?;
+        if !manifest.roots.is_empty() && entry.artifact_path.is_none() {
             return None;
         }
-        verify_artifact_checksum(&manifest, &archive_path).ok()?;
-        Self::touch_access_time(&archive_path, &manifest_path);
+        verify_artifact_checksum(&manifest, entry.artifact_path.as_deref()).ok()?;
+        self.store.touch(&self.key);
         Some(manifest.output)
     }
 
@@ -420,26 +432,32 @@ impl TaskArtifactCache {
 
     pub(crate) fn restore(&self, task: &Task) -> Result<TaskCacheRestore> {
         let _entry_lock = self.entry_lock()?;
-        let (archive_path, manifest_path) = self.paths();
-        if !manifest_path.is_file() {
-            return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
-        }
+        let entry = match self.store.get(&self.key) {
+            Ok(Some(entry)) => entry,
+            Ok(None) => {
+                return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::EntryNotFound));
+            }
+            Err(err) => {
+                warn!("ignoring unreadable task cache entry {}: {err}", self.key);
+                let _ = self.store.remove(&self.key);
+                return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::CorruptEntry));
+            }
+        };
         if self.exceeded_max_age()? {
-            remove_cache_file(&archive_path)?;
-            remove_cache_file(&manifest_path)?;
+            self.store.remove(&self.key)?;
             return Ok(TaskCacheRestore::Miss(TaskCacheMissReason::Expired));
         }
         let restore = || -> Result<TaskCacheHit> {
-            let manifest = self.read_manifest()?;
+            let manifest = self.read_manifest(&entry.manifest)?;
             for root in &manifest.roots {
                 ensure_safe_relative(root)?;
             }
             if remove_nested_roots(manifest.roots.clone()) != manifest.roots {
                 bail!("task cache manifest contains duplicate or nested roots");
             }
-            verify_artifact_checksum(&manifest, &archive_path)?;
+            verify_artifact_checksum(&manifest, entry.artifact_path.as_deref())?;
             if manifest.roots.is_empty() {
-                Self::touch_access_time(&archive_path, &manifest_path);
+                self.store.touch(&self.key);
                 return Ok(TaskCacheHit {
                     output: manifest.output,
                     restored_bytes: manifest.restored_bytes,
@@ -453,15 +471,16 @@ impl TaskArtifactCache {
                 &self.root.join(".mise-task-artifact-cache-output"),
             )
             .lock()?;
-            if !archive_path.is_file() {
-                bail!("task cache archive is missing");
-            }
+            let archive_path = entry
+                .artifact_path
+                .as_deref()
+                .ok_or_else(|| eyre!("task cache archive is missing"))?;
 
             let staging = tempfile::Builder::new()
                 .prefix(".mise-task-cache-")
                 .tempdir_in(&self.root)?;
             file::untar(
-                &archive_path,
+                archive_path,
                 staging.path(),
                 ExtractionFormat::TarZst,
                 &ExtractOptions {
@@ -492,7 +511,7 @@ impl TaskArtifactCache {
                 &remove,
                 Some(&output_matcher),
             )?;
-            Self::touch_access_time(&archive_path, &manifest_path);
+            self.store.touch(&self.key);
             Ok(TaskCacheHit {
                 output: manifest.output,
                 restored_bytes: manifest.restored_bytes,
@@ -504,8 +523,7 @@ impl TaskArtifactCache {
             Ok(output) => Ok(TaskCacheRestore::Hit(output)),
             Err(err) => {
                 warn!("ignoring corrupt task cache entry {}: {err}", self.key);
-                let _ = file::remove_file(&archive_path);
-                let _ = file::remove_file(&manifest_path);
+                let _ = self.store.remove(&self.key);
                 Ok(TaskCacheRestore::Miss(TaskCacheMissReason::CorruptEntry))
             }
         }
@@ -517,16 +535,6 @@ impl TaskArtifactCache {
         };
         Ok(task_cache_limit_entry(&self.cache_dir, &self.key)?
             .is_some_and(|entry| entry.last_accessed.elapsed().unwrap_or_default() > max_age))
-    }
-
-    fn touch_access_time(archive_path: &Path, manifest_path: &Path) {
-        for (kind, path) in [("archive", archive_path), ("manifest", manifest_path)] {
-            if path.is_file()
-                && let Err(err) = file::touch_file(path)
-            {
-                warn!("failed to update task cache {kind} access time: {err}");
-            }
-        }
     }
 
     /// Stores a successful task's declared outputs and captured logs.
@@ -542,17 +550,8 @@ impl TaskArtifactCache {
             ensure_no_symlink_ancestors(&self.root, root)?;
         }
 
-        file::create_dir_all(&self.cache_dir)?;
         let entry_lock = self.entry_lock()?;
-        let (archive_path, manifest_path) = self.paths();
-        let nonce = crate::rand::random_string(8);
-        let archive_partial = self
-            .cache_dir
-            .join(format!("{}.part-{nonce}.tar.zst", self.key));
-        let manifest_partial = self
-            .cache_dir
-            .join(format!("{}.part-{nonce}.json", self.key));
-        let _partial_files = PartialCacheFiles([archive_partial.clone(), manifest_partial.clone()]);
+        let write = self.store.begin_write(&self.key)?;
 
         let output_bytes = output.iter().fold(0_u64, |total, line| {
             let bytes = match line {
@@ -562,7 +561,7 @@ impl TaskArtifactCache {
         });
         let archive_bytes = if !roots.is_empty() {
             let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
-            write_archive(&archive_partial, &self.root, &roots, &output_matcher)?
+            write_archive(write.artifact_path(), &self.root, &roots, &output_matcher)?
         } else {
             0
         };
@@ -578,15 +577,14 @@ impl TaskArtifactCache {
         };
         manifest.artifact_checksum = Some(calculate_artifact_checksum(
             &manifest,
-            (!manifest.roots.is_empty()).then_some(archive_partial.as_path()),
+            (!manifest.roots.is_empty()).then_some(write.artifact_path()),
         )?);
-        fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
-        file::rename(&manifest_partial, &manifest_path)?;
-        if !manifest.roots.is_empty() {
-            file::rename(&archive_partial, &archive_path)?;
-        } else {
-            let _ = file::remove_file(&archive_path);
-        }
+        self.store.commit(
+            &self.key,
+            &write,
+            &serde_json::to_vec(&manifest)?,
+            !manifest.roots.is_empty(),
+        )?;
         drop(entry_lock);
         if self.limits.configured()
             && let Err(err) = enforce_task_cache_limits(&self.cache_dir, self.limits)
@@ -599,35 +597,16 @@ impl TaskArtifactCache {
         Ok(())
     }
 
-    /// Returns this cache entry's archive and manifest paths.
-    fn paths(&self) -> (PathBuf, PathBuf) {
-        (
-            self.cache_dir.join(format!("{}.tar.zst", self.key)),
-            self.cache_dir.join(format!("{}.json", self.key)),
-        )
-    }
-
     fn entry_lock(&self) -> Result<fslock::LockFile> {
         task_cache_entry_lock(&self.cache_dir, &self.key)
     }
 
-    fn read_manifest(&self) -> Result<CacheManifest> {
-        let (_, manifest_path) = self.paths();
-        let manifest: CacheManifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
+    fn read_manifest(&self, contents: &[u8]) -> Result<CacheManifest> {
+        let manifest: CacheManifest = serde_json::from_slice(contents)?;
         if manifest.format != CACHE_FORMAT_VERSION || manifest.key != self.key {
             bail!("task cache manifest does not match cache key");
         }
         Ok(manifest)
-    }
-}
-
-struct PartialCacheFiles([PathBuf; 2]);
-
-impl Drop for PartialCacheFiles {
-    fn drop(&mut self) {
-        for path in &self.0 {
-            let _ = fs::remove_file(path);
-        }
     }
 }
 
@@ -830,14 +809,16 @@ fn calculate_artifact_checksum(
     Ok(format!("blake3:{}", hash::hash_blake3_to_str(&encoded)))
 }
 
-fn verify_artifact_checksum(manifest: &CacheManifest, archive_path: &Path) -> Result<()> {
+fn verify_artifact_checksum(manifest: &CacheManifest, archive_path: Option<&Path>) -> Result<()> {
     let Some(expected) = &manifest.artifact_checksum else {
         return Ok(());
     };
-    let actual = calculate_artifact_checksum(
-        manifest,
-        (!manifest.roots.is_empty()).then_some(archive_path),
-    )?;
+    let archive_path = if manifest.roots.is_empty() {
+        None
+    } else {
+        Some(archive_path.ok_or_else(|| eyre!("task cache archive is missing"))?)
+    };
+    let actual = calculate_artifact_checksum(manifest, archive_path)?;
     if actual != *expected {
         bail!("task cache artifact checksum mismatch");
     }
@@ -1677,6 +1658,11 @@ mod tests {
 
         assert_eq!(first, second);
         assert!(first.starts_with("blake3:"));
+
+        manifest.artifact_checksum = Some(second);
+        let stale_archive = tempfile::NamedTempFile::new().unwrap();
+        fs::write(stale_archive.path(), "stale archive").unwrap();
+        verify_artifact_checksum(&manifest, Some(stale_archive.path())).unwrap();
     }
 
     #[test]
