@@ -1,3 +1,4 @@
 backends = ["aqua:micro-editor/micro"]
+bins = ["micro"]
 description = "A modern and intuitive terminal-based text editor"
 test = { cmd = "micro -version", expected = "Version: {{version}}" }

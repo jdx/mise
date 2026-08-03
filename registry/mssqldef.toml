@@ -1,2 +1,3 @@
 backends = ["aqua:sqldef/sqldef/mssqldef"]
+bins = ["mssqldef"]
 description = "Idempotent schema management for MsSQL and more"

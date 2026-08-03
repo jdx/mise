@@ -1,3 +1,19 @@
 backends = ["core:rust", "asdf:code-lever/asdf-rust"]
+bins = [
+  "cargo",
+  "cargo-clippy",
+  "cargo-fmt",
+  "cargo-miri",
+  "clippy-driver",
+  "rls",
+  "rust-analyzer",
+  "rust-gdb",
+  "rust-gdbgui",
+  "rust-lldb",
+  "rustc",
+  "rustdoc",
+  "rustfmt",
+  "rustup",
+]
 description = "Rust language"
 idiomatic_files = ["rust-toolchain.toml"]

@@ -1,2 +1,3 @@
 backends = ["aqua:openfaas/faas-cli", "asdf:zekker6/asdf-faas-cli"]
+bins = ["faas-cli"]
 description = "Official CLI for OpenFaaS"

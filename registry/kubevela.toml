@@ -1,3 +1,4 @@
 backends = ["aqua:kubevela/kubevela", "asdf:gustavclausen/asdf-kubevela"]
+bins = ["vela"]
 description = "The Modern Application Platform"
 test = { cmd = "vela version", expected = "CLI Version: {{version}}" }

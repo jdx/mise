@@ -1,3 +1,21 @@
 backends = ["conda:mysql-client"]
+bins = [
+  "myisam_ftdump",
+  "myisamchk",
+  "myisamlog",
+  "myisampack",
+  "mysql",
+  "mysql_config_editor",
+  "mysql_migrate_keyring",
+  "mysql_secure_installation",
+  "mysql_tzinfo_to_sql",
+  "mysqladmin",
+  "mysqlbinlog",
+  "mysqlcheck",
+  "mysqldump",
+  "mysqlimport",
+  "mysqlshow",
+  "mysqlslap",
+]
 description = "MySQL Client"
 test = { cmd = "mysql --version", expected = "{{version}}" }

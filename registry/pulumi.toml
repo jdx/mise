@@ -1,3 +1,18 @@
 backends = ["aqua:pulumi/pulumi", "asdf:canha/asdf-pulumi"]
+bins = [
+  "pulumi",
+  "pulumi-language-bun",
+  "pulumi-language-dotnet",
+  "pulumi-language-go",
+  "pulumi-language-java",
+  "pulumi-language-nodejs",
+  "pulumi-language-pcl",
+  "pulumi-language-python",
+  "pulumi-language-python-exec",
+  "pulumi-language-yaml",
+  "pulumi-resource-pulumi-nodejs",
+  "pulumi-resource-pulumi-python",
+  "pulumi-watch",
+]
 description = "Pulumi - Infrastructure as Code in any programming language"
 test = { cmd = "pulumi version", expected = "v{{version}}" }

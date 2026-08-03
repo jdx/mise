@@ -1,2 +1,3 @@
 backends = ["aqua:redhat-developer/odo", "asdf:rm3l/asdf-odo"]
+bins = ["odo"]
 description = "A fast, and iterative CLI tool for container-based application development"

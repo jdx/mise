@@ -1,3 +1,4 @@
 backends = ["aqua:google/osv-scanner"]
+bins = ["osv-scanner"]
 description = "Vulnerability scanner written in Go which uses the data provided by https://osv.dev"
 test = { cmd = "osv-scanner --version", expected = "osv-scanner version: {{version}}" }

@@ -2,6 +2,7 @@ description = "OpenShift installer for deploying OpenShift clusters"
 os = ["linux", "macos"]
 test = { cmd = "openshift-install version", expected = "{{version}}" }
 
+bins = ["openshift-install"]
 [[backends]]
 full = "http:openshift-install"
 

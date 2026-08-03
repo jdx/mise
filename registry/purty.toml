@@ -1,6 +1,7 @@
 description = "PureScript pretty-printer"
 test = { cmd = "purty version", expected = "Purty version: {{version}}" }
 
+bins = ["purty"]
 [[backends]]
 full = "npm:purty"
 

@@ -1,3 +1,4 @@
 backends = ["aqua:alajmo/mani", "asdf:anweber/asdf-mani"]
+bins = ["mani"]
 description = "CLI tool to help you manage repositories"
 test = { cmd = "mani --version", expected = "Version: {{version}}" }

@@ -3,5 +3,6 @@ backends = [
     "@nubjs/nub",
   ] } },
 ]
+bins = ["nub", "nubx"]
 description = "A Rust CLI that augments Node.js - a fast script runner, a TypeScript-just-works runtime, and a pnpm-compatible package manager"
 test = { cmd = "nub --version", expected = "{{version}}" }

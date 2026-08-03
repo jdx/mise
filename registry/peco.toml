@@ -1,2 +1,3 @@
 backends = ["aqua:peco/peco", "asdf:asdf-community/asdf-peco"]
+bins = ["peco"]
 description = "Simplistic interactive filtering tool"

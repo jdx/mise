@@ -1,3 +1,4 @@
 backends = ["aqua:rui314/mold"]
+bins = ["ld.mold", "mold"]
 description = "Mold: A Modern Linker"
 test = { cmd = "mold --version", expected = "mold {{version}}" }

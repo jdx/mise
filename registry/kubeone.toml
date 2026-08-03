@@ -1,3 +1,4 @@
 backends = ["aqua:kubermatic/kubeone", "aqua:kubermatic/kubeone"]
+bins = ["kubeone"]
 description = "Kubermatic KubeOne automate cluster operations on all your cloud, on-prem, edge, and IoT environments"
 test = { cmd = "kubeone version | jq -r '.kubeone.gitVersion'", expected = "{{version}}" }

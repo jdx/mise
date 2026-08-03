@@ -1,6 +1,7 @@
 description = "Generate type-safe TypeScript clients from OpenAPI specifications provided by https://orval.dev"
 test = { cmd = "orval --version", expected = "{{version}}", tools = ["aube"] }
 
+bins = ["orval"]
 [[backends]]
 full = "npm:orval"
 

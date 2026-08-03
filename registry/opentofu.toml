@@ -1,4 +1,5 @@
 backends = ["aqua:opentofu/opentofu", "asdf:virtualroot/asdf-opentofu"]
+bins = ["tofu"]
 description = "OpenTofu lets you declaratively manage your cloud infrastructure"
 idiomatic_files = [".opentofu-version"]
 test = { cmd = "tofu --version", expected = "OpenTofu v{{version}}" }

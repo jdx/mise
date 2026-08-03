@@ -1,6 +1,7 @@
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
 test = { cmd = "opam --version", expected = "{{version}}" }
 
+bins = ["opam"]
 [[backends]]
 full = "github:ocaml/opam"
 

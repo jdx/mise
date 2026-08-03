@@ -1,3 +1,4 @@
 backends = ["aqua:xataio/pgroll"]
+bins = ["pgroll"]
 description = "PostgreSQL zero-downtime migrations made easy"
 test = { cmd = "pgroll --version", expected = "pgroll version {{version}}" }

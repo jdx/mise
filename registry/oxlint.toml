@@ -1,3 +1,4 @@
 backends = ["aqua:oxc-project/oxc/oxlint", "npm:oxlint"]
+bins = ["oxlint"]
 description = "This is the linter for oxc."
 test = { cmd = "oxlint --version", expected = "Version: {{version}}" }

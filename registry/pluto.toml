@@ -1,3 +1,4 @@
 backends = ["aqua:FairwindsOps/pluto", "asdf:FairwindsOps/asdf-pluto"]
+bins = ["pluto"]
 description = "A cli tool to help discover deprecated apiVersions in Kubernetes"
 test = { cmd = "pluto version", expected = "Version:{{version}}" }

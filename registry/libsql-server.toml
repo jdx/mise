@@ -2,6 +2,7 @@ description = "server mode of libSQL, which is a fork of SQLite that is both Ope
 os = ["linux", "macos"]
 test = { cmd = "sqld --version", expected = "sqld sqld {{version}}" }
 
+bins = ["sqld"]
 [[backends]]
 full = "github:tursodatabase/libsql"
 

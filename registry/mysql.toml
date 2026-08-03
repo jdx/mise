@@ -1,3 +1,31 @@
 backends = ["vfox:jdx/vfox-mysql", "asdf:mise-plugins/mise-mysql"]
+bins = [
+  "ibd2sdi",
+  "innochecksum",
+  "my_print_defaults",
+  "myisam_ftdump",
+  "myisamchk",
+  "myisamlog",
+  "myisampack",
+  "mysql",
+  "mysql_config",
+  "mysql_config_editor",
+  "mysql_migrate_keyring",
+  "mysql_secure_installation",
+  "mysql_tzinfo_to_sql",
+  "mysqladmin",
+  "mysqlbinlog",
+  "mysqlcheck",
+  "mysqld",
+  "mysqld-debug",
+  "mysqld_multi",
+  "mysqld_safe",
+  "mysqldump",
+  "mysqldumpslow",
+  "mysqlimport",
+  "mysqlshow",
+  "mysqlslap",
+  "perror",
+]
 description = "MySQL Database"
 test = { cmd = "mysql --version", expected = "{{version}}" }

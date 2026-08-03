@@ -1,6 +1,30 @@
 description = "LLM inference in C/C++"
 test = { cmd = "llama-cli --version", expected = "version: {{version}}" }
 
+bins = [
+  "ggml-rpc-server",
+  "llama",
+  "llama-batched-bench",
+  "llama-bench",
+  "llama-cli",
+  "llama-debug-template-parser",
+  "llama-fit-params",
+  "llama-gemma3-cli",
+  "llama-gguf-split",
+  "llama-imatrix",
+  "llama-llava-cli",
+  "llama-minicpmv-cli",
+  "llama-mtmd-cli",
+  "llama-mtmd-debug",
+  "llama-perplexity",
+  "llama-quantize",
+  "llama-qwen2vl-cli",
+  "llama-results",
+  "llama-server",
+  "llama-template-analysis",
+  "llama-tokenize",
+  "llama-tts",
+]
 [[backends]]
 full = "github:ggml-org/llama.cpp"
 

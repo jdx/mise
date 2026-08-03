@@ -1,2 +1,3 @@
 backends = ["aqua:pulumi/kubespy", "asdf:jfreeland/asdf-kubespy"]
+bins = ["kubespy"]
 description = "Tools for observing Kubernetes resources in real time, powered by Pulumi"

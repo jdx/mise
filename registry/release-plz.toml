@@ -3,5 +3,6 @@ backends = [
   "github:release-plz/release-plz",
   "cargo:release-plz",
 ]
+bins = ["release-plz"]
 description = "Publish Rust crates from CI with a Release PR."
 test = { cmd = "release-plz --version", expected = "release-plz {{version}}" }

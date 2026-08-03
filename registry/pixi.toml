@@ -1,4 +1,5 @@
 backends = ["github:prefix-dev/pixi"]
+bins = ["pixi"]
 description = "Package management made easy"
 idiomatic_files = [
   { path = "pixi.toml", version_regex = '''(?m)^\s*requires-pixi\s*=\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },

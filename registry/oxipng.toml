@@ -1,3 +1,4 @@
 backends = ["aqua:oxipng/oxipng", "cargo:oxipng"]
+bins = ["oxipng"]
 description = "Oxipng is a multithreaded lossless PNG/APNG compression optimizer"
 test = { cmd = "oxipng --version", expected = "oxipng {{version}}" }

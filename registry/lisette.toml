@@ -1,6 +1,7 @@
 description = "Little language inspired by Rust that compiles to Go"
 test = { cmd = "lis version", expected = "lis {{version}}" }
 
+bins = ["lis"]
 [[backends]]
 full = "github:ivov/lisette"
 

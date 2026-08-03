@@ -1,4 +1,5 @@
 backends = ["core:node"]
+bins = ["node", "npm", "npx"]
 description = "Node.js® is a free, open-source, cross-platform JavaScript runtime environment that lets developers create servers, web apps, command line tools and scripts (Builtin plugin)"
 detect = ["package.json", ".nvmrc", ".node-version"]
 idiomatic_files = [".nvmrc", ".node-version", "package.json"]

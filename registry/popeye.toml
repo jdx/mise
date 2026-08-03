@@ -1,2 +1,3 @@
 backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
+bins = ["popeye"]
 description = "A Kubernetes cluster resource sanitizer"

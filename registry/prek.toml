@@ -1,3 +1,4 @@
 backends = ["aqua:j178/prek"]
+bins = ["prek"]
 description = "⚡ A fast Git hook manager written in Rust, designed as a drop-in alternative to pre-commit, reimagined."
 test = { cmd = "prek --version", expected = "prek {{version}}" }
