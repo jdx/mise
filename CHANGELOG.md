@@ -1,5 +1,111 @@
 # Changelog
 
+## [2026.8.1](https://github.com/jdx/mise/compare/v2026.8.0..v2026.8.1) - 2026-08-03
+
+### 🚀 Features
+
+- **(config)** accept --file on `mise use` and --path on `mise set` by @JamBalaya56562 in [#11577](https://github.com/jdx/mise/pull/11577)
+- **(config)** accept --file on `mise unuse` and --path on `mise unset` by @JamBalaya56562 in [#11616](https://github.com/jdx/mise/pull/11616)
+- **(config)** accept --file wherever `--path` names a config to write by @JamBalaya56562 in [#11631](https://github.com/jdx/mise/pull/11631)
+- **(config)** accept --path on `mise config get` and `mise config set` by @JamBalaya56562 in [#11640](https://github.com/jdx/mise/pull/11640)
+- **(env)** warn when PATH is long enough for cmd.exe to ignore by @JamBalaya56562 in [#11643](https://github.com/jdx/mise/pull/11643)
+- **(task)** include global inputs in affected projects by @jdx in [#11587](https://github.com/jdx/mise/pull/11587)
+- **(task)** attribute pnpm lockfile changes by @jdx in [#11589](https://github.com/jdx/mise/pull/11589)
+- **(task)** run affected workspace tasks by @jdx in [#11590](https://github.com/jdx/mise/pull/11590)
+- **(task)** explain affected task selection by @jdx in [#11591](https://github.com/jdx/mise/pull/11591)
+- **(task)** add affected JSON output by @jdx in [#11593](https://github.com/jdx/mise/pull/11593)
+- **(task)** explain task cache keys by @jdx in [#11595](https://github.com/jdx/mise/pull/11595)
+- **(task)** report task cache miss reasons by @jdx in [#11597](https://github.com/jdx/mise/pull/11597)
+- **(task)** show resolved cache paths by @jdx in [#11599](https://github.com/jdx/mise/pull/11599)
+- **(task)** add cache explanation JSON output by @jdx in [#11600](https://github.com/jdx/mise/pull/11600)
+- **(task)** report task cache statistics by @jdx in [#11601](https://github.com/jdx/mise/pull/11601)
+- **(task)** inspect and clear task cache entries by @jdx in [#11604](https://github.com/jdx/mise/pull/11604)
+- **(task)** verify task cache artifact checksums by @jdx in [#11605](https://github.com/jdx/mise/pull/11605)
+- **(task)** add task cache size and age limits by @jdx in [#11610](https://github.com/jdx/mise/pull/11610)
+- **(task)** audit artifact cache declarations by @jdx in [#11617](https://github.com/jdx/mise/pull/11617)
+- **(task)** compose local and remote cache stores by @jdx in [#11622](https://github.com/jdx/mise/pull/11622)
+- **(task)** stream remote cache artifacts by @jdx in [#11623](https://github.com/jdx/mise/pull/11623)
+- **(task)** add remote cache access modes by @jdx in [#11624](https://github.com/jdx/mise/pull/11624)
+- **(task)** authenticate remote cache requests by @jdx in [#11625](https://github.com/jdx/mise/pull/11625)
+- **(task)** harden remote cache requests by @jdx in [#11626](https://github.com/jdx/mise/pull/11626)
+- **(task)** verify remote cache artifacts by @jdx in [#11627](https://github.com/jdx/mise/pull/11627)
+- **(task)** acquire remote cache OIDC credentials by @jdx in [#11653](https://github.com/jdx/mise/pull/11653)
+- **(upgrade)** add --no-prune to keep the version being replaced by @JamBalaya56562 in [#11639](https://github.com/jdx/mise/pull/11639)
+- **(vfox)** add lua archive and file operations by @jdx in [#11652](https://github.com/jdx/mise/pull/11652)
+
+### 🐛 Bug Fixes
+
+- **(brew)** relocate shebang executables with long prefixes by @Marukome0743 in [#11632](https://github.com/jdx/mise/pull/11632)
+- **(config)** don't pick a write target that config loading ignores by @JamBalaya56562 in [#11571](https://github.com/jdx/mise/pull/11571)
+- **(config)** let tool versions contain a colon by @JamBalaya56562 in [#11580](https://github.com/jdx/mise/pull/11580)
+- **(config)** apply ignore filters to --path <dir> write targets by @JamBalaya56562 in [#11609](https://github.com/jdx/mise/pull/11609)
+- **(config)** don't write the global config into a conf.d drop-in by @JamBalaya56562 in [#11633](https://github.com/jdx/mise/pull/11633)
+- **(install)** restore runtime symlinks after failures by @Marukome0743 in [#11579](https://github.com/jdx/mise/pull/11579)
+- **(pipx)** apply extras to git installs by @jdx in [#11586](https://github.com/jdx/mise/pull/11586)
+- **(prune)** exclude read-only shared installs by @Marukome0743 in [#11644](https://github.com/jdx/mise/pull/11644)
+- **(registry)** gate baked registry accessor in release builds by @jdx in [#11594](https://github.com/jdx/mise/pull/11594)
+- **(schema)** publish schemas with documentation by @jdx in [#11596](https://github.com/jdx/mise/pull/11596)
+- **(task)** skip dangling task symlinks by @Marukome0743 in [#11574](https://github.com/jdx/mise/pull/11574)
+- **(task)** serialize task cache entry access by @jdx in [#11606](https://github.com/jdx/mise/pull/11606)
+- **(task)** respect group boundaries in wildcards by @Marukome0743 in [#11581](https://github.com/jdx/mise/pull/11581)
+- **(task)** support shared pre and post dependencies by @Marukome0743 in [#11578](https://github.com/jdx/mise/pull/11578)
+- **(task)** reject task-list flags on subcommands by @jdx in [#11638](https://github.com/jdx/mise/pull/11638)
+- **(task)** clean abandoned cache writes by @jdx in [#11608](https://github.com/jdx/mise/pull/11608)
+- **(upgrade)** apply all config bumps by @Marukome0743 in [#11572](https://github.com/jdx/mise/pull/11572)
+
+### 🚜 Refactor
+
+- **(task)** extract versioned cache store by @jdx in [#11620](https://github.com/jdx/mise/pull/11620)
+
+### 📚 Documentation
+
+- **(install)** prefer official release binaries by @jdx in [#11615](https://github.com/jdx/mise/pull/11615)
+- **(npm)** clarify node dependency behavior by @jdx in [#11637](https://github.com/jdx/mise/pull/11637)
+- **(task)** define remote cache protocol by @jdx in [#11621](https://github.com/jdx/mise/pull/11621)
+- **(task)** define cache trust requirements by @jdx in [#11628](https://github.com/jdx/mise/pull/11628)
+- **(task)** remove completed cache parity tracker by @jdx in [#11650](https://github.com/jdx/mise/pull/11650)
+- **(troubleshooting)** offer shims for the Windows Path limit, and fix the test for it by @JamBalaya56562 in [#11642](https://github.com/jdx/mise/pull/11642)
+- fix dead gh CLI tool-stub example URL by @Bartok9 in [#11377](https://github.com/jdx/mise/pull/11377)
+- add trailing slash to node.mirror_url npmmirror example by @Bartok9 in [#11460](https://github.com/jdx/mise/pull/11460)
+
+### ⚡ Performance
+
+- **(task)** benchmark artifact cache phases by @jdx in [#11614](https://github.com/jdx/mise/pull/11614)
+
+### 🧪 Testing
+
+- **(task)** cover task cache restore on windows by @jdx in [#11612](https://github.com/jdx/mise/pull/11612)
+- **(task)** cover task cache portability edge cases by @jdx in [#11613](https://github.com/jdx/mise/pull/11613)
+- **(task)** add remote cache compatibility suite by @jdx in [#11629](https://github.com/jdx/mise/pull/11629)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#11655](https://github.com/jdx/mise/pull/11655)
+
+### Chore
+
+- **(docs)** switch canonical domain to mise.jdx.dev by @jdx in [#11598](https://github.com/jdx/mise/pull/11598)
+
+### Ci
+
+- run perf jobs on bamboo by @jdx in [#11603](https://github.com/jdx/mise/pull/11603)
+- build perf binaries on bamboo by @jdx in [#11607](https://github.com/jdx/mise/pull/11607)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`d2lang/d2`](https://github.com/d2lang/d2)
+- [`linnea-bakshi/gha-doctor`](https://github.com/linnea-bakshi/gha-doctor)
+- [`protonpass/pass-cli`](https://github.com/protonpass/pass-cli)
+
+#### Updated Packages (4)
+
+- [`grafana/flint`](https://github.com/grafana/flint)
+- [`nodejs/node`](https://github.com/nodejs/node)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+- [`snyk/cli`](https://github.com/snyk/cli)
+
 ## [2026.8.0](https://github.com/jdx/mise/compare/v2026.7.18..v2026.8.0) - 2026-08-01
 
 ### 🚀 Features
