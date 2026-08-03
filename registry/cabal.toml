@@ -1,3 +1,4 @@
 backends = ["aqua:haskell/cabal/cabal-install"]
+bins = ["cabal"]
 description = "Cabal(haskell): Common Architecture for Building Applications and Libraries"
 test = { cmd = "cabal --version", expected = "cabal-install version {{version}}" }

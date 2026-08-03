@@ -1,2 +1,3 @@
 backends = ["aqua:open-policy-agent/conftest", "asdf:looztra/asdf-conftest"]
+bins = ["conftest"]
 description = "Write tests against structured configuration data using the Open Policy Agent Rego query language"

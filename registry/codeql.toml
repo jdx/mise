@@ -1,6 +1,7 @@
 description = "CodeQL CLI"
 test = { cmd = "codeql --version", expected = "CodeQL command-line toolchain release {{version}}" }
 
+bins = ["codeql"]
 [[backends]]
 full = "github:github/codeql-cli-binaries"
 

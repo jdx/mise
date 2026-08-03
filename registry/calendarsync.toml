@@ -1,3 +1,4 @@
 backends = ["aqua:inovex/CalendarSync", "asdf:FeryET/asdf-calendarsync"]
+bins = ["CalendarSync"]
 description = "Stateless CLI tool to sync calendars across different calendaring systems"
 test = { cmd = "CalendarSync --version", expected = "Version: {{version}}" }

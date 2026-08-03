@@ -1,2 +1,3 @@
 backends = ["aqua:crate-ci/committed"]
+bins = ["committed"]
 description = "Nitpicking commit history since beabf39"

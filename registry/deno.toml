@@ -1,3 +1,4 @@
 backends = ["core:deno"]
+bins = ["deno"]
 description = "A modern runtime for JavaScript and TypeScript (Builtin plugin)"
 idiomatic_files = [".deno-version", "package.json"]

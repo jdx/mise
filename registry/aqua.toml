@@ -1,3 +1,4 @@
 backends = ["github:aquaproj/aqua"]
+bins = ["aqua"]
 description = "Declarative CLI Version manager written in Go. Support Lazy Install, Registry, and continuous update with Renovate. CLI version is switched seamlessly"
 test = { cmd = "aqua version", expected = "{{version}}" }

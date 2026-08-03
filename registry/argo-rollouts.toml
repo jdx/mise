@@ -1,3 +1,4 @@
 backends = ["aqua:argoproj/argo-rollouts", "asdf:abatilo/asdf-argo-rollouts"]
+bins = ["kubectl-argo-rollouts"]
 description = "Progressive Delivery for Kubernetes"
 test = { cmd = "kubectl-argo-rollouts version", expected = "kubectl-argo-rollouts: v{{version}}" }

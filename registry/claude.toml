@@ -3,6 +3,7 @@ description = "Claude Code is an agentic coding tool that lives in your terminal
 os = ["linux", "macos", "windows"]
 test = { cmd = "claude --version", expected = "{{version}} (Claude Code)" }
 
+bins = ["claude"]
 [[backends]]
 full = "aqua:anthropics/claude-code"
 platforms = ["linux", "macos"]

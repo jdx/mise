@@ -1,3 +1,22 @@
 backends = ["vfox:mise-plugins/vfox-bpkg", "asdf:mise-plugins/mise-bpkg"]
+bins = [
+  "bpkg",
+  "bpkg-env",
+  "bpkg-getdeps",
+  "bpkg-init",
+  "bpkg-install",
+  "bpkg-json",
+  "bpkg-list",
+  "bpkg-package",
+  "bpkg-realpath",
+  "bpkg-run",
+  "bpkg-show",
+  "bpkg-source",
+  "bpkg-suggest",
+  "bpkg-term",
+  "bpkg-update",
+  "bpkg-utils",
+  "bpkg.sh",
+]
 description = "Lightweight bash package manager"
 test = { cmd = "bpkg --version", expected = "{{version}}" }

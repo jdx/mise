@@ -1,3 +1,4 @@
 backends = ["aqua:reproducible-containers/diffoci"]
+bins = ["diffoci"]
 description = "diff for Docker and OCI container images"
 test = { cmd = "diffoci --version", expected = "diffoci version v{{version}}" }

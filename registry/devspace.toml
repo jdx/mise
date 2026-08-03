@@ -1,2 +1,3 @@
 backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
+bins = ["devspace"]
 description = "DevSpace - The Fastest Developer Tool for Kubernetes  Automate your deployment workflow with DevSpace and develop software directly inside Kubernetes"

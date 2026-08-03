@@ -1,3 +1,4 @@
 backends = ["vfox:mise-plugins/vfox-aapt2"]
+bins = ["aapt2"]
 description = "Android Asset Packaging Tool (aapt)"
 test = { cmd = "aapt2 version", expected = "Android Asset Packaging Tool (aapt)" } # version doesn't match

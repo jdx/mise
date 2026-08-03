@@ -1,3 +1,4 @@
 backends = ["aqua:harness/drone-cli", "asdf:virtualstaticvoid/asdf-drone"]
+bins = ["drone"]
 description = "Command Line Tools for Drone CI"
 test = { cmd = "drone --version", expected = "drone version {{version}}" }

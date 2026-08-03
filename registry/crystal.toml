@@ -3,5 +3,6 @@ backends = [
   "asdf:mise-plugins/mise-crystal",
   "vfox:mise-plugins/vfox-crystal",
 ]
+bins = ["crystal", "shards"]
 description = "Crystal: A language for humans and computers"
 idiomatic_files = [".crystal-version"]

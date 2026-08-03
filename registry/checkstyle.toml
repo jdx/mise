@@ -1,4 +1,5 @@
 backends = ["aqua:checkstyle/checkstyle"]
+bins = ["checkstyle"]
 description = "Checks Java source code against a coding standard"
 test = { cmd = 'java -jar "$(command -v checkstyle)" --version', expected = "Checkstyle version: {{version}}", tools = [
   "java",

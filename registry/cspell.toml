@@ -1,3 +1,4 @@
 backends = ["npm:cspell"]
+bins = ["cspell", "cspell-esm"]
 description = "A Spell Checker for Code!"
 test = { cmd = "cspell --version", expected = "{{version}}" }

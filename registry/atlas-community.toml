@@ -1,3 +1,4 @@
 backends = ["aqua:ariga/atlas/community"]
+bins = ["atlas"]
 description = "A modern tool for managing database schemas (Community Edition)"
 test = { cmd = "atlas version", expected = "version v{{version}}" }

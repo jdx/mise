@@ -1,6 +1,7 @@
 description = "Depot CLI, build your Docker images in the cloud"
 test = { cmd = "depot --version", expected = "depot version {{version}}" }
 
+bins = ["depot"]
 [[backends]]
 full = "github:depot/cli"
 

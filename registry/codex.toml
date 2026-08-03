@@ -1,3 +1,4 @@
 backends = ["aqua:openai/codex", "npm:@openai/codex"]
+bins = ["codex", "codex-code-mode-host"]
 description = "Lightweight coding agent that runs in your terminal"
 test = { cmd = "codex --version", expected = "codex-cli {{version}}" }

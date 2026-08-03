@@ -2,5 +2,15 @@ backends = [
   "vfox:mise-plugins/vfox-clickhouse",
   "asdf:mise-plugins/mise-clickhouse",
 ]
+bins = [
+  "clickhouse",
+  "clickhouse-benchmark",
+  "clickhouse-client",
+  "clickhouse-compressor",
+  "clickhouse-format",
+  "clickhouse-local",
+  "clickhouse-obfuscator",
+  "clickhouse-server",
+]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
 test = { cmd = "clickhouse --version", expected = "ClickHouse local version {{version | trim_end(pat='-lts') | trim_end(pat='-stable')}}" }

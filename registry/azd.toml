@@ -1,3 +1,4 @@
 backends = ["aqua:Azure/azure-dev"]
+bins = ["azd"]
 description = "Azure Developer CLI - developer-centric command-line tool for creating Azure applications"
 test = { cmd = "azd version", expected = "azd version {{ version | trim_start(pat='azure-dev-cli_') }}" }

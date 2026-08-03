@@ -1,6 +1,7 @@
 description = "Pure Scala Artifact Fetching"
 # test = { cmd = "cs --help", expected = "Coursier is the Scala application" }
 
+bins = ["cs"]
 [[backends]]
 full = "github:coursier/coursier"
 

@@ -1,4 +1,5 @@
 backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
+bins = ["dagger"]
 description = "A portable devkit for CI/CD pipelines"
 idiomatic_files = [
   { path = "dagger.json", version_regex = '"engineVersion"\s*:\s*"v?([^"]+)"' },

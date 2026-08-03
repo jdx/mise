@@ -1,5 +1,13 @@
 description = "An approachable, portable, and productive language for high-quality apps on any platform"
 
+bins = [
+  "dart",
+  "dartaotruntime",
+  "dartaotruntime_asan",
+  "dartaotruntime_msan",
+  "dartaotruntime_tsan",
+  "dartvm",
+]
 [[backends]]
 full = "http:dart"
 

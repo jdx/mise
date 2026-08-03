@@ -1,4 +1,5 @@
 backends = ["github:exaloop/codon"]
+bins = ["codon"]
 description = "A high-performance, zero-overhead, extensible Python compiler with built-in NumPy support"
 os = ["linux", "macos"]
 test = { cmd = "codon --version", expected = "{{version}}" }

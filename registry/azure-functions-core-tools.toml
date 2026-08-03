@@ -2,4 +2,5 @@ backends = [
   "vfox:mise-plugins/vfox-azure-functions-core-tools",
   "asdf:mise-plugins/mise-azure-functions-core-tools",
 ]
+bins = ["func"]
 description = "Command line tools for Azure Functions"
