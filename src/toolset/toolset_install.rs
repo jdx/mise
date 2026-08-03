@@ -13,6 +13,7 @@ use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::InstallContext;
 use crate::plugins::PluginType;
+use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
@@ -24,6 +25,43 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config, hooks, runtime_symlinks};
 
 impl Toolset {
+    pub async fn should_install_missing_registry_bin_provider(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<bool> {
+        let mut providers = vec![];
+        for (backend, tv) in self.list_current_versions() {
+            if backend.is_version_installed(config, &tv, true) {
+                if backend
+                    .which(config, &tv, bin_name)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    providers.push((backend, tv));
+                }
+            } else if REGISTRY
+                .get(&tv.ba().short)
+                .is_some_and(|tool| tool.provides_bin(bin_name))
+                && match &Settings::get().auto_install_disable_tools {
+                    Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
+                    None => true,
+                }
+            {
+                providers.push((backend, tv));
+            }
+        }
+        Self::sort_by_overrides(&mut providers)?;
+        Ok(providers.first().is_some_and(|(backend, tv)| {
+            !backend.is_version_installed(config, tv, true)
+                && REGISTRY
+                    .get(&tv.ba().short)
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+        }))
+    }
+
     #[async_backtrace::framed]
     /// Installs missing tool versions and returns (installed_versions, still_missing_versions).
     /// This avoids callers needing to re-compute the missing versions list.
@@ -540,19 +578,36 @@ impl Toolset {
         config: &mut Arc<Config>,
         bin_name: &str,
     ) -> Result<Option<Vec<ToolVersion>>> {
-        // Strategy: Find backends that could provide this bin by checking:
-        // 1. Any currently installed versions that provide the bin
-        // 2. Any requested backends with installed versions (even if not current)
+        // Registry bin metadata is the only provider signal available before a tool has ever
+        // been installed. Prefer those configured providers, applying registry override order,
+        // before falling back to executable discovery from existing installs.
         let mut plugins = IndexSet::new();
+        let mut registry_providers = self
+            .list_missing_versions(config)
+            .await
+            .into_iter()
+            .filter(|tv| {
+                REGISTRY
+                    .get(&tv.ba().short)
+                    .is_some_and(|tool| tool.provides_bin(bin_name))
+            })
+            .filter(|tv| match &Settings::get().auto_install_disable_tools {
+                Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
+                None => true,
+            })
+            .map(|tv| eyre::Ok((tv.backend()?, tv)))
+            .collect::<Result<Vec<_>>>()?;
+        Self::sort_by_overrides(&mut registry_providers)?;
+        plugins.extend(registry_providers.into_iter().map(|(backend, _)| backend));
 
-        // First check currently active installed versions
+        // Check currently active installed versions.
         for (p, tv) in self.list_current_installed_versions(config) {
             if let Ok(Some(_bin)) = p.which(config, &tv, bin_name).await {
                 plugins.insert(p);
             }
         }
 
-        // Also check backends that are requested but not currently active
+        // Also check backends that are requested but not currently active.
         // This handles the case where a user has tool@v1 globally and tool@v2 locally (not installed)
         // When looking for a bin provided by the tool, we check if any installed version provides it
         let all_installed = self.list_installed_versions(config).await?;
@@ -603,7 +658,12 @@ impl Toolset {
                     )
                     .await?;
                 }
-                return Ok(Some(versions));
+                for tv in &versions {
+                    let backend = tv.backend()?;
+                    if backend.which(config, tv, bin_name).await?.is_some() {
+                        return Ok(Some(versions));
+                    }
+                }
             }
         }
         Ok(None)

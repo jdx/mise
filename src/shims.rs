@@ -123,6 +123,30 @@ async fn which_shim(
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
+    // A configured tool may intentionally override an executable bundled by another installed
+    // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
+    // by the registry before resolving an incidental installed provider.
+    if !completion_offline
+        && Settings::get().not_found_auto_install
+        && ts
+            .should_install_missing_registry_bin_provider(config, bin_name)
+            .await?
+    {
+        for tv in ts
+            .install_missing_bin(config, bin_name)
+            .await?
+            .unwrap_or_default()
+        {
+            let p = tv.backend()?;
+            if let Some(bin) = p.which(config, &tv, bin_name).await? {
+                trace!(
+                    "shim[{bin_name}] REGISTRY ToolVersion: {tv} bin: {bin}",
+                    bin = display_path(&bin)
+                );
+                return Ok((bin, ts));
+            }
+        }
+    }
     if let Some((p, tv)) = ts.which(config, bin_name).await
         && let Some(bin) = p.which(config, &tv, bin_name).await?
     {

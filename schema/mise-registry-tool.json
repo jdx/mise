@@ -133,6 +133,15 @@
       "description": "List of backends that can install this tool",
       "minItems": 1
     },
+    "bins": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\]+$"
+      },
+      "uniqueItems": true,
+      "description": "Executable names provided by this tool. Used as discovery hints for shim auto-install."
+    },
     "description": {
       "type": "string",
       "description": "A brief description of the tool"

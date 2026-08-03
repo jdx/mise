@@ -116,6 +116,7 @@ pub struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
     pub backends: &'static [RegistryBackend],
+    pub bins: &'static [&'static str],
     #[allow(unused)]
     pub aliases: &'static [&'static str],
     pub overrides: &'static [&'static str],
@@ -349,6 +350,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
     ensure!(!backends.is_empty(), "backends must not be empty");
 
     let aliases = string_array(table.get("aliases"), "aliases")?;
+    let bins = string_array(table.get("bins"), "bins")?;
     let overrides = string_array(table.get("overrides"), "overrides")?;
     let os = string_array(table.get("os"), "os")?;
     let idiomatic_files = parse_registry_idiomatic_files(table.get("idiomatic_files"))?;
@@ -368,6 +370,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         short: leak_string(short.to_string()),
         description,
         backends: leak_vec(backends),
+        bins: leak_vec(bins),
         aliases: leak_vec(aliases),
         overrides: leak_vec(overrides),
         test: Box::leak(Box::new(test)),
@@ -527,6 +530,26 @@ static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 impl RegistryTool {
+    pub fn provides_bin(&self, bin_name: &str) -> bool {
+        let exe_suffix = std::env::consts::EXE_SUFFIX;
+        let bin_name = if exe_suffix.is_empty() {
+            bin_name
+        } else {
+            let suffix_start = bin_name.len().saturating_sub(exe_suffix.len());
+            match (bin_name.get(..suffix_start), bin_name.get(suffix_start..)) {
+                (Some(name), Some(suffix)) if suffix.eq_ignore_ascii_case(exe_suffix) => name,
+                _ => bin_name,
+            }
+        };
+        self.bins.iter().any(|bin| {
+            if cfg!(windows) {
+                bin.eq_ignore_ascii_case(bin_name)
+            } else {
+                *bin == bin_name
+            }
+        })
+    }
+
     pub fn backends(&self) -> Vec<&'static str> {
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
@@ -765,6 +788,7 @@ mod tests {
             r#"
 aliases = ["example-alias"]
 description = "Example tool"
+bins = ["example", "example-helper"]
 backends = [
   "aqua:example/tool",
   { full = "github:example/tool", platforms = ["linux-x64"], options = { bin = "example" } },
@@ -783,6 +807,12 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         let tool = registry.get("example-alias").unwrap();
         assert_eq!(tool.short, "example");
         assert_eq!(tool.description, Some("Example tool"));
+        assert_eq!(tool.bins, &["example", "example-helper"]);
+        assert!(tool.provides_bin("example"));
+        assert!(!tool.provides_bin("other"));
+        if cfg!(windows) {
+            assert!(tool.provides_bin("EXAMPLE.EXE"));
+        }
         assert_eq!(tool.backends[0].full, "aqua:example/tool");
         assert_eq!(tool.backends[1].platforms, &["linux-x64"]);
         assert_eq!(
@@ -1023,6 +1053,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             short: "test",
             description: None,
             backends: BACKENDS,
+            bins: &[],
             aliases: &[],
             overrides: &[],
             test: &None,
