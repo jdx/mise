@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -1547,6 +1547,11 @@ mod tests {
     }
 }
 
+pub(crate) struct SyncSymlinksOutcome {
+    pub(crate) changed: BTreeSet<String>,
+    pub(crate) marker_errors: Vec<String>,
+}
+
 #[async_trait]
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
@@ -2192,14 +2197,74 @@ pub trait Backend: Debug + Send + Sync {
         }
         None
     }
-    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
-        let link = self.ba().installs_path.join(version);
-        if link.exists() {
-            return Ok(None);
+    fn sync_symlinks(
+        &self,
+        target_prefix: &Path,
+        links: Vec<(String, PathBuf)>,
+    ) -> Result<SyncSymlinksOutcome> {
+        let mut desired = BTreeMap::new();
+        for (version, target) in links {
+            // Preserve the first provider entry for a version, matching the
+            // previous create-if-missing loop when providers expose duplicates.
+            desired.entry(version).or_insert(target);
         }
-        file::create_dir_all(link.parent().unwrap())?;
-        let link = file::make_symlink(target, &link)?;
-        Ok(Some(link))
+        let installs_path = &self.ba().installs_path;
+        let mut versions = desired.keys().cloned().collect::<BTreeSet<_>>();
+
+        if installs_path.exists() {
+            for entry in installs_path.read_dir()? {
+                let path = entry?.path();
+                if !is_runtime_symlink(&path)
+                    && file::is_symlink_to_prefix(&path, target_prefix)?
+                    && let Some(version) = path.file_name().and_then(|v| v.to_str())
+                {
+                    versions.insert(version.to_string());
+                }
+            }
+        }
+
+        file::create_dir_all(installs_path)?;
+        let mut changed = BTreeSet::new();
+        let mut marker_errors = vec![];
+        for version in versions {
+            let _state_lock = install_state::lock_tool_version(&self.ba().short, &version)?;
+            let link = installs_path.join(&version);
+            let runtime_link = is_runtime_symlink(&link);
+            let provider_link = !runtime_link && file::is_symlink_to_prefix(&link, target_prefix)?;
+            let Some(target) = desired.get(&version) else {
+                if provider_link {
+                    file::remove_symlink_or_junction(&link)?;
+                }
+                continue;
+            };
+
+            if !runtime_link && target.exists() && file::is_symlink_to(&link, target) {
+                if let Err(err) = install_state::clear_incomplete_marker(&self.ba().short, &version)
+                {
+                    marker_errors.push(format!("{version}: {err:#}"));
+                }
+                continue;
+            }
+
+            let entry_exists = std::fs::symlink_metadata(&link).is_ok();
+            if entry_exists && !provider_link {
+                // Never overwrite a managed install, runtime alias, or link
+                // owned by another sync provider.
+                continue;
+            }
+
+            file::make_symlink(target, &link)?;
+            changed.insert(version.clone());
+            if target.exists()
+                && let Err(err) = install_state::clear_incomplete_marker(&self.ba().short, &version)
+            {
+                marker_errors.push(format!("{version}: {err:#}"));
+            }
+        }
+        Ok(SyncSymlinksOutcome {
+            changed,
+            marker_errors,
+        })
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();

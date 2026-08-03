@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
@@ -24,11 +24,12 @@ pub struct SyncPython {
 
 impl SyncPython {
     pub async fn run(self) -> Result<()> {
+        let mut marker_errors = vec![];
         if self.pyenv {
-            self.pyenv().await?;
+            marker_errors.extend(self.pyenv().await?);
         }
         if self.uv {
-            self.uv().await?;
+            marker_errors.extend(self.uv().await?);
         }
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
@@ -39,54 +40,53 @@ impl SyncPython {
             crate::lockfile::LockfileUpdateMode::Normal,
         )
         .await?;
-        Ok(())
-    }
-
-    async fn pyenv(&self) -> Result<()> {
-        let python = backend::get(&"python".into()).unwrap();
-
-        let pyenv_versions_path = PYENV_ROOT.join("versions");
-        let installed_python_versions_path = dirs::INSTALLS.join("python");
-
-        file::remove_symlinks_with_target_prefix(
-            &installed_python_versions_path,
-            &pyenv_versions_path,
-        )?;
-
-        let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
-        for v in sorted(subdirs) {
-            if v.starts_with(".") {
-                continue;
-            }
-            python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
-            miseprintln!("Synced python@{} from pyenv", v);
+        if !marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                marker_errors.join("; ")
+            );
         }
         Ok(())
     }
 
-    async fn uv(&self) -> Result<()> {
+    async fn pyenv(&self) -> Result<Vec<String>> {
+        let python = backend::get(&"python".into()).unwrap();
+
+        let pyenv_versions_path = PYENV_ROOT.join("versions");
+
+        let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
+        let mut links = vec![];
+        for v in sorted(subdirs) {
+            if v.starts_with(".") {
+                continue;
+            }
+            links.push((v.clone(), pyenv_versions_path.join(&v)));
+        }
+        let outcome = python.sync_symlinks(&pyenv_versions_path, links)?;
+        for v in outcome.changed {
+            miseprintln!("Synced python@{} from pyenv", v);
+        }
+        Ok(outcome.marker_errors)
+    }
+
+    async fn uv(&self) -> Result<Vec<String>> {
         let python = backend::get(&"python".into()).unwrap();
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
 
-        file::remove_symlinks_with_target_prefix(
-            &installed_python_versions_path,
-            uv_versions_path,
-        )?;
-
         let subdirs = file::dir_subdirs(uv_versions_path)?;
+        let mut links = vec![];
         for name in sorted(subdirs) {
             if name.starts_with(".") {
                 continue;
             }
             // name is like cpython-3.13.1-macos-aarch64-none
             let v = name.split('-').nth(1).unwrap();
-            if python
-                .create_symlink(v, &uv_versions_path.join(&name))?
-                .is_some()
-            {
-                miseprintln!("Synced python@{v} from uv to mise");
-            }
+            links.push((v.to_string(), uv_versions_path.join(&name)));
+        }
+        let outcome = python.sync_symlinks(uv_versions_path, links)?;
+        for v in outcome.changed {
+            miseprintln!("Synced python@{v} from uv to mise");
         }
 
         let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
@@ -119,7 +119,7 @@ impl SyncPython {
                 miseprintln!("Synced python@{v} from mise to uv");
             }
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 }
 
