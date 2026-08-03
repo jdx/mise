@@ -229,18 +229,15 @@ pub async fn pour(
     crate::file::rename(&inner, &tmp)?;
     crate::file::remove_all(&scratch)?;
 
-    // ":any_skip_relocation" bottles need no relocation — except on Linux,
-    // where bottles built by Homebrew < 5.1.15 are incorrectly tagged and
-    // still carry placeholder ELF linkage (brew applies the same version
-    // check in extend/os/linux/bottle_specification.rb)
-    let skip_relocation = bottle.cellar == ":any_skip_relocation"
+    // ":any_skip_relocation" skips binary linkage relocation, but Homebrew
+    // still replaces placeholders in text files. On Linux, bottles built by
+    // Homebrew < 5.1.15 are incorrectly tagged and still need ELF linkage
+    // relocation (brew applies the same version check in
+    // extend/os/linux/bottle_specification.rb).
+    let skip_linkage = bottle.cellar == ":any_skip_relocation"
         && (cfg!(target_os = "macos") || bottled_by_homebrew_at_least(&tmp, (5, 1, 15)));
-    let report = if skip_relocation {
-        relocate::RelocationReport::default()
-    } else {
-        pr.set_message("relocate".to_string());
-        relocate::relocate_keg(&tmp, name)?
-    };
+    pr.set_message("relocate".to_string());
+    let report = relocate::relocate_keg(&tmp, name, skip_linkage)?;
     // arm64 macOS kills binaries whose signature doesn't match; Linux ELF
     // files have no signatures to fix
     if cfg!(target_os = "macos") && !report.changed_machos.is_empty() {

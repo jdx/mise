@@ -192,9 +192,23 @@ fn replace_in_binary(
     Ok(changed)
 }
 
-/// Walk a poured keg and replace placeholders in all files.
-pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> {
-    let replacements = standard_replacements();
+/// Walk a poured keg and replace placeholders. `skip_linkage` leaves binary
+/// linkage untouched while still relocating text files, matching Homebrew's
+/// handling of `:any_skip_relocation` bottles.
+pub fn relocate_keg(
+    keg: &Path,
+    formula_name: &str,
+    skip_linkage: bool,
+) -> Result<RelocationReport> {
+    relocate_keg_with_replacements(keg, formula_name, skip_linkage, &standard_replacements())
+}
+
+fn relocate_keg_with_replacements(
+    keg: &Path,
+    formula_name: &str,
+    skip_linkage: bool,
+    replacements: &[Replacement],
+) -> Result<RelocationReport> {
     let elf_opts = super::elf::LinkageOpts::for_formula(formula_name);
     // brew never patches glibc's own files — rewriting the dynamic linker
     // breaks it (extend/os/linux/keg_relocate.rb)
@@ -221,6 +235,9 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
         let macho = is_macho(&content);
         let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
         let shebang_end = text_executable_shebang_end(&content);
+        if skip_linkage && (macho || elf || (content.contains(&0) && shebang_end.is_none())) {
+            continue;
+        }
         if macho || (!elf && content.contains(&0) && shebang_end.is_none()) {
             // Non-ELF files containing NUL bytes are treated as binaries unless
             // their shebang makes them text executables (for example zipapps).
@@ -325,6 +342,29 @@ pub(super) mod tests {
             String::from_utf8_lossy(&out),
             "#!/opt/homebrew/bin/bash\nCELLAR=/opt/homebrew/Cellar/foo\n"
         );
+    }
+
+    #[test]
+    fn test_skip_linkage_still_relocates_text_files() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let text = tmp.path().join("script");
+        let binary = tmp.path().join("binary");
+        crate::file::write(&text, "CELLAR=@@HOMEBREW_CELLAR@@/formula/1.0\n")?;
+        let mut binary_content = 0xfeedfacf_u32.to_be_bytes().to_vec();
+        binary_content.extend_from_slice(b"@@HOMEBREW_PREFIX@@/lib/libformula.dylib\0");
+        crate::file::write(&binary, &binary_content)?;
+
+        let report =
+            relocate_keg_with_replacements(tmp.path(), "formula", true, &test_replacements())?;
+
+        assert_eq!(
+            crate::file::read_to_string(&text)?,
+            "CELLAR=/opt/homebrew/Cellar/formula/1.0\n"
+        );
+        assert_eq!(crate::file::read(&binary)?, binary_content);
+        assert_eq!(report.changed_files, vec![text]);
+        assert!(report.changed_machos.is_empty());
+        Ok(())
     }
 
     #[test]
