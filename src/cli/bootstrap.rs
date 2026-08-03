@@ -27,6 +27,97 @@ use crate::ui::table::MiseTable;
 use clap::{Subcommand, ValueEnum};
 
 /// Set up a machine for the current config in one command
+// The wrapper defers construction of bootstrap's large nested command tree
+// until the user actually invokes `mise bootstrap`.
+pub struct DeferredBootstrap(Bootstrap);
+
+impl DeferredBootstrap {
+    pub async fn run(self) -> Result<()> {
+        self.0.run().await
+    }
+}
+
+impl clap::FromArgMatches for DeferredBootstrap {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> std::result::Result<Self, clap::Error> {
+        let mut bootstrap = <Bootstrap as clap::FromArgMatches>::from_arg_matches(matches)?;
+        bootstrap.dry_run = matches.get_flag("dry_run");
+        bootstrap.yes = matches.get_flag("yes");
+        Ok(Self(bootstrap))
+    }
+
+    fn from_arg_matches_mut(
+        matches: &mut clap::ArgMatches,
+    ) -> std::result::Result<Self, clap::Error> {
+        let dry_run = matches.get_flag("dry_run");
+        let yes = matches.get_flag("yes");
+        let mut bootstrap = <Bootstrap as clap::FromArgMatches>::from_arg_matches_mut(matches)?;
+        bootstrap.dry_run = dry_run;
+        bootstrap.yes = yes;
+        Ok(Self(bootstrap))
+    }
+
+    fn update_from_arg_matches(
+        &mut self,
+        matches: &clap::ArgMatches,
+    ) -> std::result::Result<(), clap::Error> {
+        clap::FromArgMatches::update_from_arg_matches(&mut self.0, matches)?;
+        self.0.dry_run |= matches.get_flag("dry_run");
+        self.0.yes |= matches.get_flag("yes");
+        Ok(())
+    }
+
+    fn update_from_arg_matches_mut(
+        &mut self,
+        matches: &mut clap::ArgMatches,
+    ) -> std::result::Result<(), clap::Error> {
+        let dry_run = matches.get_flag("dry_run");
+        let yes = matches.get_flag("yes");
+        clap::FromArgMatches::update_from_arg_matches_mut(&mut self.0, matches)?;
+        self.0.dry_run |= dry_run;
+        self.0.yes |= yes;
+        Ok(())
+    }
+}
+
+impl clap::Args for DeferredBootstrap {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        deferred_flags(command).defer(<Bootstrap as clap::Args>::augment_args)
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        deferred_flags(command).defer(<Bootstrap as clap::Args>::augment_args_for_update)
+    }
+}
+
+// This reconstructs the command for full-tree introspection because expanding
+// the deferred parser in place is not supported. Keep its command name and any
+// variant-level metadata aligned with `Commands::Bootstrap`; `deferred_flags`
+// is shared with normal parsing so the top-level arguments cannot drift.
+pub(crate) fn full_command() -> clap::Command {
+    <Bootstrap as clap::Args>::augment_args(deferred_flags(clap::Command::new("bootstrap")))
+}
+
+fn deferred_flags(command: clap::Command) -> clap::Command {
+    command
+        .about("Set up a machine for the current config in one command")
+        .visible_alias("bs")
+        .arg(
+            clap::Arg::new("dry_run")
+                .long("dry-run")
+                .short('n')
+                .help("Print what would happen without installing anything")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("yes")
+                .long("yes")
+                .short('y')
+                .help("Skip confirmation prompts")
+                .action(clap::ArgAction::SetTrue),
+        )
+}
+
+/// Set up a machine for the current config in one command
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
@@ -67,7 +158,6 @@ use clap::{Subcommand, ValueEnum};
 /// cannot be used together.
 #[derive(Debug, clap::Args)]
 #[clap(
-    visible_alias = "bs",
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
@@ -76,11 +166,11 @@ pub struct Bootstrap {
     command: Option<Commands>,
 
     /// Print what would happen without installing anything
-    #[clap(long, short = 'n')]
+    #[clap(skip)]
     dry_run: bool,
 
     /// Skip confirmation prompts
-    #[clap(long, short)]
+    #[clap(skip)]
     yes: bool,
 
     /// Overwrite existing files that conflict with whole-file dotfile entries
@@ -2651,5 +2741,39 @@ fn file_state_json(state: &FileState) -> &'static str {
         FileState::Missing => "missing",
         FileState::SourceMissing => "source_missing",
         FileState::Differs(_) => "differs",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::{Args, FromArgMatches};
+
+    use super::DeferredBootstrap;
+
+    fn matches(args: &[&str]) -> clap::ArgMatches {
+        <DeferredBootstrap as Args>::augment_args(clap::Command::new("bootstrap"))
+            .try_get_matches_from(args)
+            .unwrap()
+    }
+
+    #[test]
+    fn deferred_bootstrap_preserves_dry_run_and_yes_flags() {
+        let parsed = DeferredBootstrap::from_arg_matches(&matches(&[
+            "bootstrap",
+            "--dry-run",
+            "--yes",
+            "status",
+        ]))
+        .unwrap();
+        assert!(parsed.0.dry_run);
+        assert!(parsed.0.yes);
+
+        let mut updated =
+            DeferredBootstrap::from_arg_matches(&matches(&["bootstrap", "status"])).unwrap();
+        updated
+            .update_from_arg_matches(&matches(&["bootstrap", "--dry-run", "--yes", "status"]))
+            .unwrap();
+        assert!(updated.0.dry_run);
+        assert!(updated.0.yes);
     }
 }

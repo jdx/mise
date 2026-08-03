@@ -17,7 +17,10 @@ pub struct Usage {}
 /// an agent reads is the one that must not.
 pub fn spec() -> usage::Spec {
     {
-        let cli = Cli::command().version(Resettable::Reset);
+        let cli = Cli::command()
+            .version(Resettable::Reset)
+            .disable_help_subcommand(true);
+        let cli = super::expand_deferred_subcommands(cli);
         let mut spec: usage::Spec = cli.into();
 
         // Enable "naked" task completions: `mise foo` completes like `mise run foo`
