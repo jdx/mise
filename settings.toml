@@ -2682,6 +2682,18 @@ env = "MISE_TASK_CACHE_REMOTE_NAMESPACE"
 optional = true
 type = "String"
 
+[task.cache_remote_oidc_audience]
+description = "[experimental] Audience for an automatically acquired remote cache OIDC token."
+docs = """
+Acquire a short-lived OIDC token for this audience when running in a supported workload identity
+environment. GitHub Actions is supported through its OIDC request environment variables. This
+setting is global-only so shared project configuration cannot choose a token audience.
+"""
+env = "MISE_TASK_CACHE_REMOTE_OIDC_AUDIENCE"
+global_only = true
+optional = true
+type = "String"
+
 [task.cache_remote_token]
 description = "[experimental] Bearer token for remote task cache authentication."
 docs = """
@@ -2693,6 +2705,18 @@ env = "MISE_TASK_CACHE_REMOTE_TOKEN"
 global_only = true
 optional = true
 type = "String"
+
+[task.cache_remote_token_file]
+description = "[experimental] File containing a remote task cache bearer token."
+docs = """
+Read the remote task cache bearer token from this file before each request. This supports rotating
+credentials such as Kubernetes projected service account tokens. This setting is global-only so
+shared project configuration cannot select a credential file.
+"""
+env = "MISE_TASK_CACHE_REMOTE_TOKEN_FILE"
+global_only = true
+optional = true
+type = "Path"
 
 [task.cache_remote_url]
 description = "[experimental] Base URL for the remote task cache service."

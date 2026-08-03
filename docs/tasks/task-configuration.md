@@ -707,6 +707,39 @@ least-privilege credentials, restrict namespace access, avoid logging authorizat
 encrypt or otherwise protect stored cache objects according to their sensitivity and retention
 requirements.
 
+For rotating credentials, set `MISE_TASK_CACHE_REMOTE_TOKEN_FILE` to a file containing only the
+bearer token. Mise rereads the file before every request, which supports Kubernetes projected
+service account tokens without restarting a long-running process. The equivalent
+`task.cache_remote_token_file` setting is global-only.
+
+In GitHub Actions, mise can acquire and refresh a short-lived OIDC token itself. Grant the workflow
+permission to request an identity token and set its audience explicitly:
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MISE_TASK_CACHE_REMOTE_OIDC_AUDIENCE: https://cache.example.com
+    steps:
+      - uses: actions/checkout@v5
+      - run: mise run test
+```
+
+The cache service must trust GitHub's issuer, accept the configured audience, and authorize the
+workflow's identity claims for the selected namespace. Mise obtains the token from GitHub's job
+OIDC endpoint, keeps it only in memory, and refreshes it before expiry. The audience setting is
+global-only and acquisition fails clearly when the workflow lacks `id-token: write` permission.
+
+Credential precedence is explicit token, token file, then automatic OIDC. This lets an emergency
+static credential override workload identity without changing project configuration. Other CI
+providers can supply their issued OIDC token directly through `MISE_TASK_CACHE_REMOTE_TOKEN`; they
+do not need a protocol-specific integration.
+
 Task cache entries are not secret-free metadata. They contain captured stdout and stderr plus every
 declared output file. Mise applies its configured output redactions before storing logs, but this is
 not a general secret scanner: a task can print an unknown credential or write one into an output

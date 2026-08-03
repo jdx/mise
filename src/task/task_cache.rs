@@ -405,6 +405,8 @@ impl TaskArtifactCacheBuilder {
                 staging_dir: cache_dir.join("remote"),
                 mode: settings.task.cache_remote_mode,
                 token: settings.task.cache_remote_token.clone(),
+                token_file: settings.task.cache_remote_token_file.clone(),
+                oidc_audience: settings.task.cache_remote_oidc_audience.clone(),
             })
         } else {
             None
