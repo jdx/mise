@@ -112,6 +112,14 @@ struct LockChange {
     new_versions: Vec<String>,
 }
 
+struct LockTaskResult {
+    short: String,
+    version: String,
+    platform: String,
+    updated: bool,
+    unresolved: bool,
+}
+
 impl Lock {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::get();
@@ -304,6 +312,12 @@ impl Lock {
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
 
+            let platform_regressions =
+                self.platform_regression_errors(&lockfile, &stale_versions, &results);
+            if !platform_regressions.is_empty() {
+                return Err(eyre::eyre!(platform_regressions.join("\n")));
+            }
+
             // Prune stale versions AFTER provenance checks complete
             self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
@@ -314,7 +328,7 @@ impl Lock {
 
             // Print summary
             if !self.json {
-                let successful = results.iter().filter(|(_, _, ok)| *ok).count();
+                let successful = results.iter().filter(|result| result.updated).count();
                 let skipped = results.len() - successful;
                 miseprintln!(
                     "{} Updated {} platform entries ({} skipped)",
@@ -511,6 +525,45 @@ impl Lock {
     ) -> BTreeMap<String, Vec<String>> {
         let current_versions = self.current_tool_versions(tools);
         self.stale_versions_for_current(lockfile, &current_versions)
+    }
+
+    fn platform_regression_errors(
+        &self,
+        lockfile: &Lockfile,
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        results: &[LockTaskResult],
+    ) -> Vec<String> {
+        // Cross-platform locking is best-effort because many tools intentionally
+        // support only a subset of the targeted platforms. A skipped platform is
+        // only fatal when pruning the stale version would remove an entry that was
+        // previously resolvable.
+        results
+            .iter()
+            .filter(|result| result.unresolved)
+            .filter_map(|result| {
+                let stale_versions = stale_versions.get(&result.short)?;
+                let lost_versions = lockfile
+                    .tools()
+                    .get(&result.short)?
+                    .iter()
+                    .filter(|tool| {
+                        stale_versions.contains(&tool.version)
+                            && tool.platforms.contains_key(&result.platform)
+                    })
+                    .map(|tool| tool.version.as_str())
+                    .collect::<Vec<_>>();
+                if lost_versions.is_empty() {
+                    return None;
+                }
+                Some(format!(
+                    "failed to resolve {}@{} for {}; refusing to replace locked version(s) {} that support this platform",
+                    result.short,
+                    result.version,
+                    result.platform,
+                    lost_versions.join(", ")
+                ))
+            })
+            .collect()
     }
 
     fn stale_versions_for_current(
@@ -990,7 +1043,7 @@ impl Lock {
         tools: &[LockTool],
         platforms: &[Platform],
         lockfile: &mut Lockfile,
-    ) -> Result<(Vec<(String, String, bool)>, Vec<String>)> {
+    ) -> Result<(Vec<LockTaskResult>, Vec<String>)> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -1055,12 +1108,24 @@ impl Lock {
                     match lockfile::apply_lock_result(lockfile, resolution) {
                         Err(e) => {
                             provenance_errors.push(e.to_string());
-                            results.push((short, platform_key, false));
+                            results.push(LockTaskResult {
+                                short,
+                                version,
+                                platform: platform_key,
+                                updated: false,
+                                unresolved: false,
+                            });
                         }
                         // A resolution that wrote nothing is a skip, not an
                         // update — backends that can't resolve metadata without
                         // installing return empty info rather than an error.
-                        Ok(applied) => results.push((short, platform_key, ok && applied)),
+                        Ok(applied) => results.push(LockTaskResult {
+                            short,
+                            version,
+                            platform: platform_key,
+                            updated: ok && applied,
+                            unresolved: !ok || !applied,
+                        }),
                     }
                 }
                 Err(e) => {
@@ -1070,7 +1135,7 @@ impl Lock {
         }
 
         // Report entries actually written, not tasks attempted
-        let updated = results.iter().filter(|(_, _, ok)| *ok).count();
+        let updated = results.iter().filter(|result| result.updated).count();
         pr.finish_with_message(format!("{} platform entries", updated));
 
         Ok((results, provenance_errors))
@@ -1094,7 +1159,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::Lock;
+    use super::{Lock, LockTaskResult};
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
@@ -1320,5 +1385,43 @@ mod tests {
             lockfile.all_platform_keys(),
             std::collections::BTreeSet::from(["linux-x64".to_string()])
         );
+    }
+
+    #[test]
+    fn test_platform_regression_rejects_unresolved_version_bump() {
+        let cmd = lock_cmd(&[]);
+        let lockfile = lockfile_with_dummy();
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
+            updated: false,
+            unresolved: true,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("failed to resolve dummy@2.0.0 for linux-x64"));
+        assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_platform_regression_allows_new_unsupported_platform() {
+        let cmd = lock_cmd(&[]);
+        let lockfile = lockfile_with_dummy();
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "macos-arm64".to_string(),
+            updated: false,
+            unresolved: true,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert!(errors.is_empty());
     }
 }
