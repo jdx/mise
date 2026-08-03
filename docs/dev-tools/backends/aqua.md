@@ -136,6 +136,21 @@ Set them via tool options using either top-level keys or a nested `vars` table:
 Vars with defaults are filled automatically. Vars marked as required in the aqua registry must be set
 unless the registry also provides a default.
 
+### `version_sort`
+
+Aqua normally preserves the order returned by the upstream version source. For repositories that
+publish backports after newer releases, set `version_sort = "semver"` to resolve `latest` and
+version prefixes using [semantic version precedence](https://semver.org/):
+
+```toml
+[tools]
+"aqua:owner/tool" = { version = "latest", version_sort = "semver" }
+```
+
+If any matching version is not a valid semantic version, mise preserves the upstream order. The
+option is therefore intended only for tools whose release tags consistently follow semantic
+versioning.
+
 ### `prerelease`
 
 By default, releases flagged `prerelease: true` on GitHub are excluded from `mise ls-remote` and from `latest` resolution. Set `prerelease = true` to include them:

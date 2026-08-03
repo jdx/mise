@@ -45,6 +45,8 @@ use std::{
 };
 use url::Url;
 
+const VERSION_SORT_OPTION: &str = "version_sort";
+
 #[derive(Debug)]
 pub struct AquaBackend {
     ba: Arc<BackendArg>,
@@ -79,6 +81,10 @@ impl<'a> AquaOptions<'a> {
         self.values.bool("symlink_bins")
     }
 
+    fn uses_semantic_version_sort(&self) -> bool {
+        self.values.str(VERSION_SORT_OPTION) == Some("semver")
+    }
+
     fn var(&self, name: &str) -> Result<Option<String>> {
         self.canonical_var_options()?
             .get(name)
@@ -99,7 +105,10 @@ impl<'a> AquaOptions<'a> {
     fn canonical_var_options(&self) -> Result<BTreeMap<String, &toml::Value>> {
         let mut vars = BTreeMap::new();
         for (key, value) in self.values.raw().iter() {
-            if key == "symlink_bins" || EPHEMERAL_OPT_KEYS.contains(&key.as_str()) {
+            if key == "symlink_bins"
+                || key == VERSION_SORT_OPTION
+                || EPHEMERAL_OPT_KEYS.contains(&key.as_str())
+            {
                 continue;
             }
 
@@ -404,7 +413,7 @@ impl Backend for AquaBackend {
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        if self.include_prereleases(&opts) {
+        if self.include_prereleases(&opts) || AquaOptions::new(&opts).uses_semantic_version_sort() {
             return Ok(None);
         }
         self.latest_marked_release_version().await
@@ -729,6 +738,7 @@ impl Backend for AquaBackend {
         versions: Vec<String>,
         query: &str,
         filter_prereleases: bool,
+        opts: &ToolVersionOptions,
     ) -> Vec<String> {
         let escaped_query = regex::escape(query);
         let query = if query == "latest" {
@@ -737,7 +747,7 @@ impl Backend for AquaBackend {
             &escaped_query
         };
         let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
-        versions
+        let versions = versions
             .into_iter()
             .filter(|v| {
                 if query == v {
@@ -748,7 +758,12 @@ impl Backend for AquaBackend {
                 }
                 query_regex.is_match(v)
             })
-            .collect()
+            .collect();
+        if AquaOptions::new(opts).uses_semantic_version_sort() {
+            sort_versions_semantically(versions)
+        } else {
+            versions
+        }
     }
 
     /// Resolve platform-specific lock information for any target platform.
@@ -3393,7 +3408,26 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 pub fn is_install_time_option_key(key: &str) -> bool {
-    key != "symlink_bins"
+    key != "symlink_bins" && key != VERSION_SORT_OPTION
+}
+
+fn sort_versions_semantically(versions: Vec<String>) -> Vec<String> {
+    let parsed = match versions
+        .iter()
+        .map(|version| semver::Version::parse(version))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            warn_once!(
+                "aqua `{VERSION_SORT_OPTION}=semver` requires valid semantic versions: {error}; preserving upstream order"
+            );
+            return versions;
+        }
+    };
+    let mut versions = versions.into_iter().zip(parsed).collect::<Vec<_>>();
+    versions.sort_by(|(_, left), (_, right)| left.cmp_precedence(right));
+    versions.into_iter().map(|(version, _)| version).collect()
 }
 
 #[cfg(test)]
@@ -4050,6 +4084,10 @@ packages:
             toml::Value::String("true".to_string()),
         );
         opts.opts.insert(
+            VERSION_SORT_OPTION.to_string(),
+            toml::Value::String("semver".to_string()),
+        );
+        opts.opts.insert(
             "postinstall".to_string(),
             toml::Value::String("echo ok".to_string()),
         );
@@ -4063,6 +4101,7 @@ packages:
         assert_eq!(lock_opts.get("vars.channel"), Some(&"stable".to_string()));
         assert_eq!(lock_opts.get("vars.go_version"), Some(&"1.24".to_string()));
         assert!(!lock_opts.contains_key("symlink_bins"));
+        assert!(!lock_opts.contains_key(VERSION_SORT_OPTION));
         assert!(!lock_opts.contains_key("postinstall"));
     }
 
@@ -4151,6 +4190,72 @@ packages:
         assert!(is_install_time_option_key("vars.channel"));
         assert!(is_install_time_option_key("vars"));
         assert!(!is_install_time_option_key("symlink_bins"));
+        assert!(!is_install_time_option_key(VERSION_SORT_OPTION));
+    }
+
+    #[test]
+    fn test_semantic_version_sort_uses_tool_request_options() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/tool".to_string()),
+        ));
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            VERSION_SORT_OPTION.to_string(),
+            toml::Value::String("semver".to_string()),
+        );
+        let request = ToolRequest::new_opts(
+            backend.ba.clone(),
+            "latest",
+            opts,
+            crate::toolset::ToolSource::MiseToml(PathBuf::from("mise.toml")),
+        )
+        .unwrap();
+        let request_opts = request.options();
+
+        let versions = backend.fuzzy_match_filter(
+            vec!["4.202.6".to_string(), "4.197.3".to_string()],
+            "latest",
+            true,
+            &request_opts,
+        );
+
+        assert_eq!(versions, vec!["4.197.3", "4.202.6"]);
+    }
+
+    #[test]
+    fn test_default_version_sort_preserves_upstream_order() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/tool".to_string()),
+        ));
+
+        let versions = backend.fuzzy_match_filter(
+            vec!["4.202.6".to_string(), "4.197.3".to_string()],
+            "latest",
+            true,
+            &ToolVersionOptions::default(),
+        );
+
+        assert_eq!(versions, vec!["4.202.6", "4.197.3"]);
+    }
+
+    #[test]
+    fn test_semantic_version_sort_preserves_upstream_order_for_invalid_versions() {
+        let versions =
+            sort_versions_semantically(vec!["1.0.0".to_string(), "not-semver".to_string()]);
+
+        assert_eq!(versions, vec!["1.0.0", "not-semver"]);
+    }
+
+    #[test]
+    fn test_semantic_version_sort_ignores_build_metadata() {
+        let versions = sort_versions_semantically(vec![
+            "1.0.0-alpha+002".to_string(),
+            "1.0.0-alpha+001".to_string(),
+        ]);
+
+        assert_eq!(versions, vec!["1.0.0-alpha+002", "1.0.0-alpha+001"]);
     }
 
     #[test]

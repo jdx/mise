@@ -2205,8 +2205,9 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_installed_versions();
         // No async config lookup available here; fall back to inline/registry
         // opts, which is the best we have for a sync path.
-        let filter = !self.include_prereleases(&self.ba().opts());
-        self.fuzzy_match_filter(versions, query, filter)
+        let opts = self.ba().opts();
+        let filter = !self.include_prereleases(&opts);
+        self.fuzzy_match_filter(versions, query, filter, &opts)
     }
     async fn list_versions_matching(
         &self,
@@ -2216,7 +2217,7 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_remote_versions(config).await?;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !self.include_prereleases(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
+        Ok(self.fuzzy_match_filter(versions, query, filter, &opts))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -2251,7 +2252,7 @@ pub trait Backend: Debug + Send + Sync {
         };
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !self.include_prereleases(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
+        Ok(self.fuzzy_match_filter(versions, query, filter, &opts))
     }
 
     async fn latest_version_for_query(
@@ -3371,6 +3372,7 @@ pub trait Backend: Debug + Send + Sync {
         versions: Vec<String>,
         query: &str,
         filter_prereleases: bool,
+        _opts: &ToolVersionOptions,
     ) -> Vec<String> {
         fuzzy_match_versions(versions, query, filter_prereleases)
     }

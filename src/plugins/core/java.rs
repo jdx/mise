@@ -474,7 +474,7 @@ impl Backend for JavaPlugin {
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
         // Java doesn't support the `prerelease` opt-in; always filter.
-        self.fuzzy_match_filter(versions, query, true)
+        self.fuzzy_match_filter(versions, query, true, &self.ba.opts())
     }
 
     async fn list_versions_matching(
@@ -483,7 +483,8 @@ impl Backend for JavaPlugin {
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query, true))
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        Ok(self.fuzzy_match_filter(versions, query, true, &opts))
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -639,6 +640,7 @@ impl Backend for JavaPlugin {
         versions: Vec<String>,
         query: &str,
         filter_prereleases: bool,
+        _opts: &ToolVersionOptions,
     ) -> Vec<String> {
         // remove -musl feature in favour of alpine-linux OS
         let query = if Platform::current().libc() == Some("musl") && query.contains("-musl") {
