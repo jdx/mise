@@ -1810,8 +1810,16 @@
               "description": "[experimental] Namespace sent to the remote task cache.",
               "type": "string"
             },
+            "cache_remote_oidc_audience": {
+              "description": "[experimental] Audience for an automatically acquired remote cache OIDC token.",
+              "type": "string"
+            },
             "cache_remote_token": {
               "description": "[experimental] Bearer token for remote task cache authentication.",
+              "type": "string"
+            },
+            "cache_remote_token_file": {
+              "description": "[experimental] File containing a remote task cache bearer token.",
               "type": "string"
             },
             "cache_remote_url": {

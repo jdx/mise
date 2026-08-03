@@ -5,6 +5,7 @@ use crate::task::task_cache::{
 };
 use crate::{config::Settings, http};
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
 use reqwest::StatusCode;
@@ -18,6 +19,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use url::{Host, Url};
 
@@ -72,6 +74,39 @@ pub(crate) struct RemoteTaskCacheConfig {
     pub(crate) staging_dir: PathBuf,
     pub(crate) mode: TaskCacheRemoteMode,
     pub(crate) token: Option<String>,
+    pub(crate) token_file: Option<PathBuf>,
+    pub(crate) oidc_audience: Option<String>,
+}
+
+#[derive(Clone)]
+enum RemoteTaskCacheCredential {
+    None,
+    Static(HeaderValue),
+    File(PathBuf),
+    GithubActions(Arc<GithubActionsOidcCredential>),
+}
+
+struct GithubActionsOidcCredential {
+    audience: String,
+    request_url: Url,
+    request_token: HeaderValue,
+    client: reqwest::Client,
+    cached: tokio::sync::Mutex<Option<CachedOidcToken>>,
+}
+
+struct CachedOidcToken {
+    authorization: HeaderValue,
+    expires_at: u64,
+}
+
+#[derive(Deserialize)]
+struct GithubActionsOidcResponse {
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct JwtExpiry {
+    exp: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -524,18 +559,28 @@ pub(crate) fn compose_task_cache_stores(
 ) -> Result<Arc<dyn TaskCacheStore>> {
     match remote {
         Some(remote_config) => {
-            let authorization = authorization_header(remote_config.token.as_deref())?;
-            validate_remote_url(&remote_config.base_url, authorization.is_some())?;
+            let authenticated = remote_config
+                .token
+                .as_deref()
+                .is_some_and(|token| !token.trim().is_empty())
+                || remote_config.token_file.is_some()
+                || remote_config
+                    .oidc_audience
+                    .as_deref()
+                    .is_some_and(|audience| !audience.trim().is_empty());
+            validate_remote_url(&remote_config.base_url, authenticated)?;
+            let client = reqwest::Client::builder()
+                .connect_timeout(Settings::get().http_timeout())
+                .read_timeout(Settings::get().http_timeout())
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?;
+            let credential = remote_credential(&remote_config, client.clone())?;
             let remote = Arc::new(HttpTaskCacheStore {
                 base_url: normalized_base_url(remote_config.base_url),
                 namespace: remote_config.namespace,
                 staging_dir: remote_config.staging_dir,
-                client: reqwest::Client::builder()
-                    .connect_timeout(Settings::get().http_timeout())
-                    .read_timeout(Settings::get().http_timeout())
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()?,
-                authorization,
+                client,
+                credential,
             });
             Ok(Arc::new(CompositeTaskCacheStore::new(
                 local,
@@ -547,6 +592,29 @@ pub(crate) fn compose_task_cache_stores(
     }
 }
 
+fn remote_credential(
+    config: &RemoteTaskCacheConfig,
+    client: reqwest::Client,
+) -> Result<RemoteTaskCacheCredential> {
+    if let Some(authorization) = authorization_header(config.token.as_deref())? {
+        return Ok(RemoteTaskCacheCredential::Static(authorization));
+    }
+    if let Some(path) = &config.token_file {
+        return Ok(RemoteTaskCacheCredential::File(path.clone()));
+    }
+    let Some(audience) = config
+        .oidc_audience
+        .as_deref()
+        .map(str::trim)
+        .filter(|audience| !audience.is_empty())
+    else {
+        return Ok(RemoteTaskCacheCredential::None);
+    };
+    Ok(RemoteTaskCacheCredential::GithubActions(Arc::new(
+        GithubActionsOidcCredential::from_env(audience, client)?,
+    )))
+}
+
 fn authorization_header(token: Option<&str>) -> Result<Option<HeaderValue>> {
     let Some(token) = token.map(str::trim).filter(|token| !token.is_empty()) else {
         return Ok(None);
@@ -554,6 +622,152 @@ fn authorization_header(token: Option<&str>) -> Result<Option<HeaderValue>> {
     let mut value = HeaderValue::from_str(&format!("Bearer {token}"))?;
     value.set_sensitive(true);
     Ok(Some(value))
+}
+
+impl RemoteTaskCacheCredential {
+    async fn authorization(&self) -> Result<Option<HeaderValue>> {
+        match self {
+            Self::None => Ok(None),
+            Self::Static(value) => Ok(Some(value.clone())),
+            Self::File(path) => {
+                let token = tokio::fs::read_to_string(path).await.map_err(|err| {
+                    eyre!(
+                        "failed to read remote cache token file {}: {err}",
+                        path.display()
+                    )
+                })?;
+                authorization_header(Some(&token))?
+                    .ok_or_else(|| eyre!("remote cache token file {} is empty", path.display()))
+                    .map(Some)
+            }
+            Self::GithubActions(credential) => credential.authorization().await.map(Some),
+        }
+    }
+}
+
+impl GithubActionsOidcCredential {
+    fn from_env(audience: &str, client: reqwest::Client) -> Result<Self> {
+        let request_url = std::env::var("ACTIONS_ID_TOKEN_REQUEST_URL").map_err(|_| {
+            eyre!(
+                "task.cache_remote_oidc_audience requires GitHub Actions OIDC; \
+                 grant `id-token: write` or set MISE_TASK_CACHE_REMOTE_TOKEN"
+            )
+        })?;
+        let request_token = std::env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").map_err(|_| {
+            eyre!(
+                "task.cache_remote_oidc_audience requires GitHub Actions OIDC; \
+                 ACTIONS_ID_TOKEN_REQUEST_TOKEN is missing"
+            )
+        })?;
+        let request_url: Url = request_url
+            .parse()
+            .map_err(|err| eyre!("invalid GitHub Actions OIDC request URL: {err}"))?;
+        Self::new(audience, request_url, &request_token, client)
+    }
+
+    fn new(
+        audience: &str,
+        mut request_url: Url,
+        request_token: &str,
+        client: reqwest::Client,
+    ) -> Result<Self> {
+        validate_oidc_request_url(&request_url)?;
+        let query = request_url
+            .query_pairs()
+            .filter(|(key, _)| key != "audience")
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        request_url.set_query(None);
+        request_url
+            .query_pairs_mut()
+            .extend_pairs(query)
+            .append_pair("audience", audience);
+        let request_token = authorization_header(Some(request_token))?
+            .ok_or_else(|| eyre!("GitHub Actions OIDC request token is empty"))?;
+        Ok(Self {
+            audience: audience.to_string(),
+            request_url,
+            request_token,
+            client,
+            cached: tokio::sync::Mutex::new(None),
+        })
+    }
+
+    async fn authorization(&self) -> Result<HeaderValue> {
+        const REFRESH_LEEWAY_SECONDS: u64 = 60;
+        let mut cached = self.cached.lock().await;
+        let now = unix_timestamp()?;
+        if let Some(token) = cached.as_ref()
+            && token.expires_at > now.saturating_add(REFRESH_LEEWAY_SECONDS)
+        {
+            return Ok(token.authorization.clone());
+        }
+        let response: GithubActionsOidcResponse =
+            http::retry_async("GET", &self.request_url, || async {
+                Ok(self
+                    .client
+                    .get(self.request_url.clone())
+                    .header(AUTHORIZATION, self.request_token.clone())
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json()
+                    .await?)
+            })
+            .await
+            .map_err(|err| {
+                eyre!(
+                    "failed to acquire GitHub Actions OIDC token for audience {:?}: {err}",
+                    self.audience
+                )
+            })?;
+        let expires_at = jwt_expiry(&response.value)?;
+        if expires_at <= now.saturating_add(REFRESH_LEEWAY_SECONDS) {
+            bail!("GitHub Actions OIDC token expires too soon");
+        }
+        let authorization = authorization_header(Some(&response.value))?
+            .ok_or_else(|| eyre!("GitHub Actions returned an empty OIDC token"))?;
+        *cached = Some(CachedOidcToken {
+            authorization: authorization.clone(),
+            expires_at,
+        });
+        Ok(authorization)
+    }
+}
+
+fn jwt_expiry(token: &str) -> Result<u64> {
+    let payload = token
+        .split('.')
+        .nth(1)
+        .ok_or_else(|| eyre!("GitHub Actions returned a malformed OIDC token"))?;
+    let payload = URL_SAFE_NO_PAD
+        .decode(payload)
+        .map_err(|_| eyre!("GitHub Actions returned a malformed OIDC token"))?;
+    let claims: JwtExpiry = serde_json::from_slice(&payload)
+        .map_err(|_| eyre!("GitHub Actions OIDC token is missing a valid expiry"))?;
+    Ok(claims.exp)
+}
+
+fn unix_timestamp() -> Result<u64> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| eyre!("system clock is before the Unix epoch: {err}"))?
+        .as_secs())
+}
+
+fn validate_oidc_request_url(url: &Url) -> Result<()> {
+    if url.scheme() == "https"
+        || url.scheme() == "http"
+            && url.host().is_some_and(|host| match host {
+                Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
+                Host::Ipv4(address) => address.is_loopback(),
+                Host::Ipv6(address) => address.is_loopback(),
+            })
+    {
+        Ok(())
+    } else {
+        bail!("GitHub Actions OIDC request URL must use HTTPS")
+    }
 }
 
 fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result<()> {
@@ -585,7 +799,7 @@ struct HttpTaskCacheStore {
     namespace: String,
     staging_dir: PathBuf,
     client: reqwest::Client,
-    authorization: Option<HeaderValue>,
+    credential: RemoteTaskCacheCredential,
 }
 
 impl HttpTaskCacheStore {
@@ -604,22 +818,22 @@ impl HttpTaskCacheStore {
         ))?)
     }
 
-    fn request(
+    async fn request(
         &self,
         method: reqwest::Method,
         url: Url,
         media_type: &'static str,
-    ) -> reqwest::RequestBuilder {
+    ) -> Result<reqwest::RequestBuilder> {
         let request = self
             .client
             .request(method, url)
             .header(REMOTE_CACHE_PROTOCOL_HEADER, "1")
             .header(REMOTE_CACHE_NAMESPACE_HEADER, &self.namespace)
             .header(ACCEPT, media_type);
-        if let Some(authorization) = &self.authorization {
-            request.header(AUTHORIZATION, authorization)
+        if let Some(authorization) = self.credential.authorization().await? {
+            Ok(request.header(AUTHORIZATION, authorization))
         } else {
-            request
+            Ok(request)
         }
     }
 
@@ -629,6 +843,7 @@ impl HttpTaskCacheStore {
         http::retry_async("GET", &url, || async {
             let response = self
                 .request(reqwest::Method::GET, url.clone(), media_type)
+                .await?
                 .send()
                 .await?
                 .error_for_status()?;
@@ -650,6 +865,7 @@ impl HttpTaskCacheStore {
                     url.clone(),
                     REMOTE_CACHE_BLOB_MEDIA_TYPE,
                 )
+                .await?
                 .send()
                 .await?;
             response.error_for_status_ref()?;
@@ -691,6 +907,7 @@ impl HttpTaskCacheStore {
                     url.clone(),
                     REMOTE_CACHE_BLOB_MEDIA_TYPE,
                 )
+                .await?
                 .header(CONTENT_TYPE, REMOTE_CACHE_BLOB_MEDIA_TYPE)
                 .header(CONTENT_LENGTH, length)
                 .header(IF_NONE_MATCH, "*")
@@ -720,6 +937,7 @@ impl HttpTaskCacheStore {
                     url.clone(),
                     REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
                 )
+                .await?
                 .header(CONTENT_TYPE, REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
                 .header(IF_NONE_MATCH, "*")
                 .body(body.clone())
@@ -749,6 +967,7 @@ impl TaskCacheStore for HttpTaskCacheStore {
                     url.clone(),
                     REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
                 )
+                .await?
                 .send()
                 .await?;
             if response.status() == StatusCode::NOT_FOUND {
@@ -1346,6 +1565,81 @@ mod tests {
         assert!(authorization_header(Some(" ")).unwrap().is_none());
     }
 
+    #[tokio::test]
+    async fn token_file_credentials_are_reloaded() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("cache-token");
+        fs::write(&path, "first-token\n").unwrap();
+        let credential = RemoteTaskCacheCredential::File(path.clone());
+
+        let first = credential.authorization().await.unwrap().unwrap();
+        assert_eq!(first, "Bearer first-token");
+        assert!(first.is_sensitive());
+
+        fs::write(path, "rotated-token\n").unwrap();
+        let rotated = credential.authorization().await.unwrap().unwrap();
+        assert_eq!(rotated, "Bearer rotated-token");
+    }
+
+    #[tokio::test]
+    async fn github_actions_oidc_tokens_are_acquired_and_cached() {
+        let mut server = mockito::Server::new_async().await;
+        let expires_at = unix_timestamp().unwrap() + 3600;
+        let token = test_jwt(expires_at);
+        let token_response = serde_json::json!({"value":token}).to_string();
+        let request = server
+            .mock("GET", "/oidc")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "audience".into(),
+                "https://cache.example.com".into(),
+            ))
+            .match_header("authorization", "Bearer request-secret")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(token_response)
+            .expect(1)
+            .create_async()
+            .await;
+        let credential = GithubActionsOidcCredential::new(
+            "https://cache.example.com",
+            format!("{}/oidc?api-version=1&audience=old", server.url())
+                .parse()
+                .unwrap(),
+            "request-secret",
+            reqwest::Client::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            credential.request_url.query_pairs().collect::<Vec<_>>(),
+            vec![
+                ("api-version".into(), "1".into()),
+                ("audience".into(), "https://cache.example.com".into()),
+            ]
+        );
+
+        let first = credential.authorization().await.unwrap();
+        let second = credential.authorization().await.unwrap();
+
+        assert_eq!(first, format!("Bearer {token}"));
+        assert_eq!(first, second);
+        assert!(first.is_sensitive());
+        request.assert_async().await;
+    }
+
+    #[test]
+    fn oidc_request_urls_require_https_except_for_loopback() {
+        validate_oidc_request_url(&"https://example.com/oidc".parse().unwrap()).unwrap();
+        validate_oidc_request_url(&"http://127.0.0.1:3000/oidc".parse().unwrap()).unwrap();
+        assert!(validate_oidc_request_url(&"http://example.com/oidc".parse().unwrap()).is_err());
+    }
+
+    fn test_jwt(expires_at: u64) -> String {
+        let header = URL_SAFE_NO_PAD.encode(b"{}");
+        let claims = URL_SAFE_NO_PAD
+            .encode(serde_json::to_vec(&serde_json::json!({"exp":expires_at})).unwrap());
+        format!("{header}.{claims}.signature")
+    }
+
     #[test]
     fn remote_urls_require_https_for_authenticated_requests() {
         for url in [
@@ -1704,7 +1998,9 @@ mod tests {
             namespace: "test-namespace".into(),
             staging_dir: staging.path().to_path_buf(),
             client: reqwest::Client::new(),
-            authorization: Some(HeaderValue::from_static("Bearer test-token")),
+            credential: RemoteTaskCacheCredential::Static(HeaderValue::from_static(
+                "Bearer test-token",
+            )),
         };
         let write = store.begin_write(key).unwrap();
 
@@ -1745,7 +2041,7 @@ mod tests {
             namespace: "test-namespace".into(),
             staging_dir: staging.path().to_path_buf(),
             client: reqwest::Client::new(),
-            authorization: None,
+            credential: RemoteTaskCacheCredential::None,
         };
 
         let err = store
