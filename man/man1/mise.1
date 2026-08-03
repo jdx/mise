@@ -248,6 +248,9 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap plan\fR
+Show the changes declarative bootstrap resources would make
+.TP
 \fBbootstrap plugins\fR
 Manage package manager plugins declared in `[bootstrap.plugins]`
 .TP
@@ -1356,6 +1359,19 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP PLAN"
+Show the changes declarative bootstrap resources would make
+.PP
+\fBUsage:\fR mise bootstrap plan [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output a stable machine\-readable plan in JSON format
+.TP
+\fB\-\-detailed\-exitcode\fR
+Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
 .SH "MISE BOOTSTRAP PLUGINS APPLY"
 \fBUsage:\fR mise bootstrap plugins apply [OPTIONS]
 .PP

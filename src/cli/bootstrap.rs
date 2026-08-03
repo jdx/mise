@@ -246,6 +246,7 @@ enum Commands {
     #[clap(name = "mise-shell-activate", alias = "shell")]
     MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
+    Plan(BootstrapPlan),
     Plugins(BootstrapPlugins),
     Repos(BootstrapRepos),
     Status(BootstrapStatus),
@@ -265,6 +266,19 @@ struct BootstrapStatus {
     /// Exit with code 1 if any configured bootstrap state is not in its desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
+}
+
+/// Show the changes declarative bootstrap resources would make
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapPlan {
+    /// Output a stable machine-readable plan in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
+    #[clap(long, verbatim_doc_comment)]
+    detailed_exitcode: bool,
 }
 
 /// Manage dotfiles from `[dotfiles]`
@@ -1263,12 +1277,48 @@ impl Commands {
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::MiseShellActivate(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Plan(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
+    }
+}
+
+impl BootstrapPlan {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let plan = system::resources::plan(&config).await?;
+        let output = plan.output()?;
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+        } else if output.resources.is_empty() {
+            info!("nothing configured for bootstrap planning");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in &output.resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current.clone(),
+                    resource.desired.clone(),
+                ]);
+            }
+            table.print()?;
+            miseprintln!(
+                "Plan: {} create, {} update, {} unchanged, {} unknown",
+                output.summary.create,
+                output.summary.update,
+                output.summary.unchanged,
+                output.summary.unknown,
+            );
+        }
+        if self.detailed_exitcode && output.summary.has_changes() {
+            return Err(crate::request_exit(2));
+        }
+        Ok(())
     }
 }
 

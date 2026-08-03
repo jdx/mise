@@ -138,6 +138,23 @@ To preview what would change without touching anything:
 mise bootstrap --dry-run
 ```
 
+For a structured resource plan, use `mise bootstrap plan`. The provisioning
+planner currently reports system packages; other declarative bootstrap parts
+will join the same dependency-aware plan as they adopt the resource model.
+
+```sh
+mise bootstrap plan
+mise bootstrap plan --json
+mise bootstrap plan --detailed-exitcode
+```
+
+With `--detailed-exitcode`, the command exits 0 when nothing would change, 2
+when the plan contains changes, and 1 when planning fails. Resources whose
+package manager is unavailable on the current platform, or whose requested
+version the manager cannot install, are reported as `unknown`; they do not
+count as changes. This matches apply behavior: unsupported pins remain visible
+for manual resolution instead of being reported as changes mise would skip.
+
 When `mise bootstrap` applies or would apply something that needs user
 follow-up, it prints a final `bootstrap: follow-up` section after a successful
 run. Dry runs use `bootstrap: follow-up if applied`. If a later bootstrap phase

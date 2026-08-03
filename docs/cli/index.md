@@ -123,6 +123,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise bootstrap packages status [-J --json] [--missing]`](/cli/bootstrap/packages/status.md)
 - [`mise bootstrap packages upgrade [FLAGS] [PACKAGE]…`](/cli/bootstrap/packages/upgrade.md)
 - [`mise bootstrap packages use [FLAGS] <PACKAGE>…`](/cli/bootstrap/packages/use.md)
+- [`mise bootstrap plan [-J --json] [--detailed-exitcode]`](/cli/bootstrap/plan.md)
 - [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
 - [`mise bootstrap plugins apply [-n --dry-run]`](/cli/bootstrap/plugins/apply.md)
 - [`mise bootstrap plugins status [--missing]`](/cli/bootstrap/plugins/status.md)

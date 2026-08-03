@@ -40,6 +40,7 @@ pub mod launchd;
 pub mod login_shell;
 pub mod packages;
 pub mod repos;
+pub mod resources;
 pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
