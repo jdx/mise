@@ -10,7 +10,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.8.0"
+version = "2026.8.1"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]

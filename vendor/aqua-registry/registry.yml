@@ -31006,6 +31006,18 @@ packages:
           - goos: windows
             format: zip
   - type: github_release
+    repo_owner: d2lang
+    repo_name: d2
+    aliases:
+      - name: terrastruct/d2
+    asset: d2-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: D2 is a modern diagram scripting language that turns text to diagrams
+    replacements:
+      darwin: macos
+    files:
+      - name: d2
+        src: d2-{{.Version}}/bin/d2
+  - type: github_release
     repo_owner: dadav
     repo_name: helm-schema
     description: Generate jsonschemas from helm charts
@@ -46329,6 +46341,16 @@ packages:
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            replacements:
+              linux: unknown-linux-musl
+            variants:
+              - key: libc
+                value: musl
           - goos: windows
             format: zip
         github_artifact_attestations:
@@ -62178,6 +62200,22 @@ packages:
           - goos: windows
             asset: linkerd2-cli-{{.Version}}-{{.OS}}
   - type: github_release
+    repo_owner: linnea-bakshi
+    repo_name: gha-doctor
+    description: "Diagnose GitHub Actions: flaky jobs, wasted minutes, slow steps, and anti-patterns"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gha-doctor_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: lintnet
     repo_name: lintnet
     aliases:
@@ -69947,25 +69985,35 @@ packages:
           windows: win
         files:
           - name: corepack
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/corepack
+            src: "{{.AssetWithoutExt}}/bin/corepack"
           - name: node
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/node
+            src: "{{.AssetWithoutExt}}/bin/node"
           - name: npm
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npm
+            src: "{{.AssetWithoutExt}}/bin/npm"
           - name: npx
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npx
+            src: "{{.AssetWithoutExt}}/bin/npx"
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            variants:
+              - key: libc
+                value: musl
+            type: http
+            url: https://unofficial-builds.nodejs.org/download/release/{{.Version}}/node-{{.Version}}-linux-{{.Arch}}-musl.tar.gz
           - goos: windows
             format: zip
             files:
               - name: corepack
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/corepack.cmd
+                src: "{{.AssetWithoutExt}}/corepack.cmd"
               - name: node
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/node
+                src: "{{.AssetWithoutExt}}/node"
               - name: npm
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npm.cmd
+                src: "{{.AssetWithoutExt}}/npm.cmd"
               - name: npx
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npx.cmd
+                src: "{{.AssetWithoutExt}}/npx.cmd"
       - version_constraint: "true"
         url: https://nodejs.org/dist/{{.Version}}/node-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -69975,21 +70023,31 @@ packages:
           windows: win
         files:
           - name: node
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/node
+            src: "{{.AssetWithoutExt}}/bin/node"
           - name: npm
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npm
+            src: "{{.AssetWithoutExt}}/bin/npm"
           - name: npx
-            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npx
+            src: "{{.AssetWithoutExt}}/bin/npx"
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            variants:
+              - key: libc
+                value: musl
+            type: http
+            url: https://unofficial-builds.nodejs.org/download/release/{{.Version}}/node-{{.Version}}-linux-{{.Arch}}-musl.tar.gz
           - goos: windows
             format: zip
             files:
               - name: node
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/node
+                src: "{{.AssetWithoutExt}}/node"
               - name: npm
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npm.cmd
+                src: "{{.AssetWithoutExt}}/npm.cmd"
               - name: npx
-                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npx.cmd
+                src: "{{.AssetWithoutExt}}/npx.cmd"
   - type: github_release
     repo_owner: nojima
     repo_name: httpie-go
@@ -75690,6 +75748,15 @@ packages:
           amd64: x64
           windows: win32
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: pnpm-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
           - goos: windows
             format: zip
       - version_constraint: semver("<= 11.0.6")
@@ -75704,6 +75771,15 @@ packages:
           amd64: x64
           windows: win32
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: pnpm-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
           - goos: windows
             format: zip
         github_artifact_attestations:
@@ -75732,6 +75808,15 @@ packages:
           amd64: x64
           windows: win32
         overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: pnpm-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
           - goos: windows
             format: zip
         github_artifact_attestations:
@@ -76601,6 +76686,28 @@ packages:
     overrides:
       - goos: windows
         asset: protoc-{{trimV .Version}}-{{.OS}}.{{.Format}}
+  - type: github_release
+    repo_owner: protonpass
+    repo_name: pass-cli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: pass-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            asset: pass-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements: {}
   - name: psastras/sarif-rs/clang-tidy-sarif
     type: github_release
     repo_owner: psastras
@@ -85465,6 +85572,25 @@ packages:
           - goos: linux
             goarch: arm64
             asset: snyk-{{.OS}}-{{.Arch}}
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            goarch: arm64
+            asset: snyk-alpine-{{.Arch}}
+            variants:
+              - key: libc
+                value: musl
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            variants:
+              - key: libc
+                value: musl
+            replacements:
+              linux: alpine
           - goos: darwin
             goarch: arm64
             asset: snyk-{{.OS}}-{{.Arch}}
@@ -93240,16 +93366,6 @@ packages:
         overrides:
           - goos: windows
             format: zip
-  - type: github_release
-    repo_owner: terrastruct
-    repo_name: d2
-    asset: d2-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
-    description: D2 is a modern diagram scripting language that turns text to diagrams
-    replacements:
-      darwin: macos
-    files:
-      - name: d2
-        src: d2-{{.Version}}/bin/d2
   - type: github_release
     repo_owner: terrastruct
     repo_name: tala
