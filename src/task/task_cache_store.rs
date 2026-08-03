@@ -32,6 +32,44 @@ const REMOTE_CACHE_BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 /// manifest format so stores and transports can evolve without changing keys.
 pub(crate) const TASK_CACHE_STORE_VERSION: u8 = 1;
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum TaskCacheRemoteMode {
+    #[default]
+    ReadWrite,
+    ReadOnly,
+    WriteOnly,
+}
+
+impl TaskCacheRemoteMode {
+    fn reads(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::ReadOnly)
+    }
+
+    fn writes(self) -> bool {
+        matches!(self, Self::ReadWrite | Self::WriteOnly)
+    }
+}
+
+pub(crate) struct RemoteTaskCacheConfig {
+    pub(crate) base_url: Url,
+    pub(crate) namespace: String,
+    pub(crate) staging_dir: PathBuf,
+    pub(crate) mode: TaskCacheRemoteMode,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 struct CacheDigest {
     algorithm: String,
@@ -291,12 +329,14 @@ pub(crate) trait TaskCacheStore: Send + Sync {
 pub(crate) struct CompositeTaskCacheStore {
     local: Arc<dyn TaskCacheStore>,
     remote: Arc<dyn TaskCacheStore>,
+    remote_mode: TaskCacheRemoteMode,
 }
 
 impl CompositeTaskCacheStore {
     pub(crate) fn new(
         local: Arc<dyn TaskCacheStore>,
         remote: Arc<dyn TaskCacheStore>,
+        remote_mode: TaskCacheRemoteMode,
     ) -> Result<Self> {
         if local.version() != remote.version() {
             bail!(
@@ -305,7 +345,11 @@ impl CompositeTaskCacheStore {
                 remote.version()
             );
         }
-        Ok(Self { local, remote })
+        Ok(Self {
+            local,
+            remote,
+            remote_mode,
+        })
     }
 
     fn copy_artifact(source: Option<&Path>, write: &TaskCacheStoreWrite) -> Result<bool> {
@@ -349,6 +393,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         if let Some(entry) = self.local.get(key, action_size).await? {
             return Ok(Some(entry));
         }
+        if !self.remote_mode.reads() {
+            return Ok(None);
+        }
         let entry = match self.remote.get(key, action_size).await {
             Ok(Some(entry)) => entry,
             Ok(None) => return Ok(None),
@@ -381,6 +428,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         self.local
             .commit(key, action, write, manifest, has_artifact)
             .await?;
+        if !self.remote_mode.writes() {
+            return Ok(());
+        }
         let mirror: Result<()> = async {
             let entry = self
                 .local
@@ -410,6 +460,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
     }
 
     async fn remove(&self, key: &str) -> Result<()> {
+        if !self.remote_mode.writes() {
+            return self.local.remove(key).await;
+        }
         // Delete remotely first so a failed remote delete cannot allow the
         // entry to be promoted back after its local copy was removed.
         self.remote.remove(key).await?;
@@ -420,6 +473,9 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         let Err(remove_err) = self.local.remove_local(key, action_size).await else {
             return Ok(());
         };
+        if !self.remote_mode.reads() {
+            return Err(remove_err);
+        }
         let Some(entry) = self.remote.get(key, action_size).await? else {
             return Err(remove_err);
         };
@@ -442,17 +498,21 @@ impl TaskCacheStore for CompositeTaskCacheStore {
 
 pub(crate) fn compose_task_cache_stores(
     local: Arc<dyn TaskCacheStore>,
-    remote: Option<(Url, String, PathBuf)>,
+    remote: Option<RemoteTaskCacheConfig>,
 ) -> Result<Arc<dyn TaskCacheStore>> {
     match remote {
-        Some((base_url, namespace, staging_dir)) => {
+        Some(remote_config) => {
             let remote = Arc::new(HttpTaskCacheStore {
-                base_url: normalized_base_url(base_url),
-                namespace,
-                staging_dir,
+                base_url: normalized_base_url(remote_config.base_url),
+                namespace: remote_config.namespace,
+                staging_dir: remote_config.staging_dir,
                 client: reqwest::Client::new(),
             });
-            Ok(Arc::new(CompositeTaskCacheStore::new(local, remote)?))
+            Ok(Arc::new(CompositeTaskCacheStore::new(
+                local,
+                remote,
+                remote_config.mode,
+            )?))
         }
         None => Ok(local),
     }
@@ -1317,7 +1377,12 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> =
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "remote-hit", b"remote", Some(b"artifact")).await;
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote.clone()).unwrap();
+        let composite = CompositeTaskCacheStore::new(
+            local.clone(),
+            remote.clone(),
+            TaskCacheRemoteMode::ReadWrite,
+        )
+        .unwrap();
 
         let hit = composite.get("remote-hit", 6).await.unwrap().unwrap();
         assert_eq!(hit.manifest, b"remote");
@@ -1359,7 +1424,9 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> = Arc::new(FailingTaskCacheStore {
             inner: remote_inner,
         });
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+                .unwrap();
 
         assert!(composite.get("unavailable", 6).await.unwrap().is_none());
 
@@ -1552,7 +1619,12 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(local.as_ref(), "expired", b"local", None).await;
         seed(remote.as_ref(), "expired", b"remote", None).await;
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote.clone()).unwrap();
+        let composite = CompositeTaskCacheStore::new(
+            local.clone(),
+            remote.clone(),
+            TaskCacheRemoteMode::ReadWrite,
+        )
+        .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
 
@@ -1576,13 +1648,37 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> =
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
-        let composite = CompositeTaskCacheStore::new(local.clone(), remote).unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+                .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
 
         assert_eq!(
             local.get("expired", 6).await.unwrap().unwrap().manifest,
             b"fresh-remote"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_only_store_does_not_repair_local_removal_from_remote() {
+        let local_root = tempfile::tempdir().unwrap();
+        let remote_root = tempfile::tempdir().unwrap();
+        let local_inner = LocalTaskCacheStore::new(local_root.path().to_path_buf());
+        seed(&local_inner, "expired", b"stale-local", None).await;
+        let local: Arc<dyn TaskCacheStore> =
+            Arc::new(RemoveFailingTaskCacheStore { inner: local_inner });
+        let remote: Arc<dyn TaskCacheStore> =
+            Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
+        seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::WriteOnly)
+                .unwrap();
+
+        assert!(composite.remove_local("expired", 6).await.is_err());
+        assert_eq!(
+            local.get("expired", 6).await.unwrap().unwrap().manifest,
+            b"stale-local"
         );
     }
 }

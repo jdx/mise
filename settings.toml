@@ -2654,6 +2654,45 @@ env = "MISE_TASK_CACHE_MAX_SIZE"
 optional = true
 type = "String"
 
+[task.cache_remote_mode]
+default = "read-write"
+description = "[experimental] Remote task cache access mode."
+docs = """
+Control remote cache access while keeping the local task cache enabled:
+
+- `read-write` reads remote misses and uploads successful local results.
+- `read-only` reads remote misses without uploading results.
+- `write-only` uploads results without reading remote entries.
+
+The per-run `--task-cache` mode remains authoritative. In particular, `--task-cache=local-only`
+disables all remote access.
+"""
+enum = ["read-write", "read-only", "write-only"]
+env = "MISE_TASK_CACHE_REMOTE_MODE"
+rust_type = "crate::task::TaskCacheRemoteMode"
+type = "String"
+
+[task.cache_remote_namespace]
+description = "[experimental] Namespace sent to the remote task cache."
+docs = """
+Opaque repository or organization namespace used to isolate remote cache entries. This setting is
+required when [`task.cache_remote_url`](#task-cache-remote-url) is configured.
+"""
+env = "MISE_TASK_CACHE_REMOTE_NAMESPACE"
+optional = true
+type = "String"
+
+[task.cache_remote_url]
+description = "[experimental] Base URL for the remote task cache service."
+docs = """
+Enable the versioned HTTP remote task cache protocol at this base URL. Remote access also requires
+[`task.cache_remote_namespace`](#task-cache-remote-namespace). Leave unset to use only the local
+task cache.
+"""
+env = "MISE_TASK_CACHE_REMOTE_URL"
+optional = true
+type = "Url"
+
 [task.disable_paths]
 default = []
 description = "Paths that mise will not look for tasks in."

@@ -117,7 +117,7 @@ outside this tracker.
 - [x] Define and document a versioned remote cache protocol
 - [x] Add a composite local and remote cache store
 - [x] Stream artifact uploads and downloads
-- [ ] Add remote read-only, write-only, and read/write modes
+- [x] Add remote read-only, write-only, and read/write modes
 - [ ] Add authentication and repository or organization namespaces
 - [ ] Add timeouts, retries, request deduplication, and offline fallback
 - [ ] Verify remote artifact integrity and authenticity
