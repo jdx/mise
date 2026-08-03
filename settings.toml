@@ -2682,6 +2682,18 @@ env = "MISE_TASK_CACHE_REMOTE_NAMESPACE"
 optional = true
 type = "String"
 
+[task.cache_remote_token]
+description = "[experimental] Bearer token for remote task cache authentication."
+docs = """
+Authenticate remote task cache requests with an HTTP `Authorization: Bearer` header. Prefer the
+`MISE_TASK_CACHE_REMOTE_TOKEN` environment variable or a protected global configuration file; this
+setting is global-only so shared project configuration cannot supply credentials.
+"""
+env = "MISE_TASK_CACHE_REMOTE_TOKEN"
+global_only = true
+optional = true
+type = "String"
+
 [task.cache_remote_url]
 description = "[experimental] Base URL for the remote task cache service."
 docs = """

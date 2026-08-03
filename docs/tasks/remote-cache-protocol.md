@@ -31,8 +31,11 @@ allows a server to verify all referenced content before publishing a cache hit.
 
 ## Transport and versioning
 
-Version 1 uses HTTPS and HTTP semantics. Plain HTTP is accepted only for loopback development
-servers (`localhost`, `127.0.0.0/8`, and `::1`). Implementations may use HTTP/1.1, HTTP/2, or HTTP/3.
+Version 1 uses HTTPS and HTTP semantics. Requests carrying authorization credentials require HTTPS,
+except for loopback development servers (`localhost`, `127.0.0.0/8`, and `::1`). Clients may connect
+to an unauthenticated non-loopback HTTP service after emitting a visible warning. This mode provides
+neither confidentiality nor server authenticity: an on-path attacker can replace an unsigned action
+result and its internally consistent CAS graph. Implementations may use HTTP/1.1, HTTP/2, or HTTP/3.
 
 Every API request sends:
 
