@@ -795,10 +795,8 @@ impl TaskCacheStore for HttpTaskCacheStore {
             &manifest,
             artifact.as_ref().map(TaskCacheStoreArtifact::path),
         )?);
-        Ok(Some(TaskCacheStoreEntry {
-            manifest: serde_json::to_vec(&manifest)?,
-            artifact,
-        }))
+        let manifest = serde_json::to_vec(&manifest)?;
+        Ok(Some(TaskCacheStoreEntry { manifest, artifact }))
     }
 
     fn begin_write(&self, key: &str) -> Result<TaskCacheStoreWrite> {
@@ -1361,6 +1359,7 @@ mod tests {
         let insecure: Url = "http://cache.example.com".parse().unwrap();
         assert!(validate_remote_url(&insecure, true).is_err());
         validate_remote_url(&insecure, false).unwrap();
+        assert!(validate_remote_url(&"ftp://localhost/cache".parse().unwrap(), false).is_err());
     }
 
     struct FailingTaskCacheStore {
@@ -1724,6 +1723,38 @@ mod tests {
         result_put.assert_async().await;
         result_get.assert_async().await;
         metadata_get.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn http_store_rejects_corrupt_cas_blobs() {
+        let mut server = mockito::Server::new_async().await;
+        let digest = CacheDigest::blake3(b"expected bytes");
+        let blob_path = format!("/v1/blobs/blake3/{}/{}", digest.hash, digest.size);
+        let blob_get = server
+            .mock("GET", blob_path.as_str())
+            .match_header("mise-cache-protocol", "1")
+            .match_header("mise-cache-namespace", "test-namespace")
+            .with_status(200)
+            .with_body("substituted bytes")
+            .expect(1)
+            .create_async()
+            .await;
+        let staging = tempfile::tempdir().unwrap();
+        let store = HttpTaskCacheStore {
+            base_url: normalized_base_url(server.url().parse().unwrap()),
+            namespace: "test-namespace".into(),
+            staging_dir: staging.path().to_path_buf(),
+            client: reqwest::Client::new(),
+            authorization: None,
+        };
+
+        let err = store
+            .get_blob(&digest, REMOTE_CACHE_BLOB_MEDIA_TYPE)
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("failed digest verification"));
+        blob_get.assert_async().await;
     }
 
     #[tokio::test]
