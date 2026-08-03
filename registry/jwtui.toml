@@ -1,6 +1,7 @@
 description = "A command line UI for decoding/encoding JSON Web Tokens"
 # test = { cmd = "jwtui --version", expected = "jwt-ui {{version}}" }
 
+bins = ["jwtui"]
 [[backends]]
 full = "github:jwt-rs/jwt-ui"
 

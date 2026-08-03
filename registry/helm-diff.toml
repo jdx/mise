@@ -1,6 +1,7 @@
 description = "A helm plugin that shows a diff explaining what a helm upgrade would change"
 test = { cmd = "helm-diff version", expected = "{{version}}" }
 
+bins = ["helm-diff"]
 [[backends]]
 full = "github:databus23/helm-diff"
 

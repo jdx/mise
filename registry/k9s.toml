@@ -1,2 +1,3 @@
 backends = ["aqua:derailed/k9s", "asdf:looztra/asdf-k9s"]
+bins = ["k9s"]
 description = "Kubernetes CLI To Manage Your Clusters In Style"

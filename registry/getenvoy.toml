@@ -2,5 +2,6 @@ backends = [
   "github:tetratelabs-attic/getenvoy",
   "asdf:mise-plugins/mise-getenvoy",
 ]
+bins = ["getenvoy"]
 description = "historical CLI of getenvoy"
 test = { cmd = "getenvoy --version", expected = "getenvoy version {{version}}" }

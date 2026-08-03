@@ -1,2 +1,12 @@
 backends = ["vfox:jdx/vfox-groovy", "asdf:mise-plugins/mise-groovy"]
+bins = [
+  "grape",
+  "groovy",
+  "groovyConsole",
+  "groovyc",
+  "groovydoc",
+  "groovysh",
+  "java2groovy",
+  "startGroovy",
+]
 description = "A flexible and extensible Java-like language for the JVM"

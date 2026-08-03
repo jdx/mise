@@ -1,2 +1,3 @@
 backends = ["aqua:fullstorydev/grpcurl", "asdf:asdf-community/asdf-grpcurl"]
+bins = ["grpcurl"]
 description = "Like cURL, but for gRPC: Command-line tool for interacting with gRPC servers"

@@ -1,3 +1,4 @@
 backends = ["aqua:01mf02/jaq", "cargo:jaq"]
+bins = ["jaq"]
 description = "A jq clone focussed on correctness, speed, and simplicity"
 test = { cmd = "jaq --version", expected = "jaq {{version}}" }

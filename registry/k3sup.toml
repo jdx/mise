@@ -1,2 +1,3 @@
 backends = ["aqua:alexellis/k3sup", "asdf:cgroschupp/asdf-k3sup"]
+bins = ["k3sup"]
 description = "bootstrap K3s over SSH in < 60s"

@@ -1,3 +1,4 @@
 backends = ["aqua:herdrdev/herdr", "github:herdrdev/herdr"]
+bins = ["herdr"]
 description = "Agent multiplexer that lives in your terminal"
 test = { cmd = "herdr --version", expected = "herdr {{version}}" }

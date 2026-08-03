@@ -1,3 +1,4 @@
 backends = ["aqua:helmwave/helmwave"]
+bins = ["helmwave"]
 description = "New  wave for @helm"
 test = { cmd = "helmwave version", expected = "{{version}}" }

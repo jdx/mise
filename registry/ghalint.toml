@@ -1,3 +1,4 @@
 backends = ["aqua:suzuki-shunsuke/ghalint"]
+bins = ["ghalint"]
 description = "GitHub Actions linter"
 test = { cmd = "ghalint version", expected = "{{version}}" }

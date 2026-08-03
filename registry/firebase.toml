@@ -3,6 +3,7 @@ backends = [
   "npm:firebase-tools",
   "asdf:jthegedus/asdf-firebase",
 ]
+bins = ["firebase"]
 description = "The Firebase Command Line Tools"
 # 15.2.0 doesn't work. ref: https://github.com/firebase/firebase-tools/issues/9715
 # test = ["firebase --version", "{{version}}"]

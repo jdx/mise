@@ -1,3 +1,4 @@
 backends = ["aqua:gitleaks/gitleaks", "asdf:jmcvetta/asdf-gitleaks"]
+bins = ["gitleaks"]
 description = "Find secrets with Gitleaks"
 test = { cmd = "gitleaks --version", expected = "gitleaks version {{version}}" }

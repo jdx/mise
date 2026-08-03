@@ -1,2 +1,3 @@
 backends = ["aqua:helm/chart-testing", "asdf:tablexi/asdf-helm-ct"]
+bins = ["ct"]
 description = "CLI tool for linting and testing Helm charts"

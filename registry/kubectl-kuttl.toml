@@ -1,5 +1,6 @@
 aliases = ["kuttl"]
 backends = ["aqua:kudobuilder/kuttl", "asdf:jimmidyson/asdf-kuttl"]
+bins = ["kubectl-kuttl"]
 description = "Kubernetes Test TooL (kuttl)"
 os = ["linux", "macos"]
 test = { cmd = "kubectl-kuttl --version", expected = "kubectl-kuttl version {{version}}" }

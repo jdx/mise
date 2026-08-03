@@ -1,2 +1,3 @@
 backends = ["pipx:gallery-dl"]
+bins = ["gallery-dl"]
 description = "Command-line program to download image galleries and collections from several image hosting sites"

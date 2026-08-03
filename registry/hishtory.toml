@@ -1,2 +1,3 @@
 backends = ["github:ddworken/hishtory", "asdf:asdf-community/asdf-hishtory"]
+bins = ["hishtory"]
 description = "Your shell history: synced, queryable, and in context"

@@ -1,2 +1,3 @@
 backends = ["aqua:rfjakob/gocryptfs"]
+bins = ["gocryptfs", "gocryptfs-xray"]
 description = "Encrypted overlay filesystem written in Go"

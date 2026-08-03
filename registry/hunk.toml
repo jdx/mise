@@ -2,6 +2,7 @@ aliases = ["hunkdiff"]
 description = "Review-first terminal diff viewer for agentic coders"
 test = { cmd = "hunk --version", expected = "{{version}}" }
 
+bins = ["hunk"]
 [[backends]]
 full = "aqua:modem-dev/hunk"
 

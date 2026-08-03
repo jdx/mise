@@ -1,3 +1,4 @@
 backends = ["aqua:orhun/git-cliff", "asdf:jylenhof/asdf-git-cliff"]
+bins = ["git-cliff", "git-cliff-mangen"]
 description = "A highly customizable Changelog Generator that follows Conventional Commit specifications"
 test = { cmd = "git-cliff --version", expected = "git-cliff {{version}}" }

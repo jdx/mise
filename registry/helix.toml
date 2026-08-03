@@ -1,3 +1,4 @@
 backends = ["aqua:helix-editor/helix"]
+bins = ["hx"]
 description = "A post-modern modal text editor"
 test = { cmd = "hx --version", expected = "helix {{version}}" }

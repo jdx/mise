@@ -1,3 +1,4 @@
 backends = ["aqua:kptdev/kpt", "asdf:nlamirault/asdf-kpt"]
+bins = ["kpt"]
 description = "Automate Kubernetes Configuration Editing"
 os = ["linux", "macos"]

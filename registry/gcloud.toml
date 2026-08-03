@@ -1,4 +1,14 @@
 # no python dependency - gcloud bundles its own Python since v352.0.0
 backends = ["vfox:mise-plugins/vfox-gcloud", "asdf:mise-plugins/mise-gcloud"]
+bins = [
+  "bq",
+  "dev_appserver.py",
+  "docker-credential-gcloud",
+  "gcloud",
+  "gcloud-crc32c",
+  "git-credential-gcloud.sh",
+  "gsutil",
+  "java_dev_appserver.sh",
+]
 description = "GCloud CLI (Google Cloud SDK)"
 test = { cmd = "gcloud version", expected = "Google Cloud SDK {{version}}" }

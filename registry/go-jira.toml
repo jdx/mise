@@ -1,2 +1,3 @@
 backends = ["aqua:go-jira/jira", "asdf:dguihal/asdf-go-jira"]
+bins = ["jira"]
 description = "simple jira command line client in Go"

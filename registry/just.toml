@@ -1,3 +1,4 @@
 backends = ["aqua:casey/just", "asdf:olofvndrhr/asdf-just", "cargo:just"]
+bins = ["just"]
 description = "Just a command runner"
 test = { cmd = "just --version", expected = "just {{version}}" }

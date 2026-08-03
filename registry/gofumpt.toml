@@ -1,3 +1,4 @@
 backends = ["aqua:mvdan/gofumpt", "asdf:looztra/asdf-gofumpt"]
+bins = ["gofumpt"]
 description = "A stricter gofmt"
 test = { cmd = "gofumpt --version", expected = "v{{version}}" }

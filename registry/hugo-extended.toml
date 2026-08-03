@@ -1,2 +1,3 @@
 backends = ["aqua:gohugoio/hugo/hugo-extended"]
+bins = ["hugo"]
 description = "The world’s fastest framework for building websites"

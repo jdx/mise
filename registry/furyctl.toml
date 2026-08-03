@@ -1,4 +1,5 @@
 backends = ["github:sighupio/furyctl", "asdf:sighupio/asdf-furyctl"]
+bins = ["furyctl"]
 description = "furyctl is the SIGHUP Distribution cluster lifecycle manager"
 os = ["linux", "macos"]
 test = { cmd = "furyctl version", expected = "{{version}}" }

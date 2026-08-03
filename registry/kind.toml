@@ -1,3 +1,4 @@
 backends = ["aqua:kubernetes-sigs/kind", "asdf:johnlayton/asdf-kind"]
+bins = ["kind"]
 description = "Kubernetes IN Docker - local clusters for testing Kubernetes"
 test = { cmd = "kind --version", expected = "kind version {{version}}" }
