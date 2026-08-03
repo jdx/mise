@@ -567,9 +567,14 @@ impl Lock {
                     return None;
                 }
                 let stale_versions = stale_versions.get(&result.short)?;
-                let lost_versions = lockfile
-                    .tools()
-                    .get(&result.short)?
+                let locked_tools = lockfile.tools().get(&result.short)?;
+                if locked_tools.iter().any(|tool| {
+                    tool.version == result.version
+                        && tool.platforms.contains_key(&result.platform)
+                }) {
+                    return None;
+                }
+                let lost_versions = locked_tools
                     .iter()
                     .filter(|tool| {
                         stale_versions.contains(&tool.version)
@@ -1445,6 +1450,34 @@ mod tests {
             short: "dummy".to_string(),
             version: "2.0.0".to_string(),
             platform: "macos-arm64".to_string(),
+            status: LockTaskStatus::Unresolved,
+        }];
+
+        let errors = cmd.platform_regression_errors(&lockfile, &stale_versions, &results);
+
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_platform_regression_allows_existing_current_platform() {
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy();
+        lockfile.set_platform_info(
+            "dummy",
+            "2.0.0",
+            None,
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:current".to_string()),
+                ..Default::default()
+            },
+        );
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
             status: LockTaskStatus::Unresolved,
         }];
 
