@@ -3,6 +3,7 @@ use crate::task::task_cache::{
     CACHE_FORMAT_VERSION, CacheManifest, TaskCacheOutput, calculate_artifact_checksum,
     canonical_json,
 };
+use crate::{config::Settings, http};
 use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
@@ -12,11 +13,11 @@ use reqwest::header::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 use tokio::io::AsyncWriteExt;
 use url::{Host, Url};
 
@@ -333,6 +334,7 @@ pub(crate) struct CompositeTaskCacheStore {
     local: Arc<dyn TaskCacheStore>,
     remote: Arc<dyn TaskCacheStore>,
     remote_mode: TaskCacheRemoteMode,
+    remote_read_locks: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
 }
 
 impl CompositeTaskCacheStore {
@@ -352,7 +354,19 @@ impl CompositeTaskCacheStore {
             local,
             remote,
             remote_mode,
+            remote_read_locks: Mutex::new(HashMap::new()),
         })
+    }
+
+    fn remote_read_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.remote_read_locks.lock().unwrap();
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(key).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        locks.insert(key.to_string(), Arc::downgrade(&lock));
+        lock
     }
 
     fn copy_artifact(source: Option<&Path>, write: &TaskCacheStoreWrite) -> Result<bool> {
@@ -398,6 +412,11 @@ impl TaskCacheStore for CompositeTaskCacheStore {
         }
         if !self.remote_mode.reads() {
             return Ok(None);
+        }
+        let remote_read_lock = self.remote_read_lock(key);
+        let _remote_read_guard = remote_read_lock.lock().await;
+        if let Some(entry) = self.local.get(key, action_size).await? {
+            return Ok(Some(entry));
         }
         let entry = match self.remote.get(key, action_size).await {
             Ok(Some(entry)) => entry,
@@ -511,7 +530,11 @@ pub(crate) fn compose_task_cache_stores(
                 base_url: normalized_base_url(remote_config.base_url),
                 namespace: remote_config.namespace,
                 staging_dir: remote_config.staging_dir,
-                client: reqwest::Client::new(),
+                client: reqwest::Client::builder()
+                    .connect_timeout(Settings::get().http_timeout())
+                    .read_timeout(Settings::get().http_timeout())
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?,
                 authorization,
             });
             Ok(Arc::new(CompositeTaskCacheStore::new(
@@ -602,72 +625,84 @@ impl HttpTaskCacheStore {
 
     async fn get_blob(&self, digest: &CacheDigest, media_type: &'static str) -> Result<Vec<u8>> {
         digest.validate()?;
-        let response = self
-            .request(
-                reqwest::Method::GET,
-                self.blob_endpoint(digest)?,
-                media_type,
-            )
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = response.bytes().await?.to_vec();
-        if !digest.matches_bytes(&bytes)? {
-            bail!("remote cache blob failed digest verification");
-        }
-        Ok(bytes)
+        let url = self.blob_endpoint(digest)?;
+        http::retry_async("GET", &url, || async {
+            let response = self
+                .request(reqwest::Method::GET, url.clone(), media_type)
+                .send()
+                .await?
+                .error_for_status()?;
+            let bytes = response.bytes().await?.to_vec();
+            if !digest.matches_bytes(&bytes)? {
+                bail!("remote cache blob failed digest verification");
+            }
+            Ok(bytes)
+        })
+        .await
     }
 
     async fn get_blob_file(&self, digest: &CacheDigest) -> Result<tempfile::NamedTempFile> {
-        let mut response = self
-            .request(
-                reqwest::Method::GET,
-                self.blob_endpoint(digest)?,
-                REMOTE_CACHE_BLOB_MEDIA_TYPE,
-            )
-            .send()
-            .await?;
-        response.error_for_status_ref()?;
-        file::create_dir_all(&self.staging_dir)?;
-        let temporary = tempfile::NamedTempFile::new_in(&self.staging_dir)?;
-        let mut output = tokio::fs::File::from_std(temporary.reopen()?);
-        while let Some(chunk) = response.chunk().await? {
-            output.write_all(&chunk).await?;
-        }
-        output.flush().await?;
-        drop(output);
-        if !digest.matches_file(temporary.path())? {
-            bail!("remote cache blob failed digest verification");
-        }
-        Ok(temporary)
+        let url = self.blob_endpoint(digest)?;
+        let download = http::retry_async("GET", &url, || async {
+            let mut response = self
+                .request(
+                    reqwest::Method::GET,
+                    url.clone(),
+                    REMOTE_CACHE_BLOB_MEDIA_TYPE,
+                )
+                .send()
+                .await?;
+            response.error_for_status_ref()?;
+            file::create_dir_all(&self.staging_dir)?;
+            let temporary = tempfile::NamedTempFile::new_in(&self.staging_dir)?;
+            let mut output = tokio::fs::File::from_std(temporary.reopen()?);
+            while let Some(chunk) = response.chunk().await? {
+                output.write_all(&chunk).await?;
+            }
+            output.flush().await?;
+            drop(output);
+            if !digest.matches_file(temporary.path())? {
+                bail!("remote cache blob failed digest verification");
+            }
+            Ok(temporary)
+        });
+        tokio::time::timeout(Settings::get().http_download_timeout(), download)
+            .await
+            .map_err(|_| eyre!("remote task cache blob download timed out for {url}"))?
     }
 
     async fn put_blob(&self, upload: &CasBlobUpload) -> Result<()> {
-        let (length, body) = match &upload.source {
-            CasBlobSource::Bytes(bytes) => (bytes.len() as u64, reqwest::Body::from(bytes.clone())),
-            CasBlobSource::File(file) => {
-                let file = tokio::fs::File::open(file.path()).await?;
-                let length = file.metadata().await?.len();
-                let stream = tokio_util::io::ReaderStream::new(file);
-                (length, reqwest::Body::wrap_stream(stream))
+        let url = self.blob_endpoint(&upload.digest)?;
+        http::retry_async("PUT", &url, || async {
+            let (length, body) = match &upload.source {
+                CasBlobSource::Bytes(bytes) => {
+                    (bytes.len() as u64, reqwest::Body::from(bytes.clone()))
+                }
+                CasBlobSource::File(file) => {
+                    let file = tokio::fs::File::open(file.path()).await?;
+                    let length = file.metadata().await?.len();
+                    let stream = tokio_util::io::ReaderStream::new(file);
+                    (length, reqwest::Body::wrap_stream(stream))
+                }
+            };
+            let response = self
+                .request(
+                    reqwest::Method::PUT,
+                    url.clone(),
+                    REMOTE_CACHE_BLOB_MEDIA_TYPE,
+                )
+                .header(CONTENT_TYPE, REMOTE_CACHE_BLOB_MEDIA_TYPE)
+                .header(CONTENT_LENGTH, length)
+                .header(IF_NONE_MATCH, "*")
+                .body(body)
+                .send()
+                .await?;
+            if response.status() != StatusCode::PRECONDITION_FAILED {
+                response.error_for_status()?;
             }
-        };
-        let response = self
-            .request(
-                reqwest::Method::PUT,
-                self.blob_endpoint(&upload.digest)?,
-                REMOTE_CACHE_BLOB_MEDIA_TYPE,
-            )
-            .header(CONTENT_TYPE, REMOTE_CACHE_BLOB_MEDIA_TYPE)
-            .header(CONTENT_LENGTH, length)
-            .header(IF_NONE_MATCH, "*")
-            .body(body)
-            .send()
-            .await?;
-        if response.status() != StatusCode::PRECONDITION_FAILED {
-            response.error_for_status()?;
-        }
-        Ok(())
+            Ok(())
+        })
+        .await
     }
 
     async fn put_action_result(
@@ -676,21 +711,26 @@ impl HttpTaskCacheStore {
         action_size: u64,
         result: &RemoteActionResultEnvelope,
     ) -> Result<()> {
-        let response = self
-            .request(
-                reqwest::Method::PUT,
-                self.action_result_endpoint(key, action_size)?,
-                REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
-            )
-            .header(CONTENT_TYPE, REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
-            .header(IF_NONE_MATCH, "*")
-            .body(serde_json::to_vec(result)?)
-            .send()
-            .await?;
-        if response.status() != StatusCode::PRECONDITION_FAILED {
-            response.error_for_status()?;
-        }
-        Ok(())
+        let url = self.action_result_endpoint(key, action_size)?;
+        let body = serde_json::to_vec(result)?;
+        http::retry_async("PUT", &url, || async {
+            let response = self
+                .request(
+                    reqwest::Method::PUT,
+                    url.clone(),
+                    REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
+                )
+                .header(CONTENT_TYPE, REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
+                .header(IF_NONE_MATCH, "*")
+                .body(body.clone())
+                .send()
+                .await?;
+            if response.status() != StatusCode::PRECONDITION_FAILED {
+                response.error_for_status()?;
+            }
+            Ok(())
+        })
+        .await
     }
 }
 
@@ -701,18 +741,25 @@ impl TaskCacheStore for HttpTaskCacheStore {
     }
 
     async fn get(&self, key: &str, action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
-        let response = self
-            .request(
-                reqwest::Method::GET,
-                self.action_result_endpoint(key, action_size)?,
-                REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
-            )
-            .send()
-            .await?;
-        if response.status() == StatusCode::NOT_FOUND {
+        let url = self.action_result_endpoint(key, action_size)?;
+        let envelope = http::retry_async("GET", &url, || async {
+            let response = self
+                .request(
+                    reqwest::Method::GET,
+                    url.clone(),
+                    REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
+                )
+                .send()
+                .await?;
+            if response.status() == StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            Ok(Some(response.error_for_status()?.json().await?))
+        })
+        .await?;
+        let Some(envelope): Option<RemoteActionResultEnvelope> = envelope else {
             return Ok(None);
-        }
-        let envelope: RemoteActionResultEnvelope = response.error_for_status()?.json().await?;
+        };
         if envelope.result.version != 1
             || envelope.result.action.algorithm != "blake3"
             || envelope.result.action.hash != key
