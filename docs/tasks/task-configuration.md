@@ -666,8 +666,7 @@ for one run:
 - `read-only` uses cached results but does not publish misses.
 - `write-only` publishes results but always executes instead of restoring.
 - `off` disables task output caching and uses ordinary source/output freshness checks.
-- `local-only` reads and writes only the local cache. It currently behaves like `read-write` because
-  remote caching is not yet available.
+- `local-only` reads and writes only the local cache, bypassing any configured remote service.
 
 ```bash
 # Prevent an untrusted pull request from publishing cache entries
@@ -682,6 +681,71 @@ mise run --task-cache off build
 
 These modes only affect the experimental task output cache configured by a task's `cache` property.
 The existing `--no-cache` option controls fetching remote task definitions instead.
+
+#### Remote cache and sensitive data
+
+Configure an experimental remote service with `task.cache_remote_url` and a non-empty
+`task.cache_remote_namespace`. The namespace is an opaque repository or organization identifier;
+the server must isolate entries by both namespace and cache key. It is routing metadata, not an
+authentication mechanism or secret. Use a distinct namespace wherever writers should not be able to
+influence one another's cache entries.
+
+```mise-toml
+[settings]
+experimental = true
+task.cache_remote_url = "https://cache.example.com/mise/"
+task.cache_remote_namespace = "acme/widgets"
+task.cache_remote_mode = "read-write"
+```
+
+Set `MISE_TASK_CACHE_REMOTE_TOKEN` in the process environment to send a bearer credential. The
+equivalent `task.cache_remote_token` setting is global-only, but the environment variable is
+preferred so a token does not need to be written to disk. Mise redacts the token from settings trace
+output and marks its HTTP header as sensitive. It requires HTTPS for non-loopback services; plain
+HTTP is accepted only for local development servers. Servers should still use short-lived,
+least-privilege credentials, restrict namespace access, avoid logging authorization headers, and
+encrypt or otherwise protect stored cache objects according to their sensitivity and retention
+requirements.
+
+Task cache entries are not secret-free metadata. They contain captured stdout and stderr plus every
+declared output file. Mise applies its configured output redactions before storing logs, but this is
+not a general secret scanner: a task can print an unknown credential or write one into an output
+artifact. Do not cache such a task unless those values are safe to retain and share with every
+reader of its local and remote cache. Clearing a local entry does not delete copies already uploaded
+to a remote service; use the remote service's retention and deletion controls as well.
+
+Artifact checksums detect corruption and HTTPS authenticates the configured server in transit, but
+a checksum is not a signature from the original task runner. Any principal allowed to write a
+namespace can publish entries that its readers will trust. Give untrusted pull-request jobs
+read-only credentials or no remote credentials, use `--task-cache read-only` to prevent publishing,
+and isolate less-trusted writers in a separate namespace.
+
+#### Cache correctness and deterministic tasks
+
+Enabling `cache` is a correctness assertion: identical cache-key material must produce equivalent
+captured logs and declared outputs. Every value that can change the result must be represented by a
+source or input group, a resolved mise tool, `cache.env`, `cache.command_inputs`, or a cacheable
+dependency's artifact key. This includes configuration and lockfiles, locale or feature flags,
+compiler wrappers, generated inputs, and relevant external service state. Operating system and
+architecture are included automatically; other machine state is not.
+
+Cache-enabled tasks should be deterministic and should not depend on undeclared files, wall-clock
+time, randomness, mutable network responses, or ambient environment variables. If such an input
+cannot be captured reliably, disable caching for the task. Pass-through environment variables are
+intentionally absent from the key and therefore must not influence cached logs or outputs. A task
+that uses credentials only to fetch content must key on a stable digest or lockfile for that content,
+not on the credential itself.
+
+Declared outputs must completely describe the filesystem state that a hit needs to reproduce. Side
+effects outside those paths—database writes, deployments, notifications, and changes elsewhere in
+the workspace—are not replayed. `outputs = []` is only correct when no filesystem side effect needs
+to be reproduced. On Linux, `cache.audit = true` can reveal many undeclared workspace reads and
+writes, but the audit is advisory and cannot prove determinism or observe every external dependency.
+
+When correctness is uncertain, use `--task-cache off` while diagnosing, add missing key inputs, and
+force an uncached execution before trusting new entries. Use separate remote namespaces when a
+change to task semantics or undeclared external state could otherwise collide with entries produced
+under a different trust policy.
 
 ```mise-toml
 [tasks.lint]
