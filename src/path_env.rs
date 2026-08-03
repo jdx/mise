@@ -2,11 +2,12 @@ use crate::config::Settings;
 use crate::dirs;
 use std::collections::HashSet;
 use std::env::{join_paths, split_paths};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct PathEnv {
     pre: Vec<PathBuf>,
@@ -68,7 +69,9 @@ impl PathEnv {
     }
 
     pub fn join(&self) -> OsString {
-        join_paths(self.to_vec()).unwrap()
+        let joined = join_paths(self.to_vec()).unwrap();
+        warn_if_cmd_ignores_path(&joined);
+        joined
     }
 
     /// [`Self::join`] over the verbatim projection — see [`Self::to_vec_verbatim`].
@@ -158,6 +161,68 @@ pub(crate) fn is_mise_install_path(path: &std::path::Path, install_dirs: &[PathB
         .any(|d| path.starts_with(d))
 }
 
+/// Past this many UTF-16 code units, `cmd.exe` ignores an inherited environment variable
+/// outright — the whole value, not just the tail — so everything that was found through
+/// PATH stops resolving at once. Programs in the system directory keep working, since
+/// `cmd.exe` finds those without consulting PATH, which is what makes the failure look
+/// arbitrary. Microsoft documents it in KB 830473, whose "Applies to" stops at Windows 7 /
+/// Server 2008 R2 / 2012 R2 and hedges with "as appropriate to the operating system";
+/// measured to still hold on Windows 11 26200, where a program outside System32 resolves
+/// at 8184 and is not found at 8239.
+///
+/// <https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation>
+pub(crate) const WINDOWS_CMD_PATH_LIMIT: usize = 8191;
+
+/// Windows counts a variable in UTF-16 code units. `encode_utf16` gives exactly that on any
+/// platform, where `OsStr::len` would give WTF-8 bytes and over-count every non-ASCII path.
+pub(crate) fn path_len_utf16(path: &OsStr) -> usize {
+    path.to_string_lossy().encode_utf16().count()
+}
+
+/// Whether a PATH of `len` UTF-16 code units would be ignored by `cmd.exe`. Pure, so the
+/// boundary is unit-testable everywhere; only the caller is platform-gated.
+pub(crate) fn cmd_would_ignore_path(len: usize) -> bool {
+    cfg!(windows) && len > WINDOWS_CMD_PATH_LIMIT
+}
+
+/// Keyed on the condition rather than on the message. `warn_once!` dedups on formatted
+/// text, and a single `hook-env` run measures two different PATHs — the computed toolset
+/// environment and the shell's own — so the length embedded in the message would differ
+/// and the same problem would be reported twice.
+static WARNED_CMD_PATH_LIMIT: AtomicBool = AtomicBool::new(false);
+
+/// Warn when a PATH mise computed is long enough for `cmd.exe` to drop. What follows
+/// otherwise is opaque: `npm`, `npx` and batch scripts stop finding anything they look up
+/// on PATH, with nothing naming PATH, cmd.exe, or mise.
+///
+/// At most once per **invocation**, which is not once per user-visible event: under
+/// `mise activate`, `hook-env` is a fresh process on every prompt, so a PATH left over the
+/// limit warns on every prompt. Whether that is the right cadence is an open question on
+/// this PR.
+fn warn_if_cmd_ignores_path(path: &OsStr) {
+    let len = path_len_utf16(path);
+    if !cmd_would_ignore_path(len) {
+        return;
+    }
+    if WARNED_CMD_PATH_LIMIT.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    warn!(
+        "PATH is {} characters, longer than the {} cmd.exe accepts. cmd.exe ignores an \
+         inherited variable that long outright, so anything run through it — npm, npx, batch \
+         scripts — stops finding whatever it looks up on PATH: \
+         https://mise.jdx.dev/troubleshooting.html#path-limits",
+        len, WINDOWS_CMD_PATH_LIMIT
+    );
+}
+
+/// [`warn_if_cmd_ignores_path`] for a PATH assembled outside [`PathEnv`]. `hook-env` builds
+/// the shell's own PATH by hand, and that copy — not a computed child environment — is what
+/// breaks a tool the user starts directly from an activated shell.
+pub fn warn_if_cmd_ignores_path_str(path: &str) {
+    warn_if_cmd_ignores_path(OsStr::new(path));
+}
+
 // Platform-neutral, unlike `tests` below: dedup touches no filesystem and joins nothing,
 // so these also run in the windows-unit job.
 #[cfg(test)]
@@ -220,6 +285,33 @@ mod dedup_tests {
     fn to_vec_collapses_drive_letter_case() {
         let path_env = PathEnv::from_iter([r"C:\x", r"c:\x", r"C:\y"].map(PathBuf::from));
         assert_eq!(path_env.to_vec(), [r"C:\x", r"C:\y"].map(PathBuf::from));
+    }
+
+    /// The boundary itself, since the constant is the whole point of the check. Measured on
+    /// Windows 11 26200: a program outside System32 resolves with a PATH of 8184 and is not
+    /// found at 8239, so the limit sits between them and the value below is inclusive.
+    #[test]
+    fn cmd_would_ignore_path_at_the_boundary() {
+        assert!(!cmd_would_ignore_path(0));
+        assert!(!cmd_would_ignore_path(WINDOWS_CMD_PATH_LIMIT));
+        assert_eq!(
+            cmd_would_ignore_path(WINDOWS_CMD_PATH_LIMIT + 1),
+            cfg!(windows),
+            "the limit is a cmd.exe property, so it must never fire off Windows"
+        );
+    }
+
+    /// Windows counts UTF-16 code units. Counting `OsStr` bytes instead would treat a
+    /// three-byte UTF-8 character as three, and warn about a PATH cmd.exe accepts.
+    #[test]
+    fn path_len_is_utf16_units_not_bytes() {
+        let s = "あ".repeat(WINDOWS_CMD_PATH_LIMIT);
+        assert_eq!(path_len_utf16(OsStr::new(&s)), WINDOWS_CMD_PATH_LIMIT);
+        assert!(
+            s.len() > WINDOWS_CMD_PATH_LIMIT,
+            "byte length must differ, or this test proves nothing"
+        );
+        assert!(!cmd_would_ignore_path(path_len_utf16(OsStr::new(&s))));
     }
 }
 

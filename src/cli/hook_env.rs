@@ -442,6 +442,10 @@ impl HookEnv {
         )?
         .to_string_lossy()
         .into_owned();
+        // This PATH goes to the user's own shell rather than to a computed child env, so
+        // `PathEnv::join`'s check never sees it — and it is the copy a tool started directly
+        // from an activated shell inherits.
+        crate::path_env::warn_if_cmd_ignores_path_str(&new_path);
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         // For DIRENV_DIFF, we need to include both filtered user_paths and filtered tool_paths
