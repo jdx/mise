@@ -2632,6 +2632,28 @@ env = "MISE_TASK_CACHE_DIR"
 optional = true
 type = "Path"
 
+[task.cache_max_age]
+description = "[experimental] Maximum age of task output cache entries since their last access."
+docs = """
+Remove task output cache entries that have not been accessed within this duration after a new entry
+is stored. This limit applies only to the task output cache and is independent of
+[`cache_prune_age`](#cache_prune_age). Set to `0s` or leave unset to disable the age limit.
+"""
+env = "MISE_TASK_CACHE_MAX_AGE"
+optional = true
+type = "Duration"
+
+[task.cache_max_size]
+description = "[experimental] Maximum total size of task output cache entries."
+docs = """
+Keep the task output cache at or below this size by removing least-recently-accessed entries after a
+new entry is stored. Values accept SI or IEC units such as `500MB` or `2GiB`. Set to `0` or leave
+unset to disable the size limit.
+"""
+env = "MISE_TASK_CACHE_MAX_SIZE"
+optional = true
+type = "String"
+
 [task.disable_paths]
 default = []
 description = "Paths that mise will not look for tasks in."

@@ -788,6 +788,11 @@ Temporary archive and manifest files are removed when a write fails normally. On
 mise also removes partial files abandoned by an interrupted process after acquiring the associated
 cache-key lock, so it never deletes files that an active writer is still publishing.
 
+Set [`task.cache_max_size`](/configuration/settings.html#task-cache-max-size) to bound the total
+artifact cache size, or [`task.cache_max_age`](/configuration/settings.html#task-cache-max-age) to
+expire entries based on their last access. Both limits are optional and apply after successful cache
+writes. When a size limit is exceeded, mise removes least-recently-accessed entries first.
+
 When a cache-enabled task executes instead of restoring a result, mise reports the reason: no
 matching entry, a corrupt entry, forced execution, disabled reads, or a dependency that completed
 without a stable cache key. Raw and dry-run cache bypasses retain their existing warning or preview
