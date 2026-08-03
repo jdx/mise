@@ -5,6 +5,7 @@ backends = [
   ] },
   "npm:npm",
 ]
+bins = ["npm", "npx"]
 description = "the package manager for JavaScript"
 idiomatic_files = ["package.json"]
 overrides = ["node"]

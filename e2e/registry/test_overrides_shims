@@ -21,3 +21,8 @@ EOF
 mise install
 mise reshim
 assert_contains "$MISE_DATA_DIR/shims/npm --version" "10.9.0"
+
+# Test 3: a missing explicit npm is installed before falling back to Node's bundled npm
+mise uninstall npm@10.9.0
+assert_contains "$MISE_DATA_DIR/shims/npm --version" "10.9.0"
+assert_contains "mise ls npm --installed" "10.9.0"
