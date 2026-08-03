@@ -807,6 +807,35 @@ test = { cmd = "command-to-run", expected = "expected-output-pattern" }
 The test command should be reliable and the output pattern should use
 <code v-pre>{{version}}</code> to match any version number.
 
+#### Discovering registry executables
+
+Maintainers can collect the executable names installed by registry tools with
+the sandboxed discovery script:
+
+```sh
+python3 xtasks/discover_registry_bins.py actionlint age
+```
+
+The script builds `target/debug/mise` into a local Docker or Podman image and
+installs each tool in its own disposable, resource-limited container. It does
+not mount host directories or pass host credentials into those containers.
+Successful results include the resolved backend, exact version, and executable
+names reported by `mise bin-paths`; failures retain a per-tool log and are
+retried when the same command is resumed.
+
+To process the complete registry, use `--all`. Large runs can be split into
+stable shards and merged afterward by running each shard with its own output:
+
+```sh
+python3 xtasks/discover_registry_bins.py --all --jobs 8 \
+  --shard-count 4 --shard-index 0 \
+  --output registry-bin-discovery-0.json
+```
+
+Run `python3 xtasks/discover_registry_bins.py --help` for resource limits,
+timeouts, custom images, and resume controls. The JSON output also reports bin
+name collisions so they can be reviewed before updating `registry/`.
+
 If `test.cmd` needs extra mise-managed tools on PATH, declare them with
 `test.tools`. This is used only by `mise test-tool`; it does not affect normal
 tool installation.
