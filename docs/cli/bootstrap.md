@@ -17,32 +17,36 @@ Runs the bootstrap steps for the current config in order:
 2. Install built-in-manager entries from `[bootstrap.packages]`
 3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
    `[bootstrap.directories]`
-4. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+4. `mise bootstrap services apply` — converge `[bootstrap.services]`
+   systemd system services (Linux)
+5. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
-5. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+6. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-6. `mise bootstrap mise-shell-activate apply` — configure shell activation
+7. `mise bootstrap mise-shell-activate apply` — configure shell activation
    from `[bootstrap.mise_shell_activate]`
-7. `mise bootstrap macos defaults apply` — write
+8. `mise bootstrap macos defaults apply` — write
    `[bootstrap.macos.defaults]` entries (macOS)
    surrounded by `pre-defaults`/`post-defaults` hooks
-8. `mise bootstrap macos launchd-agents apply` — install/load
+9. `mise bootstrap macos launchd-agents apply` — install/load
    `[bootstrap.macos.launchd.agents]`
-9. `mise bootstrap linux systemd-units apply` — install/start
-   `[bootstrap.linux.systemd.units]`
-10. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+10. `mise bootstrap linux systemd-units apply` — install/start
+```
+`[bootstrap.linux.systemd.units]`
+```
+11. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ```
 (Unix)
 surrounded by `pre-user`/`post-user` hooks
 ```
-11. `mise install` — install missing tools from `[tools]`
+12. `mise install` — install missing tools from `[tools]`
 ```
 surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 from `[bootstrap.packages]` install afterward, followed by
 `[bootstrap.hooks.post-packages]`
 ```
-12. `mise run bootstrap` — if a task named `bootstrap` is defined
-13. `[bootstrap.hooks.final]` — optional final hook
+13. `mise run bootstrap` — if a task named `bootstrap` is defined
+14. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -80,6 +84,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 - `packages`
 - `accounts`
 - `files`
+- `services`
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
@@ -111,6 +116,7 @@ Can be passed multiple times or as a comma-separated list.
 - `packages`
 - `accounts`
 - `files`
+- `services`
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
@@ -140,6 +146,7 @@ Refresh package manager metadata and update configured repos
 - [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
 - [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.md)
+- [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.md)
 - [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 

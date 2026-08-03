@@ -1,7 +1,8 @@
 //! `[bootstrap]` config section: machine-global bootstrapping.
 //!
 //! This is `[bootstrap.groups]` and `[bootstrap.users]` — declarative Linux
-//! accounts — `[bootstrap.packages]` — declarative system packages installed
+//! accounts — `[bootstrap.services]` — declarative Linux system service
+//! lifecycle — `[bootstrap.packages]` — declarative system packages installed
 //! by `mise bootstrap packages apply` — `[bootstrap.repos]` — declarative git
 //! checkouts — `[dotfiles]` — declarative config files applied by
 //! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
@@ -49,6 +50,11 @@ pub mod packages;
 pub mod repos;
 pub mod resources;
 pub mod secrets;
+#[cfg(target_os = "linux")]
+pub mod services;
+#[cfg(not(target_os = "linux"))]
+#[path = "services_non_linux.rs"]
+pub mod services;
 pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
@@ -65,6 +71,9 @@ pub struct BootstrapTomlConfig {
     /// Linux user name -> declarative local user.
     #[serde(default)]
     pub users: IndexMap<String, accounts::UserTomlConfig>,
+    /// Linux systemd unit name -> declarative system service lifecycle.
+    #[serde(default)]
+    pub services: IndexMap<String, services::ServiceTomlConfig>,
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,

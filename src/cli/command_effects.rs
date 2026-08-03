@@ -45,6 +45,7 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bin-paths", Read),
     ("bootstrap", Destructive),
     ("bootstrap __apply-account-plan", Destructive),
+    ("bootstrap __apply-service-plan", Destructive),
     ("bootstrap __apply-system-plan", Destructive),
     ("bootstrap __inspect-system-files", Read),
     ("bootstrap accounts", Read),
@@ -54,6 +55,9 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap files", Read),
     ("bootstrap files apply", Destructive),
     ("bootstrap files status", Read),
+    ("bootstrap services", Read),
+    ("bootstrap services apply", Destructive),
+    ("bootstrap services status", Read),
     // Hidden compatibility spellings of the nested macos/linux subcommands.
     ("bootstrap launchd", Read),
     ("bootstrap launchd apply", Write),
