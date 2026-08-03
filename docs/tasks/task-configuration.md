@@ -784,6 +784,9 @@ readable. `mise cache task <task> --json` includes the checksum for cache inspec
 Readers, writers, inspection, and task-scoped deletion coordinate through a cross-process lock for
 each cache key. Concurrent processes therefore see a complete archive and manifest pair instead of
 mistaking an in-progress replacement for corruption; writers for unrelated keys remain independent.
+Temporary archive and manifest files are removed when a write fails normally. On a later cache use,
+mise also removes partial files abandoned by an interrupted process after acquiring the associated
+cache-key lock, so it never deletes files that an active writer is still publishing.
 
 When a cache-enabled task executes instead of restoring a result, mise reports the reason: no
 matching entry, a corrupt entry, forced execution, disabled reads, or a dependency that completed

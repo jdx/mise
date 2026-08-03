@@ -17,13 +17,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
 const CACHE_FORMAT_VERSION: u8 = 2;
 const CACHE_DIR_VERSION: &str = "v2";
 const ARTIFACT_CHECKSUM_FORMAT: u8 = 1;
+
+static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(BTreeSet::new()));
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -348,9 +351,11 @@ impl TaskArtifactCacheBuilder {
             None
         };
         let state_path = task_cache_state_path(task, &root);
+        let cache_dir = task_cache_dir();
+        cleanup_abandoned_partial_writes_once(&cache_dir);
         Ok(TaskArtifactCache {
             root,
-            cache_dir: task_cache_dir(),
+            cache_dir,
             key,
             explanation,
             state_path,
@@ -508,6 +513,7 @@ impl TaskArtifactCache {
         let manifest_partial = self
             .cache_dir
             .join(format!("{}.part-{nonce}.json", self.key));
+        let _partial_files = PartialCacheFiles([archive_partial.clone(), manifest_partial.clone()]);
 
         let output_bytes = output.iter().fold(0_u64, |total, line| {
             let bytes = match line {
@@ -536,12 +542,12 @@ impl TaskArtifactCache {
             (!manifest.roots.is_empty()).then_some(archive_partial.as_path()),
         )?);
         fs::write(&manifest_partial, serde_json::to_vec(&manifest)?)?;
+        file::rename(&manifest_partial, &manifest_path)?;
         if !manifest.roots.is_empty() {
             file::rename(&archive_partial, &archive_path)?;
         } else {
             let _ = file::remove_file(&archive_path);
         }
-        file::rename(&manifest_partial, &manifest_path)?;
         Ok(())
     }
 
@@ -565,6 +571,69 @@ impl TaskArtifactCache {
         }
         Ok(manifest)
     }
+}
+
+struct PartialCacheFiles([PathBuf; 2]);
+
+impl Drop for PartialCacheFiles {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn cleanup_abandoned_partial_writes_once(cache_dir: &Path) {
+    if !cache_dir.is_dir() {
+        return;
+    }
+    let should_clean = CLEANED_PARTIAL_CACHE_DIRS
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .insert(cache_dir.to_path_buf());
+    if should_clean && let Err(err) = cleanup_abandoned_partial_writes(cache_dir) {
+        CLEANED_PARTIAL_CACHE_DIRS
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .remove(cache_dir);
+        warn!(
+            "failed to clean abandoned task cache writes in {}: {err}",
+            cache_dir.display()
+        );
+    }
+}
+
+fn cleanup_abandoned_partial_writes(cache_dir: &Path) -> Result<()> {
+    let entries = match fs::read_dir(cache_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    let mut candidates = BTreeMap::<String, Vec<PathBuf>>::new();
+    for entry in entries {
+        let path = entry?.path();
+        if let Some(key) = partial_cache_key(&path) {
+            candidates.entry(key.to_string()).or_default().push(path);
+        }
+    }
+    for (key, paths) in candidates {
+        let _entry_lock = task_cache_entry_lock(cache_dir, &key)?;
+        for path in paths {
+            if path.exists() {
+                remove_cache_file(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn partial_cache_key(path: &Path) -> Option<&str> {
+    let filename = path.file_name()?.to_str()?;
+    let stem = filename
+        .strip_suffix(".tar.zst")
+        .or_else(|| filename.strip_suffix(".json"))?;
+    let (key, nonce) = stem.split_once(".part-")?;
+    (!key.is_empty() && !nonce.is_empty()).then_some(key)
 }
 
 fn calculate_artifact_checksum(
@@ -1301,6 +1370,69 @@ mod tests {
         drop(held);
         acquired_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         waiter.join().unwrap();
+    }
+
+    #[test]
+    fn abandoned_partial_writes_are_removed_without_touching_complete_entries() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let abandoned_manifest = cache_dir.path().join("abandoned.part-deadbeef.json");
+        let abandoned_archive = cache_dir.path().join("abandoned.part-deadbeef.tar.zst");
+        let complete_manifest = cache_dir.path().join("complete.json");
+        let unrelated = cache_dir.path().join("abandoned.part-deadbeef.txt");
+        fs::write(&abandoned_manifest, "partial manifest").unwrap();
+        fs::write(&abandoned_archive, "partial archive").unwrap();
+        fs::write(&complete_manifest, "complete manifest").unwrap();
+        fs::write(&unrelated, "unrelated").unwrap();
+
+        cleanup_abandoned_partial_writes(cache_dir.path()).unwrap();
+
+        assert!(!abandoned_manifest.exists());
+        assert!(!abandoned_archive.exists());
+        assert!(complete_manifest.exists());
+        assert!(unrelated.exists());
+    }
+
+    #[test]
+    fn active_partial_writes_are_not_removed_while_locked() {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let partial_manifest = cache_dir.path().join("active.part-deadbeef.json");
+        let partial_archive = cache_dir.path().join("active.part-deadbeef.tar.zst");
+        fs::write(&partial_manifest, "partial manifest").unwrap();
+        fs::write(&partial_archive, "partial archive").unwrap();
+        let held = task_cache_entry_lock(cache_dir.path(), "active").unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let cache_path = cache_dir.path().to_path_buf();
+
+        let cleanup = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            cleanup_abandoned_partial_writes(&cache_path).unwrap();
+            finished_tx.send(()).unwrap();
+        });
+
+        started_rx.recv().unwrap();
+        assert!(finished_rx.recv_timeout(Duration::from_millis(50)).is_err());
+        assert!(partial_manifest.exists());
+        assert!(partial_archive.exists());
+        drop(held);
+        finished_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        cleanup.join().unwrap();
+        assert!(!partial_manifest.exists());
+        assert!(!partial_archive.exists());
+    }
+
+    #[test]
+    fn missing_cache_directory_remains_eligible_for_partial_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let cache_dir = root.path().join("later-cache");
+        cleanup_abandoned_partial_writes_once(&cache_dir);
+
+        fs::create_dir(&cache_dir).unwrap();
+        let abandoned = cache_dir.join("abandoned.part-deadbeef.json");
+        fs::write(&abandoned, "partial manifest").unwrap();
+        cleanup_abandoned_partial_writes_once(&cache_dir);
+
+        assert!(!abandoned.exists());
     }
 
     #[test]
