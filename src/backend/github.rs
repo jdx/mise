@@ -409,6 +409,13 @@ impl Backend for UnifiedGitBackend {
                 features.push(SecurityFeature::Checksum {
                     algorithm: Some("sha256".to_string()),
                 });
+            } else {
+                let has_checksum = release.assets.iter().any(|a| a.digest.is_some());
+                if has_checksum {
+                    features.push(SecurityFeature::Checksum {
+                        algorithm: Some("sha256".to_string()),
+                    });
+                }
             }
         }
 
@@ -929,6 +936,35 @@ impl Backend for UnifiedGitBackend {
                 Ok(PlatformInfo::default())
             }
         }
+    }
+
+    /// The SHA256 digest of the current platform's release asset, taken from the
+    /// GitHub API. Used to detect rolling releases (e.g. a `nightly` tag whose
+    /// asset changes while the version string stays the same).
+    ///
+    /// Sourced from the bulk release listing — which is already fetched and cached
+    /// during version resolution — so this adds no network round-trips for the
+    /// common case, and only the API-provided digest is used (no checksum download
+    /// fallback). Returns None for GitLab/Forgejo (no per-asset API digest) or when
+    /// the asset/digest can't be determined, in which case rolling detection simply
+    /// no-ops.
+    async fn current_checksum(&self, _config: &Arc<Config>, tv: &ToolVersion) -> Option<String> {
+        if self.is_gitlab() || self.is_forgejo() {
+            return None;
+        }
+        let repo = self.repo();
+        let raw_opts = tv.request.options();
+        let opts = self.options(&raw_opts);
+        let api_url = opts.api_url();
+        let releases =
+            github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
+                .await
+                .ok()?;
+        let target = PlatformTarget::from_current();
+        let release = releases
+            .iter()
+            .find(|r| self.strip_version_prefix(&r.tag_name, &opts) == tv.version)?;
+        self.asset_digest_in_release(release, tv, &opts, &target)
     }
 }
 
@@ -2080,6 +2116,38 @@ impl UnifiedGitBackend {
             url_api: asset_url_api(&asset.uuid),
             digest,
         })
+    }
+
+    /// Pick the current target's asset within an already-fetched release and
+    /// return its API-provided SHA256 digest, if any. Pure and network-free
+    /// (mirrors the asset selection in `resolve_github_asset_url_for_target` but
+    /// skips the checksum-download fallback), so it's safe to call across many
+    /// tools for rolling-release detection.
+    fn asset_digest_in_release(
+        &self,
+        release: &github::GithubRelease,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+        target: &PlatformTarget,
+    ) -> Option<String> {
+        let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+        let asset_name = if let Some(pattern) = opts.asset_pattern_for_target(target) {
+            let templated_pattern = template_string_for_target(&pattern, tv, target);
+            self.pick_by_pattern(release.assets.clone(), &templated_pattern, |a| &a.name)
+                .map(|a| a.name)?
+        } else {
+            asset_matcher::AssetMatcher::new()
+                .for_target(target)
+                .with_no_app(opts.no_app_for_target(target))
+                .with_preferred_name(self.preferred_asset_name())
+                .with_matching(opts.matching().unwrap_or_default())
+                .with_matching_regex(opts.matching_regex().unwrap_or_default())
+                .pick_from(&available_assets)
+                .ok()?
+                .name
+        };
+        self.find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
+            .and_then(|a| a.digest.clone())
     }
 
     fn find_asset_case_insensitive<'a, T>(

@@ -88,7 +88,7 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(key, "os" | "depends" | "install_env") && !key.starts_with("install_env.")
+    !matches!(key, "os" | "depends" | "install_env" | "rolling") && !key.starts_with("install_env.")
 }
 
 fn insert_tool_option<E>(
@@ -196,6 +196,9 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
             env.insert(k, v.into());
         }
         table.insert("install_env", env.into());
+    }
+    if let Some(rolling) = core.rolling {
+        table.insert("rolling", Value::from(rolling));
     }
 }
 
@@ -1259,6 +1262,7 @@ impl ConfigFile for MiseToml {
             if opts.os.as_ref().is_some_and(|o| !o.is_empty())
                 || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
                 || !opts.install_env.is_empty()
+                || opts.rolling.is_some()
             {
                 return false;
             }
@@ -1523,6 +1527,7 @@ impl ConfigFile for MiseToml {
                     ba_opts.os = options.os.clone();
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
+                    ba_opts.rolling = options.rolling;
                     ba.set_opts(Some(ba_opts.clone()));
                     ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())
                         .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?

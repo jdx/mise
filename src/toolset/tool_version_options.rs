@@ -24,6 +24,14 @@ pub struct CoreToolOptions {
     pub depends: Option<Vec<String>>,
     #[serde(default)]
     pub install_env: IndexMap<String, EnvValue>,
+    /// Whether this tool is a rolling release (a stable version string like a
+    /// `nightly` tag whose artifact changes over time). `Some(true)` opts in
+    /// (and enables the `resolve_lock_info` slow path for backends without a
+    /// cheap checksum source); `Some(false)` declares it pinned, so a same-version
+    /// checksum change is treated as an integrity warning rather than a rolling
+    /// update; `None` leaves it to cheap auto-detection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolling: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -343,6 +351,14 @@ impl ToolOptions {
                 self.depends = Some(parse_string_or_array(value, "depends")?);
                 Ok(true)
             }
+            "rolling" => {
+                self.rolling = Some(
+                    value
+                        .as_bool()
+                        .ok_or_else(|| "rolling must be a boolean".to_string())?,
+                );
+                Ok(true)
+            }
             "install_env" => {
                 let env = value
                     .as_table()
@@ -397,6 +413,9 @@ impl ToolOptions {
         }
         if key == "install_env" {
             return !self.install_env.is_empty();
+        }
+        if key == "rolling" {
+            return self.rolling.is_some();
         }
         if let Some(env_key) = key.strip_prefix("install_env.") {
             return self.install_env.contains_key(env_key);
@@ -1123,6 +1142,7 @@ mod tests {
                 .iter()
                 .cloned()
                 .collect(),
+                rolling: None,
             },
             ..Default::default()
         };
@@ -1281,6 +1301,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                rolling: None,
             },
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
@@ -1298,6 +1319,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                rolling: None,
             },
             opts: [("api_url".to_string(), s("https://inline.example"))]
                 .iter()

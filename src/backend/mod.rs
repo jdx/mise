@@ -2770,9 +2770,114 @@ pub trait Backend: Debug + Send + Sync {
         versions.into_iter().find(|v| v.version == version)
     }
 
-    /// Check if a rolling version has changed (by comparing checksums)
-    /// Returns true if the version should be updated
+    /// The backend's current checksum for `tv` on the current platform, if it can
+    /// be obtained cheaply (e.g. from an already-fetched release listing). Used to
+    /// detect rolling releases: a stable version string (like a `nightly` tag)
+    /// whose artifact content — and therefore checksum — has changed.
+    ///
+    /// Returns `None` when the backend has no cheap checksum source; such backends
+    /// simply don't participate in checksum-based rolling detection.
+    async fn current_checksum(&self, _config: &Arc<Config>, _tv: &ToolVersion) -> Option<String> {
+        None
+    }
+
+    /// Check if a rolling version has changed (by comparing the backend's current
+    /// checksum against the lockfile's recorded checksum for this version +
+    /// platform). Returns true if the version should be reinstalled.
+    ///
+    /// Behavior depends on the tool's tri-state `rolling` setting (explicit config
+    /// value, else the lockfile's sticky value):
+    /// - `Some(true)`  — known rolling: compare via the cheap `current_checksum`
+    ///   fast path, falling back to the `resolve_lock_info` slow path when no fast
+    ///   path exists. A changed checksum means outdated.
+    /// - `None`        — auto-detect: only the fast path is used (never the slow
+    ///   path, so non-fast-path backends cost nothing). A changed checksum is
+    ///   treated as a rolling update.
+    /// - `Some(false)` — pinned: only the fast path is used (never slowed down). A
+    ///   changed checksum is surfaced as an integrity warning, NOT a reinstall.
     async fn is_rolling_version_outdated(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        let version = tv.request.version();
+        let platform_key = Platform::current().to_key();
+
+        // The lockfile on disk is authoritative for both the baseline checksum and
+        // the sticky rolling flag, because `mise upgrade` re-resolves with
+        // use_locked_version=false (so `tv.lock_platforms` / `tv.rolling` may be
+        // empty for the sticky case).
+        let lockfile_tool = tv.request.lockfile_resolve(config).ok().flatten();
+        let rolling_state = tv
+            .rolling
+            .or_else(|| lockfile_tool.as_ref().and_then(|lt| lt.rolling));
+        let baseline = lockfile_tool
+            .as_ref()
+            .and_then(|lt| {
+                lt.platforms
+                    .get(&platform_key)
+                    .and_then(|p| p.checksum.clone())
+            })
+            .or_else(|| {
+                tv.lock_platforms
+                    .get(&platform_key)
+                    .and_then(|p| p.checksum.clone())
+            })
+            .or_else(|| install_state::read_checksum(&tv.install_path()));
+
+        let Some(baseline) = baseline else {
+            // No checksum baseline at all — defer to the vfox-style fallback
+            // (VersionInfo.rolling + install_state checksum).
+            return self.is_rolling_version_outdated_fallback(config, tv).await;
+        };
+
+        // Always try the cheap fast path. Only pay the resolve_lock_info slow path
+        // when the tool is explicitly/known rolling (Some(true)); `false` and unset
+        // never slow anything down.
+        let fresh = match self.current_checksum(config, tv).await {
+            Some(c) => Some(c),
+            None if rolling_state == Some(true) => {
+                let target = PlatformTarget::from_current();
+                self.resolve_lock_info(tv, &target)
+                    .await
+                    .ok()
+                    .and_then(|pi| pi.checksum)
+            }
+            None => None,
+        };
+
+        let Some(fresh) = fresh else {
+            return self.is_rolling_version_outdated_fallback(config, tv).await;
+        };
+
+        if fresh == baseline {
+            return false;
+        }
+
+        // Checksum changed for the same version string.
+        if rolling_state == Some(false) {
+            // Explicitly pinned: a changed artifact is suspicious, not a rolling
+            // update. (The download is still verified against the lockfile checksum
+            // at install time; this is the proactive heads-up.)
+            warn!(
+                "{}@{version} resolves to a different checksum than the lockfile records \
+                 (expected {baseline}, got {fresh}), but it is marked `rolling = false`. \
+                 This may indicate upstream tampering or a re-released artifact; not \
+                 treating it as a rolling update.",
+                self.ba()
+            );
+            return false;
+        }
+
+        // Some(true) or None: treat as a rolling update.
+        trace!("rolling version {version} checksum changed: {baseline} -> {fresh}");
+        true
+    }
+
+    /// Fallback rolling check for backends that declare rolling via `VersionInfo`
+    /// and persist a checksum via `install_state` (e.g. vfox plugins), used when no
+    /// lockfile checksum baseline is available.
+    async fn is_rolling_version_outdated_fallback(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> bool {
         use crate::toolset::install_state;
 
         let version = tv.request.version();
@@ -2977,6 +3082,13 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        println!(
+            "Installing {}@{} (requested {})",
+            self.ba(),
+            tv.version,
+            tv.request
+        );
+
         // A rolling release (e.g. a `nightly` tag) keeps the same version string,
         // so its install dir already existing does NOT mean it's up-to-date.
         let rolling_reinstall = !ctx.force
@@ -3081,6 +3193,22 @@ pub trait Backend: Debug + Send + Sync {
         }
         if update_install_state {
             install_state::add_tool_version(self.ba(), &install_path, &tv.tv_pathname());
+        }
+        // Persist the installed checksum to install_state for every install so
+        // is_rolling_version_outdated can use it as a baseline when the lockfile is
+        // disabled. This enables automatic rolling-release detection (a stable version
+        // string whose artifact changed) without requiring a lockfile.
+        // verify_checksum already populated tv.lock_platforms during install, so we
+        // just mirror it here — no backend needs to do this individually.
+        let platform_key = self.get_platform_key();
+        if let Some(checksum) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.checksum.clone())
+        {
+            if let Err(e) = install_state::write_checksum(&tv.install_path(), &checksum) {
+                warn!("failed to write checksum for {}: {e}", tv);
+            }
         }
 
         self.cleanup_install_dirs(&tv);

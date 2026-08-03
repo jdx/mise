@@ -105,6 +105,11 @@ pub struct Use {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
+    /// Mark the tool as pinned (not rolling): a same-version checksum change is
+    /// surfaced as an integrity warning instead of being reinstalled.
+    #[clap(long, overrides_with = "rolling")]
+    no_rolling: bool,
+
     /// Save the resolved concrete version to the config file
     ///
     /// If the request exactly matches an available release, that release is preferred over
@@ -125,6 +130,14 @@ pub struct Use {
     /// Remove the tool(s) from config file
     #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Vec<BackendArg>,
+
+    /// Mark the tool as a rolling release (a stable version string like `nightly`
+    /// whose artifact changes over time), so `mise upgrade` reinstalls it in place
+    /// when the upstream checksum changes.
+    ///
+    /// e.g.: `mise use --rolling "github:neovim/neovim@nightly"`
+    #[clap(long, overrides_with = "no_rolling")]
+    rolling: bool,
 }
 
 impl Use {
@@ -198,6 +211,16 @@ impl Use {
             )
             .await?;
 
+        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
+        // Tri-state from --rolling / --no-rolling (neither = leave as-is).
+        let rolling_override = if self.no_rolling {
+            Some(false)
+        } else if self.rolling {
+            Some(true)
+        } else {
+            None
+        };
+
         for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl
                 .into_iter()
@@ -217,6 +240,11 @@ impl Use {
                             options,
                             backend,
                         };
+                    }
+                    if let Some(rolling) = rolling_override
+                        && let ToolRequest::Version { options, .. } = &mut request
+                    {
+                        options.core.rolling = Some(rolling);
                     }
                     request
                 })

@@ -245,6 +245,19 @@ impl ToolRequest {
         }
     }
 
+    /// The explicit `rolling` tool option, if set in config. Read without cloning
+    /// the whole options map since it's consulted on every `ToolVersion::new`.
+    pub fn rolling(&self) -> Option<bool> {
+        match self {
+            Self::Version { options: o, .. }
+            | Self::Prefix { options: o, .. }
+            | Self::Ref { options: o, .. }
+            | Self::Sub { options: o, .. }
+            | Self::Path { options: o, .. }
+            | Self::System { options: o, .. } => o.rolling,
+        }
+    }
+
     pub async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {

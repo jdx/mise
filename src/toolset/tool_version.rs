@@ -57,6 +57,8 @@ pub struct ToolVersion {
     pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
     /// Install satisfaction computed during dry-run installs.
     pub install_satisfied: Option<bool>,
+    /// Indicates that this is a rolling release channel, overrides the backend if true
+    pub rolling: Option<bool>,
 }
 
 impl ToolVersion {
@@ -77,12 +79,34 @@ impl ToolVersion {
     }
 
     pub fn new(request: ToolRequest, version: String) -> Self {
+        // An explicit `rolling` tool option (from config) seeds the field; the
+        // lockfile's sticky value is layered in by `from_lockfile` when absent.
+        let rolling = request.rolling();
         ToolVersion {
             request,
             version,
             before_date: None,
             locked: false,
             resolved_from_lockfile: false,
+            rolling,
+            lock_platforms: Default::default(),
+            install_path: None,
+            install_path_is_exact: false,
+            install_path_is_explicit: false,
+            conda_packages: Default::default(),
+            pkgx_packages: Default::default(),
+            install_satisfied: None,
+        }
+    }
+
+    pub fn new_rolling(request: ToolRequest, version: String) -> Self {
+        ToolVersion {
+            request,
+            version,
+            before_date: None,
+            locked: false,
+            resolved_from_lockfile: false,
+            rolling: Some(true),
             lock_platforms: Default::default(),
             install_path: None,
             install_path_is_exact: false,
@@ -170,6 +194,9 @@ impl ToolVersion {
         let mut tv = Self::new(request, lt.version);
         tv.locked = true;
         tv.resolved_from_lockfile = true;
+        // Explicit config `rolling` (seeded by `new`) wins; otherwise inherit the
+        // lockfile's sticky value.
+        tv.rolling = tv.rolling.or(lt.rolling);
         tv.lock_platforms = lt.platforms;
         tv
     }
@@ -418,6 +445,7 @@ impl ToolVersion {
         }
 
         let build = |v| Ok(Self::new(request.clone(), v));
+        let build_rolling = |v| Ok(Self::new_rolling(request.clone(), v));
 
         if v.matches('.').count() >= 2 {
             // Fully-qualified requests can return through several offline and
@@ -525,6 +553,38 @@ impl ToolVersion {
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
         }
+
+        // Rolling release channels (e.g. zig's "master") are moving pointers that
+        // mise must re-resolve to a concrete version -- like "latest" -- so they are
+        // not pinned forever. Mirror the "latest" fast paths: prefer an installed
+        // concrete version when not explicitly resolving latest (keeps hook-env /
+        // exec network-free), otherwise re-resolve the channel. (#10251)
+        if backend.is_rolling_channel(&v) {
+            // Reuse an installed build of THIS channel (e.g. a -dev nightly for
+            // zig@master), never an unrelated installed release, so we don't
+            // short-circuit zig@master to a stable version that happens to be
+            // installed.
+            if !opts.latest_versions
+                && !should_filter_installed_versions
+                && let Some(installed) = backend.latest_installed_channel_version(&v)
+            {
+                return build_rolling(installed);
+            }
+            if !is_offline
+                && let Some(concrete) = backend.resolve_channel_version(config, &v).await?
+            {
+                return build_rolling(concrete);
+            }
+            if opts.offline {
+                return build_rolling(v);
+            }
+            // Online but the channel did not resolve to a concrete version --
+            // either the index lacked the channel key, or the fetch failed
+            // transiently (resolve_channel_version maps both to Ok(None)). Fall
+            // through to normal resolution, which still matches the literal
+            // channel name in the backend's version list as before.
+        }
+
         let installed_matches =
             (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
         if installed_matches
@@ -1074,6 +1134,7 @@ mod tests {
             backend: Some("npm:npm".to_string()),
             options: BTreeMap::from([("registry".to_string(), "lockfile-value".to_string())]),
             platforms: Default::default(),
+            rolling: None,
         };
 
         let tv = ToolVersion::from_lockfile(request, lt);

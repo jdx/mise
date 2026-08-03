@@ -16,6 +16,7 @@ Toolset {
                             os: None,
                             depends: None,
                             install_env: {},
+                            rolling: None,
                         },
                         opts: RawBackendOptions {
                             values: {},
@@ -33,6 +34,7 @@ Toolset {
                             os: None,
                             depends: None,
                             install_env: {},
+                            rolling: None,
                         },
                         opts: RawBackendOptions {
                             values: {},
