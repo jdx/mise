@@ -100,6 +100,9 @@ impl SystemPackageManager for PacmanManager {
         debug!("$ pacman {}", args.join(" "));
         let output = tokio::process::Command::new("pacman")
             .args(&args)
+            // pacman localizes its messages via gettext, so the "was not
+            // found" check below only works against the untranslated output.
+            .env("LC_ALL", "C")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
