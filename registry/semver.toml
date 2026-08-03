@@ -3,5 +3,6 @@ backends = [
   "vfox:mise-plugins/vfox-semver",
   "asdf:mathew-fleisch/asdf-semver",
 ]
+bins = ["semver"]
 description = "semver bash implementation"
 test = { cmd = "semver --version", expected = "semver: {{version}}" }

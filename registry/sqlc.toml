@@ -1,3 +1,4 @@
 backends = ["aqua:sqlc-dev/sqlc", "github:sqlc-dev/sqlc"]
+bins = ["sqlc"]
 description = "Generate type-safe code from SQL"
 test = { cmd = "sqlc version", expected = "{{version}}" }

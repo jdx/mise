@@ -1,2 +1,3 @@
 backends = ["aqua:helmfile/vals", "asdf:dex4er/asdf-vals"]
+bins = ["vals"]
 description = "Helm-like configuration values loader with support for various sources"

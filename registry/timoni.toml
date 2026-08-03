@@ -1,2 +1,3 @@
 backends = ["aqua:stefanprodan/timoni", "asdf:Smana/asdf-timoni"]
+bins = ["timoni"]
 description = "Timoni is a package manager for Kubernetes, powered by CUE and inspired by Helm"

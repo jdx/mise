@@ -3,5 +3,6 @@ backends = [
   "asdf:chessmango/asdf-zellij",
   "cargo:zellij",
 ]
+bins = ["zellij"]
 description = "A terminal workspace with batteries included"
 test = { cmd = "zellij --version", expected = "zellij {{version}}" }

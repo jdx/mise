@@ -1,3 +1,4 @@
 backends = ["aqua:houseabsolute/ubi"]
+bins = ["ubi"]
 description = "The Universal Binary Installer"
 test = { cmd = "ubi --version", expected = "ubi {{version}}" }

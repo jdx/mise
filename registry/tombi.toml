@@ -1,3 +1,4 @@
 backends = ["aqua:tombi-toml/tombi"]
+bins = ["tombi"]
 description = "TOML Formatter / Linter / Language Server"
 test = { cmd = "tombi --version", expected = "tombi {{version}}" }

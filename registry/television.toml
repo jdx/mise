@@ -1,3 +1,4 @@
 backends = ["aqua:alexpasmantier/television"]
+bins = ["tv"]
 description = "The revolution will (not) be televised"
 test = { cmd = "tv --version", expected = "television {{version}}" }

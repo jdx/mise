@@ -3,5 +3,6 @@ backends = [
   "asdf:aschiavon91/asdf-typos",
   "cargo:typos-cli",
 ]
+bins = ["typos"]
 description = "Source code spell checker"
 test = { cmd = "typos --version", expected = "typos-cli {{version}}" }

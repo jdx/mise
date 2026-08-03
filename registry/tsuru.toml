@@ -1,6 +1,7 @@
 description = "tsuru-client is a tsuru command line tool for application developers"
 # test = { cmd = "tsuru version --help", expected = "display the current version" }
 
+bins = ["tsuru"]
 [[backends]]
 full = "github:tsuru/tsuru-client"
 

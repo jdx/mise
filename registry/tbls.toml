@@ -1,3 +1,4 @@
 backends = ["aqua:k1LoW/tbls"]
+bins = ["tbls"]
 description = "A CI-Friendly tool to document a database written in Go"
 test = { cmd = "tbls version", expected = "{{version}}" }

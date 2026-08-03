@@ -1,2 +1,3 @@
 backends = ["aqua:hashicorp/waypoint", "asdf:mise-plugins/mise-hashicorp"]
+bins = ["waypoint"]
 description = "A tool to build, deploy, and release any application on any platform"

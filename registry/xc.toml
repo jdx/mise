@@ -1,2 +1,3 @@
 backends = ["aqua:joerdav/xc", "asdf:airtonix/asdf-xc"]
+bins = ["xc"]
 description = "Markdown defined task runner"

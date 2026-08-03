@@ -1,4 +1,5 @@
 aliases = ["talos"]
 backends = ["aqua:siderolabs/talos"]
+bins = ["talosctl"]
 description = "Talos is a modern OS for Kubernetes. talosctl is a CLI for out-of-band management of Kubernetes nodes created by Talos"
 test = { cmd = "talosctl version --client --short", expected = "Talos v{{version}}" }

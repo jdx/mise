@@ -1,3 +1,4 @@
 backends = ["aqua:max-sixty/worktrunk", "cargo:worktrunk"]
+bins = ["git-wt", "wt"]
 description = "A CLI for git worktree management, designed for running AI agents in parallel."
 test = { cmd = "wt --version", expected = "wt v{{version}}" }

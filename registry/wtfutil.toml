@@ -1,3 +1,4 @@
 backends = ["aqua:wtfutil/wtf", "asdf:NeoHsu/asdf-wtfutil"]
+bins = ["wtfutil"]
 description = "WTF is the personal information dashboard for your terminal"
 test = { cmd = "wtfutil --version", expected = "WTF v{{version}}" }

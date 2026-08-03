@@ -1,6 +1,7 @@
 description = "The mighty, self-hostable Git server for the command line"
 # test = { cmd = "soft --version", expected = "soft version v{{version}}" }
 
+bins = ["soft"]
 [[backends]]
 full = "github:charmbracelet/soft-serve"
 

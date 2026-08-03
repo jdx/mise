@@ -1,2 +1,3 @@
 backends = ["github:jdx/wait-for-gh-rate-limit"]
+bins = ["wait-for-gh-rate-limit"]
 description = "CLI to wait for github rate limits to reset if they are expired"

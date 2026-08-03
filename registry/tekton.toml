@@ -1,3 +1,4 @@
 aliases = ["tekton-cli"]
 backends = ["aqua:tektoncd/cli", "asdf:johnhamelink/asdf-tekton-cli"]
+bins = ["tkn"]
 description = "A CLI for interacting with Tekton"

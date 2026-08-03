@@ -1,5 +1,6 @@
 description = "Serverless Framework"
 
+bins = ["serverless", "sls"]
 [[backends]]
 full = "npm:serverless"
 

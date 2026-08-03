@@ -1,2 +1,3 @@
 backends = ["aqua:tfutils/tfenv", "asdf:carlduevel/asdf-tfenv"]
+bins = ["terraform", "tfenv"]
 description = "Terraform version manager"

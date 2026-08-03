@@ -1,2 +1,3 @@
 backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
+bins = ["talhelper"]
 description = "A tool to help creating Talos kubernetes cluster"

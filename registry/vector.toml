@@ -1,3 +1,4 @@
 backends = ["aqua:vectordotdev/vector"]
+bins = ["vector"]
 description = "A high-performance observability data pipeline."
 # TODO: re-enable once mise-versions no longer reports vdev releases as vector versions.

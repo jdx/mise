@@ -1,3 +1,4 @@
 backends = ["pipx:xxh-xxh"]
+bins = ["xxh", "xxh.bash", "xxh.xsh", "xxh.zsh"]
 description = "🚀 Bring your favorite shell wherever you go through the ssh. Xonsh shell, fish, zsh, osquery and so on."
 test = { cmd = "xxh --version", expected = "xxh/{{version}}" }

@@ -2,4 +2,5 @@ backends = [
   "aqua:juliosueiras/terraform-lsp",
   "asdf:bartlomiejdanek/asdf-terraform-lsp",
 ]
+bins = ["terraform-lsp"]
 description = "Language Server Protocol for Terraform"

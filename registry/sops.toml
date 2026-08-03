@@ -1,2 +1,3 @@
 backends = ["aqua:getsops/sops", "asdf:mise-plugins/mise-sops"]
+bins = ["sops"]
 description = "Simple and flexible tool for managing secrets"

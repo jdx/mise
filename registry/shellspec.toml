@@ -1,2 +1,3 @@
 backends = ["aqua:shellspec/shellspec", "asdf:poikilotherm/asdf-shellspec"]
+bins = ["shellspec"]
 description = "A full-featured BDD unit testing framework for bash, ksh, zsh, dash and all POSIX shells"

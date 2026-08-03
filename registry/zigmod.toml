@@ -3,5 +3,6 @@ backends = [
   "github:nektro/zigmod",
   "asdf:mise-plugins/asdf-zigmod",
 ]
+bins = ["zigmod"]
 description = "A package manager for the Zig programming language"
 test = { cmd = "zigmod version", expected = "{{version}}" }

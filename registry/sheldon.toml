@@ -3,6 +3,7 @@ backends = [
   "github:rossmacarthur/sheldon",
   "cargo:sheldon",
 ]
+bins = ["sheldon"]
 description = "Fast, configurable, shell plugin manager"
 os = ["linux", "macos"]
 test = { cmd = "sheldon --version", expected = "{{version}}" }

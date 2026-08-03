@@ -3,5 +3,6 @@ backends = [
   "asdf:jc00ke/asdf-stylua",
   "cargo:stylua",
 ]
+bins = ["stylua"]
 description = "A Lua code formatter"
 test = { cmd = "stylua --version", expected = "stylua {{version}}" }

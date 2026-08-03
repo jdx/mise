@@ -1,2 +1,16 @@
 backends = ["aqua:apache/spark", "asdf:mise-plugins/mise-spark"]
+bins = [
+  "beeline",
+  "docker-image-tool.sh",
+  "find-spark-home",
+  "pyspark",
+  "run-example",
+  "spark-class",
+  "spark-connect-shell",
+  "spark-pipelines",
+  "spark-shell",
+  "spark-sql",
+  "spark-submit",
+  "sparkR",
+]
 description = "Apache Spark - A unified analytics engine for large-scale data processing"

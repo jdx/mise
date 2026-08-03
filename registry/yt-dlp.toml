@@ -1,6 +1,7 @@
 description = "A feature-rich command-line audio/video downloader"
 test = { cmd = "yt-dlp --version", expected = "{{version}}" }
 
+bins = ["yt-dlp"]
 [[backends]]
 full = "github:yt-dlp/yt-dlp"
 

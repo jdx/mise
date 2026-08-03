@@ -2,4 +2,5 @@ backends = [
   "aqua:bytecodealliance/wasmtime",
   "asdf:tachyonicbytes/asdf-wasmtime",
 ]
+bins = ["wasmtime", "wasmtime-min"]
 description = "A lightweight WebAssembly runtime that is fast, secure, and standards-compliant"

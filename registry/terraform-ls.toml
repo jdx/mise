@@ -1,2 +1,3 @@
 backends = ["aqua:hashicorp/terraform-ls", "asdf:mise-plugins/mise-hashicorp"]
+bins = ["terraform-ls"]
 description = "Terraform Language Server"
