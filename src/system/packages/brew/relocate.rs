@@ -192,9 +192,23 @@ fn replace_in_binary(
     Ok(changed)
 }
 
-/// Walk a poured keg and replace placeholders in all files.
-pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> {
-    let replacements = standard_replacements();
+/// Walk a poured keg and replace placeholders. `skip_linkage` leaves binary
+/// linkage untouched while still relocating text files, matching Homebrew's
+/// handling of `:any_skip_relocation` bottles.
+pub fn relocate_keg(
+    keg: &Path,
+    formula_name: &str,
+    skip_linkage: bool,
+) -> Result<RelocationReport> {
+    relocate_keg_with_replacements(keg, formula_name, skip_linkage, &standard_replacements())
+}
+
+fn relocate_keg_with_replacements(
+    keg: &Path,
+    formula_name: &str,
+    skip_linkage: bool,
+    replacements: &[Replacement],
+) -> Result<RelocationReport> {
     let elf_opts = super::elf::LinkageOpts::for_formula(formula_name);
     // brew never patches glibc's own files — rewriting the dynamic linker
     // breaks it (extend/os/linux/keg_relocate.rb)
@@ -207,7 +221,13 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
         }
         let path = entry.path();
         let content = crate::file::read(path)?;
-        if !contains_any_placeholder(&content, &replacements) {
+        if !contains_any_placeholder(&content, replacements) {
+            continue;
+        }
+        let macho = is_macho(&content);
+        let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
+        let shebang_end = text_executable_shebang_end(&content);
+        if skip_linkage && (macho || elf || (content.contains(&0) && shebang_end.is_none())) {
             continue;
         }
         let perms = path.metadata()?.permissions();
@@ -218,9 +238,6 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
             std::os::unix::fs::PermissionsExt::mode(&perms) | 0o200,
         );
         std::fs::set_permissions(path, writable)?;
-        let macho = is_macho(&content);
-        let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
-        let shebang_end = text_executable_shebang_end(&content);
         if macho || (!elf && content.contains(&0) && shebang_end.is_none()) {
             // Non-ELF files containing NUL bytes are treated as binaries unless
             // their shebang makes them text executables (for example zipapps).
@@ -229,8 +246,8 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
             // replacement is longer; then the generic in-place pass for
             // strings in data sections.
             let mut content = content;
-            let mut changed = macho && super::macho::patch(&mut content, &replacements, path)?;
-            changed |= replace_in_binary(&mut content, &replacements, path)?;
+            let mut changed = macho && super::macho::patch(&mut content, replacements, path)?;
+            changed |= replace_in_binary(&mut content, replacements, path)?;
             if changed {
                 crate::file::write(path, &content)?;
                 if macho {
@@ -254,9 +271,9 @@ pub fn relocate_keg(keg: &Path, formula_name: &str) -> Result<RelocationReport> 
             let new_content = if content.contains(&0) {
                 // A valid shebang is the only way a NUL-backed file reaches
                 // this branch. Preserve the opaque binary payload byte-for-byte.
-                replace_shebang(&content, shebang_end.unwrap(), &replacements)
+                replace_shebang(&content, shebang_end.unwrap(), replacements)
             } else {
-                replace_text(&content, &replacements)
+                replace_text(&content, replacements)
             };
             if new_content != content {
                 crate::file::write(path, &new_content)?;
@@ -301,6 +318,7 @@ pub fn codesign(files: &[PathBuf]) -> Result<()> {
 pub(super) mod tests {
     use super::*;
     use std::io::{Cursor, Read, Write};
+    use std::os::unix::fs::PermissionsExt;
 
     /// fixed macOS-style replacements so tests behave the same on all hosts
     pub(in super::super) fn test_replacements() -> Vec<Replacement> {
@@ -325,6 +343,31 @@ pub(super) mod tests {
             String::from_utf8_lossy(&out),
             "#!/opt/homebrew/bin/bash\nCELLAR=/opt/homebrew/Cellar/foo\n"
         );
+    }
+
+    #[test]
+    fn test_skip_linkage_still_relocates_text_files() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let text = tmp.path().join("script");
+        let binary = tmp.path().join("binary");
+        crate::file::write(&text, "CELLAR=@@HOMEBREW_CELLAR@@/formula/1.0\n")?;
+        let mut binary_content = 0xfeedfacf_u32.to_be_bytes().to_vec();
+        binary_content.extend_from_slice(b"@@HOMEBREW_PREFIX@@/lib/libformula.dylib\0");
+        crate::file::write(&binary, &binary_content)?;
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o444))?;
+
+        let report =
+            relocate_keg_with_replacements(tmp.path(), "formula", true, &test_replacements())?;
+
+        assert_eq!(
+            crate::file::read_to_string(&text)?,
+            "CELLAR=/opt/homebrew/Cellar/formula/1.0\n"
+        );
+        assert_eq!(crate::file::read(&binary)?, binary_content);
+        assert_eq!(binary.metadata()?.permissions().mode() & 0o777, 0o444);
+        assert_eq!(report.changed_files, vec![text]);
+        assert!(report.changed_machos.is_empty());
+        Ok(())
     }
 
     #[test]
