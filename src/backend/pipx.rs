@@ -6,6 +6,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::duration::parse_into_timestamp;
 #[cfg(unix)]
 use crate::env;
 #[cfg(unix)]
@@ -461,12 +462,28 @@ impl PIPXBackend {
             .filter(|(_, files)| files.iter().any(|f| !f.yanked))
             .sorted_by_cached_key(|(v, _)| Versioning::new(v))
             .map(|(version, files)| {
+                // Prefer the RFC3339 `upload_time_iso_8601` over the
+                // timezone-naive `upload_time`: the latter has no offset, so
+                // `parse_into_timestamp` parses it as a `civil::Date` and
+                // substitutes end-of-day UTC, dropping the real time-of-day
+                // and inflating `minimum_release_age` for same-day releases by
+                // up to ~24h. Custom indexes without the ISO field fall back to
+                // `upload_time` as before.
                 let created_at = files
                     .iter()
                     .filter(|f| !f.yanked)
-                    .filter_map(|f| f.upload_time.as_ref())
-                    .min()
-                    .cloned();
+                    .filter_map(|f| {
+                        f.upload_time_iso_8601
+                            .clone()
+                            .or_else(|| f.upload_time.clone())
+                    })
+                    // Pick the earliest upload as a parsed instant, not by
+                    // lexicographic string order: RFC3339 strings with
+                    // different offsets (`...00:00-05:00` vs `...04:00Z`) do
+                    // not sort chronologically, so a naive `.min()` on the raw
+                    // strings can select a later instant and over-gate.
+                    .min_by_key(|s| parse_into_timestamp(s).unwrap_or(Timestamp::MAX));
+
                 VersionInfo {
                     version,
                     created_at,
@@ -755,6 +772,7 @@ struct PypiPackage {
 #[derive(serde::Deserialize)]
 struct PypiRelease {
     upload_time: Option<String>,
+    upload_time_iso_8601: Option<String>,
     #[serde(default, deserialize_with = "deserialize_pypi_yanked")]
     yanked: bool,
 }
@@ -1129,6 +1147,75 @@ mod tests {
     }
 
     #[test]
+    fn test_versions_from_pypi_package_preserves_time_of_day_from_iso_field() {
+        // PyPI's JSON carries both a naive `upload_time` (no offset) and an
+        // RFC3339 `upload_time_iso_8601`. Preferring the ISO field keeps the
+        // real upload instant; the naive field would parse as a `civil::Date`
+        // and collapse to end-of-day UTC, inflating `minimum_release_age`.
+        fn release(iso: Option<&str>, naive: Option<&str>) -> PypiRelease {
+            PypiRelease {
+                upload_time: naive.map(str::to_string),
+                upload_time_iso_8601: iso.map(str::to_string),
+                yanked: false,
+            }
+        }
+
+        let versions = PIPXBackend::versions_from_pypi_package(pypi_package(vec![
+            // Both fields present: the precise midday instant wins.
+            (
+                "1.0.0",
+                vec![release(
+                    Some("2024-01-02T10:05:14.723989Z"),
+                    Some("2024-01-02T10:05:14"),
+                )],
+            ),
+            // Index without the ISO field: naive fallback still yields a
+            // timestamp (here end-of-day UTC), so release-age gating degrades
+            // gracefully rather than disappearing.
+            ("1.1.0", vec![release(None, Some("2024-01-03"))]),
+        ]));
+
+        let parsed: Vec<_> = versions
+            .iter()
+            .map(|v| v.created_at_timestamp().map(|t| t.to_string()))
+            .collect();
+        // ISO field: real upload instant, not 2024-01-02T23:59:59Z.
+        assert_eq!(parsed[0].as_deref(), Some("2024-01-02T10:05:14.723989Z"));
+        // Naive-only fallback: parses as a date, end-of-day UTC.
+        assert_eq!(parsed[1].as_deref(), Some("2024-01-03T23:59:59Z"));
+    }
+
+    #[test]
+    fn test_versions_from_pypi_package_picks_earliest_instant_not_lexical_min() {
+        // A custom index may return RFC3339 timestamps with differing offsets.
+        // These two are the same instant, but lexicographic order and
+        // chronological UTC order diverge for different-offset strings, so the
+        // earliest upload must be selected by parsed instant.
+        //
+        //   "2024-01-02T00:00:00-05:00"  ==  2024-01-02T05:00:00Z
+        //   "2024-01-02T04:30:00Z"            2024-01-02T04:30:00Z  (earlier)
+        //
+        // Lexical min is the first ("-05:00" string sorts before "Z"), but the
+        // second is 30 min earlier in UTC and must win.
+        let release = |iso: &str| PypiRelease {
+            upload_time: None,
+            upload_time_iso_8601: Some(iso.to_string()),
+            yanked: false,
+        };
+        let versions = PIPXBackend::versions_from_pypi_package(pypi_package(vec![(
+            "1.0.0",
+            vec![
+                release("2024-01-02T00:00:00-05:00"),
+                release("2024-01-02T04:30:00Z"),
+            ],
+        )]));
+        assert_eq!(
+            versions[0].created_at.as_deref(),
+            Some("2024-01-02T04:30:00Z"),
+        );
+    }
+
+    #[test]
     fn test_latest_stable_from_pypi_package_skips_yanked_and_prerelease() {
         let version = PIPXBackend::latest_stable_from_pypi_package(pypi_package(vec![
             (
@@ -1289,6 +1376,7 @@ mod tests {
     fn pypi_release(upload_time: Option<&str>, yanked: bool) -> PypiRelease {
         PypiRelease {
             upload_time: upload_time.map(str::to_string),
+            upload_time_iso_8601: upload_time.map(str::to_string),
             yanked,
         }
     }
