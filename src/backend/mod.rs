@@ -2237,6 +2237,7 @@ pub trait Backend: Debug + Send + Sync {
         file::create_dir_all(installs_path)?;
         let mut changed = BTreeSet::new();
         for version in versions {
+            let _state_lock = install_state::lock_tool_version(&self.ba().short, &version)?;
             let link = installs_path.join(&version);
             let runtime_link = is_runtime_symlink(&link);
             let provider_link = !runtime_link && file::is_symlink_to_prefix(&link, target_prefix)?;
