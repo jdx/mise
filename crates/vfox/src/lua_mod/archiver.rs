@@ -1,5 +1,6 @@
 use crate::error::Result;
 use mlua::{ExternalResult, Lua, MultiValue, Table, Value};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 pub fn mod_archiver(lua: &Lua) -> Result<()> {
@@ -64,6 +65,8 @@ fn decompress(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
 /// Match mise's built-in archive extraction behavior: promote the contents of
 /// top-level directories while retaining files that are already at the root.
 fn strip_archive_path_components(extracted: &Path, destination: &Path) -> mlua::Result<()> {
+    let mut moves = vec![];
+    let mut targets = BTreeSet::new();
     for entry in xx::file::ls(extracted).into_lua_err()? {
         if entry
             .symlink_metadata()
@@ -75,15 +78,49 @@ fn strip_archive_path_components(extracted: &Path, destination: &Path) -> mlua::
                 let file_name = child.file_name().ok_or_else(|| {
                     mlua::Error::runtime(format!("invalid archive entry: {}", child.display()))
                 })?;
-                xx::file::mv(&child, destination.join(file_name)).into_lua_err()?;
+                plan_move(
+                    child.clone(),
+                    destination.join(file_name),
+                    &mut moves,
+                    &mut targets,
+                )?;
             }
         } else {
             let file_name = entry.file_name().ok_or_else(|| {
                 mlua::Error::runtime(format!("invalid archive entry: {}", entry.display()))
             })?;
-            xx::file::mv(&entry, destination.join(file_name)).into_lua_err()?;
+            plan_move(
+                entry.clone(),
+                destination.join(file_name),
+                &mut moves,
+                &mut targets,
+            )?;
         }
     }
+    for (source, target) in moves {
+        xx::file::mv(source, target).into_lua_err()?;
+    }
+    Ok(())
+}
+
+fn plan_move(
+    source: PathBuf,
+    target: PathBuf,
+    moves: &mut Vec<(PathBuf, PathBuf)>,
+    targets: &mut BTreeSet<PathBuf>,
+) -> mlua::Result<()> {
+    let target_exists = match target.symlink_metadata() {
+        Ok(_) => true,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+        Err(err) => return Err(mlua::Error::external(err)),
+    };
+    if target_exists || !targets.insert(target.clone()) {
+        return Err(mlua::Error::runtime(format!(
+            "archive strip destination already exists: {}",
+            target.display()
+        )));
+    }
+    moves.push((source, target));
     Ok(())
 }
 
@@ -176,6 +213,38 @@ mod tests {
             "tool"
         );
         assert!(!destination.join("pkg").exists());
+    }
+
+    #[test]
+    fn test_strip_components_rejects_collisions_before_moving() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let extracted = temp_dir.path().join("extracted");
+        let destination = temp_dir.path().join("destination");
+        std::fs::create_dir_all(extracted.join("pkg")).unwrap();
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(extracted.join("tool"), "root").unwrap();
+        std::fs::write(extracted.join("pkg/tool"), "nested").unwrap();
+
+        let err = strip_archive_path_components(&extracted, &destination).unwrap_err();
+
+        assert!(err.to_string().contains("destination already exists"));
+        assert!(!destination.join("tool").exists());
+        assert!(extracted.join("tool").exists());
+        assert!(extracted.join("pkg/tool").exists());
+    }
+
+    #[test]
+    fn test_decompress_error_can_be_caught_with_pcall() {
+        let lua = Lua::new();
+        mod_archiver(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local archiver = require("archiver")
+            local ok, err = pcall(archiver.decompress, "archive.rar", "destination")
+            assert(not ok, "pcall should catch decompression errors")
+            assert(tostring(err):match("unsupported archive format"))
+        })
+        .exec()
+        .unwrap();
     }
 
     #[test]
