@@ -221,7 +221,7 @@ fn relocate_keg_with_replacements(
         }
         let path = entry.path();
         let content = crate::file::read(path)?;
-        if !contains_any_placeholder(&content, &replacements) {
+        if !contains_any_placeholder(&content, replacements) {
             continue;
         }
         let macho = is_macho(&content);
@@ -246,8 +246,8 @@ fn relocate_keg_with_replacements(
             // replacement is longer; then the generic in-place pass for
             // strings in data sections.
             let mut content = content;
-            let mut changed = macho && super::macho::patch(&mut content, &replacements, path)?;
-            changed |= replace_in_binary(&mut content, &replacements, path)?;
+            let mut changed = macho && super::macho::patch(&mut content, replacements, path)?;
+            changed |= replace_in_binary(&mut content, replacements, path)?;
             if changed {
                 crate::file::write(path, &content)?;
                 if macho {
@@ -271,9 +271,9 @@ fn relocate_keg_with_replacements(
             let new_content = if content.contains(&0) {
                 // A valid shebang is the only way a NUL-backed file reaches
                 // this branch. Preserve the opaque binary payload byte-for-byte.
-                replace_shebang(&content, shebang_end.unwrap(), &replacements)
+                replace_shebang(&content, shebang_end.unwrap(), replacements)
             } else {
-                replace_text(&content, &replacements)
+                replace_text(&content, replacements)
             };
             if new_content != content {
                 crate::file::write(path, &new_content)?;
