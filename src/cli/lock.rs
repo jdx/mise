@@ -935,9 +935,11 @@ impl Lock {
                             Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
                     } else if version == "latest" {
+                        let request_options = tv.request.options();
                         if let Some(latest_version) = crate::backend::get(&ba)
                             .and_then(|b| {
-                                b.latest_installed_version(Some("latest".to_string())).ok()
+                                b.latest_installed_version_with_opts(None, &request_options)
+                                    .ok()
                             })
                             .flatten()
                         {

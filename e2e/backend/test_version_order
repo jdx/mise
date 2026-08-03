@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+# Remote listings use the effective version ordering. Cache producers can ask
+# for the backend's source order explicitly.
+
+VERSION_LIST_DIR="$TMPDIR/version-order-list"
+mkdir -p "$VERSION_LIST_DIR"
+# `99` is an old, non-SemVer tag. It remains eligible for `latest`, but must
+# not prevent valid SemVer candidates from being ranked by precedence.
+cat <<'EOF' >"$VERSION_LIST_DIR/versions.txt"
+11.11.0
+99
+10.99.0
+10.34.5
+EOF
+
+HTTP_PORT_FILE="$TMPDIR/version_order_port"
+python3 -c "
+import http.server, socketserver
+s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
+with open('$HTTP_PORT_FILE', 'w') as f:
+    f.write(str(s.server_address[1]))
+s.serve_forever()
+" &
+HTTP_SERVER_PID=$!
+
+cleanup() {
+  kill $HTTP_SERVER_PID 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+if ! curl --retry 5 --retry-connrefused --retry-delay 1 -fsS "http://localhost:$HTTP_PORT/versions.txt" >/dev/null; then
+  fail "HTTP server failed to respond"
+fi
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+EOF
+
+assert "mise latest http:version-order" "10.34.5"
+assert "mise ls-remote http:version-order" "11.11.0
+99
+10.99.0
+10.34.5"
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+version_order = "semver"
+EOF
+
+assert "mise latest http:version-order" "11.11.0"
+assert "mise ls-remote http:version-order" "99
+10.34.5
+10.99.0
+11.11.0"
+assert "mise ls-remote --source-order http:version-order" "11.11.0
+99
+10.99.0
+10.34.5"
+assert "MISE_LS_REMOTE_SOURCE_ORDER=true mise ls-remote http:version-order" "11.11.0
+99
+10.99.0
+10.34.5"
+assert "mise ls-remote http:version-order@10" "10.34.5
+10.99.0"
+assert "mise ls-remote --source-order http:version-order@10" "10.99.0
+10.34.5"
+assert "mise ls-remote --json http:version-order | jq -r '.[].version'" "99
+10.34.5
+10.99.0
+11.11.0"
+assert "mise ls-remote --source-order --json http:version-order | jq -r '.[].version'" "11.11.0
+99
+10.99.0
+10.34.5"
+
+# With no valid SemVer candidates, semantic ordering naturally falls back to
+# source order. An exact opaque request still selects the requested tag.
+cat <<'EOF' >"$VERSION_LIST_DIR/opaque-versions.txt"
+legacy-old
+legacy-new
+EOF
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+version_order = "semver"
+
+[tools."http:version-order-opaque"]
+version = "latest"
+url = "https://example.com/version-order-opaque-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/opaque-versions.txt"
+version_order = "semver"
+EOF
+
+assert "mise latest http:version-order-opaque" "legacy-new"
+assert "mise latest http:version-order-opaque legacy-old" "legacy-old"
+assert "mise ls-remote http:version-order-opaque" "legacy-old
+legacy-new"
+
+mkdir -p "$MISE_DATA_DIR/installs/http-version-order/10.34.5"
+mkdir -p "$MISE_DATA_DIR/installs/http-version-order/11.11.0"
+mkdir -p "$MISE_DATA_DIR/installs/http-version-order/99"
+ln -s 10.34.5 "$MISE_DATA_DIR/installs/http-version-order/latest"
+
+assert "mise latest --installed http:version-order" "11.11.0"
+assert "mise latest --installed http:version-order@latest" "11.11.0"

@@ -47,6 +47,13 @@ upstream prerelease metadata or opt in to regex-based prerelease
 detection. Equivalent to setting `MISE_PRERELEASES=1` or the
 `prereleases` setting for the duration of this command.
 
+### `--source-order`
+
+Preserve the order returned by the backend
+
+This overrides a configured `version_order` for this command's output.
+Version prefix, prerelease, and release-age filters still apply.
+
 ### `--strict-metadata`
 
 Fail if release metadata fetches fail

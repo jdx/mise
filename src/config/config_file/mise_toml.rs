@@ -3989,7 +3989,7 @@ run = 'echo "template"'
     }
 
     #[tokio::test]
-    async fn test_replace_versions_preserves_named_core_options() {
+    async fn test_replace_versions_preserves_named_core_and_backend_options() {
         let _config = Config::get().await.unwrap();
         let p = CWD
             .as_ref()
@@ -4016,6 +4016,12 @@ run = 'echo "template"'
         options
             .install_env
             .insert("FOO".to_string(), EnvValue::from("bar"));
+        options
+            .insert_option(
+                "version_order".to_string(),
+                toml::Value::String("semver".to_string()),
+            )
+            .unwrap();
 
         cf.replace_versions(
             &needs_dummy,
@@ -4041,6 +4047,10 @@ run = 'echo "template"'
         assert!(
             dump.contains("install_env"),
             "install_env should be written back"
+        );
+        assert!(
+            dump.contains(r#"version_order = "semver""#),
+            "validated backend options should be written back"
         );
         file::remove_file(&p).unwrap();
     }

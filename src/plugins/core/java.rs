@@ -477,13 +477,30 @@ impl Backend for JavaPlugin {
         self.fuzzy_match_filter(versions, query, true)
     }
 
+    fn list_installed_versions_matching_with_opts(
+        &self,
+        query: &str,
+        opts: &ToolVersionOptions,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = crate::backend::options::BackendOptions::new(opts)
+            .version_order()?
+            .order(self.list_installed_versions());
+        // Java doesn't support the `prerelease` opt-in; always filter.
+        Ok(self.fuzzy_match_filter(versions, query, true))
+    }
+
     async fn list_versions_matching(
         &self,
         config: &Arc<Config>,
         query: &str,
     ) -> eyre::Result<Vec<String>> {
         let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query, true))
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let versions = crate::backend::options::BackendOptions::new(&opts)
+            .version_order()?
+            .order(versions);
+        let versions = self.fuzzy_match_filter(versions, query, true);
+        Ok(versions)
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {

@@ -1066,6 +1066,12 @@
         },
         "os": {
           "$ref": "#/$defs/os_filter"
+        },
+        "version_order": {
+          "default": "source",
+          "description": "Order matching versions during resolution. \"source\" preserves backend order; \"semver\" selects by semantic precedence.",
+          "enum": ["source", "semver"],
+          "type": "string"
         }
       },
       "oneOf": [

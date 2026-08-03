@@ -13,6 +13,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "depends",
     "install_before",
     "minimum_release_age",
+    "version_order",
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -209,7 +210,6 @@ impl std::hash::Hash for ToolOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
         self.depends.hash(state);
-
         // Hash install_env in sorted order for deterministic hashing
         let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
         install_env_sorted.sort_by_key(|(k, _)| *k);
@@ -324,6 +324,7 @@ impl ToolOptions {
         if self.insert_core_option(&key, &value)? {
             return Ok(());
         }
+        validate_backend_option(&key, &value)?;
         let value = normalize_backend_option_value(&key, value);
         self.opts.insert(key, value);
         Ok(())
@@ -513,6 +514,17 @@ fn normalize_backend_option_value(key: &str, value: toml::Value) -> toml::Value 
     match value {
         toml::Value::Table(_) | toml::Value::Array(_) | toml::Value::String(_) => value,
         _ => toml::Value::String(value.to_string().trim_matches('"').to_string()),
+    }
+}
+
+/// Validate mise-recognized backend options while keeping them in the raw option map.
+fn validate_backend_option(key: &str, value: &toml::Value) -> Result<(), String> {
+    if key != "version_order" {
+        return Ok(());
+    }
+    match value.as_str() {
+        Some("source" | "semver") => Ok(()),
+        _ => Err("version_order must be \"source\" or \"semver\"".to_string()),
     }
 }
 
@@ -832,7 +844,7 @@ mod tests {
 
     #[test]
     fn test_parse_tool_options_core_keys_from_toml() {
-        let input = r#"depends=["python","node"],os="linux",install_env={ FOO = "bar", RETRIES = 2, REMOVE = false },postinstall="echo hi",minimum_release_age="7d",install_before="2024-01-01""#;
+        let input = r#"depends=["python","node"],os="linux",install_env={ FOO = "bar", RETRIES = 2, REMOVE = false },postinstall="echo hi",minimum_release_age="7d",install_before="2024-01-01",version_order="semver""#;
         let opts = parse_tool_options(input);
 
         assert_eq!(
@@ -840,6 +852,7 @@ mod tests {
             Some(vec!["python".to_string(), "node".to_string()])
         );
         assert_eq!(opts.os, Some(vec!["linux".to_string()]));
+        assert_eq!(opts.get("version_order"), Some("semver"));
         assert_eq!(
             opts.install_env.get("FOO"),
             Some(&EnvValue::String("bar".to_string()))
@@ -855,6 +868,21 @@ mod tests {
         assert!(!opts.opts.contains_key("depends"));
         assert!(!opts.opts.contains_key("os"));
         assert!(!opts.opts.contains_key("install_env"));
+        assert!(opts.opts.contains_key("version_order"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_validates_version_order() {
+        assert_eq!(
+            try_parse_tool_options("version_order=source")
+                .unwrap()
+                .get("version_order"),
+            Some("source")
+        );
+        assert_eq!(
+            try_parse_tool_options("version_order=chronological"),
+            Err("version_order must be \"source\" or \"semver\"".to_string())
+        );
     }
 
     #[test]
@@ -1284,6 +1312,7 @@ mod tests {
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
                 ("version_prefix".to_string(), s("v")),
+                ("version_order".to_string(), s("semver")),
             ]
             .iter()
             .cloned()
@@ -1298,10 +1327,13 @@ mod tests {
                     .cloned()
                     .collect(),
             },
-            opts: [("api_url".to_string(), s("https://inline.example"))]
-                .iter()
-                .cloned()
-                .collect(),
+            opts: [
+                ("api_url".to_string(), s("https://inline.example")),
+                ("version_order".to_string(), s("source")),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
         };
 
         base.apply_overrides(&overrides);
@@ -1314,5 +1346,6 @@ mod tests {
         );
         assert_eq!(base.get("api_url"), Some("https://inline.example"));
         assert_eq!(base.get("version_prefix"), Some("v"));
+        assert_eq!(base.get("version_order"), Some("source"));
     }
 }

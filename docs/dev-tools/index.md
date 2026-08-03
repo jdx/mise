@@ -152,6 +152,23 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
+### Version ordering
+
+`version_order` is a common backend option that can be set in user tool configuration. By default, mise resolves `latest` and version prefixes using the order returned by the tool's backend. Set `version_order = "semver"` when a backend returns versions out of semantic-precedence order:
+
+```toml
+[tools]
+pnpm = { version = "latest", version_order = "semver" }
+```
+
+Registry entries may provide a backend-specific default for sources known to require semantic ordering. An explicit user setting takes precedence, including `version_order = "source"` to restore source ordering.
+
+With semantic ordering enabled, eligible valid [Semantic Versions](https://semver.org/) rank above non-SemVer entries and are ordered by semantic precedence. Query, prerelease, and release-age filters preserve that relative ordering before mise selects the last matching candidate. Non-SemVer entries retain their source order, so a list containing only non-SemVer entries naturally keeps the backend's ordering. Build metadata does not affect semantic precedence, and equal-precedence versions retain their source order.
+
+Semantic ordering applies only when mise must choose among candidates. An exact request for an opaque version such as `nightly` remains an exact request. Backend shortcuts such as a marked-latest release or package-manager dist-tag are bypassed for semantic ordering so the full candidate list can be compared.
+
+`mise ls-remote` displays the effective ordering after applying version prefix, prerelease, and release-age filters. Use `mise ls-remote --source-order` (or `MISE_LS_REMOTE_SOURCE_ORDER=true` in automation) to preserve the backend's canonical order while keeping those filters. Persistent remote-version caches, including the data produced by `mise-versions`, remain in source order.
+
 ### Tool postinstall commands
 
 Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only to when a specific tool is installed.

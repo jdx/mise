@@ -1005,6 +1005,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             ("bin", r#""rg""#),
             ("prerelease", "true"),
             ("strip_components", "1"),
+            ("version_order", r#""semver""#),
             (
                 "targets",
                 r#"["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]"#,
@@ -1042,6 +1043,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             opts.opts.get("strip_components"),
             Some(&toml::Value::Integer(1))
         );
+        assert_eq!(opts.get("version_order"), Some("semver"));
         assert!(opts.opts.get("targets").is_some_and(toml::Value::is_array));
         assert_eq!(
             opts.get_nested_string("platforms.linux-x64.asset_pattern"),
