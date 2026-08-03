@@ -208,7 +208,7 @@ local env = {}
 -- archiver module ----------------------------------------------------
 
 ---@class ArchiverDecompressOpts
----@field strip_components? integer Number of leading archive path components to remove (0 or 1)
+---@field strip_components? integer Flatten top-level directories while retaining root files (0 or 1)
 
 ---@class archiver
 ---@field decompress fun(archive: string, dest: string, opts?: ArchiverDecompressOpts) Decompress an archive (.zip, .tar.gz, .tar.xz, .tar.bz2)

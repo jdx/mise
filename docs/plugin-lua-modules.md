@@ -445,8 +445,9 @@ if err ~= nil then
 end
 ```
 
-To remove a versioned directory at the root of an archive, pass
-`strip_components = 1`:
+To flatten versioned directories at the root of an archive, pass
+`strip_components = 1`. Files already at the archive root are retained, matching
+mise's built-in archive backends.
 
 ```lua
 archiver.decompress("node-v24.18.1-linux-x64.tar.gz", "destination/", {

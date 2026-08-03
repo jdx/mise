@@ -58,8 +58,13 @@ fn decompress(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
         .into_lua_err()?;
     decompress_archive(&archive, temp_dir.path())?;
     xx::file::mkdirp(&destination).into_lua_err()?;
+    strip_archive_path_components(temp_dir.path(), &destination)
+}
 
-    for entry in xx::file::ls(temp_dir.path()).into_lua_err()? {
+/// Match mise's built-in archive extraction behavior: promote the contents of
+/// top-level directories while retaining files that are already at the root.
+fn strip_archive_path_components(extracted: &Path, destination: &Path) -> mlua::Result<()> {
+    for entry in xx::file::ls(extracted).into_lua_err()? {
         if entry
             .symlink_metadata()
             .into_lua_err()?
@@ -148,6 +153,29 @@ mod tests {
             "yep\n"
         );
         assert!(!dst_path.join("foo").exists());
+    }
+
+    #[test]
+    fn test_strip_components_preserves_root_files() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let extracted = temp_dir.path().join("extracted");
+        let destination = temp_dir.path().join("destination");
+        std::fs::create_dir_all(extracted.join("pkg")).unwrap();
+        std::fs::create_dir_all(&destination).unwrap();
+        std::fs::write(extracted.join("README"), "readme").unwrap();
+        std::fs::write(extracted.join("pkg/tool"), "tool").unwrap();
+
+        strip_archive_path_components(&extracted, &destination).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(destination.join("README")).unwrap(),
+            "readme"
+        );
+        assert_eq!(
+            std::fs::read_to_string(destination.join("tool")).unwrap(),
+            "tool"
+        );
+        assert!(!destination.join("pkg").exists());
     }
 
     #[test]
