@@ -433,16 +433,23 @@ The archiver module provides functionality for extracting compressed archives.
 local archiver = require("archiver")
 
 -- Extract archive to directory
-local err = archiver.decompress("archive.tar.gz", "extracted/")
-if err ~= nil then
-    error("Extraction failed: " .. err)
-end
+archiver.decompress("archive.tar.gz", "extracted/")
 
--- Extract ZIP file
-local err = archiver.decompress("package.zip", "destination/")
-if err ~= nil then
+-- Failures raise Lua errors. Use pcall only when the plugin needs to intercept one.
+local ok, err = pcall(archiver.decompress, "package.zip", "destination/")
+if not ok then
     error("ZIP extraction failed: " .. err)
 end
+```
+
+To flatten versioned directories at the root of an archive, pass
+`strip_components = 1`. Files already at the archive root are retained, matching
+mise's built-in archive backends.
+
+```lua
+archiver.decompress("node-v24.18.1-linux-x64.tar.gz", "destination/", {
+    strip_components = 1,
+})
 ```
 
 ### Real-World Example: Plugin Installation
@@ -454,19 +461,12 @@ local http = require("http")
 function install_from_archive(download_url, install_path)
     -- Download the archive
     local archive_path = install_path .. "/download.tar.gz"
-    local err = http.download_file({
+    http.download_file({
         url = download_url
     }, archive_path)
 
-    if err ~= nil then
-        error("Download failed: " .. err)
-    end
-
     -- Extract to installation directory
-    local err = archiver.decompress(archive_path, install_path)
-    if err ~= nil then
-        error("Extraction failed: " .. err)
-    end
+    archiver.decompress(archive_path, install_path)
 
     -- Clean up archive
     os.remove(archive_path)
@@ -512,6 +512,31 @@ if file.exists("important_file.txt") then
 else
     print("File does not exist")
 end
+```
+
+### List and match files
+
+```lua
+local file = require("file")
+
+-- Immediate entries, returned in sorted order
+local entries = file.list("/path/to/directory")
+
+-- Paths matching a glob, returned in sorted order
+local executables = file.glob(file.join_path("/path/to/bin", "mytool-*"))
+```
+
+### Move files and directories
+
+`file.move` moves either a file or an entire directory. Parent directories for
+the destination are created automatically.
+
+```lua
+local file = require("file")
+file.move(
+    file.join_path("/path/to/bin", "mytool-linux-amd64"),
+    file.join_path("/path/to/bin", "mytool")
+)
 ```
 
 ## Environment Module
