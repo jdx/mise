@@ -2193,12 +2193,19 @@ pub trait Backend: Debug + Send + Sync {
         None
     }
     fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
+        let _state_lock = install_state::lock_tool_version(&self.ba().short, version)?;
         let link = self.ba().installs_path.join(version);
         if link.exists() {
+            if target.exists() && file::is_symlink_to(&link, target) {
+                install_state::clear_incomplete_marker(&self.ba().short, version)?;
+            }
             return Ok(None);
         }
         file::create_dir_all(link.parent().unwrap())?;
         let link = file::make_symlink(target, &link)?;
+        if target.exists() {
+            install_state::clear_incomplete_marker(&self.ba().short, version)?;
+        }
         Ok(Some(link))
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
