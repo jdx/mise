@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::sorted;
 
 use crate::{
@@ -27,8 +27,9 @@ pub struct SyncRubyType {
 
 impl SyncRuby {
     pub async fn run(self) -> Result<()> {
+        let mut marker_errors = vec![];
         if self._type.brew {
-            self.run_brew().await?;
+            marker_errors.extend(self.run_brew().await?);
         }
         let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
@@ -39,10 +40,16 @@ impl SyncRuby {
             crate::lockfile::LockfileUpdateMode::Normal,
         )
         .await?;
+        if !marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                marker_errors.join("; ")
+            );
+        }
         Ok(())
     }
 
-    async fn run_brew(&self) -> Result<()> {
+    async fn run_brew(&self) -> Result<Vec<String>> {
         let ruby = backend::get(&"ruby".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -59,10 +66,11 @@ impl SyncRuby {
             let v = entry.trim_start_matches("ruby@");
             links.push((v.to_string(), brew_prefix.join(&entry)));
         }
-        for v in ruby.sync_symlinks(&brew_prefix, links)? {
+        let outcome = ruby.sync_symlinks(&brew_prefix, links)?;
+        for v in outcome.changed {
             miseprintln!("Synced ruby@{} from Homebrew", v);
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 }
 

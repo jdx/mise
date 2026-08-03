@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::sorted;
 
 use crate::{backend, config, file};
@@ -36,14 +36,15 @@ pub struct SyncNodeType {
 
 impl SyncNode {
     pub async fn run(self) -> Result<()> {
+        let mut marker_errors = vec![];
         if self._type.brew {
-            self.run_brew().await?;
+            marker_errors.extend(self.run_brew().await?);
         }
         if self._type.nvm {
-            self.run_nvm().await?;
+            marker_errors.extend(self.run_nvm().await?);
         }
         if self._type.nodenv {
-            self.run_nodenv().await?;
+            marker_errors.extend(self.run_nodenv().await?);
         }
         let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
@@ -54,10 +55,16 @@ impl SyncNode {
             crate::lockfile::LockfileUpdateMode::Normal,
         )
         .await?;
+        if !marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                marker_errors.join("; ")
+            );
+        }
         Ok(())
     }
 
-    async fn run_brew(&self) -> Result<()> {
+    async fn run_brew(&self) -> Result<Vec<String>> {
         let node = backend::get(&"node".into()).unwrap();
 
         let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
@@ -74,13 +81,14 @@ impl SyncNode {
             let v = entry.trim_start_matches("node@");
             links.push((v.to_string(), brew_prefix.join(&entry)));
         }
-        for v in node.sync_symlinks(&brew_prefix, links)? {
+        let outcome = node.sync_symlinks(&brew_prefix, links)?;
+        for v in outcome.changed {
             miseprintln!("Synced node@{} from Homebrew", v);
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 
-    async fn run_nvm(&self) -> Result<()> {
+    async fn run_nvm(&self) -> Result<Vec<String>> {
         let node = backend::get(&"node".into()).unwrap();
         let settings = Settings::get();
 
@@ -97,13 +105,14 @@ impl SyncNode {
             let v = entry.trim_start_matches('v');
             links.push((v.to_string(), nvm_versions_path.join(&entry)));
         }
-        for v in node.sync_symlinks(&nvm_versions_path, links)? {
+        let outcome = node.sync_symlinks(&nvm_versions_path, links)?;
+        for v in outcome.changed {
             miseprintln!("Synced node@{} from nvm", v);
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 
-    async fn run_nodenv(&self) -> Result<()> {
+    async fn run_nodenv(&self) -> Result<Vec<String>> {
         let node = backend::get(&"node".into()).unwrap();
         let settings = Settings::get();
 
@@ -117,10 +126,11 @@ impl SyncNode {
             }
             links.push((v.clone(), nodenv_versions_path.join(&v)));
         }
-        for v in node.sync_symlinks(&nodenv_versions_path, links)? {
+        let outcome = node.sync_symlinks(&nodenv_versions_path, links)?;
+        for v in outcome.changed {
             miseprintln!("Synced node@{} from nodenv", v);
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 }
 

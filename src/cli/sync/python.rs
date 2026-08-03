@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
@@ -24,11 +24,12 @@ pub struct SyncPython {
 
 impl SyncPython {
     pub async fn run(self) -> Result<()> {
+        let mut marker_errors = vec![];
         if self.pyenv {
-            self.pyenv().await?;
+            marker_errors.extend(self.pyenv().await?);
         }
         if self.uv {
-            self.uv().await?;
+            marker_errors.extend(self.uv().await?);
         }
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
@@ -39,10 +40,16 @@ impl SyncPython {
             crate::lockfile::LockfileUpdateMode::Normal,
         )
         .await?;
+        if !marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                marker_errors.join("; ")
+            );
+        }
         Ok(())
     }
 
-    async fn pyenv(&self) -> Result<()> {
+    async fn pyenv(&self) -> Result<Vec<String>> {
         let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
@@ -55,13 +62,14 @@ impl SyncPython {
             }
             links.push((v.clone(), pyenv_versions_path.join(&v)));
         }
-        for v in python.sync_symlinks(&pyenv_versions_path, links)? {
+        let outcome = python.sync_symlinks(&pyenv_versions_path, links)?;
+        for v in outcome.changed {
             miseprintln!("Synced python@{} from pyenv", v);
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 
-    async fn uv(&self) -> Result<()> {
+    async fn uv(&self) -> Result<Vec<String>> {
         let python = backend::get(&"python".into()).unwrap();
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
@@ -76,7 +84,8 @@ impl SyncPython {
             let v = name.split('-').nth(1).unwrap();
             links.push((v.to_string(), uv_versions_path.join(&name)));
         }
-        for v in python.sync_symlinks(uv_versions_path, links)? {
+        let outcome = python.sync_symlinks(uv_versions_path, links)?;
+        for v in outcome.changed {
             miseprintln!("Synced python@{v} from uv to mise");
         }
 
@@ -110,7 +119,7 @@ impl SyncPython {
                 miseprintln!("Synced python@{v} from mise to uv");
             }
         }
-        Ok(())
+        Ok(outcome.marker_errors)
     }
 }
 

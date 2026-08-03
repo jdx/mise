@@ -1547,6 +1547,11 @@ mod tests {
     }
 }
 
+pub(crate) struct SyncSymlinksOutcome {
+    pub(crate) changed: BTreeSet<String>,
+    pub(crate) marker_errors: Vec<String>,
+}
+
 #[async_trait]
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
@@ -2192,27 +2197,11 @@ pub trait Backend: Debug + Send + Sync {
         }
         None
     }
-    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
-        let _state_lock = install_state::lock_tool_version(&self.ba().short, version)?;
-        let link = self.ba().installs_path.join(version);
-        if link.exists() {
-            if target.exists() && file::is_symlink_to(&link, target) {
-                install_state::clear_incomplete_marker(&self.ba().short, version)?;
-            }
-            return Ok(None);
-        }
-        file::create_dir_all(link.parent().unwrap())?;
-        let link = file::make_symlink(target, &link)?;
-        if target.exists() {
-            install_state::clear_incomplete_marker(&self.ba().short, version)?;
-        }
-        Ok(Some(link))
-    }
     fn sync_symlinks(
         &self,
         target_prefix: &Path,
         links: Vec<(String, PathBuf)>,
-    ) -> Result<BTreeSet<String>> {
+    ) -> Result<SyncSymlinksOutcome> {
         let mut desired = BTreeMap::new();
         for (version, target) in links {
             // Preserve the first provider entry for a version, matching the
@@ -2236,6 +2225,7 @@ pub trait Backend: Debug + Send + Sync {
 
         file::create_dir_all(installs_path)?;
         let mut changed = BTreeSet::new();
+        let mut marker_errors = vec![];
         for version in versions {
             let _state_lock = install_state::lock_tool_version(&self.ba().short, &version)?;
             let link = installs_path.join(&version);
@@ -2249,6 +2239,10 @@ pub trait Backend: Debug + Send + Sync {
             };
 
             if !runtime_link && target.exists() && file::is_symlink_to(&link, target) {
+                if let Err(err) = install_state::clear_incomplete_marker(&self.ba().short, &version)
+                {
+                    marker_errors.push(format!("{version}: {err:#}"));
+                }
                 continue;
             }
 
@@ -2259,14 +2253,18 @@ pub trait Backend: Debug + Send + Sync {
                 continue;
             }
 
-            if entry_exists {
-                file::make_symlink(target, &link)?;
-                changed.insert(version);
-            } else if self.create_symlink(&version, target)?.is_some() {
-                changed.insert(version);
+            file::make_symlink(target, &link)?;
+            changed.insert(version.clone());
+            if target.exists()
+                && let Err(err) = install_state::clear_incomplete_marker(&self.ba().short, &version)
+            {
+                marker_errors.push(format!("{version}: {err:#}"));
             }
         }
-        Ok(changed)
+        Ok(SyncSymlinksOutcome {
+            changed,
+            marker_errors,
+        })
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
