@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::sorted;
 use std::env::consts::{ARCH, OS};
 
@@ -34,7 +34,8 @@ impl SyncPython {
         if self.uv {
             providers.push(self.uv_links()?);
         }
-        let mut changed = reconcile::reconcile_all(python.ba(), providers)?.into_iter();
+        let outcome = reconcile::reconcile_all(python.ba(), providers)?;
+        let mut changed = outcome.changed.into_iter();
         if self.pyenv {
             for v in changed.next().unwrap_or_default() {
                 miseprintln!("Synced python@{} from pyenv", v);
@@ -55,6 +56,12 @@ impl SyncPython {
             crate::lockfile::LockfileUpdateMode::Normal,
         )
         .await?;
+        if !outcome.marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                outcome.marker_errors.join("; ")
+            );
+        }
         Ok(())
     }
 

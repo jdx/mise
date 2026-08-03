@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::sorted;
 
 use crate::{backend, config, file};
@@ -49,7 +49,8 @@ impl SyncNode {
         if self._type.nodenv {
             providers.push(self.nodenv_links()?);
         }
-        let mut changed = reconcile::reconcile_all(node.ba(), providers)?.into_iter();
+        let outcome = reconcile::reconcile_all(node.ba(), providers)?;
+        let mut changed = outcome.changed.into_iter();
         if self._type.brew {
             for v in changed.next().unwrap_or_default() {
                 miseprintln!("Synced node@{} from Homebrew", v);
@@ -74,6 +75,12 @@ impl SyncNode {
             crate::lockfile::LockfileUpdateMode::Normal,
         )
         .await?;
+        if !outcome.marker_errors.is_empty() {
+            bail!(
+                "failed to clear incomplete markers: {}",
+                outcome.marker_errors.join("; ")
+            );
+        }
         Ok(())
     }
 

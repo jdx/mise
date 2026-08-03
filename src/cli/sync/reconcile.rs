@@ -33,6 +33,11 @@ pub(super) struct ProviderLinks {
     links: Vec<(String, PathBuf)>,
 }
 
+pub(super) struct ReconcileOutcome<T> {
+    pub(super) changed: T,
+    pub(super) marker_errors: Vec<String>,
+}
+
 impl ProviderLinks {
     pub(super) fn new(ownership: LinkOwnership, links: Vec<(String, PathBuf)>) -> Self {
         Self { ownership, links }
@@ -52,12 +57,12 @@ pub(super) fn reconcile(
     tool: &BackendArg,
     ownership: LinkOwnership,
     links: Vec<(String, PathBuf)>,
-) -> Result<BTreeSet<String>> {
-    Ok(
-        reconcile_all(tool, vec![ProviderLinks::new(ownership, links)])?
-            .pop()
-            .unwrap_or_default(),
-    )
+) -> Result<ReconcileOutcome<BTreeSet<String>>> {
+    let mut outcome = reconcile_all(tool, vec![ProviderLinks::new(ownership, links)])?;
+    Ok(ReconcileOutcome {
+        changed: outcome.changed.pop().unwrap_or_default(),
+        marker_errors: outcome.marker_errors,
+    })
 }
 
 /// Reconciles multiple selected providers as one operation.
@@ -69,7 +74,7 @@ pub(super) fn reconcile(
 pub(super) fn reconcile_all(
     tool: &BackendArg,
     providers: Vec<ProviderLinks>,
-) -> Result<Vec<BTreeSet<String>>> {
+) -> Result<ReconcileOutcome<Vec<BTreeSet<String>>>> {
     let mut desired = BTreeMap::new();
     for (provider_index, provider) in providers.iter().enumerate() {
         for (version, target) in &provider.links {
@@ -97,6 +102,7 @@ pub(super) fn reconcile_all(
 
     file::create_dir_all(installs_path)?;
     let mut changed = vec![BTreeSet::new(); providers.len()];
+    let mut marker_errors = vec![];
     for version in versions {
         let _state_lock = install_state::lock_tool_version(&tool.short, &version)?;
         let link = installs_path.join(&version);
@@ -110,7 +116,9 @@ pub(super) fn reconcile_all(
         };
 
         if !runtime_link && target.exists() && file::is_symlink_to(&link, target) {
-            install_state::clear_incomplete_marker(&tool.short, &version)?;
+            if let Err(err) = install_state::clear_incomplete_marker(&tool.short, &version) {
+                marker_errors.push(format!("{version}: {err:#}"));
+            }
             continue;
         }
 
@@ -123,11 +131,16 @@ pub(super) fn reconcile_all(
 
         file::make_symlink(target, &link)?;
         if target.exists() {
-            install_state::clear_incomplete_marker(&tool.short, &version)?;
+            if let Err(err) = install_state::clear_incomplete_marker(&tool.short, &version) {
+                marker_errors.push(format!("{version}: {err:#}"));
+            }
         }
         changed[*provider_index].insert(version);
     }
-    Ok(changed)
+    Ok(ReconcileOutcome {
+        changed,
+        marker_errors,
+    })
 }
 
 fn providers_own(providers: &[ProviderLinks], link: &Path) -> Result<bool> {
@@ -241,10 +254,10 @@ mod tests {
             ProviderLinks::new(LinkOwnership::in_namespace(&later_root), vec![]),
         ];
 
-        let changed = reconcile_all(&tool, providers).unwrap();
+        let outcome = reconcile_all(&tool, providers).unwrap();
 
-        assert_eq!(changed[0], BTreeSet::from(["1.0.0".to_string()]));
-        assert!(changed[1].is_empty());
+        assert_eq!(outcome.changed[0], BTreeSet::from(["1.0.0".to_string()]));
+        assert!(outcome.changed[1].is_empty());
         assert!(file::is_symlink_to(
             &installs_path.join("1.0.0"),
             &desired_target
