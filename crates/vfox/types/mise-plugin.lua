@@ -182,6 +182,9 @@ local json = {}
 ---@field symlink fun(src: string, dst: string) Create a symbolic link
 ---@field join_path fun(...: string): string Join path components
 ---@field stat fun(path: string): FileStat|nil Get file metadata or nil if not found
+---@field list fun(path: string): string[] List immediate directory entries in sorted order
+---@field glob fun(pattern: string): string[] List paths matching a glob pattern in sorted order
+---@field move fun(src: string, dst: string) Move a file or directory
 local file = {}
 
 -- cmd module ---------------------------------------------------------
@@ -204,8 +207,11 @@ local env = {}
 
 -- archiver module ----------------------------------------------------
 
+---@class ArchiverDecompressOpts
+---@field strip_components? integer Number of leading archive path components to remove (0 or 1)
+
 ---@class archiver
----@field decompress fun(archive: string, dest: string) Decompress an archive (.zip, .tar.gz, .tar.xz, .tar.bz2)
+---@field decompress fun(archive: string, dest: string, opts?: ArchiverDecompressOpts) Decompress an archive (.zip, .tar.gz, .tar.xz, .tar.bz2)
 local archiver = {}
 
 -- semver module ------------------------------------------------------

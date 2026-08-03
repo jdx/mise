@@ -6,7 +6,7 @@ use std::os::unix::fs::{PermissionsExt, symlink as _symlink};
 use std::os::windows::fs::symlink_dir;
 #[cfg(windows)]
 use std::os::windows::fs::symlink_file;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn join_path(_lua: &Lua, args: MultiValue) -> mlua::Result<String> {
     let sep = std::path::MAIN_SEPARATOR;
@@ -51,8 +51,36 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
                     stat(&_lua, path).await
                 })?,
             ),
+            ("list", lua.create_function(list)?),
+            ("glob", lua.create_function(glob)?),
+            ("move", lua.create_function(move_path)?),
         ])?,
     )?)
+}
+
+fn paths_to_strings(paths: Vec<PathBuf>) -> Vec<String> {
+    let mut paths = paths
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+}
+
+fn list(_lua: &Lua, path: String) -> mlua::Result<Vec<String>> {
+    xx::file::ls(path).map(paths_to_strings).into_lua_err()
+}
+
+fn glob(_lua: &Lua, pattern: String) -> mlua::Result<Vec<String>> {
+    let paths = glob::glob(&pattern)
+        .map_err(mlua::Error::external)?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(mlua::Error::external)?;
+    Ok(paths_to_strings(paths))
+}
+
+fn move_path(_lua: &Lua, (source, destination): (String, String)) -> mlua::Result<()> {
+    xx::file::mv(source, destination).into_lua_err()
 }
 
 async fn read(_lua: &Lua, input: MultiValue) -> mlua::Result<String> {
@@ -272,5 +300,45 @@ mod tests {
             .exec()
             .unwrap();
         }
+    }
+
+    #[test]
+    fn test_list_glob_and_move() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("source");
+        let nested_dir = source_dir.join("nested");
+        let destination_dir = temp_dir.path().join("destination");
+        fs::create_dir_all(&nested_dir).unwrap();
+        fs::write(source_dir.join("a.txt"), "a").unwrap();
+        fs::write(source_dir.join("b.log"), "b").unwrap();
+        fs::write(nested_dir.join("c.txt"), "c").unwrap();
+
+        let source_dir_str = source_dir.to_string_lossy().to_string();
+        let glob_pattern = source_dir.join("*.txt").to_string_lossy().to_string();
+        let nested_dir_str = nested_dir.to_string_lossy().to_string();
+        let destination_dir_str = destination_dir.to_string_lossy().to_string();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            local file = require("file")
+            local entries = file.list($source_dir_str)
+            assert(#entries == 3, "list should return immediate directory entries")
+            assert(entries[1] < entries[2] and entries[2] < entries[3], "list should be sorted")
+
+            local matches = file.glob($glob_pattern)
+            assert(#matches == 1, "glob should return matching files")
+            assert(matches[1]:match("a%.txt$"), "glob should return the matching path")
+
+            file.move($nested_dir_str, $destination_dir_str)
+        })
+        .exec()
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("c.txt")).unwrap(),
+            "c"
+        );
+        assert!(!nested_dir.exists());
     }
 }

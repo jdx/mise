@@ -28,6 +28,7 @@ name = "vfox-cli"
 path = "src/bin.rs"
 
 [dependencies]
+glob = "0.3"
 homedir = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"

@@ -445,6 +445,15 @@ if err ~= nil then
 end
 ```
 
+To remove a versioned directory at the root of an archive, pass
+`strip_components = 1`:
+
+```lua
+archiver.decompress("node-v24.18.1-linux-x64.tar.gz", "destination/", {
+    strip_components = 1,
+})
+```
+
 ### Real-World Example: Plugin Installation
 
 ```lua
@@ -512,6 +521,31 @@ if file.exists("important_file.txt") then
 else
     print("File does not exist")
 end
+```
+
+### List and match files
+
+```lua
+local file = require("file")
+
+-- Immediate entries, returned in sorted order
+local entries = file.list("/path/to/directory")
+
+-- Paths matching a glob, returned in sorted order
+local executables = file.glob(file.join_path("/path/to/bin", "mytool-*"))
+```
+
+### Move files and directories
+
+`file.move` moves either a file or an entire directory. Parent directories for
+the destination are created automatically.
+
+```lua
+local file = require("file")
+file.move(
+    file.join_path("/path/to/bin", "mytool-linux-amd64"),
+    file.join_path("/path/to/bin", "mytool")
+)
 ```
 
 ## Environment Module
