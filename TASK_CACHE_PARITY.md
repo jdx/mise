@@ -105,7 +105,7 @@ outside this tracker.
 - [x] Test and harden concurrent readers and writers for the same key
 - [x] Clean up interrupted and abandoned partial writes
 - [x] Add configurable cache size and age limits
-- [ ] Test restore behavior on Windows
+- [x] Test restore behavior on Windows
 - [ ] Test executable bits, symlinks, empty directories, and case-sensitive path edge cases
 - [ ] Benchmark hashing, archive creation, and restoration for large task graphs and artifacts
 - [x] Avoid rehashing unchanged source files when reliable metadata is available
