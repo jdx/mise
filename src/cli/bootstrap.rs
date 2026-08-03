@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use eyre::{Result, bail};
@@ -21,6 +21,7 @@ use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
 use crate::system::packages::PackageState;
 use crate::system::repos::RepoState;
+use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
@@ -130,28 +131,30 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
 ///    `[bootstrap.directories]`
 /// 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
 ///    systemd system services (Linux)
-/// 5. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+/// 5. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
+///    Docker Compose projects
+/// 6. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
-/// 6. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 7. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 7. `mise bootstrap mise-shell-activate apply` — configure shell activation
+/// 8. `mise bootstrap mise-shell-activate apply` — configure shell activation
 ///    from `[bootstrap.mise_shell_activate]`
-/// 8. `mise bootstrap macos defaults apply` — write
+/// 9. `mise bootstrap macos defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 9. `mise bootstrap macos launchd-agents apply` — install/load
-///    `[bootstrap.macos.launchd.agents]`
-/// 10. `mise bootstrap linux systemd-units apply` — install/start
+/// 10. `mise bootstrap macos launchd-agents apply` — install/load
+///     `[bootstrap.macos.launchd.agents]`
+/// 11. `mise bootstrap linux systemd-units apply` — install/start
 ///     `[bootstrap.linux.systemd.units]`
-/// 11. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 12. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///     (Unix)
 ///     surrounded by `pre-user`/`post-user` hooks
-/// 12. `mise install` — install missing tools from `[tools]`
+/// 13. `mise install` — install missing tools from `[tools]`
 ///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 ///     from `[bootstrap.packages]` install afterward, followed by
 ///     `[bootstrap.hooks.post-packages]`
-/// 13. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 14. `[bootstrap.hooks.final]` — optional final hook
+/// 14. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 15. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -212,6 +215,7 @@ enum BootstrapPart {
     Accounts,
     Files,
     Services,
+    Compose,
     Repos,
     Dotfiles,
     #[clap(name = "mise-shell-activate", alias = "shell")]
@@ -231,12 +235,13 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 15] = [
+    const ALL: [Self; 16] = [
         Self::Plugins,
         Self::Packages,
         Self::Accounts,
         Self::Files,
         Self::Services,
+        Self::Compose,
         Self::Repos,
         Self::Dotfiles,
         Self::Shell,
@@ -250,6 +255,43 @@ impl BootstrapPart {
     ];
 }
 
+type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
+
+fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<BootstrapPart>) -> bool {
+    let part = match resource.kind.as_str() {
+        "package" => BootstrapPart::Packages,
+        "file" | "directory" => BootstrapPart::Files,
+        "service" => BootstrapPart::Services,
+        "user" | "group" => BootstrapPart::Accounts,
+        _ => return false,
+    };
+    skip.contains(&part)
+}
+
+fn bootstrap_prediction_has_skipped_change(
+    resource: &ResourceId,
+    resources: &BootstrapPredictionGraph,
+    skip: &HashSet<BootstrapPart>,
+    visited: &mut HashSet<ResourceId>,
+) -> bool {
+    if !visited.insert(resource.clone()) {
+        return false;
+    }
+    let Some((_, dependencies)) = resources.get(resource) else {
+        return false;
+    };
+    dependencies.iter().any(|dependency| {
+        let dependency_changes = resources.get(dependency).is_some_and(|(action, _)| {
+            matches!(
+                action,
+                ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
+            )
+        });
+        (dependency_changes && bootstrap_resource_is_skipped(dependency, skip))
+            || bootstrap_prediction_has_skipped_change(dependency, resources, skip, visited)
+    })
+}
+
 #[derive(Debug, Subcommand)]
 enum Commands {
     #[clap(name = "__apply-account-plan", hide = true)]
@@ -261,6 +303,7 @@ enum Commands {
     #[clap(name = "__inspect-system-files", hide = true)]
     InspectSystemFiles(BootstrapInspectSystemFiles),
     Accounts(BootstrapAccounts),
+    Compose(BootstrapCompose),
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
     #[clap(hide = true)]
@@ -447,6 +490,44 @@ struct BootstrapServicesStatus {
     json: bool,
 
     /// Exit with code 1 when any service is not converged
+    #[clap(long)]
+    missing: bool,
+}
+
+/// Manage Docker Compose projects from `[bootstrap.compose]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapCompose {
+    #[clap(subcommand)]
+    command: BootstrapComposeCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapComposeCommands {
+    Apply(BootstrapComposeApply),
+    Status(BootstrapComposeStatus),
+}
+
+/// Apply configured Docker Compose project state
+#[derive(Debug, clap::Args)]
+struct BootstrapComposeApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Docker Compose project state
+#[derive(Debug, clap::Args)]
+struct BootstrapComposeStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any Compose project is not converged
     #[clap(long)]
     missing: bool,
 }
@@ -889,10 +970,10 @@ impl Bootstrap {
                 .as_ref()
                 .expect("enabled accounts were prepared")
         });
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let managed_system_files = if !files_enabled {
             None
         } else {
-            let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
             Some(system::managed_files::prepare_requests_from_config(
                 &config, &secrets,
             )?)
@@ -931,6 +1012,45 @@ impl Bootstrap {
         }
         let mut managed_services =
             services_enabled.then_some(configured_services.unwrap_or_default());
+        let mut managed_compose = if skip.contains(&BootstrapPart::Compose) {
+            None
+        } else {
+            Some(system::compose::prepare_requests_from_config(&config)?)
+        };
+        let dry_run_compose_actions = if self.dry_run
+            && managed_compose
+                .as_ref()
+                .is_some_and(|projects| !projects.is_empty())
+        {
+            let plan = system::resources::plan(&config, &secrets).await?;
+            let output = plan.output()?;
+            let resources = output
+                .resources
+                .iter()
+                .map(|resource| {
+                    (
+                        resource.id.clone(),
+                        (resource.action, resource.depends_on.clone()),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            output
+                .resources
+                .into_iter()
+                .filter(|resource| resource.id.kind == "compose")
+                .filter(|resource| {
+                    !bootstrap_prediction_has_skipped_change(
+                        &resource.id,
+                        &resources,
+                        &skip,
+                        &mut HashSet::new(),
+                    )
+                })
+                .map(|resource| (resource.id.name.clone(), resource.action))
+                .collect()
+        } else {
+            HashMap::new()
+        };
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
         let mut notified_services = system::services::ServiceNotifications::default();
         let mut dry_run_config_files = None;
@@ -1030,6 +1150,23 @@ impl Bootstrap {
             }
         } else {
             debug!("bootstrap: system services skipped");
+        }
+
+        if let Some(projects) = &mut managed_compose {
+            system::compose::inspect_requests(projects);
+            if projects.is_empty() {
+                debug!("bootstrap: no [bootstrap.compose] configured");
+            } else {
+                info!("bootstrap: compose projects");
+                system::compose::apply_with_dry_run_actions(
+                    projects,
+                    &dry_run_compose_actions,
+                    self.dry_run,
+                    self.yes,
+                )?;
+            }
+        } else {
+            debug!("bootstrap: compose projects skipped");
         }
 
         if skip.contains(&BootstrapPart::Repos) {
@@ -1580,6 +1717,7 @@ impl Commands {
             Self::ApplySystemPlan(cmd) => cmd.run(),
             Self::InspectSystemFiles(cmd) => cmd.run(),
             Self::Accounts(cmd) => cmd.run().await,
+            Self::Compose(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Files(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
@@ -1867,6 +2005,54 @@ impl BootstrapServicesStatus {
     }
 }
 
+impl BootstrapCompose {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapComposeCommands::Apply(command) => command.run().await,
+            BootstrapComposeCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapComposeApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::compose::requests_from_config(&config)?;
+        system::compose::apply(&requests, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapComposeStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::compose::requests_from_config(&config)?;
+        let resources = system::compose::plans(&requests, false);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap compose projects configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
 impl BootstrapSecrets {
     async fn run(self) -> Result<()> {
         match self.command {
@@ -1969,11 +2155,13 @@ impl BootstrapStatus {
         let service_requests = system::services::status_requests_from_config(config)?;
         system::services::validate_notifications(&files, &directories, &service_requests)?;
         let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
+        let compose_requests = system::compose::requests_from_config(config)?;
         self.collect_secrets(&secrets.used_statuses()?, &mut report);
         self.collect_packages(config, &mut report).await?;
         self.collect_accounts(&accounts, &mut report);
         self.collect_files(files, directories, unavailable_files, &mut report)?;
         self.collect_services(&service_requests, &notified_services, &mut report);
+        self.collect_compose(&compose_requests, &mut report);
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
@@ -2069,6 +2257,24 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("services".to_string(), json!(resources));
+    }
+
+    fn collect_compose(
+        &self,
+        requests: &[system::compose::ComposeRequest],
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::compose::plans(requests, false);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("compose".to_string(), json!(resources));
     }
 
     async fn collect_plugin_deps(

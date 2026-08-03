@@ -132,6 +132,10 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/services",
       },
       {
+        text: "Docker Compose Projects",
+        link: "/bootstrap/compose",
+      },
+      {
         text: "Secret Inputs",
         link: "/bootstrap/secrets",
       },

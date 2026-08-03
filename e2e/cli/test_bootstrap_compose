@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+
+mkdir -p project
+compose="$PWD/fake-compose"
+engine="$PWD/fake-engine"
+
+cat >"$compose" <<'EOF'
+#!/bin/sh
+root=$(dirname "$0")
+action=
+for arg in "$@"; do
+  case "$arg" in
+  config | ps | up | stop | down)
+    action=$arg
+    break
+    ;;
+  esac
+done
+
+case "$action" in
+config)
+  case " $* " in
+  *" --services "*) echo cache ;;
+  *" --hash "*) printf 'cache '; cat "$root/hash" ;;
+  *) exit 2 ;;
+  esac
+  ;;
+ps)
+  if test -f "$root/state"; then
+    state=$(cat "$root/state")
+    if test "$state" = running; then
+      printf '%s\n' '{"ID":"cache-1","Service":"cache","State":"running","Health":"healthy","ExitCode":0}'
+    else
+      printf '%s\n' '{"ID":"cache-1","Service":"cache","State":"exited","Health":"","ExitCode":0}'
+    fi
+  fi
+  if test -f "$root/orphan"; then
+    printf '%s\n' '{"ID":"old-1","Service":"removed","State":"running","Health":"","ExitCode":0}'
+  fi
+  ;;
+up)
+  echo running >"$root/state"
+  cp "$root/hash" "$root/applied-hash"
+  ;;
+stop)
+  echo stopped >"$root/state"
+  ;;
+down)
+  rm -f "$root/state" "$root/applied-hash"
+  ;;
+*) exit 2 ;;
+esac
+EOF
+
+cat >"$engine" <<'EOF'
+#!/bin/sh
+root=$(dirname "$0")
+if test "${1:-}" = rm; then
+  test "${2:-}" = --force
+  test "${3:-}" = old-1
+  rm -f "$root/orphan"
+  exit 0
+fi
+hash=$(cat "$root/applied-hash")
+printf '{"com.docker.compose.config-hash":"%s"}\n' "$hash"
+EOF
+
+echo hash-v1 >"hash"
+
+write_config() {
+  state=$1
+  cat >mise.toml <<EOF
+[bootstrap.compose.cache]
+project_dir = "$PWD/project"
+project_name = "mise-cache"
+files = ["compose.yaml"]
+state = "$state"
+pull = "missing"
+build = "auto"
+recreate = "auto"
+wait = true
+wait_timeout = 30
+timeout = 10
+remove_orphans = true
+command = ["sh", "$compose"]
+engine_command = ["sh", "$engine"]
+EOF
+}
+
+write_config running
+assert_contains "mise bootstrap compose status" "create"
+assert_fail "mise bootstrap compose status --missing"
+assert_contains "mise bootstrap compose status --json" '"action": "create"'
+assert_contains "mise bootstrap plan" "compose:cache"
+assert_contains "mise bootstrap compose apply --dry-run --yes" "would run"
+assert_fail "test -f state"
+
+assert_succeed "mise bootstrap --only compose --yes"
+assert "cat state" "running"
+assert_contains "mise bootstrap compose status" "unchanged"
+assert_succeed "mise bootstrap compose status --missing"
+
+echo hash-v2 >"hash"
+assert_contains "mise bootstrap compose status" "update"
+assert_succeed "mise bootstrap compose apply --yes"
+assert "cat applied-hash" "hash-v2"
+
+write_config stopped
+assert_contains "mise bootstrap compose status" "update"
+assert_succeed "mise bootstrap compose apply --yes"
+assert "cat state" "stopped"
+assert_contains "mise bootstrap compose status" "unchanged"
+
+touch orphan
+assert_contains "mise bootstrap compose status" "update"
+assert_contains "mise bootstrap compose apply --dry-run --yes" "rm --force old-1"
+assert_succeed "mise bootstrap compose apply --yes"
+assert_fail "test -f orphan"
+assert_contains "mise bootstrap compose status" "unchanged"
+
+write_config absent
+assert_contains "mise bootstrap compose status" "remove"
+assert_succeed "mise bootstrap compose apply --yes"
+assert_fail "test -f state"
+assert_contains "mise bootstrap compose status" "unchanged"
+
+# Aggregate dry-runs may predict Compose convergence only when the exact
+# dependency that makes inspection possible will be applied first.
+deferred_compose="$PWD/deferred-compose"
+mkdir -p deferred-project
+cat >mise.toml <<EOF
+[bootstrap.files."$deferred_compose"]
+content = '''
+#!/bin/sh
+exit 0
+'''
+mode = "0644"
+
+[bootstrap.compose.deferred]
+project_dir = "$PWD/deferred-project"
+command = ["sh", "$deferred_compose"]
+engine_command = ["sh", "$engine"]
+depends_on = ["file:$deferred_compose"]
+EOF
+
+assert_fail "mise bootstrap compose apply --dry-run --yes"
+assert_fail "mise bootstrap --dry-run --yes --skip files"
+assert_contains "mise bootstrap --dry-run --yes" "deferred-compose --project-directory"
+assert_fail "test -f $deferred_compose"

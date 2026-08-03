@@ -65,7 +65,7 @@
 
 ## Bootstrap
 
-- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: Linux users and groups, OS packages, privileged files and directories, system services, git repos, dotfiles, mise shell…
+- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: Linux users and groups, OS packages, privileged files and directories, system services, Docker Compose projects, git repos,…
 - [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): mise can ensure machine-global system packages are installed via the [bootstrap.packages] section of mise.toml, applied by mise bootstrap packages apply or as part of mise bootstrap.
 - [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
 - [apt](https://mise.jdx.dev/bootstrap/packages/apt.html): System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
@@ -77,6 +77,7 @@
 - [Linux Users and Groups](https://mise.jdx.dev/bootstrap/accounts.html): [bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts. Mise applies groups before users and applies accounts before privileged files, so a managed file can safely refer to…
 - [System Files](https://mise.jdx.dev/bootstrap/files.html): [bootstrap.files] and [bootstrap.directories] declaratively manage absolute paths that may require root privileges. They are separate from [dotfiles], which manages files in a user's home directory.
 - [System Services](https://mise.jdx.dev/bootstrap/services.html): [bootstrap.services] declaratively manages the lifecycle of existing Linux systemd system units. Package installation and [bootstrap.files] run first, so a service may be installed by a package or…
+- [Docker Compose Projects](https://mise.jdx.dev/bootstrap/compose.html): [bootstrap.compose] declaratively manages long-running Docker Compose projects after packages, privileged files, directories, and system services have converged.
 - [Secret Inputs](https://mise.jdx.dev/bootstrap/secrets.html): [bootstrap.secrets] declares the sensitive inputs a bootstrap configuration needs without storing their values in mise configuration.
 - [Repos](https://mise.jdx.dev/bootstrap/repos.html): mise can declare git repositories in [bootstrap.repos] and apply them with mise bootstrap repos apply or as part of mise bootstrap.
 - [Dotfiles](https://mise.jdx.dev/dotfiles.html): [!WARNING] The top-level mise dotfiles command is deprecated and hidden from help. It will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use mise bootstrap dotfiles instead.
@@ -163,6 +164,7 @@
 - [mise bin-paths](https://mise.jdx.dev/cli/bin-paths.html): List all the active runtime bin paths
 - [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine for the current config in one command
 - [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
+- [mise bootstrap compose](https://mise.jdx.dev/cli/bootstrap/compose.html): Manage Docker Compose projects from [bootstrap.compose]
 - [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Manage dotfiles from [dotfiles]
 - [mise bootstrap files](https://mise.jdx.dev/cli/bootstrap/files.html): Manage privileged files and directories from [bootstrap.files] and [bootstrap.directories]
 - [mise bootstrap linux](https://mise.jdx.dev/cli/bootstrap/linux.html): Manage Linux bootstrap config from [bootstrap.linux]

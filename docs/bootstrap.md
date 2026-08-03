@@ -2,7 +2,7 @@
 
 `mise bootstrap` sets up a machine for the current config in one command: Linux
 users and groups, OS packages, privileged files and directories, system services,
-git repos, dotfiles, mise shell
+Docker Compose projects, git repos, dotfiles, mise shell
 activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
 the user's login shell, tools, and any final project-specific task. It can
 consume declared secret inputs without storing their values in mise config. You
@@ -30,27 +30,29 @@ preflight prevents a missing input from leaving a partially provisioned host.
    [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
 5. `mise bootstrap services apply` converges existing systemd system units from
    [`[bootstrap.services]`](/bootstrap/services.html).
-6. `mise bootstrap repos apply` clones or updates
+6. `mise bootstrap compose apply` converges
+   [`[bootstrap.compose]`](/bootstrap/compose.html) projects.
+7. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-7. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
-8. `mise bootstrap mise-shell-activate apply` configures shell activation from
+8. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+9. `mise bootstrap mise-shell-activate apply` configures shell activation from
    [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
-9. `mise bootstrap macos defaults apply` writes
-   [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
-10. `mise bootstrap macos launchd-agents apply` writes and loads
+10. `mise bootstrap macos defaults apply` writes
+    [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
+11. `mise bootstrap macos launchd-agents apply` writes and loads
     [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
-11. `mise bootstrap linux systemd-units apply` converges
+12. `mise bootstrap linux systemd-units apply` converges
     [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
     by writing unit files, enabling/disabling them, and starting/stopping them
     as configured.
-12. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
-13. `mise install` installs missing `[tools]`.
-14. Plugin package managers apply after their host tools are available.
-15. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-16. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+13. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
+14. `mise install` installs missing `[tools]`.
+15. Plugin package managers apply after their host tools are available.
+16. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+17. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`accounts`, `plugins`, `packages`, `files`, `services`, `repos`, `dotfiles`, `mise-shell-activate`,
+`accounts`, `plugins`, `packages`, `files`, `services`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
 `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`,
 `task`, and `final-hook`. The old shorter names `shell`, `defaults`, `launchd`,
 and `systemd` are still accepted as aliases. The flag can be repeated or
@@ -181,9 +183,9 @@ mise bootstrap --dry-run
 ```
 
 For a structured resource plan, use `mise bootstrap plan`. The provisioning
-planner currently reports system packages and privileged files and
-directories; other declarative bootstrap parts will join the same
-dependency-aware plan as they adopt the resource model.
+planner reports accounts, system packages, privileged files and directories,
+system services, and Compose projects in dependency order. Other declarative
+bootstrap parts will join the same graph as they adopt the resource model.
 
 ```sh
 mise bootstrap plan

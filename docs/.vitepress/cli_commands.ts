@@ -51,6 +51,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      compose: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       dotfiles: {
         hide: false,
         subcommands: {

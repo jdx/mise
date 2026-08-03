@@ -2,9 +2,12 @@
 //!
 //! This is `[bootstrap.groups]` and `[bootstrap.users]` — declarative Linux
 //! accounts — `[bootstrap.services]` — declarative Linux system service
-//! lifecycle — `[bootstrap.packages]` — declarative system packages installed
-//! by `mise bootstrap packages apply` — `[bootstrap.repos]` — declarative git
-//! checkouts — `[dotfiles]` — declarative config files applied by
+//! lifecycle — `[bootstrap.compose]` — declarative Compose projects —
+//! `[bootstrap.packages]` — declarative system packages installed by
+//! `mise bootstrap packages apply` — `[bootstrap.files]` and
+//! `[bootstrap.directories]` — privileged filesystem resources —
+//! `[bootstrap.repos]` — declarative git checkouts — `[dotfiles]` —
+//! declarative config files applied by
 //! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
 //! shell activation setup — `[bootstrap.macos.defaults]` — declarative macOS
 //! user defaults — `[bootstrap.macos.launchd.agents]` — declarative macOS
@@ -38,6 +41,7 @@ pub mod accounts;
 #[cfg(not(target_os = "linux"))]
 #[path = "accounts_non_linux.rs"]
 pub mod accounts;
+pub mod compose;
 pub mod defaults;
 pub mod deps;
 pub mod edits;
@@ -74,6 +78,9 @@ pub struct BootstrapTomlConfig {
     /// Linux systemd unit name -> declarative system service lifecycle.
     #[serde(default)]
     pub services: IndexMap<String, services::ServiceTomlConfig>,
+    /// Docker Compose project name -> declarative project lifecycle.
+    #[serde(default)]
+    pub compose: IndexMap<String, compose::ComposeTomlConfig>,
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,

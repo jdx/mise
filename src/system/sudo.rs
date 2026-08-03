@@ -6,7 +6,7 @@
 //! with `system_packages.sudo = false`.
 
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use eyre::bail;
 
@@ -103,6 +103,31 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     // inherited stdio: sudo password prompts and apt progress go straight to
     // the user's terminal
     cmd.raw(true).execute()
+}
+
+/// Run an elevated command and capture its output.
+///
+/// Interactive callers authenticate with an inherited `sudo -v` first so a
+/// password prompt is never hidden inside captured stderr. Non-interactive
+/// callers retain [`ensure_elevation_available`]'s fail-fast `sudo -n` check.
+pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
+    let argv = argv_with_env(program, args, envs);
+    let manual_cmd = std::iter::once("sudo".to_string())
+        .chain((!envs.is_empty()).then_some("env".to_string()))
+        .chain(envs.iter().map(|(key, value)| format!("{key}={value}")))
+        .chain(std::iter::once(program.to_string()))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    ensure_elevation_available(&manual_cmd)?;
+    if !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr() {
+        CmdLineRunner::new("sudo").arg("-v").raw(true).execute()?;
+    }
+    info!("$ {}", argv.join(" "));
+    Ok(Command::new(&argv[0])
+        .args(&argv[1..])
+        .envs(envs.iter().map(|(key, value)| (key, value)))
+        .output()?)
 }
 
 /// Run one elevated helper with its private payload on stdin.

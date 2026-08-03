@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 
 use eyre::{Result, bail};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
 use crate::config::Config;
@@ -446,6 +446,40 @@ pub async fn plan(
         plan.insert(resource)?;
         for dependency in &service_dependencies {
             plan.add_dependency(&id, dependency.clone())?;
+        }
+    }
+    let mut compose = super::compose::prepare_requests_from_config(config)?;
+    super::compose::inspect_requests(&mut compose);
+    for request in &compose {
+        let mut dependencies = request
+            .path_dependencies()
+            .iter()
+            .filter(|dependency| plan.resources.contains_key(*dependency))
+            .cloned()
+            .collect::<IndexSet<_>>();
+        for dependency in request.explicit_dependencies() {
+            if !plan.resources.contains_key(dependency) {
+                bail!(
+                    "bootstrap compose project '{}' depends on missing resource '{}'",
+                    request.name,
+                    dependency
+                );
+            }
+            dependencies.insert(dependency.clone());
+        }
+        let dependency_changed = dependencies.iter().any(|dependency| {
+            plan.resources.get(dependency).is_some_and(|resource| {
+                matches!(
+                    resource.action,
+                    ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
+                )
+            })
+        });
+        let resource = request.plan_with_dependency_change(dependency_changed);
+        let id = resource.id.clone();
+        plan.insert(resource)?;
+        for dependency in dependencies {
+            plan.add_dependency(&id, dependency)?;
         }
     }
     // Validate dependency references and cycles even when callers only need JSON.
