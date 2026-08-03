@@ -95,7 +95,7 @@ impl SyncPython {
                 continue;
             }
             let src = installed_python_versions_path.join(&v);
-            if src.is_symlink() {
+            if file::is_symlink_or_junction(&src) {
                 continue;
             }
             // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
