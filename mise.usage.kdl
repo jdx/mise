@@ -4780,6 +4780,7 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --no-rolling help="Mark the tool as pinned (not rolling): a same-version checksum change is surfaced as an integrity warning instead of being reinstalled"
     flag --pin help="Save the resolved concrete version to the config file" {
         long_help #"""
 Save the resolved concrete version to the config file
@@ -4796,6 +4797,13 @@ https://mise.jdx.dev/configuration/settings.html#lockfile
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`"
     flag --remove help="Remove the tool(s) from config file" var=#true {
         arg <TOOL>
+    }
+    flag --rolling help="Mark the tool as a rolling release (a stable version string like `nightly` whose artifact changes over time), so `mise upgrade` reinstalls it in place when the upstream checksum changes" {
+        long_help #"""
+Mark the tool as a rolling release (a stable version string like `nightly` whose artifact changes over time), so `mise upgrade` reinstalls it in place when the upstream checksum changes.
+
+e.g.: `mise use --rolling "github:neovim/neovim@nightly"`
+"""#
     }
     arg "[TOOL@VERSION]…" help="Tool(s) to add to config file" help_long=#"""
 Tool(s) to add to config file

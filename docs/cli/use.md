@@ -90,6 +90,10 @@ Only install versions released before this date or older than this duration
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 
+### `--no-rolling`
+
+Mark the tool as pinned (not rolling): a same-version checksum change is surfaced as an integrity warning instead of being reinstalled
+
 ### `--pin`
 
 Save the resolved concrete version to the config file
@@ -109,6 +113,12 @@ Connect backend install command stdin/stdout/stderr directly to the terminal Imp
 ### `--remove… <TOOL>`
 
 Remove the tool(s) from config file
+
+### `--rolling`
+
+Mark the tool as a rolling release (a stable version string like `nightly` whose artifact changes over time), so `mise upgrade` reinstalls it in place when the upstream checksum changes.
+
+e.g.: `mise use --rolling "github:neovim/neovim@nightly"`
 
 Examples:
 
