@@ -224,6 +224,12 @@ fn relocate_keg_with_replacements(
         if !contains_any_placeholder(&content, &replacements) {
             continue;
         }
+        let macho = is_macho(&content);
+        let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
+        let shebang_end = text_executable_shebang_end(&content);
+        if skip_linkage && (macho || elf || (content.contains(&0) && shebang_end.is_none())) {
+            continue;
+        }
         let perms = path.metadata()?.permissions();
         // bottle files are often read-only; lift that while we patch
         let mut writable = perms.clone();
@@ -232,12 +238,6 @@ fn relocate_keg_with_replacements(
             std::os::unix::fs::PermissionsExt::mode(&perms) | 0o200,
         );
         std::fs::set_permissions(path, writable)?;
-        let macho = is_macho(&content);
-        let elf = cfg!(target_os = "linux") && super::elf::is_elf(&content);
-        let shebang_end = text_executable_shebang_end(&content);
-        if skip_linkage && (macho || elf || (content.contains(&0) && shebang_end.is_none())) {
-            continue;
-        }
         if macho || (!elf && content.contains(&0) && shebang_end.is_none()) {
             // Non-ELF files containing NUL bytes are treated as binaries unless
             // their shebang makes them text executables (for example zipapps).
@@ -318,6 +318,7 @@ pub fn codesign(files: &[PathBuf]) -> Result<()> {
 pub(super) mod tests {
     use super::*;
     use std::io::{Cursor, Read, Write};
+    use std::os::unix::fs::PermissionsExt;
 
     /// fixed macOS-style replacements so tests behave the same on all hosts
     pub(in super::super) fn test_replacements() -> Vec<Replacement> {
@@ -353,6 +354,7 @@ pub(super) mod tests {
         let mut binary_content = 0xfeedfacf_u32.to_be_bytes().to_vec();
         binary_content.extend_from_slice(b"@@HOMEBREW_PREFIX@@/lib/libformula.dylib\0");
         crate::file::write(&binary, &binary_content)?;
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o444))?;
 
         let report =
             relocate_keg_with_replacements(tmp.path(), "formula", true, &test_replacements())?;
@@ -362,6 +364,7 @@ pub(super) mod tests {
             "CELLAR=/opt/homebrew/Cellar/formula/1.0\n"
         );
         assert_eq!(crate::file::read(&binary)?, binary_content);
+        assert_eq!(binary.metadata()?.permissions().mode() & 0o777, 0o444);
         assert_eq!(report.changed_files, vec![text]);
         assert!(report.changed_machos.is_empty());
         Ok(())
