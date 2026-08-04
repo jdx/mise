@@ -86,7 +86,7 @@ aws-sdk-s3 = { version = "1", default-features = false, features = [
   "behavior-version-latest",
   "default-https-client",
 ] }
-base64 = "0.22"
+base64 = "0.23"
 bytesize = "2"
 bzip2 = "0.6"
 calm_io = "0.1"
