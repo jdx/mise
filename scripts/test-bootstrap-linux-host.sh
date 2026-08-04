@@ -193,7 +193,8 @@ remote_bootstrap
 remote_bootstrap
 
 ssh "${ssh_args[@]}" \
-	'getent passwd mise-case >/dev/null
+	'set -eu
+   getent passwd mise-case >/dev/null
    test "$(stat -c %U:%G:%a /opt/mise-case)" = mise-case:mise-case:750
    test "$(stat -c %U:%G:%a /etc/mise-case.conf)" = root:root:640
    systemctl is-active --quiet mise-case.service
@@ -203,14 +204,16 @@ ssh "${ssh_args[@]}" \
    docker compose --project-directory /opt/mise-case --file /opt/mise-case/compose.yaml --project-name mise-bootstrap-smoke ps --status running --quiet | grep -q .'
 
 ssh "${ssh_args[@]}" \
-	'printf "drift\n" >/etc/mise-case.conf
+	'set -eu
+   printf "drift\n" >/etc/mise-case.conf
    systemctl stop mise-case.service
    nft add rule inet mise_bootstrap input tcp dport 9 accept comment '"'"'manual-drift'"'"''
 
 remote_bootstrap
 
 ssh "${ssh_args[@]}" \
-	'test "$(cat /etc/mise-case.conf)" = generation=1
+	'set -eu
+   test "$(cat /etc/mise-case.conf)" = generation=1
    systemctl is-active --quiet mise-case.service
    ! nft list table inet mise_bootstrap | grep -q manual-drift
    docker compose --project-directory /opt/mise-case --file /opt/mise-case/compose.yaml --project-name mise-bootstrap-smoke ps --status running --quiet | grep -q .'
