@@ -8,6 +8,10 @@ use indexmap::{IndexMap, IndexSet};
 use serde::Deserialize;
 
 use crate::config::Config;
+use crate::http::HTTP;
+use crate::ui::multi_progress_report::MultiProgressReport;
+
+const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct RemoteTomlConfig {
@@ -75,6 +79,26 @@ pub struct RemoteRunOptions {
     pub only: Vec<String>,
     pub keep_staging: bool,
     pub connect_timeout: u16,
+}
+
+#[derive(Default)]
+pub struct RemoteArtifactResolver {
+    directory: Option<tempfile::TempDir>,
+    manifest: Option<ReleaseManifest>,
+    artifacts: IndexMap<String, PathBuf>,
+    official_local_verified: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ReleaseManifest {
+    checksums: std::collections::HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RemotePlatform {
+    os: String,
+    arch: String,
+    libc: Option<LibcFlavor>,
 }
 
 pub fn hosts_from_config(
@@ -269,7 +293,11 @@ impl RemoteHost {
     }
 }
 
-pub fn run(host: &RemoteHost, options: &RemoteRunOptions) -> Result<()> {
+pub async fn run(
+    host: &RemoteHost,
+    options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
+) -> Result<()> {
     let ssh = crate::file::which("ssh").ok_or_else(|| eyre!("required command 'ssh' not found"))?;
     let tar = crate::file::which("tar").ok_or_else(|| eyre!("required command 'tar' not found"))?;
     let control_directory = if cfg!(unix) {
@@ -291,7 +319,7 @@ pub fn run(host: &RemoteHost, options: &RemoteRunOptions) -> Result<()> {
         .trim()
         .to_string();
     validate_staging_path(&staging)?;
-    let mut result = run_staged(&session, &tar, &staging, options);
+    let mut result = run_staged(&session, &tar, &staging, options, artifacts).await;
     if options.keep_staging {
         warn!("remote staging retained on {}: {staging}", host.name);
     } else if let Err(cleanup_error) = session.status(&["rm", "-rf", "--", &staging], false) {
@@ -323,16 +351,17 @@ printf 'mktemp returned an unsafe staging path: %s\n' "$staging" >&2
 exit 1"#
 }
 
-fn run_staged(
+async fn run_staged(
     session: &SshSession<'_>,
     tar: &Path,
     staging: &str,
     options: &RemoteRunOptions,
+    artifacts: &mut RemoteArtifactResolver,
 ) -> Result<()> {
     let project = format!("{staging}/project");
     session.status(&["mkdir", "-p", &project], false)?;
     upload_source(session, tar, &project)?;
-    let mise = provision_mise(session, staging, &project, options.dry_run)?;
+    let mise = provision_mise(session, staging, &project, options.dry_run, artifacts).await?;
     let mut argv = vec![
         "env".to_string(),
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
@@ -386,11 +415,12 @@ fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<
     session.status_with_stdin(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
 }
 
-fn provision_mise(
+async fn provision_mise(
     session: &SshSession<'_>,
     staging: &str,
     project: &str,
     dry_run: bool,
+    artifacts: &mut RemoteArtifactResolver,
 ) -> Result<String> {
     if let Some(remote_mise) = &session.host.remote_mise {
         let remote_mise = resolve_configured_remote_mise(session, remote_mise, project)
@@ -431,24 +461,39 @@ fn provision_mise(
         session.status(&[&mise, "version"], false)?;
         return Ok(mise);
     }
-    let platform = session.output(&["sh", "-c", "uname -s; uname -m"])?;
-    let mut lines = platform.lines();
-    let remote_os = normalize_os(lines.next().unwrap_or_default());
-    let remote_arch = normalize_arch(lines.next().unwrap_or_default());
     let binary = if let Some(binary) = &session.host.mise_bin {
         binary.clone()
     } else {
+        let platform = detect_remote_platform(session)?;
         let local_os = normalize_os(std::env::consts::OS);
         let local_arch = normalize_arch(std::env::consts::ARCH);
-        if remote_os != local_os || remote_arch != local_arch {
-            bail!(
-                "remote host '{}' is {remote_os}/{remote_arch}, but local mise is {local_os}/{local_arch}; set mise_bin, remote_mise, or bootstrap_command",
-                session.host.name
-            );
+        let local = std::env::current_exe()?;
+        let local_incompatibility = if platform.os != local_os || platform.arch != local_arch {
+            Some(format!(
+                "local mise is {local_os}/{local_arch}, while the remote target is {}",
+                platform.description()
+            ))
+        } else {
+            validate_default_binary_compatibility(session, &local, &platform.os)
+                .err()
+                .map(|error| format!("{error:#}"))
+        };
+        if local_incompatibility.is_none() {
+            local
+        } else {
+            artifacts
+                .resolve(&platform, &local)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "local mise could not run on remote host '{}' ({}) because {}; official mise {} artifact fallback also failed",
+                        session.host.name,
+                        platform.description(),
+                        local_incompatibility.expect("incompatibility was identified"),
+                        env!("CARGO_PKG_VERSION"),
+                    )
+                })?
         }
-        let binary = std::env::current_exe()?;
-        validate_default_binary_compatibility(session, &binary, &remote_os)?;
-        binary
     };
     let remote = format!("{staging}/mise");
     session.upload_executable(&binary, &remote)?;
@@ -713,6 +758,278 @@ fn select_unique_remote_mise_candidate(
 enum LibcFlavor {
     Glibc,
     Musl,
+}
+
+impl RemotePlatform {
+    fn description(&self) -> String {
+        match self.libc {
+            Some(libc) => format!("{}/{}/{libc}", self.os, self.arch),
+            None => format!("{}/{}", self.os, self.arch),
+        }
+    }
+
+    fn release_asset_name(&self) -> Result<String> {
+        release_asset_name(&self.os, &self.arch, self.libc)
+    }
+}
+
+impl fmt::Display for LibcFlavor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Glibc => f.write_str("glibc"),
+            Self::Musl => f.write_str("musl"),
+        }
+    }
+}
+
+impl ReleaseManifest {
+    fn verified(contents: &str, signature: &str) -> Result<Self> {
+        crate::minisign::verify(
+            &crate::minisign::MISE_PUB_KEY,
+            contents.as_bytes(),
+            signature,
+        )
+        .wrap_err("mise release checksum signature is invalid")?;
+        let checksums = crate::hash::parse_shasums(contents);
+        if checksums.is_empty() {
+            bail!("signed mise release checksum manifest is empty");
+        }
+        if checksums.values().any(|checksum| {
+            checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            bail!("signed mise release checksum manifest contains an invalid SHA-256 checksum");
+        }
+        Ok(Self { checksums })
+    }
+
+    fn checksum(&self, asset: &str) -> Result<&str> {
+        self.checksums
+            .get(asset)
+            .or_else(|| self.checksums.get(&format!("./{asset}")))
+            .map(String::as_str)
+            .ok_or_else(|| eyre!("signed mise release manifest does not contain {asset}"))
+    }
+}
+
+impl RemoteArtifactResolver {
+    async fn resolve(&mut self, platform: &RemotePlatform, local: &Path) -> Result<PathBuf> {
+        let asset = platform.release_asset_name()?;
+        if let Some(path) = self.artifacts.get(&asset) {
+            return Ok(path.clone());
+        }
+        self.ensure_official_local(local).await?;
+        let checksum = self.manifest().await?.checksum(&asset)?.to_string();
+        if self.directory.is_none() {
+            self.directory = Some(tempfile::tempdir()?);
+        }
+        let path = self
+            .directory
+            .as_ref()
+            .expect("artifact directory was initialized")
+            .path()
+            .join(&asset);
+        let progress = MultiProgressReport::get().add("mise bootstrap");
+        progress.set_message(format!("downloading {asset}"));
+        if let Err(error) = HTTP
+            .download_file(release_url(&asset), &path, Some(progress.as_ref()))
+            .await
+        {
+            progress.abandon();
+            return Err(error).wrap_err_with(|| {
+                format!("failed to download official mise release artifact {asset}")
+            });
+        }
+        progress.set_message(format!("verifying {asset}"));
+        if let Err(error) =
+            crate::hash::ensure_checksum(&path, &checksum, Some(progress.as_ref()), "sha256")
+        {
+            progress.abandon();
+            return Err(error).wrap_err_with(|| {
+                format!("official mise release artifact {asset} failed verification")
+            });
+        }
+        progress.finish();
+        info!(
+            "using signed official mise {} artifact {asset}",
+            env!("CARGO_PKG_VERSION")
+        );
+        self.artifacts.insert(asset, path.clone());
+        Ok(path)
+    }
+
+    async fn ensure_official_local(&mut self, local: &Path) -> Result<()> {
+        if self.official_local_verified {
+            return Ok(());
+        }
+        if cfg!(debug_assertions) {
+            bail!(
+                "automatic cross-platform provisioning is unavailable from a debug mise build; set mise_bin, remote_mise, or bootstrap_command"
+            );
+        }
+        let local_os = normalize_os(std::env::consts::OS);
+        let local_arch = normalize_arch(std::env::consts::ARCH);
+        let candidates = official_release_assets(&local_os, &local_arch)?;
+        let actual = crate::hash::file_hash_sha256(local, None)?;
+        let manifest = self.manifest().await?;
+        let official = candidates.iter().any(|asset| {
+            manifest
+                .checksum(asset)
+                .is_ok_and(|expected| expected.eq_ignore_ascii_case(&actual))
+        });
+        if !official {
+            bail!(
+                "automatic cross-platform provisioning refuses to replace a custom mise build with an official binary because {} does not match the signed mise {} release checksums; set mise_bin, remote_mise, or bootstrap_command",
+                local.display(),
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        self.official_local_verified = true;
+        Ok(())
+    }
+
+    async fn manifest(&mut self) -> Result<&ReleaseManifest> {
+        if self.manifest.is_none() {
+            let manifest_url = release_url("SHASUMS256.txt");
+            let signature_url = release_url("SHASUMS256.txt.minisig");
+            let (contents, signature) = tokio::try_join!(
+                HTTP.get_text_cached(&manifest_url),
+                HTTP.get_text_cached(&signature_url)
+            )
+            .wrap_err_with(|| {
+                format!(
+                    "failed to fetch signed mise {} release checksums",
+                    env!("CARGO_PKG_VERSION")
+                )
+            })?;
+            self.manifest = Some(ReleaseManifest::verified(&contents, &signature)?);
+        }
+        Ok(self.manifest.as_ref().expect("release manifest was loaded"))
+    }
+}
+
+fn release_url(filename: &str) -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    format!("{RELEASE_BASE_URL}/v{version}/{filename}")
+}
+
+fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<String> {
+    let release_arch = match arch {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        "armv7" => "armv7",
+        _ => {
+            bail!(
+                "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+                env!("CARGO_PKG_VERSION")
+            )
+        }
+    };
+    let suffix = match os {
+        "macos" if matches!(arch, "x86_64" | "aarch64") => {
+            if libc.is_some() {
+                bail!("macOS release targets cannot declare a libc family");
+            }
+            format!("macos-{release_arch}")
+        }
+        "linux" if matches!(arch, "x86_64" | "aarch64" | "armv7") => match libc {
+            Some(LibcFlavor::Glibc) => format!("linux-{release_arch}"),
+            Some(LibcFlavor::Musl) => format!("linux-{release_arch}-musl"),
+            None => bail!("Linux release targets require a detected libc family"),
+        },
+        _ => {
+            bail!(
+                "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+                env!("CARGO_PKG_VERSION")
+            )
+        }
+    };
+    Ok(format!("mise-v{}-{suffix}", env!("CARGO_PKG_VERSION")))
+}
+
+fn official_release_assets(os: &str, arch: &str) -> Result<Vec<String>> {
+    match os {
+        "linux" => [LibcFlavor::Glibc, LibcFlavor::Musl]
+            .into_iter()
+            .map(|libc| release_asset_name(os, arch, Some(libc)))
+            .collect(),
+        "macos" => Ok(vec![release_asset_name(os, arch, None)?]),
+        "windows" => {
+            let release_arch = match arch {
+                "x86_64" => "x64",
+                "aarch64" => "arm64",
+                _ => {
+                    bail!(
+                        "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+                        env!("CARGO_PKG_VERSION")
+                    )
+                }
+            };
+            Ok(vec![format!(
+                "mise-v{}-windows-{release_arch}.exe",
+                env!("CARGO_PKG_VERSION")
+            )])
+        }
+        _ => bail!(
+            "mise {} has no official precompiled artifact for {os}/{arch}; set mise_bin, remote_mise, or bootstrap_command",
+            env!("CARGO_PKG_VERSION")
+        ),
+    }
+}
+
+fn detect_remote_platform(session: &SshSession<'_>) -> Result<RemotePlatform> {
+    let output = session.output(&["sh", "-c", remote_platform_script()])?;
+    parse_remote_platform(&output).wrap_err_with(|| {
+        format!(
+            "could not detect the platform for remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
+            session.host.name
+        )
+    })
+}
+
+fn remote_platform_script() -> &'static str {
+    r#"os=$(uname -s)
+arch=$(uname -m)
+printf '%s\n%s\n' "$os" "$arch"
+case "$os" in
+  Linux|linux)
+    libc=
+    if command -v getconf >/dev/null 2>&1; then
+      libc_output=$(getconf GNU_LIBC_VERSION 2>&1 || true)
+      case "$libc_output" in *glibc*|*GLIBC*) libc=glibc ;; esac
+    fi
+    if [ -z "$libc" ] && command -v ldd >/dev/null 2>&1; then
+      libc_output=$(ldd --version 2>&1 || true)
+      case "$libc_output" in
+        *musl*|*MUSL*) libc=musl ;;
+        *glibc*|*GLIBC*|*GNU\ libc*|*GNU\ C\ Library*) libc=glibc ;;
+      esac
+    fi
+    if [ -z "$libc" ]; then
+      for loader in /lib/ld-musl-*.so.1 /usr/lib/ld-musl-*.so.1; do
+        if [ -e "$loader" ]; then libc=musl; break; fi
+      done
+    fi
+    printf '%s\n' "${libc:-unknown}"
+    ;;
+  *) printf '%s\n' none ;;
+esac"#
+}
+
+fn parse_remote_platform(output: &str) -> Result<RemotePlatform> {
+    let mut lines = output.lines();
+    let os = normalize_os(lines.next().unwrap_or_default());
+    let arch = normalize_arch(lines.next().unwrap_or_default());
+    let libc = match (os.as_str(), lines.next()) {
+        ("linux", Some("glibc")) => Some(LibcFlavor::Glibc),
+        ("linux", Some("musl")) => Some(LibcFlavor::Musl),
+        ("linux", _) => bail!("remote Linux libc family could not be identified"),
+        (_, Some("none")) => None,
+        _ => bail!("remote platform response is incomplete"),
+    };
+    if os.is_empty() || arch.is_empty() || lines.next().is_some() {
+        bail!("remote platform response is invalid");
+    }
+    Ok(RemotePlatform { os, arch, libc })
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1308,6 +1625,106 @@ mod tests {
             Some(LibcFlavor::Musl)
         );
         assert_eq!(parse_libc_flavor("unknown loader"), None);
+    }
+
+    #[test]
+    fn maps_every_supported_remote_release_target() {
+        let version = env!("CARGO_PKG_VERSION");
+        assert_eq!(
+            release_asset_name("linux", "x86_64", Some(LibcFlavor::Glibc)).unwrap(),
+            format!("mise-v{version}-linux-x64")
+        );
+        assert_eq!(
+            release_asset_name("linux", "x86_64", Some(LibcFlavor::Musl)).unwrap(),
+            format!("mise-v{version}-linux-x64-musl")
+        );
+        assert_eq!(
+            release_asset_name("linux", "aarch64", Some(LibcFlavor::Glibc)).unwrap(),
+            format!("mise-v{version}-linux-arm64")
+        );
+        assert_eq!(
+            release_asset_name("linux", "aarch64", Some(LibcFlavor::Musl)).unwrap(),
+            format!("mise-v{version}-linux-arm64-musl")
+        );
+        assert_eq!(
+            release_asset_name("linux", "armv7", Some(LibcFlavor::Glibc)).unwrap(),
+            format!("mise-v{version}-linux-armv7")
+        );
+        assert_eq!(
+            release_asset_name("linux", "armv7", Some(LibcFlavor::Musl)).unwrap(),
+            format!("mise-v{version}-linux-armv7-musl")
+        );
+        assert_eq!(
+            release_asset_name("macos", "x86_64", None).unwrap(),
+            format!("mise-v{version}-macos-x64")
+        );
+        assert_eq!(
+            release_asset_name("macos", "aarch64", None).unwrap(),
+            format!("mise-v{version}-macos-arm64")
+        );
+        assert!(release_asset_name("linux", "riscv64", Some(LibcFlavor::Glibc)).is_err());
+        assert!(release_asset_name("freebsd", "x86_64", None).is_err());
+        assert!(release_asset_name("linux", "x86_64", None).is_err());
+    }
+
+    #[test]
+    fn maps_official_local_release_executables_for_provenance() {
+        let version = env!("CARGO_PKG_VERSION");
+        assert_eq!(
+            official_release_assets("windows", "x86_64").unwrap(),
+            vec![format!("mise-v{version}-windows-x64.exe")]
+        );
+        assert_eq!(
+            official_release_assets("windows", "aarch64").unwrap(),
+            vec![format!("mise-v{version}-windows-arm64.exe")]
+        );
+        assert!(official_release_assets("windows", "x86").is_err());
+    }
+
+    #[test]
+    fn parses_remote_release_platforms_and_requires_linux_libc() {
+        assert_eq!(
+            parse_remote_platform("Linux\nx86_64\nglibc\n").unwrap(),
+            RemotePlatform {
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                libc: Some(LibcFlavor::Glibc),
+            }
+        );
+        assert_eq!(
+            parse_remote_platform("linux\naarch64\nmusl\n").unwrap(),
+            RemotePlatform {
+                os: "linux".to_string(),
+                arch: "aarch64".to_string(),
+                libc: Some(LibcFlavor::Musl),
+            }
+        );
+        assert_eq!(
+            parse_remote_platform("Darwin\narm64\nnone\n").unwrap(),
+            RemotePlatform {
+                os: "macos".to_string(),
+                arch: "aarch64".to_string(),
+                libc: None,
+            }
+        );
+        assert!(parse_remote_platform("Linux\nx86_64\nunknown\n").is_err());
+        assert!(parse_remote_platform("Linux\nx86_64\n").is_err());
+        assert!(parse_remote_platform("Darwin\narm64\nnone\nextra\n").is_err());
+    }
+
+    #[test]
+    fn verifies_real_signed_release_manifest_before_lookup() {
+        let contents = include_str!("remote_testdata/mise-v2026.8.1-SHASUMS256.txt");
+        let signature = include_str!("remote_testdata/mise-v2026.8.1-SHASUMS256.txt.minisig");
+        let manifest = ReleaseManifest::verified(contents, signature).unwrap();
+        assert_eq!(
+            manifest.checksum("mise-v2026.8.1-linux-x64-musl").unwrap(),
+            "522fd15a3b0748d8a240bdf06cd45f679f759a097e2f49b436363e92c48fdbdc"
+        );
+        assert!(manifest.checksum("missing-asset").is_err());
+
+        let tampered = contents.replacen("522fd15", "022fd15", 1);
+        assert!(ReleaseManifest::verified(&tampered, signature).is_err());
     }
 
     #[test]

@@ -2232,8 +2232,9 @@ impl BootstrapRemote {
             );
         }
         let mut failures = vec![];
+        let mut artifacts = system::remote::RemoteArtifactResolver::default();
         for host in selected.values() {
-            if let Err(error) = system::remote::run(host, &options) {
+            if let Err(error) = system::remote::run(host, &options, &mut artifacts).await {
                 error!("remote bootstrap failed on {}: {error:#}", host.name);
                 failures.push(format!("{}: {error:#}", host.name));
                 if self.fail_fast {
