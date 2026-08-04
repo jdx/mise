@@ -125,17 +125,27 @@ impl Toolset {
     pub(super) fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
         for tr in requests {
             if let Some(tvl) = self.versions.get(tr.ba()) {
-                // Use config request options if available, falling back to backend arg opts.
-                // This ensures tool options like postinstall from mise.toml are preserved
-                // when installing with an explicit CLI version (e.g. `mise install tool@latest`).
-                let config_options =
+                // Requests cloned from this toolset already carry their own
+                // per-entry options, including platform filters. Do not
+                // collapse duplicate selectors onto another config entry.
+                if tvl.requests.contains(tr) {
+                    continue;
+                }
+                // Use matching config options when available. If selection is
+                // ambiguous, preserve options already carried by the request;
+                // synthesize backend defaults only for an empty request.
+                if let Some(config_options) =
                     super::tool_request_set::configured_options_for_runtime_request(
                         &tvl.requests,
                         tr,
-                    );
-                let options = tr.ba().opts_with_config(config_options);
-                if tr.options().is_empty() || tr.options() != options {
-                    tr.set_options(options);
+                    )
+                {
+                    let options = tr.ba().opts_with_config(Some(config_options));
+                    if tr.options() != options {
+                        tr.set_options(options);
+                    }
+                } else if tr.options().is_empty() {
+                    tr.set_options(tr.ba().opts_with_config(None));
                 }
             }
         }
@@ -754,5 +764,70 @@ fn transitive_dependency_before_date(
         }
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
         _ => tv.before_date,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendArg;
+    use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn test_init_request_options_preserves_unmatched_request_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        for version in ["1.0.0", "2.0.0"] {
+            toolset.add_version(
+                ToolRequest::new_opts(
+                    ba.clone(),
+                    version,
+                    parse_tool_options(&format!(r#"postinstall="echo configured {version}""#)),
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            );
+        }
+
+        let mut requests = vec![
+            ToolRequest::new_opts(
+                ba.clone(),
+                "3.0.0",
+                parse_tool_options(r#"postinstall="echo carried""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+        toolset.init_request_options(&mut requests);
+
+        assert_eq!(
+            requests[0].options().get("postinstall"),
+            Some("echo carried")
+        );
+
+        let mut inactive_options = parse_tool_options(r#"postinstall="echo inactive""#);
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let inactive =
+            ToolRequest::new_opts(ba.clone(), "4.0.0", inactive_options, ToolSource::Unknown)
+                .unwrap();
+        let active = ToolRequest::new_opts(
+            ba,
+            "4.0.0",
+            parse_tool_options(r#"postinstall="echo active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(inactive.clone());
+        toolset.add_version(active.clone());
+        let mut requests = vec![inactive.clone(), active.clone()];
+        toolset.init_request_options(&mut requests);
+
+        assert_eq!(requests, vec![inactive, active]);
     }
 }
