@@ -123,6 +123,7 @@ heck = "0.5"
 hex = "0.4"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
+ipnet = { version = "2", features = ["serde"] }
 clx = "3"
 indoc = "2"
 itertools = "0.15"
@@ -221,7 +222,7 @@ tree-sitter-iter = "=1.27.0"
 ubi = { version = "0.10", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "4", features = ["clap", "docs"] }
+usage-lib = { version = "5", features = ["clap", "docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }

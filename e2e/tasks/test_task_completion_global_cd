@@ -8,6 +8,11 @@
 # because their root globals are long-only, so the parser dropped the shorts that exist
 # only on the non-global `run` redeclarations; that workaround is no longer needed.
 #
+# The `-- ''` cases additionally depend on the mounted task spec NOT declaring a
+# `--`-gated catch-all arg: usage 5 routes an explicit `--` onto whichever arg declared
+# the separator (jdx/usage#762), so such an arg swallows the word being completed and
+# these fall back to filenames. See `tasks::ls::display_usage`.
+#
 # Needs usage >= 3.5.7. `latest` only reaches it once it clears the default 24h
 # minimum_release_age, so opt out of the delay here.
 export MISE_MINIMUM_RELEASE_AGE=0s

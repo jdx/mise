@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]] || ! sudo -n true 2>/dev/null; then
+  echo "skipping: managed system files require Linux and passwordless sudo"
+  exit 0
+fi
+
+managed_dir="$PWD/managed-system"
+managed_nested="$managed_dir/nested"
+managed_file="$managed_nested/example.conf"
+managed_owner="$(id -un)"
+managed_group="$(id -gn)"
+
+# Dry runs validate ownership before claiming the plan can be applied.
+missing_owner="mise-bootstrap-missing-owner-$$"
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/missing-owner"]
+content = "unreachable"
+owner = "$missing_owner"
+EOF
+assert_fail "mise bootstrap files apply --dry-run --yes" "user '$missing_owner' does not exist"
+assert_fail "mise bootstrap plan" "user '$missing_owner' does not exist"
+assert_fail "test -e $PWD/missing-owner"
+
+cat <<EOF >mise.toml
+[bootstrap.directories."$managed_dir"]
+owner = "$managed_owner"
+group = "$managed_group"
+mode = "0755"
+
+[bootstrap.directories."$managed_nested"]
+owner = "$managed_owner"
+group = "$managed_group"
+mode = "0750"
+
+[bootstrap.files."$managed_file"]
+content = "first"
+owner = "$managed_owner"
+group = "$managed_group"
+mode = "0640"
+EOF
+
+assert_contains "mise bootstrap plan" "directory:$managed_dir"
+assert_contains "mise bootstrap plan" "file:$managed_file"
+assert_fail "mise bootstrap plan --detailed-exitcode"
+assert_contains "mise bootstrap files apply --dry-run --yes" "would create directory $managed_dir"
+assert_directory_not_exists "$managed_dir"
+
+assert_succeed "mise bootstrap files apply --yes"
+assert "cat $managed_file" "first"
+assert "stat -c %a $managed_nested" "750"
+assert_succeed "mise bootstrap files status --missing"
+assert_succeed "mise bootstrap files status --json | jq -e . >/dev/null"
+assert_contains "mise bootstrap status --json" '"files"'
+
+# Applying the same declarations again is a no-op.
+assert_succeed "mise bootstrap files apply --yes"
+
+# Root-only files are compared in one privileged batch and remain idempotent.
+root_file="$managed_nested/root-only.conf"
+locked_dir="$managed_dir/locked"
+locked_nested="$locked_dir/nested"
+locked_file="$locked_nested/root-only.conf"
+cat <<EOF >mise.toml
+[bootstrap.directories."$managed_dir"]
+owner = "$managed_owner"
+group = "$managed_group"
+mode = "0755"
+
+[bootstrap.directories."$managed_nested"]
+owner = "$managed_owner"
+group = "$managed_group"
+mode = "0750"
+
+[bootstrap.files."$managed_file"]
+content = "first"
+owner = "$managed_owner"
+group = "$managed_group"
+mode = "0640"
+
+[bootstrap.files."$root_file"]
+content = "root-only"
+owner = "root"
+group = "root"
+mode = "0600"
+
+[bootstrap.directories."$locked_dir"]
+owner = "root"
+group = "root"
+mode = "0700"
+
+[bootstrap.directories."$locked_nested"]
+owner = "root"
+group = "root"
+mode = "0750"
+
+[bootstrap.files."$locked_file"]
+content = "locked-root-only"
+owner = "root"
+group = "root"
+mode = "0600"
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+assert "sudo cat $root_file" "root-only"
+# The invoking user cannot search this parent. Status and planning must fall
+# back to the single privileged inspection batch for both metadata and content.
+assert "sudo cat $locked_file" "locked-root-only"
+assert_succeed "mise bootstrap files status --missing"
+assert_succeed "mise bootstrap plan --detailed-exitcode"
+root_inode="$(stat -c %i "$root_file")"
+locked_inode="$(sudo stat -c %i "$locked_file")"
+assert_succeed "mise bootstrap files apply --yes"
+assert "stat -c %i $root_file" "$root_inode"
+assert "sudo stat -c %i $locked_file" "$locked_inode"
+
+cat <<EOF >mise.toml
+[bootstrap.directories."$managed_dir"]
+state = "absent"
+
+[bootstrap.directories."$managed_nested"]
+state = "absent"
+
+[bootstrap.files."$managed_file"]
+state = "absent"
+
+[bootstrap.files."$root_file"]
+state = "absent"
+
+[bootstrap.directories."$locked_dir"]
+state = "absent"
+
+[bootstrap.directories."$locked_nested"]
+state = "absent"
+
+[bootstrap.files."$locked_file"]
+state = "absent"
+EOF
+
+assert_contains "mise bootstrap plan" "remove"
+assert_succeed "mise bootstrap files apply --yes"
+assert_directory_not_exists "$managed_dir"
+
+# Wrong node types require explicit replacement and never recursively destroy.
+collision="$PWD/type-collision"
+pending_collision="$PWD/pending-next-to-collision"
+mkdir "$collision"
+cat <<EOF >mise.toml
+[bootstrap.files."$collision"]
+content = "replacement"
+
+[bootstrap.files."$pending_collision"]
+content = "pending"
+EOF
+assert_contains "mise bootstrap plan" "unknown"
+assert_contains "mise bootstrap files apply --dry-run --yes" "would write file $pending_collision"
+assert_contains "mise bootstrap files apply --dry-run --yes 2>&1" "manual action required"
+assert_fail "mise bootstrap files apply --yes" "set replace = true"
+cat <<EOF >mise.toml
+[bootstrap.files."$collision"]
+content = "replacement"
+replace = true
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+assert "cat $collision" "replacement"
+
+cat <<EOF >mise.toml
+[bootstrap.directories."$collision"]
+replace = true
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+assert_directory_exists "$collision"
+
+cat <<EOF >mise.toml
+[bootstrap.files."$collision"]
+state = "absent"
+EOF
+assert_contains "mise bootstrap plan" "unknown"
+assert_fail "mise bootstrap files apply --yes" "declare it in [bootstrap.directories]"
+cat <<EOF >mise.toml
+[bootstrap.directories."$collision"]
+state = "absent"
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+
+# Missing ancestors must be declared instead of receiving implicit defaults.
+undeclared_parent="$PWD/undeclared-parent"
+cat <<EOF >mise.toml
+[bootstrap.directories."$undeclared_parent/nested"]
+mode = "0750"
+EOF
+assert_fail "mise bootstrap files apply --yes"
+assert_directory_not_exists "$undeclared_parent"
+cat <<EOF >mise.toml
+[bootstrap.directories."$collision"]
+state = "absent"
+EOF
+
+# The nearest configuration wins when the same target is declared in layers.
+layered_dir="$PWD/layered"
+layered_child="$layered_dir/child"
+layered_file="$layered_dir/config"
+mkdir -p "$layered_child"
+cat <<EOF >"$layered_dir/mise.toml"
+[bootstrap.files."$layered_dir/./config"]
+content = "outer"
+EOF
+cat <<EOF >"$layered_child/mise.toml"
+[bootstrap.files."$layered_dir/nested/../config"]
+content = "inner"
+EOF
+assert_succeed "mise -C $layered_child bootstrap files apply --yes"
+assert "cat $layered_file" "inner"
+cat <<EOF >"$layered_child/mise.toml"
+[bootstrap.files."$layered_file"]
+state = "absent"
+EOF
+assert_succeed "mise -C $layered_child bootstrap files apply --yes"
+
+# Lexical aliases in one config layer are ambiguous and rejected.
+duplicate_file="$PWD/duplicate-target"
+cat <<EOF >mise.toml
+[bootstrap.files."$duplicate_file"]
+content = "first"
+
+[bootstrap.files."$PWD/alias/../duplicate-target"]
+content = "second"
+EOF
+assert_fail "mise bootstrap plan" "normalize to the same target"
+cat <<EOF >mise.toml
+[bootstrap.directories."$PWD/duplicate-directory"]
+
+[bootstrap.directories."$PWD/alias/../duplicate-directory"]
+EOF
+assert_fail "mise bootstrap plan" "normalize to the same target"
+
+# Destructive directory removal requires an explicit recursive opt-in.
+mkdir -p "$managed_dir"
+echo "unmanaged" >"$managed_dir/child"
+cat <<EOF >mise.toml
+[bootstrap.directories."$managed_dir"]
+state = "absent"
+EOF
+assert_fail "mise bootstrap files apply --yes" "Directory not empty"
+assert_directory_exists "$managed_dir"
+
+cat <<EOF >mise.toml
+[bootstrap.directories."$managed_dir"]
+state = "absent"
+recursive = true
+EOF
+assert_succeed "mise bootstrap files apply --yes"
+assert_directory_not_exists "$managed_dir"

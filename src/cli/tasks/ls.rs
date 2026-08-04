@@ -227,10 +227,17 @@ impl TasksLs {
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
-            // Ensure that completions after -- work.
+            // Absorb words the caller forwards to the task beyond what it declares, so
+            // `mise run <task> -- --not-a-mise-flag` completes instead of erroring with
+            // "unexpected word". This must NOT be spelled `-- ARGS_LAST`: jdx/usage#762
+            // made an explicit `--` route the positional cursor onto the arg that declared
+            // the separator, past earlier args, so a `--`-gated catch-all swallowed the
+            // word being completed and `mise run <task> -- <TAB>` offered filenames
+            // instead of the task's own choices. A plain trailing variadic takes the
+            // overflow without hijacking `--`, and behaves the same on usage 4 and 5.
             task_spec.cmd.args.push(
                 usage::SpecArgBuilder::new()
-                    .name("-- ARGS_LAST")
+                    .name("ARGS")
                     .help("Arguments to pass to the tasks. Use \":::\" to separate tasks.")
                     .hide(true)
                     .var(true)

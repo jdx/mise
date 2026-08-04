@@ -5,7 +5,8 @@
 //! never prompts for a password without a TTY, and can be disabled entirely
 //! with `system_packages.sudo = false`.
 
-use std::process::{Command, Stdio};
+use std::io::Write;
+use std::process::{Command, Output, Stdio};
 
 use eyre::bail;
 
@@ -90,36 +91,7 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     manual.push(program.to_string());
     manual.extend(args.iter().cloned());
     let manual_cmd = manual.join(" ");
-    if !is_root() {
-        if !Settings::get().system_packages.sudo {
-            bail!(
-                "not running as root and system_packages.sudo is disabled. Run manually:\n  {manual_cmd}"
-            );
-        }
-        if crate::file::which("sudo").is_none() {
-            bail!(
-                "sudo not found. Run as root:\n  {}",
-                manual_cmd.trim_start_matches("sudo ")
-            );
-        }
-        if !console::user_attended_stderr() {
-            // no TTY to type a password into — only proceed if sudo is
-            // passwordless (NOPASSWD/cached credentials), never hang
-            let ok = Command::new("sudo")
-                .args(["-n", "true"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
-            if !ok {
-                bail!(
-                    "sudo requires a password but no TTY is available. Run manually:\n  {manual_cmd}"
-                );
-            }
-        }
-    }
+    ensure_elevation_available(&manual_cmd)?;
     info!("$ {}", argv.join(" "));
     let mut cmd = CmdLineRunner::new(&argv[0]);
     for arg in &argv[1..] {
@@ -131,4 +103,126 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     // inherited stdio: sudo password prompts and apt progress go straight to
     // the user's terminal
     cmd.raw(true).execute()
+}
+
+/// Run an elevated command and capture its output.
+///
+/// Interactive callers authenticate with an inherited `sudo -v` first so a
+/// password prompt is never hidden inside captured stderr. Non-interactive
+/// callers retain [`ensure_elevation_available`]'s fail-fast `sudo -n` check.
+pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Result<Output> {
+    let argv = argv_with_env(program, args, envs);
+    let manual_cmd = std::iter::once("sudo".to_string())
+        .chain((!envs.is_empty()).then_some("env".to_string()))
+        .chain(envs.iter().map(|(key, value)| format!("{key}={value}")))
+        .chain(std::iter::once(program.to_string()))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    ensure_elevation_available(&manual_cmd)?;
+    if !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr() {
+        CmdLineRunner::new("sudo").arg("-v").raw(true).execute()?;
+    }
+    info!("$ {}", argv.join(" "));
+    Ok(Command::new(&argv[0])
+        .args(&argv[1..])
+        .envs(envs.iter().map(|(key, value)| (key, value)))
+        .output()?)
+}
+
+/// Run one elevated helper with its private payload on stdin.
+///
+/// Unlike [`run`], the payload is never included in argv, logs, or the manual
+/// fallback. This is the transport used for typed privileged bootstrap plans.
+pub(crate) fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Result<()> {
+    let argv = argv(program, args);
+    let manual_cmd = std::iter::once("sudo".to_string())
+        .chain(std::iter::once(program.to_string()))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    ensure_elevation_available(&manual_cmd)?;
+    info!("$ {}", argv.join(" "));
+    let mut child = Command::new(&argv[0])
+        .args(&argv[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .expect("piped stdin is available")
+        .write_all(input)?;
+    let status = child.wait()?;
+    if !status.success() {
+        bail!("elevated bootstrap helper failed with {status}");
+    }
+    Ok(())
+}
+
+/// Run one elevated helper with a private stdin payload and capture stdout.
+/// Stderr remains attached to the terminal for sudo prompts and diagnostics.
+pub(crate) fn run_with_input_output(
+    program: &str,
+    args: &[String],
+    input: &[u8],
+) -> Result<Vec<u8>> {
+    let argv = argv(program, args);
+    let manual_cmd = std::iter::once("sudo".to_string())
+        .chain(std::iter::once(program.to_string()))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    ensure_elevation_available(&manual_cmd)?;
+    info!("$ {}", argv.join(" "));
+    let mut child = Command::new(&argv[0])
+        .args(&argv[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .expect("piped stdin is available")
+        .write_all(input)?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        bail!("elevated bootstrap helper failed with {}", output.status);
+    }
+    Ok(output.stdout)
+}
+
+fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+    if is_root() {
+        return Ok(());
+    }
+    if !Settings::get().system_packages.sudo {
+        bail!(
+            "not running as root and system_packages.sudo is disabled. Run manually:\n  {manual_cmd}"
+        );
+    }
+    if crate::file::which("sudo").is_none() {
+        bail!(
+            "sudo not found. Run as root:\n  {}",
+            manual_cmd.trim_start_matches("sudo ")
+        );
+    }
+    if !console::user_attended_stderr() {
+        let ok = Command::new("sudo")
+            .args(["-n", "true"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !ok {
+            bail!(
+                "sudo requires a password but no TTY is available. Run manually:\n  {manual_cmd}"
+            );
+        }
+    }
+    Ok(())
 }

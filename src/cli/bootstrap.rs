@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use serde_json::{Value, json};
 
 use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply};
@@ -21,6 +21,7 @@ use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
 use crate::system::packages::PackageState;
 use crate::system::repos::RepoState;
+use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
@@ -121,31 +122,41 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
 ///
 /// Runs the bootstrap steps for the current config in order:
 ///
-/// 0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
-///    0.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
-/// 1. Install built-in-manager entries from `[bootstrap.packages]`
-/// 2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+/// 0. `mise bootstrap accounts apply` — converge `[bootstrap.users]` and
+///    `[bootstrap.groups]` (Linux)
+/// 1. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+///    1.7. `[bootstrap.hooks.pre-packages]` — optional setup hook
+/// 2. Install built-in-manager entries from `[bootstrap.packages]`
+/// 3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
+///    `[bootstrap.directories]`
+/// 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
+///    systemd system services (Linux)
+/// 5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
+///    host firewall policy and rules (Linux)
+/// 6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
+///    Docker Compose projects
+/// 7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
-/// 3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 4. `mise bootstrap mise-shell-activate apply` — configure shell activation
+/// 9. `mise bootstrap mise-shell-activate apply` — configure shell activation
 ///    from `[bootstrap.mise_shell_activate]`
-/// 5. `mise bootstrap macos defaults apply` — write
-///    `[bootstrap.macos.defaults]` entries (macOS)
-///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 6. `mise bootstrap macos launchd-agents apply` — install/load
-///    `[bootstrap.macos.launchd.agents]`
-/// 7. `mise bootstrap linux systemd-units apply` — install/start
-///    `[bootstrap.linux.systemd.units]`
-/// 8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
-///    (Unix)
-///    surrounded by `pre-user`/`post-user` hooks
-/// 9. `mise install` — install missing tools from `[tools]`
-///    surrounded by `pre-tools`/`post-tools` hooks
-///    9.5. Install package-plugin entries from `[bootstrap.packages]`, then run
-///    `[bootstrap.hooks.post-packages]`
-/// 10. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 11. `[bootstrap.hooks.final]` — optional final hook
+/// 10. `mise bootstrap macos defaults apply` — write
+///     `[bootstrap.macos.defaults]` entries (macOS)
+///     surrounded by `pre-defaults`/`post-defaults` hooks
+/// 11. `mise bootstrap macos launchd-agents apply` — install/load
+///     `[bootstrap.macos.launchd.agents]`
+/// 12. `mise bootstrap linux systemd-units apply` — install/start
+///     `[bootstrap.linux.systemd.units]`
+/// 13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+///     (Unix)
+///     surrounded by `pre-user`/`post-user` hooks
+/// 14. `mise install` — install missing tools from `[tools]`
+///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
+///     from `[bootstrap.packages]` install afterward, followed by
+///     `[bootstrap.hooks.post-packages]`
+/// 15. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 16. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -184,6 +195,10 @@ pub struct Bootstrap {
     #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
     only: Vec<BootstrapPart>,
 
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+
     /// Skip one or more bootstrap parts
     ///
     /// Can be passed multiple times or as a comma-separated list.
@@ -199,6 +214,11 @@ pub struct Bootstrap {
 enum BootstrapPart {
     Plugins,
     Packages,
+    Accounts,
+    Files,
+    Services,
+    Firewall,
+    Compose,
     Repos,
     Dotfiles,
     #[clap(name = "mise-shell-activate", alias = "shell")]
@@ -218,9 +238,14 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 17] = [
         Self::Plugins,
         Self::Packages,
+        Self::Accounts,
+        Self::Files,
+        Self::Services,
+        Self::Firewall,
+        Self::Compose,
         Self::Repos,
         Self::Dotfiles,
         Self::Shell,
@@ -234,9 +259,63 @@ impl BootstrapPart {
     ];
 }
 
+type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
+
+fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<BootstrapPart>) -> bool {
+    let part = match resource.kind.as_str() {
+        "package" => BootstrapPart::Packages,
+        "file" | "directory" => BootstrapPart::Files,
+        "service" => BootstrapPart::Services,
+        "firewall" | "firewall-rule" => BootstrapPart::Firewall,
+        "user" | "group" => BootstrapPart::Accounts,
+        _ => return false,
+    };
+    skip.contains(&part)
+}
+
+fn bootstrap_prediction_has_skipped_change(
+    resource: &ResourceId,
+    resources: &BootstrapPredictionGraph,
+    skip: &HashSet<BootstrapPart>,
+    visited: &mut HashSet<ResourceId>,
+) -> bool {
+    if !visited.insert(resource.clone()) {
+        return false;
+    }
+    let Some((_, dependencies)) = resources.get(resource) else {
+        return false;
+    };
+    dependencies.iter().any(|dependency| {
+        let dependency_changes = resources.get(dependency).is_some_and(|(action, _)| {
+            matches!(
+                action,
+                ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
+            )
+        });
+        (dependency_changes && bootstrap_resource_is_skipped(dependency, skip))
+            || bootstrap_prediction_has_skipped_change(dependency, resources, skip, visited)
+    })
+}
+
 #[derive(Debug, Subcommand)]
 enum Commands {
+    #[clap(name = "__apply-account-plan", hide = true)]
+    ApplyAccountPlan(BootstrapApplyAccountPlan),
+    #[clap(name = "__apply-service-plan", hide = true)]
+    ApplyServicePlan(BootstrapApplyServicePlan),
+    #[clap(name = "__apply-firewall-plan", hide = true)]
+    ApplyFirewallPlan(BootstrapApplyFirewallPlan),
+    #[clap(name = "__apply-system-plan", hide = true)]
+    ApplySystemPlan(BootstrapApplySystemPlan),
+    #[clap(name = "__inspect-system-files", hide = true)]
+    InspectSystemFiles(BootstrapInspectSystemFiles),
+    #[clap(name = "__inspect-firewall-plan", hide = true)]
+    InspectFirewallPlan(BootstrapInspectFirewallPlan),
+    Accounts(BootstrapAccounts),
+    Compose(BootstrapCompose),
     Dotfiles(BootstrapDotfiles),
+    Files(BootstrapFiles),
+    Firewall(BootstrapFirewall),
     #[clap(hide = true)]
     Launchd(BootstrapLaunchd),
     Linux(BootstrapLinux),
@@ -246,8 +325,12 @@ enum Commands {
     #[clap(name = "mise-shell-activate", alias = "shell")]
     MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
+    Plan(BootstrapPlan),
     Plugins(BootstrapPlugins),
+    Remote(BootstrapRemote),
     Repos(BootstrapRepos),
+    Secrets(BootstrapSecrets),
+    Services(BootstrapServices),
     Status(BootstrapStatus),
     #[clap(hide = true)]
     Systemd(BootstrapSystemd),
@@ -264,6 +347,373 @@ struct BootstrapStatus {
 
     /// Exit with code 1 if any configured bootstrap state is not in its desired state
     #[clap(long, verbatim_doc_comment)]
+    missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+}
+
+/// Show the changes declarative bootstrap resources would make
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapPlan {
+    /// Output a stable machine-readable plan in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
+    #[clap(long, verbatim_doc_comment)]
+    detailed_exitcode: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplySystemPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplyAccountPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplyServicePlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplyFirewallPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapInspectFirewallPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapInspectSystemFiles {}
+
+/// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapAccounts {
+    #[clap(subcommand)]
+    command: BootstrapAccountsCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapAccountsCommands {
+    Apply(BootstrapAccountsApply),
+    Status(BootstrapAccountsStatus),
+}
+
+/// Apply configured Linux users and groups
+#[derive(Debug, clap::Args)]
+struct BootstrapAccountsApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux user and group state
+#[derive(Debug, clap::Args)]
+struct BootstrapAccountsStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any account is not converged
+    #[clap(long)]
+    missing: bool,
+}
+
+/// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapFiles {
+    #[clap(subcommand)]
+    command: BootstrapFilesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapFilesCommands {
+    Apply(BootstrapFilesApply),
+    Status(BootstrapFilesStatus),
+}
+
+/// Apply configured privileged files and directories
+#[derive(Debug, clap::Args)]
+struct BootstrapFilesApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+}
+
+/// Show configured privileged file and directory state
+#[derive(Debug, clap::Args)]
+struct BootstrapFilesStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any resource is not converged
+    #[clap(long)]
+    missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+}
+
+/// Manage Linux system services from `[bootstrap.services]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapServices {
+    #[clap(subcommand)]
+    command: BootstrapServicesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapServicesCommands {
+    Apply(BootstrapServicesApply),
+    Status(BootstrapServicesStatus),
+}
+
+/// Apply configured Linux system service state
+#[derive(Debug, clap::Args)]
+struct BootstrapServicesApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux system service state
+#[derive(Debug, clap::Args)]
+struct BootstrapServicesStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any service is not converged
+    #[clap(long)]
+    missing: bool,
+}
+
+/// Manage the Linux host firewall from `[bootstrap.linux.firewall]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapFirewall {
+    #[clap(subcommand)]
+    command: BootstrapFirewallCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapFirewallCommands {
+    Apply(BootstrapFirewallApply),
+    Status(BootstrapFirewallStatus),
+}
+
+/// Apply the configured Linux host firewall
+#[derive(Debug, clap::Args)]
+struct BootstrapFirewallApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux host firewall state
+#[derive(Debug, clap::Args)]
+struct BootstrapFirewallStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when the firewall is not converged
+    #[clap(long)]
+    missing: bool,
+}
+
+/// Manage Docker Compose projects from `[bootstrap.compose]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapCompose {
+    #[clap(subcommand)]
+    command: BootstrapComposeCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapComposeCommands {
+    Apply(BootstrapComposeApply),
+    Status(BootstrapComposeStatus),
+}
+
+/// Apply configured Docker Compose project state
+#[derive(Debug, clap::Args)]
+struct BootstrapComposeApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Docker Compose project state
+#[derive(Debug, clap::Args)]
+struct BootstrapComposeStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any Compose project is not converged
+    #[clap(long)]
+    missing: bool,
+}
+
+/// Bootstrap one or more machines over OpenSSH
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapRemote {
+    /// Inventory host names from `[bootstrap.remote.hosts]`
+    #[clap(value_name = "TARGET")]
+    targets: Vec<String>,
+
+    /// Select every configured inventory host
+    #[clap(long)]
+    all: bool,
+
+    /// Explicit remote shell command that installs mise and places it on PATH
+    #[clap(
+        long,
+        value_name = "COMMAND",
+        conflicts_with_all = ["mise_bin", "remote_mise"]
+    )]
+    bootstrap_command: Option<String>,
+
+    /// SSH connection timeout in seconds
+    #[clap(long, default_value_t = 10)]
+    connect_timeout: u16,
+
+    /// Additional archive pattern to exclude; repeat for multiple patterns
+    #[clap(long, value_name = "PATTERN")]
+    exclude: Vec<String>,
+
+    /// Stop after the first failed target
+    #[clap(long)]
+    fail_fast: bool,
+
+    /// Allow remote dotfile conflicts to be replaced
+    #[clap(long)]
+    force_dotfiles: bool,
+
+    /// Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+    #[clap(long, value_name = "[USER@]HOST")]
+    host: Vec<String>,
+
+    /// SSH identity file override
+    #[clap(long, short = 'i', value_hint = clap::ValueHint::FilePath)]
+    identity_file: Option<std::path::PathBuf>,
+
+    /// Print the remote bootstrap changes without applying them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Keep the remote staging directory for debugging
+    #[clap(long)]
+    keep_staging: bool,
+
+    /// Local mise binary to upload (escape hatch for custom architectures)
+    #[clap(
+        long,
+        value_hint = clap::ValueHint::FilePath,
+        conflicts_with_all = ["remote_mise", "bootstrap_command"]
+    )]
+    mise_bin: Option<std::path::PathBuf>,
+
+    /// Run only one or more remote bootstrap parts
+    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
+    only: Vec<BootstrapPart>,
+
+    /// SSH port override
+    #[clap(long)]
+    port: Option<u16>,
+
+    /// Prompt securely for missing secret inputs on the remote host
+    #[clap(long)]
+    prompt_secrets: bool,
+
+    /// Existing mise executable name or path; relative paths use the staged project
+    #[clap(
+        long,
+        value_name = "COMMAND",
+        conflicts_with_all = ["mise_bin", "bootstrap_command"]
+    )]
+    remote_mise: Option<String>,
+
+    /// Skip one or more remote bootstrap parts
+    #[clap(long, value_enum, value_delimiter = ',')]
+    skip: Vec<BootstrapPart>,
+
+    /// Local directory archived and sent to each target
+    #[clap(long, value_hint = clap::ValueHint::DirPath)]
+    source: Option<std::path::PathBuf>,
+
+    /// OpenSSH `-o` option; repeat for multiple options
+    #[clap(long, value_name = "OPTION")]
+    ssh_option: Vec<String>,
+
+    /// Select configured hosts with this tag; repeat to match any tag
+    #[clap(long, value_name = "TAG")]
+    tag: Vec<String>,
+
+    /// Refresh package manager metadata and update configured repos remotely
+    #[clap(long)]
+    update: bool,
+
+    /// Skip remote confirmation prompts
+    #[clap(long, short = 'y')]
+    yes: bool,
+}
+
+/// Inspect bootstrap secret inputs without revealing their values
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapSecrets {
+    #[clap(subcommand)]
+    command: BootstrapSecretsCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapSecretsCommands {
+    Status(BootstrapSecretsStatus),
+}
+
+/// Show whether declared bootstrap secret inputs are available
+#[derive(Debug, clap::Args)]
+struct BootstrapSecretsStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if a declared secret input is unavailable
+    #[clap(long)]
     missing: bool,
 }
 
@@ -667,9 +1117,122 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
+        let files_enabled = !skip.contains(&BootstrapPart::Files);
+        let configured_accounts =
+            if accounts_enabled || (cfg!(target_os = "linux") && files_enabled) {
+                Some(system::accounts::prepare_requests_from_config(&config)?)
+            } else {
+                None
+            };
+        let managed_accounts = accounts_enabled.then(|| {
+            configured_accounts
+                .as_ref()
+                .expect("enabled accounts were prepared")
+        });
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let managed_system_files = if !files_enabled {
+            None
+        } else {
+            Some(system::managed_files::prepare_requests_from_config(
+                &config, &secrets,
+            )?)
+        };
+        if let Some((files, directories)) = &managed_system_files {
+            system::managed_files::validate_principals(
+                files,
+                directories,
+                configured_accounts.as_ref(),
+                accounts_enabled,
+            )?;
+        }
+        let services_enabled = !skip.contains(&BootstrapPart::Services);
+        let notifications_configured =
+            managed_system_files
+                .as_ref()
+                .is_some_and(|(files, directories)| {
+                    files.iter().any(|file| !file.notify.is_empty())
+                        || directories
+                            .iter()
+                            .any(|directory| !directory.notify.is_empty())
+                });
+        let configured_services = if services_enabled || notifications_configured {
+            Some(system::services::prepare_requests_from_config(&config)?)
+        } else {
+            None
+        };
+        if notifications_configured {
+            let (files, directories) = managed_system_files
+                .as_ref()
+                .expect("configured notifications came from managed files");
+            let services = configured_services
+                .as_ref()
+                .expect("configured notifications prepared services");
+            system::services::validate_notifications(files, directories, services)?;
+        }
+        let mut managed_services =
+            services_enabled.then_some(configured_services.unwrap_or_default());
+        let mut managed_firewall = if skip.contains(&BootstrapPart::Firewall) {
+            None
+        } else {
+            system::firewall::prepare_request_from_config(&config)?
+        };
+        let mut managed_compose = if skip.contains(&BootstrapPart::Compose) {
+            None
+        } else {
+            Some(system::compose::prepare_requests_from_config(&config)?)
+        };
+        let dry_run_compose_actions = if self.dry_run
+            && managed_compose
+                .as_ref()
+                .is_some_and(|projects| !projects.is_empty())
+        {
+            let plan = system::resources::plan(&config, &secrets).await?;
+            let output = plan.output()?;
+            let resources = output
+                .resources
+                .iter()
+                .map(|resource| {
+                    (
+                        resource.id.clone(),
+                        (resource.action, resource.depends_on.clone()),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            output
+                .resources
+                .into_iter()
+                .filter(|resource| resource.id.kind == "compose")
+                .filter(|resource| {
+                    !bootstrap_prediction_has_skipped_change(
+                        &resource.id,
+                        &resources,
+                        &skip,
+                        &mut HashSet::new(),
+                    )
+                })
+                .map(|resource| (resource.id.name.clone(), resource.action))
+                .collect()
+        } else {
+            HashMap::new()
+        };
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
+        let mut notified_services = system::services::ServiceNotifications::default();
         let mut dry_run_config_files = None;
         let mut post_packages_ran = false;
+
+        let allow_pending_accounts = if let Some(accounts) = managed_accounts {
+            if accounts.groups.is_empty() && accounts.users.is_empty() {
+                debug!("bootstrap: no [bootstrap.groups] or [bootstrap.users] configured");
+                true
+            } else {
+                info!("bootstrap: accounts");
+                system::accounts::apply(accounts, self.dry_run, self.yes)?
+            }
+        } else {
+            debug!("bootstrap: accounts skipped");
+            false
+        };
 
         if skip.contains(&BootstrapPart::Plugins) {
             debug!("bootstrap: package plugins skipped");
@@ -711,6 +1274,74 @@ impl Bootstrap {
                     .await?;
                 post_packages_ran = true;
             }
+        }
+
+        if skip.contains(&BootstrapPart::Files) {
+            debug!("bootstrap: system files skipped");
+        } else {
+            let (mut files, mut directories) = managed_system_files
+                .as_ref()
+                .expect("system files were preflighted when not skipped")
+                .clone();
+            system::managed_files::inspect_requests(&mut files, &mut directories)?;
+            if files.is_empty() && directories.is_empty() {
+                debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
+            } else {
+                info!("bootstrap: system files");
+                let report = system::managed_files::apply_with_accounts(
+                    &files,
+                    &directories,
+                    configured_accounts.as_ref(),
+                    allow_pending_accounts,
+                    self.dry_run,
+                    self.yes,
+                )?;
+                notified_services = report.notified_services;
+            }
+        }
+
+        if let Some(services) = &mut managed_services {
+            system::services::inspect_requests(services);
+            if services.is_empty() {
+                debug!("bootstrap: no [bootstrap.services] configured");
+            } else {
+                info!("bootstrap: system services");
+                system::services::apply_with_notifications(
+                    services,
+                    &notified_services,
+                    self.dry_run,
+                    self.yes,
+                )?;
+            }
+        } else {
+            debug!("bootstrap: system services skipped");
+        }
+
+        if skip.contains(&BootstrapPart::Firewall) {
+            debug!("bootstrap: firewall skipped");
+        } else if let Some(firewall) = &mut managed_firewall {
+            system::firewall::inspect_request(firewall)?;
+            info!("bootstrap: firewall");
+            system::firewall::apply(firewall, self.dry_run, self.yes)?;
+        } else {
+            debug!("bootstrap: no [bootstrap.linux.firewall] configured");
+        }
+
+        if let Some(projects) = &mut managed_compose {
+            system::compose::inspect_requests(projects);
+            if projects.is_empty() {
+                debug!("bootstrap: no [bootstrap.compose] configured");
+            } else {
+                info!("bootstrap: compose projects");
+                system::compose::apply_with_dry_run_actions(
+                    projects,
+                    &dry_run_compose_actions,
+                    self.dry_run,
+                    self.yes,
+                )?;
+            }
+        } else {
+            debug!("bootstrap: compose projects skipped");
         }
 
         if skip.contains(&BootstrapPart::Repos) {
@@ -1256,19 +1887,571 @@ fn is_mise_config_target(path: &std::path::Path) -> bool {
 impl Commands {
     async fn run(self) -> Result<()> {
         match self {
+            Self::ApplyAccountPlan(cmd) => cmd.run(),
+            Self::ApplyServicePlan(cmd) => cmd.run(),
+            Self::ApplyFirewallPlan(cmd) => cmd.run(),
+            Self::ApplySystemPlan(cmd) => cmd.run(),
+            Self::InspectSystemFiles(cmd) => cmd.run(),
+            Self::InspectFirewallPlan(cmd) => cmd.run(),
+            Self::Accounts(cmd) => cmd.run().await,
+            Self::Compose(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
+            Self::Files(cmd) => cmd.run().await,
+            Self::Firewall(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
             Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
             Self::MiseShellActivate(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
+            Self::Plan(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
+            Self::Remote(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
+            Self::Secrets(cmd) => cmd.run().await,
+            Self::Services(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
+    }
+}
+
+impl BootstrapPlan {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let plan = system::resources::plan(&config, &secrets).await?;
+        let output = plan.output()?;
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+        } else if output.resources.is_empty() {
+            info!("nothing configured for bootstrap planning");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in &output.resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current.clone(),
+                    resource.desired.clone(),
+                ]);
+            }
+            table.print()?;
+            miseprintln!(
+                "Plan: {} create, {} update, {} unchanged, {} remove, {} unknown",
+                output.summary.create,
+                output.summary.update,
+                output.summary.unchanged,
+                output.summary.remove,
+                output.summary.unknown,
+            );
+        }
+        if self.detailed_exitcode {
+            if output.summary.has_unknown() {
+                bail!("bootstrap plan contains resources with unknown state");
+            }
+            if output.summary.has_changes() {
+                return Err(crate::request_exit(2));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapApplySystemPlan {
+    fn run(self) -> Result<()> {
+        system::managed_files::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyAccountPlan {
+    fn run(self) -> Result<()> {
+        system::accounts::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyServicePlan {
+    fn run(self) -> Result<()> {
+        system::services::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyFirewallPlan {
+    fn run(self) -> Result<()> {
+        system::firewall::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapInspectFirewallPlan {
+    fn run(self) -> Result<()> {
+        system::firewall::inspect_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapInspectSystemFiles {
+    fn run(self) -> Result<()> {
+        system::managed_files::inspect_privileged_files_from_stdin()
+    }
+}
+
+impl BootstrapAccounts {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapAccountsCommands::Apply(command) => command.run().await,
+            BootstrapAccountsCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapAccountsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::accounts::requests_from_config(&config)?;
+        system::accounts::apply(&requests, self.dry_run, self.yes)?;
+        Ok(())
+    }
+}
+
+impl BootstrapAccountsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::accounts::requests_from_config(&config)?;
+        let resources = system::accounts::plans(&requests);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap users or groups configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFiles {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapFilesCommands::Apply(command) => command.run().await,
+            BootstrapFilesCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapFilesApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
+        let mut services = if files.iter().any(|file| !file.notify.is_empty())
+            || directories
+                .iter()
+                .any(|directory| !directory.notify.is_empty())
+        {
+            let services = system::services::prepare_requests_from_config(&config)?;
+            system::services::validate_notifications(&files, &directories, &services)?;
+            Some(services)
+        } else {
+            None
+        };
+        let accounts = if cfg!(target_os = "linux") {
+            Some(system::accounts::requests_from_config(&config)?)
+        } else {
+            None
+        };
+        let report = system::managed_files::apply_with_accounts(
+            &files,
+            &directories,
+            accounts.as_ref(),
+            false,
+            self.dry_run,
+            self.yes,
+        )?;
+        if let Some(services) = &mut services {
+            system::services::inspect_requests(services);
+            system::services::apply_with_notifications(
+                services,
+                &report.notified_services,
+                self.dry_run,
+                self.yes,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFilesStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let (files, directories, mut unavailable) =
+            system::managed_files::status_requests_from_config(&config, &secrets)?;
+        let accounts = system::accounts::prepare_requests_from_config(&config)?;
+        system::managed_files::validate_principals(
+            &files,
+            &directories,
+            cfg!(target_os = "linux").then_some(&accounts),
+            false,
+        )?;
+        let mut resources = directories
+            .into_iter()
+            .map(|request| request.plan())
+            .collect::<Result<Vec<_>>>()?;
+        resources.extend(
+            files
+                .into_iter()
+                .map(|request| request.plan())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        resources.append(&mut unavailable);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no system files or directories configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapServices {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapServicesCommands::Apply(command) => command.run().await,
+            BootstrapServicesCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapServicesApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::services::requests_from_config(&config)?;
+        system::services::apply(&requests, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapServicesStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::services::requests_from_config(&config)?;
+        let resources = system::services::plans_with_notifications(
+            &requests,
+            &system::services::ServiceNotifications::default(),
+        );
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap system services configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFirewall {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapFirewallCommands::Apply(command) => command.run().await,
+            BootstrapFirewallCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapFirewallApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let Some(request) = system::firewall::request_from_config(&config)? else {
+            info!("no bootstrap firewall configured");
+            return Ok(());
+        };
+        system::firewall::apply(&request, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapFirewallStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let Some(request) = system::firewall::status_request_from_config(&config)? else {
+            info!("no bootstrap firewall configured");
+            return Ok(());
+        };
+        let resources = request.plans();
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapCompose {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapComposeCommands::Apply(command) => command.run().await,
+            BootstrapComposeCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapComposeApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::compose::requests_from_config(&config)?;
+        system::compose::apply(&requests, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapComposeStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::compose::requests_from_config(&config)?;
+        let resources = system::compose::plans(&requests, false);
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap compose projects configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapSecrets {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapSecretsCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapRemote {
+    async fn run(self) -> Result<()> {
+        if self.connect_timeout == 0 {
+            bail!("--connect-timeout must be greater than zero");
+        }
+        let config = Config::get().await?;
+        let config_excludes = system::remote::excludes_from_config(&config);
+        let inventory = system::remote::hosts_from_config(&config, &config_excludes)?;
+        let mut selected = select_remote_inventory(&inventory, &self.targets, self.all, &self.tag)?;
+        let ad_hoc_source = self.source.clone().unwrap_or(std::env::current_dir()?);
+        for destination in &self.host {
+            let host =
+                system::remote::ad_hoc_host(destination, ad_hoc_source.clone(), &config_excludes)?;
+            if selected.insert(host.name.clone(), host).is_some() {
+                bail!("remote target '{destination}' was selected more than once");
+            }
+        }
+        if selected.is_empty() {
+            if inventory.is_empty() {
+                bail!(
+                    "no remote targets configured; pass --host [user@]host or add [bootstrap.remote.hosts]"
+                );
+            }
+            bail!(
+                "select a remote target by name, --tag, or --all (configured: {})",
+                inventory.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+
+        let overrides = system::remote::RemoteOverrides {
+            source: self.source,
+            port: self.port,
+            identity_file: self.identity_file,
+            exclude: self.exclude,
+            ssh_options: self.ssh_option,
+            mise_bin: self.mise_bin,
+            remote_mise: self.remote_mise,
+            bootstrap_command: self.bootstrap_command,
+        };
+        let options = system::remote::RemoteRunOptions {
+            dry_run: self.dry_run,
+            yes: self.yes,
+            update: self.update,
+            prompt_secrets: self.prompt_secrets,
+            force_dotfiles: self.force_dotfiles,
+            skip: self.skip.iter().map(bootstrap_part_name).collect(),
+            only: self.only.iter().map(bootstrap_part_name).collect(),
+            keep_staging: self.keep_staging,
+            connect_timeout: self.connect_timeout,
+        };
+        let mut configuration_errors = vec![];
+        for host in selected.values_mut() {
+            if let Err(error) = host.apply_overrides(&overrides) {
+                configuration_errors.push(format!("{}: {error:#}", host.name));
+            }
+        }
+        if !configuration_errors.is_empty() {
+            bail!(
+                "remote bootstrap configuration is invalid for {} target(s):\n  {}",
+                configuration_errors.len(),
+                configuration_errors.join("\n  ")
+            );
+        }
+        let mut failures = vec![];
+        let mut artifacts = system::remote::RemoteArtifactResolver::default();
+        for host in selected.values() {
+            if let Err(error) = system::remote::run(host, &options, &mut artifacts).await {
+                error!("remote bootstrap failed on {}: {error:#}", host.name);
+                failures.push(format!("{}: {error:#}", host.name));
+                if self.fail_fast {
+                    break;
+                }
+            }
+        }
+        if !failures.is_empty() {
+            bail!(
+                "remote bootstrap failed on {} target(s):\n  {}",
+                failures.len(),
+                failures.join("\n  ")
+            );
+        }
+        info!("remote bootstrap completed on {} target(s)", selected.len());
+        Ok(())
+    }
+}
+
+fn select_remote_inventory(
+    inventory: &indexmap::IndexMap<String, system::remote::RemoteHost>,
+    targets: &[String],
+    all: bool,
+    tags: &[String],
+) -> Result<indexmap::IndexMap<String, system::remote::RemoteHost>> {
+    let mut selected = indexmap::IndexMap::new();
+    for target in targets {
+        let host = inventory.get(target).ok_or_else(|| {
+            eyre::eyre!(
+                "remote inventory target '{target}' not found; configured targets: {}",
+                inventory.keys().cloned().collect::<Vec<_>>().join(", ")
+            )
+        })?;
+        selected
+            .entry(target.clone())
+            .or_insert_with(|| host.clone());
+    }
+    if all {
+        for (name, host) in inventory {
+            selected.entry(name.clone()).or_insert_with(|| host.clone());
+        }
+    }
+    if !tags.is_empty() {
+        for (name, host) in inventory {
+            if tags.iter().any(|tag| host.tags.contains(tag)) {
+                selected.entry(name.clone()).or_insert_with(|| host.clone());
+            }
+        }
+    }
+    Ok(selected)
+}
+
+fn bootstrap_part_name(part: &BootstrapPart) -> String {
+    part.to_possible_value()
+        .expect("BootstrapPart values have clap names")
+        .get_name()
+        .to_string()
+}
+
+impl BootstrapSecretsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let statuses = system::secrets::statuses(&config)?;
+        let unavailable = statuses
+            .iter()
+            .any(|status| status.state != system::secrets::SecretState::Available);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&statuses)?);
+        } else if statuses.is_empty() {
+            info!("no bootstrap secret inputs configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Secret", "Environment", "State"]);
+            for status in statuses {
+                table.add_row(vec![status.name, status.env, status.state.to_string()]);
+            }
+            table.print()?;
+        }
+        if self.missing && unavailable {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
     }
 }
 
@@ -1304,7 +2487,8 @@ impl BootstrapStatusReport {
 impl BootstrapStatus {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let report = self.collect(&config).await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let report = self.collect(&config, &secrets).await?;
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&report.json)?);
         } else if report.rows.is_empty() {
@@ -1322,9 +2506,33 @@ impl BootstrapStatus {
         Ok(())
     }
 
-    async fn collect(&self, config: &Arc<Config>) -> Result<BootstrapStatusReport> {
+    async fn collect(
+        &self,
+        config: &Arc<Config>,
+        secrets: &system::secrets::SecretValues,
+    ) -> Result<BootstrapStatusReport> {
         let mut report = BootstrapStatusReport::new();
+        let (files, directories, unavailable_files) =
+            system::managed_files::status_requests_from_config(config, secrets)?;
+        let accounts = system::accounts::prepare_requests_from_config(config)?;
+        system::managed_files::validate_principals(
+            &files,
+            &directories,
+            cfg!(target_os = "linux").then_some(&accounts),
+            false,
+        )?;
+        let service_requests = system::services::status_requests_from_config(config)?;
+        let firewall_request = system::firewall::status_request_from_config(config)?;
+        system::services::validate_notifications(&files, &directories, &service_requests)?;
+        let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
+        let compose_requests = system::compose::requests_from_config(config)?;
+        self.collect_secrets(&secrets.used_statuses()?, &mut report);
         self.collect_packages(config, &mut report).await?;
+        self.collect_accounts(&accounts, &mut report);
+        self.collect_files(files, directories, unavailable_files, &mut report)?;
+        self.collect_services(&service_requests, &notified_services, &mut report);
+        self.collect_firewall(firewall_request.as_ref(), &mut report);
+        self.collect_compose(&compose_requests, &mut report);
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
@@ -1335,6 +2543,127 @@ impl BootstrapStatus {
         self.collect_tools(config, &mut report).await?;
         self.collect_plugin_deps(config, &mut report).await?;
         Ok(report)
+    }
+
+    fn collect_secrets(
+        &self,
+        statuses: &[system::secrets::SecretStatus],
+        report: &mut BootstrapStatusReport,
+    ) {
+        for status in statuses {
+            report.row(
+                "secret",
+                &status.name,
+                status.state.to_string(),
+                &status.env,
+                status.state != system::secrets::SecretState::Available,
+            );
+        }
+        report.json.insert("secrets".to_string(), json!(statuses));
+    }
+
+    fn collect_accounts(
+        &self,
+        requests: &system::accounts::AccountRequests,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::accounts::plans(requests);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("accounts".to_string(), json!(resources));
+    }
+
+    fn collect_files(
+        &self,
+        files: Vec<system::managed_files::ManagedFileRequest>,
+        directories: Vec<system::managed_files::ManagedDirectoryRequest>,
+        mut unavailable: Vec<system::resources::ResourcePlan>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let mut resources = directories
+            .into_iter()
+            .map(|request| request.plan())
+            .collect::<Result<Vec<_>>>()?;
+        resources.extend(
+            files
+                .into_iter()
+                .map(|request| request.plan())
+                .collect::<Result<Vec<_>>>()?,
+        );
+        resources.append(&mut unavailable);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("files".to_string(), json!(resources));
+        Ok(())
+    }
+
+    fn collect_services(
+        &self,
+        requests: &[system::services::ServiceRequest],
+        notified_services: &system::services::ServiceNotifications,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::services::plans_with_notifications(requests, notified_services);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("services".to_string(), json!(resources));
+    }
+
+    fn collect_firewall(
+        &self,
+        request: Option<&system::firewall::FirewallRequest>,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = request.map(|request| request.plans()).unwrap_or_default();
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("firewall".to_string(), json!(resources));
+    }
+
+    fn collect_compose(
+        &self,
+        requests: &[system::compose::ComposeRequest],
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::compose::plans(requests, false);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("compose".to_string(), json!(resources));
     }
 
     async fn collect_plugin_deps(
@@ -2747,8 +4076,10 @@ fn file_state_json(state: &FileState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use clap::{Args, FromArgMatches};
+    use indexmap::{IndexMap, IndexSet};
 
-    use super::DeferredBootstrap;
+    use super::{DeferredBootstrap, select_remote_inventory};
+    use crate::system::remote;
 
     fn matches(args: &[&str]) -> clap::ArgMatches {
         <DeferredBootstrap as Args>::augment_args(clap::Command::new("bootstrap"))
@@ -2775,5 +4106,36 @@ mod tests {
             .unwrap();
         assert!(updated.0.dry_run);
         assert!(updated.0.yes);
+    }
+
+    #[test]
+    fn explicit_remote_targets_precede_all_and_tag_expansion() {
+        let source = std::env::current_dir().unwrap();
+        let mut inventory = IndexMap::new();
+        for (name, tags) in [
+            ("alpha", &[][..]),
+            ("beta", &["selected"][..]),
+            ("gamma", &["selected"][..]),
+        ] {
+            let mut host = remote::ad_hoc_host(name, source.clone(), &[]).unwrap();
+            host.tags = tags
+                .iter()
+                .map(|tag| (*tag).to_string())
+                .collect::<IndexSet<_>>();
+            inventory.insert(name.to_string(), host);
+        }
+
+        let selected = select_remote_inventory(
+            &inventory,
+            &["gamma".to_string(), "alpha".to_string()],
+            true,
+            &["selected".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["gamma", "alpha", "beta"]
+        );
     }
 }

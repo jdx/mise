@@ -103,6 +103,10 @@ export const sidebar: SidebarItem[] = [
     items: [
       { text: "Overview", link: "/bootstrap" },
       {
+        text: "Remote Hosts",
+        link: "/bootstrap/remote",
+      },
+      {
         text: "Bootstrap Packages",
         link: "/bootstrap/packages/",
         collapsed: true,
@@ -118,6 +122,26 @@ export const sidebar: SidebarItem[] = [
             link: "/bootstrap/packages/plugins",
           },
         ],
+      },
+      {
+        text: "Linux Users and Groups",
+        link: "/bootstrap/accounts",
+      },
+      {
+        text: "System Files",
+        link: "/bootstrap/files",
+      },
+      {
+        text: "System Services",
+        link: "/bootstrap/services",
+      },
+      {
+        text: "Docker Compose Projects",
+        link: "/bootstrap/compose",
+      },
+      {
+        text: "Secret Inputs",
+        link: "/bootstrap/secrets",
       },
       {
         text: "Repos",

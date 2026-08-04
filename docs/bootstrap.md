@@ -1,10 +1,15 @@
 # Bootstrap
 
-`mise bootstrap` sets up a machine for the current config in one command: OS
-packages, git repos, dotfiles, mise shell activation, macOS defaults, macOS
-LaunchAgents, Linux systemd user services, the user's login shell, tools, and
-any final project-specific task. You can also add hooks that run at named points
-in the bootstrap sequence.
+`mise bootstrap` sets up a machine for the current config in one command: Linux
+users and groups, OS packages, privileged files and directories, system services,
+Linux host firewall policy, Docker Compose projects, git repos, dotfiles, mise shell
+activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
+the user's login shell, tools, and any final project-specific task. It can
+consume declared secret inputs without storing their values in mise config. You
+can also add hooks that run at named points in the bootstrap sequence.
+
+The same configuration can be applied to named inventory hosts or ad-hoc SSH
+destinations with [`mise bootstrap remote`](/bootstrap/remote.html).
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
@@ -15,33 +20,47 @@ preferences, user services, and one-time machine setup.
 
 `mise bootstrap` runs these steps in order:
 
-1. `mise bootstrap plugins apply` installs package manager plugins declared in
+Before making changes, mise resolves any required
+[`[bootstrap.secrets]`](/bootstrap/secrets.html) used by the files phase. This
+preflight prevents a missing input from leaving a partially provisioned host.
+
+1. `mise bootstrap accounts apply` converges
+   [`[bootstrap.users]` and `[bootstrap.groups]`](/bootstrap/accounts.html).
+2. `mise bootstrap plugins apply` installs package manager plugins declared in
    [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
-2. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
-3. `mise bootstrap repos apply` clones or updates
+3. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
+4. `mise bootstrap files apply` converges
+   [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
+5. `mise bootstrap services apply` converges existing systemd system units from
+   [`[bootstrap.services]`](/bootstrap/services.html).
+6. `mise bootstrap firewall apply` converges host firewall policy and rules from
+   [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html).
+7. `mise bootstrap compose apply` converges
+   [`[bootstrap.compose]`](/bootstrap/compose.html) projects.
+8. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-4. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
-5. `mise bootstrap mise-shell-activate apply` configures shell activation from
-   [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
-6. `mise bootstrap macos defaults apply` writes
-   [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
-7. `mise bootstrap macos launchd-agents apply` writes and loads
-   [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
-8. `mise bootstrap linux systemd-units apply` converges
-   [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
-   by writing unit files, enabling/disabling them, and starting/stopping them
-   as configured.
-9. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
-10. `mise install` installs missing `[tools]`.
-11. Plugin package managers apply after their host tools are available.
-12. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-13. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+9. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+10. `mise bootstrap mise-shell-activate apply` configures shell activation from
+    [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
+11. `mise bootstrap macos defaults apply` writes
+    [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html).
+12. `mise bootstrap macos launchd-agents apply` writes and loads
+    [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html).
+13. `mise bootstrap linux systemd-units apply` converges
+    [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)
+    by writing unit files, enabling/disabling them, and starting/stopping them
+    as configured.
+14. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
+15. `mise install` installs missing `[tools]`.
+16. Plugin package managers apply after their host tools are available.
+17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
-`plugins`, `packages`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`,
-`macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, and
-`final-hook`. The old shorter names `shell`, `defaults`, `launchd`, and
-`systemd` are still accepted as aliases. The flag can be repeated or
+`accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
+`macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`,
+`task`, and `final-hook`. The old shorter names `shell`, `defaults`, `launchd`,
+and `systemd` are still accepted as aliases. The flag can be repeated or
 comma-separated, for example `mise bootstrap --skip tools,task`.
 
 Use `mise bootstrap --only <part>` to run only specific parts. It supports the
@@ -68,6 +87,48 @@ set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
 "apk:build-base" = "latest"
 "apt:build-essential" = "latest"
 "brew:postgresql@17" = "latest"
+
+[bootstrap.secrets]
+service_token = "EXAMPLE_SERVICE_TOKEN"
+
+[bootstrap.groups.example]
+system = true
+
+[bootstrap.users.example]
+system = true
+group = "example"
+home = "/var/lib/example"
+create_home = true
+
+[bootstrap.directories."/opt/example"]
+owner = "root"
+group = "root"
+mode = "0755"
+
+[bootstrap.files."/etc/example.conf"]
+content = 'token={{ secret(name="service_token") }}'
+template = true
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["example"]
+
+[bootstrap.services.example]
+state = "running"
+enabled = true
+on_change = "reload_or_restart"
+
+[bootstrap.linux.firewall]
+backend = "auto"
+state = "enabled"
+default_incoming = "deny"
+default_outgoing = "allow"
+
+[[bootstrap.linux.firewall.rules]]
+name = "https"
+port = 443
+protocol = "tcp"
+action = "allow"
 
 [bootstrap.repos]
 "~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }
@@ -138,6 +199,25 @@ To preview what would change without touching anything:
 mise bootstrap --dry-run
 ```
 
+For a structured resource plan, use `mise bootstrap plan`. The provisioning
+planner reports accounts, system packages, privileged files and directories,
+system services, firewall policy and rules, and Compose projects in dependency order. Other declarative
+bootstrap parts will join the same graph as they adopt the resource model.
+
+```sh
+mise bootstrap plan
+mise bootstrap plan --json
+mise bootstrap plan --detailed-exitcode
+```
+
+With `--detailed-exitcode`, the command exits 0 when nothing would change, 2
+when the plan contains changes, and 1 when planning fails or any resource has
+an `unknown` state. Unknown resources do not count as changes, but they block a
+successful convergence result. A package is unknown when its manager is
+unavailable on the current platform or cannot install the requested version.
+This matches apply behavior: unsupported pins remain visible for manual
+resolution instead of being reported as changes mise would skip.
+
 When `mise bootstrap` applies or would apply something that needs user
 follow-up, it prints a final `bootstrap: follow-up` section after a successful
 run. Dry runs use `bootstrap: follow-up if applied`. If a later bootstrap phase
@@ -169,6 +249,7 @@ mise bootstrap mise-shell-activate status
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents status
 mise bootstrap linux systemd-units status
+mise bootstrap firewall status
 mise bootstrap user status
 ```
 
@@ -189,6 +270,7 @@ only want to check one part without installing anything.
 | [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) | macOS user preferences written through `defaults write`       |
 | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)  | macOS user LaunchAgents written and loaded with `launchctl`   |
 | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)   | Linux systemd user services managed with `systemctl --user`   |
+| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)       | Linux host firewall policy and managed rules                  |
 | [`[bootstrap.user]`](/bootstrap/user.html)                     | Current-user settings such as `login_shell`                   |
 | `[bootstrap.hooks]`                                            | Commands that run at named bootstrap phases                   |
 | `[tools]`                                                      | Versioned dev tools managed by mise                           |

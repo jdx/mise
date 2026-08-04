@@ -148,6 +148,24 @@ Set up a machine for the current config in one command
 \fIAliases: \fRbs
 .RE
 .TP
+\fBbootstrap accounts\fR
+Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+.TP
+\fBbootstrap accounts apply\fR
+Apply configured Linux users and groups
+.TP
+\fBbootstrap accounts status\fR
+Show configured Linux user and group state
+.TP
+\fBbootstrap compose\fR
+Manage Docker Compose projects from `[bootstrap.compose]`
+.TP
+\fBbootstrap compose apply\fR
+Apply configured Docker Compose project state
+.TP
+\fBbootstrap compose status\fR
+Show configured Docker Compose project state
+.TP
 \fBbootstrap dotfiles\fR
 Manage dotfiles from `[dotfiles]`
 .TP
@@ -168,6 +186,24 @@ Show the status of dotfiles from `[dotfiles]`
 .TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
+.TP
+\fBbootstrap files\fR
+Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+.TP
+\fBbootstrap files apply\fR
+Apply configured privileged files and directories
+.TP
+\fBbootstrap files status\fR
+Show configured privileged file and directory state
+.TP
+\fBbootstrap firewall\fR
+Manage the Linux host firewall from `[bootstrap.linux.firewall]`
+.TP
+\fBbootstrap firewall apply\fR
+Apply the configured Linux host firewall
+.TP
+\fBbootstrap firewall status\fR
+Show configured Linux host firewall state
 .TP
 \fBbootstrap linux\fR
 Manage Linux bootstrap config from `[bootstrap.linux]`
@@ -248,12 +284,18 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap plan\fR
+Show the changes declarative bootstrap resources would make
+.TP
 \fBbootstrap plugins\fR
 Manage package manager plugins declared in `[bootstrap.plugins]`
 .TP
 \fBbootstrap plugins apply\fR
 .TP
 \fBbootstrap plugins status\fR
+.TP
+\fBbootstrap remote\fR
+Bootstrap one or more machines over OpenSSH
 .TP
 \fBbootstrap repos\fR
 Manage git repo checkouts from `[bootstrap.repos]`
@@ -265,6 +307,21 @@ Manage git repo checkouts from `[bootstrap.repos]`
 \fBbootstrap repos status\fR
 .TP
 \fBbootstrap repos update\fR
+.TP
+\fBbootstrap secrets\fR
+Inspect bootstrap secret inputs without revealing their values
+.TP
+\fBbootstrap secrets status\fR
+Show whether declared bootstrap secret inputs are available
+.TP
+\fBbootstrap services\fR
+Manage Linux system services from `[bootstrap.services]`
+.TP
+\fBbootstrap services apply\fR
+Apply configured Linux system service state
+.TP
+\fBbootstrap services status\fR
+Show configured Linux system service state
 .TP
 \fBbootstrap status\fR
 Show the aggregate bootstrap status
@@ -855,31 +912,41 @@ Set up a machine for the current config in one command
 
 Runs the bootstrap steps for the current config in order:
 
-0. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
-   0.7. `[bootstrap.hooks.pre\-packages]` — optional setup hook
-1. Install built\-in\-manager entries from `[bootstrap.packages]`
-2. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+0. `mise bootstrap accounts apply` — converge `[bootstrap.users]` and
+   `[bootstrap.groups]` (Linux)
+1. `mise bootstrap plugins apply` — install `[bootstrap.plugins]`
+   1.7. `[bootstrap.hooks.pre\-packages]` — optional setup hook
+2. Install built\-in\-manager entries from `[bootstrap.packages]`
+3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
+   `[bootstrap.directories]`
+4. `mise bootstrap services apply` — converge `[bootstrap.services]`
+   systemd system services (Linux)
+5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
+   host firewall policy and rules (Linux)
+6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
+   Docker Compose projects
+7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre\-repos`/`post\-repos` hooks
-3. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre\-dotfiles`/`post\-dotfiles` hooks
-4. `mise bootstrap mise\-shell\-activate apply` — configure shell activation
+9. `mise bootstrap mise\-shell\-activate apply` — configure shell activation
    from `[bootstrap.mise_shell_activate]`
-5. `mise bootstrap macos defaults apply` — write
-   `[bootstrap.macos.defaults]` entries (macOS)
-   surrounded by `pre\-defaults`/`post\-defaults` hooks
-6. `mise bootstrap macos launchd\-agents apply` — install/load
-   `[bootstrap.macos.launchd.agents]`
-7. `mise bootstrap linux systemd\-units apply` — install/start
-   `[bootstrap.linux.systemd.units]`
-8. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
-   (Unix)
-   surrounded by `pre\-user`/`post\-user` hooks
-9. `mise install` — install missing tools from `[tools]`
-   surrounded by `pre\-tools`/`post\-tools` hooks
-   9.5. Install package\-plugin entries from `[bootstrap.packages]`, then run
-   `[bootstrap.hooks.post\-packages]`
-10. `mise run bootstrap` — if a task named `bootstrap` is defined
-11. `[bootstrap.hooks.final]` — optional final hook
+10. `mise bootstrap macos defaults apply` — write
+    `[bootstrap.macos.defaults]` entries (macOS)
+    surrounded by `pre\-defaults`/`post\-defaults` hooks
+11. `mise bootstrap macos launchd\-agents apply` — install/load
+    `[bootstrap.macos.launchd.agents]`
+12. `mise bootstrap linux systemd\-units apply` — install/start
+    `[bootstrap.linux.systemd.units]`
+13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+    (Unix)
+    surrounded by `pre\-user`/`post\-user` hooks
+14. `mise install` — install missing tools from `[tools]`
+    surrounded by `pre\-tools`/`post\-tools` hooks; package\-plugin entries
+    from `[bootstrap.packages]` install afterward, followed by
+    `[bootstrap.hooks.post\-packages]`
+15. `mise run bootstrap` — if a task named `bootstrap` is defined
+16. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -910,6 +977,9 @@ Run only one or more bootstrap parts
 
 Can be passed multiple times or as a comma\-separated list. Cannot be used with `\-\-skip`.
 .TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
+.TP
 \fB\-\-skip\fR \fI<SKIP>\fR
 Skip one or more bootstrap parts
 
@@ -917,6 +987,58 @@ Can be passed multiple times or as a comma\-separated list.
 .TP
 \fB\-\-update\fR
 Refresh package manager metadata and update configured repos
+.SH "MISE BOOTSTRAP ACCOUNTS APPLY"
+Apply configured Linux users and groups
+.PP
+\fBUsage:\fR mise bootstrap accounts apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP ACCOUNTS STATUS"
+Show configured Linux user and group state
+.PP
+\fBUsage:\fR mise bootstrap accounts status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 when any account is not converged
+.SH "MISE BOOTSTRAP COMPOSE APPLY"
+Apply configured Docker Compose project state
+.PP
+\fBUsage:\fR mise bootstrap compose apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP COMPOSE STATUS"
+Show configured Docker Compose project state
+.PP
+\fBUsage:\fR mise bootstrap compose status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 when any Compose project is not converged
 .SH "MISE BOOTSTRAP DOTFILES ADD"
 Add or update dotfiles in `[dotfiles]`
 
@@ -1054,6 +1176,64 @@ Skip the confirmation prompt
 .TP
 \fB<TARGET>\fR
 Only unapply these targets
+.SH "MISE BOOTSTRAP FILES APPLY"
+Apply configured privileged files and directories
+.PP
+\fBUsage:\fR mise bootstrap files apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
+.SH "MISE BOOTSTRAP FILES STATUS"
+Show configured privileged file and directory state
+.PP
+\fBUsage:\fR mise bootstrap files status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 when any resource is not converged
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
+.SH "MISE BOOTSTRAP FIREWALL APPLY"
+Apply the configured Linux host firewall
+.PP
+\fBUsage:\fR mise bootstrap firewall apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP FIREWALL STATUS"
+Show configured Linux host firewall state
+.PP
+\fBUsage:\fR mise bootstrap firewall status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 when the firewall is not converged
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
 \fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP
@@ -1356,6 +1536,22 @@ Skip the confirmation prompt
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package[@version]` form
+.SH "MISE BOOTSTRAP PLAN"
+Show the changes declarative bootstrap resources would make
+.PP
+\fBUsage:\fR mise bootstrap plan [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output a stable machine\-readable plan in JSON format
+.TP
+\fB\-\-detailed\-exitcode\fR
+Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
 .SH "MISE BOOTSTRAP PLUGINS APPLY"
 \fBUsage:\fR mise bootstrap plugins apply [OPTIONS]
 .PP
@@ -1372,6 +1568,84 @@ Print what would happen without installing plugins
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if a declared plugin is missing
+.SH "MISE BOOTSTRAP REMOTE"
+Bootstrap one or more machines over OpenSSH
+.PP
+\fBUsage:\fR mise bootstrap remote [OPTIONS] [<TARGET>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-all\fR
+Select every configured inventory host
+.TP
+\fB\-\-bootstrap\-command\fR \fI<COMMAND>\fR
+Explicit remote shell command that installs mise and places it on PATH
+.TP
+\fB\-\-connect\-timeout\fR \fI<CONNECT_TIMEOUT>\fR
+SSH connection timeout in seconds
+.RS
+\fIDefault: \fR10
+.RE
+.TP
+\fB\-\-exclude\fR \fI<PATTERN>\fR
+Additional archive pattern to exclude; repeat for multiple patterns
+.TP
+\fB\-\-fail\-fast\fR
+Stop after the first failed target
+.TP
+\fB\-\-force\-dotfiles\fR
+Allow remote dotfile conflicts to be replaced
+.TP
+\fB\-\-host\fR \fI<[USER@]HOST>\fR
+Ad\-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+.TP
+\fB\-i, \-\-identity\-file\fR \fI<IDENTITY_FILE>\fR
+SSH identity file override
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the remote bootstrap changes without applying them
+.TP
+\fB\-\-keep\-staging\fR
+Keep the remote staging directory for debugging
+.TP
+\fB\-\-mise\-bin\fR \fI<MISE_BIN>\fR
+Local mise binary to upload (escape hatch for custom architectures)
+.TP
+\fB\-\-only\fR \fI<ONLY>\fR
+Run only one or more remote bootstrap parts
+.TP
+\fB\-\-port\fR \fI<PORT>\fR
+SSH port override
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing secret inputs on the remote host
+.TP
+\fB\-\-remote\-mise\fR \fI<COMMAND>\fR
+Existing mise executable name or path; relative paths use the staged project
+.TP
+\fB\-\-skip\fR \fI<SKIP>\fR
+Skip one or more remote bootstrap parts
+.TP
+\fB\-\-source\fR \fI<SOURCE>\fR
+Local directory archived and sent to each target
+.TP
+\fB\-\-ssh\-option\fR \fI<OPTION>\fR
+OpenSSH `\-o` option; repeat for multiple options
+.TP
+\fB\-\-tag\fR \fI<TAG>\fR
+Select configured hosts with this tag; repeat to match any tag
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata and update configured repos remotely
+.TP
+\fB\-y, \-\-yes\fR
+Skip remote confirmation prompts
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Inventory host names from `[bootstrap.remote.hosts]`
 .SH "MISE BOOTSTRAP REPOS APPLY"
 \fBUsage:\fR mise bootstrap repos apply [OPTIONS]
 .PP
@@ -1429,6 +1703,45 @@ Skip the confirmation prompt
 .TP
 \fB<PATH>\fR
 Update only matching configured or expanded paths
+.SH "MISE BOOTSTRAP SECRETS STATUS"
+Show whether declared bootstrap secret inputs are available
+.PP
+\fBUsage:\fR mise bootstrap secrets status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if a declared secret input is unavailable
+.SH "MISE BOOTSTRAP SERVICES APPLY"
+Apply configured Linux system service state
+.PP
+\fBUsage:\fR mise bootstrap services apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP SERVICES STATUS"
+Show configured Linux system service state
+.PP
+\fBUsage:\fR mise bootstrap services status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 when any service is not converged
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP
@@ -1442,6 +1755,9 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured bootstrap state is not in its desired state
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing bootstrap secret inputs
 .SH "MISE BOOTSTRAP USER APPLY"
 \fBUsage:\fR mise bootstrap user apply [OPTIONS]
 .PP

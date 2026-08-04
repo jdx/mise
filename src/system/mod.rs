@@ -1,8 +1,14 @@
 //! `[bootstrap]` config section: machine-global bootstrapping.
 //!
-//! This is `[bootstrap.packages]` — declarative system packages installed
-//! by `mise bootstrap packages apply` — `[bootstrap.repos]` — declarative
-//! git checkouts — `[dotfiles]` — declarative config files applied by
+//! This is `[bootstrap.groups]` and `[bootstrap.users]` — declarative Linux
+//! accounts — `[bootstrap.services]` — declarative Linux system service
+//! lifecycle — `[bootstrap.linux.firewall]` — declarative Linux host
+//! firewall policy — `[bootstrap.compose]` — declarative Compose projects —
+//! `[bootstrap.packages]` — declarative system packages installed by
+//! `mise bootstrap packages apply` — `[bootstrap.files]` and
+//! `[bootstrap.directories]` — privileged filesystem resources —
+//! `[bootstrap.repos]` — declarative git checkouts — `[dotfiles]` —
+//! declarative config files applied by
 //! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
 //! shell activation setup — `[bootstrap.macos.defaults]` — declarative macOS
 //! user defaults — `[bootstrap.macos.launchd.agents]` — declarative macOS
@@ -31,15 +37,35 @@ use crate::system::shell_activation::{
 };
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 
+#[cfg(target_os = "linux")]
+pub mod accounts;
+#[cfg(not(target_os = "linux"))]
+#[path = "accounts_non_linux.rs"]
+pub mod accounts;
+pub mod compose;
 pub mod defaults;
 pub mod deps;
 pub mod edits;
 pub mod files;
+#[cfg(target_os = "linux")]
+pub mod firewall;
+#[cfg(not(target_os = "linux"))]
+#[path = "firewall_non_linux.rs"]
+pub mod firewall;
 pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
+pub mod managed_files;
 pub mod packages;
+pub mod remote;
 pub mod repos;
+pub mod resources;
+pub mod secrets;
+#[cfg(target_os = "linux")]
+pub mod services;
+#[cfg(not(target_os = "linux"))]
+#[path = "services_non_linux.rs"]
+pub mod services;
 pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
@@ -47,6 +73,24 @@ pub mod systemd;
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapTomlConfig {
+    /// Logical secret name -> environment input declaration.
+    #[serde(default)]
+    pub secrets: IndexMap<String, secrets::SecretTomlConfig>,
+    /// Linux group name -> declarative local group.
+    #[serde(default)]
+    pub groups: IndexMap<String, accounts::GroupTomlConfig>,
+    /// Linux user name -> declarative local user.
+    #[serde(default)]
+    pub users: IndexMap<String, accounts::UserTomlConfig>,
+    /// Linux systemd unit name -> declarative system service lifecycle.
+    #[serde(default)]
+    pub services: IndexMap<String, services::ServiceTomlConfig>,
+    /// Docker Compose project name -> declarative project lifecycle.
+    #[serde(default)]
+    pub compose: IndexMap<String, compose::ComposeTomlConfig>,
+    /// OpenSSH targets used by `mise bootstrap remote`.
+    #[serde(default)]
+    pub remote: remote::RemoteTomlConfig,
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,
@@ -55,6 +99,12 @@ pub struct BootstrapTomlConfig {
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
     pub packages: IndexMap<String, String>,
+    /// Absolute target path -> declarative managed file.
+    #[serde(default)]
+    pub files: IndexMap<String, managed_files::ManagedFileTomlConfig>,
+    /// Absolute target path -> declarative managed directory.
+    #[serde(default)]
+    pub directories: IndexMap<String, managed_files::ManagedDirectoryTomlConfig>,
     /// `"~/path"` -> git repo checkout.
     #[serde(default)]
     pub repos: IndexMap<String, RepoTomlConfig>,
@@ -135,6 +185,9 @@ pub struct BootstrapMacosLaunchdTomlConfig {
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapLinuxTomlConfig {
+    /// Declarative Linux host firewall policy and rules.
+    #[serde(default)]
+    pub firewall: Option<firewall::FirewallTomlConfig>,
     /// `[bootstrap.linux.systemd.units.<name>]`: declarative systemd user
     /// services and timers rendered to ~/.config/systemd/user.
     #[serde(default)]
@@ -272,24 +325,36 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
 pub fn pending_plugin_packages_from_config(
     config: &Config,
 ) -> IndexMap<String, Vec<PackageRequest>> {
+    pending_plugin_packages_from_config_including_disabled(config)
+        .into_iter()
+        .filter(|(name, _)| package_manager_is_enabled(name))
+        .collect()
+}
+
+/// All package requests for declared, not-yet-installed package plugins,
+/// including managers excluded by `system_packages.managers`. Resource plans
+/// use this broader view so excluded declarations remain visible as unknown.
+pub(crate) fn pending_plugin_packages_from_config_including_disabled(
+    config: &Config,
+) -> IndexMap<String, Vec<PackageRequest>> {
     let declared = plugins_from_config(config);
     let brew_taps = brew_taps_from_config(config);
     let installed = packages::all_managers()
         .into_iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    let enabled = crate::config::Settings::get()
-        .system_packages
-        .managers
-        .clone();
     package_requests_from_config_files(&config.config_files, &brew_taps)
         .into_iter()
-        .filter(|(name, _)| {
-            declared.contains_key(name)
-                && !installed.contains(name)
-                && enabled.as_ref().is_none_or(|names| names.contains(name))
-        })
+        .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
         .collect()
+}
+
+pub(crate) fn package_manager_is_enabled(name: &str) -> bool {
+    crate::config::Settings::get()
+        .system_packages
+        .managers
+        .as_ref()
+        .is_none_or(|names| names.iter().any(|enabled| enabled == name))
 }
 
 /// Aggregate `[bootstrap.packages]` from the current merged config plus every

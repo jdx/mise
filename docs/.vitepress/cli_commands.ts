@@ -28,6 +28,46 @@ export const commands: { [key: string]: Command } = {
   bootstrap: {
     hide: false,
     subcommands: {
+      "__apply-account-plan": {
+        hide: true,
+      },
+      "__apply-firewall-plan": {
+        hide: true,
+      },
+      "__apply-service-plan": {
+        hide: true,
+      },
+      "__apply-system-plan": {
+        hide: true,
+      },
+      "__inspect-firewall-plan": {
+        hide: true,
+      },
+      "__inspect-system-files": {
+        hide: true,
+      },
+      accounts: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      compose: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       dotfiles: {
         hide: false,
         subcommands: {
@@ -44,6 +84,28 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           unapply: {
+            hide: false,
+          },
+        },
+      },
+      files: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      firewall: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
             hide: false,
           },
         },
@@ -158,6 +220,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      plan: {
+        hide: false,
+      },
       plugins: {
         hide: false,
         subcommands: {
@@ -168,6 +233,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
         },
+      },
+      remote: {
+        hide: false,
       },
       repos: {
         hide: false,
@@ -182,6 +250,25 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           update: {
+            hide: false,
+          },
+        },
+      },
+      secrets: {
+        hide: false,
+        subcommands: {
+          status: {
+            hide: false,
+          },
+        },
+      },
+      services: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
             hide: false,
           },
         },

@@ -11,7 +11,7 @@ assert_json_partial_array "mise tasks ls --json" "name,description,source" "[
   }
 ]"
 assert "mise tasks ls --usage" 'cmd test help=sh {
-    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+    arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
 }'
 
 assert "mise tasks add --file test --description no-sh"
@@ -48,10 +48,10 @@ EOF
 )"
 
 assert "mise tasks ls --usage" 'cmd test help=no-sh {
-    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+    arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
 }
 cmd test.sh help=sh {
-    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+    arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
 }'
 
 touch script.sh
