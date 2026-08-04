@@ -74,6 +74,21 @@ mise bootstrap files apply --dry-run
 mise bootstrap files apply --yes
 ```
 
+Files and directories may notify configured `[bootstrap.services]` after they
+change:
+
+```toml
+[bootstrap.files."/etc/example/config.toml"]
+content = "enabled = true"
+notify = ["example"]
+```
+
+Notifications are applied by the full `mise bootstrap` flow after all managed
+files converge. The dedicated `mise bootstrap files apply` command also runs
+handlers after its file changes succeed. `mise bootstrap services apply`
+converges lifecycle state only and never fires a handler before the causal file
+change.
+
 `mise bootstrap plan` includes these resources and automatically orders a
 managed file after its managed parent directory. Removal reverses that
 dependency so children are removed before their parent.

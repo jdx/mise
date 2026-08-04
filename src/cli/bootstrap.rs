@@ -128,28 +128,30 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
 /// 2. Install built-in-manager entries from `[bootstrap.packages]`
 /// 3. `mise bootstrap files apply` — converge `[bootstrap.files]` and
 ///    `[bootstrap.directories]`
-/// 4. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+/// 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
+///    systemd system services (Linux)
+/// 5. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
-/// 5. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 6. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 6. `mise bootstrap mise-shell-activate apply` — configure shell activation
+/// 7. `mise bootstrap mise-shell-activate apply` — configure shell activation
 ///    from `[bootstrap.mise_shell_activate]`
-/// 7. `mise bootstrap macos defaults apply` — write
+/// 8. `mise bootstrap macos defaults apply` — write
 ///    `[bootstrap.macos.defaults]` entries (macOS)
 ///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 8. `mise bootstrap macos launchd-agents apply` — install/load
+/// 9. `mise bootstrap macos launchd-agents apply` — install/load
 ///    `[bootstrap.macos.launchd.agents]`
-/// 9. `mise bootstrap linux systemd-units apply` — install/start
-///    `[bootstrap.linux.systemd.units]`
-/// 10. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 10. `mise bootstrap linux systemd-units apply` — install/start
+///     `[bootstrap.linux.systemd.units]`
+/// 11. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///     (Unix)
 ///     surrounded by `pre-user`/`post-user` hooks
-/// 11. `mise install` — install missing tools from `[tools]`
+/// 12. `mise install` — install missing tools from `[tools]`
 ///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 ///     from `[bootstrap.packages]` install afterward, followed by
 ///     `[bootstrap.hooks.post-packages]`
-/// 12. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 13. `[bootstrap.hooks.final]` — optional final hook
+/// 13. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 14. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -209,6 +211,7 @@ enum BootstrapPart {
     Packages,
     Accounts,
     Files,
+    Services,
     Repos,
     Dotfiles,
     #[clap(name = "mise-shell-activate", alias = "shell")]
@@ -228,11 +231,12 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Plugins,
         Self::Packages,
         Self::Accounts,
         Self::Files,
+        Self::Services,
         Self::Repos,
         Self::Dotfiles,
         Self::Shell,
@@ -250,6 +254,8 @@ impl BootstrapPart {
 enum Commands {
     #[clap(name = "__apply-account-plan", hide = true)]
     ApplyAccountPlan(BootstrapApplyAccountPlan),
+    #[clap(name = "__apply-service-plan", hide = true)]
+    ApplyServicePlan(BootstrapApplyServicePlan),
     #[clap(name = "__apply-system-plan", hide = true)]
     ApplySystemPlan(BootstrapApplySystemPlan),
     #[clap(name = "__inspect-system-files", hide = true)]
@@ -270,6 +276,7 @@ enum Commands {
     Plugins(BootstrapPlugins),
     Repos(BootstrapRepos),
     Secrets(BootstrapSecrets),
+    Services(BootstrapServices),
     Status(BootstrapStatus),
     #[clap(hide = true)]
     Systemd(BootstrapSystemd),
@@ -315,6 +322,9 @@ struct BootstrapApplySystemPlan {}
 
 #[derive(Debug, clap::Args)]
 struct BootstrapApplyAccountPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplyServicePlan {}
 
 #[derive(Debug, clap::Args)]
 struct BootstrapInspectSystemFiles {}
@@ -401,6 +411,44 @@ struct BootstrapFilesStatus {
     /// Prompt securely for missing bootstrap secret inputs
     #[clap(long)]
     prompt_secrets: bool,
+}
+
+/// Manage Linux system services from `[bootstrap.services]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapServices {
+    #[clap(subcommand)]
+    command: BootstrapServicesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapServicesCommands {
+    Apply(BootstrapServicesApply),
+    Status(BootstrapServicesStatus),
+}
+
+/// Apply configured Linux system service state
+#[derive(Debug, clap::Args)]
+struct BootstrapServicesApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux system service state
+#[derive(Debug, clap::Args)]
+struct BootstrapServicesStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when any service is not converged
+    #[clap(long)]
+    missing: bool,
 }
 
 /// Inspect bootstrap secret inputs without revealing their values
@@ -857,7 +905,34 @@ impl Bootstrap {
                 accounts_enabled,
             )?;
         }
+        let services_enabled = !skip.contains(&BootstrapPart::Services);
+        let notifications_configured =
+            managed_system_files
+                .as_ref()
+                .is_some_and(|(files, directories)| {
+                    files.iter().any(|file| !file.notify.is_empty())
+                        || directories
+                            .iter()
+                            .any(|directory| !directory.notify.is_empty())
+                });
+        let configured_services = if services_enabled || notifications_configured {
+            Some(system::services::prepare_requests_from_config(&config)?)
+        } else {
+            None
+        };
+        if notifications_configured {
+            let (files, directories) = managed_system_files
+                .as_ref()
+                .expect("configured notifications came from managed files");
+            let services = configured_services
+                .as_ref()
+                .expect("configured notifications prepared services");
+            system::services::validate_notifications(files, directories, services)?;
+        }
+        let mut managed_services =
+            services_enabled.then_some(configured_services.unwrap_or_default());
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
+        let mut notified_services = system::services::ServiceNotifications::default();
         let mut dry_run_config_files = None;
         let mut post_packages_ran = false;
 
@@ -928,7 +1003,7 @@ impl Bootstrap {
                 debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
             } else {
                 info!("bootstrap: system files");
-                system::managed_files::apply_with_accounts(
+                let report = system::managed_files::apply_with_accounts(
                     &files,
                     &directories,
                     configured_accounts.as_ref(),
@@ -936,7 +1011,25 @@ impl Bootstrap {
                     self.dry_run,
                     self.yes,
                 )?;
+                notified_services = report.notified_services;
             }
+        }
+
+        if let Some(services) = &mut managed_services {
+            system::services::inspect_requests(services);
+            if services.is_empty() {
+                debug!("bootstrap: no [bootstrap.services] configured");
+            } else {
+                info!("bootstrap: system services");
+                system::services::apply_with_notifications(
+                    services,
+                    &notified_services,
+                    self.dry_run,
+                    self.yes,
+                )?;
+            }
+        } else {
+            debug!("bootstrap: system services skipped");
         }
 
         if skip.contains(&BootstrapPart::Repos) {
@@ -1483,6 +1576,7 @@ impl Commands {
     async fn run(self) -> Result<()> {
         match self {
             Self::ApplyAccountPlan(cmd) => cmd.run(),
+            Self::ApplyServicePlan(cmd) => cmd.run(),
             Self::ApplySystemPlan(cmd) => cmd.run(),
             Self::InspectSystemFiles(cmd) => cmd.run(),
             Self::Accounts(cmd) => cmd.run().await,
@@ -1498,6 +1592,7 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
             Self::Secrets(cmd) => cmd.run().await,
+            Self::Services(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
@@ -1556,6 +1651,12 @@ impl BootstrapApplySystemPlan {
 impl BootstrapApplyAccountPlan {
     fn run(self) -> Result<()> {
         system::accounts::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyServicePlan {
+    fn run(self) -> Result<()> {
+        system::services::apply_privileged_plan_from_stdin()
     }
 }
 
@@ -1628,19 +1729,40 @@ impl BootstrapFilesApply {
         let config = Config::get().await?;
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
+        let mut services = if files.iter().any(|file| !file.notify.is_empty())
+            || directories
+                .iter()
+                .any(|directory| !directory.notify.is_empty())
+        {
+            let services = system::services::prepare_requests_from_config(&config)?;
+            system::services::validate_notifications(&files, &directories, &services)?;
+            Some(services)
+        } else {
+            None
+        };
         let accounts = if cfg!(target_os = "linux") {
             Some(system::accounts::requests_from_config(&config)?)
         } else {
             None
         };
-        system::managed_files::apply_with_accounts(
+        let report = system::managed_files::apply_with_accounts(
             &files,
             &directories,
             accounts.as_ref(),
             false,
             self.dry_run,
             self.yes,
-        )
+        )?;
+        if let Some(services) = &mut services {
+            system::services::inspect_requests(services);
+            system::services::apply_with_notifications(
+                services,
+                &report.notified_services,
+                self.dry_run,
+                self.yes,
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -1675,6 +1797,57 @@ impl BootstrapFilesStatus {
             miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
         } else if resources.is_empty() {
             info!("no system files or directories configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapServices {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapServicesCommands::Apply(command) => command.run().await,
+            BootstrapServicesCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapServicesApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::services::requests_from_config(&config)?;
+        system::services::apply(&requests, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapServicesStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let requests = system::services::requests_from_config(&config)?;
+        let resources = system::services::plans_with_notifications(
+            &requests,
+            &system::services::ServiceNotifications::default(),
+        );
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
+        } else if resources.is_empty() {
+            info!("no bootstrap system services configured");
         } else {
             let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
             for resource in resources {
@@ -1793,10 +1966,14 @@ impl BootstrapStatus {
             cfg!(target_os = "linux").then_some(&accounts),
             false,
         )?;
+        let service_requests = system::services::status_requests_from_config(config)?;
+        system::services::validate_notifications(&files, &directories, &service_requests)?;
+        let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
         self.collect_secrets(&secrets.used_statuses()?, &mut report);
         self.collect_packages(config, &mut report).await?;
         self.collect_accounts(&accounts, &mut report);
         self.collect_files(files, directories, unavailable_files, &mut report)?;
+        self.collect_services(&service_requests, &notified_services, &mut report);
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
@@ -1873,6 +2050,25 @@ impl BootstrapStatus {
         }
         report.json.insert("files".to_string(), json!(resources));
         Ok(())
+    }
+
+    fn collect_services(
+        &self,
+        requests: &[system::services::ServiceRequest],
+        notified_services: &system::services::ServiceNotifications,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = system::services::plans_with_notifications(requests, notified_services);
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("services".to_string(), json!(resources));
     }
 
     async fn collect_plugin_deps(

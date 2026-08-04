@@ -31,6 +31,9 @@ export const commands: { [key: string]: Command } = {
       "__apply-account-plan": {
         hide: true,
       },
+      "__apply-service-plan": {
+        hide: true,
+      },
       "__apply-system-plan": {
         hide: true,
       },
@@ -223,6 +226,17 @@ export const commands: { [key: string]: Command } = {
       secrets: {
         hide: false,
         subcommands: {
+          status: {
+            hide: false,
+          },
+        },
+      },
+      services: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
           status: {
             hide: false,
           },

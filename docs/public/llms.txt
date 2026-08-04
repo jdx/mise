@@ -65,7 +65,7 @@
 
 ## Bootstrap
 
-- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: Linux users and groups, OS packages, privileged files and directories, git repos, dotfiles, mise shell activation, macOS…
+- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: Linux users and groups, OS packages, privileged files and directories, system services, git repos, dotfiles, mise shell…
 - [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): mise can ensure machine-global system packages are installed via the [bootstrap.packages] section of mise.toml, applied by mise bootstrap packages apply or as part of mise bootstrap.
 - [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
 - [apt](https://mise.jdx.dev/bootstrap/packages/apt.html): System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
@@ -76,6 +76,7 @@
 - [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [bootstrap.packages] without adding a manager to mise core. They are useful for machine-global state owned by another tool, such as VS Code extensions, Helm plugins,…
 - [Linux Users and Groups](https://mise.jdx.dev/bootstrap/accounts.html): [bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts. Mise applies groups before users and applies accounts before privileged files, so a managed file can safely refer to…
 - [System Files](https://mise.jdx.dev/bootstrap/files.html): [bootstrap.files] and [bootstrap.directories] declaratively manage absolute paths that may require root privileges. They are separate from [dotfiles], which manages files in a user's home directory.
+- [System Services](https://mise.jdx.dev/bootstrap/services.html): [bootstrap.services] declaratively manages the lifecycle of existing Linux systemd system units. Package installation and [bootstrap.files] run first, so a service may be installed by a package or…
 - [Secret Inputs](https://mise.jdx.dev/bootstrap/secrets.html): [bootstrap.secrets] declares the sensitive inputs a bootstrap configuration needs without storing their values in mise configuration.
 - [Repos](https://mise.jdx.dev/bootstrap/repos.html): mise can declare git repositories in [bootstrap.repos] and apply them with mise bootstrap repos apply or as part of mise bootstrap.
 - [Dotfiles](https://mise.jdx.dev/dotfiles.html): [!WARNING] The top-level mise dotfiles command is deprecated and hidden from help. It will begin warning in mise 2027.2.0 and be removed in mise 2028.2.0. Use mise bootstrap dotfiles instead.
@@ -172,6 +173,7 @@
 - [mise bootstrap plugins](https://mise.jdx.dev/cli/bootstrap/plugins.html): Manage package manager plugins declared in [bootstrap.plugins]
 - [mise bootstrap repos](https://mise.jdx.dev/cli/bootstrap/repos.html): Manage git repo checkouts from [bootstrap.repos]
 - [mise bootstrap secrets](https://mise.jdx.dev/cli/bootstrap/secrets.html): Inspect bootstrap secret inputs without revealing their values
+- [mise bootstrap services](https://mise.jdx.dev/cli/bootstrap/services.html): Manage Linux system services from [bootstrap.services]
 - [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the aggregate bootstrap status
 - [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage current-user bootstrap settings from [bootstrap.user]
 - [mise cache](https://mise.jdx.dev/cli/cache.html): Manage the mise cache

@@ -26,6 +26,8 @@ pub struct ManagedFileTomlConfig {
     pub state: ManagedState,
     #[serde(default)]
     pub replace: bool,
+    #[serde(default)]
+    pub notify: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -39,6 +41,8 @@ pub struct ManagedDirectoryTomlConfig {
     pub recursive: bool,
     #[serde(default)]
     pub replace: bool,
+    #[serde(default)]
+    pub notify: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -58,6 +62,7 @@ pub struct ManagedFileRequest {
     pub mode: u32,
     pub state: ManagedState,
     pub replace: bool,
+    pub notify: Vec<String>,
     inspection: Option<PathInspection>,
 }
 
@@ -70,6 +75,7 @@ pub struct ManagedDirectoryRequest {
     pub state: ManagedState,
     pub recursive: bool,
     pub replace: bool,
+    pub notify: Vec<String>,
     inspection: Option<PathInspection>,
 }
 
@@ -103,6 +109,35 @@ pub enum PrivilegedAction {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PrivilegedPlan {
     pub actions: Vec<PrivilegedAction>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ApplyReport {
+    pub notified_services: super::services::ServiceNotifications,
+}
+
+pub fn pending_notifications(
+    files: &[ManagedFileRequest],
+    directories: &[ManagedDirectoryRequest],
+) -> Result<super::services::ServiceNotifications> {
+    let mut notifications = super::services::ServiceNotifications::default();
+    for directory in directories {
+        if matches!(
+            directory.plan()?.action,
+            ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
+        ) {
+            notifications.notify_directory(&directory.path, &directory.notify);
+        }
+    }
+    for file in files {
+        if matches!(
+            file.plan()?.action,
+            ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
+        ) {
+            notifications.notify_file(&file.path, &file.notify);
+        }
+    }
+    Ok(notifications)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -456,6 +491,7 @@ impl ManagedFileRequest {
             mode,
             state: config.state,
             replace: config.replace,
+            notify: config.notify,
             inspection: None,
         })
     }
@@ -509,6 +545,7 @@ impl ManagedDirectoryRequest {
             state: config.state,
             recursive: config.recursive,
             replace: config.replace,
+            notify: config.notify,
             inspection: None,
         })
     }
@@ -553,9 +590,10 @@ pub fn apply_with_accounts(
     allow_pending_accounts: bool,
     dry_run: bool,
     yes: bool,
-) -> Result<()> {
+) -> Result<ApplyReport> {
     validate_principals(files, directories, accounts, allow_pending_accounts)?;
     let mut plan = PrivilegedPlan::default();
+    let mut report = ApplyReport::default();
     let mut unknown = vec![];
     let mut present_directories = directories
         .iter()
@@ -570,6 +608,9 @@ pub fn apply_with_accounts(
         }
         if let Some(action) = directory.operation()? {
             plan.actions.push(action);
+            report
+                .notified_services
+                .notify_directory(&directory.path, &directory.notify);
         }
     }
     for file in files {
@@ -580,6 +621,9 @@ pub fn apply_with_accounts(
         }
         if let Some(action) = file.operation()? {
             plan.actions.push(action);
+            report
+                .notified_services
+                .notify_file(&file.path, &file.notify);
         }
     }
     let mut absent_directories = directories
@@ -595,6 +639,9 @@ pub fn apply_with_accounts(
         }
         if let Some(action) = directory.operation()? {
             plan.actions.push(action);
+            report
+                .notified_services
+                .notify_directory(&directory.path, &directory.notify);
         }
     }
     let descriptions = plan
@@ -615,11 +662,11 @@ pub fn apply_with_accounts(
         if plan.actions.is_empty() && unknown.is_empty() {
             info!("system files: already converged");
         }
-        return Ok(());
+        return Ok(report);
     }
     if plan.actions.is_empty() {
         info!("system files: already converged");
-        return Ok(());
+        return Ok(report);
     }
     if !yes
         && console::user_attended_stderr()
@@ -629,7 +676,7 @@ pub fn apply_with_accounts(
         ))?
     {
         info!("system files: skipped");
-        return Ok(());
+        return Ok(ApplyReport::default());
     }
     let input = serde_json::to_vec(&plan)?;
     let executable = std::env::current_exe()?.to_string_lossy().to_string();
@@ -645,7 +692,7 @@ pub fn apply_with_accounts(
         &input,
     )?;
     info!("system files: applied {} change(s)", plan.actions.len());
-    Ok(())
+    Ok(report)
 }
 
 #[cfg(unix)]
@@ -1309,6 +1356,7 @@ mod tests {
             mode: 0o644,
             state,
             replace: false,
+            notify: vec![],
             inspection: None,
         }
     }
@@ -1322,6 +1370,7 @@ mod tests {
             state,
             recursive: false,
             replace: false,
+            notify: vec![],
             inspection: None,
         }
     }
@@ -1419,6 +1468,26 @@ mod tests {
             ResourceAction::Unknown
         );
         assert!(absent_directory.operation().is_err());
+    }
+
+    #[test]
+    fn only_actionable_file_changes_notify_services() {
+        let mut changed = file("/opt/changed", ManagedState::Present);
+        changed.notify.push("example".to_string());
+        changed.inspection = Some(PathInspection::Missing);
+
+        let mut unsafe_change = file("/opt/unsafe", ManagedState::Present);
+        unsafe_change.notify.push("ignored".to_string());
+        unsafe_change.inspection = Some(PathInspection::Present {
+            kind: ManagedPathKind::Directory,
+            current: "directory".to_string(),
+            metadata_matches: false,
+            content_matches: None,
+        });
+
+        let notifications = pending_notifications(&[changed, unsafe_change], &[]).unwrap();
+        assert!(notifications.contains("example"));
+        assert!(!notifications.contains("ignored"));
     }
 
     #[cfg(unix)]
