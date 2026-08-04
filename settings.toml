@@ -2204,11 +2204,13 @@ optional = true
 type = "String"
 
 [ruby.compile]
-description = "Set to true to compile ruby from source, false to use precompiled binaries."
+description = "If true, compile ruby from source. If false, require precompiled binaries. If not set, use precompiled binaries if available."
 docs = """
 Controls whether Ruby is compiled from source or downloaded as precompiled binaries.
 
-- If `false`: Try precompiled binaries first, fall back to compiling if unavailable
+- If `false`: Only use precompiled binaries. Installs error out instead of falling back to
+  ruby-build, and version listings only include versions that have a precompiled binary for
+  the current platform.
 - If `true`: Always compile from source using ruby-build
 - If unset: Try precompiled binaries first, fall back to compiling if unavailable
 """

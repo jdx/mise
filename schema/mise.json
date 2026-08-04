@@ -1545,7 +1545,7 @@
               "type": "string"
             },
             "compile": {
-              "description": "Set to true to compile ruby from source, false to use precompiled binaries.",
+              "description": "If true, compile ruby from source. If false, require precompiled binaries. If not set, use precompiled binaries if available.",
               "type": "boolean"
             },
             "default_packages_file": {
