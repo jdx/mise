@@ -100,7 +100,10 @@ apply fails before elevation. A deliberately out-of-band deployment can set
 Rules are installed in declared order before deny policies for UFW. nftables
 installs the complete ruleset atomically, and firewalld changes permanent
 policies before a single validated reload, so intermediate state cannot drop
-the active SSH connection.
+the active SSH connection. Non-exclusive UFW updates stage a uniquely tagged
+replacement ruleset before removing the previous mise rules, then replace the
+staging tags only after the stable rules are live. A later run safely cleans up
+staging rules left by an interrupted update.
 
 ```sh
 mise bootstrap firewall status

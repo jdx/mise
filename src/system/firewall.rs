@@ -21,6 +21,7 @@ const NFT_RULES_PATH: &str = "/etc/mise/bootstrap/firewall.nft";
 const NFT_UNIT_PATH: &str = "/etc/systemd/system/mise-bootstrap-firewall.service";
 const FIREWALLD_INCOMING: &str = "mise-bootstrap-in";
 const FIREWALLD_OUTGOING: &str = "mise-bootstrap-out";
+const UFW_TRANSITION_PREFIX: &str = "mise-transition:";
 const FIREWALLD_POLICY_DIR: &str = "/etc/firewalld/policies";
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -1498,24 +1499,68 @@ fn apply_ufw(request: &FirewallRequest) -> Result<()> {
     if request.exclusive {
         run(&ufw, &["--force", "reset"])?;
     } else {
-        remove_ufw_managed_rules()?;
+        let existing = ufw_added_rules()?;
+        let nonce = crate::rand::random_string(8);
+        let transition = request
+            .rules
+            .iter()
+            .map(|rule| {
+                render_ufw_rule_with_comment(
+                    rule,
+                    format!("{UFW_TRANSITION_PREFIX}{nonce}:{}", rule.name),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // Keep the old rules live until a complete replacement exists. This
+        // avoids a default-deny gap that could sever the SSH session running
+        // bootstrap. A unique transition marker also lets a later run safely
+        // recover after interruption at any point in this sequence: it stages
+        // another complete replacement before cleaning up either marker set.
+        add_ufw_rules(&ufw, &transition)?;
+        remove_ufw_rules(&ufw, &existing)?;
+        let stable = request
+            .rules
+            .iter()
+            .map(render_ufw_rule)
+            .collect::<Vec<_>>();
+        add_ufw_rules(&ufw, &stable)?;
+        remove_ufw_commands(&ufw, &transition)?;
+        return finish_ufw_apply(&ufw, request);
     }
-    for rule in &request.rules {
-        let args = render_ufw_rule(rule);
-        run_owned(&ufw, &args)?;
-    }
+    let stable = request
+        .rules
+        .iter()
+        .map(render_ufw_rule)
+        .collect::<Vec<_>>();
+    add_ufw_rules(&ufw, &stable)?;
+    finish_ufw_apply(&ufw, request)
+}
+
+fn finish_ufw_apply(ufw: &Path, request: &FirewallRequest) -> Result<()> {
     run(
-        &ufw,
+        ufw,
         &["default", request.default_incoming.ufw(), "incoming"],
     )?;
     run(
-        &ufw,
+        ufw,
         &["default", request.default_outgoing.ufw(), "outgoing"],
     )?;
-    run(&ufw, &["--force", "enable"])
+    run(ufw, &["--force", "enable"])
+}
+
+fn add_ufw_rules(ufw: &Path, rules: &[Vec<String>]) -> Result<()> {
+    for args in rules {
+        run_owned(ufw, args)?;
+    }
+    Ok(())
 }
 
 fn render_ufw_rule(rule: &FirewallRule) -> Vec<String> {
+    render_ufw_rule_with_comment(rule, format!("mise:{}", rule.name))
+}
+
+fn render_ufw_rule_with_comment(rule: &FirewallRule, comment: String) -> Vec<String> {
     let mut args = vec![rule.action.ufw().to_string()];
     if rule.direction == FirewallDirection::Outgoing {
         args.push("out".to_string());
@@ -1539,7 +1584,7 @@ fn render_ufw_rule(rule: &FirewallRule) -> Vec<String> {
     if let Some(port) = rule.port {
         args.extend(["port".to_string(), port.render(':')]);
     }
-    args.extend(["comment".to_string(), format!("mise:{}", rule.name)]);
+    args.extend(["comment".to_string(), comment]);
     args
 }
 
@@ -1547,24 +1592,52 @@ fn remove_ufw_managed_rules() -> Result<()> {
     let Some(ufw) = crate::file::which("ufw") else {
         return Ok(());
     };
-    for added in ufw_added_rules()? {
-        let Some(command) = added.strip_prefix("ufw ") else {
-            continue;
-        };
-        let command = shell_words::split(command)?;
-        if !command.windows(2).any(|pair| {
-            pair[0] == "comment"
-                && pair[1]
-                    .strip_prefix("mise:")
-                    .is_some_and(|name| validate_name(name).is_ok())
-        }) {
-            continue;
-        }
+    let added = ufw_added_rules()?;
+    remove_ufw_rules(&ufw, &added)
+}
+
+fn remove_ufw_rules(ufw: &Path, added: &[String]) -> Result<()> {
+    let commands = added
+        .iter()
+        .filter_map(|added| added.strip_prefix("ufw "))
+        .map(shell_words::split)
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|command| ufw_owned_rule(command))
+        .collect::<Vec<_>>();
+    remove_ufw_commands(ufw, &commands)
+}
+
+fn remove_ufw_commands(ufw: &Path, commands: &[Vec<String>]) -> Result<()> {
+    // UFW uses first-match ordering. Removing from the end keeps an earlier
+    // SSH allow effective until every later rule from that generation is gone.
+    for command in commands.iter().rev() {
         let mut args = vec!["--force".to_string(), "delete".to_string()];
-        args.extend(command);
-        run_owned(&ufw, &args)?;
+        args.extend(command.iter().cloned());
+        run_owned(ufw, &args)?;
     }
     Ok(())
+}
+
+fn ufw_owned_rule(tokens: &[String]) -> bool {
+    value_after(tokens, "comment").is_some_and(ufw_owned_comment)
+}
+
+fn ufw_owned_comment(comment: &str) -> bool {
+    if let Some(name) = comment.strip_prefix("mise:") {
+        return validate_name(name).is_ok();
+    }
+    let Some((nonce, name)) = comment
+        .strip_prefix(UFW_TRANSITION_PREFIX)
+        .and_then(|value| value.split_once(':'))
+    else {
+        return false;
+    };
+    nonce.len() == 8
+        && nonce
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+        && validate_name(name).is_ok()
 }
 
 fn ufw_added_rules() -> Result<Vec<String>> {
@@ -1612,11 +1685,7 @@ fn ufw_matches(request: &FirewallRequest) -> bool {
 fn ufw_managed_rules_match(parsed: &[Vec<String>], rules: &[FirewallRule]) -> bool {
     let managed = parsed
         .iter()
-        .filter(|tokens| {
-            tokens
-                .windows(2)
-                .any(|pair| pair[0] == "comment" && pair[1].starts_with("mise:"))
-        })
+        .filter(|tokens| ufw_owned_rule(tokens))
         .collect::<Vec<_>>();
     managed.len() == rules.len()
         && managed
@@ -2225,6 +2294,21 @@ mod tests {
 
         let reversed = declared.into_iter().rev().collect::<Vec<_>>();
         assert!(!ufw_managed_rules_match(&reversed, &request.rules));
+    }
+
+    #[test]
+    fn recognizes_recoverable_ufw_transition_rules() {
+        assert!(ufw_owned_comment("mise:ssh"));
+        assert!(ufw_owned_comment("mise-transition:a1B2c3D4:ssh"));
+        assert!(!ufw_owned_comment("mise-transition:short:ssh"));
+        assert!(!ufw_owned_comment("mise-transition:a1B2c3D4:../ssh"));
+
+        let request = request_with_ssh(None);
+        let transition = vec![render_ufw_rule_with_comment(
+            &request.rules[0],
+            "mise-transition:a1B2c3D4:ssh".to_string(),
+        )];
+        assert!(!ufw_managed_rules_match(&transition, &request.rules));
     }
 
     #[test]
