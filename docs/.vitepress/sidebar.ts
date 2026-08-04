@@ -124,6 +124,10 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/files",
       },
       {
+        text: "Secret Inputs",
+        link: "/bootstrap/secrets",
+      },
+      {
         text: "Repos",
         link: "/bootstrap/repos",
       },

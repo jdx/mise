@@ -9,5 +9,5 @@ Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap
 
 ## Subcommands
 
-- [`mise bootstrap files apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/files/apply.md)
-- [`mise bootstrap files status [-J --json] [--missing]`](/cli/bootstrap/files/status.md)
+- [`mise bootstrap files apply [FLAGS]`](/cli/bootstrap/files/apply.md)
+- [`mise bootstrap files status [FLAGS]`](/cli/bootstrap/files/status.md)

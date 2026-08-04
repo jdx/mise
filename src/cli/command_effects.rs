@@ -95,6 +95,8 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap repos apply", Write),
     ("bootstrap repos status", Read),
     ("bootstrap repos update", Write),
+    ("bootstrap secrets", Read),
+    ("bootstrap secrets status", Read),
     ("bootstrap status", Read),
     // Changes the current user's login shell.
     ("bootstrap user", Read),

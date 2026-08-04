@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use serde_json::{Value, json};
 
 use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply};
@@ -184,6 +184,10 @@ pub struct Bootstrap {
     #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
     only: Vec<BootstrapPart>,
 
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+
     /// Skip one or more bootstrap parts
     ///
     /// Can be passed multiple times or as a comma-separated list.
@@ -256,6 +260,7 @@ enum Commands {
     Plan(BootstrapPlan),
     Plugins(BootstrapPlugins),
     Repos(BootstrapRepos),
+    Secrets(BootstrapSecrets),
     Status(BootstrapStatus),
     #[clap(hide = true)]
     Systemd(BootstrapSystemd),
@@ -273,6 +278,10 @@ struct BootstrapStatus {
     /// Exit with code 1 if any configured bootstrap state is not in its desired state
     #[clap(long, verbatim_doc_comment)]
     missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
 }
 
 /// Show the changes declarative bootstrap resources would make
@@ -286,6 +295,10 @@ struct BootstrapPlan {
     /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
     #[clap(long, verbatim_doc_comment)]
     detailed_exitcode: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -318,6 +331,10 @@ struct BootstrapFilesApply {
     /// Skip the confirmation prompt
     #[clap(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
 }
 
 /// Show configured privileged file and directory state
@@ -328,6 +345,35 @@ struct BootstrapFilesStatus {
     json: bool,
 
     /// Exit with code 1 when any resource is not converged
+    #[clap(long)]
+    missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[clap(long)]
+    prompt_secrets: bool,
+}
+
+/// Inspect bootstrap secret inputs without revealing their values
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapSecrets {
+    #[clap(subcommand)]
+    command: BootstrapSecretsCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapSecretsCommands {
+    Status(BootstrapSecretsStatus),
+}
+
+/// Show whether declared bootstrap secret inputs are available
+#[derive(Debug, clap::Args)]
+struct BootstrapSecretsStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if a declared secret input is unavailable
     #[clap(long)]
     missing: bool,
 }
@@ -732,6 +778,14 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        let managed_system_files = if skip.contains(&BootstrapPart::Files) {
+            None
+        } else {
+            let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+            Some(system::managed_files::requests_from_config(
+                &config, &secrets,
+            )?)
+        };
         let mut follow_up = BootstrapFollowUp::new(self.dry_run);
         let mut dry_run_config_files = None;
         let mut post_packages_ran = false;
@@ -781,12 +835,14 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Files) {
             debug!("bootstrap: system files skipped");
         } else {
-            let (files, directories) = system::managed_files::requests_from_config(&config)?;
+            let (files, directories) = managed_system_files
+                .as_ref()
+                .expect("system files were preflighted when not skipped");
             if files.is_empty() && directories.is_empty() {
                 debug!("bootstrap: no [bootstrap.files] or [bootstrap.directories] configured");
             } else {
                 info!("bootstrap: system files");
-                system::managed_files::apply(&files, &directories, self.dry_run, self.yes)?;
+                system::managed_files::apply(files, directories, self.dry_run, self.yes)?;
             }
         }
 
@@ -1346,6 +1402,7 @@ impl Commands {
             Self::Plan(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
+            Self::Secrets(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
@@ -1356,7 +1413,8 @@ impl Commands {
 impl BootstrapPlan {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let plan = system::resources::plan(&config).await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let plan = system::resources::plan(&config, &secrets).await?;
         let output = plan.output()?;
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&output)?);
@@ -1382,8 +1440,13 @@ impl BootstrapPlan {
                 output.summary.unknown,
             );
         }
-        if self.detailed_exitcode && output.summary.has_changes() {
-            return Err(crate::request_exit(2));
+        if self.detailed_exitcode {
+            if output.summary.has_unknown() {
+                bail!("bootstrap plan contains resources with unknown state");
+            }
+            if output.summary.has_changes() {
+                return Err(crate::request_exit(2));
+            }
         }
         Ok(())
     }
@@ -1413,7 +1476,8 @@ impl BootstrapFiles {
 impl BootstrapFilesApply {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let (files, directories) = system::managed_files::requests_from_config(&config)?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let (files, directories) = system::managed_files::requests_from_config(&config, &secrets)?;
         system::managed_files::apply(&files, &directories, self.dry_run, self.yes)
     }
 }
@@ -1421,7 +1485,9 @@ impl BootstrapFilesApply {
 impl BootstrapFilesStatus {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let (files, directories) = system::managed_files::requests_from_config(&config)?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let (files, directories, mut unavailable) =
+            system::managed_files::status_requests_from_config(&config, &secrets)?;
         let mut resources = directories
             .into_iter()
             .map(|request| request.plan())
@@ -1432,6 +1498,7 @@ impl BootstrapFilesStatus {
                 .map(|request| request.plan())
                 .collect::<Result<Vec<_>>>()?,
         );
+        resources.append(&mut unavailable);
         let missing = resources
             .iter()
             .any(|resource| resource.action != system::resources::ResourceAction::Noop);
@@ -1452,6 +1519,39 @@ impl BootstrapFilesStatus {
             table.print()?;
         }
         if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapSecrets {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapSecretsCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapSecretsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let statuses = system::secrets::statuses(&config)?;
+        let unavailable = statuses
+            .iter()
+            .any(|status| status.state != system::secrets::SecretState::Available);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&statuses)?);
+        } else if statuses.is_empty() {
+            info!("no bootstrap secret inputs configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Secret", "Environment", "State"]);
+            for status in statuses {
+                table.add_row(vec![status.name, status.env, status.state.to_string()]);
+            }
+            table.print()?;
+        }
+        if self.missing && unavailable {
             return Err(crate::request_exit(1));
         }
         Ok(())
@@ -1490,7 +1590,8 @@ impl BootstrapStatusReport {
 impl BootstrapStatus {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let report = self.collect(&config).await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let report = self.collect(&config, &secrets).await?;
         if self.json {
             miseprintln!("{}", serde_json::to_string_pretty(&report.json)?);
         } else if report.rows.is_empty() {
@@ -1508,10 +1609,17 @@ impl BootstrapStatus {
         Ok(())
     }
 
-    async fn collect(&self, config: &Arc<Config>) -> Result<BootstrapStatusReport> {
+    async fn collect(
+        &self,
+        config: &Arc<Config>,
+        secrets: &system::secrets::SecretValues,
+    ) -> Result<BootstrapStatusReport> {
         let mut report = BootstrapStatusReport::new();
+        let (files, directories, unavailable_files) =
+            system::managed_files::status_requests_from_config(config, secrets)?;
+        self.collect_secrets(&secrets.used_statuses()?, &mut report);
         self.collect_packages(config, &mut report).await?;
-        self.collect_files(config, &mut report)?;
+        self.collect_files(files, directories, unavailable_files, &mut report)?;
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
@@ -1524,12 +1632,30 @@ impl BootstrapStatus {
         Ok(report)
     }
 
+    fn collect_secrets(
+        &self,
+        statuses: &[system::secrets::SecretStatus],
+        report: &mut BootstrapStatusReport,
+    ) {
+        for status in statuses {
+            report.row(
+                "secret",
+                &status.name,
+                status.state.to_string(),
+                &status.env,
+                status.state != system::secrets::SecretState::Available,
+            );
+        }
+        report.json.insert("secrets".to_string(), json!(statuses));
+    }
+
     fn collect_files(
         &self,
-        config: &Arc<Config>,
+        files: Vec<system::managed_files::ManagedFileRequest>,
+        directories: Vec<system::managed_files::ManagedDirectoryRequest>,
+        mut unavailable: Vec<system::resources::ResourcePlan>,
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
-        let (files, directories) = system::managed_files::requests_from_config(config)?;
         let mut resources = directories
             .into_iter()
             .map(|request| request.plan())
@@ -1540,6 +1666,7 @@ impl BootstrapStatus {
                 .map(|request| request.plan())
                 .collect::<Result<Vec<_>>>()?,
         );
+        resources.append(&mut unavailable);
         for resource in &resources {
             report.row(
                 resource.id.kind.clone(),

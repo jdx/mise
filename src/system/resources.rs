@@ -104,6 +104,10 @@ impl PlanSummary {
     pub fn has_changes(self) -> bool {
         self.create + self.update + self.remove > 0
     }
+
+    pub fn has_unknown(self) -> bool {
+        self.unknown > 0
+    }
 }
 
 #[derive(Serialize)]
@@ -212,7 +216,10 @@ impl BootstrapPlan {
 
 /// Build the resource plan currently supported by the provisioning engine.
 /// Other bootstrap sections will move into this graph as resource adapters land.
-pub async fn plan(config: &Config) -> Result<BootstrapPlan> {
+pub async fn plan(
+    config: &Config,
+    secrets: &super::secrets::SecretValues,
+) -> Result<BootstrapPlan> {
     let mut plan = BootstrapPlan::default();
     for manager_packages in super::packages_from_config(config) {
         let manager = manager_packages.manager;
@@ -261,7 +268,8 @@ pub async fn plan(config: &Config) -> Result<BootstrapPlan> {
             ))?;
         }
     }
-    let (files, directories) = super::managed_files::requests_from_config(config)?;
+    let (files, directories, unavailable_files) =
+        super::managed_files::status_requests_from_config(config, secrets)?;
     let directory_states = directories
         .iter()
         .map(|directory| (directory.path.clone(), directory.state))
@@ -349,6 +357,9 @@ pub async fn plan(config: &Config) -> Result<BootstrapPlan> {
                 ) => {}
             }
         }
+    }
+    for resource in unavailable_files {
+        plan.insert(resource)?;
     }
     // Validate dependency references and cycles even when callers only need JSON.
     plan.output()?;

@@ -18,6 +18,8 @@ pub struct ManagedFileTomlConfig {
     pub group: Option<String>,
     pub mode: Option<String>,
     #[serde(default)]
+    pub template: bool,
+    #[serde(default)]
     pub state: ManagedState,
     #[serde(default)]
     pub replace: bool,
@@ -138,15 +140,72 @@ enum ManagedPathKind {
 
 pub fn requests_from_config(
     config: &Config,
+    secrets: &super::secrets::SecretValues,
 ) -> Result<(Vec<ManagedFileRequest>, Vec<ManagedDirectoryRequest>)> {
-    let mut files = files_from_config(config)?;
+    let mut files = files_from_config(config, secrets)?;
     let mut directories = directories_from_config(config)?;
     validate_requests(&files, &directories)?;
     inspect_paths(&mut files, &mut directories)?;
     Ok((files, directories))
 }
 
-fn files_from_config(config: &Config) -> Result<Vec<ManagedFileRequest>> {
+pub fn status_requests_from_config(
+    config: &Config,
+    secrets: &super::secrets::SecretValues,
+) -> Result<(
+    Vec<ManagedFileRequest>,
+    Vec<ManagedDirectoryRequest>,
+    Vec<ResourcePlan>,
+)> {
+    let mut files = vec![];
+    let mut unavailable = vec![];
+    let mut directories = directories_from_config(config)?;
+    let directory_states = directories
+        .iter()
+        .map(|directory| (directory.path.as_path(), directory.state))
+        .collect::<std::collections::HashMap<_, _>>();
+    for (path, (file, base)) in merged_files_from_config(config)? {
+        let state = file.state;
+        match ManagedFileRequest::from_toml(config, path.clone(), file, &base, secrets) {
+            Ok(file) => files.push(file),
+            Err(error) if super::secrets::is_unavailable(&error) => {
+                if directory_states.contains_key(path.as_path()) {
+                    bail!(
+                        "managed system path '{}' is declared as both a file and a directory",
+                        path.display()
+                    );
+                }
+                validate_present_ancestors(&path, state, &directory_states)?;
+                unavailable.push(ResourcePlan::new(
+                    ResourceId::new("file", path.to_string_lossy().into_owned()),
+                    "not inspected: required secret unavailable",
+                    "template rendered",
+                    ResourceAction::Unknown,
+                ));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    validate_requests(&files, &directories)?;
+    inspect_paths(&mut files, &mut directories)?;
+    Ok((files, directories, unavailable))
+}
+
+fn files_from_config(
+    config: &Config,
+    secrets: &super::secrets::SecretValues,
+) -> Result<Vec<ManagedFileRequest>> {
+    merged_files_from_config(config)?
+        .into_iter()
+        .map(|(path, (file, base))| {
+            ManagedFileRequest::from_toml(config, path, file, &base, secrets)
+        })
+        .collect()
+}
+
+fn merged_files_from_config(
+    config: &Config,
+) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf)>> {
     let mut merged: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf)> = IndexMap::new();
     // Config files are ordered from highest to lowest precedence. Preserve the
     // first declaration of a target so a parent or global layer cannot replace
@@ -171,10 +230,7 @@ fn files_from_config(config: &Config) -> Result<Vec<ManagedFileRequest>> {
             }
         }
     }
-    merged
-        .into_iter()
-        .map(|(path, (config, base))| ManagedFileRequest::from_toml(path, config, &base))
-        .collect()
+    Ok(merged)
 }
 
 fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryRequest>> {
@@ -246,8 +302,17 @@ fn validate_present_ancestors(
 }
 
 impl ManagedFileRequest {
-    fn from_toml(path: PathBuf, config: ManagedFileTomlConfig, base: &Path) -> Result<Self> {
-        let content = match (config.source, config.content, config.state) {
+    fn from_toml(
+        root_config: &Config,
+        path: PathBuf,
+        config: ManagedFileTomlConfig,
+        base: &Path,
+        secrets: &super::secrets::SecretValues,
+    ) -> Result<Self> {
+        let owner = nonempty("owner", config.owner)?;
+        let group = nonempty("group", config.group)?;
+        let mode = parse_mode(config.mode.as_deref(), 0o644)?;
+        let mut content = match (config.source, config.content, config.state) {
             (Some(_), Some(_), _) => {
                 bail!(
                     "[bootstrap.files].\"{}\": source and content are mutually exclusive",
@@ -280,12 +345,25 @@ impl ManagedFileRequest {
                 path.display()
             ),
         };
+        if config.template {
+            let rendered = content
+                .as_deref()
+                .map(|content| secrets.render(root_config, content, base, &path))
+                .transpose()
+                .wrap_err_with(|| {
+                    format!(
+                        "[bootstrap.files].\"{}\": failed to render template",
+                        path.display()
+                    )
+                })?;
+            content = rendered;
+        }
         Ok(Self {
             path,
             content,
-            owner: nonempty("owner", config.owner)?,
-            group: nonempty("group", config.group)?,
-            mode: parse_mode(config.mode.as_deref(), 0o644)?,
+            owner,
+            group,
+            mode,
             state: config.state,
             replace: config.replace,
             inspection: None,
