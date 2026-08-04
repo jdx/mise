@@ -498,7 +498,7 @@ impl FirewallRequest {
         }) {
             if rule.action != FirewallAction::Allow {
                 match backend {
-                    Some(FirewallBackend::Nftables) if !covered => bail!(
+                    Some(FirewallBackend::Nftables | FirewallBackend::Ufw) if !covered => bail!(
                         "refusing firewall default incoming {} over SSH: blocking rule '{}' precedes a proven allow for peer {} on server port {}; reorder or narrow the rule, or set allow_lockout = true",
                         self.default_incoming.ufw(),
                         rule.name,
@@ -512,8 +512,8 @@ impl FirewallRequest {
                         connection.peer,
                         connection.server_port
                     ),
-                    // UFW installs allows before denies/rejects. An automatic
-                    // backend is validated again after it is resolved.
+                    // An automatic backend is validated again after it is
+                    // resolved.
                     _ => {}
                 }
                 continue;
@@ -523,7 +523,10 @@ impl FirewallRequest {
             // session, so keep looking for an unrestricted covering allow.
             if rule.interface.is_none() {
                 covered = true;
-                if backend == Some(FirewallBackend::Nftables) {
+                if matches!(
+                    backend,
+                    Some(FirewallBackend::Nftables | FirewallBackend::Ufw)
+                ) {
                     break;
                 }
             }
@@ -1497,9 +1500,7 @@ fn apply_ufw(request: &FirewallRequest) -> Result<()> {
     } else {
         remove_ufw_managed_rules()?;
     }
-    let mut rules = request.rules.iter().collect::<Vec<_>>();
-    rules.sort_by_key(|rule| rule.action != FirewallAction::Allow);
-    for rule in rules {
+    for rule in &request.rules {
         let args = render_ufw_rule(rule);
         run_owned(&ufw, &args)?;
     }
@@ -1605,6 +1606,10 @@ fn ufw_matches(request: &FirewallRequest) -> bool {
         .filter_map(|line| line.strip_prefix("ufw "))
         .filter_map(|line| shell_words::split(line).ok())
         .collect::<Vec<_>>();
+    ufw_managed_rules_match(&parsed, &request.rules)
+}
+
+fn ufw_managed_rules_match(parsed: &[Vec<String>], rules: &[FirewallRule]) -> bool {
     let managed = parsed
         .iter()
         .filter(|tokens| {
@@ -1613,11 +1618,11 @@ fn ufw_matches(request: &FirewallRequest) -> bool {
                 .any(|pair| pair[0] == "comment" && pair[1].starts_with("mise:"))
         })
         .collect::<Vec<_>>();
-    managed.len() == request.rules.len()
-        && request
-            .rules
-            .iter()
-            .all(|rule| managed.iter().any(|tokens| ufw_rule_matches(tokens, rule)))
+    managed.len() == rules.len()
+        && managed
+            .into_iter()
+            .zip(rules)
+            .all(|(tokens, rule)| ufw_rule_matches(tokens, rule))
 }
 
 fn ufw_rule_matches(tokens: &[String], rule: &FirewallRule) -> bool {
@@ -2019,7 +2024,13 @@ mod tests {
         );
 
         request.backend = FirewallBackend::Ufw;
-        request.validate_safety().unwrap();
+        assert!(
+            request
+                .validate_safety()
+                .unwrap_err()
+                .to_string()
+                .contains("blocking rule 'block-ssh' precedes")
+        );
     }
 
     #[test]
@@ -2195,6 +2206,25 @@ mod tests {
             shell_words::split("allow out to 1.1.1.1 port 53 proto udp comment 'mise:dns'")
                 .unwrap();
         assert!(ufw_rule_matches(&expanded, &outgoing));
+    }
+
+    #[test]
+    fn matches_ufw_managed_rules_in_declared_order() {
+        let mut request = request_with_ssh(None);
+        let mut denied = request.rules[0].clone();
+        denied.name = "blocked-ssh".to_string();
+        denied.action = FirewallAction::Deny;
+        request.rules.push(denied);
+
+        let declared = request
+            .rules
+            .iter()
+            .map(render_ufw_rule)
+            .collect::<Vec<_>>();
+        assert!(ufw_managed_rules_match(&declared, &request.rules));
+
+        let reversed = declared.into_iter().rev().collect::<Vec<_>>();
+        assert!(!ufw_managed_rules_match(&reversed, &request.rules));
     }
 
     #[test]

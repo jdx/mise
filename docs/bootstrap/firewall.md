@@ -42,8 +42,9 @@ start its selected firewall backend before its policy is applied.
 - `"firewalld"`: maintain the permanent `mise-bootstrap-in` and
   `mise-bootstrap-out` policies and reload firewalld only after its
   permanent configuration validates.
-- `"ufw"`: maintain rules bearing `mise:<name>` comments, apply allow rules
-  before default-deny policy, and enable UFW after all rules are installed.
+- `"ufw"`: maintain rules bearing `mise:<name>` comments in declared order,
+  apply them before the default policy, and enable UFW after all rules are
+  installed.
 
 Explicitly selected backends fail closed when their command is unavailable.
 The selected backend and effective state are visible in `status` and `plan`.
@@ -96,10 +97,10 @@ rule must cover both the connected peer address and the server port. Otherwise
 apply fails before elevation. A deliberately out-of-band deployment can set
 `allow_lockout = true` as an explicit escape hatch.
 
-Allow rules are installed before deny policies for UFW. nftables installs the
-complete ruleset atomically, and firewalld changes permanent policies before a
-single validated reload, so intermediate state cannot drop the active SSH
-connection.
+Rules are installed in declared order before deny policies for UFW. nftables
+installs the complete ruleset atomically, and firewalld changes permanent
+policies before a single validated reload, so intermediate state cannot drop
+the active SSH connection.
 
 ```sh
 mise bootstrap firewall status
