@@ -248,7 +248,8 @@ impl ToolRequestSetBuilder {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    arg_ts.add_version(tvr.clone(), &ToolSource::Argument);
+                    let tvr = apply_config_options_to_runtime_arg(&trs, tvr.clone());
+                    arg_ts.add_version(tvr, &ToolSource::Argument);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
                     // should default to installing the "latest" version if no version is specified
@@ -268,17 +269,7 @@ impl ToolRequestSetBuilder {
         let mut arg_trs = ToolRequestSet::new();
         for arg in tool_args.iter() {
             if let Some(tvr) = &arg.tvr {
-                let mut tvr = tvr.clone();
-                // When CLI specifies a version for a tool that's in config,
-                // merge config options (e.g. postinstall) into the CLI request
-                if tvr.options().is_empty()
-                    && let Some(config_tvr) = trs.tools.get(&arg.ba).and_then(|v| v.first())
-                {
-                    let config_opts = config_tvr.options();
-                    if !config_opts.is_empty() {
-                        tvr.set_options(config_opts);
-                    }
-                }
+                let tvr = apply_config_options_to_runtime_arg(&trs, tvr.clone());
                 arg_trs.add_version(tvr, &ToolSource::Argument);
             } else if !trs.tools.contains_key(&arg.ba) {
                 // no active version, so use "latest"
@@ -290,6 +281,49 @@ impl ToolRequestSetBuilder {
 
         Ok(trs)
     }
+}
+
+/// Overlay configured tool options onto an explicit runtime version request.
+///
+/// A request can already contain registry, install-manifest, or backend-alias
+/// defaults, so option emptiness cannot indicate whether config should apply.
+/// `opts_with_config` preserves the normal precedence and reapplies explicit
+/// inline backend options last.
+fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolRequest) -> ToolRequest {
+    if let Some(config_options) = trs
+        .tools
+        .get(tvr.ba())
+        .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
+    {
+        tvr.set_options(tvr.ba().opts_with_config(Some(config_options)));
+    }
+    tvr
+}
+
+/// Select configured options for an explicit runtime request without assuming
+/// that version selectors are ordered or semver-compatible.
+///
+/// A unique, platform-supported exact opaque selector match wins. A sole
+/// supported configured request is also a valid fallback because its options
+/// act as the tool-level defaults when a command requests another version.
+/// Multiple supported exact matches or unmatched requests are ambiguous, so
+/// none of their options are applied arbitrarily.
+pub(super) fn configured_options_for_runtime_request(
+    configured: &[ToolRequest],
+    runtime: &ToolRequest,
+) -> Option<crate::toolset::ToolVersionOptions> {
+    let runtime_version = runtime.version();
+    let supported = || {
+        configured
+            .iter()
+            .filter(|request| request.is_os_supported())
+    };
+    supported()
+        .filter(|request| request.version() == runtime_version)
+        .exactly_one()
+        .ok()
+        .or_else(|| supported().exactly_one().ok())
+        .map(ToolRequest::options)
 }
 
 fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
@@ -335,7 +369,7 @@ pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::toolset::{CoreToolOptions, ToolVersionOptions};
+    use crate::toolset::{CoreToolOptions, ToolVersionOptions, parse_tool_options};
 
     #[test]
     fn test_tool_env_var_name_round_trip() {
@@ -443,6 +477,118 @@ mod tests {
             std::env::remove_var("HOMEBREW_INSTALL_BADGE");
             std::env::remove_var("SOME_OTHER_VAR");
         }
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_options_layer_registry_config_and_inline() {
+        crate::toolset::install_state::init().await.unwrap();
+        let config_ba = Arc::new(BackendArg::from("solidity"));
+        assert_eq!(config_ba.registry_opts().get("bin"), Some("solc"));
+
+        let config_options = parse_tool_options(
+            r#"bin="config",postinstall="echo configured",config_only="config""#,
+        );
+        let config_request = ToolRequest::new_opts(
+            config_ba.clone(),
+            "0.8.0",
+            config_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(config_request, &ToolSource::Unknown);
+
+        let registry_arg = "solidity@0.8.1".parse::<ToolArg>().unwrap();
+        let registry_request = registry_arg.tvr.clone().unwrap();
+        assert!(!registry_request.options().is_empty());
+        let layered = apply_config_options_to_runtime_arg(&trs, registry_request);
+        assert_eq!(layered.options().get("bin"), Some("config"));
+        assert_eq!(
+            layered.options().get("postinstall"),
+            Some("echo configured")
+        );
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+
+        let inline_arg = "solidity[bin=inline,inline_only=inline]@0.8.1"
+            .parse::<ToolArg>()
+            .unwrap();
+        let layered = apply_config_options_to_runtime_arg(&trs, inline_arg.tvr.clone().unwrap());
+        assert_eq!(layered.options().get("bin"), Some("inline"));
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+        assert_eq!(layered.options().get("inline_only"), Some("inline"));
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_options_match_configured_version() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let first = ToolRequest::new_opts(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"postinstall="echo one",selected="one""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let second = ToolRequest::new_opts(
+            ba.clone(),
+            "2.0.0",
+            parse_tool_options(r#"postinstall="echo two",selected="two""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(first.clone(), &ToolSource::Unknown);
+        trs.add_version(second, &ToolSource::Unknown);
+
+        let matching = "dummy[inline_only=inline]@2.0.0"
+            .parse::<ToolArg>()
+            .unwrap()
+            .tvr
+            .unwrap();
+        let matching = apply_config_options_to_runtime_arg(&trs, matching);
+        assert_eq!(matching.options().get("postinstall"), Some("echo two"));
+        assert_eq!(matching.options().get("selected"), Some("two"));
+        assert_eq!(matching.options().get("inline_only"), Some("inline"));
+
+        let unmatched = "dummy[inline_only=inline]@3.0.0"
+            .parse::<ToolArg>()
+            .unwrap()
+            .tvr
+            .unwrap();
+        let unmatched = apply_config_options_to_runtime_arg(&trs, unmatched);
+        assert_eq!(unmatched.options().get("postinstall"), None);
+        assert_eq!(unmatched.options().get("selected"), None);
+        assert_eq!(unmatched.options().get("inline_only"), Some("inline"));
+
+        let mut sole = ToolRequestSet::new();
+        sole.add_version(first, &ToolSource::Unknown);
+        let fallback = "dummy@3.0.0".parse::<ToolArg>().unwrap().tvr.unwrap();
+        let fallback = apply_config_options_to_runtime_arg(&sole, fallback);
+        assert_eq!(fallback.options().get("postinstall"), Some("echo one"));
+        assert_eq!(fallback.options().get("selected"), Some("one"));
+
+        let mut inactive_options =
+            parse_tool_options(r#"postinstall="echo inactive",selected="inactive""#);
+        inactive_options.core.os = Some(vec![inactive_os()]);
+        let inactive =
+            ToolRequest::new_opts(ba.clone(), "4.0.0", inactive_options, ToolSource::Unknown)
+                .unwrap();
+        let active = ToolRequest::new_opts(
+            ba.clone(),
+            "4.0.0",
+            parse_tool_options(r#"postinstall="echo active",selected="active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let runtime = "dummy@4.0.0".parse::<ToolArg>().unwrap().tvr.unwrap();
+        let selected =
+            configured_options_for_runtime_request(&[inactive, active.clone()], &runtime).unwrap();
+        assert_eq!(selected.get("postinstall"), Some("echo active"));
+        assert_eq!(selected.get("selected"), Some("active"));
+
+        assert!(
+            configured_options_for_runtime_request(&[active.clone(), active], &runtime).is_none()
+        );
     }
 
     fn unknown_tool_request(os: Option<Vec<String>>) -> (Arc<BackendArg>, Vec<ToolRequest>) {
