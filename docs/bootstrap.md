@@ -8,6 +8,9 @@ the user's login shell, tools, and any final project-specific task. It can
 consume declared secret inputs without storing their values in mise config. You
 can also add hooks that run at named points in the bootstrap sequence.
 
+The same configuration can be applied to named inventory hosts or ad-hoc SSH
+destinations with [`mise bootstrap remote`](/bootstrap/remote.html).
+
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
 formulae, dotfile repositories, shell rc files, editor config, macOS

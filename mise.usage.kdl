@@ -815,6 +815,60 @@ Examples:
             flag --missing help="Exit with code 1 if a declared plugin is missing"
         }
     }
+    cmd remote help="Bootstrap one or more machines over OpenSSH" effect=destructive {
+        flag --all help="Select every configured inventory host"
+        flag --bootstrap-command help="Explicit remote shell command that installs mise and places it on PATH" {
+            arg <COMMAND>
+        }
+        flag --connect-timeout help="SSH connection timeout in seconds" default="10" {
+            arg <CONNECT_TIMEOUT>
+        }
+        flag --exclude help="Additional archive pattern to exclude; repeat for multiple patterns" var=#true {
+            arg <PATTERN>
+        }
+        flag --fail-fast help="Stop after the first failed target"
+        flag --force-dotfiles help="Allow remote dotfile conflicts to be replaced"
+        flag --host help="Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts" var=#true {
+            arg "<[USER@]HOST>"
+        }
+        flag "-i --identity-file" help="SSH identity file override" {
+            arg <IDENTITY_FILE>
+        }
+        flag "-n --dry-run" help="Print the remote bootstrap changes without applying them"
+        flag --keep-staging help="Keep the remote staging directory for debugging"
+        flag --mise-bin help="Local mise binary to upload (escape hatch for custom architectures)" {
+            arg <MISE_BIN>
+        }
+        flag --only help="Run only one or more remote bootstrap parts" var=#true {
+            arg <ONLY> {
+                choices plugins packages accounts files services compose repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
+            }
+        }
+        flag --port help="SSH port override" {
+            arg <PORT>
+        }
+        flag --prompt-secrets help="Prompt securely for missing secret inputs on the remote host"
+        flag --remote-mise help="Existing mise executable name or path; relative paths use the staged project" {
+            arg <COMMAND>
+        }
+        flag --skip help="Skip one or more remote bootstrap parts" var=#true {
+            arg <SKIP> {
+                choices plugins packages accounts files services compose repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
+            }
+        }
+        flag --source help="Local directory archived and sent to each target" {
+            arg <SOURCE>
+        }
+        flag --ssh-option help="OpenSSH `-o` option; repeat for multiple options" var=#true {
+            arg <OPTION>
+        }
+        flag --tag help="Select configured hosts with this tag; repeat to match any tag" var=#true {
+            arg <TAG>
+        }
+        flag --update help="Refresh package manager metadata and update configured repos remotely"
+        flag "-y --yes" help="Skip remote confirmation prompts"
+        arg "[TARGET]…" help="Inventory host names from `[bootstrap.remote.hosts]`" required=#false var=#true
+    }
     cmd repos subcommand_required=#true help="Manage git repo checkouts from `[bootstrap.repos]`" effect=read {
         cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"

@@ -151,6 +151,7 @@ Refresh package manager metadata and update configured repos
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
 - [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.md)
 - [`mise bootstrap plugins <SUBCOMMAND>`](/cli/bootstrap/plugins.md)
+- [`mise bootstrap remote [FLAGS] [TARGET]…`](/cli/bootstrap/remote.md)
 - [`mise bootstrap repos <SUBCOMMAND>`](/cli/bootstrap/repos.md)
 - [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.md)
 - [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.md)

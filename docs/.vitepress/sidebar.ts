@@ -103,6 +103,10 @@ export const sidebar: SidebarItem[] = [
     items: [
       { text: "Overview", link: "/bootstrap" },
       {
+        text: "Remote Hosts",
+        link: "/bootstrap/remote",
+      },
+      {
         text: "Bootstrap Packages",
         link: "/bootstrap/packages/",
         collapsed: true,
