@@ -1,5 +1,63 @@
 # Changelog
 
+## [2026.8.2](https://github.com/jdx/mise/compare/v2026.8.1..v2026.8.2) - 2026-08-04
+
+### 🚀 Features
+
+- **(bootstrap)** add declarative resource plans by @jdx in [#11669](https://github.com/jdx/mise/pull/11669)
+- **(bootstrap)** manage privileged files and directories by @jdx in [#11674](https://github.com/jdx/mise/pull/11674)
+- **(bootstrap)** add secret inputs for managed files by @jdx in [#11680](https://github.com/jdx/mise/pull/11680)
+- **(bootstrap)** manage linux users and groups by @jdx in [#11681](https://github.com/jdx/mise/pull/11681)
+- **(bootstrap)** manage system services by @jdx in [#11688](https://github.com/jdx/mise/pull/11688)
+- **(bootstrap)** manage compose projects by @jdx in [#11689](https://github.com/jdx/mise/pull/11689)
+- **(bootstrap)** run bootstrap over ssh by @jdx in [#11690](https://github.com/jdx/mise/pull/11690)
+- **(bootstrap)** resolve remote mise artifacts by @jdx in [#11693](https://github.com/jdx/mise/pull/11693)
+- **(bootstrap)** manage Linux firewall rules by @jdx in [#11694](https://github.com/jdx/mise/pull/11694)
+- **(ruby)** require precompiled binaries with ruby.compile=false by @jdx in [#11710](https://github.com/jdx/mise/pull/11710)
+
+### 🐛 Bug Fixes
+
+- **(brew)** relocate text in skip-relocation bottles by @jdx in [#11665](https://github.com/jdx/mise/pull/11665)
+- **(brew-cask)** detect extensionless DMG downloads by @jacobbednarz in [#11692](https://github.com/jdx/mise/pull/11692)
+- **(completions)** stop `--` from hijacking task argument completion by @jdx in [#11711](https://github.com/jdx/mise/pull/11711)
+- **(lock)** reject platform regressions during relock by @jdx in [#11664](https://github.com/jdx/mise/pull/11664)
+- **(pacman)** force C locale when parsing pacman -Q output by @rarandeyo in [#11673](https://github.com/jdx/mise/pull/11673)
+- **(pipx)** prefer RFC3339 upload_time_iso_8601 for release-age gating by @Guria in [#11662](https://github.com/jdx/mise/pull/11662)
+- **(sync)** clear stale incomplete markers for external links by @risu729 in [#11172](https://github.com/jdx/mise/pull/11172)
+- **(task)** make workspace task inference opt-in by @jdx in [#11706](https://github.com/jdx/mise/pull/11706)
+
+### ⚡ Performance
+
+- **(cli)** defer bootstrap command tree by @jdx in [#11684](https://github.com/jdx/mise/pull/11684)
+
+### 🧪 Testing
+
+- **(bootstrap)** add Linux host convergence gate by @jdx in [#11704](https://github.com/jdx/mise/pull/11704)
+
+### 📦️ Dependency Updates
+
+- update zizmorcore/zizmor-action action to v0.6.1 by @renovate[bot] in [#11700](https://github.com/jdx/mise/pull/11700)
+- update node.js to v24.18.1 by @renovate[bot] in [#11699](https://github.com/jdx/mise/pull/11699)
+- update ghcr.io/jdx/mise:deb docker digest to c87709c by @renovate[bot] in [#11696](https://github.com/jdx/mise/pull/11696)
+- update rust crate base64 to 0.23 by @renovate[bot] in [#11702](https://github.com/jdx/mise/pull/11702)
+- update ghcr.io/jdx/mise:alpine docker digest to e46827b by @renovate[bot] in [#11695](https://github.com/jdx/mise/pull/11695)
+- update jdx/mise-action action to v4.2.3 by @renovate[bot] in [#11698](https://github.com/jdx/mise/pull/11698)
+- update ghcr.io/jdx/mise:rpm docker digest to 6ddbe45 by @renovate[bot] in [#11697](https://github.com/jdx/mise/pull/11697)
+- update rattler (major) by @renovate[bot] in [#11703](https://github.com/jdx/mise/pull/11703)
+
+### 📦 Registry
+
+- add bin metadata for shim auto-install by @jdx in [#11666](https://github.com/jdx/mise/pull/11666)
+- add discovered bin metadata (1/4) by @jdx in [#11671](https://github.com/jdx/mise/pull/11671)
+- add discovered bin metadata (2/4) by @jdx in [#11676](https://github.com/jdx/mise/pull/11676)
+- add discovered bin metadata (3/4) by @jdx in [#11677](https://github.com/jdx/mise/pull/11677)
+- add discovered bin metadata (4/4) by @jdx in [#11678](https://github.com/jdx/mise/pull/11678)
+
+### New Contributors
+
+- @jacobbednarz made their first contribution in [#11692](https://github.com/jdx/mise/pull/11692)
+- @rarandeyo made their first contribution in [#11673](https://github.com/jdx/mise/pull/11673)
+
 ## [2026.8.1](https://github.com/jdx/mise/compare/v2026.8.0..v2026.8.1) - 2026-08-03
 
 ### 🚀 Features
