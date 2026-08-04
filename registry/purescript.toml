@@ -1,6 +1,7 @@
 description = "A strongly-typed language that compiles to JavaScript"
 # test = { cmd = "purs --version", expected = "{{version}}" }
 
+bins = ["purs"]
 [[backends]]
 full = "github:purescript/purescript"
 

@@ -1,2 +1,3 @@
 backends = ["aqua:regclient/regclient/regsync", "asdf:rsrchboy/asdf-regsync"]
+bins = ["regsync"]
 description = "regsync is a registry synchronization utility used to update mirrors of OCI compatible container registries"

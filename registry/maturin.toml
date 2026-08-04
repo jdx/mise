@@ -1,3 +1,4 @@
 backends = ["github:PyO3/maturin"]
+bins = ["maturin"]
 description = "Build and publish crates with pyo3, cffi and uniffi bindings as well as rust binaries as python packages with minimal configuration."
 test = { cmd = "maturin --version", expected = "maturin {{version}}" }

@@ -3,6 +3,7 @@ backends = [
   "asdf:jtzero/asdf-lefthook",
   "go:github.com/evilmartians/lefthook",
 ]
+bins = ["lefthook"]
 description = "Fast and powerful Git hooks manager for any type of projects"
 idiomatic_files = [
   { path = "lefthook.yml", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },

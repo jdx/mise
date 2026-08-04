@@ -1,3 +1,4 @@
 backends = ["aqua:mutagen-io/mutagen", "github:mutagen-io/mutagen"]
+bins = ["mutagen"]
 description = "Fast file synchronization and network forwarding for remote development"
 test = { cmd = "mutagen version", expected = "{{version}}" }

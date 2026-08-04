@@ -1,2 +1,3 @@
 backends = ["aqua:jedisct1/minisign"]
+bins = ["minisign"]
 description = "A dead simple tool to sign files and verify digital signatures"

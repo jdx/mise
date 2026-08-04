@@ -1,3 +1,4 @@
 backends = ["npm:portless"]
+bins = ["portless"]
 description = "Replace port numbers with stable, named .localhost URLs. For humans and agents."
 test = { cmd = "portless --version", expected = "{{version}}" }

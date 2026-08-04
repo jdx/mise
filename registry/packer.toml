@@ -1,4 +1,5 @@
 backends = ["aqua:hashicorp/packer", "asdf:mise-plugins/mise-hashicorp"]
+bins = ["packer"]
 description = "Packer is a tool for creating identical machine images for multiple platforms from a single source configuration"
 idiomatic_files = [".packer-version"]
 test = { cmd = "packer --version", expected = "Packer v{{version}}" }

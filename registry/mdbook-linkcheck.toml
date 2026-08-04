@@ -1,6 +1,7 @@
 description = "A backend for `mdbook` which will check your links for you"
 test = { cmd = "mdbook-linkcheck --version", expected = "mdbook-linkcheck {{version}}" }
 
+bins = ["mdbook-linkcheck"]
 [[backends]]
 full = "github:Michael-F-Bryan/mdbook-linkcheck"
 

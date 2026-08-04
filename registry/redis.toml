@@ -1,2 +1,10 @@
 backends = ["vfox:mise-plugins/vfox-redis", "asdf:mise-plugins/mise-redis"]
+bins = [
+  "redis-benchmark",
+  "redis-check-aof",
+  "redis-check-rdb",
+  "redis-cli",
+  "redis-sentinel",
+  "redis-server",
+]
 description = "Cache & in-memory datastore"

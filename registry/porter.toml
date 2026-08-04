@@ -1,6 +1,7 @@
 description = "CNAB bundle authoring and management tool"
 test = { cmd = "porter version", expected = "porter v{{version}}" }
 
+bins = ["porter"]
 [[backends]]
 full = "aqua:getporter/porter/porter"
 

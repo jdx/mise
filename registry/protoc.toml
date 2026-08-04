@@ -3,4 +3,5 @@ backends = [
   "aqua:protocolbuffers/protobuf/protoc",
   "asdf:paxosglobal/asdf-protoc",
 ]
+bins = ["protoc"]
 description = "Protocol Buffers Compiler - Google's data interchange format"

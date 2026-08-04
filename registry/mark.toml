@@ -3,5 +3,6 @@ backends = [
   "github:kovetskiy/mark",
   "asdf:jfreeland/asdf-mark",
 ]
+bins = ["mark"]
 description = "Sync your markdown files with Confluence pages"
 test = { cmd = "mark --version", expected = "{{version}}" }

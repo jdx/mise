@@ -1,3 +1,4 @@
 backends = ["aqua:rancher/cli", "asdf:abinet/asdf-rancher"]
+bins = ["rancher"]
 description = "Rancher CLI"
 test = { cmd = "rancher --version", expected = "rancher version v{{version}}" }

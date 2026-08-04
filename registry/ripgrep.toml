@@ -4,5 +4,6 @@ backends = [
   "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
   "cargo:ripgrep",
 ]
+bins = ["rg"]
 description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
 test = { cmd = "rg --version", expected = "ripgrep {{version}}" }

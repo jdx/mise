@@ -1,3 +1,4 @@
 backends = ["aqua:sharkdp/numbat", "cargo:numbat-cli"]
+bins = ["numbat"]
 description = "A statically typed programming language for scientific computations with first class support for physical dimensions and units"
 test = { cmd = "numbat --version", expected = "numbat {{version}}" }

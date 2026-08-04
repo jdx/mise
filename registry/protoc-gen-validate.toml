@@ -2,5 +2,11 @@ backends = [
   "aqua:bufbuild/protoc-gen-validate",
   "go:github.com/envoyproxy/protoc-gen-validate",
 ]
+bins = [
+  "protoc-gen-validate",
+  "protoc-gen-validate-cpp",
+  "protoc-gen-validate-go",
+  "protoc-gen-validate-java",
+]
 description = "Protocol Buffer Validation - Being replaced by github.com/bufbuild/protovalidate"
 test = { cmd = "which protoc-gen-validate", expected = "protoc-gen-validate" }

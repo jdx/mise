@@ -2,6 +2,7 @@ description = "OpenShift Client CLI (oc)"
 os = ["linux", "macos", "windows"]
 test = { cmd = "oc version --client", expected = "{{version}}" }
 
+bins = ["oc"]
 [[backends]]
 full = "http:oc"
 

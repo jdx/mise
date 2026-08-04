@@ -1,3 +1,4 @@
 backends = ["aqua:hatoo/oha", "github:hatoo/oha"]
+bins = ["oha"]
 description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation"
 test = { cmd = "oha --version", expected = "oha {{version}}" }

@@ -1,2 +1,3 @@
 backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd", "cargo:lsd"]
+bins = ["lsd"]
 description = "The next gen ls command"

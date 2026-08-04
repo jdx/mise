@@ -1,2 +1,3 @@
 backends = ["aqua:oras-project/oras", "asdf:bodgit/asdf-oras"]
+bins = ["oras"]
 description = "ORAS CLI"

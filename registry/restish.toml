@@ -1,3 +1,4 @@
 backends = ["aqua:rest-sh/restish", "go:github.com/danielgtaylor/restish"]
+bins = ["restish"]
 description = "Restish is a CLI for interacting with REST-ish HTTP APIs with some nice features built-in"
 test = { cmd = "restish --version", expected = "restish version {{version}}" }

@@ -3,5 +3,6 @@ backends = [
   "aqua:PowerShell/PowerShell",
   "asdf:daveneeley/asdf-powershell-core",
 ]
+bins = ["pwsh"]
 description = "PowerShell for every system"
 test = { cmd = "pwsh --version", expected = "PowerShell {{version}}" }

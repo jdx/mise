@@ -1,4 +1,22 @@
 backends = ["core:ruby"]
+bins = [
+  "bundle",
+  "bundler",
+  "erb",
+  "gem",
+  "irb",
+  "minitest",
+  "racc",
+  "rake",
+  "rbs",
+  "rdbg",
+  "rdoc",
+  "ri",
+  "ruby",
+  "syntax_suggest",
+  "test-unit",
+  "typeprof",
+]
 description = "Ruby language"
 detect = ["Gemfile", ".ruby-version", "Rakefile"]
 idiomatic_files = [".ruby-version", "Gemfile"]

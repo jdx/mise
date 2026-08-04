@@ -1,4 +1,38 @@
 backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
+bins = [
+  "change-shebang",
+  "corelist",
+  "cpan",
+  "cpanm",
+  "enc2xs",
+  "encguess",
+  "h2ph",
+  "h2xs",
+  "instmodsh",
+  "json_pp",
+  "libnetcfg",
+  "perl",
+  "perlbug",
+  "perldoc",
+  "perlivp",
+  "perlthanks",
+  "piconv",
+  "pl2pm",
+  "pod2html",
+  "pod2man",
+  "pod2text",
+  "pod2usage",
+  "podchecker",
+  "prove",
+  "ptar",
+  "ptardiff",
+  "ptargrep",
+  "shasum",
+  "splain",
+  "streamzip",
+  "xsubpp",
+  "zipdetails",
+]
 description = "self-contained, portable perl binaries"
 detect = [".perl-version"]
 idiomatic_files = [".perl-version"]

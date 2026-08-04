@@ -1,3 +1,4 @@
 backends = ["conda:luajit", "asdf:mise-plugins/mise-luaJIT"]
+bins = ["luajit"]
 description = "a Just-In-Time Compiler for Lua"
 test = { cmd = "luajit -v", expected = "LuaJIT" }

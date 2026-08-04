@@ -3,5 +3,6 @@ backends = [
   "asdf:mise-plugins/mise-maven",
   "vfox:mise-plugins/vfox-maven",
 ]
+bins = ["mvn", "mvnDebug", "mvnyjp"]
 description = "Apache Maven core"
 test = { cmd = "mvn --version", expected = "Apache Maven {{version}}" }

@@ -1,3 +1,4 @@
 backends = ["aqua:dathere/qsv", "github:dathere/qsv", "asdf:vjda/asdf-qsv"]
+bins = ["qsv", "qsvdp", "qsvlite", "qsvp", "qsvpdp", "qsvplite"]
 description = "Blazing-fast Data-Wrangling toolkit"
 test = { cmd = "qsv --version", expected = "qsv {{version}}" }

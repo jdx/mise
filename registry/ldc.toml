@@ -1,3 +1,18 @@
 backends = ["github:ldc-developers/ldc"]
+bins = [
+  "ddemangle",
+  "dub",
+  "dustmite",
+  "ldc-build-plugin",
+  "ldc-build-runtime",
+  "ldc-profdata",
+  "ldc-profgen",
+  "ldc-prune-cache",
+  "ldc2",
+  "ldmd2",
+  "rdmd",
+  "reggae",
+  "timetrace2txt",
+]
 description = "LLVM-based compiler for the D programming language"
 test = { cmd = "ldc2 --version", expected = "{{version}}" }

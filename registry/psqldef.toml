@@ -1,2 +1,3 @@
 backends = ["aqua:sqldef/sqldef/psqldef"]
+bins = ["psqldef"]
 description = "Idempotent schema management for PostgreSQL"

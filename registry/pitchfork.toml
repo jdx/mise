@@ -1,3 +1,4 @@
 backends = ["aqua:jdx/pitchfork"]
+bins = ["pitchfork"]
 description = "Daemons with DX"
 test = { cmd = "pitchfork --version", expected = "pitchfork {{version}}" }

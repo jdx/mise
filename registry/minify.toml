@@ -1,2 +1,3 @@
 backends = ["aqua:tdewolff/minify", "asdf:axilleas/asdf-minify"]
+bins = ["minify"]
 description = "Go minifiers for web formats"

@@ -5,3 +5,4 @@ backends = [
   "aqua:localstack/localstack-cli",
   "github:localstack/localstack-cli",
 ]
+bins = ["localstack"]

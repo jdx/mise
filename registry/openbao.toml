@@ -2,3 +2,4 @@ description = "OpenBao exists to provide a software solution to manage, store, a
 test = { cmd = "bao version", expected = "OpenBao v{{version}}" }
 
 backends = ["aqua:openbao/openbao/bao", "github:openbao/openbao"]
+bins = ["bao"]
