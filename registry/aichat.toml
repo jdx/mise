@@ -1,3 +1,4 @@
 backends = ["aqua:sigoden/aichat"]
+bins = ["aichat"]
 description = "Use GPT-4(V), Gemini, LocalAI, Ollama and other LLMs in the terminal"
 test = { cmd = "aichat --version", expected = "{{version}}" }

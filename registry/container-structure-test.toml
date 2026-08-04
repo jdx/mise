@@ -2,4 +2,5 @@ backends = [
   "aqua:GoogleContainerTools/container-structure-test",
   "asdf:FeryET/asdf-container-structure-test",
 ]
+bins = ["container-structure-test"]
 description = "validate the structure of your container images"

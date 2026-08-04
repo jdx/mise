@@ -1,3 +1,4 @@
 backends = ["github:jckuester/awsls", "asdf:chessmango/asdf-awsls"]
+bins = ["awsls"]
 description = "A list command for AWS resources"
 test = { cmd = "awsls --version", expected = "version: {{version}}" }

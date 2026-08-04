@@ -1,3 +1,4 @@
 backends = ["npm:@owloops/claude-powerline"]
+bins = ["claude-powerline"]
 description = "Beautiful vim-style powerline statusline for Claude Code"
 test = { cmd = "claude-powerline --help", expected = "claude-powerline [options]" }

@@ -1,3 +1,4 @@
 backends = ["aqua:foresterre/cargo-msrv", "cargo:cargo-msrv"]
+bins = ["cargo-msrv"]
 description = "Find the minimum supported Rust version for your project"
 test = { cmd = "cargo msrv --version", expected = "cargo-msrv {{version}}" }

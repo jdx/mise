@@ -1,3 +1,4 @@
 backends = ["aqua:dependency-check/DependencyCheck"]
+bins = ["dependency-check", "dependency-check.sh"]
 description = "Software composition analysis utility that detects publicly disclosed vulnerabilities in application dependencies"
 test = { cmd = "dependency-check --version", expected = "Dependency-Check Core version {{version}}" }

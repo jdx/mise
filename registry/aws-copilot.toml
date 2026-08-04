@@ -1,3 +1,4 @@
 backends = ["aqua:aws/copilot-cli", "asdf:NeoHsu/asdf-copilot"]
+bins = ["copilot"]
 description = "The AWS Copilot CLI is a tool for developers to build, release and operate production ready containerized applications on AWS App Runner, Amazon ECS, and AWS Fargate"
 test = { cmd = "copilot --version", expected = "copilot version: v{{version}}" }

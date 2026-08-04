@@ -1,4 +1,5 @@
 backends = ["aqua:jamesob/desk", "asdf:endorama/asdf-desk"]
+bins = ["desk"]
 description = "A lightweight workspace manager for the shell"
 os = ["linux", "macos"]
 test = { cmd = "desk version", expected = "desk {{version}}" }

@@ -3,5 +3,6 @@ backends = [
   "cargo:bat",
   "asdf:https://gitlab.com/wt0f/asdf-bat",
 ]
+bins = ["bat"]
 description = "A cat(1) clone with wings"
 test = { cmd = "bat --version", expected = "bat {{version}}" }

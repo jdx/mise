@@ -1,2 +1,3 @@
 backends = ["aqua:Kong/deck", "asdf:nutellinoit/asdf-deck"]
+bins = ["deck"]
 description = "decK: Configuration management and drift detection for Kong"

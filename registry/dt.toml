@@ -1,2 +1,3 @@
 backends = ["aqua:so-dang-cool/dt", "asdf:so-dang-cool/asdf-dt"]
+bins = ["dt"]
 description = "dt - duct tape for your unix pipes"

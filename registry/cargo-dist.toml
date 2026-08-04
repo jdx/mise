@@ -3,5 +3,6 @@ backends = [
   "github:axodotdev/cargo-dist",
   "cargo:cargo-dist",
 ]
+bins = ["dist"]
 description = "📦 shippable application packaging"
 test = { cmd = "dist --version", expected = "cargo-dist {{version}}" }

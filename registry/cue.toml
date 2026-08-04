@@ -1,2 +1,3 @@
 backends = ["aqua:cue-lang/cue", "asdf:asdf-community/asdf-cue"]
+bins = ["cue"]
 description = "The home of the CUE language! Validate and define text-based and dynamic configuration"

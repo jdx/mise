@@ -1,4 +1,5 @@
 backends = ["vfox:mise-plugins/vfox-bfs", "asdf:mise-plugins/mise-bfs"]
+bins = ["bfs"]
 description = "Breadth-first search for your files"
 # TODO: re-enable once bfs reports the full resolved version; 4.1.1 currently reports "bfs 4.1".
 # test = { cmd = "bfs --version", expected = "bfs {{version}}" }

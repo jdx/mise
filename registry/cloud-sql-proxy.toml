@@ -2,4 +2,5 @@ backends = [
   "aqua:GoogleCloudPlatform/cloud-sql-proxy",
   "asdf:pbr0ck3r/asdf-cloud-sql-proxy",
 ]
+bins = ["cloud-sql-proxy"]
 description = "A utility for connecting securely to your Cloud SQL instances"

@@ -1,3 +1,4 @@
 backends = ["pipx:copier", "asdf:looztra/asdf-copier"]
+bins = ["copier"]
 description = "A library and CLI app for rendering project templates"
 test = { cmd = "copier --version", expected = "copier {{version}}" }

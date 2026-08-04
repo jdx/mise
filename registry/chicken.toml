@@ -1,4 +1,15 @@
 backends = ["vfox:mise-plugins/vfox-chicken"]
+bins = [
+  "chicken",
+  "chicken-do",
+  "chicken-install",
+  "chicken-profile",
+  "chicken-status",
+  "chicken-uninstall",
+  "csc",
+  "csi",
+  "feathers",
+]
 description = "CHICKEN is a compiler for the Scheme programming language"
 os = ["linux", "macos", "freebsd", "openbsd"]
 test = { cmd = "csi -version", expected = "Version" }

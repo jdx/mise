@@ -1,2 +1,3 @@
 backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
+bins = ["coder"]
 description = "Provision remote development environments via Terraform"

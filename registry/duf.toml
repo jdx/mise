@@ -1,2 +1,3 @@
 backends = ["aqua:muesli/duf", "asdf:NeoHsu/asdf-duf"]
+bins = ["duf"]
 description = "Disk Usage/Free Utility - a better 'df' alternative"

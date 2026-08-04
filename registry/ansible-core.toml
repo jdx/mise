@@ -1,4 +1,16 @@
 aliases = ["ansible-base"]
 backends = ["pipx:ansible-core"]
+bins = [
+  "ansible",
+  "ansible-config",
+  "ansible-console",
+  "ansible-doc",
+  "ansible-galaxy",
+  "ansible-inventory",
+  "ansible-playbook",
+  "ansible-pull",
+  "ansible-test",
+  "ansible-vault",
+]
 description = "ansible-core python package contains the core runtime and CLI tools, such as ansible and ansible-playbook"
 test = { cmd = "ansible --version", expected = "ansible [core {{version}}]" }

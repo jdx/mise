@@ -1,5 +1,6 @@
 description = "The Codefresh CLI provides a full and flexible interface to interact with Codefresh"
 
+bins = ["codefresh"]
 [[backends]]
 full = "github:codefresh-io/cli"
 

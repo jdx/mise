@@ -1,3 +1,4 @@
 backends = ["github:mhausenblas/cidrchk", "asdf:ORCID/asdf-cidrchk"]
+bins = ["cidrchk"]
 description = "CLI tool for CIDR range operations (check, generate)"
 test = { cmd = "cidrchk --version", expected = "{{version}}," }

@@ -1,3 +1,4 @@
 backends = ["pipx:awsebcli", "asdf:mise-plugins/mise-pyapp"]
+bins = ["eb", "ebp"]
 description = "The AWS Elastic Beanstalk Command Line Interface (EB CLI) is a tool that helps you deploy and manage your Elastic Beanstalk applications and environments. It also provides integration with Git"
 test = { cmd = "eb --version", expected = "EB CLI {{version}}" }

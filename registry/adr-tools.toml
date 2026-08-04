@@ -2,5 +2,16 @@ backends = [
   "aqua:npryce/adr-tools",
   "asdf:https://gitlab.com/td7x/asdf/adr-tools",
 ]
+bins = [
+  "adr",
+  "adr-config",
+  "adr-generate",
+  "adr-help",
+  "adr-init",
+  "adr-link",
+  "adr-list",
+  "adr-new",
+  "adr-upgrade-repository",
+]
 description = "Command-line tools for working with Architecture Decision Records"
 test = { cmd = "adr help", expected = "adr help" }

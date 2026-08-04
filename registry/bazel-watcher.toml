@@ -1,3 +1,4 @@
 backends = ["aqua:bazelbuild/bazel-watcher"]
+bins = ["ibazel"]
 description = "Tools for building Bazel targets when source files change"
 test = { cmd = "ibazel version", expected = "iBazel - Version v{{version}}" }

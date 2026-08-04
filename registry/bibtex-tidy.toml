@@ -1,6 +1,7 @@
 description = "Cleaner and Formatter for BibTeX files"
 test = { cmd = "bibtex-tidy --version", expected = "v{{version}}" }
 
+bins = ["bibtex-tidy"]
 [[backends]]
 full = "npm:bibtex-tidy"
 

@@ -3,5 +3,6 @@ backends = [
   "asdf:mise-plugins/asdf-cargo-make",
   "cargo:cargo-make",
 ]
+bins = ["cargo-make", "makers"]
 description = "Rust task runner and build tool"
 test = { cmd = "makers --version", expected = "cargo-make {{version}}" }

@@ -1,2 +1,3 @@
 backends = ["aqua:tilt-dev/ctlptl", "asdf:ezcater/asdf-ctlptl"]
+bins = ["ctlptl"]
 description = "Making local Kubernetes clusters fun and easy to set up"

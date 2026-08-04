@@ -1,3 +1,4 @@
+bins = ["code-review-graph", "crg-daemon"]
 description = "code-review-graph: Stop burning tokens. Start reviewing smarter."
 test = { cmd = "code-review-graph --version", expected = "code-review-graph {{version}}" }
 [[backends]]

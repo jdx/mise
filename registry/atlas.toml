@@ -1,3 +1,4 @@
 backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
+bins = ["atlas"]
 description = "A modern tool for managing database schemas"
 test = { cmd = "atlas version", expected = "atlas version v{{version}}" }

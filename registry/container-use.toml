@@ -1,3 +1,4 @@
 backends = ["aqua:dagger/container-use"]
+bins = ["container-use", "cu"]
 description = "Development environments for coding agents. Enable multiple agents to work safely and independently with your preferred stack."
 test = { cmd = "container-use --version", expected = "container-use version {{version}}" }

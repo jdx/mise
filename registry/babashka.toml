@@ -1,6 +1,7 @@
 description = "Native, fast starting Clojure interpreter for scripting"
 test = { cmd = "bb --version", expected = "babashka v{{version}}" }
 
+bins = ["bb"]
 [[backends]]
 full = "github:babashka/babashka"
 

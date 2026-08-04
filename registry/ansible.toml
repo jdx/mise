@@ -1,6 +1,19 @@
 description = "ansible python package contains the core runtime and CLI tools, such as ansible and ansible-playbook and extra modules, plugins, and roles"
 test = { cmd = "ansible --version", expected = "ansible" }
 
+bins = [
+  "ansible",
+  "ansible-community",
+  "ansible-config",
+  "ansible-console",
+  "ansible-doc",
+  "ansible-galaxy",
+  "ansible-inventory",
+  "ansible-playbook",
+  "ansible-pull",
+  "ansible-test",
+  "ansible-vault",
+]
 [[backends]]
 full = "pipx:ansible"
 

@@ -1,6 +1,7 @@
 description = "Modern diagram scripting language that turns text to diagrams"
 test = { cmd = "d2 --version", expected = "v{{version}}" }
 
+bins = ["d2"]
 [[backends]]
 full = "aqua:terrastruct/d2"
 

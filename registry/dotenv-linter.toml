@@ -3,5 +3,6 @@ backends = [
   "asdf:wesleimp/asdf-dotenv-linter",
   "cargo:dotenv-linter",
 ]
+bins = ["dotenv-linter"]
 description = "Lightning-fast linter for .env files. Written in Rust"
 test = { cmd = "dotenv-linter --version", expected = "dotenv-linter {{version}}" }

@@ -3,5 +3,6 @@ description = "AWS CDK CLI, the command line tool for CDK apps"
 detect = ["cdk.json"]
 test = { cmd = "cdk --version", expected = "{{version}}" }
 
+bins = ["cdk"]
 [[backends]]
 full = "npm:aws-cdk"

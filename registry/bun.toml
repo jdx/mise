@@ -1,4 +1,5 @@
 backends = ["core:bun"]
+bins = ["bun", "bunx"]
 description = "Bun is a fast JavaScript all-in-one toolkit"
 detect = ["bun.lock", "bun.lockb", "bunfig.toml"]
 idiomatic_files = [".bun-version", "package.json"]

@@ -1,2 +1,13 @@
 backends = ["npm:danger"]
+bins = [
+  "danger",
+  "danger-ci",
+  "danger-init",
+  "danger-js",
+  "danger-local",
+  "danger-pr",
+  "danger-process",
+  "danger-reset-status",
+  "danger-runner",
+]
 description = "Danger runs during your CI process, and gives teams the chance to automate common code review chores"

@@ -2,6 +2,7 @@ aliases = ["amplify"]
 description = "The AWS Amplify CLI is a toolchain for simplifying serverless web and mobile development"
 # test = ["amplify --version", "{{version}}"]  # hangs in CI
 
+bins = ["amplify"]
 [[backends]]
 full = "github:aws-amplify/amplify-cli"
 

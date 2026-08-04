@@ -2,6 +2,7 @@ aliases = ["azure-cli"]
 description = "azure-cli (az)"
 test = { cmd = "az --version", expected = "azure-cli                         {{version}}" }
 
+bins = ["az"]
 [[backends]]
 full = "pipx:azure-cli"
 

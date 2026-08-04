@@ -1,3 +1,9 @@
 backends = ["aqua:blender/blender"]
+bins = [
+  "blender",
+  "blender-launcher",
+  "blender-system-info.sh",
+  "blender-thumbnailer",
+]
 description = "Blender is a free and open-source 3D computer graphics software"
 test = { cmd = "blender --version", expected = "Blender {{version}}" }

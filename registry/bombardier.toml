@@ -1,3 +1,4 @@
 backends = ["aqua:codesenberg/bombardier", "asdf:NeoHsu/asdf-bombardier"]
+bins = ["bombardier"]
 description = "Fast cross-platform HTTP benchmarking tool written in Go"
 test = { cmd = "bombardier --version", expected = "bombardier version" } # shows "unspecified"

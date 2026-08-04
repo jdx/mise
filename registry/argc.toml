@@ -1,3 +1,4 @@
 backends = ["github:sigoden/argc"]
+bins = ["argc"]
 description = "A Bash CLI framework, also a Bash command runner"
 test = { cmd = "argc --argc-version", expected = "argc {{version}}" }

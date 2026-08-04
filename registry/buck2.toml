@@ -2,6 +2,7 @@ description = "A fast, hermetic, multi-language build system"
 # test disabled: facebook replaces assets in-place on "latest" tag causing checksum race conditions
 # test = ["buck2 --version", "buck2"]
 
+bins = ["buck2"]
 [[backends]]
 full = "aqua:facebook/buck2"
 

@@ -1,3 +1,4 @@
 backends = ["github:coredns/coredns", "asdf:s3than/asdf-coredns"]
+bins = ["coredns"]
 description = "CoreDNS: DNS and Service Discovery"
 test = { cmd = "coredns --version", expected = "CoreDNS-{{version}}" }
