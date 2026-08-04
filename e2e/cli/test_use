@@ -30,6 +30,20 @@ rm .mise.local.toml
 mise use dummy@1 dummy@2
 assert "mise current dummy" "1.0.0 2.0.0"
 
+# Multiple additions should preserve an already-sorted [tools] table.
+rm mise.toml
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-local"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-ref"
+mise use tiny-ref@1
+mise use dummy@1 tiny-local@1 tiny@1
+assert "cat mise.toml" '[tools]
+dummy = "1"
+tiny = "1"
+tiny-local = "1"
+tiny-ref = "1"'
+rm mise.toml
+
 mise use --pin dummy@1
 assert "cat mise.toml" '[tools]
 dummy = "1.0.0"'
