@@ -38,6 +38,7 @@ pub mod files;
 pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
+pub mod managed_files;
 pub mod packages;
 pub mod repos;
 pub mod resources;
@@ -56,6 +57,12 @@ pub struct BootstrapTomlConfig {
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
     pub packages: IndexMap<String, String>,
+    /// Absolute target path -> declarative managed file.
+    #[serde(default)]
+    pub files: IndexMap<String, managed_files::ManagedFileTomlConfig>,
+    /// Absolute target path -> declarative managed directory.
+    #[serde(default)]
+    pub directories: IndexMap<String, managed_files::ManagedDirectoryTomlConfig>,
     /// `"~/path"` -> git repo checkout.
     #[serde(default)]
     pub repos: IndexMap<String, RepoTomlConfig>,

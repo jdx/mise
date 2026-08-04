@@ -280,7 +280,7 @@ Tool(s) to look up
 e.g.: ruby@3
 """# required=#false var=#true
 }
-cmd bootstrap help="Set up a machine for the current config in one command" effect=write {
+cmd bootstrap help="Set up a machine for the current config in one command" effect=destructive {
     alias bs
     long_help #"""
 Set up a machine for the current config in one command
@@ -352,7 +352,7 @@ Run only one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 """#
         arg <ONLY> {
-            choices plugins packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
+            choices plugins packages files repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
     flag --skip help="Skip one or more bootstrap parts" var=#true {
@@ -362,10 +362,12 @@ Skip one or more bootstrap parts
 Can be passed multiple times or as a comma-separated list.
 """#
         arg <SKIP> {
-            choices plugins packages repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
+            choices plugins packages files repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
         }
     }
     flag --update help="Refresh package manager metadata and update configured repos"
+    cmd __apply-system-plan hide=#true effect=destructive
+    cmd __inspect-system-files hide=#true effect=read
     cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
         cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
             long_help #"""
@@ -479,6 +481,16 @@ Examples:
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
             arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
+        }
+    }
+    cmd files subcommand_required=#true help="Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`" effect=read {
+        cmd apply help="Apply configured privileged files and directories" effect=destructive {
+            flag "-n --dry-run" help="Print what would change without changing anything"
+            flag "-y --yes" help="Skip the confirmation prompt"
+        }
+        cmd status help="Show configured privileged file and directory state" effect=read {
+            flag "-J --json" help="Output in JSON format"
+            flag --missing help="Exit with code 1 when any resource is not converged"
         }
     }
     cmd launchd hide=#true subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {

@@ -169,6 +169,15 @@ Show the status of dotfiles from `[dotfiles]`
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
 .TP
+\fBbootstrap files\fR
+Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+.TP
+\fBbootstrap files apply\fR
+Apply configured privileged files and directories
+.TP
+\fBbootstrap files status\fR
+Show configured privileged file and directory state
+.TP
 \fBbootstrap linux\fR
 Manage Linux bootstrap config from `[bootstrap.linux]`
 .TP
@@ -1057,6 +1066,32 @@ Skip the confirmation prompt
 .TP
 \fB<TARGET>\fR
 Only unapply these targets
+.SH "MISE BOOTSTRAP FILES APPLY"
+Apply configured privileged files and directories
+.PP
+\fBUsage:\fR mise bootstrap files apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Skip the confirmation prompt
+.SH "MISE BOOTSTRAP FILES STATUS"
+Show configured privileged file and directory state
+.PP
+\fBUsage:\fR mise bootstrap files status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 when any resource is not converged
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
 \fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP
