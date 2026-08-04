@@ -284,7 +284,7 @@ struct FirewallInspection {
     exact: bool,
     active: bool,
     reason: Option<String>,
-    current_rules: Vec<FirewallRule>,
+    current_rules: Option<Vec<FirewallRule>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -600,36 +600,52 @@ impl FirewallRequest {
             desired,
             action,
         )];
-        let current_rules = inspection
-            .map(|inspection| {
-                inspection
-                    .current_rules
+        let current_rules = inspection.and_then(|inspection| {
+            inspection.current_rules.as_ref().map(|rules| {
+                rules
                     .iter()
                     .map(|rule| (rule.name.as_str(), rule))
                     .collect::<IndexMap<_, _>>()
             })
-            .unwrap_or_default();
+        });
+        let unknown_rule_state = match inspection {
+            None => Some("not inspected"),
+            Some(inspection) if inspection.current_rules.is_none() => Some(
+                inspection
+                    .reason
+                    .as_deref()
+                    .unwrap_or("live firewall differs from the saved rule snapshot"),
+            ),
+            Some(_) => None,
+        };
         for rule in &self.rules {
-            let current = current_rules.get(rule.name.as_str()).copied();
+            let current = current_rules
+                .as_ref()
+                .and_then(|rules| rules.get(rule.name.as_str()).copied());
             let desired_state = if self.state == FirewallState::Absent {
                 FirewallRuleState::Absent
             } else {
                 rule.state
             };
-            let (current_description, action) = match (desired_state, current) {
-                (FirewallRuleState::Absent, None) => ("absent".to_string(), ResourceAction::Noop),
-                (FirewallRuleState::Absent, Some(_)) => {
-                    ("present".to_string(), ResourceAction::Remove)
-                }
-                (FirewallRuleState::Present, None) => {
-                    ("absent".to_string(), ResourceAction::Create)
-                }
-                (FirewallRuleState::Present, Some(existing)) if existing == rule => {
-                    (rule.describe(), ResourceAction::Noop)
-                }
-                (FirewallRuleState::Present, Some(existing)) => {
-                    (existing.describe(), ResourceAction::Update)
-                }
+            let (current_description, action) = match unknown_rule_state {
+                Some(reason) => (format!("unknown: {reason}"), ResourceAction::Unknown),
+                None => match (desired_state, current) {
+                    (FirewallRuleState::Absent, None) => {
+                        ("absent".to_string(), ResourceAction::Noop)
+                    }
+                    (FirewallRuleState::Absent, Some(_)) => {
+                        ("present".to_string(), ResourceAction::Remove)
+                    }
+                    (FirewallRuleState::Present, None) => {
+                        ("absent".to_string(), ResourceAction::Create)
+                    }
+                    (FirewallRuleState::Present, Some(existing)) if existing == rule => {
+                        (rule.describe(), ResourceAction::Noop)
+                    }
+                    (FirewallRuleState::Present, Some(existing)) => {
+                        (existing.describe(), ResourceAction::Update)
+                    }
+                },
             };
             plans.push(ResourcePlan::new(
                 ResourceId::new("firewall-rule", &rule.name),
@@ -775,7 +791,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
                 exact: false,
                 active: false,
                 reason: Some(error.to_string()),
-                current_rules: state.map(|state| state.request.rules).unwrap_or_default(),
+                current_rules: None,
             };
         }
     };
@@ -786,7 +802,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
             exact: false,
             active: false,
             reason: Some(error.to_string()),
-            current_rules: state.map(|state| state.request.rules).unwrap_or_default(),
+            current_rules: None,
         };
     }
     let effective = effective_request(request, state.as_ref());
@@ -797,12 +813,21 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
             exact: false,
             active: false,
             reason: Some(error.to_string()),
-            current_rules: state.map(|state| state.request.rules).unwrap_or_default(),
+            current_rules: None,
         };
     }
     let expected_digest = request_digest(&effective, backend).unwrap_or_default();
     let managed = state.is_some() || managed_backend_present(backend);
     let active = managed_backend_active(backend);
+    let saved_rules_verified = state.as_ref().is_some_and(|state| {
+        state.backend == backend
+            && live_matches(
+                backend,
+                &state.request,
+                &state.digest,
+                state.live_fingerprint.as_deref(),
+            )
+    });
     let live_matches = live_matches(
         backend,
         &effective,
@@ -826,7 +851,18 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
         exact,
         active,
         reason: None,
-        current_rules: state.map(|state| state.request.rules).unwrap_or_default(),
+        current_rules: if saved_rules_verified {
+            Some(
+                state
+                    .as_ref()
+                    .map(|state| state.request.rules.clone())
+                    .unwrap_or_default(),
+            )
+        } else if !managed {
+            Some(vec![])
+        } else {
+            None
+        },
     }
 }
 
@@ -2348,12 +2384,53 @@ mod tests {
             exact: true,
             active: false,
             reason: None,
-            current_rules: vec![],
+            current_rules: Some(vec![]),
         });
         let plans = request.plans();
         assert!(plans.iter().all(|plan| plan.action == ResourceAction::Noop));
         assert_eq!(plans[0].current, "absent");
         assert_eq!(plans[1].desired, "absent");
+    }
+
+    #[test]
+    fn live_drift_marks_rule_status_unknown() {
+        let mut request = request_with_ssh(None);
+        request.inspection = Some(FirewallInspection {
+            backend: Some(FirewallBackend::Nftables),
+            managed: true,
+            exact: false,
+            active: true,
+            reason: None,
+            current_rules: None,
+        });
+
+        let plans = request.plans();
+        assert_eq!(plans[0].action, ResourceAction::Update);
+        assert_eq!(plans[1].action, ResourceAction::Unknown);
+        assert!(plans[1].current.contains("live firewall differs"));
+    }
+
+    #[test]
+    fn verified_saved_rules_keep_precise_rule_updates() {
+        let mut request = request_with_ssh(None);
+        let current_rules = request.rules.clone();
+        request.rules[0].port = Some(FirewallPort {
+            start: 2222,
+            end: 2222,
+        });
+        request.inspection = Some(FirewallInspection {
+            backend: Some(FirewallBackend::Nftables),
+            managed: true,
+            exact: false,
+            active: true,
+            reason: None,
+            current_rules: Some(current_rules),
+        });
+
+        let plans = request.plans();
+        assert_eq!(plans[0].action, ResourceAction::Update);
+        assert_eq!(plans[1].action, ResourceAction::Update);
+        assert!(!plans[1].current.contains("unknown"));
     }
 
     #[test]
