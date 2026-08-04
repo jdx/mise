@@ -701,10 +701,7 @@ pub fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Result<()> 
         info!("firewall: already converged");
         return Ok(());
     }
-    if plan
-        .iter()
-        .any(|resource| resource.action == ResourceAction::Unknown)
-    {
+    if firewall_change_is_unsafe(&plan) {
         if dry_run {
             for resource in plan
                 .iter()
@@ -764,6 +761,12 @@ pub fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Result<()> 
     )?;
     info!("firewall: applied changes");
     Ok(())
+}
+
+fn firewall_change_is_unsafe(plan: &[ResourcePlan]) -> bool {
+    plan.iter()
+        .find(|resource| resource.id.kind == "firewall" && resource.id.name == "linux")
+        .is_none_or(|resource| resource.action == ResourceAction::Unknown)
 }
 
 pub fn inspect_privileged_plan_from_stdin() -> Result<()> {
@@ -2408,6 +2411,24 @@ mod tests {
         assert_eq!(plans[0].action, ResourceAction::Update);
         assert_eq!(plans[1].action, ResourceAction::Unknown);
         assert!(plans[1].current.contains("live firewall differs"));
+        assert!(!firewall_change_is_unsafe(&plans));
+    }
+
+    #[test]
+    fn unavailable_firewall_inspection_remains_unsafe_to_apply() {
+        let mut request = request_with_ssh(None);
+        request.inspection = Some(FirewallInspection {
+            backend: None,
+            managed: false,
+            exact: false,
+            active: false,
+            reason: Some("firewall backend unavailable".to_string()),
+            current_rules: None,
+        });
+
+        let plans = request.plans();
+        assert_eq!(plans[0].action, ResourceAction::Unknown);
+        assert!(firewall_change_is_unsafe(&plans));
     }
 
     #[test]
