@@ -65,7 +65,7 @@
 
 ## Bootstrap
 
-- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: Linux users and groups, OS packages, privileged files and directories, system services, Docker Compose projects, git repos,…
+- [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap sets up a machine for the current config in one command: Linux users and groups, OS packages, privileged files and directories, system services, Linux host firewall policy, Docker…
 - [Remote Hosts](https://mise.jdx.dev/bootstrap/remote.html): mise bootstrap remote applies a bootstrap project to one or more machines through the locally installed OpenSSH client.
 - [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): mise can ensure machine-global system packages are installed via the [bootstrap.packages] section of mise.toml, applied by mise bootstrap packages apply or as part of mise bootstrap.
 - [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
@@ -168,6 +168,7 @@
 - [mise bootstrap compose](https://mise.jdx.dev/cli/bootstrap/compose.html): Manage Docker Compose projects from [bootstrap.compose]
 - [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Manage dotfiles from [dotfiles]
 - [mise bootstrap files](https://mise.jdx.dev/cli/bootstrap/files.html): Manage privileged files and directories from [bootstrap.files] and [bootstrap.directories]
+- [mise bootstrap firewall](https://mise.jdx.dev/cli/bootstrap/firewall.html): Manage the Linux host firewall from [bootstrap.linux.firewall]
 - [mise bootstrap linux](https://mise.jdx.dev/cli/bootstrap/linux.html): Manage Linux bootstrap config from [bootstrap.linux]
 - [mise bootstrap macos](https://mise.jdx.dev/cli/bootstrap/macos.html): Manage macOS bootstrap config from [bootstrap.macos]
 - [mise bootstrap mise-shell-activate](https://mise.jdx.dev/cli/bootstrap/mise-shell-activate.html): Manage mise shell activation from [bootstrap.miseshellactivate]

@@ -131,30 +131,32 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
 ///    `[bootstrap.directories]`
 /// 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
 ///    systemd system services (Linux)
-/// 5. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
+/// 5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
+///    host firewall policy and rules (Linux)
+/// 6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
 ///    Docker Compose projects
-/// 6. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+/// 7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
 ///    surrounded by `pre-repos`/`post-repos` hooks
-/// 7. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+/// 8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
 ///    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-/// 8. `mise bootstrap mise-shell-activate apply` — configure shell activation
+/// 9. `mise bootstrap mise-shell-activate apply` — configure shell activation
 ///    from `[bootstrap.mise_shell_activate]`
-/// 9. `mise bootstrap macos defaults apply` — write
-///    `[bootstrap.macos.defaults]` entries (macOS)
-///    surrounded by `pre-defaults`/`post-defaults` hooks
-/// 10. `mise bootstrap macos launchd-agents apply` — install/load
+/// 10. `mise bootstrap macos defaults apply` — write
+///     `[bootstrap.macos.defaults]` entries (macOS)
+///     surrounded by `pre-defaults`/`post-defaults` hooks
+/// 11. `mise bootstrap macos launchd-agents apply` — install/load
 ///     `[bootstrap.macos.launchd.agents]`
-/// 11. `mise bootstrap linux systemd-units apply` — install/start
+/// 12. `mise bootstrap linux systemd-units apply` — install/start
 ///     `[bootstrap.linux.systemd.units]`
-/// 12. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+/// 13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ///     (Unix)
 ///     surrounded by `pre-user`/`post-user` hooks
-/// 13. `mise install` — install missing tools from `[tools]`
+/// 14. `mise install` — install missing tools from `[tools]`
 ///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 ///     from `[bootstrap.packages]` install afterward, followed by
 ///     `[bootstrap.hooks.post-packages]`
-/// 14. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 15. `[bootstrap.hooks.final]` — optional final hook
+/// 15. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 16. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -215,6 +217,7 @@ enum BootstrapPart {
     Accounts,
     Files,
     Services,
+    Firewall,
     Compose,
     Repos,
     Dotfiles,
@@ -235,12 +238,13 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 17] = [
         Self::Plugins,
         Self::Packages,
         Self::Accounts,
         Self::Files,
         Self::Services,
+        Self::Firewall,
         Self::Compose,
         Self::Repos,
         Self::Dotfiles,
@@ -262,6 +266,7 @@ fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<Bootstrap
         "package" => BootstrapPart::Packages,
         "file" | "directory" => BootstrapPart::Files,
         "service" => BootstrapPart::Services,
+        "firewall" | "firewall-rule" => BootstrapPart::Firewall,
         "user" | "group" => BootstrapPart::Accounts,
         _ => return false,
     };
@@ -298,14 +303,19 @@ enum Commands {
     ApplyAccountPlan(BootstrapApplyAccountPlan),
     #[clap(name = "__apply-service-plan", hide = true)]
     ApplyServicePlan(BootstrapApplyServicePlan),
+    #[clap(name = "__apply-firewall-plan", hide = true)]
+    ApplyFirewallPlan(BootstrapApplyFirewallPlan),
     #[clap(name = "__apply-system-plan", hide = true)]
     ApplySystemPlan(BootstrapApplySystemPlan),
     #[clap(name = "__inspect-system-files", hide = true)]
     InspectSystemFiles(BootstrapInspectSystemFiles),
+    #[clap(name = "__inspect-firewall-plan", hide = true)]
+    InspectFirewallPlan(BootstrapInspectFirewallPlan),
     Accounts(BootstrapAccounts),
     Compose(BootstrapCompose),
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
+    Firewall(BootstrapFirewall),
     #[clap(hide = true)]
     Launchd(BootstrapLaunchd),
     Linux(BootstrapLinux),
@@ -369,6 +379,12 @@ struct BootstrapApplyAccountPlan {}
 
 #[derive(Debug, clap::Args)]
 struct BootstrapApplyServicePlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapApplyFirewallPlan {}
+
+#[derive(Debug, clap::Args)]
+struct BootstrapInspectFirewallPlan {}
 
 #[derive(Debug, clap::Args)]
 struct BootstrapInspectSystemFiles {}
@@ -491,6 +507,44 @@ struct BootstrapServicesStatus {
     json: bool,
 
     /// Exit with code 1 when any service is not converged
+    #[clap(long)]
+    missing: bool,
+}
+
+/// Manage the Linux host firewall from `[bootstrap.linux.firewall]`
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapFirewall {
+    #[clap(subcommand)]
+    command: BootstrapFirewallCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum BootstrapFirewallCommands {
+    Apply(BootstrapFirewallApply),
+    Status(BootstrapFirewallStatus),
+}
+
+/// Apply the configured Linux host firewall
+#[derive(Debug, clap::Args)]
+struct BootstrapFirewallApply {
+    /// Print what would change without changing anything
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+}
+
+/// Show configured Linux host firewall state
+#[derive(Debug, clap::Args)]
+struct BootstrapFirewallStatus {
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 when the firewall is not converged
     #[clap(long)]
     missing: bool,
 }
@@ -1118,6 +1172,11 @@ impl Bootstrap {
         }
         let mut managed_services =
             services_enabled.then_some(configured_services.unwrap_or_default());
+        let mut managed_firewall = if skip.contains(&BootstrapPart::Firewall) {
+            None
+        } else {
+            system::firewall::prepare_request_from_config(&config)?
+        };
         let mut managed_compose = if skip.contains(&BootstrapPart::Compose) {
             None
         } else {
@@ -1256,6 +1315,16 @@ impl Bootstrap {
             }
         } else {
             debug!("bootstrap: system services skipped");
+        }
+
+        if skip.contains(&BootstrapPart::Firewall) {
+            debug!("bootstrap: firewall skipped");
+        } else if let Some(firewall) = &mut managed_firewall {
+            system::firewall::inspect_request(firewall)?;
+            info!("bootstrap: firewall");
+            system::firewall::apply(firewall, self.dry_run, self.yes)?;
+        } else {
+            debug!("bootstrap: no [bootstrap.linux.firewall] configured");
         }
 
         if let Some(projects) = &mut managed_compose {
@@ -1820,12 +1889,15 @@ impl Commands {
         match self {
             Self::ApplyAccountPlan(cmd) => cmd.run(),
             Self::ApplyServicePlan(cmd) => cmd.run(),
+            Self::ApplyFirewallPlan(cmd) => cmd.run(),
             Self::ApplySystemPlan(cmd) => cmd.run(),
             Self::InspectSystemFiles(cmd) => cmd.run(),
+            Self::InspectFirewallPlan(cmd) => cmd.run(),
             Self::Accounts(cmd) => cmd.run().await,
             Self::Compose(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Files(cmd) => cmd.run().await,
+            Self::Firewall(cmd) => cmd.run().await,
             Self::Launchd(cmd) => cmd.run().await,
             Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
@@ -1902,6 +1974,18 @@ impl BootstrapApplyAccountPlan {
 impl BootstrapApplyServicePlan {
     fn run(self) -> Result<()> {
         system::services::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapApplyFirewallPlan {
+    fn run(self) -> Result<()> {
+        system::firewall::apply_privileged_plan_from_stdin()
+    }
+}
+
+impl BootstrapInspectFirewallPlan {
+    fn run(self) -> Result<()> {
+        system::firewall::inspect_privileged_plan_from_stdin()
     }
 }
 
@@ -2093,6 +2177,58 @@ impl BootstrapServicesStatus {
             miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
         } else if resources.is_empty() {
             info!("no bootstrap system services configured");
+        } else {
+            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            for resource in resources {
+                table.add_row(vec![
+                    resource.action.to_string(),
+                    resource.id.to_string(),
+                    resource.current,
+                    resource.desired,
+                ]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapFirewall {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapFirewallCommands::Apply(command) => command.run().await,
+            BootstrapFirewallCommands::Status(command) => command.run().await,
+        }
+    }
+}
+
+impl BootstrapFirewallApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let Some(request) = system::firewall::request_from_config(&config)? else {
+            info!("no bootstrap firewall configured");
+            return Ok(());
+        };
+        system::firewall::apply(&request, self.dry_run, self.yes)
+    }
+}
+
+impl BootstrapFirewallStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let Some(request) = system::firewall::status_request_from_config(&config)? else {
+            info!("no bootstrap firewall configured");
+            return Ok(());
+        };
+        let resources = request.plans();
+        let missing = resources
+            .iter()
+            .any(|resource| resource.action != system::resources::ResourceAction::Noop);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&resources)?);
         } else {
             let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
             for resource in resources {
@@ -2386,6 +2522,7 @@ impl BootstrapStatus {
             false,
         )?;
         let service_requests = system::services::status_requests_from_config(config)?;
+        let firewall_request = system::firewall::status_request_from_config(config)?;
         system::services::validate_notifications(&files, &directories, &service_requests)?;
         let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
         let compose_requests = system::compose::requests_from_config(config)?;
@@ -2394,6 +2531,7 @@ impl BootstrapStatus {
         self.collect_accounts(&accounts, &mut report);
         self.collect_files(files, directories, unavailable_files, &mut report)?;
         self.collect_services(&service_requests, &notified_services, &mut report);
+        self.collect_firewall(firewall_request.as_ref(), &mut report);
         self.collect_compose(&compose_requests, &mut report);
         self.collect_repos(config, &mut report)?;
         self.collect_dotfiles(config, &mut report)?;
@@ -2490,6 +2628,24 @@ impl BootstrapStatus {
             );
         }
         report.json.insert("services".to_string(), json!(resources));
+    }
+
+    fn collect_firewall(
+        &self,
+        request: Option<&system::firewall::FirewallRequest>,
+        report: &mut BootstrapStatusReport,
+    ) {
+        let resources = request.map(|request| request.plans()).unwrap_or_default();
+        for resource in &resources {
+            report.row(
+                resource.id.kind.clone(),
+                resource.id.name.clone(),
+                resource.current.clone(),
+                resource.action.to_string(),
+                resource.action != system::resources::ResourceAction::Noop,
+            );
+        }
+        report.json.insert("firewall".to_string(), json!(resources));
     }
 
     fn collect_compose(

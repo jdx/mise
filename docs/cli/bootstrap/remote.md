@@ -72,6 +72,7 @@ Run only one or more remote bootstrap parts
 - `accounts`
 - `files`
 - `services`
+- `firewall`
 - `compose`
 - `repos`
 - `dotfiles`
@@ -111,6 +112,7 @@ Skip one or more remote bootstrap parts
 - `accounts`
 - `files`
 - `services`
+- `firewall`
 - `compose`
 - `repos`
 - `dotfiles`

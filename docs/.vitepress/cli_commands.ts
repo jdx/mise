@@ -31,10 +31,16 @@ export const commands: { [key: string]: Command } = {
       "__apply-account-plan": {
         hide: true,
       },
+      "__apply-firewall-plan": {
+        hide: true,
+      },
       "__apply-service-plan": {
         hide: true,
       },
       "__apply-system-plan": {
+        hide: true,
+      },
+      "__inspect-firewall-plan": {
         hide: true,
       },
       "__inspect-system-files": {
@@ -83,6 +89,17 @@ export const commands: { [key: string]: Command } = {
         },
       },
       files: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
+      firewall: {
         hide: false,
         subcommands: {
           apply: {

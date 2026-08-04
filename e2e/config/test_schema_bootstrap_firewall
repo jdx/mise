@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-firewall.toml", "mise-bad-firewall.toml"]
+EOF
+
+cat >"$HOME/workdir/mise-firewall.toml" <<'TOML'
+[bootstrap.linux.firewall]
+backend = "nftables"
+state = "enabled"
+default_incoming = "deny"
+default_outgoing = "allow"
+exclusive = false
+allow_lockout = false
+
+[[bootstrap.linux.firewall.rules]]
+name = "https"
+port = 443
+protocol = "tcp"
+action = "allow"
+
+[[bootstrap.linux.firewall.rules]]
+name = "admin-range"
+port = "2200-2205"
+protocol = "tcp"
+source = "203.0.113.0/24"
+interface = "eth0"
+direction = "incoming"
+state = "present"
+TOML
+
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise-firewall.toml"
+
+for invalid_rule in \
+  'name = "contains spaces"' \
+  'name = "web"\nport = 0' \
+  'name = "web"\nport = "not-a-range"' \
+  'name = "web"\nprotocol = "icmp"' \
+  'name = "web"\ndirection = "sideways"' \
+  'name = "web"\nunknown = true'; do
+  printf '%b\n' \
+    '[bootstrap.linux.firewall]' \
+    '[[bootstrap.linux.firewall.rules]]' \
+    "$invalid_rule" >"$HOME/workdir/mise-bad-firewall.toml"
+  assert_fail "$TOMBI_LINT mise-bad-firewall.toml"
+done
