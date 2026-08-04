@@ -2,6 +2,7 @@
 # `mise bootstrap firewall apply`
 
 - **Usage**: `mise bootstrap firewall apply [-n --dry-run] [-y --yes]`
+- **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Apply the configured Linux host firewall

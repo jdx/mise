@@ -2,6 +2,7 @@
 # `mise bootstrap firewall`
 
 - **Usage**: `mise bootstrap firewall <SUBCOMMAND>`
+- **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
 Manage the Linux host firewall from `[bootstrap.linux.firewall]`

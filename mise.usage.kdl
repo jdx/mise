@@ -379,10 +379,10 @@ Can be passed multiple times or as a comma-separated list.
     flag --update help="Refresh package manager metadata and update configured repos"
     cmd __apply-account-plan hide=#true effect=destructive
     cmd __apply-service-plan hide=#true effect=destructive
-    cmd __apply-firewall-plan hide=#true
+    cmd __apply-firewall-plan hide=#true effect=destructive
     cmd __apply-system-plan hide=#true effect=destructive
     cmd __inspect-system-files hide=#true effect=read
-    cmd __inspect-firewall-plan hide=#true
+    cmd __inspect-firewall-plan hide=#true effect=read
     cmd accounts subcommand_required=#true help="Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`" effect=read {
         cmd apply help="Apply configured Linux users and groups" effect=destructive {
             flag "-n --dry-run" help="Print what would change without changing anything"
@@ -530,12 +530,12 @@ Examples:
             flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         }
     }
-    cmd firewall subcommand_required=#true help="Manage the Linux host firewall from `[bootstrap.linux.firewall]`" {
-        cmd apply help="Apply the configured Linux host firewall" {
+    cmd firewall subcommand_required=#true help="Manage the Linux host firewall from `[bootstrap.linux.firewall]`" effect=read {
+        cmd apply help="Apply the configured Linux host firewall" effect=destructive {
             flag "-n --dry-run" help="Print what would change without changing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
         }
-        cmd status help="Show configured Linux host firewall state" {
+        cmd status help="Show configured Linux host firewall state" effect=read {
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with code 1 when the firewall is not converged"
         }
