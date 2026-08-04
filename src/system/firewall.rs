@@ -734,6 +734,16 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
         };
     }
     let effective = effective_request(request, state.as_ref());
+    if let Err(error) = validate_effective_backend_request(&effective, backend) {
+        return FirewallInspection {
+            backend: Some(backend),
+            managed: state.is_some() || managed_backend_present(backend),
+            exact: false,
+            active: false,
+            reason: Some(error.to_string()),
+            current_rules: state.map(|state| state.request.rules).unwrap_or_default(),
+        };
+    }
     let expected_digest = request_digest(&effective, backend).unwrap_or_default();
     let managed = state.is_some() || managed_backend_present(backend);
     let active = managed_backend_active(backend);
@@ -768,6 +778,8 @@ fn apply_privileged(request: &FirewallRequest) -> Result<()> {
     let state = read_state()?;
     let backend = resolve_backend(request.backend, state.as_ref())?;
     validate_backend_request(request, backend)?;
+    let effective = effective_request(request, state.as_ref());
+    validate_effective_backend_request(&effective, backend)?;
     if let Some(state) = &state
         && state.backend != backend
     {
@@ -778,7 +790,6 @@ fn apply_privileged(request: &FirewallRequest) -> Result<()> {
         remove_state()?;
         return Ok(());
     }
-    let effective = effective_request(request, state.as_ref());
     let digest = request_digest(&effective, backend)?;
     match effective.state {
         FirewallState::Enabled => apply_backend(backend, &effective, &digest)?,
@@ -941,6 +952,16 @@ fn validate_backend_request(request: &FirewallRequest, backend: FirewallBackend)
                 rule.protocol.expect("matched protocol").as_str()
             );
         }
+    }
+    Ok(())
+}
+
+fn validate_effective_backend_request(
+    request: &FirewallRequest,
+    backend: FirewallBackend,
+) -> Result<()> {
+    if request.state == FirewallState::Enabled {
+        validate_backend_request(request, backend)?;
     }
     Ok(())
 }
@@ -1600,6 +1621,7 @@ fn preview_commands(
     backend: FirewallBackend,
 ) -> Result<Vec<Vec<String>>> {
     let effective = effective_request(request, read_state()?.as_ref());
+    validate_effective_backend_request(&effective, backend)?;
     let mut commands = vec![];
     match effective.state {
         FirewallState::Absent => commands.push(vec![
@@ -2079,5 +2101,26 @@ mod tests {
         request.rules[0].interface = None;
         request.rules[0].protocol = Some(FirewallProtocol::Sctp);
         assert!(validate_backend_request(&request, FirewallBackend::Ufw).is_err());
+    }
+
+    #[test]
+    fn backend_capability_checks_include_inherited_state_rules() {
+        let mut inherited = request_with_ssh(None);
+        inherited.rules[0].interface = Some("eth0".to_string());
+        let state = FirewallStateFile {
+            backend: FirewallBackend::Firewalld,
+            digest: "old".to_string(),
+            live_fingerprint: None,
+            request: inherited,
+        };
+        let mut desired = request_with_ssh(None);
+        desired.rules.clear();
+        desired.ssh_connection = None;
+        let effective = effective_request(&desired, Some(&state));
+
+        assert!(validate_backend_request(&desired, FirewallBackend::Firewalld).is_ok());
+        assert!(
+            validate_effective_backend_request(&effective, FirewallBackend::Firewalld).is_err()
+        );
     }
 }
