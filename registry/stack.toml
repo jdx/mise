@@ -1,3 +1,4 @@
 backends = ["aqua:commercialhaskell/stack", "asdf:mise-plugins/mise-ghcup"]
+bins = ["stack"]
 description = "The Haskell Tool Stack"
 test = { cmd = "stack --version", expected = "Version {{version}}" }

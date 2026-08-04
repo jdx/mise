@@ -1,2 +1,3 @@
 backends = ["aqua:spinnaker/spin", "asdf:pavloos/asdf-spin"]
+bins = ["spin"]
 description = "Spinnaker CLI"

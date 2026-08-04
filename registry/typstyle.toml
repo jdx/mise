@@ -1,3 +1,4 @@
 backends = ["aqua:Enter-tainer/typstyle", "cargo:typstyle"]
+bins = ["typstyle"]
 description = "Beautiful and reliable typst code formatter"
 test = { cmd = "typstyle --version | grep 'Version:' | awk '{print $2}'", expected = "{{version}}" }

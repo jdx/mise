@@ -1,5 +1,6 @@
 description = "All-in-one tool for interacting with Starknet smart contracts, sending transactions and getting chain data"
 # test = { cmd = "sncast --version", expected = "sncast {{version}}" }
 
+bins = ["sncast", "snforge"]
 [[backends]]
 full = "github:foundry-rs/starknet-foundry"

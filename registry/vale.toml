@@ -1,2 +1,3 @@
 backends = ["aqua:vale-cli/vale", "asdf:pdemagny/asdf-vale"]
+bins = ["vale"]
 description = ":pencil: A markup-aware linter for prose built with speed and extensibility in mind"

@@ -2,6 +2,7 @@ description = "Meta-programming for Swift, stop writing boilerplate code"
 os = ["linux", "macos"]
 # test = { cmd = "which sourcery", expected = "sourcery" }
 
+bins = ["sourcery"]
 [[backends]]
 full = "github:krzysztofzablocki/Sourcery"
 

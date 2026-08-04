@@ -3,5 +3,6 @@ backends = [
   "asdf:luizm/asdf-shfmt",
   "go:mvdan.cc/sh/v3/cmd/shfmt",
 ]
+bins = ["shfmt"]
 description = "A shell parser, formatter, and interpreter with bash support; includes shfmt"
 test = { cmd = "shfmt --version", expected = "v{{version}}" }

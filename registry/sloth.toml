@@ -1,2 +1,3 @@
 backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
+bins = ["sloth"]
 description = "Easy and simple Prometheus SLO (service level objectives) generator"

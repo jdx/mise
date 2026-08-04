@@ -1,2 +1,3 @@
 backends = ["aqua:caarlos0/svu", "asdf:asdf-community/asdf-svu"]
+bins = ["svu"]
 description = "semantic version utility"

@@ -1,3 +1,4 @@
 backends = ["github:jdx/tak", "cargo:tak-cli"]
+bins = ["tak"]
 description = "CLI performance, tracked"
 test = { cmd = "tak --version", expected = "tak {{version}}" }

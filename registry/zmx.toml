@@ -1,4 +1,5 @@
 backends = ["github:neurosnap/zmx"]
+bins = ["zmx"]
 description = "Session attach/detach for the terminal"
 os = ["linux", "macos"]
 test = { cmd = "zmx --version | head -n1 | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+'", expected = "{{version}}" }

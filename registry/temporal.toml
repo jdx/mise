@@ -1,2 +1,10 @@
 backends = ["aqua:temporalio/temporal", "asdf:asdf-community/asdf-temporal"]
+bins = [
+  "tdbg",
+  "temporal",
+  "temporal-cassandra-tool",
+  "temporal-elasticsearch-tool",
+  "temporal-server",
+  "temporal-sql-tool",
+]
 description = "Temporal service and CLI"

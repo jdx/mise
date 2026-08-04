@@ -2,6 +2,7 @@ description = "Command line interface to the Atlassian Teamwork Graph and Cloud 
 os = ["linux", "macos", "windows"]
 test = { cmd = "twg --version", expected = "{{version}}" }
 
+bins = ["twg"]
 [[backends]]
 full = "http:twg"
 

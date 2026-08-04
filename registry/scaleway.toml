@@ -3,4 +3,5 @@ backends = [
   "aqua:scaleway/scaleway-cli",
   "asdf:albarralnunez/asdf-plugin-scaleway-cli",
 ]
+bins = ["scw"]
 description = "Command Line Interface for Scaleway"

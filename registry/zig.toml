@@ -1,3 +1,4 @@
 backends = ["core:zig"]
+bins = ["zig"]
 description = "Zig is a general-purpose programming language and toolchain for maintaining robust, optimal and reusable software"
 idiomatic_files = [".zig-version"]

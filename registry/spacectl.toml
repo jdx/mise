@@ -1,2 +1,3 @@
 backends = ["aqua:spacelift-io/spacectl", "asdf:bodgit/asdf-spacectl"]
+bins = ["spacectl"]
 description = "Spacelift client and CLI"

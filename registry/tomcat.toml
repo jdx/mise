@@ -1,2 +1,16 @@
 backends = ["aqua:apache/tomcat", "asdf:mise-plugins/mise-tomcat"]
+bins = [
+  "catalina.sh",
+  "ciphers.sh",
+  "configtest.sh",
+  "daemon.sh",
+  "digest.sh",
+  "makebase.sh",
+  "migrate.sh",
+  "setclasspath.sh",
+  "shutdown.sh",
+  "startup.sh",
+  "tool-wrapper.sh",
+  "version.sh",
+]
 description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"

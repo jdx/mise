@@ -1,3 +1,4 @@
 backends = ["aqua:astral-sh/ty", "github:astral-sh/ty"]
+bins = ["ty"]
 description = "An extremely fast Python type checker and language server, written in Rust"
 test = { cmd = "ty --version", expected = "ty {{version}}" }

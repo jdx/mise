@@ -1,3 +1,4 @@
 backends = ["aqua:realm/SwiftLint", "asdf:mise-plugins/mise-swiftlint"]
+bins = ["swiftlint", "swiftlint-static"]
 description = "A tool to enforce Swift style and conventions"
 test = { cmd = "swiftlint-static --version", expected = "{{version}}" }

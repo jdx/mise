@@ -1,3 +1,4 @@
 backends = ["aqua:chmln/sd", "cargo:sd"]
+bins = ["sd"]
 description = "Intuitive find & replace CLI (sed alternative)"
 # test = { cmd = "sd --version", expected = "sd {{version}}" } # upstream bug: v1.1.0 reports "sd 1.0.0"

@@ -3,6 +3,7 @@ test = { cmd = "vc --version", expected = "{{version}}", tools = [
   "aube@1.26.0",
 ] }
 
+bins = ["vc", "vercel"]
 [[backends]]
 full = "npm:vercel"
 

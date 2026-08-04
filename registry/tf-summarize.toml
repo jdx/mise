@@ -1,2 +1,3 @@
 backends = ["aqua:dineshba/tf-summarize", "asdf:adamcrews/asdf-tf-summarize"]
+bins = ["tf-summarize"]
 description = "A command-line utility to print the summary of the terraform plan"

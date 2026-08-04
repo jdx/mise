@@ -3,5 +3,6 @@ backends = [
   "github:slsa-framework/slsa-verifier",
   "go:github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier",
 ]
+bins = ["slsa-verifier"]
 description = "Verify provenance from SLSA compliant builders"
 test = { cmd = "slsa-verifier version", expected = "{{version}}" }

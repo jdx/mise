@@ -1,2 +1,3 @@
 backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
+bins = ["ttyd"]
 description = "Share your terminal over the web"

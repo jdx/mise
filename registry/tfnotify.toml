@@ -1,2 +1,3 @@
 backends = ["aqua:mercari/tfnotify", "asdf:jnavarrof/asdf-tfnotify"]
+bins = ["tfnotify"]
 description = "A CLI command to parse Terraform execution result and notify it to GitHub"

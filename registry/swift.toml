@@ -1,4 +1,34 @@
 backends = ["core:swift"]
+bins = [
+  "repl_swift",
+  "sourcekit-lsp",
+  "swift",
+  "swift-api-checker.py",
+  "swift-api-digester",
+  "swift-autolink-extract",
+  "swift-build",
+  "swift-build-sdk-interfaces",
+  "swift-build-tool",
+  "swift-cache-tool",
+  "swift-demangle",
+  "swift-driver",
+  "swift-experimental-sdk",
+  "swift-format",
+  "swift-frontend",
+  "swift-help",
+  "swift-legacy-driver",
+  "swift-package",
+  "swift-package-collection",
+  "swift-package-registry",
+  "swift-plugin-server",
+  "swift-run",
+  "swift-sdk",
+  "swift-symbolgraph-extract",
+  "swift-synthesize-interface",
+  "swift-test",
+  "swiftc",
+  "swiftc-legacy-driver",
+]
 description = "Swift Lang (Core)"
 idiomatic_files = [".swift-version"]
 os = ["linux", "macos"]

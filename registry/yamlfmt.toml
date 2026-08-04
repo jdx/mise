@@ -3,5 +3,6 @@ backends = [
   "asdf:mise-plugins/asdf-yamlfmt",
   "go:github.com/google/yamlfmt/cmd/yamlfmt",
 ]
+bins = ["yamlfmt"]
 description = "An extensible command line tool or library to format yaml files"
 test = { cmd = "yamlfmt --version", expected = "yamlfmt {{version}}" }

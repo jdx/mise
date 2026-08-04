@@ -1,6 +1,7 @@
 description = "HCP Terraform Agents allow HCP Terraform to communicate with isolated, private, or on-premises infrastructure"
 os = ["linux"]
 
+bins = ["tfc-agent", "tfc-agent-core"]
 [[backends]]
 full = "http:tfc-agent"
 

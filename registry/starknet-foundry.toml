@@ -1,5 +1,6 @@
 description = "Starknet testing framework (like Truffle, Hardhat and DappTools but for Starknet)"
 # test = { cmd = "snforge --version", expected = "snforge {{version}}" }
 
+bins = ["sncast", "snforge"]
 [[backends]]
 full = "github:foundry-rs/starknet-foundry"

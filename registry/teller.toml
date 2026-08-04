@@ -1,2 +1,3 @@
 backends = ["aqua:tellerops/teller", "asdf:pdemagny/asdf-teller"]
+bins = ["teller"]
 description = "Cloud native secrets management for developers - never leave your command line for secrets"

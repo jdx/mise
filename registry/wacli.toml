@@ -1,3 +1,4 @@
 backends = ["aqua:openclaw/wacli", "github:openclaw/wacli"]
+bins = ["wacli"]
 description = "Send WhatsApp messages or search and sync WhatsApp history"
 test = { cmd = "wacli --help", expected = "Usage:" }

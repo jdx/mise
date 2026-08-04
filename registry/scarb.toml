@@ -1,2 +1,12 @@
 backends = ["github:software-mansion/scarb", "asdf:software-mansion/asdf-scarb"]
+bins = [
+  "scarb",
+  "scarb-cairo-language-server",
+  "scarb-cairo-test",
+  "scarb-doc",
+  "scarb-execute",
+  "scarb-mdbook",
+  "scarb-prove",
+  "scarb-verify",
+]
 description = "The Cairo package manager"

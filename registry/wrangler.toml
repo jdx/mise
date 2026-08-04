@@ -3,6 +3,7 @@ test = { cmd = "wrangler --version", expected = "{{version}}", tools = [
   "aube",
 ] }
 
+bins = ["cf-wrangler", "wrangler", "wrangler2"]
 [[backends]]
 full = "npm:wrangler"
 

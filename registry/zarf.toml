@@ -1,3 +1,4 @@
 backends = ["aqua:zarf-dev/zarf"]
+bins = ["zarf"]
 description = "The Airgap Native Packager Manager for Kubernetes"
 test = { cmd = "zarf version", expected = "v{{version | trim_start(pat='v')}}" }

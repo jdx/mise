@@ -1,3 +1,4 @@
 backends = ["aqua:bridgecrewio/yor", "asdf:ordinaryexperts/asdf-yor"]
+bins = ["yor"]
 description = "Extensible auto-tagger for your IaC files. The ultimate way to link entities in the cloud back to the codified resource which created it"
 test = { cmd = "yor --version", expected = "yor version {{version}}" }

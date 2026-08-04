@@ -1,3 +1,4 @@
 backends = ["github:scalameta/scalafmt"]
+bins = ["scalafmt"]
 description = "Code formatter for Scala"
 test = { cmd = "scalafmt --version", expected = "scalafmt {{version}}" }

@@ -1,3 +1,4 @@
 backends = ["aqua:oracle.com/sqlcl"]
+bins = ["sql"]
 description = "Oracle SQLcl command-line interface for Oracle Database"
 test = { cmd = "sql -V", expected = "SQLcl", tools = ["java"] }

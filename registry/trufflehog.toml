@@ -2,5 +2,6 @@ backends = [
   "aqua:trufflesecurity/trufflehog",
   "github:trufflesecurity/trufflehog",
 ]
+bins = ["trufflehog"]
 description = "Find, verify, and analyze leaked credentials"
 test = { cmd = "trufflehog --version", expected = "trufflehog {{version}}" }

@@ -2,4 +2,5 @@ backends = [
   "aqua:telepresenceio/telepresence",
   "asdf:pirackr/asdf-telepresence",
 ]
+bins = ["telepresence"]
 description = "Local development against a remote Kubernetes or OpenShift cluster"

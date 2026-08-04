@@ -2,4 +2,5 @@ backends = [
   "aqua:terraform-docs/terraform-docs",
   "asdf:looztra/asdf-terraform-docs",
 ]
+bins = ["terraform-docs"]
 description = "Generate documentation from Terraform modules in various output formats"
