@@ -642,28 +642,42 @@ fn select_bootstrapped_mise(
     after: &[String],
     after_identities: &IndexMap<String, Option<RemoteMiseIdentity>>,
 ) -> Result<String> {
-    if let Some(candidate) = after.iter().find(|candidate| !before.contains(candidate)) {
-        return Ok(candidate.clone());
+    let new_candidates = after
+        .iter()
+        .filter(|candidate| !before.contains(candidate))
+        .collect::<Vec<_>>();
+    if let Some(candidate) = select_unique_remote_mise_candidate(new_candidates, "new")? {
+        return Ok(candidate);
     }
-    if let Some(candidate) = after.iter().find(|candidate| {
-        before_identities.get(*candidate) != after_identities.get(*candidate)
-            && after_identities
+    let changed_candidates = after
+        .iter()
+        .filter(|candidate| {
+            before_identities.get(*candidate) != after_identities.get(*candidate)
+                && after_identities
+                    .get(*candidate)
+                    .is_some_and(Option::is_some)
+        })
+        .collect::<Vec<_>>();
+    if let Some(candidate) = select_unique_remote_mise_candidate(changed_candidates, "changed")? {
+        return Ok(candidate);
+    }
+    let version_candidates = after
+        .iter()
+        .filter(|candidate| {
+            after_identities
                 .get(*candidate)
-                .is_some_and(Option::is_some)
-    }) {
-        return Ok(candidate.clone());
-    }
-    if let Some(candidate) = after.iter().find(|candidate| {
-        after_identities
-            .get(*candidate)
-            .and_then(Option::as_ref)
-            .and_then(|identity| identity.version.split_whitespace().next())
-            .is_some_and(|version| {
-                version == env!("CARGO_PKG_VERSION")
-                    || version == concat!(env!("CARGO_PKG_VERSION"), "-DEBUG")
-            })
-    }) {
-        return Ok(candidate.clone());
+                .and_then(Option::as_ref)
+                .and_then(|identity| identity.version.split_whitespace().next())
+                .is_some_and(|version| {
+                    version == env!("CARGO_PKG_VERSION")
+                        || version == concat!(env!("CARGO_PKG_VERSION"), "-DEBUG")
+                })
+        })
+        .collect::<Vec<_>>();
+    if let Some(candidate) =
+        select_unique_remote_mise_candidate(version_candidates, "version-matching")?
+    {
+        return Ok(candidate);
     }
     if let [candidate] = after {
         return Ok(candidate.clone());
@@ -675,6 +689,24 @@ fn select_bootstrapped_mise(
         "bootstrap_command left multiple unchanged mise executables and the installed path is ambiguous: {}; set remote_mise or mise_bin explicitly",
         after.join(", ")
     )
+}
+
+fn select_unique_remote_mise_candidate(
+    candidates: Vec<&String>,
+    kind: &str,
+) -> Result<Option<String>> {
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [candidate] => Ok(Some((*candidate).clone())),
+        _ => bail!(
+            "bootstrap_command left multiple {kind} mise executables and the installed path is ambiguous: {}; set remote_mise or mise_bin explicitly",
+            candidates
+                .iter()
+                .map(|candidate| candidate.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1451,6 +1483,34 @@ mod tests {
         ]);
         assert!(
             select_bootstrapped_mise(&candidates, &identities, &candidates, &identities).is_err()
+        );
+        let current_version = format!("{} linux-x64", env!("CARGO_PKG_VERSION"));
+        let matching_identities = IndexMap::from([
+            (
+                candidates[0].clone(),
+                Some(RemoteMiseIdentity {
+                    version: current_version.clone(),
+                    fingerprint: "100 10".to_string(),
+                }),
+            ),
+            (
+                candidates[1].clone(),
+                Some(RemoteMiseIdentity {
+                    version: current_version,
+                    fingerprint: "200 20".to_string(),
+                }),
+            ),
+        ]);
+        assert!(
+            select_bootstrapped_mise(
+                &candidates,
+                &matching_identities,
+                &candidates,
+                &matching_identities,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("multiple version-matching mise executables")
         );
         assert!(parse_remote_mise_candidates("/opt/mise").is_err());
         assert_eq!(
