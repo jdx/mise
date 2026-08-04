@@ -50,6 +50,9 @@ mkdir -p projects/app
 cat <<'EOF' >mise.toml
 monorepo_root = true
 
+[settings]
+task.auto_infer = ["node"]
+
 [monorepo]
 config_roots = ["projects/app"]
 EOF

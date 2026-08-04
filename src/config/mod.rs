@@ -831,10 +831,17 @@ impl Config {
             })
             .map(|t| (t.name.clone(), t))
             .collect();
-        if Settings::get().experimental {
+        let settings = Settings::get();
+        if settings.experimental && !settings.task.auto_infer.is_empty() {
             let inferred_tasks = match workspace_graph.as_ref() {
                 Some(Ok(graph)) => {
-                    inferred_workspace_tasks(&config, &task_definitions, graph).await
+                    inferred_workspace_tasks(
+                        &config,
+                        &task_definitions,
+                        graph,
+                        &settings.task.auto_infer,
+                    )
+                    .await
                 }
                 Some(Err(err)) => {
                     warn!(
@@ -870,7 +877,22 @@ impl Config {
                     .aliases
                     .iter()
                     .find(|alias| tasks.contains_key(*alias))
-                    .cloned();
+                    .cloned()
+                    .or_else(|| {
+                        task.aliases.iter().find_map(|alias| {
+                            tasks.iter().find_map(|(name, explicit)| {
+                                (explicit.file.is_some() && strip_task_extension(name) == alias)
+                                    .then(|| name.clone())
+                            })
+                        })
+                    })
+                    .or_else(|| {
+                        task.aliases.iter().find_map(|alias| {
+                            tasks.iter().find_map(|(name, explicit)| {
+                                explicit.aliases.contains(alias).then(|| name.clone())
+                            })
+                        })
+                    });
                 if let Some(explicit_name) = explicit_name {
                     let explicit = tasks
                         .get_mut(&explicit_name)
@@ -3020,13 +3042,20 @@ async fn inferred_workspace_tasks(
     config: &Arc<Config>,
     task_definitions: &TaskDefinitions,
     graph: &crate::task::workspace::WorkspaceProjectGraph,
+    providers: &BTreeSet<String>,
 ) -> Vec<Task> {
     let Some(monorepo_root) = config.monorepo_root() else {
         return Vec::new();
     };
     let mut tasks = Vec::new();
 
-    for project in graph.projects() {
+    for project in graph.projects().filter(|project| {
+        project
+            .id
+            .as_str()
+            .split_once(':')
+            .is_some_and(|(provider, _)| providers.contains(provider))
+    }) {
         let project_root = monorepo_root.join(&project.root);
         let path_scope = monorepo_scope(&monorepo_root, &project_root);
         for (name, inferred) in &project.tasks {

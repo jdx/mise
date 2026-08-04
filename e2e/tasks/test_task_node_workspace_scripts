@@ -86,11 +86,28 @@ cat <<'JSON' >packages/app/package.json
   "scripts": {
     "build": "printf inferred > result.txt",
     "cache-only": "printf cached > cache-result.txt",
+    "file-collision": "printf inferred > file-collision-result.txt",
     "no-deps": "printf independent > no-deps-result.txt",
+    "precedence-collision": "printf inferred > precedence-collision-result.txt",
     "test:unit": "printf tested > test-result.txt"
   }
 }
 JSON
+
+cat <<'TOML' >packages/app/mise.toml
+[tasks.alias-owner]
+alias = ["//packages/app:precedence-collision"]
+run = "printf alias-owner > precedence-collision-result.txt"
+
+[tasks.precedence-collision]
+run = "printf explicit > precedence-collision-result.txt"
+TOML
+mkdir -p packages/app/.config/mise/tasks
+cat <<'SH' >packages/app/.config/mise/tasks/file-collision.sh
+#!/bin/sh
+printf explicit > file-collision-result.txt
+SH
+chmod +x packages/app/.config/mise/tasks/file-collision.sh
 
 mkdir -p packages/bridge
 cat <<'JSON' >packages/bridge/package.json
@@ -120,6 +137,14 @@ run = "printf '%s' \"$ROOT_TASK_DEFAULT\" > config-root-default.txt"
 
 [tasks.template-only]
 extends = "template-only"
+TOML
+
+assert_not_contains "mise tasks --all" "node:@scope/app#build"
+assert_not_contains "MISE_TASK_AUTO_INFER=cargo mise tasks --all" "node:@scope/app#build"
+cat <<'TOML' >>mise.toml
+
+[settings]
+task.auto_infer = ["node"]
 TOML
 
 assert_contains "mise tasks --all" "node:@scope/app#build"
@@ -152,6 +177,13 @@ assert "cat workspace-task.log" $'core:run prepare --\napp:run build -- forwarde
 printf stale >packages/app/result.txt
 mise -q run //packages/app:build
 assert "cat packages/app/result.txt" "inferred"
+
+mise -q run //packages/app:file-collision
+assert "cat packages/app/file-collision-result.txt" "explicit"
+mise -q run 'node:@scope/app#file-collision'
+assert "cat packages/app/file-collision-result.txt" "explicit"
+mise -q run 'node:@scope/app#precedence-collision'
+assert "cat packages/app/precedence-collision-result.txt" "explicit"
 
 cat <<'TOML' >packages/app/mise.toml
 [tasks.build]
