@@ -125,18 +125,14 @@ impl Toolset {
     pub(super) fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
         for tr in requests {
             if let Some(tvl) = self.versions.get(tr.ba()) {
-                if tvl.requests.len() != 1 {
-                    // TODO: handle this case with multiple versions
-                    continue;
-                }
                 // Use config request options if available, falling back to backend arg opts.
                 // This ensures tool options like postinstall from mise.toml are preserved
                 // when installing with an explicit CLI version (e.g. `mise install tool@latest`).
-                let config_options = tvl
-                    .requests
-                    .first()
-                    .map(|r| r.options())
-                    .filter(|opts| !opts.is_empty());
+                let config_options =
+                    super::tool_request_set::configured_options_for_runtime_request(
+                        &tvl.requests,
+                        tr,
+                    );
                 let options = tr.ba().opts_with_config(config_options);
                 if tr.options().is_empty() || tr.options() != options {
                     tr.set_options(options);

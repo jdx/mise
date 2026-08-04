@@ -7,6 +7,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
+use crate::toolset::tool_request_set::configured_options_for_runtime_request;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
@@ -128,14 +129,14 @@ impl ToolsetBuilder {
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
-            // carry over options (e.g. filter_bins) from config for this tool
-            let config_options = ts
+            let configured = ts
                 .versions
                 .get(&args[0].ba)
-                .and_then(|tvl| tvl.requests.first())
-                .map(|tvr| tvr.options());
+                .map(|tvl| tvl.requests.clone())
+                .unwrap_or_default();
             let apply_arg_options = |mut tvr: ToolRequest, ba: &BackendArg| {
-                tvr.set_options(ba.opts_with_config(config_options.clone()));
+                let config_options = configured_options_for_runtime_request(&configured, &tvr);
+                tvr.set_options(ba.opts_with_config(config_options));
                 tvr
             };
             for arg in args {
