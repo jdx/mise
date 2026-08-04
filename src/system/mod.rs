@@ -51,6 +51,7 @@ pub mod launchd;
 pub mod login_shell;
 pub mod managed_files;
 pub mod packages;
+pub mod remote;
 pub mod repos;
 pub mod resources;
 pub mod secrets;
@@ -81,6 +82,9 @@ pub struct BootstrapTomlConfig {
     /// Docker Compose project name -> declarative project lifecycle.
     #[serde(default)]
     pub compose: IndexMap<String, compose::ComposeTomlConfig>,
+    /// OpenSSH targets used by `mise bootstrap remote`.
+    #[serde(default)]
+    pub remote: remote::RemoteTomlConfig,
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,

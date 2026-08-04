@@ -317,6 +317,7 @@ enum Commands {
     Packages(BootstrapPackages),
     Plan(BootstrapPlan),
     Plugins(BootstrapPlugins),
+    Remote(BootstrapRemote),
     Repos(BootstrapRepos),
     Secrets(BootstrapSecrets),
     Services(BootstrapServices),
@@ -530,6 +531,111 @@ struct BootstrapComposeStatus {
     /// Exit with code 1 when any Compose project is not converged
     #[clap(long)]
     missing: bool,
+}
+
+/// Bootstrap one or more machines over OpenSSH
+#[derive(Debug, clap::Args)]
+#[clap(verbatim_doc_comment)]
+struct BootstrapRemote {
+    /// Inventory host names from `[bootstrap.remote.hosts]`
+    #[clap(value_name = "TARGET")]
+    targets: Vec<String>,
+
+    /// Select every configured inventory host
+    #[clap(long)]
+    all: bool,
+
+    /// Explicit remote shell command that installs mise and places it on PATH
+    #[clap(
+        long,
+        value_name = "COMMAND",
+        conflicts_with_all = ["mise_bin", "remote_mise"]
+    )]
+    bootstrap_command: Option<String>,
+
+    /// SSH connection timeout in seconds
+    #[clap(long, default_value_t = 10)]
+    connect_timeout: u16,
+
+    /// Additional archive pattern to exclude; repeat for multiple patterns
+    #[clap(long, value_name = "PATTERN")]
+    exclude: Vec<String>,
+
+    /// Stop after the first failed target
+    #[clap(long)]
+    fail_fast: bool,
+
+    /// Allow remote dotfile conflicts to be replaced
+    #[clap(long)]
+    force_dotfiles: bool,
+
+    /// Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+    #[clap(long, value_name = "[USER@]HOST")]
+    host: Vec<String>,
+
+    /// SSH identity file override
+    #[clap(long, short = 'i', value_hint = clap::ValueHint::FilePath)]
+    identity_file: Option<std::path::PathBuf>,
+
+    /// Print the remote bootstrap changes without applying them
+    #[clap(long, short = 'n')]
+    dry_run: bool,
+
+    /// Keep the remote staging directory for debugging
+    #[clap(long)]
+    keep_staging: bool,
+
+    /// Local mise binary to upload (escape hatch for custom architectures)
+    #[clap(
+        long,
+        value_hint = clap::ValueHint::FilePath,
+        conflicts_with_all = ["remote_mise", "bootstrap_command"]
+    )]
+    mise_bin: Option<std::path::PathBuf>,
+
+    /// Run only one or more remote bootstrap parts
+    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
+    only: Vec<BootstrapPart>,
+
+    /// SSH port override
+    #[clap(long)]
+    port: Option<u16>,
+
+    /// Prompt securely for missing secret inputs on the remote host
+    #[clap(long)]
+    prompt_secrets: bool,
+
+    /// Existing mise executable name or path; relative paths use the staged project
+    #[clap(
+        long,
+        value_name = "COMMAND",
+        conflicts_with_all = ["mise_bin", "bootstrap_command"]
+    )]
+    remote_mise: Option<String>,
+
+    /// Skip one or more remote bootstrap parts
+    #[clap(long, value_enum, value_delimiter = ',')]
+    skip: Vec<BootstrapPart>,
+
+    /// Local directory archived and sent to each target
+    #[clap(long, value_hint = clap::ValueHint::DirPath)]
+    source: Option<std::path::PathBuf>,
+
+    /// OpenSSH `-o` option; repeat for multiple options
+    #[clap(long, value_name = "OPTION")]
+    ssh_option: Vec<String>,
+
+    /// Select configured hosts with this tag; repeat to match any tag
+    #[clap(long, value_name = "TAG")]
+    tag: Vec<String>,
+
+    /// Refresh package manager metadata and update configured repos remotely
+    #[clap(long)]
+    update: bool,
+
+    /// Skip remote confirmation prompts
+    #[clap(long, short = 'y')]
+    yes: bool,
 }
 
 /// Inspect bootstrap secret inputs without revealing their values
@@ -1728,6 +1834,7 @@ impl Commands {
             Self::Packages(cmd) => cmd.run().await,
             Self::Plan(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
+            Self::Remote(cmd) => cmd.run().await,
             Self::Repos(cmd) => cmd.run().await,
             Self::Secrets(cmd) => cmd.run().await,
             Self::Services(cmd) => cmd.run().await,
@@ -2059,6 +2166,131 @@ impl BootstrapSecrets {
             BootstrapSecretsCommands::Status(command) => command.run().await,
         }
     }
+}
+
+impl BootstrapRemote {
+    async fn run(self) -> Result<()> {
+        if self.connect_timeout == 0 {
+            bail!("--connect-timeout must be greater than zero");
+        }
+        let config = Config::get().await?;
+        let config_excludes = system::remote::excludes_from_config(&config);
+        let inventory = system::remote::hosts_from_config(&config, &config_excludes)?;
+        let mut selected = select_remote_inventory(&inventory, &self.targets, self.all, &self.tag)?;
+        let ad_hoc_source = self.source.clone().unwrap_or(std::env::current_dir()?);
+        for destination in &self.host {
+            let host =
+                system::remote::ad_hoc_host(destination, ad_hoc_source.clone(), &config_excludes)?;
+            if selected.insert(host.name.clone(), host).is_some() {
+                bail!("remote target '{destination}' was selected more than once");
+            }
+        }
+        if selected.is_empty() {
+            if inventory.is_empty() {
+                bail!(
+                    "no remote targets configured; pass --host [user@]host or add [bootstrap.remote.hosts]"
+                );
+            }
+            bail!(
+                "select a remote target by name, --tag, or --all (configured: {})",
+                inventory.keys().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+
+        let overrides = system::remote::RemoteOverrides {
+            source: self.source,
+            port: self.port,
+            identity_file: self.identity_file,
+            exclude: self.exclude,
+            ssh_options: self.ssh_option,
+            mise_bin: self.mise_bin,
+            remote_mise: self.remote_mise,
+            bootstrap_command: self.bootstrap_command,
+        };
+        let options = system::remote::RemoteRunOptions {
+            dry_run: self.dry_run,
+            yes: self.yes,
+            update: self.update,
+            prompt_secrets: self.prompt_secrets,
+            force_dotfiles: self.force_dotfiles,
+            skip: self.skip.iter().map(bootstrap_part_name).collect(),
+            only: self.only.iter().map(bootstrap_part_name).collect(),
+            keep_staging: self.keep_staging,
+            connect_timeout: self.connect_timeout,
+        };
+        let mut configuration_errors = vec![];
+        for host in selected.values_mut() {
+            if let Err(error) = host.apply_overrides(&overrides) {
+                configuration_errors.push(format!("{}: {error:#}", host.name));
+            }
+        }
+        if !configuration_errors.is_empty() {
+            bail!(
+                "remote bootstrap configuration is invalid for {} target(s):\n  {}",
+                configuration_errors.len(),
+                configuration_errors.join("\n  ")
+            );
+        }
+        let mut failures = vec![];
+        for host in selected.values() {
+            if let Err(error) = system::remote::run(host, &options) {
+                error!("remote bootstrap failed on {}: {error:#}", host.name);
+                failures.push(format!("{}: {error:#}", host.name));
+                if self.fail_fast {
+                    break;
+                }
+            }
+        }
+        if !failures.is_empty() {
+            bail!(
+                "remote bootstrap failed on {} target(s):\n  {}",
+                failures.len(),
+                failures.join("\n  ")
+            );
+        }
+        info!("remote bootstrap completed on {} target(s)", selected.len());
+        Ok(())
+    }
+}
+
+fn select_remote_inventory(
+    inventory: &indexmap::IndexMap<String, system::remote::RemoteHost>,
+    targets: &[String],
+    all: bool,
+    tags: &[String],
+) -> Result<indexmap::IndexMap<String, system::remote::RemoteHost>> {
+    let mut selected = indexmap::IndexMap::new();
+    for target in targets {
+        let host = inventory.get(target).ok_or_else(|| {
+            eyre::eyre!(
+                "remote inventory target '{target}' not found; configured targets: {}",
+                inventory.keys().cloned().collect::<Vec<_>>().join(", ")
+            )
+        })?;
+        selected
+            .entry(target.clone())
+            .or_insert_with(|| host.clone());
+    }
+    if all {
+        for (name, host) in inventory {
+            selected.entry(name.clone()).or_insert_with(|| host.clone());
+        }
+    }
+    if !tags.is_empty() {
+        for (name, host) in inventory {
+            if tags.iter().any(|tag| host.tags.contains(tag)) {
+                selected.entry(name.clone()).or_insert_with(|| host.clone());
+            }
+        }
+    }
+    Ok(selected)
+}
+
+fn bootstrap_part_name(part: &BootstrapPart) -> String {
+    part.to_possible_value()
+        .expect("BootstrapPart values have clap names")
+        .get_name()
+        .to_string()
 }
 
 impl BootstrapSecretsStatus {
@@ -3687,8 +3919,10 @@ fn file_state_json(state: &FileState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use clap::{Args, FromArgMatches};
+    use indexmap::{IndexMap, IndexSet};
 
-    use super::DeferredBootstrap;
+    use super::{DeferredBootstrap, select_remote_inventory};
+    use crate::system::remote;
 
     fn matches(args: &[&str]) -> clap::ArgMatches {
         <DeferredBootstrap as Args>::augment_args(clap::Command::new("bootstrap"))
@@ -3715,5 +3949,36 @@ mod tests {
             .unwrap();
         assert!(updated.0.dry_run);
         assert!(updated.0.yes);
+    }
+
+    #[test]
+    fn explicit_remote_targets_precede_all_and_tag_expansion() {
+        let source = std::env::current_dir().unwrap();
+        let mut inventory = IndexMap::new();
+        for (name, tags) in [
+            ("alpha", &[][..]),
+            ("beta", &["selected"][..]),
+            ("gamma", &["selected"][..]),
+        ] {
+            let mut host = remote::ad_hoc_host(name, source.clone(), &[]).unwrap();
+            host.tags = tags
+                .iter()
+                .map(|tag| (*tag).to_string())
+                .collect::<IndexSet<_>>();
+            inventory.insert(name.to_string(), host);
+        }
+
+        let selected = select_remote_inventory(
+            &inventory,
+            &["gamma".to_string(), "alpha".to_string()],
+            true,
+            &["selected".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            selected.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["gamma", "alpha", "beta"]
+        );
     }
 }

@@ -285,6 +285,9 @@ Manage package manager plugins declared in `[bootstrap.plugins]`
 .TP
 \fBbootstrap plugins status\fR
 .TP
+\fBbootstrap remote\fR
+Bootstrap one or more machines over OpenSSH
+.TP
 \fBbootstrap repos\fR
 Manage git repo checkouts from `[bootstrap.repos]`
 .TP
@@ -1528,6 +1531,84 @@ Print what would happen without installing plugins
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if a declared plugin is missing
+.SH "MISE BOOTSTRAP REMOTE"
+Bootstrap one or more machines over OpenSSH
+.PP
+\fBUsage:\fR mise bootstrap remote [OPTIONS] [<TARGET>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-all\fR
+Select every configured inventory host
+.TP
+\fB\-\-bootstrap\-command\fR \fI<COMMAND>\fR
+Explicit remote shell command that installs mise and places it on PATH
+.TP
+\fB\-\-connect\-timeout\fR \fI<CONNECT_TIMEOUT>\fR
+SSH connection timeout in seconds
+.RS
+\fIDefault: \fR10
+.RE
+.TP
+\fB\-\-exclude\fR \fI<PATTERN>\fR
+Additional archive pattern to exclude; repeat for multiple patterns
+.TP
+\fB\-\-fail\-fast\fR
+Stop after the first failed target
+.TP
+\fB\-\-force\-dotfiles\fR
+Allow remote dotfile conflicts to be replaced
+.TP
+\fB\-\-host\fR \fI<[USER@]HOST>\fR
+Ad\-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+.TP
+\fB\-i, \-\-identity\-file\fR \fI<IDENTITY_FILE>\fR
+SSH identity file override
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print the remote bootstrap changes without applying them
+.TP
+\fB\-\-keep\-staging\fR
+Keep the remote staging directory for debugging
+.TP
+\fB\-\-mise\-bin\fR \fI<MISE_BIN>\fR
+Local mise binary to upload (escape hatch for custom architectures)
+.TP
+\fB\-\-only\fR \fI<ONLY>\fR
+Run only one or more remote bootstrap parts
+.TP
+\fB\-\-port\fR \fI<PORT>\fR
+SSH port override
+.TP
+\fB\-\-prompt\-secrets\fR
+Prompt securely for missing secret inputs on the remote host
+.TP
+\fB\-\-remote\-mise\fR \fI<COMMAND>\fR
+Existing mise executable name or path; relative paths use the staged project
+.TP
+\fB\-\-skip\fR \fI<SKIP>\fR
+Skip one or more remote bootstrap parts
+.TP
+\fB\-\-source\fR \fI<SOURCE>\fR
+Local directory archived and sent to each target
+.TP
+\fB\-\-ssh\-option\fR \fI<OPTION>\fR
+OpenSSH `\-o` option; repeat for multiple options
+.TP
+\fB\-\-tag\fR \fI<TAG>\fR
+Select configured hosts with this tag; repeat to match any tag
+.TP
+\fB\-\-update\fR
+Refresh package manager metadata and update configured repos remotely
+.TP
+\fB\-y, \-\-yes\fR
+Skip remote confirmation prompts
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Inventory host names from `[bootstrap.remote.hosts]`
 .SH "MISE BOOTSTRAP REPOS APPLY"
 \fBUsage:\fR mise bootstrap repos apply [OPTIONS]
 .PP

@@ -102,6 +102,9 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap plugins", Read),
     ("bootstrap plugins apply", Write),
     ("bootstrap plugins status", Read),
+    // Runs the configured bootstrap, including destructive resource states and
+    // arbitrary project hooks/tasks, on another machine.
+    ("bootstrap remote", Destructive),
     ("bootstrap repos", Read),
     ("bootstrap repos apply", Write),
     ("bootstrap repos status", Read),

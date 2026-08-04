@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+
+mkdir -p fakebin source bin "bin with space" "$HOME/.config/mise" "$HOME/.local/bin"
+ssh_log="$PWD/ssh.log"
+remote_stage="/tmp/mise-bootstrap.e2e-$$"
+bad_remote_stage="$remote_stage invalid"
+mise_bin=$(command -v mise)
+bootstrap_marker="$PWD/bootstrap-command-ran"
+installer="$PWD/install-mise"
+export SSH_LOG="$ssh_log"
+export REMOTE_STAGE="$remote_stage"
+export BAD_REMOTE_STAGE="$bad_remote_stage"
+export BOOTSTRAP_MARKER="$bootstrap_marker"
+export MISE_SOURCE="$mise_bin"
+
+cat >bin/mise <<'EOF'
+#!/bin/sh
+exec "$MISE_SOURCE" "$@"
+EOF
+chmod 700 bin/mise
+cp bin/mise "bin with space/mise"
+
+cat >"$HOME/.local/bin/mise" <<'EOF'
+#!/bin/sh
+if test "${1:-}" = "--cd" && test -e "$2/layered-secret"; then
+  echo "layered remote exclude was not applied" >&2
+  exit 42
+fi
+exec "$MISE_SOURCE" "$@"
+EOF
+chmod 700 "$HOME/.local/bin/mise"
+touch layered-secret
+
+cat >fakebin/ssh <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$SSH_LOG"
+while test "$#" -gt 0; do
+  case "$1" in
+  -o | -p | -i | -S)
+    shift 2
+    ;;
+  -tt)
+    shift
+    ;;
+  -O)
+    exit 0
+    ;;
+  *)
+    shift
+    command=$1
+    exec sh -c "$command"
+    ;;
+  esac
+done
+EOF
+chmod +x fakebin/ssh
+
+cat >fakebin/mktemp <<'EOF'
+#!/bin/sh
+if test "${MISE_TEST_BAD_STAGE:-}" = 1; then
+  mkdir -p "$BAD_REMOTE_STAGE"
+  printf '%s\n' "$BAD_REMOTE_STAGE"
+  exit 0
+fi
+mkdir -p "$REMOTE_STAGE"
+printf '%s\n' "$REMOTE_STAGE"
+EOF
+chmod +x fakebin/mktemp
+export PATH="$PWD/fakebin:$PATH"
+
+cat >"$installer" <<'EOF'
+touch "$BOOTSTRAP_MARKER"
+mkdir -p "$REMOTE_STAGE/bin with space"
+cp "$MISE_SOURCE" "$REMOTE_STAGE/bin with space/mise"
+chmod 700 "$REMOTE_STAGE/bin with space/mise"
+PATH=/usr/bin:/bin
+printf 'export PATH="$PATH:%s"\n' "$REMOTE_STAGE/bin with space" >>"$HOME/.profile"
+EOF
+
+cat >source/mise.toml <<EOF
+[bootstrap.remote]
+source = "."
+exclude = ["generated", "layered-secret"]
+
+[bootstrap.remote.hosts.cache]
+host = "example.test"
+user = "ubuntu"
+tags = ["cache", "production"]
+remote_mise = "mise"
+
+[bootstrap.remote.hosts.relative]
+host = "relative.test"
+remote_mise = "./bin/mise"
+
+[bootstrap.remote.hosts.installer]
+host = "installer.test"
+bootstrap_command = ". $installer"
+EOF
+
+cat >"$HOME/.config/mise/config.toml" <<'EOF'
+[bootstrap.remote.hosts.layered]
+host = "layered.test"
+remote_mise = "~/.local/bin/mise"
+EOF
+
+cp source/mise.toml mise.toml
+assert_fail "MISE_TEST_BAD_STAGE=1 mise bootstrap remote cache --dry-run --yes --skip tools"
+assert_fail "test -d '$bad_remote_stage'"
+
+assert_succeed "mise bootstrap remote cache --dry-run --yes --skip tools"
+assert_contains "cat $ssh_log" "ubuntu@example.test"
+assert_contains "cat $ssh_log" "bootstrap --dry-run --yes --skip tools"
+assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote relative --dry-run --yes"
+assert_contains "cat $ssh_log" "$remote_stage/project/bin/mise version"
+assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote relative --all --dry-run --yes"
+assert \
+  "grep \"sh -c 'set -eu\" $ssh_log | awk '{ for (i = 1; i <= NF; i++) if (\$i ~ /\\.test$/) print \$i }'" \
+  $'relative.test\nubuntu@example.test\ninstaller.test\nlayered.test'
+assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote layered --dry-run --yes"
+assert_contains "cat $ssh_log" "$HOME/.local/bin/mise version"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote --host root@ad-hoc.test --source . --remote-mise $HOME/.local/bin/mise --dry-run --yes"
+assert_contains "cat $ssh_log" "root@ad-hoc.test"
+assert_contains "cat $ssh_log" "bootstrap --dry-run --yes"
+assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote --tag cache --dry-run --yes"
+assert_contains "cat $ssh_log" "ubuntu@example.test"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote installer --dry-run --yes"
+assert_fail "test -e $bootstrap_marker"
+
+mv "$HOME/.local/bin/mise" "$HOME/.local/bin/mise.saved"
+if test -f "$HOME/.profile"; then
+  cp "$HOME/.profile" "$PWD/profile-before-installer"
+  touch "$PWD/profile-existed"
+else
+  : >"$PWD/profile-before-installer"
+fi
+mkdir -p "$PWD/stale-bin"
+cat >"$PWD/stale-bin/mise" <<'EOF'
+#!/bin/sh
+if test "${1:-}" = version; then
+  echo "0.0.1 linux-x64"
+  exit 0
+fi
+echo "stale mise was selected" >&2
+exit 99
+EOF
+chmod 700 "$PWD/stale-bin/mise"
+literal_dollar='$'
+printf 'export PATH="%sPATH:%s"\n' "$literal_dollar" "$PWD/stale-bin" >>"$HOME/.profile"
+assert_succeed "mise bootstrap remote installer --yes"
+mv "$HOME/.local/bin/mise.saved" "$HOME/.local/bin/mise"
+assert_succeed "test -e $bootstrap_marker"
+assert_contains "cat $ssh_log" "sh -lc"
+assert_contains "cat $ssh_log" "'$remote_stage/bin with space/mise' version"
+assert_not_contains "cat $ssh_log" "'$PWD/stale-bin/mise' --cd"
+if test -e "$PWD/profile-existed"; then
+  cp "$PWD/profile-before-installer" "$HOME/.profile"
+else
+  rm -f "$HOME/.profile"
+fi
+
+cat >>mise.toml <<'EOF'
+
+[bootstrap.remote.hosts.spaced]
+host = "spaced.test"
+remote_mise = "./bin with space/mise"
+EOF
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote spaced --dry-run --yes"
+assert_contains "cat $ssh_log" "'$remote_stage/project/bin with space/mise' version"
+assert_fail "test -d $remote_stage"
+
+cat >>"$HOME/.config/mise/config.toml" <<'EOF'
+
+[bootstrap.remote.hosts.stale]
+host = "-invalid"
+identity_file = "/definitely/missing/identity"
+EOF
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote cache --dry-run --yes --skip tools"
+assert_succeed "mise bootstrap remote --host ad-hoc.test --source source --remote-mise $mise_bin --dry-run --yes"
+: >"$ssh_log"
+assert_fail "mise bootstrap remote cache stale --dry-run --yes"
+assert_fail "grep example.test $ssh_log"
+assert_fail "grep -- -invalid $ssh_log"

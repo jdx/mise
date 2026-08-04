@@ -217,6 +217,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      remote: {
+        hide: false,
+      },
       repos: {
         hide: false,
         subcommands: {
