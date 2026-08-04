@@ -176,6 +176,7 @@ impl CondaBackend {
             exclude_newer: None,
             strategy: SolveStrategy::Highest,
             dependency_overrides: vec![],
+            excluded_candidates: Default::default(),
             cancellation_token: None,
         };
 
