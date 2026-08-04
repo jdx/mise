@@ -30,7 +30,8 @@
       "description": "rattler crates are tightly version-locked across the workspace; bump together.",
       "matchPackageNames": ["/^rattler($|_)/"],
       "matchManagers": ["cargo"],
-      "groupName": "rattler"
+      "groupName": "rattler",
+      "separateMajorMinor": false
     },
     {
       "description": "Sigstore crates are versioned together; bump together.",
