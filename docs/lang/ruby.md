@@ -38,6 +38,30 @@ for the following platforms:
 If a precompiled binary is not available for your platform or Ruby version, mise automatically
 falls back to compiling from source using ruby-build.
 
+### Precompiled binaries only
+
+Set `ruby.compile=false` to opt out of source builds entirely. This is useful on hosts without a
+build toolchain, where a silent fallback to ruby-build would fail late or pull in build
+dependencies you deliberately don't have:
+
+```sh
+mise settings ruby.compile=false
+```
+
+With this setting:
+
+- Installs error out when no precompiled binary exists for the requested version and platform,
+  instead of falling back to ruby-build.
+- `mise ls-remote ruby` and fuzzy versions only consider versions that have a precompiled
+  binary, so `ruby = "4.0"` resolves to the newest 4.0.x that actually has a binary rather than
+  a version that would have to be built from source.
+
+If you set a custom `ruby.precompiled_url` template, mise cannot enumerate available versions and
+version listings are left unfiltered.
+
+`ruby.compile` has no effect on Windows, which installs Ruby from
+[RubyInstaller2](https://rubyinstaller.org/) rather than from `jdx/ruby` or ruby-build.
+
 ### Precompiled build revisions
 
 Precompiled Ruby binaries are released from `jdx/ruby`. Sometimes the binary for a Ruby version is rebuilt without changing the Ruby version itself. Those rebuilds use build revision release tags like `3.3.11-1` or `3.3.11-2`.
@@ -91,6 +115,9 @@ To always compile from source even when precompiled binaries are available:
 ```sh
 mise settings ruby.compile=true
 ```
+
+To require precompiled binaries and never compile, see
+[Precompiled binaries only](#precompiled-binaries-only).
 
 You can also use a custom source for precompiled binaries by setting `ruby.precompiled_url` to
 either a GitHub repo (e.g., `owner/repo`) or a full URL template.
