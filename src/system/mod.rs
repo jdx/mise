@@ -1,8 +1,9 @@
 //! `[bootstrap]` config section: machine-global bootstrapping.
 //!
-//! This is `[bootstrap.packages]` — declarative system packages installed
-//! by `mise bootstrap packages apply` — `[bootstrap.repos]` — declarative
-//! git checkouts — `[dotfiles]` — declarative config files applied by
+//! This is `[bootstrap.groups]` and `[bootstrap.users]` — declarative Linux
+//! accounts — `[bootstrap.packages]` — declarative system packages installed
+//! by `mise bootstrap packages apply` — `[bootstrap.repos]` — declarative git
+//! checkouts — `[dotfiles]` — declarative config files applied by
 //! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
 //! shell activation setup — `[bootstrap.macos.defaults]` — declarative macOS
 //! user defaults — `[bootstrap.macos.launchd.agents]` — declarative macOS
@@ -31,6 +32,11 @@ use crate::system::shell_activation::{
 };
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 
+#[cfg(target_os = "linux")]
+pub mod accounts;
+#[cfg(not(target_os = "linux"))]
+#[path = "accounts_non_linux.rs"]
+pub mod accounts;
 pub mod defaults;
 pub mod deps;
 pub mod edits;
@@ -53,6 +59,12 @@ pub struct BootstrapTomlConfig {
     /// Logical secret name -> environment input declaration.
     #[serde(default)]
     pub secrets: IndexMap<String, secrets::SecretTomlConfig>,
+    /// Linux group name -> declarative local group.
+    #[serde(default)]
+    pub groups: IndexMap<String, accounts::GroupTomlConfig>,
+    /// Linux user name -> declarative local user.
+    #[serde(default)]
+    pub users: IndexMap<String, accounts::UserTomlConfig>,
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,

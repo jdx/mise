@@ -2,6 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_os = "linux"))]
+use std::collections::HashSet;
+
 use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use path_absolutize::Absolutize;
@@ -142,10 +145,8 @@ pub fn requests_from_config(
     config: &Config,
     secrets: &super::secrets::SecretValues,
 ) -> Result<(Vec<ManagedFileRequest>, Vec<ManagedDirectoryRequest>)> {
-    let mut files = files_from_config(config, secrets)?;
-    let mut directories = directories_from_config(config)?;
-    validate_requests(&files, &directories)?;
-    inspect_paths(&mut files, &mut directories)?;
+    let (mut files, mut directories) = prepare_requests_from_config(config, secrets)?;
+    inspect_requests(&mut files, &mut directories)?;
     Ok((files, directories))
 }
 
@@ -186,9 +187,98 @@ pub fn status_requests_from_config(
             Err(error) => return Err(error),
         }
     }
+    ignore_non_linux_account_principals(config, &mut files, &mut directories);
     validate_requests(&files, &directories)?;
     inspect_paths(&mut files, &mut directories)?;
     Ok((files, directories, unavailable))
+}
+
+pub fn prepare_requests_from_config(
+    config: &Config,
+    secrets: &super::secrets::SecretValues,
+) -> Result<(Vec<ManagedFileRequest>, Vec<ManagedDirectoryRequest>)> {
+    let mut files = files_from_config(config, secrets)?;
+    let mut directories = directories_from_config(config)?;
+    ignore_non_linux_account_principals(config, &mut files, &mut directories);
+    validate_requests(&files, &directories)?;
+    Ok((files, directories))
+}
+
+#[cfg(target_os = "linux")]
+fn ignore_non_linux_account_principals(
+    _config: &Config,
+    _files: &mut [ManagedFileRequest],
+    _directories: &mut [ManagedDirectoryRequest],
+) {
+}
+
+#[cfg(not(target_os = "linux"))]
+fn ignore_non_linux_account_principals(
+    config: &Config,
+    files: &mut [ManagedFileRequest],
+    directories: &mut [ManagedDirectoryRequest],
+) {
+    let mut users = HashSet::new();
+    let mut groups = HashSet::new();
+    for cf in config.config_files.values() {
+        if let Some(bootstrap) = cf.bootstrap_config() {
+            users.extend(bootstrap.users.into_keys());
+            groups.extend(bootstrap.groups.into_keys());
+        }
+    }
+    clear_ignored_principals(files, directories, &users, &groups);
+}
+
+#[cfg(any(not(target_os = "linux"), test))]
+fn clear_ignored_principals(
+    files: &mut [ManagedFileRequest],
+    directories: &mut [ManagedDirectoryRequest],
+    users: &std::collections::HashSet<String>,
+    groups: &std::collections::HashSet<String>,
+) {
+    for (kind, path, owner, group) in files
+        .iter_mut()
+        .map(|request| {
+            (
+                "file",
+                request.path.as_path(),
+                &mut request.owner,
+                &mut request.group,
+            )
+        })
+        .chain(directories.iter_mut().map(|request| {
+            (
+                "directory",
+                request.path.as_path(),
+                &mut request.owner,
+                &mut request.group,
+            )
+        }))
+    {
+        if owner.as_ref().is_some_and(|owner| users.contains(owner)) {
+            warn!(
+                "ignoring owner '{}' for managed {kind} '{}' because [bootstrap.users] is Linux-only",
+                owner.as_deref().expect("matching owner is present"),
+                path.display()
+            );
+            *owner = None;
+        }
+        if group.as_ref().is_some_and(|group| groups.contains(group)) {
+            warn!(
+                "ignoring group '{}' for managed {kind} '{}' because [bootstrap.groups] is Linux-only",
+                group.as_deref().expect("matching group is present"),
+                path.display()
+            );
+            *group = None;
+        }
+    }
+}
+
+pub fn inspect_requests(
+    files: &mut [ManagedFileRequest],
+    directories: &mut [ManagedDirectoryRequest],
+) -> Result<()> {
+    inspect_paths(files, directories)
 }
 
 fn files_from_config(
@@ -456,12 +546,15 @@ impl ManagedDirectoryRequest {
     }
 }
 
-pub fn apply(
+pub fn apply_with_accounts(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
+    accounts: Option<&super::accounts::AccountRequests>,
+    allow_pending_accounts: bool,
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
+    validate_principals(files, directories, accounts, allow_pending_accounts)?;
     let mut plan = PrivilegedPlan::default();
     let mut unknown = vec![];
     let mut present_directories = directories
@@ -553,6 +646,80 @@ pub fn apply(
     )?;
     info!("system files: applied {} change(s)", plan.actions.len());
     Ok(())
+}
+
+#[cfg(unix)]
+pub fn validate_principals(
+    files: &[ManagedFileRequest],
+    directories: &[ManagedDirectoryRequest],
+    accounts: Option<&super::accounts::AccountRequests>,
+    allow_pending_accounts: bool,
+) -> Result<()> {
+    for (owner, group) in files
+        .iter()
+        .filter(|request| request.state == ManagedState::Present)
+        .map(|request| (request.owner.as_deref(), request.group.as_deref()))
+        .chain(
+            directories
+                .iter()
+                .filter(|request| request.state == ManagedState::Present)
+                .map(|request| (request.owner.as_deref(), request.group.as_deref())),
+        )
+    {
+        if let Some(owner) = owner {
+            match accounts
+                .and_then(|accounts| accounts.users.iter().find(|request| request.name == owner))
+            {
+                Some(request) if request.state == super::accounts::AccountState::Absent => bail!(
+                    "managed system files require owner '{owner}', but that bootstrap user is absent"
+                ),
+                Some(request)
+                    if allow_pending_accounts
+                        && request.plan().action == ResourceAction::Unknown =>
+                {
+                    bail!(
+                        "managed system files require owner '{owner}', but that bootstrap user cannot be safely converged"
+                    )
+                }
+                Some(_) if allow_pending_accounts => {}
+                Some(_) | None => {
+                    resolve_user(owner)?;
+                }
+            }
+        }
+        if let Some(group) = group {
+            match accounts
+                .and_then(|accounts| accounts.groups.iter().find(|request| request.name == group))
+            {
+                Some(request) if request.state == super::accounts::AccountState::Absent => bail!(
+                    "managed system files require group '{group}', but that bootstrap group is absent"
+                ),
+                Some(request)
+                    if allow_pending_accounts
+                        && request.plan().action == ResourceAction::Unknown =>
+                {
+                    bail!(
+                        "managed system files require group '{group}', but that bootstrap group cannot be safely converged"
+                    )
+                }
+                Some(_) if allow_pending_accounts => {}
+                Some(_) | None => {
+                    resolve_group(group)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn validate_principals(
+    _files: &[ManagedFileRequest],
+    _directories: &[ManagedDirectoryRequest],
+    _accounts: Option<&super::accounts::AccountRequests>,
+    _allow_pending_accounts: bool,
+) -> Result<()> {
+    bail!("managed system files are only supported on Unix")
 }
 
 impl PrivilegedAction {
@@ -941,14 +1108,14 @@ fn metadata_matches(
 ) -> Result<bool> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-    let owner_matches = owner
-        .map(resolve_user)
-        .transpose()?
-        .is_none_or(|uid| metadata.uid() == uid);
-    let group_matches = group
-        .map(resolve_group)
-        .transpose()?
-        .is_none_or(|gid| metadata.gid() == gid);
+    let owner_matches = match owner {
+        Some(owner) => lookup_user(owner)?.is_some_and(|uid| metadata.uid() == uid),
+        None => true,
+    };
+    let group_matches = match group {
+        Some(group) => lookup_group(group)?.is_some_and(|gid| metadata.gid() == gid),
+        None => true,
+    };
     Ok(metadata.permissions().mode() & 0o7777 == mode && owner_matches && group_matches)
 }
 
@@ -995,16 +1162,22 @@ fn describe_file_type(metadata: &fs::Metadata) -> String {
 
 #[cfg(unix)]
 fn resolve_user(name: &str) -> Result<u32> {
-    nix::unistd::User::from_name(name)?
-        .map(|user| user.uid.as_raw())
-        .ok_or_else(|| eyre!("user '{name}' does not exist"))
+    lookup_user(name)?.ok_or_else(|| eyre!("user '{name}' does not exist"))
 }
 
 #[cfg(unix)]
 fn resolve_group(name: &str) -> Result<u32> {
-    nix::unistd::Group::from_name(name)?
-        .map(|group| group.gid.as_raw())
-        .ok_or_else(|| eyre!("group '{name}' does not exist"))
+    lookup_group(name)?.ok_or_else(|| eyre!("group '{name}' does not exist"))
+}
+
+#[cfg(unix)]
+fn lookup_user(name: &str) -> Result<Option<u32>> {
+    Ok(nix::unistd::User::from_name(name)?.map(|user| user.uid.as_raw()))
+}
+
+#[cfg(unix)]
+fn lookup_group(name: &str) -> Result<Option<u32>> {
+    Ok(nix::unistd::Group::from_name(name)?.map(|group| group.gid.as_raw()))
 }
 
 #[cfg(unix)]
@@ -1300,5 +1473,27 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn clears_only_ignored_account_principals() {
+        let mut files = vec![file("/opt/example/config", ManagedState::Present)];
+        files[0].owner = Some("service-user".to_string());
+        files[0].group = Some("local-group".to_string());
+        let mut directories = vec![directory("/opt/example", ManagedState::Present)];
+        directories[0].owner = Some("local-user".to_string());
+        directories[0].group = Some("service-group".to_string());
+
+        clear_ignored_principals(
+            &mut files,
+            &mut directories,
+            &std::collections::HashSet::from(["service-user".to_string()]),
+            &std::collections::HashSet::from(["service-group".to_string()]),
+        );
+
+        assert_eq!(files[0].owner, None);
+        assert_eq!(files[0].group.as_deref(), Some("local-group"));
+        assert_eq!(directories[0].owner.as_deref(), Some("local-user"));
+        assert_eq!(directories[0].group, None);
     }
 }
