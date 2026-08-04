@@ -40,6 +40,7 @@ pub mod launchd;
 pub mod login_shell;
 pub mod packages;
 pub mod repos;
+pub mod resources;
 pub mod shell_activation;
 pub(crate) mod sudo;
 pub mod systemd;
@@ -272,24 +273,36 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
 pub fn pending_plugin_packages_from_config(
     config: &Config,
 ) -> IndexMap<String, Vec<PackageRequest>> {
+    pending_plugin_packages_from_config_including_disabled(config)
+        .into_iter()
+        .filter(|(name, _)| package_manager_is_enabled(name))
+        .collect()
+}
+
+/// All package requests for declared, not-yet-installed package plugins,
+/// including managers excluded by `system_packages.managers`. Resource plans
+/// use this broader view so excluded declarations remain visible as unknown.
+pub(crate) fn pending_plugin_packages_from_config_including_disabled(
+    config: &Config,
+) -> IndexMap<String, Vec<PackageRequest>> {
     let declared = plugins_from_config(config);
     let brew_taps = brew_taps_from_config(config);
     let installed = packages::all_managers()
         .into_iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    let enabled = crate::config::Settings::get()
-        .system_packages
-        .managers
-        .clone();
     package_requests_from_config_files(&config.config_files, &brew_taps)
         .into_iter()
-        .filter(|(name, _)| {
-            declared.contains_key(name)
-                && !installed.contains(name)
-                && enabled.as_ref().is_none_or(|names| names.contains(name))
-        })
+        .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
         .collect()
+}
+
+pub(crate) fn package_manager_is_enabled(name: &str) -> bool {
+    crate::config::Settings::get()
+        .system_packages
+        .managers
+        .as_ref()
+        .is_none_or(|names| names.iter().any(|enabled| enabled == name))
 }
 
 /// Aggregate `[bootstrap.packages]` from the current merged config plus every

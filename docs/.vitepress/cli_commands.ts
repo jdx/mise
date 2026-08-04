@@ -158,6 +158,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      plan: {
+        hide: false,
+      },
       plugins: {
         hide: false,
         subcommands: {

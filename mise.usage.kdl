@@ -757,6 +757,10 @@ Examples:
             arg <PACKAGE>… help="Packages in `manager:package[@version]` form" var=#true
         }
     }
+    cmd plan help="Show the changes declarative bootstrap resources would make" effect=read {
+        flag "-J --json" help="Output a stable machine-readable plan in JSON format"
+        flag --detailed-exitcode help="Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors"
+    }
     cmd plugins subcommand_required=#true help="Manage package manager plugins declared in `[bootstrap.plugins]`" effect=read {
         cmd apply effect=write {
             flag "-n --dry-run" help="Print what would happen without installing plugins"
