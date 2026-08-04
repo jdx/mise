@@ -283,6 +283,11 @@ impl ComposeRequest {
         validate_values("oneshot service", &config.oneshot)?;
         validate_command("command", &config.command)?;
         validate_command("engine_command", &config.engine_command)?;
+        if config.state == ComposeState::Absent && !config.services.is_empty() {
+            bail!(
+                "bootstrap compose project '{name}' services cannot be combined with state = \"absent\" because compose down removes the entire project"
+            );
+        }
         if !config.wait && config.wait_timeout.is_some() {
             bail!("bootstrap compose project '{name}' wait_timeout requires wait = true");
         }
@@ -720,7 +725,12 @@ impl ComposeRequest {
                 args
             }
         };
-        args.extend(self.services.iter().cloned());
+        // `compose down` is project-scoped and does not accept service names.
+        // Validation rejects that ambiguous configuration, but keep command
+        // construction defensive in case a request is assembled internally.
+        if self.state != ComposeState::Absent {
+            args.extend(self.services.iter().cloned());
+        }
         args
     }
 
@@ -1229,6 +1239,9 @@ mod tests {
                 "local",
             ]
         );
+
+        request.services = vec!["api".to_string()];
+        assert!(!request.action_args().contains(&"api".to_string()));
     }
 
     #[test]
