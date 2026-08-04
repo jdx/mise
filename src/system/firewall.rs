@@ -226,40 +226,20 @@ pub struct FirewallRuleTomlConfig {
     pub interface: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct FirewallTomlConfig {
-    #[serde(default)]
-    pub backend: FirewallBackend,
-    #[serde(default)]
-    pub state: FirewallState,
-    #[serde(default = "default_incoming")]
-    pub default_incoming: FirewallPolicy,
-    #[serde(default)]
-    pub default_outgoing: FirewallPolicy,
-    #[serde(default)]
-    pub exclusive: bool,
-    #[serde(default)]
-    pub allow_lockout: bool,
+    pub backend: Option<FirewallBackend>,
+    pub state: Option<FirewallState>,
+    pub default_incoming: Option<FirewallPolicy>,
+    pub default_outgoing: Option<FirewallPolicy>,
+    pub exclusive: Option<bool>,
+    pub allow_lockout: Option<bool>,
     #[serde(default)]
     pub rules: Vec<FirewallRuleTomlConfig>,
 }
 
 fn default_incoming() -> FirewallPolicy {
     FirewallPolicy::Deny
-}
-
-impl Default for FirewallTomlConfig {
-    fn default() -> Self {
-        Self {
-            backend: FirewallBackend::Auto,
-            state: FirewallState::Enabled,
-            default_incoming: default_incoming(),
-            default_outgoing: FirewallPolicy::Allow,
-            exclusive: false,
-            allow_lockout: false,
-            rules: vec![],
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -316,14 +296,58 @@ struct FirewallStateFile {
 }
 
 pub fn prepare_request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
-    for cf in config.config_files.values() {
+    let mut merged = None;
+    // config_files is ordered local -> global; merge global -> local so a
+    // more local scalar or same-named rule overrides its inherited value.
+    for cf in config.config_files.values().rev() {
         if let Some(bootstrap) = cf.bootstrap_config()
             && let Some(firewall) = bootstrap.linux.firewall
         {
-            return FirewallRequest::from_toml(firewall).map(Some);
+            merged = Some(merge_toml_config(merged.unwrap_or_default(), firewall)?);
         }
     }
-    Ok(None)
+    merged.map(FirewallRequest::from_toml).transpose()
+}
+
+fn merge_toml_config(
+    mut inherited: FirewallTomlConfig,
+    local: FirewallTomlConfig,
+) -> Result<FirewallTomlConfig> {
+    let mut local_names = HashSet::new();
+    for rule in &local.rules {
+        if !local_names.insert(&rule.name) {
+            bail!("firewall rule '{}' is declared more than once", rule.name);
+        }
+    }
+    if local.backend.is_some() {
+        inherited.backend = local.backend;
+    }
+    if local.state.is_some() {
+        inherited.state = local.state;
+    }
+    if local.default_incoming.is_some() {
+        inherited.default_incoming = local.default_incoming;
+    }
+    if local.default_outgoing.is_some() {
+        inherited.default_outgoing = local.default_outgoing;
+    }
+    if local.exclusive.is_some() {
+        inherited.exclusive = local.exclusive;
+    }
+    if local.allow_lockout.is_some() {
+        inherited.allow_lockout = local.allow_lockout;
+    }
+    for rule in local.rules {
+        match inherited
+            .rules
+            .iter()
+            .position(|inherited| inherited.name == rule.name)
+        {
+            Some(index) => inherited.rules[index] = rule,
+            None => inherited.rules.push(rule),
+        }
+    }
+    Ok(inherited)
 }
 
 pub fn request_from_config(config: &Config) -> Result<Option<FirewallRequest>> {
@@ -408,12 +432,12 @@ impl FirewallRequest {
             .map(|value| parse_ssh_connection(&value))
             .transpose()?;
         let request = Self {
-            backend: config.backend,
-            state: config.state,
-            default_incoming: config.default_incoming,
-            default_outgoing: config.default_outgoing,
-            exclusive: config.exclusive,
-            allow_lockout: config.allow_lockout,
+            backend: config.backend.unwrap_or_default(),
+            state: config.state.unwrap_or_default(),
+            default_incoming: config.default_incoming.unwrap_or_else(default_incoming),
+            default_outgoing: config.default_outgoing.unwrap_or_default(),
+            exclusive: config.exclusive.unwrap_or_default(),
+            allow_lockout: config.allow_lockout.unwrap_or_default(),
             rules,
             ssh_connection,
             inspection: None,
@@ -446,10 +470,15 @@ impl FirewallRequest {
                 && rule
                     .destination
                     .is_none_or(|destination| destination.contains(&connection.server))
+                // SSH_CONNECTION does not identify the ingress interface.
+                // An interface-constrained rule therefore cannot prove that
+                // it preserves this session; require an unrestricted rule or
+                // an explicit allow_lockout override.
+                && rule.interface.is_none()
         });
         if !covered {
             bail!(
-                "refusing firewall default incoming {} over SSH: no incoming TCP allow rule covers peer {} on server port {}; add a covering rule or set allow_lockout = true",
+                "refusing firewall default incoming {} over SSH: no incoming TCP allow rule covers peer {} on server port {} with an unrestricted interface; add a covering rule or set allow_lockout = true",
                 self.default_incoming.ufw(),
                 connection.peer,
                 connection.server_port
@@ -1821,6 +1850,64 @@ mod tests {
                 .to_string()
                 .contains("refusing firewall default incoming")
         );
+    }
+
+    #[test]
+    fn ssh_lockout_guard_rejects_interface_constrained_coverage() {
+        let mut request = request_with_ssh(Some("203.0.113.0/24"));
+        request.rules[0].interface = Some("eth1".to_string());
+        assert!(request.validate_safety().is_err());
+    }
+
+    #[test]
+    fn layered_config_inherits_scalars_and_merges_rules_by_name() {
+        let inherited: FirewallWrapper = toml::from_str(
+            r#"
+                [firewall]
+                backend = "nftables"
+                default_incoming = "reject"
+
+                [[firewall.rules]]
+                name = "ssh"
+                port = 22
+                protocol = "tcp"
+                action = "allow"
+            "#,
+        )
+        .unwrap();
+        let local: FirewallWrapper = toml::from_str(
+            r#"
+                [firewall]
+                state = "disabled"
+                exclusive = true
+
+                [[firewall.rules]]
+                name = "ssh"
+                port = 2222
+                protocol = "tcp"
+                action = "allow"
+
+                [[firewall.rules]]
+                name = "https"
+                port = 443
+                protocol = "tcp"
+                action = "allow"
+            "#,
+        )
+        .unwrap();
+
+        let request = FirewallRequest::from_toml(
+            merge_toml_config(inherited.firewall, local.firewall).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(request.backend, FirewallBackend::Nftables);
+        assert_eq!(request.state, FirewallState::Disabled);
+        assert_eq!(request.default_incoming, FirewallPolicy::Reject);
+        assert!(request.exclusive);
+        assert_eq!(request.rules.len(), 2);
+        assert_eq!(request.rules[0].name, "ssh");
+        assert_eq!(request.rules[0].port.unwrap().start, 2222);
+        assert_eq!(request.rules[1].name, "https");
     }
 
     #[test]

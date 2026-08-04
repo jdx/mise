@@ -4808,7 +4808,7 @@ run = 'echo "template"'
         let firewall = cf.bootstrap_config().unwrap().linux.firewall.unwrap();
         assert_eq!(
             firewall.backend,
-            crate::system::firewall::FirewallBackend::Nftables
+            Some(crate::system::firewall::FirewallBackend::Nftables)
         );
         assert_eq!(firewall.rules.len(), 2);
         assert_eq!(firewall.rules[0].name, "https");
