@@ -46,14 +46,28 @@ while test "$#" -gt 0; do
     exit 0
     ;;
   *)
+    destination=$1
     shift
     command=$1
+    if test "$destination" = cross.test; then
+      export MISE_TEST_REMOTE_ARCH=armv7l
+    fi
     exec sh -c "$command"
     ;;
   esac
 done
 EOF
 chmod +x fakebin/ssh
+
+cat >fakebin/uname <<'EOF'
+#!/bin/sh
+if test "${MISE_TEST_REMOTE_ARCH:-}" && test "${1:-}" = -m; then
+  printf '%s\n' "$MISE_TEST_REMOTE_ARCH"
+else
+  PATH=/usr/bin:/bin command uname "$@"
+fi
+EOF
+chmod +x fakebin/uname
 
 cat >fakebin/mktemp <<'EOF'
 #!/bin/sh
@@ -179,11 +193,19 @@ cat >>mise.toml <<'EOF'
 [bootstrap.remote.hosts.spaced]
 host = "spaced.test"
 remote_mise = "./bin with space/mise"
+
+[bootstrap.remote.hosts.cross]
+host = "cross.test"
 EOF
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote spaced --dry-run --yes"
 assert_contains "cat $ssh_log" "'$remote_stage/project/bin with space/mise' version"
+assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_fail "mise bootstrap remote cross --dry-run --yes --skip tools"
+assert_contains "cat $ssh_log" "uname -s"
 assert_fail "test -d $remote_stage"
 
 cat >>"$HOME/.config/mise/config.toml" <<'EOF'

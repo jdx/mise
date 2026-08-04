@@ -96,10 +96,11 @@ prints the retained path instead of deleting it.
 
 ## Provisioning mise itself
 
-By default, mise detects the remote OS and architecture and uploads the current
-local executable when they match. This guarantees the remote process supports
-the same bootstrap configuration as its orchestrator rather than silently
-using an older installed version.
+By default, mise detects the remote OS, architecture, and Linux libc family. It
+uploads the current local executable when that executable is compatible with
+the target. This guarantees the remote process supports the same bootstrap
+configuration as its orchestrator rather than silently using an older installed
+version.
 
 On Linux, mise also inspects the executable's ELF interpreter. Static binaries
 can run without a target libc check. For dynamically linked binaries, the
@@ -109,7 +110,25 @@ from the ELF and verifies that the remote loader provides at least that ABI
 before upload. For musl binaries, mise compares the local and remote loader
 versions and requires the remote loader to be at least as new. Mise then runs
 `mise version` remotely as the final authority for all other binary and host
-requirements. Failures report which explicit provisioning override to use.
+requirements.
+
+When the local executable cannot run on the target, mise automatically resolves
+the raw executable for the same mise version from the official GitHub release.
+This covers Linux x64, arm64, and armv7 on both glibc and musl, plus macOS x64
+and arm64. Mise downloads `SHASUMS256.txt` and its minisign signature, verifies
+the manifest with mise's embedded release key, then verifies the selected
+artifact's SHA-256 checksum before upload. The verified artifact is cached for
+the duration of the command, so targets with the same platform share one
+download.
+
+Automatic substitution is deliberately limited to official release binaries.
+Before downloading a different target, mise proves that the local executable
+matches one of the signed checksums for the same official release. Debug builds,
+source builds with local changes, and downstream-packaged binaries therefore
+fail closed rather than silently changing code on the remote machine. Use an
+explicit strategy below for those builds or for a platform outside the official
+artifact matrix. Failure to identify a Linux libc family also requires an
+explicit strategy.
 
 Three explicit escape hatches cover other environments:
 
@@ -150,9 +169,8 @@ host = "builder.example.com"
 bootstrap_command = "nix profile install nixpkgs#mise"
 ```
 
-Mise verifies the selected remote command by running `mise version` before
-bootstrap. A later artifact resolver can automate official cross-platform
-downloads without changing these escape hatches.
+Mise verifies every uploaded or selected remote command by running
+`mise version` before bootstrap.
 
 ## Bootstrap controls and secrets
 
