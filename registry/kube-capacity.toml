@@ -1,2 +1,3 @@
 backends = ["aqua:robscott/kube-capacity", "asdf:looztra/asdf-kube-capacity"]
+bins = ["kube-capacity", "kubectl-resource_capacity"]
 description = "A simple CLI that provides an overview of the resource requests, limits, and utilization in a Kubernetes cluster"

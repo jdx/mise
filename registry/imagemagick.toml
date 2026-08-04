@@ -5,5 +5,23 @@ backends = [
   "conda:imagemagick",
   "asdf:mise-plugins/mise-imagemagick",
 ]
+bins = [
+  "Magick++-config",
+  "MagickCore-config",
+  "MagickWand-config",
+  "animate",
+  "compare",
+  "composite",
+  "conjure",
+  "convert",
+  "display",
+  "identify",
+  "import",
+  "magick",
+  "magick-script",
+  "mogrify",
+  "montage",
+  "stream",
+]
 description = "ImageMagick is a free, open-source software suite for creating, editing, converting, and displaying images. It supports 200+ formats and offers powerful command-line tools and APIs for automation, scripting, and integration across platforms"
 test = { cmd = "magick -version", expected = "Version: ImageMagick {{ version | split(pat='_') | join(sep='-') }}" }

@@ -1,2 +1,3 @@
 backends = ["aqua:fission/fission", "asdf:virtualstaticvoid/asdf-fission"]
+bins = ["fission"]
 description = "Fast and Simple Serverless Functions for Kubernetes"

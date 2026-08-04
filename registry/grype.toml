@@ -1,3 +1,4 @@
 backends = ["aqua:anchore/grype", "asdf:poikilotherm/asdf-grype"]
+bins = ["grype"]
 description = "A vulnerability scanner for container images and filesystems"
 test = { cmd = "grype --version", expected = "{{version}}" }

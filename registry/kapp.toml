@@ -1,2 +1,3 @@
 backends = ["aqua:carvel-dev/kapp", "asdf:vmware-tanzu/asdf-carvel"]
+bins = ["kapp"]
 description = 'kapp is a simple deployment tool focused on the concept of "Kubernetes application" — a set of resources with the same label'

@@ -2,4 +2,27 @@ backends = [
   "vfox:jdx/vfox-elasticsearch",
   "asdf:mise-plugins/mise-elasticsearch",
 ]
+bins = [
+  "elasticsearch",
+  "elasticsearch-certgen",
+  "elasticsearch-certutil",
+  "elasticsearch-cli",
+  "elasticsearch-create-enrollment-token",
+  "elasticsearch-croneval",
+  "elasticsearch-env",
+  "elasticsearch-env-from-file",
+  "elasticsearch-geoip",
+  "elasticsearch-keystore",
+  "elasticsearch-node",
+  "elasticsearch-plugin",
+  "elasticsearch-reconfigure-node",
+  "elasticsearch-reset-password",
+  "elasticsearch-saml-metadata",
+  "elasticsearch-service-tokens",
+  "elasticsearch-setup-passwords",
+  "elasticsearch-shard",
+  "elasticsearch-sql-cli",
+  "elasticsearch-syskeygen",
+  "elasticsearch-users",
+]
 description = "Elasticsearch is an open source, distributed search and analytics engine built for speed, scale, and AI applications"

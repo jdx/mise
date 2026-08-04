@@ -3,6 +3,7 @@ test = { cmd = "jules version", expected = "Version: v{{version}}", tools = [
   "aube",
 ] }
 
+bins = ["jules"]
 [[backends]]
 full = "npm:@google/jules"
 

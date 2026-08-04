@@ -1,3 +1,4 @@
 backends = ["aqua:microsoft/edit"]
+bins = ["edit"]
 description = "We all edit"
 # test = ["edit --version", "edit version {{version}}"] # exits 1 on CI

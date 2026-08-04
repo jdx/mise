@@ -1,3 +1,4 @@
 backends = ["core:elixir"]
+bins = ["elixir", "elixirc", "iex", "mix"]
 description = "Elixir is a dynamic, functional language for building scalable and maintainable applications"
 idiomatic_files = [".exenv-version"]

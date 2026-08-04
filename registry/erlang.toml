@@ -1,2 +1,16 @@
 backends = ["core:erlang"]
+bins = [
+  "ct_run",
+  "dialyzer",
+  "epmd",
+  "erl",
+  "erl_call",
+  "erlc",
+  "escript",
+  "run_erl",
+  "start",
+  "start_erl",
+  "to_erl",
+  "typer",
+]
 description = "erlang"

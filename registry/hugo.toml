@@ -3,4 +3,5 @@ backends = [
   "asdf:NeoHsu/asdf-hugo",
   "asdf:nklmilojevic/asdf-hugo",
 ]
+bins = ["hugo"]
 description = "The world’s fastest framework for building websites"

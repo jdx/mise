@@ -1,2 +1,3 @@
 backends = ["aqua:ahmetb/kubectx/kubens"]
+bins = ["kubens"]
 description = "Faster way to switch between clusters and namespaces in kubectl"

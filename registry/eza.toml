@@ -5,5 +5,6 @@ backends = [
   "vfox:jdx/vfox-eza",
   "cargo:eza",
 ]
+bins = ["eza"]
 description = "A modern, maintained replacement for ls"
 test = { cmd = "eza --version", expected = "v{{version}}" }

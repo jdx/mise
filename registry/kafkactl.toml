@@ -1,2 +1,3 @@
 backends = ["aqua:deviceinsight/kafkactl", "asdf:anweber/asdf-kafkactl"]
+bins = ["kafkactl"]
 description = "Command Line Tool for managing Apache Kafka"

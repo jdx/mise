@@ -1,6 +1,7 @@
 description = "Compiler for Elm, a functional language for reliable webapps"
 test = { cmd = "elm --version", expected = "{{version}}" }
 
+bins = ["elm"]
 [[backends]]
 full = "github:elm/compiler"
 

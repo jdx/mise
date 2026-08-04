@@ -1,2 +1,3 @@
 backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
+bins = ["helm"]
 description = "The Kubernetes Package Manager"

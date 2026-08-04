@@ -1,2 +1,3 @@
 backends = ["aqua:fwdcloudsec/granted", "asdf:dex4er/asdf-granted"]
+bins = ["assume", "assumego", "granted"]
 description = "The easiest way to access AWS"

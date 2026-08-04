@@ -3,4 +3,5 @@ backends = [
   "aqua:Ladicle/kubectl-rolesum",
   "asdf:looztra/asdf-kubectl-bindrole",
 ]
+bins = ["kubectl-rolesum"]
 description = "Summarize Kubernetes RBAC roles for the specified subjects"

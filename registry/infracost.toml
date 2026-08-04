@@ -1,2 +1,3 @@
 backends = ["aqua:infracost/infracost", "asdf:dex4er/asdf-infracost"]
+bins = ["infracost"]
 description = "Cloud cost estimates for Terraform in pull requests. Love your cloud bill"

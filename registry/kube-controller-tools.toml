@@ -1,6 +1,7 @@
 description = "Tools to use with the controller-runtime libraries"
 # test = { cmd = "controller-gen --version", expected = "Version: v{{version}}" }
 
+bins = ["controller-gen"]
 [[backends]]
 full = "github:kubernetes-sigs/controller-tools"
 

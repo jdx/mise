@@ -1,2 +1,3 @@
 backends = ["aqua:helm/chart-releaser", "asdf:Antiarchitect/asdf-helm-cr"]
+bins = ["cr"]
 description = "Hosting Helm Charts via GitHub Pages and Releases"

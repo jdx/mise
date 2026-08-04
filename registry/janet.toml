@@ -1,3 +1,4 @@
 backends = ["github:janet-lang/janet"]
+bins = ["janet"]
 description = "A dynamic language and bytecode vm"
 test = { cmd = "janet --version", expected = "{{version}}" }

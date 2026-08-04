@@ -1,2 +1,3 @@
 backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
+bins = ["ecspresso"]
 description = "ecspresso is a deployment tool for Amazon ECS"

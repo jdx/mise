@@ -1,2 +1,3 @@
 backends = ["aqua:x-motemen/ghq", "asdf:kajisha/asdf-ghq"]
+bins = ["ghq"]
 description = "Remote repository management made easy"

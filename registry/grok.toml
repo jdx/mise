@@ -2,6 +2,7 @@ description = "Grok Build is an agentic coding tool that runs in your terminal"
 os = ["linux", "macos", "windows"]
 test = { cmd = "grok --version", expected = "{{version}}" }
 
+bins = ["grok"]
 [[backends]]
 full = "http:grok"
 

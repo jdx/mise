@@ -1,4 +1,5 @@
 backends = ["aqua:godotengine/godot"]
+bins = ["godot"]
 description = "Free and open source 2D and 3D game engine"
 # Example of `godot --version`: 4.6.stable.official.89cea1439 (MAJOR.MINOR.stable.official.SHORT_COMMIT_HASH)
 # PATCH is sometimes present after MINOR.

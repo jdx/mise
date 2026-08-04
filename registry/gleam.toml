@@ -1,3 +1,4 @@
 backends = ["aqua:gleam-lang/gleam", "asdf:asdf-community/asdf-gleam"]
+bins = ["gleam"]
 description = "A friendly language for building type-safe, scalable systems"
 test = { cmd = "gleam --version", expected = "gleam {{version}}" }

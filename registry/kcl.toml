@@ -1,3 +1,4 @@
 backends = ["aqua:kcl-lang/cli", "asdf:mise-plugins/mise-kcl"]
+bins = ["kcl"]
 description = "The KCL Command Line Interface (CLI)"
 test = { cmd = "kcl --version", expected = "kcl version {{version}}" }

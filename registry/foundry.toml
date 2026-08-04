@@ -1,3 +1,4 @@
 backends = ["aqua:foundry-rs/foundry"]
+bins = ["anvil", "cast", "chisel", "forge"]
 description = "Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust"
 test = { cmd = "forge -V", expected = "{{version}}" }

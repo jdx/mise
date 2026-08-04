@@ -1,4 +1,5 @@
 backends = ["aqua:goreleaser/goreleaser", "asdf:kforsthoevel/asdf-goreleaser"]
+bins = ["goreleaser"]
 description = "Deliver Go binaries as fast and easily as possible"
 idiomatic_files = [
   { path = ".config/goreleaser.yml", version_regex = '''(?m)^\s*version\s*:\s*["']?v?([0-9]+)''' },

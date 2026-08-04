@@ -1,2 +1,3 @@
 backends = ["aqua:gopasspw/gopass", "asdf:trallnag/asdf-gopass"]
+bins = ["gopass"]
 description = "The slightly more awesome standard unix password manager for teams"
