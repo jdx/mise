@@ -568,41 +568,73 @@ impl RubyPlugin {
     }
 
     fn is_build_revision_tag(version: &str, tag: &str) -> bool {
-        matches!(Self::split_build_revision_tag(tag), (v, true) if v == version)
+        matches!(Self::split_build_revision_tag(tag), (v, Some(_)) if v == version)
     }
 
-    /// Split a release tag into its version and whether it carries a build revision.
+    /// Split a release tag into its version and build revision.
     ///
-    /// `3.3.11-1` -> `("3.3.11", true)`, `3.3.11` -> `("3.3.11", false)`.
-    /// Non-numeric suffixes are part of the version: `3.4.0-preview1` -> `("3.4.0-preview1", false)`.
-    fn split_build_revision_tag(tag: &str) -> (&str, bool) {
+    /// `3.3.11-1` -> `("3.3.11", Some(1))`, `3.3.11` -> `("3.3.11", None)`.
+    /// Non-numeric suffixes are part of the version: `3.4.0-preview1` -> `("3.4.0-preview1", None)`.
+    fn split_build_revision_tag(tag: &str) -> (&str, Option<u32>) {
         match tag.rsplit_once('-') {
-            Some((version, revision)) if revision.parse::<u32>().is_ok() => (version, true),
-            _ => (tag, false),
+            Some((version, revision)) => match revision.parse::<u32>() {
+                Ok(revision) => (version, Some(revision)),
+                Err(_) => (tag, None),
+            },
+            None => (tag, None),
         }
     }
 
     /// Collect the versions that have a precompiled asset for `platform`.
     ///
-    /// Mirrors the asset lookup in [`Self::find_precompiled_asset_in_repo`] so a version is
-    /// only reported as available when an install would actually find a binary for it.
+    /// An install resolves a version to exactly one release — the highest build revision, or
+    /// the base tag when revisions aren't required — so availability is decided by that same
+    /// release. A newer revision that is missing an asset for this platform means the version
+    /// is not installable even when an older revision has one, which keeps this list from
+    /// offering versions [`Self::find_precompiled_asset_in_repo`] would reject.
     fn precompiled_versions_from_releases(
         releases: &[GithubRelease],
         requires_build_revision: bool,
         platform: &str,
     ) -> HashSet<String> {
-        let mut versions = HashSet::new();
+        let mut best: HashMap<&str, (Option<u32>, bool)> = HashMap::new();
         for release in releases {
-            let (version, has_build_revision) = Self::split_build_revision_tag(&release.tag_name);
-            if requires_build_revision && !has_build_revision {
+            let (version, revision) = Self::split_build_revision_tag(&release.tag_name);
+            if requires_build_revision && revision.is_none() {
                 continue;
             }
-            let asset_name = format!("ruby-{version}.{platform}.tar.gz");
-            if release.assets.iter().any(|asset| asset.name == asset_name) {
-                versions.insert(version.to_string());
+            match best.get(version) {
+                // `None` (the base tag) sorts below every numeric revision, matching how
+                // installs prefer `3.3.11-2` over `3.3.11-1` over `3.3.11`.
+                Some((best_revision, _)) if *best_revision >= revision => continue,
+                _ => {}
             }
+            let asset_name = format!("ruby-{version}.{platform}.tar.gz");
+            let has_asset = release.assets.iter().any(|asset| asset.name == asset_name);
+            best.insert(version, (revision, has_asset));
         }
-        versions
+        best.into_iter()
+            .filter(|(_, (_, has_asset))| *has_asset)
+            .map(|(version, _)| version.to_string())
+            .collect()
+    }
+
+    /// Cache key context for strict precompiled version listings.
+    ///
+    /// The filtered list depends on which source is queried and which platform's assets are
+    /// looked for, so a change to any of those must not reuse the previous list.
+    fn precompiled_cache_context(&self) -> Option<String> {
+        if !self.precompiled_only() {
+            return None;
+        }
+        let settings = Settings::get();
+        Some(hash::hash_to_str(&(
+            "ruby-precompiled",
+            &settings.ruby.precompiled_url,
+            &settings.ruby.precompiled_arch,
+            &settings.ruby.precompiled_os,
+            self.precompiled_platform(),
+        )))
     }
 
     /// Restrict a version list to versions that have a precompiled binary for this platform.
@@ -974,7 +1006,7 @@ impl Backend for RubyPlugin {
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         // Strict precompiled mode lists a subset of the versions ruby-build knows about, so it
         // must not share a cache — or the shared versions host list — with source installs.
-        Ok(self.precompiled_only().then(|| "precompiled".to_string()))
+        Ok(self.precompiled_cache_context())
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
@@ -1286,16 +1318,34 @@ mod tests {
         backend.resolve_lockfile_options(&request, &target).unwrap()
     }
 
-    fn ruby_precompiled_only(compile: Option<bool>) -> bool {
+    fn with_ruby_settings<T>(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+        f: impl FnOnce(&RubyPlugin) -> T,
+    ) -> T {
         let lock = TEST_SETTINGS_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut settings = SettingsPartial::empty();
-        settings.ruby.compile = compile;
+        configure_settings(&mut settings);
         Settings::reset(Some(settings));
         let _guard = SettingsResetGuard { _lock: lock };
 
-        RubyPlugin::new().precompiled_only()
+        f(&RubyPlugin::new())
+    }
+
+    fn ruby_precompiled_only(compile: Option<bool>) -> bool {
+        with_ruby_settings(
+            |settings| settings.ruby.compile = compile,
+            |backend| backend.precompiled_only(),
+        )
+    }
+
+    fn ruby_precompiled_cache_context(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> Option<String> {
+        with_ruby_settings(configure_settings, |backend| {
+            backend.precompiled_cache_context()
+        })
     }
 
     fn release(tag: &str, assets: &[&str]) -> GithubRelease {
@@ -1433,20 +1483,69 @@ mod tests {
     fn test_ruby_split_build_revision_tag() {
         assert_eq!(
             RubyPlugin::split_build_revision_tag("3.3.11-1"),
-            ("3.3.11", true)
+            ("3.3.11", Some(1))
         );
         assert_eq!(
             RubyPlugin::split_build_revision_tag("3.3.11-12"),
-            ("3.3.11", true)
+            ("3.3.11", Some(12))
         );
         assert_eq!(
             RubyPlugin::split_build_revision_tag("3.3.11"),
-            ("3.3.11", false)
+            ("3.3.11", None)
         );
         assert_eq!(
             RubyPlugin::split_build_revision_tag("3.4.0-preview1"),
-            ("3.4.0-preview1", false)
+            ("3.4.0-preview1", None)
         );
+    }
+
+    #[test]
+    fn test_ruby_precompiled_versions_use_highest_build_revision_only() {
+        // An install resolves 3.3.12 to the -2 release, which has no asset for this platform,
+        // so 3.3.12 must not be listed even though -1 does have one.
+        let releases = vec![
+            release("3.3.12-1", &["ruby-3.3.12.x86_64_linux.tar.gz"]),
+            release("3.3.12-2", &["ruby-3.3.12.macos.tar.gz"]),
+        ];
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&releases, true, "x86_64_linux");
+        assert!(versions.is_empty());
+
+        // Release order must not change the answer.
+        let reversed = releases.into_iter().rev().collect_vec();
+        let versions =
+            RubyPlugin::precompiled_versions_from_releases(&reversed, true, "x86_64_linux");
+        assert!(versions.is_empty());
+        let versions = RubyPlugin::precompiled_versions_from_releases(&reversed, true, "macos");
+        assert_eq!(versions, HashSet::from(["3.3.12".to_string()]));
+    }
+
+    #[test]
+    fn test_ruby_precompiled_cache_context_tracks_source_and_platform() {
+        assert_eq!(ruby_precompiled_cache_context(|_| {}), None);
+
+        let default_source = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+        });
+        let same = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+        });
+        assert!(default_source.is_some());
+        assert_eq!(default_source, same);
+
+        let custom_source = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+        });
+        assert_ne!(default_source, custom_source);
+
+        let custom_platform = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_arch = Some("arm64".to_string());
+            settings.ruby.precompiled_os = Some("linux".to_string());
+        });
+        assert_ne!(default_source, custom_platform);
+        assert_ne!(custom_source, custom_platform);
     }
 
     #[test]

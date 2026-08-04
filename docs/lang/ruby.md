@@ -59,6 +59,9 @@ With this setting:
 If you set a custom `ruby.precompiled_url` template, mise cannot enumerate available versions and
 version listings are left unfiltered.
 
+`ruby.compile` has no effect on Windows, which installs Ruby from
+[RubyInstaller2](https://rubyinstaller.org/) rather than from `jdx/ruby` or ruby-build.
+
 ### Precompiled build revisions
 
 Precompiled Ruby binaries are released from `jdx/ruby`. Sometimes the binary for a Ruby version is rebuilt without changing the Ruby version itself. Those rebuilds use build revision release tags like `3.3.11-1` or `3.3.11-2`.

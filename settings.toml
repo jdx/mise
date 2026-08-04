@@ -2213,6 +2213,8 @@ Controls whether Ruby is compiled from source or downloaded as precompiled binar
   the current platform.
 - If `true`: Always compile from source using ruby-build
 - If unset: Try precompiled binaries first, fall back to compiling if unavailable
+
+This setting has no effect on Windows, which installs Ruby from RubyInstaller2.
 """
 env = "MISE_RUBY_COMPILE"
 optional = true
