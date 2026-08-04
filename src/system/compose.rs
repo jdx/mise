@@ -472,7 +472,7 @@ impl ComposeRequest {
         };
         let config_hashes = if self.state == ComposeState::Running {
             parse_config_hashes(
-                &self.compose_output(&["config".to_string(), "--hash".to_string()])?,
+                &self.compose_output(&["config".to_string(), "--hash=*".to_string()])?,
             )?
         } else {
             HashMap::new()

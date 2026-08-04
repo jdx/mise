@@ -21,7 +21,7 @@ case "$action" in
 config)
   case " $* " in
   *" --services "*) echo cache ;;
-  *" --hash "*) printf 'cache '; cat "$root/hash" ;;
+  *" --hash=* "*) printf 'cache '; cat "$root/hash" ;;
   *) exit 2 ;;
   esac
   ;;
