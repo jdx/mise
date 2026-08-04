@@ -2208,6 +2208,16 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(Some(link))
     }
+    /// Reconciles provider-owned version links under the backend's installs path.
+    ///
+    /// `target_prefix` defines ownership: only links whose resolved targets are
+    /// within it may be removed or replaced. Managed installs, runtime aliases,
+    /// and links owned by another provider are preserved.
+    ///
+    /// If multiple entries in `links` map to the same version, the first entry
+    /// wins, so callers must supply entries in a deterministic order.
+    ///
+    /// Returns versions whose links were created or changed.
     fn sync_symlinks(
         &self,
         target_prefix: &Path,
@@ -2248,6 +2258,7 @@ pub trait Backend: Debug + Send + Sync {
             };
 
             if !runtime_link && target.exists() && file::is_symlink_to(&link, target) {
+                install_state::clear_incomplete_marker(&self.ba().short, &version)?;
                 continue;
             }
 
@@ -2260,6 +2271,9 @@ pub trait Backend: Debug + Send + Sync {
 
             if entry_exists {
                 file::make_symlink(target, &link)?;
+                if target.exists() {
+                    install_state::clear_incomplete_marker(&self.ba().short, &version)?;
+                }
                 changed.insert(version);
             } else if self.create_symlink(&version, target)?.is_some() {
                 changed.insert(version);

@@ -60,9 +60,10 @@ impl SyncNode {
     async fn run_brew(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
 
-        let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
+        let brew_opt = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
+        let brew_cellar = PathBuf::from(cmd!("brew", "--cellar").read()?);
 
-        let subdirs = file::dir_subdirs(&brew_prefix)?;
+        let subdirs = file::dir_subdirs(&brew_opt)?;
         let mut links = vec![];
         for entry in sorted(subdirs) {
             if entry.starts_with(".") {
@@ -72,9 +73,9 @@ impl SyncNode {
                 continue;
             }
             let v = entry.trim_start_matches("node@");
-            links.push((v.to_string(), brew_prefix.join(&entry)));
+            links.push((v.to_string(), brew_opt.join(&entry)));
         }
-        for v in node.sync_symlinks(&brew_prefix, links)? {
+        for v in node.sync_symlinks(&brew_cellar, links)? {
             miseprintln!("Synced node@{} from Homebrew", v);
         }
         Ok(())

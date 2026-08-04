@@ -17,7 +17,7 @@ ln -s ./18.0.0 "$MISE_DATA_DIR/installs/node/provider-runtime-alias"
 install_fake_node "$NVM_DIR/versions/node/v20.0.0"
 install_fake_node "$NVM_DIR/versions/node/v21.0.0"
 install_fake_node "$NVM_DIR/versions/node/v22.0.0"
-install_fake_node "$MISE_DATA_DIR/installs/node/20.0.0/bin"
+install_fake_node "$MISE_DATA_DIR/installs/node/20.0.0"
 install_fake_node "$PWD/other-provider/21.0.0"
 ln -s "$PWD/other-provider/21.0.0" "$MISE_DATA_DIR/installs/node/21.0.0"
 

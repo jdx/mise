@@ -2496,6 +2496,24 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
+    fn test_symlink_prefix_detection_follows_an_indirect_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let cellar = dir.path().join("Cellar");
+        let target = cellar.join("node@22").join("22.0.0");
+        let opt = dir.path().join("opt");
+        let opt_entry = opt.join("node@22");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&opt).unwrap();
+        std::os::unix::fs::symlink(&target, &opt_entry).unwrap();
+        std::os::unix::fs::symlink(&opt_entry, &link).unwrap();
+
+        assert!(is_symlink_to_prefix(&link, &cellar).unwrap());
+        assert!(!is_symlink_to_prefix(&link, &opt).unwrap());
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn test_symlink_prefix_detection_rejects_escapes() {
         let dir = tempfile::tempdir().unwrap();
         let prefix = dir.path().join("provider");
@@ -2511,6 +2529,12 @@ mod tests {
         std::os::unix::fs::symlink(&foreign, prefix.join("hop")).unwrap();
         std::os::unix::fs::symlink(prefix.join("hop").join("missing"), &redirected).unwrap();
         assert!(!is_symlink_to_prefix(&redirected, &prefix).unwrap());
+
+        let dangling = prefix.join("dangling");
+        let redirected_tail = dir.path().join("redirected-tail");
+        std::os::unix::fs::symlink(prefix.join("missing"), &dangling).unwrap();
+        std::os::unix::fs::symlink(dangling.join("child"), &redirected_tail).unwrap();
+        assert!(!is_symlink_to_prefix(&redirected_tail, &prefix).unwrap());
     }
 
     #[test]

@@ -45,9 +45,10 @@ impl SyncRuby {
     async fn run_brew(&self) -> Result<()> {
         let ruby = backend::get(&"ruby".into()).unwrap();
 
-        let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
+        let brew_opt = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
+        let brew_cellar = PathBuf::from(cmd!("brew", "--cellar").read()?);
 
-        let subdirs = file::dir_subdirs(&brew_prefix)?;
+        let subdirs = file::dir_subdirs(&brew_opt)?;
         let mut links = vec![];
         for entry in sorted(subdirs) {
             if entry.starts_with(".") {
@@ -57,9 +58,9 @@ impl SyncRuby {
                 continue;
             }
             let v = entry.trim_start_matches("ruby@");
-            links.push((v.to_string(), brew_prefix.join(&entry)));
+            links.push((v.to_string(), brew_opt.join(&entry)));
         }
-        for v in ruby.sync_symlinks(&brew_prefix, links)? {
+        for v in ruby.sync_symlinks(&brew_cellar, links)? {
             miseprintln!("Synced ruby@{} from Homebrew", v);
         }
         Ok(())

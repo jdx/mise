@@ -73,7 +73,10 @@ impl SyncPython {
                 continue;
             }
             // name is like cpython-3.13.1-macos-aarch64-none
-            let v = name.split('-').nth(1).unwrap();
+            let Some(v) = name.split('-').nth(1).filter(|v| !v.is_empty()) else {
+                debug!("skipping unrecognized uv python dir: {name}");
+                continue;
+            };
             links.push((v.to_string(), uv_versions_path.join(&name)));
         }
         for v in python.sync_symlinks(uv_versions_path, links)? {
