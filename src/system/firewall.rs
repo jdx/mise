@@ -447,10 +447,19 @@ impl FirewallRequest {
     }
 
     fn validate_safety(&self) -> Result<()> {
-        self.validate_safety_with_ssh_ancestry(ssh_ancestor_present())
+        self.validate_safety_with_rules(
+            &self.rules,
+            (self.backend != FirewallBackend::Auto).then_some(self.backend),
+            ssh_ancestor_present(),
+        )
     }
 
-    fn validate_safety_with_ssh_ancestry(&self, ssh_ancestor: Option<bool>) -> Result<()> {
+    fn validate_safety_with_rules(
+        &self,
+        rules: &[FirewallRule],
+        backend: Option<FirewallBackend>,
+        ssh_ancestor: Option<bool>,
+    ) -> Result<()> {
         if self.state != FirewallState::Enabled
             || self.default_incoming == FirewallPolicy::Allow
             || self.allow_lockout
@@ -471,7 +480,7 @@ impl FirewallRequest {
             };
         };
         let mut covered = false;
-        for rule in self.rules.iter().filter(|rule| {
+        for rule in rules.iter().filter(|rule| {
             rule.state == FirewallRuleState::Present
                 && rule.direction == FirewallDirection::Incoming
                 && rule
@@ -488,20 +497,35 @@ impl FirewallRequest {
                     .is_none_or(|destination| destination.contains(&connection.server))
         }) {
             if rule.action != FirewallAction::Allow {
-                bail!(
-                    "refusing firewall default incoming {} over SSH: blocking rule '{}' precedes a proven allow for peer {} on server port {}; reorder or narrow the rule, or set allow_lockout = true",
-                    self.default_incoming.ufw(),
-                    rule.name,
-                    connection.peer,
-                    connection.server_port
-                );
+                match backend {
+                    Some(FirewallBackend::Nftables) if !covered => bail!(
+                        "refusing firewall default incoming {} over SSH: blocking rule '{}' precedes a proven allow for peer {} on server port {}; reorder or narrow the rule, or set allow_lockout = true",
+                        self.default_incoming.ufw(),
+                        rule.name,
+                        connection.peer,
+                        connection.server_port
+                    ),
+                    Some(FirewallBackend::Firewalld) => bail!(
+                        "refusing firewall default incoming {} over SSH: blocking rule '{}' also covers peer {} on server port {}, and firewalld cannot guarantee the allow wins; narrow the rule or set allow_lockout = true",
+                        self.default_incoming.ufw(),
+                        rule.name,
+                        connection.peer,
+                        connection.server_port
+                    ),
+                    // UFW installs allows before denies/rejects. An automatic
+                    // backend is validated again after it is resolved.
+                    _ => {}
+                }
+                continue;
             }
             // SSH_CONNECTION does not identify the ingress interface. An
             // interface-constrained allow cannot prove that it preserves this
             // session, so keep looking for an unrestricted covering allow.
             if rule.interface.is_none() {
                 covered = true;
-                break;
+                if backend == Some(FirewallBackend::Nftables) {
+                    break;
+                }
             }
         }
         if !covered {
@@ -762,7 +786,7 @@ fn inspect_privileged(request: &FirewallRequest) -> FirewallInspection {
         };
     }
     let effective = effective_request(request, state.as_ref());
-    if let Err(error) = validate_effective_backend_request(&effective, backend) {
+    if let Err(error) = validate_effective_backend_request(request, &effective, backend) {
         return FirewallInspection {
             backend: Some(backend),
             managed: state.is_some() || managed_backend_present(backend),
@@ -807,7 +831,7 @@ fn apply_privileged(request: &FirewallRequest) -> Result<()> {
     let backend = resolve_backend(request.backend, state.as_ref())?;
     validate_backend_request(request, backend)?;
     let effective = effective_request(request, state.as_ref());
-    validate_effective_backend_request(&effective, backend)?;
+    validate_effective_backend_request(request, &effective, backend)?;
     if let Some(state) = &state
         && state.backend != backend
     {
@@ -986,10 +1010,16 @@ fn validate_backend_request(request: &FirewallRequest, backend: FirewallBackend)
 
 fn validate_effective_backend_request(
     request: &FirewallRequest,
+    effective: &FirewallRequest,
     backend: FirewallBackend,
 ) -> Result<()> {
-    if request.state == FirewallState::Enabled {
-        validate_backend_request(request, backend)?;
+    if effective.state == FirewallState::Enabled {
+        validate_backend_request(effective, backend)?;
+        request.validate_safety_with_rules(
+            &effective.rules,
+            Some(backend),
+            ssh_ancestor_present(),
+        )?;
     }
     Ok(())
 }
@@ -1649,7 +1679,7 @@ fn preview_commands(
     backend: FirewallBackend,
 ) -> Result<Vec<Vec<String>>> {
     let effective = effective_request(request, read_state()?.as_ref());
-    validate_effective_backend_request(&effective, backend)?;
+    validate_effective_backend_request(request, &effective, backend)?;
     let mut commands = vec![];
     match effective.state {
         FirewallState::Absent => commands.push(vec![
@@ -1949,16 +1979,28 @@ mod tests {
         let mut request = request_with_ssh(None);
         request.ssh_connection = None;
         request
-            .validate_safety_with_ssh_ancestry(Some(false))
+            .validate_safety_with_rules(
+                &request.rules,
+                Some(FirewallBackend::Nftables),
+                Some(false),
+            )
             .unwrap();
         assert!(
             request
-                .validate_safety_with_ssh_ancestry(Some(true))
+                .validate_safety_with_rules(
+                    &request.rules,
+                    Some(FirewallBackend::Nftables),
+                    Some(true),
+                )
                 .unwrap_err()
                 .to_string()
                 .contains("SSH-derived process without SSH_CONNECTION")
         );
-        assert!(request.validate_safety_with_ssh_ancestry(None).is_err());
+        assert!(
+            request
+                .validate_safety_with_rules(&request.rules, Some(FirewallBackend::Nftables), None)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1975,6 +2017,9 @@ mod tests {
                 .to_string()
                 .contains("blocking rule 'block-ssh' precedes")
         );
+
+        request.backend = FirewallBackend::Ufw;
+        request.validate_safety().unwrap();
     }
 
     #[test]
@@ -2224,7 +2269,8 @@ mod tests {
 
         assert!(validate_backend_request(&desired, FirewallBackend::Firewalld).is_ok());
         assert!(
-            validate_effective_backend_request(&effective, FirewallBackend::Firewalld).is_err()
+            validate_effective_backend_request(&desired, &effective, FirewallBackend::Firewalld)
+                .is_err()
         );
     }
 }
