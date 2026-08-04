@@ -2620,6 +2620,20 @@ it, and skips sudo entirely when already running as root (e.g. containers/CI).
 env = "MISE_SYSTEM_PACKAGES_SUDO"
 type = "Bool"
 
+[task.auto_infer]
+default = []
+description = "[experimental] Workspace providers from which to automatically infer tasks."
+docs = """
+List the workspace provider languages whose ecosystem tasks mise should import. For example,
+`["node"]` imports scripts from Node workspace `package.json` files. Inferred tasks use stable
+provider-scoped names and monorepo path aliases. Task inference is opt-in because ecosystem commands
+may overlap with explicit mise tasks.
+"""
+env = "MISE_TASK_AUTO_INFER"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [task.cache_dir]
 description = "[experimental] Directory for task output cache artifacts."
 docs = """

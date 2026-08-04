@@ -498,8 +498,8 @@ All four dependency kinds participate in the same project graph, including devel
 
 ### Node Package Scripts
 
-When experimental features are enabled, mise imports scripts from each discovered Node workspace
-package as tasks. Packages do not need their own `mise.toml`.
+When task inference and experimental features are enabled, mise imports scripts from each
+discovered Node workspace package as tasks. Packages do not need their own `mise.toml`.
 
 An imported task uses the stable project ID followed by `#` and the package script name:
 
@@ -522,10 +522,12 @@ declaration or lockfile to select the manager and falls back to npm when neither
 An explicit mise task at the package's monorepo path takes precedence over the imported script.
 Both names continue to resolve to that explicit task.
 
-This inference is currently experimental and only runs for a configured monorepo root:
+This inference is opt-in, currently experimental, and only runs for a configured monorepo root:
 
-```bash
-mise settings experimental=true
+```toml
+[settings]
+experimental = true
+task.auto_infer = ["node"]
 ```
 
 ### Root Task Defaults

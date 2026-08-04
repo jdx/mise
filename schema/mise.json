@@ -1788,6 +1788,14 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "auto_infer": {
+              "default": [],
+              "description": "[experimental] Workspace providers from which to automatically infer tasks.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "cache_dir": {
               "description": "[experimental] Directory for task output cache artifacts.",
               "type": "string"
