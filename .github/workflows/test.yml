@@ -401,6 +401,21 @@ jobs:
               TOKEN_B: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
 
+  bootstrap-linux-host:
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 20
+    needs: [build-ubuntu, classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - run: chmod +x target/debug/mise
+      - name: Converge a complete Linux host over SSH
+        run: scripts/test-bootstrap-linux-host.sh target/debug/mise
+
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -462,6 +477,7 @@ jobs:
       - nightly
       - lint
       - e2e
+      - bootstrap-linux-host
       - windows-unit
       - windows-e2e
     # Evaluate skipped and failed dependencies, but do not waste a runner when
@@ -501,6 +517,10 @@ jobs:
               echo "e2e failed or was skipped"
               exit 1
             fi
+            if [ "${{ needs.bootstrap-linux-host.result }}" != "success" ]; then
+              echo "bootstrap-linux-host failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.windows-unit.result }}" != "success" ]; then
               echo "windows-unit failed or was skipped"
               exit 1
@@ -514,6 +534,7 @@ jobs:
               "${{ needs.build-windows.result }}" \
               "${{ needs.unit.result }}" \
               "${{ needs.e2e.result }}" \
+              "${{ needs.bootstrap-linux-host.result }}" \
               "${{ needs.windows-unit.result }}" \
               "${{ needs.windows-e2e.result }}"; do
               if [ "$result" != "skipped" ]; then
