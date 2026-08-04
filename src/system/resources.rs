@@ -230,11 +230,18 @@ pub async fn plan(config: &Config) -> Result<BootstrapPlan> {
             plan.insert(ResourcePlan::new(id, current, desired, action))?;
         }
     }
-    for (manager_name, requests) in super::pending_plugin_packages_from_config(config) {
+    for (manager_name, requests) in
+        super::pending_plugin_packages_from_config_including_disabled(config)
+    {
+        let reason = if super::package_manager_is_enabled(&manager_name) {
+            "package plugin is not installed"
+        } else {
+            "excluded by system_packages.managers"
+        };
         for request in requests {
             plan.insert(ResourcePlan::new(
                 ResourceId::new("package", format!("{manager_name}:{}", request.name)),
-                "unavailable (package plugin is not installed)",
+                format!("unavailable ({reason})"),
                 desired_package(&request),
                 ResourceAction::Unknown,
             ))?;
