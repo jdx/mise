@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::{borrow::Cow, collections::BTreeMap};
@@ -701,7 +701,7 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or_default();
-    if filename.ends_with(".dmg") {
+    if is_dmg_archive(archive, filename)? {
         file::un_dmg(archive, &extract_dir)?;
     } else {
         let format = cask_extraction_format(archive, filename)?;
@@ -857,6 +857,27 @@ fn cask_extraction_format(archive: &Path, filename: &str) -> Result<ExtractionFo
         return Ok(format);
     }
     Ok(detect_extraction_format(archive)?.unwrap_or(format))
+}
+
+fn is_dmg_archive(archive: &Path, filename: &str) -> Result<bool> {
+    if filename.ends_with(".dmg") {
+        return Ok(true);
+    }
+    if ExtractionFormat::from_file_name(filename) != ExtractionFormat::Raw {
+        return Ok(false);
+    }
+
+    // UDIF images end with a 512-byte resource footer containing this prefix.
+    const UDIF_TRAILER_SIZE: i64 = 512;
+    const UDIF_TRAILER_PREFIX: &[u8; 12] = b"koly\0\0\0\x04\0\0\x02\0";
+    let mut file = std::fs::File::open(archive)?;
+    if file.metadata()?.len() < UDIF_TRAILER_SIZE as u64 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-UDIF_TRAILER_SIZE))?;
+    let mut prefix = [0; UDIF_TRAILER_PREFIX.len()];
+    file.read_exact(&mut prefix)?;
+    Ok(&prefix == UDIF_TRAILER_PREFIX)
 }
 
 fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> {
@@ -5139,11 +5160,55 @@ end
     }
 
     #[test]
+    fn detects_suffixless_dmg_archives() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("download");
+        let mut contents = vec![0; 1024];
+        contents[512..524].copy_from_slice(b"koly\0\0\0\x04\0\0\x02\0");
+        std::fs::write(&archive, contents)?;
+
+        assert!(is_dmg_archive(&archive, "raycast-1.104.24-download")?);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_malformed_suffixless_dmg_trailers() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("download");
+        let mut contents = vec![0; 1024];
+        contents[512..520].copy_from_slice(b"koly\0\0\0\x04");
+        std::fs::write(&archive, contents)?;
+
+        assert!(!is_dmg_archive(&archive, "raycast-1.104.24-download")?);
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_sniff_named_archives_as_dmg() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("archive.zip");
+        let mut contents = vec![0; 1024];
+        contents[..4].copy_from_slice(b"PK\x03\x04");
+        contents[512..524].copy_from_slice(b"koly\0\0\0\x04\0\0\x02\0");
+        std::fs::write(&archive, contents)?;
+
+        assert!(!is_dmg_archive(&archive, "archive.zip")?);
+        assert_eq!(
+            cask_extraction_format(&archive, "archive.zip")?,
+            ExtractionFormat::Zip
+        );
+        Ok(())
+    }
+
+    #[test]
     fn leaves_suffixless_raw_binaries_raw() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let archive = tmp.path().join("claude");
-        std::fs::write(&archive, b"#!/bin/sh\necho raw\n")?;
+        let mut contents = vec![0; 1024];
+        contents[..10].copy_from_slice(b"#!/bin/sh\n");
+        std::fs::write(&archive, contents)?;
 
+        assert!(!is_dmg_archive(&archive, "claude-1.0.0-claude")?);
         assert_eq!(
             cask_extraction_format(&archive, "claude-1.0.0-claude")?,
             ExtractionFormat::Raw
