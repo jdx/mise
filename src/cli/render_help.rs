@@ -109,11 +109,12 @@ fn render_command_ts() -> String {
         }};
         "#});
     doc.push_str("export const commands: { [key: string]: Command } = {\n");
-    let mut cli = Cli::command()
+    let cli = Cli::command()
         .term_width(80)
         .max_term_width(80)
         .disable_help_subcommand(true)
         .disable_help_flag(true);
+    let mut cli = super::expand_deferred_subcommands(cli);
     for command in cli
         .get_subcommands_mut()
         .sorted_by_cached_key(|c| c.get_name().to_string())

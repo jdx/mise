@@ -211,7 +211,7 @@ pub enum Commands {
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
-    Bootstrap(bootstrap::Bootstrap),
+    Bootstrap(bootstrap::DeferredBootstrap),
     Cache(cache::Cache),
     Completion(completion::Completion),
     Config(config::Config),
@@ -276,6 +276,15 @@ pub enum Commands {
     Watch(Box<watch::Watch>),
     Where(r#where::Where),
     Which(which::Which),
+}
+
+/// Expand command sections that are deferred during normal startup. Use this
+/// only for full-tree introspection such as generated docs and validation.
+pub(crate) fn expand_deferred_subcommands(mut command: clap::Command) -> clap::Command {
+    *command
+        .find_subcommand_mut("bootstrap")
+        .expect("bootstrap command is registered") = bootstrap::full_command();
+    command
 }
 
 impl Commands {
@@ -983,6 +992,38 @@ mod tests {
                 clap_sort::assert_sorted(subcmd);
             }
         }
+        let cmd = expand_deferred_subcommands(Cli::command());
+        let bootstrap = cmd
+            .get_subcommands()
+            .find(|subcommand| subcommand.get_name() == "bootstrap")
+            .unwrap();
+        for subcommand in bootstrap.get_subcommands() {
+            clap_sort::assert_sorted(subcommand);
+        }
+    }
+
+    #[test]
+    fn test_bootstrap_command_tree_is_deferred_until_parsing() {
+        let cmd = Cli::command();
+        let bootstrap = cmd
+            .get_subcommands()
+            .find(|subcommand| subcommand.get_name() == "bootstrap")
+            .unwrap();
+        assert_eq!(bootstrap.get_subcommands().count(), 0);
+
+        let alias_args = vec![
+            "mise".to_string(),
+            "bs".to_string(),
+            "status".to_string(),
+            "--json".to_string(),
+        ];
+        assert_eq!(preprocess_args_for_naked_run(&cmd, &alias_args), alias_args);
+        assert!(cmd.clone().try_get_matches_from(alias_args).is_ok());
+
+        assert!(
+            cmd.try_get_matches_from(["mise", "bootstrap", "status", "--json"])
+                .is_ok()
+        );
     }
 
     /// Commands that name a config file to write to accept both spellings, so it
@@ -1018,7 +1059,7 @@ mod tests {
                 cfg!(not(windows)),
             ),
         ];
-        let root = Cli::command();
+        let root = expand_deferred_subcommands(Cli::command());
 
         for (path, arg_name, alias, available) in cases {
             if !available {

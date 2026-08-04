@@ -311,7 +311,10 @@ mod tests {
     /// still runnable, and `bootstrap launchd`/`systemd`/`macos-defaults` are
     /// hidden compatibility spellings of commands that change system state.
     fn all_commands() -> Vec<String> {
-        let spec: usage::Spec = crate::cli::Cli::command().into();
+        let command = crate::cli::expand_deferred_subcommands(
+            crate::cli::Cli::command().disable_help_subcommand(true),
+        );
+        let spec: usage::Spec = command.into();
         let mut out = vec![];
         collect(&spec.cmd, &mut vec![], &mut out);
         out
@@ -331,7 +334,10 @@ mod tests {
     /// actually transfers them.
     #[test]
     fn apply_annotates_the_spec() {
-        let mut spec: usage::Spec = crate::cli::Cli::command().into();
+        let command = crate::cli::expand_deferred_subcommands(
+            crate::cli::Cli::command().disable_help_subcommand(true),
+        );
+        let mut spec: usage::Spec = command.into();
         apply(&mut spec);
 
         let cmd = |name: &str| {
