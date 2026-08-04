@@ -4018,6 +4018,113 @@
           "type": "object",
           "description": "Linux-specific bootstrap config",
           "properties": {
+            "firewall": {
+              "type": "object",
+              "description": "Linux host firewall policy and rules managed with `mise bootstrap firewall`",
+              "additionalProperties": false,
+              "properties": {
+                "backend": {
+                  "type": "string",
+                  "description": "firewall backend; auto reuses managed or active host infrastructure",
+                  "enum": ["auto", "ufw", "firewalld", "nftables"],
+                  "default": "auto"
+                },
+                "state": {
+                  "type": "string",
+                  "description": "desired lifecycle of mise-managed firewall state",
+                  "enum": ["enabled", "disabled", "absent"],
+                  "default": "enabled"
+                },
+                "default_incoming": {
+                  "type": "string",
+                  "description": "default action for incoming traffic",
+                  "enum": ["allow", "deny", "reject"],
+                  "default": "deny"
+                },
+                "default_outgoing": {
+                  "type": "string",
+                  "description": "default action for outgoing traffic",
+                  "enum": ["allow", "deny", "reject"],
+                  "default": "allow"
+                },
+                "exclusive": {
+                  "type": "boolean",
+                  "description": "treat the declared rules as the complete owned ruleset; UFW reset also removes unrelated UFW rules",
+                  "default": false
+                },
+                "allow_lockout": {
+                  "type": "boolean",
+                  "description": "allow default-deny or reject over SSH without a rule covering the connected peer",
+                  "default": false
+                },
+                "rules": {
+                  "type": "array",
+                  "description": "named firewall rules reconciled without deleting undeclared managed rules",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "stable managed rule identifier",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": ["present", "absent"],
+                        "default": "present"
+                      },
+                      "direction": {
+                        "type": "string",
+                        "enum": ["incoming", "outgoing"],
+                        "default": "incoming"
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": ["allow", "deny", "reject"],
+                        "default": "allow"
+                      },
+                      "port": {
+                        "description": "single port number or inclusive range",
+                        "oneOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9]+[-:][0-9]+$"
+                          }
+                        ]
+                      },
+                      "protocol": {
+                        "type": "string",
+                        "enum": ["tcp", "udp", "sctp", "dccp"]
+                      },
+                      "source": {
+                        "type": "string",
+                        "description": "source IPv4 or IPv6 CIDR network"
+                      },
+                      "destination": {
+                        "type": "string",
+                        "description": "destination IPv4 or IPv6 CIDR network"
+                      },
+                      "interface": {
+                        "type": "string",
+                        "description": "network interface (nftables and UFW only)",
+                        "minLength": 1,
+                        "maxLength": 15,
+                        "pattern": "^[A-Za-z0-9_.:-]+$"
+                      }
+                    },
+                    "required": ["name"]
+                  }
+                }
+              }
+            },
             "systemd": {
               "type": "object",
               "description": "systemd user service and timer bootstrap config",

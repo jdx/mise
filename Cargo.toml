@@ -123,6 +123,7 @@ heck = "0.5"
 hex = "0.4"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
+ipnet = { version = "2", features = ["serde"] }
 clx = "3"
 indoc = "2"
 itertools = "0.15"

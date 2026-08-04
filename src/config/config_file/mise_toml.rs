@@ -4772,4 +4772,57 @@ run = 'echo "template"'
         assert_eq!(timer.unit.as_deref(), Some("dev.mise.my-sync.service"));
         file::remove_file(&p).unwrap();
     }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_bootstrap_linux_firewall() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test-firewall.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.linux.firewall]
+        backend = "nftables"
+        state = "enabled"
+        default_incoming = "deny"
+        default_outgoing = "allow"
+        exclusive = false
+
+        [[bootstrap.linux.firewall.rules]]
+        name = "https"
+        port = 443
+        protocol = "tcp"
+        action = "allow"
+
+        [[bootstrap.linux.firewall.rules]]
+        name = "admin"
+        port = "2200-2205"
+        protocol = "tcp"
+        source = "203.0.113.0/24"
+        interface = "eth0"
+        action = "allow"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let firewall = cf.bootstrap_config().unwrap().linux.firewall.unwrap();
+        assert_eq!(
+            firewall.backend,
+            crate::system::firewall::FirewallBackend::Nftables
+        );
+        assert_eq!(firewall.rules.len(), 2);
+        assert_eq!(firewall.rules[0].name, "https");
+        assert!(matches!(
+            firewall.rules[0].port,
+            Some(crate::system::firewall::FirewallPortToml::Single(443))
+        ));
+        assert!(matches!(
+            firewall.rules[1].port,
+            Some(crate::system::firewall::FirewallPortToml::Range(ref range))
+                if range == "2200-2205"
+        ));
+        assert_eq!(firewall.rules[1].source.as_deref(), Some("203.0.113.0/24"));
+        assert_eq!(firewall.rules[1].interface.as_deref(), Some("eth0"));
+        file::remove_file(&p).unwrap();
+    }
 }

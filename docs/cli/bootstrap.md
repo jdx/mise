@@ -19,38 +19,42 @@ Runs the bootstrap steps for the current config in order:
    `[bootstrap.directories]`
 4. `mise bootstrap services apply` — converge `[bootstrap.services]`
    systemd system services (Linux)
-5. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
+5. `mise bootstrap firewall apply` — converge `[bootstrap.linux.firewall]`
+   host firewall policy and rules (Linux)
+6. `mise bootstrap compose apply` — converge `[bootstrap.compose]`
    Docker Compose projects
-6. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
+7. `mise bootstrap repos apply` — clone/converge `[bootstrap.repos]`
    surrounded by `pre-repos`/`post-repos` hooks
-7. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
+8. `mise bootstrap dotfiles apply` — apply dotfiles from `[dotfiles]`
    surrounded by `pre-dotfiles`/`post-dotfiles` hooks
-8. `mise bootstrap mise-shell-activate apply` — configure shell activation
+9. `mise bootstrap mise-shell-activate apply` — configure shell activation
    from `[bootstrap.mise_shell_activate]`
-9. `mise bootstrap macos defaults apply` — write
-   `[bootstrap.macos.defaults]` entries (macOS)
-   surrounded by `pre-defaults`/`post-defaults` hooks
-10. `mise bootstrap macos launchd-agents apply` — install/load
+10. `mise bootstrap macos defaults apply` — write
+```
+`[bootstrap.macos.defaults]` entries (macOS)
+surrounded by `pre-defaults`/`post-defaults` hooks
+```
+11. `mise bootstrap macos launchd-agents apply` — install/load
 ```
 `[bootstrap.macos.launchd.agents]`
 ```
-11. `mise bootstrap linux systemd-units apply` — install/start
+12. `mise bootstrap linux systemd-units apply` — install/start
 ```
 `[bootstrap.linux.systemd.units]`
 ```
-12. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
+13. `mise bootstrap user apply` — set `[bootstrap.user].login_shell`
 ```
 (Unix)
 surrounded by `pre-user`/`post-user` hooks
 ```
-13. `mise install` — install missing tools from `[tools]`
+14. `mise install` — install missing tools from `[tools]`
 ```
 surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 from `[bootstrap.packages]` install afterward, followed by
 `[bootstrap.hooks.post-packages]`
 ```
-14. `mise run bootstrap` — if a task named `bootstrap` is defined
-15. `[bootstrap.hooks.final]` — optional final hook
+15. `mise run bootstrap` — if a task named `bootstrap` is defined
+16. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -89,6 +93,7 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 - `accounts`
 - `files`
 - `services`
+- `firewall`
 - `compose`
 - `repos`
 - `dotfiles`
@@ -122,6 +127,7 @@ Can be passed multiple times or as a comma-separated list.
 - `accounts`
 - `files`
 - `services`
+- `firewall`
 - `compose`
 - `repos`
 - `dotfiles`
@@ -145,6 +151,7 @@ Refresh package manager metadata and update configured repos
 - [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.md)
 - [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
 - [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
+- [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)
 - [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
 - [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)

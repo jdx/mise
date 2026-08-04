@@ -448,6 +448,41 @@ pub async fn plan(
             plan.add_dependency(&id, dependency.clone())?;
         }
     }
+    if let Some(mut firewall) = super::firewall::prepare_request_from_config(config)? {
+        super::firewall::inspect_request(&mut firewall)?;
+        let dependencies = plan
+            .resources
+            .keys()
+            .filter(|id| {
+                matches!(
+                    id.kind.as_str(),
+                    "package" | "file" | "directory" | "service"
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let firewall_resources = firewall.plans();
+        for resource in firewall_resources {
+            plan.insert(resource)?;
+        }
+        let policy_id = ResourceId::new("firewall", "linux");
+        let rule_ids = plan
+            .resources
+            .keys()
+            .filter(|id| id.kind == "firewall-rule")
+            .cloned()
+            .collect::<Vec<_>>();
+        for rule_id in &rule_ids {
+            for dependency in &dependencies {
+                plan.add_dependency(rule_id, dependency.clone())?;
+            }
+            // Backends apply allow rules before activating default-deny policy.
+            plan.add_dependency(&policy_id, rule_id.clone())?;
+        }
+        for dependency in &dependencies {
+            plan.add_dependency(&policy_id, dependency.clone())?;
+        }
+    }
     let mut compose = super::compose::prepare_requests_from_config(config)?;
     super::compose::inspect_requests(&mut compose);
     for request in &compose {
@@ -457,6 +492,10 @@ pub async fn plan(
             .filter(|dependency| plan.resources.contains_key(*dependency))
             .cloned()
             .collect::<IndexSet<_>>();
+        let firewall = ResourceId::new("firewall", "linux");
+        if plan.resources.contains_key(&firewall) {
+            dependencies.insert(firewall);
+        }
         for dependency in request.explicit_dependencies() {
             if !plan.resources.contains_key(dependency) {
                 bail!(

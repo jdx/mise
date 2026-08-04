@@ -2,7 +2,8 @@
 //!
 //! This is `[bootstrap.groups]` and `[bootstrap.users]` — declarative Linux
 //! accounts — `[bootstrap.services]` — declarative Linux system service
-//! lifecycle — `[bootstrap.compose]` — declarative Compose projects —
+//! lifecycle — `[bootstrap.linux.firewall]` — declarative Linux host
+//! firewall policy — `[bootstrap.compose]` — declarative Compose projects —
 //! `[bootstrap.packages]` — declarative system packages installed by
 //! `mise bootstrap packages apply` — `[bootstrap.files]` and
 //! `[bootstrap.directories]` — privileged filesystem resources —
@@ -46,6 +47,11 @@ pub mod defaults;
 pub mod deps;
 pub mod edits;
 pub mod files;
+#[cfg(target_os = "linux")]
+pub mod firewall;
+#[cfg(not(target_os = "linux"))]
+#[path = "firewall_non_linux.rs"]
+pub mod firewall;
 pub mod hooks;
 pub mod launchd;
 pub mod login_shell;
@@ -179,6 +185,9 @@ pub struct BootstrapMacosLaunchdTomlConfig {
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapLinuxTomlConfig {
+    /// Declarative Linux host firewall policy and rules.
+    #[serde(default)]
+    pub firewall: Option<firewall::FirewallTomlConfig>,
     /// `[bootstrap.linux.systemd.units.<name>]`: declarative systemd user
     /// services and timers rendered to ~/.config/systemd/user.
     #[serde(default)]
