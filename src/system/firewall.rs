@@ -447,6 +447,10 @@ impl FirewallRequest {
     }
 
     fn validate_safety(&self) -> Result<()> {
+        self.validate_safety_with_ssh_ancestry(ssh_ancestor_present())
+    }
+
+    fn validate_safety_with_ssh_ancestry(&self, ssh_ancestor: Option<bool>) -> Result<()> {
         if self.state != FirewallState::Enabled
             || self.default_incoming == FirewallPolicy::Allow
             || self.allow_lockout
@@ -454,16 +458,25 @@ impl FirewallRequest {
             return Ok(());
         }
         let Some(connection) = &self.ssh_connection else {
-            bail!(
-                "refusing firewall default incoming {} without SSH connection context: mise cannot verify that remote access will survive; run without a stripped SSH_CONNECTION environment or set allow_lockout = true",
-                self.default_incoming.ufw()
-            );
+            return match ssh_ancestor {
+                Some(false) => Ok(()),
+                Some(true) => bail!(
+                    "refusing firewall default incoming {} from an SSH-derived process without SSH_CONNECTION: mise cannot verify that remote access will survive; preserve SSH_CONNECTION or set allow_lockout = true",
+                    self.default_incoming.ufw()
+                ),
+                None => bail!(
+                    "refusing firewall default incoming {} without SSH_CONNECTION because process ancestry could not be inspected; set allow_lockout = true to acknowledge the lockout risk",
+                    self.default_incoming.ufw()
+                ),
+            };
         };
-        let covered = self.rules.iter().any(|rule| {
+        let mut covered = false;
+        for rule in self.rules.iter().filter(|rule| {
             rule.state == FirewallRuleState::Present
                 && rule.direction == FirewallDirection::Incoming
-                && rule.action == FirewallAction::Allow
-                && rule.protocol == Some(FirewallProtocol::Tcp)
+                && rule
+                    .protocol
+                    .is_none_or(|protocol| protocol == FirewallProtocol::Tcp)
                 && rule
                     .port
                     .is_none_or(|port| port.contains(connection.server_port))
@@ -473,12 +486,24 @@ impl FirewallRequest {
                 && rule
                     .destination
                     .is_none_or(|destination| destination.contains(&connection.server))
-                // SSH_CONNECTION does not identify the ingress interface.
-                // An interface-constrained rule therefore cannot prove that
-                // it preserves this session; require an unrestricted rule or
-                // an explicit allow_lockout override.
-                && rule.interface.is_none()
-        });
+        }) {
+            if rule.action != FirewallAction::Allow {
+                bail!(
+                    "refusing firewall default incoming {} over SSH: blocking rule '{}' precedes a proven allow for peer {} on server port {}; reorder or narrow the rule, or set allow_lockout = true",
+                    self.default_incoming.ufw(),
+                    rule.name,
+                    connection.peer,
+                    connection.server_port
+                );
+            }
+            // SSH_CONNECTION does not identify the ingress interface. An
+            // interface-constrained allow cannot prove that it preserves this
+            // session, so keep looking for an unrestricted covering allow.
+            if rule.interface.is_none() {
+                covered = true;
+                break;
+            }
+        }
         if !covered {
             bail!(
                 "refusing firewall default incoming {} over SSH: no incoming TCP allow rule covers peer {} on server port {} with an unrestricted interface; add a covering rule or set allow_lockout = true",
@@ -1821,6 +1846,41 @@ fn parse_ssh_connection(value: &str) -> Result<SshConnection> {
     })
 }
 
+/// Detect an sshd ancestor when SSH_CONNECTION was stripped by sudo, env -i,
+/// or a wrapper. `None` fails closed because ancestry could not be inspected.
+fn ssh_ancestor_present() -> Option<bool> {
+    let mut pid = std::process::id();
+    let mut visited = HashSet::new();
+    for _ in 0..64 {
+        if !visited.insert(pid) {
+            return None;
+        }
+        let comm = fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+        let comm = comm.trim();
+        if comm == "sshd" || comm == "sshd-session" || comm.starts_with("sshd:") {
+            return Some(true);
+        }
+        if pid <= 1 {
+            return Some(false);
+        }
+        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        pid = proc_parent_pid(&stat)?;
+        if pid == 0 {
+            return Some(false);
+        }
+    }
+    None
+}
+
+fn proc_parent_pid(stat: &str) -> Option<u32> {
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1885,15 +1945,43 @@ mod tests {
     }
 
     #[test]
-    fn ssh_lockout_guard_rejects_missing_connection_context() {
+    fn ssh_lockout_guard_distinguishes_local_and_stripped_ssh_context() {
         let mut request = request_with_ssh(None);
         request.ssh_connection = None;
+        request
+            .validate_safety_with_ssh_ancestry(Some(false))
+            .unwrap();
+        assert!(
+            request
+                .validate_safety_with_ssh_ancestry(Some(true))
+                .unwrap_err()
+                .to_string()
+                .contains("SSH-derived process without SSH_CONNECTION")
+        );
+        assert!(request.validate_safety_with_ssh_ancestry(None).is_err());
+    }
+
+    #[test]
+    fn ssh_lockout_guard_rejects_earlier_covering_block_rule() {
+        let mut request = request_with_ssh(None);
+        let mut block = request.rules[0].clone();
+        block.name = "block-ssh".to_string();
+        block.action = FirewallAction::Deny;
+        request.rules.insert(0, block);
         assert!(
             request
                 .validate_safety()
                 .unwrap_err()
                 .to_string()
-                .contains("without SSH connection context")
+                .contains("blocking rule 'block-ssh' precedes")
+        );
+    }
+
+    #[test]
+    fn parses_proc_parent_pid_after_complex_process_names() {
+        assert_eq!(
+            proc_parent_pid("123 (name with ) paren) S 42 1 2 3"),
+            Some(42)
         );
     }
 
