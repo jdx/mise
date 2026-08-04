@@ -371,7 +371,7 @@ impl UserRequest {
         {
             bail!("bootstrap user '{name}' comment must not contain ':', CR, or LF");
         }
-        let groups = config
+        let mut groups = config
             .groups
             .map(|groups| {
                 groups
@@ -383,6 +383,9 @@ impl UserRequest {
                     .collect::<Result<BTreeSet<_>>>()
             })
             .transpose()?;
+        if let (Some(groups), Some(primary_group)) = (&mut groups, &config.group) {
+            groups.remove(primary_group);
+        }
         let inspection = inspect_user(&name, config.uid)?;
         Ok(Self {
             name,
@@ -1051,5 +1054,20 @@ mod tests {
             inspection: UserInspection::Missing,
         };
         assert!(request.desired().contains("comment managed by mise"));
+    }
+
+    #[test]
+    fn primary_group_is_not_treated_as_supplementary() {
+        let request = UserRequest::from_toml(
+            "mise-primary-group-test".to_string(),
+            UserTomlConfig {
+                group: Some("developers".to_string()),
+                groups: Some(vec!["sudo".to_string(), "developers".to_string()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(request.groups, Some(BTreeSet::from(["sudo".to_string()])));
     }
 }
