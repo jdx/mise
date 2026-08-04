@@ -454,7 +454,10 @@ impl FirewallRequest {
             return Ok(());
         }
         let Some(connection) = &self.ssh_connection else {
-            return Ok(());
+            bail!(
+                "refusing firewall default incoming {} without SSH connection context: mise cannot verify that remote access will survive; run without a stripped SSH_CONNECTION environment or set allow_lockout = true",
+                self.default_incoming.ufw()
+            );
         };
         let covered = self.rules.iter().any(|rule| {
             rule.state == FirewallRuleState::Present
@@ -1879,6 +1882,19 @@ mod tests {
         let mut request = request_with_ssh(Some("203.0.113.0/24"));
         request.rules[0].interface = Some("eth1".to_string());
         assert!(request.validate_safety().is_err());
+    }
+
+    #[test]
+    fn ssh_lockout_guard_rejects_missing_connection_context() {
+        let mut request = request_with_ssh(None);
+        request.ssh_connection = None;
+        assert!(
+            request
+                .validate_safety()
+                .unwrap_err()
+                .to_string()
+                .contains("without SSH connection context")
+        );
     }
 
     #[test]
