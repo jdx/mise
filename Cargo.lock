@@ -6371,7 +6371,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.10.2",
  "rattler",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_package_streaming",
  "rattler_repodata_gateway",
  "rattler_solve",
@@ -7890,7 +7890,7 @@ dependencies = [
  "parking_lot",
  "path_resolver",
  "rattler_cache",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_digest",
  "rattler_menuinst",
  "rattler_networking",
@@ -7930,7 +7930,7 @@ dependencies = [
  "hex",
  "itertools 0.15.0",
  "parking_lot",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_digest",
  "rattler_networking",
  "rattler_package_streaming",
@@ -7951,6 +7951,48 @@ name = "rattler_conda_types"
 version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f38273db000680207c48aa39ae1bcca9babf430c0f4dfb80b7dea9376592ddad"
+dependencies = [
+ "ahash",
+ "core-foundation 0.10.1",
+ "dirs",
+ "fancy-regex",
+ "file_url",
+ "fs-err",
+ "glob",
+ "hex",
+ "indexmap 2.14.0",
+ "itertools 0.15.0",
+ "jiff",
+ "lazy-regex",
+ "memmap2",
+ "nom 8.0.0",
+ "nom-language",
+ "purl",
+ "rattler_digest",
+ "rattler_macros",
+ "rattler_redaction",
+ "regex",
+ "serde",
+ "serde-untagged",
+ "serde_json",
+ "serde_repr",
+ "serde_with",
+ "serde_yaml",
+ "simd-json",
+ "smallvec",
+ "strum 0.28.0",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tracing",
+ "typed-path",
+ "url",
+]
+
+[[package]]
+name = "rattler_conda_types"
+version = "0.49.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "776dcc9348ae7e1843e1320ad1c1afc375bd2b73faeaa1bb49b1e002575f7791"
 dependencies = [
  "ahash",
  "core-foundation 0.10.1",
@@ -8033,7 +8075,7 @@ dependencies = [
  "once_cell",
  "plist",
  "quick-xml 0.41.0",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_shell",
  "regex",
  "serde",
@@ -8100,7 +8142,7 @@ dependencies = [
  "http 1.5.0",
  "jiff",
  "num_cpus",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_digest",
  "rattler_networking",
  "rattler_redaction",
@@ -8178,7 +8220,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "rattler_cache",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_digest",
  "rattler_networking",
  "rattler_package_streaming",
@@ -8215,7 +8257,7 @@ dependencies = [
  "fs-err",
  "indexmap 2.14.0",
  "itertools 0.15.0",
- "rattler_conda_types",
+ "rattler_conda_types 0.48.1",
  "rattler_pty",
  "serde_json",
  "shlex 2.0.1",
@@ -8227,34 +8269,35 @@ dependencies = [
 
 [[package]]
 name = "rattler_solve"
-version = "7.2.2"
+version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "766e32dc5827da2adb0a0cb774da99ddf097dbec632a2ee74ed32ba55b2203a3"
+checksum = "47428b4adefb08d4b7b915f29a3ea716f6a329b75723355ea1eb63fc0a4eaac2"
 dependencies = [
  "futures",
  "hex",
  "itertools 0.15.0",
  "jiff",
- "rattler_conda_types",
+ "rattler_conda_types 0.49.0",
  "rattler_digest",
  "resolvo",
  "tempfile",
  "thiserror 2.0.19",
  "tracing",
+ "url",
 ]
 
 [[package]]
 name = "rattler_virtual_packages"
-version = "3.0.4"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af8a387e540318781c3805871c02f4652da75c5440a8b6adea63a2de63dffec6"
+checksum = "9e5bb5ca36e7e3c22c77ebb49737401d1ab4dd47a40fcdab19adb4a0319767b5"
 dependencies = [
  "archspec",
  "libloading 0.9.0",
  "nom 8.0.0",
  "once_cell",
  "plist",
- "rattler_conda_types",
+ "rattler_conda_types 0.49.0",
  "regex",
  "serde",
  "thiserror 2.0.19",
