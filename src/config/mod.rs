@@ -873,14 +873,26 @@ impl Config {
                         .extend(available_aliases);
                     continue;
                 }
-                let explicit_name = task.aliases.iter().find_map(|alias| {
-                    tasks.iter().find_map(|(name, explicit)| {
-                        (name == alias
-                            || explicit.aliases.contains(alias)
-                            || (explicit.file.is_some() && strip_task_extension(name) == alias))
-                            .then(|| name.clone())
+                let explicit_name = task
+                    .aliases
+                    .iter()
+                    .find(|alias| tasks.contains_key(*alias))
+                    .cloned()
+                    .or_else(|| {
+                        task.aliases.iter().find_map(|alias| {
+                            tasks.iter().find_map(|(name, explicit)| {
+                                (explicit.file.is_some() && strip_task_extension(name) == alias)
+                                    .then(|| name.clone())
+                            })
+                        })
                     })
-                });
+                    .or_else(|| {
+                        task.aliases.iter().find_map(|alias| {
+                            tasks.iter().find_map(|(name, explicit)| {
+                                explicit.aliases.contains(alias).then(|| name.clone())
+                            })
+                        })
+                    });
                 if let Some(explicit_name) = explicit_name {
                     let explicit = tasks
                         .get_mut(&explicit_name)

@@ -88,12 +88,20 @@ cat <<'JSON' >packages/app/package.json
     "cache-only": "printf cached > cache-result.txt",
     "file-collision": "printf inferred > file-collision-result.txt",
     "no-deps": "printf independent > no-deps-result.txt",
+    "precedence-collision": "printf inferred > precedence-collision-result.txt",
     "test:unit": "printf tested > test-result.txt"
   }
 }
 JSON
 
-touch packages/app/mise.toml
+cat <<'TOML' >packages/app/mise.toml
+[tasks.alias-owner]
+alias = ["//packages/app:precedence-collision"]
+run = "printf alias-owner > precedence-collision-result.txt"
+
+[tasks.precedence-collision]
+run = "printf explicit > precedence-collision-result.txt"
+TOML
 mkdir -p packages/app/.config/mise/tasks
 cat <<'SH' >packages/app/.config/mise/tasks/file-collision.sh
 #!/bin/sh
@@ -174,6 +182,8 @@ mise -q run //packages/app:file-collision
 assert "cat packages/app/file-collision-result.txt" "explicit"
 mise -q run 'node:@scope/app#file-collision'
 assert "cat packages/app/file-collision-result.txt" "explicit"
+mise -q run 'node:@scope/app#precedence-collision'
+assert "cat packages/app/precedence-collision-result.txt" "explicit"
 
 cat <<'TOML' >packages/app/mise.toml
 [tasks.build]
