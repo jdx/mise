@@ -303,21 +303,26 @@ fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolReques
 /// Select configured options for an explicit runtime request without assuming
 /// that version selectors are ordered or semver-compatible.
 ///
-/// An exact opaque selector match wins. A sole configured request is also a
-/// valid fallback because its options act as the tool-level defaults when a
-/// command requests another version. Multiple unmatched requests are
-/// ambiguous, so none of their options are applied arbitrarily.
+/// A unique, platform-supported exact opaque selector match wins. A sole
+/// supported configured request is also a valid fallback because its options
+/// act as the tool-level defaults when a command requests another version.
+/// Multiple supported exact matches or unmatched requests are ambiguous, so
+/// none of their options are applied arbitrarily.
 pub(super) fn configured_options_for_runtime_request(
     configured: &[ToolRequest],
     runtime: &ToolRequest,
 ) -> Option<crate::toolset::ToolVersionOptions> {
-    configured
-        .iter()
-        .find(|request| request.version() == runtime.version())
-        .or_else(|| match configured {
-            [only] => Some(only),
-            _ => None,
-        })
+    let runtime_version = runtime.version();
+    let supported = || {
+        configured
+            .iter()
+            .filter(|request| request.is_os_supported())
+    };
+    supported()
+        .filter(|request| request.version() == runtime_version)
+        .exactly_one()
+        .ok()
+        .or_else(|| supported().exactly_one().ok())
         .map(ToolRequest::options)
 }
 
@@ -561,6 +566,29 @@ mod tests {
         let fallback = apply_config_options_to_runtime_arg(&sole, fallback);
         assert_eq!(fallback.options().get("postinstall"), Some("echo one"));
         assert_eq!(fallback.options().get("selected"), Some("one"));
+
+        let mut inactive_options =
+            parse_tool_options(r#"postinstall="echo inactive",selected="inactive""#);
+        inactive_options.core.os = Some(vec![inactive_os()]);
+        let inactive =
+            ToolRequest::new_opts(ba.clone(), "4.0.0", inactive_options, ToolSource::Unknown)
+                .unwrap();
+        let active = ToolRequest::new_opts(
+            ba.clone(),
+            "4.0.0",
+            parse_tool_options(r#"postinstall="echo active",selected="active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let runtime = "dummy@4.0.0".parse::<ToolArg>().unwrap().tvr.unwrap();
+        let selected =
+            configured_options_for_runtime_request(&[inactive, active.clone()], &runtime).unwrap();
+        assert_eq!(selected.get("postinstall"), Some("echo active"));
+        assert_eq!(selected.get("selected"), Some("active"));
+
+        assert!(
+            configured_options_for_runtime_request(&[active.clone(), active], &runtime).is_none()
+        );
     }
 
     fn unknown_tool_request(os: Option<Vec<String>>) -> (Arc<BackendArg>, Vec<ToolRequest>) {

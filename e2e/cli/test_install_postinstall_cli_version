@@ -59,24 +59,28 @@ EOF
 
 # Test 4: An explicit install selects options from its matching configured version
 rm -rf "$MISE_DATA_DIR/installs/dummy"
-output=$(mise install dummy@2.0.0 2>&1)
+status=0
+output=$(mise install dummy@2.0.0 2>&1) || status=$?
 
-if [[ $output == *"MATCHED_POSTINSTALL=yes"* && $output != *"WRONG_POSTINSTALL=yes"* ]]; then
+if [[ $status -eq 0 && $output == *"MATCHED_POSTINSTALL=yes"* && $output != *"WRONG_POSTINSTALL=yes"* ]]; then
   echo "✓ install used options from its matching configured version"
 else
   echo "✗ install used options from the wrong configured version"
+  echo "Status: $status"
   echo "Output: $output"
   exit 1
 fi
 
 # Test 5: The exec builder applies the same matching policy
 rm -rf "$MISE_DATA_DIR/installs/dummy"
-output=$(mise x dummy@2.0.0 -- dummy 2>&1)
+status=0
+output=$(mise x dummy@2.0.0 -- dummy 2>&1) || status=$?
 
-if [[ $output == *"MATCHED_POSTINSTALL=yes"* && $output != *"WRONG_POSTINSTALL=yes"* ]]; then
+if [[ $status -eq 0 && $output == *"MATCHED_POSTINSTALL=yes"* && $output != *"WRONG_POSTINSTALL=yes"* ]]; then
   echo "✓ exec used options from its matching configured version"
 else
   echo "✗ exec used options from the wrong configured version"
+  echo "Status: $status"
   echo "Output: $output"
   exit 1
 fi
