@@ -190,7 +190,8 @@ impl LsRemote {
 }
 
 fn warn_if_versions_hidden_by_minimum_release_age(tool: &str, hidden_versions: usize) {
-    if hidden_versions == 0 {
+    // usage sets __USAGE when running complete scripts; skip so Tab does not spam stderr
+    if hidden_versions == 0 || crate::env::__USAGE.is_some() {
         return;
     }
     let s = if hidden_versions == 1 { "" } else { "s" };
