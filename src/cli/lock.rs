@@ -26,6 +26,15 @@ fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
 }
 
+fn options_for_lock_request(
+    tv: &crate::toolset::ToolVersion,
+    specified_request: &ToolRequest,
+) -> ToolVersionOptions {
+    let mut options = tv.request.options();
+    options.apply_overrides(&specified_request.options());
+    options
+}
+
 fn latest_installed_for_lock(
     backend: &dyn crate::backend::Backend,
     selection_opts: &ToolVersionOptions,
@@ -1010,7 +1019,7 @@ impl Lock {
             {
                 if let Some(Some(request)) = specified_versions.get(&ba.short) {
                     let version = request.version();
-                    let request_options = tv.request.options();
+                    let request_options = options_for_lock_request(&tv, request);
                     let request = ToolRequest::new_opts(
                         Arc::new(ba.clone()),
                         &version,
@@ -1204,7 +1213,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{Lock, LockTaskResult, LockTaskStatus, latest_installed_for_lock};
+    use super::{
+        Lock, LockTaskResult, LockTaskStatus, latest_installed_for_lock, options_for_lock_request,
+    };
     use crate::backend::test_helpers::{RemoteVersionsBackend, prerelease_options};
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
@@ -1281,14 +1292,27 @@ mod tests {
         ba.installs_path = temp_dir.path().join("installs");
         std::fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
         std::fs::create_dir_all(ba.installs_path.join("1.1.0-rc.1")).unwrap();
-        let backend = RemoteVersionsBackend::new(Arc::new(ba), vec![], None);
+        let ba = Arc::new(ba);
+        let backend = RemoteVersionsBackend::new(ba.clone(), vec![], None);
+        let configured_request = ToolRequest::new_opts(
+            ba.clone(),
+            "1.0.0",
+            ToolVersionOptions::default(),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let configured_tv = ToolVersion::new(configured_request, "1.0.0".to_string());
+        let specified_request =
+            ToolRequest::new_opts(ba, "latest", prerelease_options(), ToolSource::Argument)
+                .unwrap();
+        let request_options = options_for_lock_request(&configured_tv, &specified_request);
 
         assert_eq!(
             latest_installed_for_lock(&backend, &ToolVersionOptions::default()),
             Some("1.0.0".to_string())
         );
         assert_eq!(
-            latest_installed_for_lock(&backend, &prerelease_options()),
+            latest_installed_for_lock(&backend, &request_options),
             Some("1.1.0-rc.1".to_string())
         );
     }
