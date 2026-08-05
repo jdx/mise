@@ -433,7 +433,8 @@ impl ToolRequest {
             return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
-            let matches = backend.list_installed_versions_matching(v);
+            let matches =
+                backend.list_installed_versions_matching_with_selection_options(v, &self.options());
             if matches.iter().any(|m| m == v) {
                 return Ok(Some(v.to_string()));
             }

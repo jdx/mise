@@ -312,7 +312,7 @@ impl Backend for ZigPlugin {
         //
         // list_installed_versions() is already ordered ascending by install_state
         // (the canonical version sort), so take the last "-dev." entry instead of
-        // re-sorting here. list_installed_versions_matching() is unusable: it drops
+        // re-sorting here. Generic installed-version matching is unusable: it drops
         // prereleases (the "-dev." nightlies) unless the tool opts into them.
         // rfind() walks from the newest end (the list is double-ended), giving the
         // latest nightly without re-sorting.

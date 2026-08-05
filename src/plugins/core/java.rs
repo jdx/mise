@@ -485,12 +485,6 @@ impl Backend for JavaPlugin {
         self.list_remote_versions_for_options(selection_opts).await
     }
 
-    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
-        let versions = self.list_installed_versions();
-        // Java doesn't support the `prerelease` opt-in; always filter.
-        self.fuzzy_match_filter(versions, query, true)
-    }
-
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = BTreeMap::from([("lts".into(), "25".into())]);
         Ok(aliases)

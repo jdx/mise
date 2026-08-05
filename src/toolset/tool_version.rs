@@ -491,7 +491,8 @@ impl ToolVersion {
         if v == "latest" {
             if !opts.latest_versions
                 && !should_filter_installed_versions
-                && let Some(v) = backend.latest_installed_version(None)?
+                && let Some(v) = backend
+                    .latest_installed_version_with_selection_options(None, &selection_opts)?
             {
                 return build(v);
             }
@@ -531,15 +532,15 @@ impl ToolVersion {
             }
             return Err(Self::no_versions_found(backend, opts.before_date));
         }
-        let installed_matches =
-            (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
+        let installed_matches = (!opts.latest_versions).then(|| {
+            backend.list_installed_versions_matching_with_selection_options(&v, &selection_opts)
+        });
         if installed_matches
             .as_ref()
             .is_some_and(|matches| matches.contains(&v))
         {
             return build(v);
         }
-
         let mut pin_remote_matches = None;
         if opts.prefer_exact_version && !is_offline && !crate::semver::is_npm_semver_range_query(&v)
         {
@@ -742,7 +743,9 @@ impl ToolVersion {
             && !prefer_offline;
         if !opts.latest_versions
             && !should_filter_installed_versions
-            && let Some(v) = backend.list_installed_versions_matching(prefix).last()
+            && let Some(v) = backend
+                .list_installed_versions_matching_with_selection_options(prefix, &selection_opts)
+                .last()
         {
             return Ok(Self::new(request, v.to_string()));
         }
@@ -1033,49 +1036,13 @@ impl Display for ResolveOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{Backend, VersionInfo};
+    use crate::backend::{
+        Backend, VersionInfo,
+        test_helpers::{RemoteVersionsBackend, prerelease_options},
+    };
     use crate::cli::args::BackendResolution;
-    use crate::install_context::InstallContext;
     use crate::toolset::CoreToolOptions;
-    use async_trait::async_trait;
-    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[derive(Debug)]
-    struct RequestOptionsBackend {
-        ba: Arc<BackendArg>,
-        list_calls: AtomicUsize,
-    }
-
-    #[async_trait]
-    impl Backend for RequestOptionsBackend {
-        fn ba(&self) -> &Arc<BackendArg> {
-            &self.ba
-        }
-
-        async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-            self.list_calls.fetch_add(1, AtomicOrdering::SeqCst);
-            Ok(vec![
-                VersionInfo {
-                    version: "1.0.0".to_string(),
-                    ..Default::default()
-                },
-                VersionInfo {
-                    version: "1.1.0-rc.1".to_string(),
-                    prerelease: true,
-                    ..Default::default()
-                },
-            ])
-        }
-
-        async fn install_version_(
-            &self,
-            _ctx: &InstallContext,
-            tv: ToolVersion,
-        ) -> Result<ToolVersion> {
-            Ok(tv)
-        }
-    }
 
     fn unique_name(prefix: &str) -> String {
         format!(
@@ -1105,10 +1072,7 @@ mod tests {
     async fn resolve_version_uses_each_requests_prerelease_option() {
         let config = Config::get().await.unwrap();
         let ba = Arc::new(BackendArg::from(unique_name("request-options")));
-        let backend_impl = Arc::new(RequestOptionsBackend {
-            ba: ba.clone(),
-            list_calls: AtomicUsize::new(0),
-        });
+        let backend_impl = Arc::new(RemoteVersionsBackend::stable_and_prerelease(ba.clone()));
         backend_impl
             .get_remote_version_cache()
             .lock()
@@ -1117,10 +1081,6 @@ mod tests {
             .unwrap();
 
         let stable_options = ToolVersionOptions::default();
-        let mut prerelease_options = ToolVersionOptions::default();
-        prerelease_options
-            .opts
-            .insert("prerelease".to_string(), toml::Value::Boolean(true));
         let stable_request = ToolRequest::Version {
             backend: ba.clone(),
             version: "1".to_string(),
@@ -1130,7 +1090,7 @@ mod tests {
         let prerelease_request = ToolRequest::Version {
             backend: ba,
             version: "1".to_string(),
-            options: prerelease_options,
+            options: prerelease_options(),
             source: ToolSource::Argument,
         };
         let resolve_options = ResolveOptions {
@@ -1156,7 +1116,140 @@ mod tests {
 
         assert_eq!(stable.version, "1.0.0");
         assert_eq!(prerelease.version, "1.1.0-rc.1");
-        assert_eq!(backend_impl.list_calls.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(backend_impl.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_version_uses_request_options_for_installed_versions() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = unique_name("request-options-installed");
+        let mut ba = BackendArg::from(short);
+        ba.installs_path = temp_dir.path().join("installs");
+        std::fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(ba.installs_path.join("1.1.0-rc.1")).unwrap();
+        let ba = Arc::new(ba);
+        let backend_impl = Arc::new(RemoteVersionsBackend::new(ba.clone(), vec![], None));
+
+        let stable_request = ToolRequest::Version {
+            backend: ba.clone(),
+            version: "latest".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let prerelease_request = ToolRequest::Version {
+            backend: ba,
+            version: "latest".to_string(),
+            options: prerelease_options(),
+            source: ToolSource::Argument,
+        };
+        let resolve_options = ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+
+        let backend: ABackend = backend_impl.clone();
+        let stable = ToolVersion::resolve_version(
+            &config,
+            stable_request,
+            &backend,
+            "latest",
+            &resolve_options,
+        )
+        .await
+        .unwrap();
+        let prerelease = ToolVersion::resolve_version(
+            &config,
+            prerelease_request,
+            &backend,
+            "latest",
+            &resolve_options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(stable.version, "1.0.0");
+        assert_eq!(prerelease.version, "1.1.0-rc.1");
+        assert_eq!(backend_impl.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn resolve_version_uses_each_requests_minimum_release_age() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from(unique_name("request-age")));
+        let backend_impl = Arc::new(RemoteVersionsBackend::new(
+            ba.clone(),
+            vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2000-01-01T00:00:00Z".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.1.0".to_string(),
+                    created_at: Some("2999-01-01T00:00:00Z".to_string()),
+                    ..Default::default()
+                },
+            ],
+            None,
+        ));
+        backend_impl
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        let unrestricted_request = ToolRequest::Version {
+            backend: ba.clone(),
+            version: "1".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let mut aged_options = ToolVersionOptions::default();
+        aged_options.opts.insert(
+            "minimum_release_age".to_string(),
+            toml::Value::String("1d".to_string()),
+        );
+        let aged_request = ToolRequest::Version {
+            backend: ba,
+            version: "1".to_string(),
+            options: aged_options,
+            source: ToolSource::Argument,
+        };
+        let resolve_options = ResolveOptions {
+            latest_versions: true,
+            use_locked_version: false,
+            ..Default::default()
+        };
+        let unrestricted_resolve_options = unrestricted_request
+            .resolve_options(&resolve_options)
+            .unwrap();
+        let aged_resolve_options = aged_request.resolve_options(&resolve_options).unwrap();
+
+        let backend: ABackend = backend_impl.clone();
+        let unrestricted = ToolVersion::resolve_version(
+            &config,
+            unrestricted_request,
+            &backend,
+            "1",
+            &unrestricted_resolve_options,
+        )
+        .await
+        .unwrap();
+        let aged = ToolVersion::resolve_version(
+            &config,
+            aged_request,
+            &backend,
+            "1",
+            &aged_resolve_options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(unrestricted.version, "1.1.0");
+        assert_eq!(aged.version, "1.0.0");
+        assert_eq!(backend_impl.list_calls(), 1);
     }
 
     #[test]
