@@ -1130,9 +1130,18 @@ pub(crate) fn usage_command_for_args<'a>(
             continue;
         }
         if arg.starts_with('-') {
-            if !arg.contains('=')
-                && (usage_flag_takes_value(&spec.cmd, arg) || usage_flag_takes_value(cmd, arg))
+            let flag_takes_value =
+                usage_flag_takes_value(&spec.cmd, arg) || usage_flag_takes_value(cmd, arg);
+            if !flag_takes_value
+                && !used_default_subcommand
+                && let Some(default_name) = &spec.default_subcommand
+                && let Some(subcommand) = cmd.find_subcommand(default_name)
             {
+                cmd = subcommand;
+                used_default_subcommand = true;
+                continue;
+            }
+            if !arg.contains('=') && flag_takes_value {
                 idx += 1;
             }
             idx += 1;
@@ -1759,7 +1768,14 @@ impl Task {
         let Some(prefix) = args.strip_suffix(self.trailing_args.as_slice()) else {
             return args.to_vec();
         };
-        if !usage_command_for_args(spec, prefix)
+        debug_assert!(
+            self.args.ends_with(&self.trailing_args),
+            "task trailing_args must be a suffix of task args"
+        );
+        let Some(task_prefix) = self.args.strip_suffix(self.trailing_args.as_slice()) else {
+            return args.to_vec();
+        };
+        if !usage_command_for_args(spec, task_prefix)
             .args
             .iter()
             .any(|arg| arg.double_dash == usage::SpecDoubleDashChoices::Required)
