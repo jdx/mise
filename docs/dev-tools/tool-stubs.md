@@ -125,7 +125,7 @@ mise generate tool-stub ./bin/node \
 
 # Auto-detect platform from URL (detects as 'linux-x64')
 mise generate tool-stub ./bin/node \
-  --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-arm64.tar.gz
+  --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz
 ```
 
 Or build them incrementally by adding platforms one at a time:
