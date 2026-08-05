@@ -107,7 +107,14 @@ impl OutdatedInfo {
         let latest_result = if use_backend_latest {
             let prefix = prefixed_latest_query(&prefix, &prefix_version);
             // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
-            t.latest_version(config, prefix, opts.before_date).await
+            t.latest_version_with_selection_options(
+                config,
+                prefix,
+                &tv.request.options(),
+                opts.before_date,
+                false,
+            )
+            .await
         } else {
             tv.latest_version_with_opts(config, opts)
                 .await

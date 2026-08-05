@@ -738,10 +738,12 @@ impl Upgrade {
         if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             backend
-                .latest_version(
+                .latest_version_with_selection_options(
                     config,
                     prefixed_latest_query(&prefix, &prefix_version),
+                    &tv.request.options(),
                     opts.before_date,
+                    false,
                 )
                 .await
         } else {
@@ -762,7 +764,9 @@ impl Upgrade {
         } else {
             Some(tv.request.version())
         };
-        backend.latest_version_unfiltered(config, query).await
+        backend
+            .latest_version_unfiltered_with_selection_options(config, query, &tv.request.options())
+            .await
     }
 }
 
