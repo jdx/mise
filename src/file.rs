@@ -789,16 +789,21 @@ fn symlink_or_junction_target(link: &Path) -> Result<Option<PathBuf>> {
 
 #[cfg(unix)]
 pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    if !link.is_symlink() {
+        bail!("not a symlink: {}", display_path(link));
+    }
     fs::remove_file(link)
         .wrap_err_with(|| format!("failed to remove symlink: {}", display_path(link)))
 }
 
 #[cfg(windows)]
 pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
-    if junction::get_target(link).is_ok() {
+    if link.is_symlink() {
+        fs::remove_file(link).or_else(|_| fs::remove_dir(link))
+    } else if junction::get_target(link).is_ok() {
         junction::delete(link)
     } else {
-        fs::remove_file(link).or_else(|_| fs::remove_dir(link))
+        bail!("not a symlink or junction: {}", display_path(link));
     }
     .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
 }
@@ -2387,6 +2392,20 @@ mod tests {
         assert!(std::fs::symlink_metadata(&link).is_err());
         assert!(std::fs::symlink_metadata(&other_link).is_ok());
         assert!(target.exists());
+    }
+
+    #[test]
+    fn test_remove_symlink_or_junction_rejects_non_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        let directory = dir.path().join("directory");
+        fs::write(&file, "contents").unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        assert!(remove_symlink_or_junction(&file).is_err());
+        assert!(remove_symlink_or_junction(&directory).is_err());
+        assert!(file.is_file());
+        assert!(directory.is_dir());
     }
 
     #[test]
