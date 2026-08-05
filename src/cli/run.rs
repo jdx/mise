@@ -18,7 +18,7 @@ use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
-use crate::task::{Deps, Task, TaskCacheMode};
+use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use bytesize::ByteSize;
@@ -1404,59 +1404,6 @@ fn display_task_help(task: &Task) -> Result<()> {
 fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
     let cmd = usage_command_for_args(spec, args);
     usage::docs::cli::render_help(spec, cmd, true)
-}
-
-fn usage_command_for_args<'a>(spec: &'a usage::Spec, args: &[String]) -> &'a usage::SpecCommand {
-    let mut cmd = &spec.cmd;
-    let mut idx = 0;
-    let mut used_default_subcommand = false;
-
-    while idx < args.len() {
-        let arg = &args[idx];
-        if arg == "-h" || arg == "--help" {
-            break;
-        }
-        if let Some(subcommand) = cmd.find_subcommand(arg) {
-            cmd = subcommand;
-            idx += 1;
-            continue;
-        }
-        if arg.starts_with('-') {
-            if !arg.contains('=')
-                && (flag_takes_value(&spec.cmd, arg) || flag_takes_value(cmd, arg))
-            {
-                idx += 1;
-            }
-            idx += 1;
-            continue;
-        }
-        if !used_default_subcommand
-            && let Some(default_name) = &spec.default_subcommand
-            && let Some(subcommand) = cmd.find_subcommand(default_name)
-        {
-            cmd = subcommand;
-            used_default_subcommand = true;
-            continue;
-        }
-        break;
-    }
-
-    cmd
-}
-
-fn flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
-    let flag = flag.split_once('=').map(|(flag, _)| flag).unwrap_or(flag);
-    if let Some(long) = flag.strip_prefix("--") {
-        cmd.flags
-            .iter()
-            .any(|f| f.arg.is_some() && f.long.iter().any(|f| f == long))
-    } else if let Some(short) = flag.strip_prefix('-').and_then(|f| f.chars().next()) {
-        cmd.flags
-            .iter()
-            .any(|f| f.arg.is_some() && f.short.contains(&short))
-    } else {
-        false
-    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

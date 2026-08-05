@@ -612,15 +612,14 @@ impl TaskExecutor {
         }
 
         let task_file = task.file_path(config).await?;
-        let task_args = task.args_for_usage_parser(&task.args);
         let usage_args = || {
             if let Some(file) = &task_file {
                 once(file.to_string_lossy().to_string())
-                    .chain(task_args.iter().cloned())
+                    .chain(task.args.iter().cloned())
                     .collect()
             } else {
                 once(String::new())
-                    .chain(task_args.iter().cloned())
+                    .chain(task.args.iter().cloned())
                     .collect()
             }
         };
@@ -1920,7 +1919,7 @@ impl TaskExecutor {
                 || !spec.cmd.flags.is_empty()
                 || !spec.cmd.subcommands.is_empty())
         {
-            let args: Vec<String> = get_args();
+            let args = task.args_for_usage_parser(&spec, &get_args());
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
             let env_map: std::collections::HashMap<String, String> =
