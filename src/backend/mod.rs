@@ -1735,7 +1735,6 @@ pub trait Backend: Debug + Send + Sync {
     /// `refresh = true` to bypass the cached remote-versions list and re-fetch
     /// upstream. Used by install-time resolution for selectors whose answer
     /// depends on the freshest upstream entry (e.g. `latest`).
-    #[allow(dead_code)] // compatibility wrapper for callers without request context
     async fn list_remote_versions_with_refresh(
         &self,
         config: &Arc<Config>,
@@ -2290,7 +2289,6 @@ pub trait Backend: Debug + Send + Sync {
         let filter = !self.include_prereleases(&self.ba().opts());
         self.fuzzy_match_filter(versions, query, filter)
     }
-    #[allow(dead_code)] // compatibility wrapper for callers without request context
     async fn list_versions_matching(
         &self,
         config: &Arc<Config>,
@@ -2303,7 +2301,6 @@ pub trait Backend: Debug + Send + Sync {
 
     /// List versions matching a query, optionally filtered by release date.
     /// Use this when you have a `before_date` from ResolveOptions.
-    #[allow(dead_code)] // compatibility wrapper for callers without request context
     async fn list_versions_matching_with_opts(
         &self,
         config: &Arc<Config>,
@@ -2321,7 +2318,6 @@ pub trait Backend: Debug + Send + Sync {
         )
         .await
     }
-
     /// List versions matching a query using the active request's selection options.
     async fn list_versions_matching_with_selection_options(
         &self,
@@ -2359,25 +2355,6 @@ pub trait Backend: Debug + Send + Sync {
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
         Ok(self.version_order(selection_opts)?.order(versions))
-    }
-
-    #[allow(dead_code)] // compatibility wrapper for callers without request context
-    async fn latest_version_for_query(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-        before_date: Option<Timestamp>,
-        refresh: bool,
-    ) -> eyre::Result<Option<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.latest_version_for_query_with_selection_options(
-            config,
-            query,
-            &opts,
-            before_date,
-            refresh,
-        )
-        .await
     }
 
     /// Select the latest query match using the active request's options.
@@ -2453,7 +2430,6 @@ pub trait Backend: Debug + Send + Sync {
     /// with the absolute latest result. Normal resolution should use
     /// `latest_version` so global, per-tool, and default release-age cutoffs are
     /// honored.
-    #[allow(dead_code)] // compatibility wrapper for callers without request context
     async fn latest_version_unfiltered(
         &self,
         config: &Arc<Config>,
