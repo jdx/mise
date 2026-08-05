@@ -1666,6 +1666,13 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether an installed version string should be treated as a prerelease.
+    /// This is separate from fuzzy query matching so opaque stable versions such
+    /// as `nightly` are not discarded while resolving the latest installed tool.
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        VERSION_REGEX.is_match(version)
+    }
+
     /// Tool option keys whose non-registry overrides change the backend's
     /// remote version list. When any of these keys come from a backend alias,
     /// config, or inline backend arg, the versions host must be skipped because
@@ -2488,19 +2495,16 @@ pub trait Backend: Debug + Send + Sync {
             return Ok(find_match_in_list(&matches, &query));
         }
 
-        let filter = !self.include_prereleases(selection_opts);
-        let matches = self.fuzzy_match_filter(
-            file::dir_subdirs(&self.ba().installs_path)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|v| !v.starts_with('.'))
-                .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-                .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
-                .filter(|v| v != "latest")
-                .collect(),
-            "latest",
-            filter,
-        );
+        let filter_prereleases = !self.include_prereleases(selection_opts);
+        let matches = file::dir_subdirs(&self.ba().installs_path)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| !v.starts_with('.'))
+            .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+            .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+            .filter(|v| v != "latest")
+            .filter(|v| !filter_prereleases || !self.is_prerelease_version(v))
+            .collect_vec();
         let installed_symlink = self.ba().installs_path.join("latest");
         if installed_symlink.exists()
             && let Some(target) = file::resolve_symlink(&installed_symlink)?
@@ -3809,6 +3813,13 @@ pub(crate) mod test_helpers {
             &self.ba
         }
 
+        fn list_installed_versions(&self) -> Vec<String> {
+            file::dir_subdirs(&self.ba.installs_path)
+                .unwrap_or_default()
+                .into_iter()
+                .collect()
+        }
+
         async fn _list_remote_versions(
             &self,
             _config: &Arc<Config>,
@@ -4420,8 +4431,9 @@ mod latest_version_tests {
         assert_eq!(backend.list_calls(), 0);
     }
 
-    #[test]
-    fn test_latest_installed_version_ignores_real_latest_dir() {
+    #[tokio::test]
+    async fn test_latest_installed_version_ignores_real_latest_dir() {
+        let _config = Config::get().await.unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let mut ba = BackendArg::new_raw(
             "latest-real-dir".into(),
@@ -4447,6 +4459,45 @@ mod latest_version_tests {
         assert_eq!(
             backend.latest_installed_version(None).unwrap(),
             Some("2.0.0".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_latest_installed_version_keeps_opaque_stable_versions() {
+        let _config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "latest-opaque-version".into(),
+            None,
+            "latest-opaque-version".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir
+            .path()
+            .join("installs")
+            .join("latest-opaque-version");
+        fs::create_dir_all(ba.installs_path.join("nightly")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("2.0.0-rc1")).unwrap();
+        file::make_symlink_or_file(
+            &ba.installs_path.join("nightly"),
+            &ba.installs_path.join("latest"),
+        )
+        .unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_result: Some("9.9.9".to_string()),
+            stable_info: None,
+            remote_versions: vec![],
+            stable_calls: AtomicUsize::new(0),
+            stable_info_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("nightly".into())
         );
     }
 

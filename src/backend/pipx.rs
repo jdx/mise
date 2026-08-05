@@ -14,7 +14,7 @@ use crate::file;
 use crate::github::{self, GithubRelease};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::plugins::PEP440_PRERELEASE_REGEX;
+use crate::plugins::{PEP440_PRERELEASE_REGEX, VERSION_REGEX};
 use crate::semver::semver_is_older_than;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
@@ -118,6 +118,10 @@ impl Backend for PIPXBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        VERSION_REGEX.is_match(version) || PEP440_PRERELEASE_REGEX.is_match(version)
     }
 
     /// PyPI versions follow PEP 440, so the shared filter alone (which only

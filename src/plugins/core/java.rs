@@ -461,6 +461,10 @@ impl Backend for JavaPlugin {
         false
     }
 
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        VERSION_REGEX.is_match(version)
+    }
+
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["release_type"]
     }
@@ -823,6 +827,52 @@ mod tests {
                 ("release_type".to_string(), "ea".to_string()),
                 ("shorthand_vendor".to_string(), default_vendor.clone())
             ])
+        );
+    }
+
+    #[tokio::test]
+    async fn request_options_select_java_release_metadata() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let ga_cache = CacheManagerBuilder::new(temp_dir.path().join("ga.msgpack.z")).build();
+        let ea_cache = CacheManagerBuilder::new(temp_dir.path().join("ea.msgpack.z")).build();
+        let metadata = |version: &str| JavaMetadata {
+            image_type: Some("jdk".to_string()),
+            java_version: version.to_string(),
+            jvm_impl: "hotspot".to_string(),
+            vendor: "temurin".to_string(),
+            version: version.to_string(),
+            ..Default::default()
+        };
+        ga_cache
+            .write(&HashMap::from([(
+                "ga-only".to_string(),
+                metadata("17.0.1"),
+            )]))
+            .unwrap();
+        ea_cache
+            .write(&HashMap::from([("ea-only".to_string(), metadata("26-ea"))]))
+            .unwrap();
+        let plugin = JavaPlugin {
+            ba: Arc::new(plugins::core::new_backend_arg("java")),
+            java_metadata_ea_cache: ea_cache,
+            java_metadata_ga_cache: ga_cache,
+            java_metadata_target_cache: tokio::sync::Mutex::new(HashMap::new()),
+        };
+        let config = Config::get().await.unwrap();
+        let ga_opts = opts_with_release_type("ga");
+        let ea_opts = opts_with_release_type("ea");
+
+        let versions = plugin
+            .list_remote_versions_with_info_and_options(&config, &ga_opts, &ea_opts, false, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            versions
+                .into_iter()
+                .map(|version| version.version)
+                .collect_vec(),
+            vec!["ea-only"]
         );
     }
 
