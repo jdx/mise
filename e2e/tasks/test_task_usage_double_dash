@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.extract]
+usage = '''
+arg "[bundletool]" double_dash="required" help="some double dash required arg"
+'''
+run = 'echo "bundletool=$usage_bundletool"'
+EOF
+
+assert "mise run extract -- --mode=universal" "bundletool=--mode=universal"
+# shellcheck disable=SC2016
+assert_fail_contains "mise run extract --mode=universal" \
+  'Argument <bundletool> can only be set after a `--` separator'

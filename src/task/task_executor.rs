@@ -612,14 +612,15 @@ impl TaskExecutor {
         }
 
         let task_file = task.file_path(config).await?;
+        let task_args = task.args_for_usage_parser(&task.args);
         let usage_args = || {
             if let Some(file) = &task_file {
                 once(file.to_string_lossy().to_string())
-                    .chain(task.args.iter().cloned())
+                    .chain(task_args.iter().cloned())
                     .collect()
             } else {
                 once(String::new())
-                    .chain(task.args.iter().cloned())
+                    .chain(task_args.iter().cloned())
                     .collect()
             }
         };

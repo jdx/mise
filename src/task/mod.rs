@@ -1689,6 +1689,29 @@ impl Task {
             .any(|a| a == "--help" || a == "-h")
     }
 
+    /// Reconstruct the command-line separator clap consumed before populating
+    /// `trailing_args`, so usage can enforce `double_dash="required"`.
+    pub fn args_for_usage_parser(&self, args: &[String]) -> Vec<String> {
+        if self.trailing_args.is_empty() {
+            return args.to_vec();
+        }
+
+        debug_assert!(
+            args.ends_with(&self.trailing_args),
+            "task trailing_args must be a suffix of the arguments passed to usage"
+        );
+        let Some(prefix) = args.strip_suffix(self.trailing_args.as_slice()) else {
+            return args.to_vec();
+        };
+
+        prefix
+            .iter()
+            .cloned()
+            .chain(once("--".to_string()))
+            .chain(self.trailing_args.iter().cloned())
+            .collect()
+    }
+
     fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
         spec.name = self.display_name.clone();
         spec.bin = self.display_name.clone();
@@ -1821,13 +1844,14 @@ impl Task {
         if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
             let mut env = env.clone();
             clear_usage_env(&mut env);
+            let args = self.args_for_usage_parser(args);
             let parser_dir = match cwd {
                 Some(cwd) => Some(cwd),
                 None => self.dir(config).await?,
             };
             let scripts_only = self.run_script_strings();
             let scripts = Self::make_script_parser(parser_dir, extra_vars)
-                .parse_run_scripts_with_args(config, self, &scripts_only, &env, args, &spec)
+                .parse_run_scripts_with_args(config, self, &scripts_only, &env, &args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -3288,7 +3312,7 @@ pub async fn parse_usage_values_from_task(
     }
     // Build args list with empty first element (usage parser expects argv[0] to be the command)
     let args: Vec<String> = once(String::new())
-        .chain(task.args.iter().cloned())
+        .chain(task.args_for_usage_parser(&task.args))
         .collect();
     let po = match usage::Parser::new(&spec).parse(&args) {
         Ok(po) => po,
