@@ -392,6 +392,10 @@ impl Backend for JavaPlugin {
         &self.ba
     }
 
+    fn include_prereleases(&self, _opts: &ToolVersionOptions) -> bool {
+        false
+    }
+
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["release_type"]
     }
@@ -460,13 +464,15 @@ impl Backend for JavaPlugin {
 
     /// Override to bypass the shared remote_versions cache since Java has
     /// separate caches for GA and EA release types in `fetch_java_metadata`.
-    /// The override is on `_with_refresh` so install-time refresh paths also
-    /// reach the GA/EA-aware logic; the underlying fetch already handles
-    /// freshness, so the `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_with_refresh(
+    /// The underlying fetch already handles freshness, so the `_refresh` flag
+    /// is irrelevant.
+    async fn list_remote_versions_with_info_and_options(
         &self,
         config: &Arc<Config>,
+        _listing_opts: &ToolVersionOptions,
+        _selection_opts: &ToolVersionOptions,
         _refresh: bool,
+        _has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
         self._list_remote_versions(config).await
     }
