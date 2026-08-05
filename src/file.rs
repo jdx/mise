@@ -897,7 +897,7 @@ pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
 }
 
 pub fn is_symlink_to(link: &Path, target: &Path) -> bool {
-    is_symlink_or_junction(link) && paths_refer_to_same_entry(link, target)
+    is_symlink_or_junction(link) && same_file::is_same_file(link, target).unwrap_or(false)
 }
 
 #[cfg(unix)]
@@ -916,126 +916,21 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn is_symlink_to_prefix(link: &Path, target_prefix: &Path) -> Result<bool> {
-    let Some(target) = dir_link_target(link)? else {
-        return Ok(false);
-    };
-    // Broken provider links cannot be canonicalized in full. Resolve the
-    // longest existing ancestor so symlinks in the existing portion still
-    // participate in ownership checks, then append only a safe normal tail.
-    // If that cannot establish ownership, preserve the link because this
-    // predicate controls destructive provider cleanup.
-    let Some(target) = canonicalize_with_missing_tail(&target)? else {
-        return Ok(false);
-    };
-    let Some(target_prefix) = canonicalize_with_missing_tail(target_prefix)? else {
-        return Ok(false);
-    };
-    Ok(path_is_within(&target, &target_prefix))
-}
-
-fn path_is_within(path: &Path, prefix: &Path) -> bool {
-    path.starts_with(prefix)
-        || path
-            .ancestors()
-            .any(|ancestor| paths_refer_to_same_entry(ancestor, prefix))
-}
-
-fn paths_refer_to_same_entry(a: &Path, b: &Path) -> bool {
-    same_file::is_same_file(a, b).unwrap_or(false)
-}
-
-fn canonicalize_with_missing_tail(path: &Path) -> Result<Option<PathBuf>> {
-    for ancestor in path.ancestors() {
-        match ancestor.canonicalize() {
-            Ok(mut resolved) => {
-                for component in path.strip_prefix(ancestor)?.components() {
-                    match component {
-                        std::path::Component::Normal(component) => {
-                            let candidate = resolved.join(component);
-                            // A link or junction in the unresolved tail may
-                            // redirect outside the provider. Its destination
-                            // cannot be established, so preserve the outer
-                            // link instead of claiming provider ownership.
-                            if dir_link_target(&candidate)?.is_some() {
-                                return Ok(None);
-                            }
-                            resolved.push(component);
-                        }
-                        std::path::Component::CurDir => {}
-                        std::path::Component::ParentDir
-                        | std::path::Component::RootDir
-                        | std::path::Component::Prefix(_) => return Ok(None),
-                    }
-                }
-                return Ok(Some(resolved));
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Ok(None),
-        }
-    }
-    Ok(None)
-}
-
 #[cfg(unix)]
-fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
-    let metadata = match fs::symlink_metadata(link) {
-        Ok(metadata) => metadata,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => {
-            return Err(err)
-                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
-        }
-    };
-    if !metadata.file_type().is_symlink() {
-        return Ok(None);
+fn symlink_or_junction_target(link: &Path) -> Result<Option<PathBuf>> {
+    if link.is_symlink() {
+        Ok(Some(fs::read_link(link)?))
+    } else {
+        Ok(None)
     }
-    let target = fs::read_link(link)
-        .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?;
-    Ok(Some(resolve_relative_link_target(link, target)))
 }
 
 #[cfg(windows)]
-fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
-    const ERROR_NOT_A_REPARSE_POINT: i32 = 4390;
-
-    let metadata = match fs::symlink_metadata(link) {
-        Ok(metadata) => metadata,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => {
-            return Err(err)
-                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
-        }
-    };
-    let target = if metadata.file_type().is_symlink() {
-        fs::read_link(link)
-            .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?
+fn symlink_or_junction_target(link: &Path) -> Result<Option<PathBuf>> {
+    if link.is_symlink() {
+        Ok(Some(fs::read_link(link)?))
     } else {
-        match junction::get_target(link) {
-            Ok(target) => target,
-            Err(err)
-                if err.kind() == std::io::ErrorKind::NotFound
-                    || err.raw_os_error() == Some(ERROR_NOT_A_REPARSE_POINT)
-                    || (err.kind() == std::io::ErrorKind::Other
-                        && err.raw_os_error().is_none()) =>
-            {
-                return Ok(None);
-            }
-            Err(err) => {
-                return Err(err).wrap_err_with(|| {
-                    format!("failed to inspect junction: {}", display_path(link))
-                });
-            }
-        }
-    };
-    Ok(Some(resolve_relative_link_target(link, target)))
-}
-
-fn resolve_relative_link_target(link: &Path, target: PathBuf) -> PathBuf {
-    if target.is_absolute() {
-        target
-    } else {
-        link.parent().unwrap_or(link).join(target)
+        Ok(junction::get_target(link).ok())
     }
 }
 
@@ -1047,9 +942,12 @@ pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
 
 #[cfg(windows)]
 pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
-    fs::remove_file(link)
-        .or_else(|_| fs::remove_dir(link))
-        .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+    if junction::get_target(link).is_ok() {
+        junction::delete(link)
+    } else {
+        fs::remove_file(link).or_else(|_| fs::remove_dir(link))
+    }
+    .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
 }
 
 pub fn remove_symlinks_with_target_prefix(
@@ -1063,7 +961,9 @@ pub fn remove_symlinks_with_target_prefix(
     for entry in symlink_dir.read_dir()? {
         let entry = entry?;
         let path = entry.path();
-        if is_symlink_to_prefix(&path, target_prefix)? {
+        if let Some(target) = symlink_or_junction_target(&path)?
+            && target.starts_with(target_prefix)
+        {
             remove_symlink_or_junction(&path)?;
             removed.push(path);
         }
@@ -2779,91 +2679,23 @@ mod tests {
     }
 
     #[test]
-    fn test_is_symlink_to_requires_a_link() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("target");
-        let link = dir.path().join("link");
-        fs::create_dir(&target).unwrap();
-
-        make_symlink(&target, &link).unwrap();
-
-        assert!(is_symlink_to(&link, &target));
-        assert!(!is_symlink_to(&target, &target));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_is_symlink_to_resolves_relative_target_from_link_parent() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("target");
-        let link = dir.path().join("link");
-        fs::create_dir(&target).unwrap();
-        std::os::unix::fs::symlink("target", &link).unwrap();
-
-        assert!(is_symlink_to(&link, &target));
-    }
-
-    #[test]
-    fn test_symlink_prefix_detection_and_removal() {
+    fn test_remove_symlinks_with_target_prefix() {
         let dir = tempfile::tempdir().unwrap();
         let prefix = dir.path().join("provider");
         let target = prefix.join("version");
         let other = dir.path().join("other");
         let link = dir.path().join("link");
+        let other_link = dir.path().join("other-link");
         fs::create_dir_all(&target).unwrap();
         fs::create_dir_all(&other).unwrap();
         make_symlink(&target, &link).unwrap();
-
-        assert!(is_symlink_to_prefix(&link, &prefix).unwrap());
-        assert!(!is_symlink_to_prefix(&link, &other).unwrap());
+        make_symlink(&other, &other_link).unwrap();
 
         let removed = remove_symlinks_with_target_prefix(dir.path(), &prefix).unwrap();
         assert_eq!(removed, vec![link.clone()]);
         assert!(std::fs::symlink_metadata(&link).is_err());
+        assert!(std::fs::symlink_metadata(&other_link).is_ok());
         assert!(target.exists());
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_symlink_prefix_detection_follows_an_indirect_target() {
-        let dir = tempfile::tempdir().unwrap();
-        let cellar = dir.path().join("Cellar");
-        let target = cellar.join("node@22").join("22.0.0");
-        let opt = dir.path().join("opt");
-        let opt_entry = opt.join("node@22");
-        let link = dir.path().join("link");
-        fs::create_dir_all(&target).unwrap();
-        fs::create_dir_all(&opt).unwrap();
-        std::os::unix::fs::symlink(&target, &opt_entry).unwrap();
-        std::os::unix::fs::symlink(&opt_entry, &link).unwrap();
-
-        assert!(is_symlink_to_prefix(&link, &cellar).unwrap());
-        assert!(!is_symlink_to_prefix(&link, &opt).unwrap());
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_symlink_prefix_detection_rejects_escapes() {
-        let dir = tempfile::tempdir().unwrap();
-        let prefix = dir.path().join("provider");
-        let foreign = dir.path().join("foreign");
-        let escaped = dir.path().join("escaped");
-        let redirected = dir.path().join("redirected");
-        fs::create_dir_all(&prefix).unwrap();
-        fs::create_dir_all(&foreign).unwrap();
-
-        std::os::unix::fs::symlink(prefix.join("..").join("foreign"), &escaped).unwrap();
-        assert!(!is_symlink_to_prefix(&escaped, &prefix).unwrap());
-
-        std::os::unix::fs::symlink(&foreign, prefix.join("hop")).unwrap();
-        std::os::unix::fs::symlink(prefix.join("hop").join("missing"), &redirected).unwrap();
-        assert!(!is_symlink_to_prefix(&redirected, &prefix).unwrap());
-
-        let dangling = prefix.join("dangling");
-        let redirected_tail = dir.path().join("redirected-tail");
-        std::os::unix::fs::symlink(prefix.join("missing"), &dangling).unwrap();
-        std::os::unix::fs::symlink(dangling.join("child"), &redirected_tail).unwrap();
-        assert!(!is_symlink_to_prefix(&redirected_tail, &prefix).unwrap());
     }
 
     #[test]
