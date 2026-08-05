@@ -248,7 +248,8 @@ impl ToolRequestSetBuilder {
             let mut arg_ts = ToolRequestSet::new();
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    arg_ts.add_version(tvr.clone(), &ToolSource::Argument);
+                    let tvr = apply_config_options_to_runtime_arg(&trs, arg, tvr.clone());
+                    arg_ts.add_version(tvr, &ToolSource::Argument);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
                     // should default to installing the "latest" version if no version is specified
@@ -268,17 +269,7 @@ impl ToolRequestSetBuilder {
         let mut arg_trs = ToolRequestSet::new();
         for arg in tool_args.iter() {
             if let Some(tvr) = &arg.tvr {
-                let mut tvr = tvr.clone();
-                // When CLI specifies a version for a tool that's in config,
-                // merge config options (e.g. postinstall) into the CLI request
-                if tvr.options().is_empty()
-                    && let Some(config_tvr) = trs.tools.get(&arg.ba).and_then(|v| v.first())
-                {
-                    let config_opts = config_tvr.options();
-                    if !config_opts.is_empty() {
-                        tvr.set_options(config_opts);
-                    }
-                }
+                let tvr = apply_config_options_to_runtime_arg(&trs, arg, tvr.clone());
                 arg_trs.add_version(tvr, &ToolSource::Argument);
             } else if !trs.tools.contains_key(&arg.ba) {
                 // no active version, so use "latest"
@@ -290,6 +281,23 @@ impl ToolRequestSetBuilder {
 
         Ok(trs)
     }
+}
+
+/// Overlay configured tool options onto an explicit runtime version request.
+///
+/// A request can already contain registry, install-manifest, or backend-alias
+/// defaults, so option emptiness cannot indicate whether config should apply.
+/// `opts_with_config` preserves the normal precedence and reapplies explicit
+/// inline backend options last.
+fn apply_config_options_to_runtime_arg(
+    trs: &ToolRequestSet,
+    arg: &ToolArg,
+    mut tvr: ToolRequest,
+) -> ToolRequest {
+    if let Some(config_tvr) = trs.tools.get(&arg.ba).and_then(|versions| versions.first()) {
+        tvr.set_options(arg.ba.opts_with_config(Some(config_tvr.options())));
+    }
+    tvr
 }
 
 fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
@@ -335,7 +343,7 @@ pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::toolset::{CoreToolOptions, ToolVersionOptions};
+    use crate::toolset::{CoreToolOptions, ToolVersionOptions, parse_tool_options};
 
     #[test]
     fn test_tool_env_var_name_round_trip() {
@@ -443,6 +451,46 @@ mod tests {
             std::env::remove_var("HOMEBREW_INSTALL_BADGE");
             std::env::remove_var("SOME_OTHER_VAR");
         }
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_options_layer_registry_config_and_inline() {
+        crate::toolset::install_state::init().await.unwrap();
+        let config_ba = Arc::new(BackendArg::from("solidity"));
+        assert_eq!(config_ba.registry_opts().get("bin"), Some("solc"));
+
+        let config_options = parse_tool_options(
+            r#"bin="config",postinstall="echo configured",config_only="config""#,
+        );
+        let config_request = ToolRequest::new_opts(
+            config_ba.clone(),
+            "0.8.0",
+            config_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(config_request, &ToolSource::Unknown);
+
+        let registry_arg = "solidity@0.8.1".parse::<ToolArg>().unwrap();
+        let registry_request = registry_arg.tvr.clone().unwrap();
+        assert!(!registry_request.options().is_empty());
+        let layered = apply_config_options_to_runtime_arg(&trs, &registry_arg, registry_request);
+        assert_eq!(layered.options().get("bin"), Some("config"));
+        assert_eq!(
+            layered.options().get("postinstall"),
+            Some("echo configured")
+        );
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+
+        let inline_arg = "solidity[bin=inline,inline_only=inline]@0.8.1"
+            .parse::<ToolArg>()
+            .unwrap();
+        let layered =
+            apply_config_options_to_runtime_arg(&trs, &inline_arg, inline_arg.tvr.clone().unwrap());
+        assert_eq!(layered.options().get("bin"), Some("inline"));
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+        assert_eq!(layered.options().get("inline_only"), Some("inline"));
     }
 
     fn unknown_tool_request(os: Option<Vec<String>>) -> (Arc<BackendArg>, Vec<ToolRequest>) {
