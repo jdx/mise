@@ -2243,11 +2243,13 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(Some(link))
     }
-    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
+    fn list_installed_versions_matching_with_selection_options(
+        &self,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+    ) -> Vec<String> {
         let versions = self.list_installed_versions();
-        // No async config lookup available here; fall back to inline/registry
-        // opts, which is the best we have for a sync path.
-        let filter = !self.include_prereleases(&self.ba().opts());
+        let filter = !self.include_prereleases(selection_opts);
         self.fuzzy_match_filter(versions, query, filter)
     }
     /// List versions matching a query using the active request's selection options.
@@ -2473,34 +2475,49 @@ pub trait Backend: Debug + Send + Sync {
         .await
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let matches = self.list_installed_versions_matching(&query);
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => {
-                let installed_symlink = self.ba().installs_path.join("latest");
-                if installed_symlink.exists()
-                    && let Some(target) = file::resolve_symlink(&installed_symlink)?
-                {
-                    let version = target
-                        .file_name()
-                        .ok_or_else(|| eyre!("Invalid symlink target"))?
-                        .to_string_lossy()
-                        .to_string();
-                    return Ok(Some(version));
-                }
-                Ok(file::dir_subdirs(&self.ba().installs_path)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
-                    .filter(|v| v != "latest")
-                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                    .last())
+        self.latest_installed_version_with_selection_options(query, &self.ba().opts())
+    }
+    fn latest_installed_version_with_selection_options(
+        &self,
+        query: Option<String>,
+        selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<String>> {
+        if let Some(query) = query {
+            let matches = self
+                .list_installed_versions_matching_with_selection_options(&query, selection_opts);
+            return Ok(find_match_in_list(&matches, &query));
+        }
+
+        let filter = !self.include_prereleases(selection_opts);
+        let matches = self.fuzzy_match_filter(
+            file::dir_subdirs(&self.ba().installs_path)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|v| !v.starts_with('.'))
+                .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+                .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+                .filter(|v| v != "latest")
+                .collect(),
+            "latest",
+            filter,
+        );
+        let installed_symlink = self.ba().installs_path.join("latest");
+        if installed_symlink.exists()
+            && let Some(target) = file::resolve_symlink(&installed_symlink)?
+        {
+            let version = target
+                .file_name()
+                .ok_or_else(|| eyre!("Invalid symlink target"))?
+                .to_string_lossy()
+                .to_string();
+            if matches.contains(&version) {
+                return Ok(Some(version));
             }
         }
+        Ok(matches
+            .into_iter()
+            .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+            .last())
     }
 
     /// Get version info for a specific version (including checksum for rolling releases)
@@ -3712,6 +3729,108 @@ pub trait Backend: Debug + Send + Sync {
             conda_deps: None,
             ..Default::default()
         })
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use super::*;
+    use crate::install_context::InstallContext;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    pub struct RemoteVersionsBackend {
+        ba: Arc<BackendArg>,
+        remote_versions: Vec<VersionInfo>,
+        stable_result: Option<String>,
+        list_calls: AtomicUsize,
+    }
+
+    impl RemoteVersionsBackend {
+        pub fn new(
+            ba: Arc<BackendArg>,
+            remote_versions: Vec<VersionInfo>,
+            stable_result: Option<&str>,
+        ) -> Self {
+            Self {
+                ba,
+                remote_versions,
+                stable_result: stable_result.map(str::to_string),
+                list_calls: AtomicUsize::new(0),
+            }
+        }
+
+        pub fn stable_and_prerelease(ba: Arc<BackendArg>) -> Self {
+            Self::new(
+                ba,
+                vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "1.1.0-rc.1".to_string(),
+                        prerelease: true,
+                        ..Default::default()
+                    },
+                ],
+                Some("1.0.0"),
+            )
+        }
+
+        pub fn list_calls(&self) -> usize {
+            self.list_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    pub fn prerelease_options() -> ToolVersionOptions {
+        let mut options = ToolVersionOptions::default();
+        options
+            .opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        options
+    }
+
+    pub fn request_tool_version(ba: Arc<BackendArg>, options: ToolVersionOptions) -> ToolVersion {
+        ToolVersion::new(
+            ToolRequest::Version {
+                backend: ba,
+                version: "1".to_string(),
+                options,
+                source: crate::toolset::ToolSource::Argument,
+            },
+            "1.0.0".to_string(),
+        )
+    }
+
+    #[async_trait]
+    impl Backend for RemoteVersionsBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            self.list_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.remote_versions.clone())
+        }
+
+        async fn latest_stable_version(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Option<String>> {
+            Ok(self.stable_result.clone())
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            Ok(tv)
+        }
     }
 }
 
