@@ -1037,6 +1037,12 @@ impl ConfigFile for MiseToml {
             .iter()
             .map(|tr| MiseTomlTool::from(tr.clone()))
             .collect();
+        if is_tools_sorted {
+            // Keep the parsed representation in sync with the document ordering. Sorting only the
+            // document leaves this map in insertion order, so a later replacement in the same
+            // `mise use` command can mistake an originally sorted table for an unsorted one.
+            tools.sort_keys();
+        }
         trace!("done replacing versions");
         let mut doc = self.doc_mut()?;
         trace!("got doc");
@@ -3611,6 +3617,29 @@ run = 'echo "template"'
         assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
         file::remove_all(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_keeps_sorted_across_multiple_updates() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".multiple-tool-sort.mise.toml");
+        file::write(&p, "[tools]\ntiny-ref = \"1\"\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+
+        for tool in ["dummy", "tiny-local", "tiny"] {
+            let ba = BackendArg::from(tool);
+            cf.replace_versions(
+                &ba,
+                vec![ToolRequest::new(Arc::new(ba.clone()), "1", ToolSource::Unknown).unwrap()],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            "[tools]\ndummy = \"1\"\ntiny = \"1\"\ntiny-local = \"1\"\ntiny-ref = \"1\"\n"
+        );
+        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]
