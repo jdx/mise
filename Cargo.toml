@@ -168,7 +168,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "stream",
   "system-proxy",
 ] }
-rmcp = { version = "2.0", features = ["server", "transport-io", "schemars"] }
+rmcp = { version = "3.0", features = ["server", "transport-io", "schemars"] }
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
   "aes-gcm",

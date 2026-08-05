@@ -6,10 +6,10 @@ use rmcp::{
     RoleServer, ServiceExt,
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, Implementation,
-        ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
-        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
-        ServerCapabilities, ServerInfo,
+        CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorCode,
+        ErrorData, Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+        ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
+        Resource, ResourceContents, ServerCapabilities, ServerInfo,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -272,7 +272,7 @@ impl ServerHandler for MiseServer {
         &self,
         params: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> std::result::Result<ReadResourceResult, ErrorData> {
+    ) -> std::result::Result<ReadResourceResponse, ErrorData> {
         // Parse URI to extract query parameters
         // Example: mise://tools?include_inactive=true
         let url = url::Url::parse(&params.uri).map_err(|e| ErrorData {
@@ -365,7 +365,7 @@ impl ServerHandler for MiseServer {
                     meta: None,
                 }];
 
-                Ok(ReadResourceResult::new(contents))
+                Ok(ReadResourceResult::new(contents).into())
             }
             ("mise", Some("tasks")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
@@ -418,7 +418,7 @@ impl ServerHandler for MiseServer {
                     meta: None,
                 }];
 
-                Ok(ReadResourceResult::new(contents))
+                Ok(ReadResourceResult::new(contents).into())
             }
             ("mise", Some("env")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
@@ -446,7 +446,7 @@ impl ServerHandler for MiseServer {
                     meta: None,
                 }];
 
-                Ok(ReadResourceResult::new(contents))
+                Ok(ReadResourceResult::new(contents).into())
             }
             ("mise", Some("config")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
@@ -468,7 +468,7 @@ impl ServerHandler for MiseServer {
                     meta: None,
                 }];
 
-                Ok(ReadResourceResult::new(contents))
+                Ok(ReadResourceResult::new(contents).into())
             }
             _ => Err(ErrorData {
                 code: ErrorCode::RESOURCE_NOT_FOUND,
@@ -490,7 +490,7 @@ impl ServerHandler for MiseServer {
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> std::result::Result<CallToolResult, ErrorData> {
+    ) -> std::result::Result<CallToolResponse, ErrorData> {
         let tool_call_context =
             rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         self.tool_router.call(tool_call_context).await
