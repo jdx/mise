@@ -1919,7 +1919,7 @@ impl TaskExecutor {
                 || !spec.cmd.flags.is_empty()
                 || !spec.cmd.subcommands.is_empty())
         {
-            let args: Vec<String> = get_args();
+            let args = task.args_for_usage_parser(&spec, &get_args());
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
             let env_map: std::collections::HashMap<String, String> =

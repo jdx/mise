@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.extract]
+usage = '''
+arg "[bundletool]" double_dash="required" help="some double dash required arg"
+'''
+run = 'echo "bundletool=$usage_bundletool"'
+EOF
+
+assert "mise run extract -- --mode=universal" "bundletool=--mode=universal"
+# shellcheck disable=SC2016
+assert_fail_contains "mise run extract --mode=universal" \
+  'Argument <bundletool> can only be set after a `--` separator'
+
+cat <<'EOF' >mise.toml
+[tasks.consume]
+usage = 'arg "<bundletool>"'
+run = 'echo "dependency=$usage_bundletool"'
+
+[tasks.extract]
+usage = '''
+cmd "bundle" {
+  arg "[bundletool]" double_dash="required" help="some double dash required arg"
+}
+'''
+depends = [{ task = "consume", args = ["{{usage.bundletool}}"] }]
+run = 'echo "bundletool=$usage_bundletool"'
+EOF
+
+output=$(mise run extract bundle -- --mode=universal 2>&1)
+assert_contains "echo \"$output\"" "dependency=--mode=universal"
+assert_contains "echo \"$output\"" "bundletool=--mode=universal"

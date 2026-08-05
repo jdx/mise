@@ -1111,6 +1111,71 @@ fn normalize_root_mount_node(line: &str) -> String {
     }
 }
 
+pub(crate) fn usage_command_for_args<'a>(
+    spec: &'a usage::Spec,
+    args: &[String],
+) -> &'a usage::SpecCommand {
+    let mut cmd = &spec.cmd;
+    let mut idx = 0;
+    let mut used_default_subcommand = false;
+
+    while idx < args.len() {
+        let arg = &args[idx];
+        if arg == "-h" || arg == "--help" {
+            break;
+        }
+        if let Some(subcommand) = cmd.find_subcommand(arg) {
+            cmd = subcommand;
+            idx += 1;
+            continue;
+        }
+        if arg.starts_with('-') {
+            let flag_takes_value =
+                usage_flag_takes_value(&spec.cmd, arg) || usage_flag_takes_value(cmd, arg);
+            if !flag_takes_value
+                && !used_default_subcommand
+                && let Some(default_name) = &spec.default_subcommand
+                && let Some(subcommand) = cmd.find_subcommand(default_name)
+            {
+                cmd = subcommand;
+                used_default_subcommand = true;
+                continue;
+            }
+            if !arg.contains('=') && flag_takes_value {
+                idx += 1;
+            }
+            idx += 1;
+            continue;
+        }
+        if !used_default_subcommand
+            && let Some(default_name) = &spec.default_subcommand
+            && let Some(subcommand) = cmd.find_subcommand(default_name)
+        {
+            cmd = subcommand;
+            used_default_subcommand = true;
+            continue;
+        }
+        break;
+    }
+
+    cmd
+}
+
+fn usage_flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
+    let flag = flag.split_once('=').map(|(flag, _)| flag).unwrap_or(flag);
+    if let Some(long) = flag.strip_prefix("--") {
+        cmd.flags
+            .iter()
+            .any(|f| f.arg.is_some() && f.long.iter().any(|f| f == long))
+    } else if let Some(short) = flag.strip_prefix('-').and_then(|f| f.chars().next()) {
+        cmd.flags
+            .iter()
+            .any(|f| f.arg.is_some() && f.short.contains(&short))
+    } else {
+        false
+    }
+}
+
 impl Task {
     pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
@@ -1689,6 +1754,43 @@ impl Task {
             .any(|a| a == "--help" || a == "-h")
     }
 
+    /// Reconstruct the command-line separator clap consumed before populating
+    /// `trailing_args` when the active usage command requires it.
+    pub fn args_for_usage_parser(&self, spec: &usage::Spec, args: &[String]) -> Vec<String> {
+        if self.trailing_args.is_empty() {
+            return args.to_vec();
+        }
+
+        debug_assert!(
+            args.ends_with(&self.trailing_args),
+            "task trailing_args must be a suffix of the arguments passed to usage"
+        );
+        let Some(prefix) = args.strip_suffix(self.trailing_args.as_slice()) else {
+            return args.to_vec();
+        };
+        debug_assert!(
+            self.args.ends_with(&self.trailing_args),
+            "task trailing_args must be a suffix of task args"
+        );
+        let Some(task_prefix) = self.args.strip_suffix(self.trailing_args.as_slice()) else {
+            return args.to_vec();
+        };
+        if !usage_command_for_args(spec, task_prefix)
+            .args
+            .iter()
+            .any(|arg| arg.double_dash == usage::SpecDoubleDashChoices::Required)
+        {
+            return args.to_vec();
+        }
+
+        prefix
+            .iter()
+            .cloned()
+            .chain(once("--".to_string()))
+            .chain(self.trailing_args.iter().cloned())
+            .collect()
+    }
+
     fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
         spec.name = self.display_name.clone();
         spec.bin = self.display_name.clone();
@@ -1821,13 +1923,14 @@ impl Task {
         if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
             let mut env = env.clone();
             clear_usage_env(&mut env);
+            let args = self.args_for_usage_parser(&spec, args);
             let parser_dir = match cwd {
                 Some(cwd) => Some(cwd),
                 None => self.dir(config).await?,
             };
             let scripts_only = self.run_script_strings();
             let scripts = Self::make_script_parser(parser_dir, extra_vars)
-                .parse_run_scripts_with_args(config, self, &scripts_only, &env, args, &spec)
+                .parse_run_scripts_with_args(config, self, &scripts_only, &env, &args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -3288,7 +3391,7 @@ pub async fn parse_usage_values_from_task(
     }
     // Build args list with empty first element (usage parser expects argv[0] to be the command)
     let args: Vec<String> = once(String::new())
-        .chain(task.args.iter().cloned())
+        .chain(task.args_for_usage_parser(&spec, &task.args))
         .collect();
     let po = match usage::Parser::new(&spec).parse(&args) {
         Ok(po) => po,
