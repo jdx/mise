@@ -422,6 +422,13 @@ impl Config {
             .map(crate::toolset::parse_tool_options)
     }
 
+    pub fn get_configured_plugin_type(&self, plugin_name: &str) -> Option<PluginType> {
+        self.repo_urls.keys().find_map(|key| {
+            let (plugin_type, name) = PluginType::from_plugin_config(key);
+            (key != name && name == plugin_name).then_some(plugin_type)
+        })
+    }
+
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         if let Some(url) = self.repo_urls.get(plugin_name)
             && (Path::new(url).is_absolute() || url.starts_with("file://"))
@@ -5713,6 +5720,14 @@ config_roots = ["apps/api", "apps/web"]
                 "vfox:remote-vfox".to_string(),
                 "owner/vfox-plugin".to_string(),
             ),
+            (
+                "asdf:explicit-asdf".to_string(),
+                "owner/asdf-plugin".to_string(),
+            ),
+            (
+                "vfox-backend:explicit-backend".to_string(),
+                "owner/backend-plugin".to_string(),
+            ),
         ]);
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
@@ -5751,6 +5766,19 @@ config_roots = ["apps/api", "apps/web"]
             config.get_repo_url("remote-vfox").as_deref(),
             Some("https://github.com/owner/vfox-plugin.git")
         );
+        assert_eq!(
+            config.get_configured_plugin_type("local-vfox"),
+            Some(PluginType::Vfox)
+        );
+        assert_eq!(
+            config.get_configured_plugin_type("explicit-asdf"),
+            Some(PluginType::Asdf)
+        );
+        assert_eq!(
+            config.get_configured_plugin_type("explicit-backend"),
+            Some(PluginType::VfoxBackend)
+        );
+        assert_eq!(config.get_configured_plugin_type("local-asdf"), None);
     }
 
     #[tokio::test]
