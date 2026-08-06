@@ -1104,7 +1104,6 @@ fn select_python_precompiled(
     let candidates = manifest
         .lines()
         .filter(|line| line.contains(platform))
-        .filter(|line| filter_freethreaded(line, &flavor))
         .flat_map(|line| {
             regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
                 .captures(line)
@@ -1121,7 +1120,12 @@ fn select_python_precompiled(
     let select = |filename: Option<&str>| {
         candidates
             .iter()
-            .filter(|(_, _, candidate)| filename.is_none_or(|filename| candidate == filename))
+            .filter(|(_, _, candidate)| {
+                filename.map_or_else(
+                    || filter_freethreaded(candidate, &flavor),
+                    |filename| candidate == filename,
+                )
+            })
             .min_by_key(|(_, date, name)| {
                 let install_type = if let Some(flavor) = flavor.as_deref() {
                     let name_without_ext = name.trim_end_matches(".tar.gz");
@@ -1397,6 +1401,7 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
         let manifest = "\
 cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz
 cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped+freethreaded.tar.gz
 cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
 ";
         let platform = "x86_64-unknown-linux-gnu";
@@ -1419,6 +1424,22 @@ cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
             Some((
                 "20260805".to_string(),
                 "cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+                    .to_string()
+            ))
+        );
+        assert_eq!(
+            select_python_precompiled(
+                manifest,
+                "3.12.13",
+                platform,
+                None,
+                Some(
+                    "cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped+freethreaded.tar.gz"
+                )
+            ),
+            Some((
+                "20260728".to_string(),
+                "cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped+freethreaded.tar.gz"
                     .to_string()
             ))
         );
