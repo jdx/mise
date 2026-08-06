@@ -3678,11 +3678,12 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// files) with inline `[tasks.*]` blocks.
 ///
 /// `config_tasks` are collected in config-file precedence order (highest first).
-/// When a name appears in both a script file task
-/// (`file.is_some()`) and an inline block, the script stays as the base and the
-/// TOML block is overlaid via [`Task::merge_toml_overlay`]. When the same name
-/// appears in multiple inline blocks (e.g. `.config/mise.toml` and
-/// `.mise/config.toml`), the first entry wins and later ones are skipped.
+/// When a name appears in both an executable script task and an inline block,
+/// the script stays as the base and the TOML block is overlaid via
+/// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
+/// an included TOML file. When the same name appears in multiple inline blocks
+/// (e.g. `.config/mise.toml` and `.mise/config.toml`), the first entry wins and
+/// later ones are skipped.
 /// When the same name appears in more than one file task (e.g. a local
 /// `.mise/tasks` script and a same-named task from a `git::` include), the last
 /// one wins. Callers load `file_tasks` in declared `task_config.includes`
@@ -3698,7 +3699,12 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         if !seen_config_task_names.insert(t.name.clone()) {
             continue;
         }
-        if let Some(existing) = by_name.get_mut(&t.name) {
+        if by_name
+            .get(&t.name)
+            .is_some_and(|existing| existing.is_toml_include)
+        {
+            by_name.insert(t.name.clone(), t);
+        } else if let Some(existing) = by_name.get_mut(&t.name) {
             if existing.file.is_some() {
                 existing.merge_toml_overlay(t);
             }
@@ -4521,6 +4527,7 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
+        task.is_toml_include = true;
         if let Some(monorepo_cf) = monorepo_cf {
             task.cf = Some(monorepo_cf.clone());
         }

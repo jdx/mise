@@ -687,6 +687,14 @@ pub struct Task {
     #[serde(default)]
     pub file: Option<PathBuf>,
 
+    /// This task was loaded from a TOML file in `task_config.includes`.
+    ///
+    /// Included TOML tasks and executable file tasks share the same loading
+    /// pipeline, but inline config tasks override the former while only
+    /// contributing metadata to the latter.
+    #[serde(skip)]
+    pub(crate) is_toml_include: bool,
+
     // Store the original remote file source (git::/http:/https:) before it's replaced with local path
     // This is used to determine if the task should use monorepo config file context
     #[serde(skip)]
@@ -2975,6 +2983,7 @@ impl Default for Task {
             run_windows: vec![],
             args: vec![],
             file: None,
+            is_toml_include: false,
             quiet: false,
             tools: Default::default(),
             usage: "".to_string(),

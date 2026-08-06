@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >tasks.toml
+[plain]
+run = "echo included plain"
+
+[with-file]
+file = "does-not-exist"
+EOF
+
+cat <<'EOF' >mise.toml
+[task_config]
+includes = ["tasks.toml"]
+
+[tasks.plain]
+run = "echo inline plain"
+
+[tasks.with-file]
+run = "echo inline file"
+EOF
+
+# Inline tasks override same-named TOML includes, including included tasks
+# whose execution type sets `file`. That field describes execution and must
+# not be used as task-source provenance.
+assert "mise run plain" "inline plain"
+assert "mise run with-file" "inline file"
