@@ -6,15 +6,15 @@ use reqwest::{RequestBuilder, Response};
 use url::Url;
 
 use crate::http::{
-    CLIENT, http_requests_cancelled, http_retry_attempts, is_transient, retry_async, retry_delay,
-    should_retry_status,
+    CLIENT, HttpCancellation, http_cancellation, http_retry_attempts, is_transient, retry_async,
+    retry_delay, should_retry_status,
 };
 
 async fn cancel_on_interrupt<T, F>(operation: F) -> Result<T>
 where
     F: Future<Output = std::result::Result<T, reqwest::Error>>,
 {
-    cancel_on_signal(operation, http_requests_cancelled()).await
+    cancel_on_signal(operation, http_cancellation().cancelled()).await
 }
 
 async fn cancel_on_signal<T, F, C>(operation: F, cancelled: C) -> Result<T>
@@ -191,17 +191,29 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
 }
 
 async fn get(lua: &Lua, input: Table) -> Result<Table> {
+    get_with_cancellation(lua, input, http_cancellation()).await
+}
+
+async fn get_with_cancellation(
+    lua: &Lua,
+    input: Table,
+    cancellation: &HttpCancellation,
+) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
     let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = cancel_on_interrupt(send_with_retry(CLIENT.get(&url).headers(headers))).await?;
+    let resp = cancel_on_signal(
+        send_with_retry(CLIENT.get(&url).headers(headers)),
+        cancellation.cancelled(),
+    )
+    .await?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
-    let body = cancel_on_interrupt(resp.text()).await?;
+    let body = cancel_on_signal(resp.text(), cancellation.cancelled()).await?;
     t.set("body", body)?;
     Ok(t)
 }
@@ -391,23 +403,45 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::future;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::sync::mpsc;
     use std::thread;
+    use std::time::Duration;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn test_http_operation_is_cancelled_on_interrupt() {
-        let err = cancel_on_signal(
-            future::pending::<std::result::Result<(), reqwest::Error>>(),
-            future::ready(()),
-        )
-        .await
-        .unwrap_err();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/pending", listener.local_addr().unwrap());
+        let cancellation = HttpCancellation::default();
+        let trigger = cancellation.clone();
+        let (release_tx, release_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            stream.read(&mut request).unwrap();
+            trigger.cancel();
+            release_rx.recv().unwrap();
+        });
+
+        let lua = Lua::new();
+        let input = lua.create_table().unwrap();
+        input.set("url", url).unwrap();
+        let err = get_with_cancellation(&lua, input, &cancellation)
+            .await
+            .unwrap_err();
 
         assert_eq!(err.to_string(), "runtime error: interrupted");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), cancellation.cancelled())
+                .await
+                .is_err(),
+            "a later operation should wait for the next cancellation generation"
+        );
+        release_tx.send(()).unwrap();
+        server.join().unwrap();
     }
 
     #[tokio::test]

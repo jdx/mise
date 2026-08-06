@@ -10,19 +10,43 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .expect("Failed to create reqwest client")
 });
 
-static HTTP_CANCELLED: LazyLock<watch::Sender<bool>> = LazyLock::new(|| watch::channel(false).0);
+static HTTP_CANCELLATION: LazyLock<HttpCancellation> = LazyLock::new(Default::default);
+
+#[derive(Clone)]
+pub(crate) struct HttpCancellation {
+    generation: watch::Sender<u64>,
+}
+
+impl Default for HttpCancellation {
+    fn default() -> Self {
+        Self {
+            generation: watch::channel(0).0,
+        }
+    }
+}
+
+impl HttpCancellation {
+    pub(crate) fn cancel(&self) {
+        self.generation
+            .send_modify(|generation| *generation = generation.wrapping_add(1));
+    }
+
+    pub(crate) async fn cancelled(&self) {
+        let mut generation = self.generation.subscribe();
+        let current = *generation.borrow_and_update();
+        let _ = generation
+            .wait_for(|generation| *generation != current)
+            .await;
+    }
+}
 
 /// Cancel in-flight HTTP operations started by vfox plugins.
 pub fn cancel_http_requests() {
-    HTTP_CANCELLED.send_replace(true);
+    HTTP_CANCELLATION.cancel();
 }
 
-pub(crate) async fn http_requests_cancelled() {
-    let mut cancelled = HTTP_CANCELLED.subscribe();
-    if *cancelled.borrow() {
-        return;
-    }
-    let _ = cancelled.wait_for(|cancelled| *cancelled).await;
+pub(crate) fn http_cancellation() -> &'static HttpCancellation {
+    &HTTP_CANCELLATION
 }
 
 /// Default retry attempts when MISE_HTTP_RETRIES is unset. Mirrors the
