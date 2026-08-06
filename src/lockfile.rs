@@ -1741,10 +1741,19 @@ pub fn update_lockfiles(
     let mut provenance_errors: Vec<String> = Vec::new();
     let mut has_deferred_provenance = false;
 
-    for (lockfile_path, _configs) in lockfile_configs {
-        // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
+    for (lockfile_path, configs) in lockfile_configs {
+        // When lockfiles are enabled implicitly, only maintain files the user has
+        // already created. An explicit `lockfile = true` opts into project
+        // lockfile creation too; global lockfiles remain explicit via the
+        // `mise lock --global` command.
         if !lockfile_path.exists() {
-            continue;
+            let create_project_lockfile = Settings::get().lockfile_creation_enabled()
+                && configs
+                    .iter()
+                    .any(|path| !crate::config::is_global_config(path));
+            if !create_project_lockfile {
+                continue;
+            }
         }
         let is_monorepo_root_lockfile = config
             .monorepo_lockfile_root()
