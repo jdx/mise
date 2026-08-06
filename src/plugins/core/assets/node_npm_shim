@@ -53,10 +53,12 @@ should_reshim() {
     if ! [ "${additional_bare_cmds[0]-}" ]; then
       is_global=1
       cmd_needs_reshim=true
-    fi
-
     # Links to directories also install a global package
-    if [[ "${additional_bare_cmds[0]-}" =~ [./].* && -d "${additional_bare_cmds[0]-}" ]]; then
+    elif [[ "${additional_bare_cmds[0]-}" =~ ^[./].* && -d "${additional_bare_cmds[0]-}" ]]; then
+      is_global=1
+      cmd_needs_reshim=true
+    # npm link <package-name> also installs globally (creates symlink in global node_modules)
+    elif [ "${additional_bare_cmds[0]-}" ]; then
       is_global=1
       cmd_needs_reshim=true
     fi
