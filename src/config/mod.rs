@@ -3678,11 +3678,12 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// files) with inline `[tasks.*]` blocks.
 ///
 /// `config_tasks` are collected in config-file precedence order (highest first).
-/// When a name appears in both a script file task
-/// (`file.is_some()`) and an inline block, the script stays as the base and the
-/// TOML block is overlaid via [`Task::merge_toml_overlay`]. When the same name
-/// appears in multiple inline blocks (e.g. `.config/mise.toml` and
-/// `.mise/config.toml`), the first entry wins and later ones are skipped.
+/// When a name appears in both an executable script task and an inline block,
+/// the script stays as the base and the TOML block is overlaid via
+/// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
+/// an included TOML file. When the same name appears in multiple inline blocks
+/// (e.g. `.config/mise.toml` and `.mise/config.toml`), the first entry wins and
+/// later ones are skipped.
 /// When the same name appears in more than one file task (e.g. a local
 /// `.mise/tasks` script and a same-named task from a `git::` include), the last
 /// one wins. Callers load `file_tasks` in declared `task_config.includes`
@@ -3698,7 +3699,18 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         if !seen_config_task_names.insert(t.name.clone()) {
             continue;
         }
-        if let Some(existing) = by_name.get_mut(&t.name) {
+        if let Some(existing) = by_name
+            .get_mut(&t.name)
+            .filter(|existing| existing.is_toml_include)
+        {
+            if t.config_precedence <= existing.config_precedence {
+                if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+                    existing.merge_toml_overlay(t);
+                } else {
+                    *existing = t;
+                }
+            }
+        } else if let Some(existing) = by_name.get_mut(&t.name) {
             if existing.file.is_some() {
                 existing.merge_toml_overlay(t);
             }
@@ -4378,10 +4390,11 @@ async fn load_task_sources_from_configs(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-    let (includes, resolve_dir) = configs
+    let (includes, resolve_dir, include_config_precedence) = configs
         .iter()
-        .find_map(|cf| match cf.task_config_includes() {
-            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+        .enumerate()
+        .find_map(|(precedence, cf)| match cf.task_config_includes() {
+            Ok(Some(includes)) => Some(Ok((includes, cf.config_root(), precedence))),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
         })
@@ -4391,10 +4404,10 @@ async fn load_task_sources_from_configs(
                 tc.task_config
                     .includes
                     .clone()
-                    .map(|includes| (includes, tc.includes_root.clone()))
+                    .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
             })
         })
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf()));
+        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
 
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
@@ -4419,20 +4432,22 @@ async fn load_task_sources_from_configs(
     };
 
     let mut config_tasks = vec![];
-    for cf in &configs {
+    for (precedence, cf) in configs.iter().enumerate() {
         let dir = dir.to_path_buf();
         let monorepo_cf = monorepo_context.then_some(*cf);
-        config_tasks.extend(
-            load_config_tasks(
-                config,
-                (*cf).clone(),
-                &dir,
-                templates,
-                monorepo_cf,
-                &task_config,
-            )
-            .await?,
-        );
+        let mut loaded = load_config_tasks(
+            config,
+            (*cf).clone(),
+            &dir,
+            templates,
+            monorepo_cf,
+            &task_config,
+        )
+        .await?;
+        for task in &mut loaded {
+            task.config_precedence = precedence;
+        }
+        config_tasks.extend(loaded);
     }
 
     let mut file_tasks = vec![];
@@ -4462,6 +4477,9 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
+                if task.is_toml_include {
+                    task.config_precedence = include_config_precedence;
+                }
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
                 task_config.environment.apply(task)?;
@@ -4521,6 +4539,7 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
+        task.is_toml_include = true;
         if let Some(monorepo_cf) = monorepo_cf {
             task.cf = Some(monorepo_cf.clone());
         }
