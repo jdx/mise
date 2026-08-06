@@ -250,6 +250,12 @@ mod tests {
             "git::ssh://git@myserver.com/example.git//terraform/myfile",
             "git::ssh://user@myserver.com/example.git//myfile?ref=master",
             "git::ssh://myserver.com/example.git//myfile?ref=master",
+            "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+            "git::ssh://git@dev.azure/org/project/_git/example//terraform/myfile?ref=master",
+            "git::ssh://git@dev.azure:1222/org/project/_git/example//terraform/myfile?ref=master",
+            "git::ssh://git@dev.azure/org/project/_git/example//terraform/myfile",
+            "git::ssh://user@dev.azure/org/project/_git/example//myfile?ref=master",
+            "git::ssh://dev.azure/org/project/_git/example//myfile?ref=master",
         ];
 
         for url in test_cases {
@@ -267,6 +273,9 @@ mod tests {
             "git::ssh://user@myserver.com/example.git?ref=master",
             "git::ssh://user@myserver.com/example.git",
             "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
+            "git::ssh://user@dev.azure/org/project/_git/example?ref=master",
+            "git::ssh://user@dev.azure/org/project/_git/example",
+            "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
         ];
 
         for url in test_cases {
@@ -287,6 +296,12 @@ mod tests {
             "git::https://myserver.com/example.git//terraform/myfile",
             "git::https://myserver.com/example.git//myfile?ref=master",
             "git::http://localhost:8080/repo.git//xtasks/lint/remote-task", // HTTP support for local testing
+            "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+            "git::https://dev.azure/org/project/_git/example//terraform/myfile?ref=master",
+            "git::https://dev.azure:8080/org/project/_git/example//terraform/myfile?ref=master",
+            "git::https://dev.azure/org/project/_git/example//terraform/myfile",
+            "git::https://dev.azure/org/project/_git/example//myfile?ref=master",
+            "git::http://localhost:8080/org/project/_git/example//xtasks/lint/remote-task", // HTTP support for local testing
         ];
 
         for url in test_cases {
@@ -304,6 +319,9 @@ mod tests {
             "git::https://myserver.com/example.git?ref=master",
             "git::https://user@myserver.com/example.git",
             "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
+            "git::https://dev.azure/org/project/_git/example?ref=master",
+            "git::https://user@dev.azure/org/project/_git/example",
+            "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
         ];
 
         for url in test_cases {
@@ -364,6 +382,24 @@ mod tests {
             (
                 "git::https://myserver.com/example.git//terraform/myfile",
                 "https://myserver.com/example.git",
+                "terraform/myfile",
+                None,
+            ),
+            (
+                "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+                "https://dev.azure/org/project/_git/example",
+                "myfile",
+                Some("v1.0.0".to_string()),
+            ),
+            (
+                "git::https://dev.azure/org/project/_git/example//terraform/myfile?ref=master",
+                "https://dev.azure/org/project/_git/example",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+            (
+                "git::https://dev.azure/org/project/_git/example//terraform/myfile",
+                "https://dev.azure/org/project/_git/example",
                 "terraform/myfile",
                 None,
             ),
