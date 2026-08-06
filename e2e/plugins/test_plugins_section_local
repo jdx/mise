@@ -143,3 +143,53 @@ EOF
   [[ ! -L "$MISE_DATA_DIR/plugins/local-path-ref" ]]
   [[ -d "$MISE_DATA_DIR/plugins/local-path-ref/.git" ]]
 )
+
+mkdir backend-alias-case
+(
+  cd backend-alias-case
+  mkdir -p local-backend/hooks
+  cat >local-backend/metadata.lua <<'EOF'
+PLUGIN = {}
+PLUGIN.name = "chainguard"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = ""
+PLUGIN.license = "Apache 2.0"
+PLUGIN.description = "Backend alias test plugin"
+PLUGIN.minRuntimeVersion = "0.3.0"
+PLUGIN.notes = {}
+PLUGIN.legacyFilenames = {}
+EOF
+  cat >local-backend/hooks/backend_list_versions.lua <<'EOF'
+function PLUGIN:BackendListVersions(ctx)
+  if ctx.tool == "jq" then
+    return { versions = { "1.7.1" } }
+  end
+  return { versions = {} }
+end
+EOF
+  cat >local-backend/hooks/backend_install.lua <<'EOF'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+EOF
+  cat >local-backend/hooks/backend_exec_env.lua <<'EOF'
+function PLUGIN:BackendExecEnv(ctx)
+  return { env_vars = {} }
+end
+EOF
+  cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[plugins]
+"vfox-backend:chainguard" = "$PWD/local-backend"
+
+[tool_alias]
+jq = "chainguard:jq"
+EOF
+  cat >mise.toml <<'EOF'
+[tools]
+jq = "latest"
+EOF
+
+  mise plugin install chainguard
+  mise install
+  assert "mise ls-remote jq" "1.7.1"
+)
