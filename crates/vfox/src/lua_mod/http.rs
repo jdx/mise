@@ -14,7 +14,8 @@ async fn cancel_on_interrupt<T, F>(operation: F) -> Result<T>
 where
     F: Future<Output = std::result::Result<T, reqwest::Error>>,
 {
-    cancel_on_signal(operation, http_cancellation().cancelled()).await
+    let mut cancellation = http_cancellation().subscribe();
+    cancel_on_signal(operation, cancellation.cancelled()).await
 }
 
 async fn cancel_on_signal<T, F, C>(operation: F, cancelled: C) -> Result<T>
@@ -199,6 +200,7 @@ async fn get_with_cancellation(
     input: Table,
     cancellation: &HttpCancellation,
 ) -> Result<Table> {
+    let mut cancellation = cancellation.subscribe();
     let url: String = input.get("url").into_lua_err()?;
     let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
@@ -265,13 +267,27 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
 }
 
 async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
+    try_get_with_cancellation(lua, input, http_cancellation()).await
+}
+
+async fn try_get_with_cancellation(
+    lua: &Lua,
+    input: Table,
+    cancellation: &HttpCancellation,
+) -> Result<MultiValue> {
+    let mut cancellation = cancellation.subscribe();
     let url: String = input.get("url").into_lua_err()?;
     let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = match cancel_on_interrupt(send_with_retry(CLIENT.get(&url).headers(headers))).await {
+    let resp = match cancel_on_signal(
+        send_with_retry(CLIENT.get(&url).headers(headers)),
+        cancellation.cancelled(),
+    )
+    .await
+    {
         Ok(resp) => resp,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -283,7 +299,7 @@ async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
-    match cancel_on_interrupt(resp.text()).await {
+    match cancel_on_signal(resp.text(), cancellation.cancelled()).await {
         Ok(body) => t.set("body", body)?,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -422,6 +438,11 @@ mod tests {
             let (mut stream, _) = listener.accept().unwrap();
             let mut request = [0; 1024];
             stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n")
+                .unwrap();
+            stream.flush().unwrap();
+            thread::sleep(Duration::from_millis(50));
             trigger.cancel();
             release_rx.recv().unwrap();
         });
@@ -434,8 +455,9 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.to_string(), "runtime error: interrupted");
+        let mut later = cancellation.subscribe();
         assert!(
-            tokio::time::timeout(Duration::from_millis(10), cancellation.cancelled())
+            tokio::time::timeout(Duration::from_millis(10), later.cancelled())
                 .await
                 .is_err(),
             "a later operation should wait for the next cancellation generation"

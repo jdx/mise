@@ -14,29 +14,36 @@ static HTTP_CANCELLATION: LazyLock<HttpCancellation> = LazyLock::new(Default::de
 
 #[derive(Clone)]
 pub(crate) struct HttpCancellation {
-    generation: watch::Sender<u64>,
+    signal: watch::Sender<()>,
+}
+
+pub(crate) struct HttpCancellationReceiver {
+    signal: watch::Receiver<()>,
 }
 
 impl Default for HttpCancellation {
     fn default() -> Self {
         Self {
-            generation: watch::channel(0).0,
+            signal: watch::channel(()).0,
         }
     }
 }
 
 impl HttpCancellation {
     pub(crate) fn cancel(&self) {
-        self.generation
-            .send_modify(|generation| *generation = generation.wrapping_add(1));
+        self.signal.send_replace(());
     }
 
-    pub(crate) async fn cancelled(&self) {
-        let mut generation = self.generation.subscribe();
-        let current = *generation.borrow_and_update();
-        let _ = generation
-            .wait_for(|generation| *generation != current)
-            .await;
+    pub(crate) fn subscribe(&self) -> HttpCancellationReceiver {
+        HttpCancellationReceiver {
+            signal: self.signal.subscribe(),
+        }
+    }
+}
+
+impl HttpCancellationReceiver {
+    pub(crate) async fn cancelled(&mut self) {
+        let _ = self.signal.changed().await;
     }
 }
 
