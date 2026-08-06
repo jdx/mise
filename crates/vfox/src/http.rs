@@ -1,6 +1,7 @@
 use reqwest::{Client, ClientBuilder, StatusCode};
 use std::sync::LazyLock;
 use std::time::Duration;
+use tokio::sync::watch;
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     ClientBuilder::new()
@@ -8,6 +9,52 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .build()
         .expect("Failed to create reqwest client")
 });
+
+static HTTP_CANCELLATION: LazyLock<HttpCancellation> = LazyLock::new(Default::default);
+
+#[derive(Clone)]
+pub(crate) struct HttpCancellation {
+    signal: watch::Sender<()>,
+}
+
+pub(crate) struct HttpCancellationReceiver {
+    signal: watch::Receiver<()>,
+}
+
+impl Default for HttpCancellation {
+    fn default() -> Self {
+        Self {
+            signal: watch::channel(()).0,
+        }
+    }
+}
+
+impl HttpCancellation {
+    pub(crate) fn cancel(&self) {
+        self.signal.send_replace(());
+    }
+
+    pub(crate) fn subscribe(&self) -> HttpCancellationReceiver {
+        HttpCancellationReceiver {
+            signal: self.signal.subscribe(),
+        }
+    }
+}
+
+impl HttpCancellationReceiver {
+    pub(crate) async fn cancelled(&mut self) {
+        let _ = self.signal.changed().await;
+    }
+}
+
+/// Cancel in-flight HTTP operations started by vfox plugins.
+pub fn cancel_http_requests() {
+    HTTP_CANCELLATION.cancel();
+}
+
+pub(crate) fn http_cancellation() -> &'static HttpCancellation {
+    &HTTP_CANCELLATION
+}
 
 /// Default retry attempts when MISE_HTTP_RETRIES is unset. Mirrors the
 /// `http_retries` setting default in the main mise crate.

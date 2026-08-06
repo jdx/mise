@@ -17,6 +17,7 @@ pub async fn exit_signal() -> i32 {
         // Record the first task-mode interrupt before signalling children so
         // their exit handlers can distinguish cancellation from task failure.
         let should_exit = EXIT.load(Ordering::Relaxed) || CANCELLED.swap(true, Ordering::Relaxed);
+        vfox::cancel_http_requests();
         CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
         if should_exit {
             debug!("Ctrl-C pressed, exiting...");
