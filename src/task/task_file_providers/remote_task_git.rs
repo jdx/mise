@@ -429,6 +429,11 @@ mod tests {
                 false,
             ),
             (
+                "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+                "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v2.0.0",
+                false,
+            ),
+            (
                 "git::ssh://git@github.com/example.git//myfile?ref=v1.0.0",
                 "git::ssh://git@github.com/example.git//subfolder/mysecondfile?ref=v1.0.0",
                 true,
@@ -436,6 +441,11 @@ mod tests {
             (
                 "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
                 "git::ssh://git@github.com/myorg/example.git//subfolder/mysecondfile?ref=v1.0.0",
+                true,
+            ),
+            (
+                "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+                "git::ssh://git@dev.azure/org/project/_git/example//subfolder/mysecondfile?ref=v1.0.0",
                 true,
             ),
         ];
@@ -465,6 +475,11 @@ mod tests {
                 false,
             ),
             (
+                "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+                "git::https://dev.azure/org/project/_git/example//myfile?ref=v2.0.0",
+                false,
+            ),
+            (
                 "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
                 "git::https://github.com/myorg/example.git//subfolder/myfile?ref=v1.0.0",
                 true,
@@ -472,6 +487,11 @@ mod tests {
             (
                 "git::https://github.com/example.git//myfile?ref=v1.0.0",
                 "git::https://github.com/example.git//subfolder/myfile?ref=v1.0.0",
+                true,
+            ),
+            (
+                "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+                "git::https://dev.azure/org/project/_git/example//subfolder/myfile?ref=v1.0.0",
                 true,
             ),
         ];

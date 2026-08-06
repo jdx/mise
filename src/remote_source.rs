@@ -38,12 +38,12 @@ impl RemoteSource {
 
     pub(crate) fn parse_git_ssh(file: &str) -> Option<RemoteGitSource> {
         parse_git_with(&SSH_GIT_REGEX, file)
-        .or_else(|| parse_git_with(&AZURE_DEVOPS_SSH_GIT_REGEX, file))
+            .or_else(|| parse_git_with(&AZURE_DEVOPS_SSH_GIT_REGEX, file))
     }
 
     pub(crate) fn parse_git_https(file: &str) -> Option<RemoteGitSource> {
         parse_git_with(&HTTPS_GIT_REGEX, file)
-        .or_else(|| parse_git_with(&AZURE_DEVOPS_HTTPS_GIT_REGEX, file))
+            .or_else(|| parse_git_with(&AZURE_DEVOPS_HTTPS_GIT_REGEX, file))
     }
 
     pub fn parse_http(file: &str) -> Option<RemoteHttpSource> {
@@ -158,9 +158,10 @@ mod tests {
 
     #[test]
     fn parses_azure_devops_git_ssh_sources_without_user() {
-        let source =
-            RemoteSource::parse_git("git::ssh://dev.azure/myorg/myproj/_git/example//terraform/myfile")
-                .unwrap();
+        let source = RemoteSource::parse_git(
+            "git::ssh://dev.azure/myorg/myproj/_git/example//terraform/myfile",
+        )
+        .unwrap();
         assert_eq!(source.url, "ssh://dev.azure/myorg/myproj/_git/example");
         assert_eq!(source.path, "terraform/myfile");
         assert_eq!(source.git_ref, None);
@@ -172,7 +173,10 @@ mod tests {
             "git::https://dev.azure:8080/myorg/myproj/_git/example//terraform/myfile?ref=master",
         )
         .unwrap();
-        assert_eq!(source.url, "https://dev.azure:8080/myorg/myproj/_git/example");
+        assert_eq!(
+            source.url,
+            "https://dev.azure:8080/myorg/myproj/_git/example"
+        );
         assert_eq!(source.path, "terraform/myfile");
         assert_eq!(source.git_ref, Some("master".to_string()));
     }
@@ -189,27 +193,38 @@ mod tests {
     #[test]
     fn rejects_azure_devops_git_sources_without_paths() {
         assert!(
-            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example?ref=master").is_none()
+            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example?ref=master")
+                .is_none()
         );
-        assert!(RemoteSource::parse_git("git::ssh://user@dev.azure/myorg/myproj/_git/example").is_none());
+        assert!(
+            RemoteSource::parse_git("git::ssh://user@dev.azure/myorg/myproj/_git/example")
+                .is_none()
+        );
     }
 
     #[test]
     fn rejects_azure_devops_git_sources_with_unsafe_paths() {
         assert!(
-            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example//../plugin").is_none()
-        );
-        assert!(
-            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example//plugin/../other")
+            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example//../plugin")
                 .is_none()
         );
         assert!(
-            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example//plugin//other")
-                .is_none()
+            RemoteSource::parse_git(
+                "git::https://dev.azure/myorg/myproj/_git/example//plugin/../other"
+            )
+            .is_none()
         );
         assert!(
-            RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example//plugin/./other")
-                .is_none()
+            RemoteSource::parse_git(
+                "git::https://dev.azure/myorg/myproj/_git/example//plugin//other"
+            )
+            .is_none()
+        );
+        assert!(
+            RemoteSource::parse_git(
+                "git::https://dev.azure/myorg/myproj/_git/example//plugin/./other"
+            )
+            .is_none()
         );
     }
 
