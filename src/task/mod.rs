@@ -695,6 +695,12 @@ pub struct Task {
     #[serde(skip)]
     pub(crate) is_toml_include: bool,
 
+    /// Relative precedence of the config that defined this task or selected
+    /// its TOML include. Lower values have higher precedence. This is scoped
+    /// to one config root and is only used while task sources are merged.
+    #[serde(skip)]
+    pub(crate) config_precedence: usize,
+
     // Store the original remote file source (git::/http:/https:) before it's replaced with local path
     // This is used to determine if the task should use monorepo config file context
     #[serde(skip)]
@@ -2984,6 +2990,7 @@ impl Default for Task {
             args: vec![],
             file: None,
             is_toml_include: false,
+            config_precedence: usize::MAX,
             quiet: false,
             tools: Default::default(),
             usage: "".to_string(),
