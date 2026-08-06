@@ -1,11 +1,32 @@
+use std::future::Future;
+
 use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table, Value};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{RequestBuilder, Response};
 use url::Url;
 
 use crate::http::{
-    CLIENT, http_retry_attempts, is_transient, retry_async, retry_delay, should_retry_status,
+    CLIENT, http_requests_cancelled, http_retry_attempts, is_transient, retry_async, retry_delay,
+    should_retry_status,
 };
+
+async fn cancel_on_interrupt<T, F>(operation: F) -> Result<T>
+where
+    F: Future<Output = std::result::Result<T, reqwest::Error>>,
+{
+    cancel_on_signal(operation, http_requests_cancelled()).await
+}
+
+async fn cancel_on_signal<T, F, C>(operation: F, cancelled: C) -> Result<T>
+where
+    F: Future<Output = std::result::Result<T, reqwest::Error>>,
+    C: Future<Output = ()>,
+{
+    tokio::select! {
+        result = operation => result.into_lua_err(),
+        () = cancelled => Err(mlua::Error::runtime("interrupted")),
+    }
+}
 
 async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Response, reqwest::Error> {
     let url = builder
@@ -176,13 +197,12 @@ async fn get(lua: &Lua, input: Table) -> Result<Table> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = send_with_retry(CLIENT.get(&url).headers(headers))
-        .await
-        .into_lua_err()?;
+    let resp = cancel_on_interrupt(send_with_retry(CLIENT.get(&url).headers(headers))).await?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
-    t.set("body", resp.text().await.into_lua_err()?)?;
+    let body = cancel_on_interrupt(resp.text()).await?;
+    t.set("body", body)?;
     Ok(t)
 }
 
@@ -197,13 +217,12 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     let path: String = input.iter().nth(1).unwrap().to_string()?;
     // Retry the whole flow (request + body) so a mid-stream drop restarts the
     // download instead of failing.
-    let bytes = retry_async(&url, || async {
+    let bytes = cancel_on_interrupt(retry_async(&url, || async {
         let resp = CLIENT.get(&url).headers(headers.clone()).send().await?;
         let resp = resp.error_for_status()?;
         resp.bytes().await
-    })
-    .await
-    .into_lua_err()?;
+    }))
+    .await?;
     // Create the parent directory so plugins don't have to shell out to `mkdir`
     // before downloading into a fresh install path.
     if let Some(parent) = std::path::Path::new(&path).parent() {
@@ -226,9 +245,7 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = send_with_retry(CLIENT.head(&url).headers(headers))
-        .await
-        .into_lua_err()?;
+    let resp = cancel_on_interrupt(send_with_retry(CLIENT.head(&url).headers(headers))).await?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
@@ -242,7 +259,7 @@ async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = match send_with_retry(CLIENT.get(&url).headers(headers)).await {
+    let resp = match cancel_on_interrupt(send_with_retry(CLIENT.get(&url).headers(headers))).await {
         Ok(resp) => resp,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -254,7 +271,7 @@ async fn try_get(lua: &Lua, input: Table) -> Result<MultiValue> {
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
-    match resp.text().await {
+    match cancel_on_interrupt(resp.text()).await {
         Ok(body) => t.set("body", body)?,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -273,7 +290,8 @@ async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
         None => HeaderMap::default(),
     };
     let headers = add_default_headers(lua, &url, headers);
-    let resp = match send_with_retry(CLIENT.head(&url).headers(headers)).await {
+    let resp = match cancel_on_interrupt(send_with_retry(CLIENT.head(&url).headers(headers))).await
+    {
         Ok(resp) => resp,
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
@@ -313,11 +331,11 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
             ]));
         }
     };
-    let bytes = match retry_async(&url, || async {
+    let bytes = match cancel_on_interrupt(retry_async(&url, || async {
         let resp = CLIENT.get(&url).headers(headers.clone()).send().await?;
         let resp = resp.error_for_status()?;
         resp.bytes().await
-    })
+    }))
     .await
     {
         Ok(bytes) => bytes,
@@ -373,11 +391,24 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn test_http_operation_is_cancelled_on_interrupt() {
+        let err = cancel_on_signal(
+            future::pending::<std::result::Result<(), reqwest::Error>>(),
+            future::ready(()),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(err.to_string(), "runtime error: interrupted");
+    }
 
     #[tokio::test]
     async fn test_get() {

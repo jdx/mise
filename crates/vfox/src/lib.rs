@@ -18,6 +18,8 @@ pub use plugin::Plugin;
 pub use vfox::InstallResult;
 pub use vfox::Vfox;
 
+pub use http::cancel_http_requests;
+
 mod config;
 mod context;
 pub mod embedded_plugins;

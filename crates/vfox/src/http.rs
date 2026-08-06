@@ -1,6 +1,7 @@
 use reqwest::{Client, ClientBuilder, StatusCode};
 use std::sync::LazyLock;
 use std::time::Duration;
+use tokio::sync::watch;
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     ClientBuilder::new()
@@ -8,6 +9,21 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .build()
         .expect("Failed to create reqwest client")
 });
+
+static HTTP_CANCELLED: LazyLock<watch::Sender<bool>> = LazyLock::new(|| watch::channel(false).0);
+
+/// Cancel in-flight HTTP operations started by vfox plugins.
+pub fn cancel_http_requests() {
+    HTTP_CANCELLED.send_replace(true);
+}
+
+pub(crate) async fn http_requests_cancelled() {
+    let mut cancelled = HTTP_CANCELLED.subscribe();
+    if *cancelled.borrow() {
+        return;
+    }
+    let _ = cancelled.wait_for(|cancelled| *cancelled).await;
+}
 
 /// Default retry attempts when MISE_HTTP_RETRIES is unset. Mirrors the
 /// `http_retries` setting default in the main mise crate.
