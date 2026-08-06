@@ -1751,15 +1751,17 @@ pub fn update_lockfiles(
                 lockfile_path_for_tool_source(config, source)
                     .is_some_and(|(path, _)| path == lockfile_path)
             };
-            let has_tool_contribution = if new_versions.is_empty() {
-                tools_by_source
+            let updates_project_lockfiles = new_versions.is_empty()
+                || new_versions.iter().any(|tv| {
+                    tv.request
+                        .source()
+                        .path()
+                        .is_some_and(|path| !crate::config::is_global_config(path))
+                });
+            let has_tool_contribution = updates_project_lockfiles
+                && tools_by_source
                     .iter()
-                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source))
-            } else {
-                new_versions
-                    .iter()
-                    .any(|tv| source_maps_to_lockfile(tv.request.source()))
-            };
+                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source));
             let create_project_lockfile = Settings::get().lockfile_creation_enabled()
                 && configs
                     .iter()

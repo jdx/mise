@@ -25,11 +25,15 @@ assert "test ! -e $MISE_CONFIG_DIR/mise.lock"
 cat <<EOF >mise.toml
 [settings]
 lockfile = true
+
+[tools]
+dummy = "1"
 EOF
 
 mise install
-assert "test ! -e mise.lock"
+assert "test -f mise.lock"
 
+rm mise.lock
 cat <<EOF >mise.toml
 [tools]
 tiny = "1"
@@ -37,3 +41,21 @@ EOF
 
 mise install
 assert "test ! -e mise.lock"
+
+cat <<EOF >mise.toml
+[settings]
+lockfile = true
+
+[tools]
+dummy = "1"
+EOF
+cat <<EOF >mise.dev.toml
+[tools]
+tiny = "2"
+EOF
+
+mise use --env dev --pin tiny@2
+assert "test -f mise.lock"
+assert "test -f mise.dev.lock"
+assert_contains "cat mise.lock" '[[tools.dummy]]'
+assert_contains "cat mise.dev.lock" '[[tools.tiny]]'
