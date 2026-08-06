@@ -5,7 +5,7 @@ static SSH_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)?(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
-static ALT_SSH_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
+static AZURE_DEVOPS_SSH_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)?(?P<host>[^/]+)/(?P<org>[^/]+)/(?P<project>[^/]+)/_git/(?P<repo>[^/]+))//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
@@ -13,7 +13,7 @@ static HTTPS_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^git::(?P<url>https?://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
-static ALT_HTTPS_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
+static AZURE_DEVOPS_HTTPS_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^git::(?P<url>https?://(?P<host>[^/]+)/(?P<org>[^/]+)/(?P<project>[^/]+)/_git/(?P<repo>[^/]+))//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
@@ -38,12 +38,12 @@ impl RemoteSource {
 
     pub(crate) fn parse_git_ssh(file: &str) -> Option<RemoteGitSource> {
         parse_git_with(&SSH_GIT_REGEX, file)
-        .or_else(|| parse_git_with(&ALT_SSH_GIT_REGEX, file))
+        .or_else(|| parse_git_with(&AZURE_DEVOPS_SSH_GIT_REGEX, file))
     }
 
     pub(crate) fn parse_git_https(file: &str) -> Option<RemoteGitSource> {
         parse_git_with(&HTTPS_GIT_REGEX, file)
-        .or_else(|| parse_git_with(&ALT_HTTPS_GIT_REGEX, file))
+        .or_else(|| parse_git_with(&AZURE_DEVOPS_HTTPS_GIT_REGEX, file))
     }
 
     pub fn parse_http(file: &str) -> Option<RemoteHttpSource> {
