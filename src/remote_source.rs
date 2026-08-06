@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_alt_git_ssh_sources() {
+    fn parses_azure_devops_git_ssh_sources() {
         let source = RemoteSource::parse_git(
             "git::ssh://git@dev.azure/myorg/myproj/_git/example//terraform/myfile?ref=master",
         )
@@ -157,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_alt_git_ssh_sources_without_user() {
+    fn parses_azure_devops_git_ssh_sources_without_user() {
         let source =
             RemoteSource::parse_git("git::ssh://dev.azure/myorg/myproj/_git/example//terraform/myfile")
                 .unwrap();
@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_alt_git_https_sources() {
+    fn parses_azure_devops_git_https_sources() {
         let source = RemoteSource::parse_git(
             "git::https://dev.azure:8080/myorg/myproj/_git/example//terraform/myfile?ref=master",
         )
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_alt_git_ref_before_additional_query_params() {
+    fn parses_azure_devops_git_ref_before_additional_query_params() {
         let source = RemoteSource::parse_git(
             "git::https://dev.azure/myorg/myproj/_git/example//terraform/myfile?ref=master&depth=1",
         )
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_alt_git_sources_without_paths() {
+    fn rejects_azure_devops_git_sources_without_paths() {
         assert!(
             RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example?ref=master").is_none()
         );
@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_alt_git_sources_with_unsafe_paths() {
+    fn rejects_azure_devops_git_sources_with_unsafe_paths() {
         assert!(
             RemoteSource::parse_git("git::https://dev.azure/myorg/myproj/_git/example//../plugin").is_none()
         );
