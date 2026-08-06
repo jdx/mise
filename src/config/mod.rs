@@ -3703,20 +3703,21 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         by_name.insert(t.name.clone(), t);
     }
     let mut seen_config_task_names = BTreeSet::new();
-    let mut pending_inline_overlays = BTreeSet::new();
+    let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
         if !seen_config_task_names.insert(t.name.clone()) {
-            if pending_inline_overlays.contains(&t.name)
-                && (!t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
-            {
-                let overlay = by_name
-                    .get(&t.name)
-                    .expect("pending inline overlay should be present")
-                    .clone();
+            let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
+            if pending_inline_overlays.contains_key(&t.name) && has_command {
+                let overlays = pending_inline_overlays
+                    .shift_remove(&t.name)
+                    .expect("pending inline overlays should be present");
                 let mut base = t;
-                base.merge_toml_overlay(overlay);
-                pending_inline_overlays.remove(&base.name);
+                for overlay in overlays.into_iter().rev() {
+                    base.merge_toml_overlay(overlay);
+                }
                 by_name.insert(base.name.clone(), base);
+            } else if let Some(overlays) = pending_inline_overlays.get_mut(&t.name) {
+                overlays.push(t);
             }
             continue;
         }
@@ -3737,7 +3738,10 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             }
         } else {
             if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
-                pending_inline_overlays.insert(t.name.clone());
+                pending_inline_overlays
+                    .entry(t.name.clone())
+                    .or_default()
+                    .push(t.clone());
             }
             by_name.insert(t.name.clone(), t);
         }
