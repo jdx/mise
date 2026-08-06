@@ -1747,10 +1747,24 @@ pub fn update_lockfiles(
         // lockfile creation too; global lockfiles remain explicit via the
         // `mise lock --global` command.
         if !lockfile_path.exists() {
+            let source_maps_to_lockfile = |source: &ToolSource| {
+                lockfile_path_for_tool_source(config, source)
+                    .is_some_and(|(path, _)| path == lockfile_path)
+            };
+            let has_tool_contribution = if new_versions.is_empty() {
+                tools_by_source
+                    .iter()
+                    .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source))
+            } else {
+                new_versions
+                    .iter()
+                    .any(|tv| source_maps_to_lockfile(tv.request.source()))
+            };
             let create_project_lockfile = Settings::get().lockfile_creation_enabled()
                 && configs
                     .iter()
-                    .any(|path| !crate::config::is_global_config(path));
+                    .any(|path| !crate::config::is_global_config(path))
+                && has_tool_contribution;
             if !create_project_lockfile {
                 continue;
             }
