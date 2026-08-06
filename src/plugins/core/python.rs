@@ -626,7 +626,7 @@ impl PythonPlugin {
         &self,
         version: &str,
         target: &PlatformTarget,
-        locked_release: Option<&str>,
+        locked_filename: Option<&str>,
     ) -> eyre::Result<Option<(String, String)>> {
         let settings = Settings::get();
 
@@ -652,19 +652,19 @@ impl PythonPlugin {
 
         let flavor = settings.python.precompiled_flavor.clone();
 
-        // Prefer the PBS release already recorded in the lockfile so a plain
+        // Prefer the PBS artifact already recorded in the lockfile so a plain
         // `mise lock` refreshes the same artifact. `mise lock --bump` resolves
-        // without the existing lockfile, so locked_release is None and the
+        // without the existing lockfile, so locked_filename is None and the
         // newest build wins.
         let result =
-            select_python_precompiled(&raw, version, &platform, flavor.as_deref(), locked_release);
-        if let Some(locked_release) = locked_release
+            select_python_precompiled(&raw, version, &platform, flavor.as_deref(), locked_filename);
+        if let Some(locked_filename) = locked_filename
             && result
                 .as_ref()
-                .is_some_and(|(release, _)| release != locked_release)
+                .is_some_and(|(_, filename)| filename != locked_filename)
         {
             debug!(
-                "locked python-build-standalone release {locked_release} not found for python {version} on {platform}, finding latest"
+                "locked python-build-standalone artifact {locked_filename} not found for python {version} on {platform}, finding latest"
             );
         }
         Ok(result)
@@ -1009,15 +1009,15 @@ impl Backend for PythonPlugin {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let version = &tv.version;
-        let locked_release = tv
+        let locked_filename = tv
             .lock_platforms
             .get(&target.to_key())
             .and_then(|info| info.url.as_deref())
-            .and_then(|url| python_precompiled_release_from_url(url, version));
+            .and_then(|url| python_precompiled_filename_from_url(url, version));
 
         // Look up the precompiled release for this version and target platform
         let Some((tag, filename)) = self
-            .fetch_precompiled_for_target(version, target, locked_release)
+            .fetch_precompiled_for_target(version, target, locked_filename)
             .await?
         else {
             return Ok(PlatformInfo::default());
@@ -1081,7 +1081,7 @@ fn python_precompiled_created_at(date: &str) -> Option<String> {
     ))
 }
 
-fn python_precompiled_release_from_url<'a>(url: &'a str, version: &str) -> Option<&'a str> {
+fn python_precompiled_filename_from_url<'a>(url: &'a str, version: &str) -> Option<&'a str> {
     let (release, filename) = url
         .strip_prefix(PBS_RELEASE_DOWNLOAD_URL)?
         .split_once('/')?;
@@ -1090,7 +1090,7 @@ fn python_precompiled_release_from_url<'a>(url: &'a str, version: &str) -> Optio
     }
     filename
         .starts_with(&format!("cpython-{version}+{release}-"))
-        .then_some(release)
+        .then_some(filename)
 }
 
 fn select_python_precompiled(
@@ -1098,7 +1098,7 @@ fn select_python_precompiled(
     version: &str,
     platform: &str,
     flavor: Option<&str>,
-    locked_release: Option<&str>,
+    locked_filename: Option<&str>,
 ) -> Option<(String, String)> {
     let flavor = flavor.map(str::to_string);
     let candidates = manifest
@@ -1118,10 +1118,10 @@ fn select_python_precompiled(
         })
         .filter(|(candidate, _, _)| candidate == version)
         .collect_vec();
-    let select = |release: Option<&str>| {
+    let select = |filename: Option<&str>| {
         candidates
             .iter()
-            .filter(|(_, date, _)| release.is_none_or(|release| date == release))
+            .filter(|(_, _, candidate)| filename.is_none_or(|filename| candidate == filename))
             .min_by_key(|(_, date, name)| {
                 let install_type = if let Some(flavor) = flavor.as_deref() {
                     let name_without_ext = name.trim_end_matches(".tar.gz");
@@ -1138,7 +1138,7 @@ fn select_python_precompiled(
             })
             .map(|(_, release, filename)| (release.clone(), filename.clone()))
     };
-    select(locked_release).or_else(|| select(None))
+    select(locked_filename).or_else(|| select(None))
 }
 
 fn python_precompiled_url_path(settings: &Settings) -> String {
@@ -1376,15 +1376,15 @@ plugins/python-build/share/python-build/patches/3.14.5/foo.patch
     }
 
     #[test]
-    fn parses_python_precompiled_release_from_url() {
+    fn parses_python_precompiled_filename_from_url() {
         let url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz";
         assert_eq!(
-            python_precompiled_release_from_url(url, "3.12.13"),
-            Some("20260728")
+            python_precompiled_filename_from_url(url, "3.12.13"),
+            Some("cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz")
         );
-        assert_eq!(python_precompiled_release_from_url(url, "3.12.12"), None);
+        assert_eq!(python_precompiled_filename_from_url(url, "3.12.12"), None);
         assert_eq!(
-            python_precompiled_release_from_url(
+            python_precompiled_filename_from_url(
                 "https://example.com/releases/download/20260728/cpython-3.12.13+20260728.tar.gz",
                 "3.12.13"
             ),
@@ -1402,15 +1402,36 @@ cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
         let platform = "x86_64-unknown-linux-gnu";
 
         assert_eq!(
-            select_python_precompiled(manifest, "3.12.13", platform, None, Some("20260728")),
+            select_python_precompiled(
+                manifest,
+                "3.12.13",
+                platform,
+                None,
+                Some("cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz")
+            ),
             Some((
                 "20260728".to_string(),
-                "cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
-                    .to_string()
+                "cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz".to_string()
             ))
         );
         assert_eq!(
             select_python_precompiled(manifest, "3.12.13", platform, None, None),
+            Some((
+                "20260805".to_string(),
+                "cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+                    .to_string()
+            ))
+        );
+        assert_eq!(
+            select_python_precompiled(
+                manifest,
+                "3.12.13",
+                platform,
+                None,
+                Some(
+                    "cpython-3.12.13+20250101-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+                )
+            ),
             Some((
                 "20260805".to_string(),
                 "cpython-3.12.13+20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
