@@ -594,6 +594,18 @@ impl Config {
         }
     }
 
+    /// Returns true when lockfile creation is enabled by a TOML settings file.
+    ///
+    /// `MISE_LOCKFILE=1` predates automatic creation and continues to mean
+    /// "read and maintain existing lockfiles" for backwards compatibility.
+    pub fn lockfile_creation_enabled(&self) -> bool {
+        Settings::get().lockfile_creation_enabled()
+            && self.config_files.values().any(|cf| {
+                cf.settings()
+                    .is_some_and(|settings| settings.lockfile == Some(true))
+            })
+    }
+
     pub(crate) fn monorepo_config_root_dirs_for_lockfiles(&self) -> Result<Vec<PathBuf>> {
         self.monorepo_config_root_dirs(None)
     }

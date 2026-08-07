@@ -1762,7 +1762,7 @@ pub fn update_lockfiles(
                 && tools_by_source
                     .iter()
                     .any(|(source, tools)| !tools.is_empty() && source_maps_to_lockfile(source));
-            let create_project_lockfile = Settings::get().lockfile_creation_enabled()
+            let create_project_lockfile = config.lockfile_creation_enabled()
                 && configs
                     .iter()
                     .any(|path| !crate::config::is_global_config(path))

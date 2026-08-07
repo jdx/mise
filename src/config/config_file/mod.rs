@@ -103,6 +103,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(Default::default())
     }
 
+    fn settings(&self) -> Option<&settings::SettingsPartial> {
+        None
+    }
+
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(Default::default())
     }

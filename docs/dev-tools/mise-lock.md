@@ -1,6 +1,6 @@
 # mise.lock Lockfile
 
-`mise.lock` is a lockfile that pins exact versions and checksums of tools for reproducible environments. When `lockfile = true` is explicitly configured, mise creates and maintains project lockfiles as tools are installed or upgraded. When the setting is unset, mise maintains existing lockfiles but does not create new ones; run `mise lock` to generate one explicitly. Global lockfiles are only created with `mise lock --global`.
+`mise.lock` is a lockfile that pins exact versions and checksums of tools for reproducible environments. When `lockfile = true` is explicitly configured in a TOML settings file, mise creates and maintains project lockfiles as tools are installed or upgraded. When the setting is unset, mise maintains existing lockfiles but does not create new ones; run `mise lock` to generate one explicitly. `MISE_LOCKFILE=1` retains this existing-lockfile behavior for backwards compatibility. Global lockfiles are only created with `mise lock --global`.
 
 ## Overview
 

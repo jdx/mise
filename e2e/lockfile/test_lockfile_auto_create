@@ -42,6 +42,18 @@ EOF
 mise install
 assert "test ! -e mise.lock"
 
+MISE_LOCKFILE=1 mise install
+assert "test ! -e mise.lock"
+
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+lockfile = true
+EOF
+
+mise install
+assert "test -f mise.lock"
+rm mise.lock "$MISE_CONFIG_DIR/config.toml"
+
 cat <<EOF >mise.toml
 [settings]
 lockfile = true

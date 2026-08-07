@@ -26,7 +26,7 @@
 - [Tool Stubs](https://mise.jdx.dev/dev-tools/tool-stubs.html): Tool stubs allow you to create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly…
 - [Registry](https://mise.jdx.dev/registry.html): List of all tools aliased by default in mise.
 - [GitHub Tokens](https://mise.jdx.dev/dev-tools/github-tokens.html): Many tools in mise are hosted on GitHub. For public releases, mise uses mise-versions by default as a shared cache for version lists, release metadata, and GitHub artifact attestations.
-- [mise.lock Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.lock is a lockfile that pins exact versions and checksums of tools for reproducible environments. Lockfiles are not created automatically—you must run mise lock to generate them.
+- [mise.lock Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html): mise.lock is a lockfile that pins exact versions and checksums of tools for reproducible environments.
 - [Security](https://mise.jdx.dev/security.html): mise includes several supply-chain controls for installing and managing tools. These controls have different coverage depending on the backend and the metadata available from upstream.
 - [OCI Images (experimental)](https://mise.jdx.dev/dev-tools/mise-oci.html): mise oci build turns a mise.toml into a container image, with one OCI layer per installed tool.
 - [Deps](https://mise.jdx.dev/dev-tools/deps.html): The mise deps command manages project dependencies by hashing source files (e.g., package-lock.json) and running install commands when changes are detected.

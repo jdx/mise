@@ -946,6 +946,10 @@ impl ConfigFile for MiseToml {
         self.min_version.as_ref()
     }
 
+    fn settings(&self) -> Option<&SettingsPartial> {
+        Some(&self.settings)
+    }
+
     fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
         self.plugins
             .clone()
