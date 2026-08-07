@@ -74,9 +74,10 @@ declarative sections work the same way:
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
   works on both macOS and Linux; `brew-cask` works on macOS and supports
-  font-only casks on Linux; `flatpak` and `flatpak-user` work on Linux when the
-  `flatpak` CLI is on `PATH`; `mas` works on macOS when the `mas` CLI is on
-  `PATH`. Status commands still list
+  font-only casks without lifecycle hooks or structured flight steps on Linux;
+  `flatpak` and `flatpak-user` work on Linux when the `flatpak` CLI is on
+  `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`. Status commands
+  still list
   unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are

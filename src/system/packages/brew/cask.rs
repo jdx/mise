@@ -1181,9 +1181,11 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
             }
             let expanded_path = Path::new(&expanded);
             if expanded_path.is_absolute() {
-                let fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
-                if let Ok(relative) = expanded_path.strip_prefix(&fonts_dir) {
-                    return Ok(relative.to_string_lossy().to_string());
+                let macos_fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
+                for fonts_dir in [font_dir(), macos_fonts_dir] {
+                    if let Ok(relative) = expanded_path.strip_prefix(fonts_dir) {
+                        return Ok(relative.to_string_lossy().to_string());
+                    }
                 }
                 return expanded_path
                     .file_name()
@@ -1240,15 +1242,15 @@ fn remove_obsolete_fonts(
             continue;
         }
         // Check if any version directory under the token dir contains this font
-        // filename, indicating it was staged by a previous version of this cask.
-        let filename = target.file_name();
+        // path, indicating it was staged by a previous version of this cask.
+        let relative = target.strip_prefix(&fonts_dir).ok();
         let has_staged_copy = std::fs::read_dir(&token_dir)
             .ok()
             .into_iter()
             .flatten()
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
-            .any(|entry| filename.is_some_and(|f| entry.path().join(f).is_file()));
+            .any(|entry| relative.is_some_and(|path| entry.path().join(path).is_file()));
         if has_staged_copy {
             file::remove_file(target)?;
         }
@@ -6364,6 +6366,20 @@ end
     #[test]
     fn linux_font_dir_uses_xdg_data_home() {
         assert_eq!(font_dir(), crate::env::XDG_DATA_HOME.join("fonts"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_font_target_preserves_xdg_subdirectories() -> Result<()> {
+        let target = font_dir().join("nerd-fonts").join("NestedFont.ttf");
+        let font = FontArtifact {
+            source: "NestedFont.ttf".to_string(),
+            target: Some(target.to_string_lossy().to_string()),
+        };
+
+        assert_eq!(font_filename(&font)?, "nerd-fonts/NestedFont.ttf");
+        assert_eq!(font_target_path(&font)?, target);
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]

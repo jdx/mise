@@ -68,8 +68,8 @@ installs app bundles into `/Applications` while recording the version under
 ```
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
-hooks. Fonts are installed into `$XDG_DATA_HOME/fonts`, which defaults to
-`~/.local/share/fonts`:
+hooks or structured `preflight_steps` or `postflight_steps`. Fonts are installed
+into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
 
 ```toml
 [bootstrap.packages]
@@ -275,8 +275,9 @@ operation.
 - **Cask artifact coverage is intentionally narrow.** On macOS, `brew-cask`
   supports app bundles, binary artifacts, font artifacts, and simple pkg
   installers from dmg and common archive formats. On Linux, it supports
-  font-only casks without lifecycle hooks. Other artifact types, pkg installers
-  without `pkgutil` IDs, and pkg installers with custom choices fail explicitly.
+  font-only casks without lifecycle hooks or structured `preflight_steps` or
+  `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
+  IDs, and pkg installers with custom choices fail explicitly.
 - **`brew services` is not implemented.**
 - **Cask import/prune is not implemented.** `import` and `prune` are formulae-only
   until cask uninstall semantics can be made safe for app and pkg artifacts.
