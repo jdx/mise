@@ -846,6 +846,10 @@ impl Settings {
         self.lockfile.unwrap_or(true)
     }
 
+    pub fn lockfile_creation_enabled(&self) -> bool {
+        self.lockfile == Some(true)
+    }
+
     /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
     /// Errors on invalid platform strings (same validation as `mise lock --platform`).
     pub fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {

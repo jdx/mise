@@ -1439,11 +1439,13 @@ gh = "latest"
 But you'd like the versions installed to be consistent within a project. When this is enabled, mise will update mise.lock
 files next to mise.toml files containing pinned versions. When installing tools, mise will reference this lockfile if it exists and this setting is enabled to resolve versions.
 
-The lockfiles are not created automatically. To generate them, run the following (assuming the config file is `mise.toml`):
+When set to `true` in a TOML settings file, project lockfiles are created and maintained automatically. When unset, existing lockfiles are read and updated but new lockfiles are not created. `MISE_LOCKFILE=1` retains this existing-lockfile behavior for backwards compatibility. To generate one explicitly, run:
 
 ```sh
-touch mise.lock && mise install
+mise lock
 ```
+
+Global lockfiles are only created with `mise lock --global`.
 
 The lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:
 
@@ -1451,9 +1453,9 @@ The lockfile is named the same as the config file but with `.lock` instead of `.
 - `mise.local.toml` -> `mise.local.lock`
 - `.config/mise.toml` -> `.config/mise.lock`
 
-When set to `true`, lockfiles are read and written. When set to `false`, lockfiles are explicitly disabled—this
+When set to `true`, project lockfiles are created, read, and written. When set to `false`, lockfiles are explicitly disabled—this
 will cause an error if `locked = true` is also set, since locked mode requires reading lockfiles.
-When unset (the default), lockfiles are enabled (same as `true`) but there is no conflict with `locked` mode.
+When unset (the default), existing lockfiles are read and written, but new lockfiles are not created.
 """
 env = "MISE_LOCKFILE"
 optional = true
