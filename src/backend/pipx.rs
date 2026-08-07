@@ -12,6 +12,7 @@ use crate::env;
 #[cfg(unix)]
 use crate::file;
 use crate::github::{self, GithubRelease};
+use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::plugins::PEP440_PRERELEASE_REGEX;
@@ -43,7 +44,6 @@ const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 #[derive(Debug)]
 pub struct PIPXBackend {
     ba: Arc<BackendArg>,
-    latest_version_cache: CacheManager<Option<String>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,6 +68,10 @@ impl<'a> PipxOptions<'a> {
 
     fn pipx_args(&self) -> Option<&'a str> {
         self.values.str("pipx_args")
+    }
+
+    fn registry_url(&self) -> Option<&'a str> {
+        self.values.str("registry_url")
     }
 
     fn uvx_args(&self) -> Option<&'a str> {
@@ -138,10 +142,17 @@ impl Backend for PIPXBackend {
         false
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        match self.tool_name().parse()? {
+            PipxRequest::Pypi(_) => self.get_registry_url(config).await.map(Some),
+            PipxRequest::Git(_) => Ok(None),
+        }
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let versions: Vec<VersionInfo> = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
-                let registry_url = Self::get_registry_url()?;
+                let registry_url = self.get_registry_url(config).await?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
                     let url = registry_url.replace("{}", &package);
@@ -199,53 +210,53 @@ impl Backend for PIPXBackend {
             .collect())
     }
 
-    async fn latest_stable_version(&self, _config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        let this = self;
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let package = match self.tool_name().parse()? {
+            PipxRequest::Pypi(package) => package,
+            PipxRequest::Git(_) => return Ok(None),
+        };
+        let registry_url = self.get_registry_url(config).await?;
+        let latest_version_cache = self.latest_version_cache(&registry_url);
         timeout::run_with_timeout_async(
             async || {
-                this.latest_version_cache
-                    .get_or_try_init_async(async || match this.tool_name().parse()? {
-                        PipxRequest::Pypi(package) => {
-                            let registry_url = Self::get_registry_url()?;
-                            if registry_url.contains("/json") {
-                                debug!("Fetching JSON for {}", package);
-                                let url = registry_url.replace("{}", &package);
-                                let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
-                                Ok(Self::latest_stable_from_pypi_package(pkg))
-                            } else {
-                                debug!("Fetching HTML for {}", package);
-                                let url = registry_url.replace("{}", &package);
-                                let html = HTTP_FETCH.get_html(url).await?;
+                latest_version_cache
+                    .get_or_try_init_async(async || {
+                        if registry_url.contains("/json") {
+                            debug!("Fetching JSON for {}", package);
+                            let url = registry_url.replace("{}", &package);
+                            let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
+                            Ok(Self::latest_stable_from_pypi_package(pkg))
+                        } else {
+                            debug!("Fetching HTML for {}", package);
+                            let url = registry_url.replace("{}", &package);
+                            let html = HTTP_FETCH.get_html(url).await?;
 
-                                 // PEP-0503
-                                let version_re = regex!(r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#);
+                            // PEP-0503
+                            let version_re = regex!(r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#);
 
-                                let version = version_re
-                                    .captures_iter(&html)
-                                    .filter_map(|cap| {
-                                        let filename = cap.get(1)?.as_str();
-                                        let escaped_package = regex::escape(&package);
-                                        // PEP-503: normalize package names by replacing hyphens with character class that allows -, _, .
-                                        let re_str = escaped_package.replace(r"\-", r"[\-_.]");
-                                        let re_str = format!("^{re_str}-(.+)$");
-                                        let pkg_re = regex::Regex::new(&re_str).ok()?;
-                                        let pkg_version =
-                                            pkg_re.captures(filename)?.get(1)?.as_str();
-                                        Some(pkg_version.to_string())
-                                    })
-                                    .filter(|v| {
-                                        !v.contains("dev")
-                                            && !v.contains("a")
-                                            && !v.contains("b")
-                                            && !v.contains("rc")
-                                    })
-                                    .sorted_by_cached_key(|v| Versioning::new(v))
-                                    .next_back();
+                            let version = version_re
+                                .captures_iter(&html)
+                                .filter_map(|cap| {
+                                    let filename = cap.get(1)?.as_str();
+                                    let escaped_package = regex::escape(&package);
+                                    // PEP-503: normalize package names by replacing hyphens with character class that allows -, _, .
+                                    let re_str = escaped_package.replace(r"\-", r"[\-_.]");
+                                    let re_str = format!("^{re_str}-(.+)$");
+                                    let pkg_re = regex::Regex::new(&re_str).ok()?;
+                                    let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
+                                    Some(pkg_version.to_string())
+                                })
+                                .filter(|v| {
+                                    !v.contains("dev")
+                                        && !v.contains("a")
+                                        && !v.contains("b")
+                                        && !v.contains("rc")
+                                })
+                                .sorted_by_cached_key(|v| Versioning::new(v))
+                                .next_back();
 
-                                Ok(version)
-                            }
+                            Ok(version)
                         }
-                        _ => Ok(None),
                     })
                     .await
             },
@@ -264,7 +275,7 @@ impl Backend for PIPXBackend {
 
     async fn resolve_exact_version(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         version: &str,
     ) -> eyre::Result<Option<String>> {
         // Git-sourced tools resolve versions from repo tags, which cannot be
@@ -278,7 +289,7 @@ impl Backend for PIPXBackend {
         // Surface malformed registry configuration at resolve time like
         // remote discovery would — installation only sees the derived index
         // URL, which skips this validation.
-        Self::get_registry_url()?;
+        self.get_registry_url(config).await?;
         // PEP 440 allows non-semver versions (1.2.3.4, 1.2.3rc1, 1.2.3.post1)
         // — those keep using remote discovery. A full semver request is
         // exact; `pipx install pkg==version` / `uv tool install` fail when it
@@ -533,14 +544,18 @@ impl PIPXBackend {
     }
 
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self {
-            latest_version_cache: CacheManagerBuilder::new(
-                ba.cache_path.join("latest_version.msgpack.z"),
-            )
-            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-            .build(),
-            ba: Arc::new(ba),
-        }
+        Self { ba: Arc::new(ba) }
+    }
+
+    fn latest_version_cache(&self, registry_url: &str) -> CacheManager<Option<String>> {
+        let registry_hash = hash_to_str(&registry_url);
+        CacheManagerBuilder::new(
+            self.ba
+                .cache_path
+                .join(format!("latest_version_{registry_hash}.msgpack.z")),
+        )
+        .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+        .build()
     }
 
     fn get_index_url() -> eyre::Result<String> {
@@ -579,8 +594,13 @@ impl PIPXBackend {
         Ok(url)
     }
 
-    fn get_registry_url() -> eyre::Result<String> {
-        let registry_url = Settings::get().pipx.registry_url.clone();
+    async fn get_registry_url(&self, config: &Arc<Config>) -> eyre::Result<String> {
+        let raw_options = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let options = PipxOptions::new(&raw_options);
+        let registry_url = options
+            .registry_url()
+            .map(str::to_owned)
+            .unwrap_or_else(|| Settings::get().pipx.registry_url.clone());
 
         debug!("Pipx registry URL: {}", registry_url);
 
@@ -978,6 +998,119 @@ mod tests {
                 .as_deref(),
             Some("24.3.0")
         );
+    }
+
+    #[tokio::test]
+    async fn per_tool_registry_url_resolves_latest_version() {
+        use crate::backend::Backend;
+
+        let mut server = mockito::Server::new_async().await;
+        let registry = server
+            .mock("GET", "/pypi/private-tool/json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "1.0.0": [{
+                            "upload_time": "2026-01-01T00:00:00",
+                            "upload_time_iso_8601": "2026-01-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:private-tool[registry_url='{}/pypi/{{}}/json']",
+                server.url()
+            )
+            .into(),
+        );
+
+        assert_eq!(
+            backend
+                .latest_stable_version(&config)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        registry.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn per_tool_registries_isolate_remote_version_cache() {
+        use crate::backend::Backend;
+
+        let mut first_server = mockito::Server::new_async().await;
+        let first_registry = first_server
+            .mock("GET", "/pypi/private-tool/json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "1.0.0": [{
+                            "upload_time": "2026-01-01T00:00:00",
+                            "upload_time_iso_8601": "2026-01-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let mut second_server = mockito::Server::new_async().await;
+        let second_registry = second_server
+            .mock("GET", "/pypi/private-tool/json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "2.0.0": [{
+                            "upload_time": "2026-02-01T00:00:00",
+                            "upload_time_iso_8601": "2026-02-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let config = crate::config::Config::get().await.unwrap();
+        let first_backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:private-tool[registry_url='{}/pypi/{{}}/json']",
+                first_server.url()
+            )
+            .into(),
+        );
+        let second_backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:private-tool[registry_url='{}/pypi/{{}}/json']",
+                second_server.url()
+            )
+            .into(),
+        );
+
+        assert_eq!(
+            first_backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0"]
+        );
+        assert_eq!(
+            second_backend.list_remote_versions(&config).await.unwrap(),
+            vec!["2.0.0"]
+        );
+        first_registry.assert_async().await;
+        second_registry.assert_async().await;
     }
 
     #[tokio::test]
