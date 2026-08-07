@@ -67,3 +67,13 @@ run = ["cargo build --release", "tak run --record"]
 [tasks."perf:task-cache"]
 dir = "{{config_root}}"
 run = ["cargo build --release", "bash benchmarks/task-cache/benchmark.sh"]
+
+# Measures the argv0-dispatched rustc wrapper path without config discovery or
+# runtime startup. Keep the warm median below the 2ms compiler-wrapper budget.
+[tasks."perf:cache-shim"]
+dir = "{{config_root}}"
+env = { MISE_BIN = "target/serious/mise" }
+run = [
+  "cargo build --profile serious --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored",
+  "bash benchmarks/cache-shim/benchmark.sh",
+]
