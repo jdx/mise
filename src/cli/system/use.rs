@@ -148,7 +148,7 @@ impl SystemUse {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835</bold>
+    $ <bold>mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
     $ <bold>mise bootstrap packages use -g brew:postgresql@17</bold>
     $ <bold>mise bootstrap packages use apt:curl@8.5.0-2</bold>
 "#

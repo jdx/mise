@@ -7,12 +7,35 @@ use eyre::bail;
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::result::Result;
 
-/// Flatpak applications and runtimes installed system-wide.
-pub struct FlatpakManager {}
+#[derive(Clone, Copy)]
+enum FlatpakScope {
+    System,
+    User,
+}
+
+/// Flatpak applications and runtimes installed system-wide or for the current user.
+pub struct FlatpakManager {
+    scope: FlatpakScope,
+}
 
 impl FlatpakManager {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            scope: FlatpakScope::System,
+        }
+    }
+
+    pub fn new_user() -> Self {
+        Self {
+            scope: FlatpakScope::User,
+        }
+    }
+
+    fn scope_arg(&self) -> &'static str {
+        match self.scope {
+            FlatpakScope::System => "--system",
+            FlatpakScope::User => "--user",
+        }
     }
 }
 
@@ -75,7 +98,10 @@ async fn run_flatpak(args: &[String], action: &str) -> Result<()> {
 #[async_trait(?Send)]
 impl SystemPackageManager for FlatpakManager {
     fn name(&self) -> &str {
-        "flatpak"
+        match self.scope {
+            FlatpakScope::System => "flatpak",
+            FlatpakScope::User => "flatpak-user",
+        }
     }
 
     fn is_available(&self) -> bool {
@@ -98,7 +124,7 @@ impl SystemPackageManager for FlatpakManager {
         if pkgs.is_empty() {
             return Ok(vec![]);
         }
-        let args = ["list", "--system", "--columns=application,version"];
+        let args = ["list", self.scope_arg(), "--columns=application,version"];
         debug!("$ flatpak {}", args.join(" "));
         let output = tokio::process::Command::new("flatpak")
             .args(args)
@@ -123,7 +149,7 @@ impl SystemPackageManager for FlatpakManager {
         }
         let mut args = vec![
             "install".to_string(),
-            "--system".to_string(),
+            self.scope_arg().to_string(),
             "--noninteractive".to_string(),
         ];
         args.extend(pkgs.iter().map(|pkg| pkg.name.clone()));
@@ -143,7 +169,7 @@ impl SystemPackageManager for FlatpakManager {
         }
         let mut args = vec![
             "update".to_string(),
-            "--system".to_string(),
+            self.scope_arg().to_string(),
             "--noninteractive".to_string(),
         ];
         args.extend(pkgs.iter().map(|pkg| pkg.name.clone()));
@@ -165,6 +191,17 @@ mod tests {
             version: version.map(str::to_string),
             tap_url: None,
         }
+    }
+
+    #[test]
+    fn test_scope_names_and_args() {
+        let system = FlatpakManager::new();
+        assert_eq!(system.name(), "flatpak");
+        assert_eq!(system.scope_arg(), "--system");
+
+        let user = FlatpakManager::new_user();
+        assert_eq!(user.name(), "flatpak-user");
+        assert_eq!(user.scope_arg(), "--user");
     }
 
     #[test]

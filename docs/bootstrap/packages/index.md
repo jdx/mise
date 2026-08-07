@@ -1,6 +1,6 @@
 # Bootstrap Packages
 
-mise can ensure machine-global system packages are installed via the
+mise can ensure host packages are installed via the
 `[bootstrap.packages]` section of `mise.toml`, applied by
 `mise bootstrap packages apply` or as part of
 [`mise bootstrap`](/bootstrap.html):
@@ -14,6 +14,7 @@ mise can ensure machine-global system packages are installed via the
 "brew:ffmpeg" = "latest"
 "brew-cask:firefox" = "latest"
 "flatpak:org.mozilla.firefox" = "latest"
+"flatpak-user:org.gnome.Builder" = "latest"
 "mas:497799835" = "latest"
 ```
 
@@ -22,13 +23,13 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
-System packages are intentionally separate from [`[tools]`](/configuration.html):
-they are not version-pinned per-project, do not get shims, and are installed
-machine-globally by the platform's package manager — or, for `brew` and
+Host packages are intentionally separate from [`[tools]`](/configuration.html):
+they are not version-pinned per-project, do not get shims, and are managed
+outside the project by the platform's package manager — or, for `brew` and
 `brew-cask`, by mise's built-in Homebrew installers, which don't require
-Homebrew itself. Use them for shared libraries, build dependencies, and
-machine-global GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`),
-not for project dev tools — those belong in `[tools]`.
+Homebrew itself. Use them for shared libraries, build dependencies, and host
+GUI apps (`libssl-dev`, `postgresql`, `ffmpeg`, `firefox`), not for project dev
+tools — those belong in `[tools]`.
 
 The manager list is extensible through [package manager plugins](./plugins.md),
 which cover host-owned state such as VS Code extensions, Helm plugins, krew
@@ -47,17 +48,18 @@ declarative sections work the same way:
 
 ## Supported package managers
 
-| Manager     | Platform                                                       | Page                                                |
-| ----------- | -------------------------------------------------------------- | --------------------------------------------------- |
-| `apk`       | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)                 |
-| `apt`       | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)                 |
-| `dnf`       | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                 |
-| `pacman`    | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
-| `brew`      | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
-| `brew-cask` | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)               |
-| `flatpak`   | Linux with the `flatpak` CLI on `PATH`                         | [Flatpak](/bootstrap/packages/flatpak.html)         |
-| `mas`       | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
-| plugin      | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
+| Manager        | Platform                                                       | Page                                                |
+| -------------- | -------------------------------------------------------------- | --------------------------------------------------- |
+| `apk`          | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)                 |
+| `apt`          | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)                 |
+| `dnf`          | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                 |
+| `pacman`       | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
+| `brew`         | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
+| `brew-cask`    | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)               |
+| `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
+| `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
+| `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
+| plugin         | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
 
 ## Semantics
 
@@ -71,9 +73,9 @@ declarative sections work the same way:
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
-  works on both macOS and Linux; `brew-cask` works on macOS; `flatpak` works
-  on Linux when the `flatpak` CLI is on `PATH`; `mas` works on
-  macOS when the `mas` CLI is on `PATH`. Status commands still list
+  works on both macOS and Linux; `brew-cask` works on macOS; `flatpak` and
+  `flatpak-user` work on Linux when the `flatpak` CLI is on `PATH`; `mas`
+  works on macOS when the `mas` CLI is on `PATH`. Status commands still list
   unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
@@ -104,7 +106,7 @@ mise bootstrap packages apply --yes     # skip the confirmation prompt
 mise bootstrap packages apply --manager apt
 mise bootstrap packages apply --update  # refresh package manager metadata first
 
-mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835
+mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835
 mise bootstrap packages use -g brew:ffmpeg     # write globally
 mise bootstrap packages use apt:curl@8.5.0-2   # pin a version
     # (brew pins via the formula name instead: brew:postgresql@17)
@@ -121,6 +123,7 @@ mise bootstrap packages upgrade           # upgrade installed packages to curren
 mise bootstrap packages upgrade --manager brew
 mise bootstrap packages upgrade --manager brew-cask
 mise bootstrap packages upgrade --manager flatpak
+mise bootstrap packages upgrade --manager flatpak-user
 mise bootstrap packages upgrade --manager mas
 ```
 
@@ -148,12 +151,13 @@ declarative cleanup command, similar in spirit to
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
 version — apk, apt, and dnf also honor a version pinned in config (pacman, brew,
-brew-cask, flatpak, and mas [can't install pins](/bootstrap/packages/pacman.html), so
+brew-cask, flatpak, flatpak-user, and mas [can't install pins](/bootstrap/packages/pacman.html), so
 pinned entries are skipped with a warning). Packages that aren't installed
 yet are skipped — that's `mise bootstrap packages apply`'s job. For brew
 this pours the formula's current bottle and replaces the old keg; for
-brew-cask this installs the current cask artifact; for flatpak this updates the
-configured applications and runtimes; for mas this runs `mas upgrade`.
+brew-cask this installs the current cask artifact; for flatpak and flatpak-user
+this updates the configured applications and runtimes in their respective
+scopes; for mas this runs `mas upgrade`.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.

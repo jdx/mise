@@ -434,7 +434,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap packages apply</bold>
-    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox mas:497799835</bold>
+    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
     $ <bold>mise bootstrap packages apply --dry-run</bold>
     $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
 "#
