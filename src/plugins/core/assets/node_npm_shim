@@ -18,11 +18,22 @@ should_reshim() {
 
   local is_global='' cmd='' cmd_needs_reshim=''
   local additional_bare_cmds=()
+  local has_workspace_flag=false
+  local has_package_operand=false
 
   for arg; do
     case "$arg" in
     -g | --global)
       is_global=true
+      ;;
+
+    --workspace=*)
+      has_workspace_flag=true
+      ;;
+
+    --workspace | -w)
+      # Next arg is workspace name - will be caught in next iteration
+      has_workspace_flag=true
       ;;
 
     -*) ;; # Skip other options
@@ -32,6 +43,10 @@ should_reshim() {
         cmd="$arg"
       else
         additional_bare_cmds+=("$arg")
+        # First bare arg after cmd is the package operand
+        if [ "${#additional_bare_cmds[@]}" -eq 1 ]; then
+          has_package_operand=true
+        fi
       fi
       ;;
     esac
@@ -49,14 +64,21 @@ should_reshim() {
     ;;
 
   link | ln)
+    # Workspace-local link: npm link <pkg> --workspace <name> (or -w)
+    # Global workspace link: npm link --workspace <name> (no package operand)
+    if [ "$has_workspace_flag" = true ] && [ "$has_package_operand" = true ]; then
+      is_global=''
+      cmd_needs_reshim=''
     # Bare link installs a global package
-    if ! [ "${additional_bare_cmds[0]-}" ]; then
+    elif ! [ "${additional_bare_cmds[0]-}" ]; then
       is_global=1
       cmd_needs_reshim=true
-    fi
-
     # Links to directories also install a global package
-    if [[ "${additional_bare_cmds[0]-}" =~ [./].* && -d "${additional_bare_cmds[0]-}" ]]; then
+    elif [[ "${additional_bare_cmds[0]-}" =~ ^[./].* && -d "${additional_bare_cmds[0]-}" ]]; then
+      is_global=1
+      cmd_needs_reshim=true
+    # npm link <package-name> also installs globally (creates symlink in global node_modules)
+    elif [ "${additional_bare_cmds[0]-}" ]; then
       is_global=1
       cmd_needs_reshim=true
     fi
@@ -71,9 +93,14 @@ wrap_npm_if_reshim_is_needed() {
   local npm_cli="$plugin_dir/lib/node_modules/npm/bin/npm-cli.js"
   local node_bin="$plugin_dir/bin/node"
   if should_reshim "$@"; then
+    # Run npm and capture exit code without exiting on failure (set -e)
     "$node_bin" "$npm_cli" "$@"
+    local npm_exit=$?
     printf "Reshimming mise %s...\n" "$plugin_name" >&2
-    mise reshim
+    # Run mise reshim, ignore its exit code
+    mise reshim || true
+    # Return npm's exit code
+    return $npm_exit
   else
     exec "$node_bin" "$npm_cli" "$@"
   fi
