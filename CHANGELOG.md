@@ -1,5 +1,70 @@
 # Changelog
 
+## [2026.8.3](https://github.com/jdx/mise/compare/v2026.8.2..v2026.8.3) - 2026-08-07
+
+### 🚀 Features
+
+- **(bootstrap)** add user-scoped flatpak packages by @jdx in [#11757](https://github.com/jdx/mise/pull/11757)
+- **(brew)** support font casks on linux by @jdx in [#11758](https://github.com/jdx/mise/pull/11758)
+- **(pipx)** add per-tool registry URL by @jdx in [#11754](https://github.com/jdx/mise/pull/11754)
+- **(shim)** add not_found_system_fallback setting by @richid in [#11755](https://github.com/jdx/mise/pull/11755)
+
+### 🐛 Bug Fixes
+
+- **(config)** preserve configured runtime options by @risu729 in [#11550](https://github.com/jdx/mise/pull/11550)
+- **(copr)** submit builds without waiting by @jdx in [#11744](https://github.com/jdx/mise/pull/11744)
+- **(docs)** replace errant ripgrep url with node url in tool-stub docs by @arti5an in [#11725](https://github.com/jdx/mise/pull/11725)
+- **(github)** use published date for release age by @jdx in [#11756](https://github.com/jdx/mise/pull/11756)
+- **(lockfile)** create lockfile when explicitly enabled by @jdx in [#11746](https://github.com/jdx/mise/pull/11746)
+- **(ls-remote)** suppress minimum_release_age warn during completions by @beisenherz in [#11727](https://github.com/jdx/mise/pull/11727)
+- **(python)** skip junctions when syncing installs to uv by @risu729 in [#11683](https://github.com/jdx/mise/pull/11683)
+- **(python)** preserve locked precompiled release by @jdx in [#11747](https://github.com/jdx/mise/pull/11747)
+- **(rust)** expand tilde in home settings by @xqm32 in [#11752](https://github.com/jdx/mise/pull/11752)
+- **(task)** preserve separator for required task args by @jdx in [#11729](https://github.com/jdx/mise/pull/11729)
+- **(task)** prefer inline tasks over toml includes by @jdx in [#11734](https://github.com/jdx/mise/pull/11734)
+- **(task)** overlay local task metadata by @jdx in [#11745](https://github.com/jdx/mise/pull/11745)
+- **(use)** keep multiple tool additions sorted by @jdx in [#11713](https://github.com/jdx/mise/pull/11713)
+- **(vfox)** resolve backend aliases for custom plugins by @jdx in [#11736](https://github.com/jdx/mise/pull/11736)
+- **(vfox)** cancel http retries on ctrl-c by @jdx in [#11735](https://github.com/jdx/mise/pull/11735)
+- handle npm link <package-name> in npm shim (auto-reshim) by @cheezmil in [#11748](https://github.com/jdx/mise/pull/11748)
+
+### 🧪 Testing
+
+- **(npm)** cover embedded aube deprecation output by @jdx in [#11761](https://github.com/jdx/mise/pull/11761)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to c26b116 by @renovate[bot] in [#11717](https://github.com/jdx/mise/pull/11717)
+- update ghcr.io/jdx/mise:rpm docker digest to 95e8313 by @renovate[bot] in [#11718](https://github.com/jdx/mise/pull/11718)
+- update ghcr.io/jdx/mise:alpine docker digest to bf0245e by @renovate[bot] in [#11716](https://github.com/jdx/mise/pull/11716)
+- update rust crate rmcp to v3 by @renovate[bot] in [#11719](https://github.com/jdx/mise/pull/11719)
+- update aube to v1.38.0 by @jdx in [#11759](https://github.com/jdx/mise/pull/11759)
+
+### New Contributors
+
+- @richid made their first contribution in [#11755](https://github.com/jdx/mise/pull/11755)
+- @xqm32 made their first contribution in [#11752](https://github.com/jdx/mise/pull/11752)
+- @cheezmil made their first contribution in [#11748](https://github.com/jdx/mise/pull/11748)
+- @arti5an made their first contribution in [#11725](https://github.com/jdx/mise/pull/11725)
+- @beisenherz made their first contribution in [#11727](https://github.com/jdx/mise/pull/11727)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`babarot/gh-infra`](https://github.com/babarot/gh-infra)
+- [`jolars/arity`](https://github.com/jolars/arity)
+- [`jolars/badness`](https://github.com/jolars/badness)
+- [`jolars/fatou`](https://github.com/jolars/fatou)
+- [`jolars/panache`](https://github.com/jolars/panache)
+- [`matteo-sung/lockvet`](https://github.com/matteo-sung/lockvet)
+
+#### Updated Packages (3)
+
+- [`CircleCI-Public/circleci-cli`](https://github.com/CircleCI-Public/circleci-cli)
+- [`hadolint/hadolint`](https://github.com/hadolint/hadolint)
+- [`smithy-lang/smithy`](https://github.com/smithy-lang/smithy)
+
 ## [2026.8.2](https://github.com/jdx/mise/compare/v2026.8.1..v2026.8.2) - 2026-08-04
 
 ### 🚀 Features
