@@ -1,6 +1,6 @@
-//! System package managers (apk, apt, brew, brew-cask, flatpak, mas) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, brew, brew-cask, flatpak, flatpak-user, mas) for the `[bootstrap.packages]` config section.
 //!
-//! These are machine-global, unversioned packages — deliberately separate from
+//! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
 
 use std::sync::Arc;
@@ -143,6 +143,7 @@ pub fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(brew::BrewCaskManager::new()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(flatpak::FlatpakManager::new()),
+        Arc::new(flatpak::FlatpakManager::new_user()),
         Arc::new(mas::MasManager::new()),
         Arc::new(pacman::PacmanManager::new()),
     ]
