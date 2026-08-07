@@ -19,7 +19,7 @@ use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
-use aube::embed::EmbedderRuntime;
+use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
@@ -973,7 +973,12 @@ impl NPMBackend {
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
         let package = format!("{}@{}", self.tool_name(), tv.version);
-        let install = aube::embed::add(&install_path, std::slice::from_ref(&package), opts);
+        let install = aube::embed::add_with_overrides(
+            &install_path,
+            std::slice::from_ref(&package),
+            opts,
+            Self::aube_embed_install_overrides(),
+        );
         tokio::pin!(install);
         // Drain events alongside the install rather than after it: the
         // reporter only enqueues (it must never wait on us while holding an
@@ -1066,6 +1071,18 @@ impl NPMBackend {
         let ts = self.dependency_toolset(&ctx.config).await.ok()?;
         let node = ts.which_bin(&ctx.config, "node").await?;
         node.parent().map(EmbedderRuntime::selector)
+    }
+
+    /// Keep embedded aube's regenerable state inside mise's npm cache tree.
+    /// Project-local materialization means installed tools no longer depend on
+    /// this store, so `mise cache prune npm` can reclaim it by normal cache age.
+    fn aube_embed_install_overrides() -> EmbedderInstallOverrides {
+        let root = crate::dirs::CACHE.join("npm").join("aube");
+        EmbedderInstallOverrides {
+            use_global_virtual_store: Some(false),
+            cache_dir: Some(root.join("cache")),
+            store_dir: Some(root.join("store")),
+        }
     }
 
     /// Write the throwaway project's `package.json` + `.npmrc` for an embedded
@@ -1617,6 +1634,16 @@ mod tests {
         let backend = create_npm_backend("prettier");
         let deps = backend.get_dependencies().unwrap();
         assert_eq!(deps, vec!["node"]);
+    }
+
+    #[test]
+    fn embedded_aube_uses_mise_owned_cache_and_store() {
+        let overrides = NPMBackend::aube_embed_install_overrides();
+        let root = crate::dirs::CACHE.join("npm").join("aube");
+
+        assert_eq!(overrides.use_global_virtual_store, Some(false));
+        assert_eq!(overrides.cache_dir, Some(root.join("cache")));
+        assert_eq!(overrides.store_dir, Some(root.join("store")));
     }
 
     #[test]
