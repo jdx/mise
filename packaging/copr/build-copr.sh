@@ -15,6 +15,7 @@ COPR_OWNER="${COPR_OWNER:-jdxcode}"
 COPR_PROJECT="${COPR_PROJECT:-mise}"
 COPR_BUILD_TIMEOUT="${COPR_BUILD_TIMEOUT:-180000}"
 DRY_RUN="${DRY_RUN:-false}"
+WAIT_FOR_BUILD="${WAIT_FOR_BUILD:-true}"
 
 # Store the repository root directory
 REPO_ROOT="$(pwd)"
@@ -32,6 +33,7 @@ usage() {
 	echo "  -n, --name NAME              Package name (default: mise)"
 	echo "  -m, --maintainer-name NAME   Maintainer name (default: mise Release Bot)"
 	echo "  -e, --maintainer-email EMAIL Maintainer email (default: noreply@mise.jdx.dev)"
+	echo "      --nowait                 Return after COPR accepts the build"
 	echo "  -d, --dry-run                Build SRPM only, don't submit to COPR"
 	echo "  -h, --help                   Show this help"
 	echo ""
@@ -79,6 +81,10 @@ while [[ $# -gt 0 ]]; do
 		MAINTAINER_EMAIL="$2"
 		shift 2
 		;;
+	--nowait)
+		WAIT_FOR_BUILD="false"
+		shift
+		;;
 	-d | --dry-run)
 		DRY_RUN="true"
 		shift
@@ -109,6 +115,7 @@ echo "COPR Owner: $COPR_OWNER"
 echo "COPR Project: $COPR_PROJECT"
 echo "COPR Build Timeout: $COPR_BUILD_TIMEOUT"
 echo "Maintainer: $MAINTAINER_NAME <$MAINTAINER_EMAIL>"
+echo "Wait for build: $WAIT_FOR_BUILD"
 echo "Dry Run: $DRY_RUN"
 echo ""
 
@@ -323,6 +330,9 @@ if [ "$DRY_RUN" != "true" ]; then
 	# conservative chroot pattern before forwarding to copr-cli.
 	IFS=' ' read -ra chroot_array <<<"$CHROOTS"
 	copr_args=("build" "--timeout" "$COPR_BUILD_TIMEOUT")
+	if [ "$WAIT_FOR_BUILD" != "true" ]; then
+		copr_args+=("--nowait")
+	fi
 	for chroot in "${chroot_array[@]}"; do
 		[ -z "$chroot" ] && continue
 		if ! [[ "$chroot" =~ ^[A-Za-z0-9._+-]+$ ]]; then

@@ -497,12 +497,9 @@ impl VfoxBackend {
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
 
-        // Extract tool name for plugin:tool format
-        let tool_name = if ba.short.contains(':') {
-            ba.short.split_once(':').map(|(_, tool)| tool.to_string())
-        } else {
-            None
-        };
+        // Extract the tool name from the resolved backend so aliases from a bare
+        // name to a backend plugin still provide the plugin:tool identifier.
+        let tool_name = backend_plugin_name.as_ref().map(|_| ba.tool_name());
 
         Self {
             exec_env_cache: Default::default(),

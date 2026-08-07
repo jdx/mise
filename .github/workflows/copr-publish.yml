@@ -88,7 +88,7 @@ jobs:
           if [ -n "${CHROOTS:-}" ]; then
             args+=(--chroots "${CHROOTS}")
           fi
-          ./packaging/copr/build-copr.sh "${args[@]}"
+          ./packaging/copr/build-copr.sh --nowait "${args[@]}"
         env:
           COPR_API_LOGIN: ${{ secrets.COPR_API_LOGIN }}
           COPR_API_TOKEN: ${{ secrets.COPR_API_TOKEN }}
