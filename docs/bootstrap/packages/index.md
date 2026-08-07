@@ -55,7 +55,7 @@ declarative sections work the same way:
 | `dnf`          | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                 |
 | `pacman`       | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
 | `brew`         | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
-| `brew-cask`    | macOS — **no Homebrew required**                               | [brew](/bootstrap/packages/brew.html)               |
+| `brew-cask`    | macOS; Linux (font casks) — **no Homebrew required**           | [brew](/bootstrap/packages/brew.html)               |
 | `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
@@ -73,9 +73,10 @@ declarative sections work the same way:
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
-  works on both macOS and Linux; `brew-cask` works on macOS; `flatpak` and
-  `flatpak-user` work on Linux when the `flatpak` CLI is on `PATH`; `mas`
-  works on macOS when the `mas` CLI is on `PATH`. Status commands still list
+  works on both macOS and Linux; `brew-cask` works on macOS and supports
+  font-only casks on Linux; `flatpak` and `flatpak-user` work on Linux when the
+  `flatpak` CLI is on `PATH`; `mas` works on macOS when the `mas` CLI is on
+  `PATH`. Status commands still list
   unavailable managers so nothing is silently invisible.
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
