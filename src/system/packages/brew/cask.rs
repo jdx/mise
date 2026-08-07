@@ -242,6 +242,7 @@ impl BrewCaskManager {
     ) -> Result<String> {
         let cask = fetch_cask(req).await?;
         let artifacts = cask_artifacts(&cask)?;
+        validate_platform_support(&cask, &artifacts)?;
         if homebrew_metadata_present(&cask.token) {
             bail!(
                 "brew-cask:{}: Homebrew owns this cask; remove it with Homebrew before installing it with mise",
@@ -517,11 +518,11 @@ impl SystemPackageManager for BrewCaskManager {
     }
 
     fn is_available(&self) -> bool {
-        cfg!(target_os = "macos")
+        cfg!(any(target_os = "macos", target_os = "linux"))
     }
 
     fn unavailable_reason(&self) -> String {
-        "only available on macos".to_string()
+        "only available on macos and linux".to_string()
     }
 
     fn supports_version_pins(&self) -> bool {
@@ -533,6 +534,7 @@ impl SystemPackageManager for BrewCaskManager {
         for req in pkgs {
             let cask = fetch_cask(req).await?;
             let artifacts = cask_artifacts(&cask)?;
+            validate_platform_support(&cask, &artifacts)?;
             let version = installed_cask_version(&cask, &artifacts)?;
             let state = match version {
                 Some(version) => match &req.version {
@@ -1078,8 +1080,21 @@ fn remove_artifact_target_elevating(path: &Path) -> Result<()> {
     with_sudo_fallback(result, "rm", &args)
 }
 
-/// Copy a directory using macOS `ditto`, which preserves resource forks, extended attributes,
-/// and HFS+ metadata that a plain recursive copy would strip.
+/// Copy a cask artifact while preserving macOS metadata where it matters.
+///
+/// Linux cask support currently covers font files, which do not need the
+/// resource-fork and extended-attribute handling provided by `ditto`.
+fn copy_cask_artifact(from: &Path, to: &Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        ditto(from, to)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        file::copy(from, to)
+    }
+}
+
 fn ditto(from: &Path, to: &Path) -> Result<()> {
     let status = std::process::Command::new("ditto")
         .arg(from)
@@ -1116,7 +1131,7 @@ fn stage_font(stage: &Path, caskroom: &Path, font: &FontArtifact) -> Result<()> 
     }
     let source = find_file_artifact(stage, &font.source)
         .ok_or_else(|| eyre!("brew-cask: font artifact '{}' was not found", font.source))?;
-    ditto(&source, &caskroom_font)?;
+    copy_cask_artifact(&source, &caskroom_font)?;
     Ok(())
 }
 
@@ -1139,7 +1154,7 @@ fn link_font(caskroom: &Path, font: &FontArtifact) -> Result<()> {
     if target.exists() {
         file::rename(&target, &old_target)?;
     }
-    if let Err(e) = ditto(&caskroom_font, &target) {
+    if let Err(e) = copy_cask_artifact(&caskroom_font, &target) {
         if old_target.exists() {
             let _ = file::rename(&old_target, &target);
         }
@@ -1166,9 +1181,11 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
             }
             let expanded_path = Path::new(&expanded);
             if expanded_path.is_absolute() {
-                let fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
-                if let Ok(relative) = expanded_path.strip_prefix(&fonts_dir) {
-                    return Ok(relative.to_string_lossy().to_string());
+                let macos_fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
+                for fonts_dir in [font_dir(), macos_fonts_dir] {
+                    if let Ok(relative) = expanded_path.strip_prefix(fonts_dir) {
+                        return Ok(relative.to_string_lossy().to_string());
+                    }
                 }
                 return expanded_path
                     .file_name()
@@ -1218,22 +1235,22 @@ fn remove_obsolete_fonts(
             continue;
         }
         // Only remove the file if it was staged by us — check that it
-        // resides under ~/Library/Fonts and the caskroom still has a
+        // resides under the platform font directory and the caskroom still has a
         // staged copy (from the previous version directory).
-        let fonts_dir = crate::dirs::HOME.join("Library").join("Fonts");
+        let fonts_dir = font_dir();
         if !target.starts_with(&fonts_dir) {
             continue;
         }
         // Check if any version directory under the token dir contains this font
-        // filename, indicating it was staged by a previous version of this cask.
-        let filename = target.file_name();
+        // path, indicating it was staged by a previous version of this cask.
+        let relative = target.strip_prefix(&fonts_dir).ok();
         let has_staged_copy = std::fs::read_dir(&token_dir)
             .ok()
             .into_iter()
             .flatten()
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
-            .any(|entry| filename.is_some_and(|f| entry.path().join(f).is_file()));
+            .any(|entry| relative.is_some_and(|path| entry.path().join(path).is_file()));
         if has_staged_copy {
             file::remove_file(target)?;
         }
@@ -1252,10 +1269,15 @@ fn font_target_path(font: &FontArtifact) -> Result<PathBuf> {
     {
         bail!("brew-cask: invalid font target '{}'", name);
     }
-    Ok(crate::dirs::HOME
-        .join("Library")
-        .join("Fonts")
-        .join(name_path))
+    Ok(font_dir().join(name_path))
+}
+
+fn font_dir() -> PathBuf {
+    if cfg!(target_os = "linux") {
+        crate::env::XDG_DATA_HOME.join("fonts")
+    } else {
+        crate::dirs::HOME.join("Library").join("Fonts")
+    }
 }
 
 #[cfg(test)]
@@ -2504,6 +2526,32 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         );
     }
     Ok(artifacts)
+}
+
+fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let font_only = !artifacts.fonts.is_empty()
+            && artifacts.apps.is_empty()
+            && artifacts.binaries.is_empty()
+            && artifacts.command_wrappers.is_empty()
+            && artifacts.pkgs.is_empty()
+            && artifacts.completions.is_empty()
+            && artifacts.generated_completions.is_empty()
+            && artifacts.preflight_steps.is_empty()
+            && artifacts.postflight_steps.is_empty()
+            && !has_lifecycle_hook(cask, "preflight")
+            && !has_lifecycle_hook(cask, "postflight");
+        if !font_only {
+            bail!(
+                "brew-cask:{}: only font-only casks without lifecycle hooks are supported on linux",
+                cask.token
+            );
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (cask, artifacts);
+    Ok(())
 }
 
 fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
@@ -6271,10 +6319,7 @@ end
             source: "MyFont.ttf".to_string(),
             target: Some("MyFont.ttf".to_string()),
         };
-        let expected = crate::dirs::HOME
-            .join("Library")
-            .join("Fonts")
-            .join("MyFont.ttf");
+        let expected = font_dir().join("MyFont.ttf");
         assert_eq!(font_target_path(&font)?, expected);
         Ok(())
     }
@@ -6285,10 +6330,7 @@ end
             source: "FontAwesome.otf".to_string(),
             target: None,
         };
-        let expected = crate::dirs::HOME
-            .join("Library")
-            .join("Fonts")
-            .join("FontAwesome.otf");
+        let expected = font_dir().join("FontAwesome.otf");
         assert_eq!(font_target_path(&font)?, expected);
         Ok(())
     }
@@ -6302,10 +6344,7 @@ end
             source: "JetBrainsMono.ttf".to_string(),
             target: Some(target),
         };
-        let expected = crate::dirs::HOME
-            .join("Library")
-            .join("Fonts")
-            .join("JetBrainsMono.ttf");
+        let expected = font_dir().join("JetBrainsMono.ttf");
         assert_eq!(font_target_path(&font)?, expected);
         Ok(())
     }
@@ -6318,11 +6357,52 @@ end
             source: "TildeFont.ttf".to_string(),
             target: Some(target),
         };
-        let expected = crate::dirs::HOME
-            .join("Library")
-            .join("Fonts")
-            .join("TildeFont.ttf");
+        let expected = font_dir().join("TildeFont.ttf");
         assert_eq!(font_target_path(&font)?, expected);
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_font_dir_uses_xdg_data_home() {
+        assert_eq!(font_dir(), crate::env::XDG_DATA_HOME.join("fonts"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_font_target_preserves_xdg_subdirectories() -> Result<()> {
+        let target = font_dir().join("nerd-fonts").join("NestedFont.ttf");
+        let font = FontArtifact {
+            source: "NestedFont.ttf".to_string(),
+            target: Some(target.to_string_lossy().to_string()),
+        };
+
+        assert_eq!(font_filename(&font)?, "nerd-fonts/NestedFont.ttf");
+        assert_eq!(font_target_path(&font)?, target);
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_supports_font_only_casks() -> Result<()> {
+        let mut cask = test_cask("font-test", "1.0.0");
+        cask.artifacts = vec![serde_json::json!({"font": "TestFont.ttf"})];
+        let artifacts = cask_artifacts(&cask)?;
+
+        validate_platform_support(&cask, &artifacts)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_rejects_non_font_casks() -> Result<()> {
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![serde_json::json!({"app": "Example.app"})];
+        let artifacts = cask_artifacts(&cask)?;
+
+        let err = validate_platform_support(&cask, &artifacts)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("only font-only casks"));
         Ok(())
     }
 

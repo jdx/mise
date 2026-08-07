@@ -67,6 +67,19 @@ installs app bundles into `/Applications` while recording the version under
 "brew-cask:homebrew/cask/visual-studio-code" = "latest"
 ```
 
+On Linux, initial cask support is limited to font-only casks without lifecycle
+hooks or structured `preflight_steps` or `postflight_steps`. Fonts are installed
+into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
+
+```toml
+[bootstrap.packages]
+"brew-cask:font-heavy-data-nerd-font" = "latest"
+```
+
+Other Linux casks fail with a clear unsupported-platform error. This boundary
+will expand as mise gains portable implementations for more cask artifact
+types.
+
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
 simple macOS installer packages (`pkg` artifacts), and shell completions
@@ -259,10 +272,12 @@ operation.
 
 ## Limitations
 
-- **Cask artifact coverage is intentionally narrow.** `brew-cask` supports
-  app bundles, binary artifacts, and simple pkg installers from dmg and common
-  archive formats. Other artifact types, pkg installers without `pkgutil` IDs,
-  and pkg installers with custom choices fail explicitly.
+- **Cask artifact coverage is intentionally narrow.** On macOS, `brew-cask`
+  supports app bundles, binary artifacts, font artifacts, and simple pkg
+  installers from dmg and common archive formats. On Linux, it supports
+  font-only casks without lifecycle hooks or structured `preflight_steps` or
+  `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
+  IDs, and pkg installers with custom choices fail explicitly.
 - **`brew services` is not implemented.**
 - **Cask import/prune is not implemented.** `import` and `prune` are formulae-only
   until cask uninstall semantics can be made safe for app and pkg artifacts.
