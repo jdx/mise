@@ -283,10 +283,11 @@ impl Backend for SwiftPlugin {
             .await?
             .into_iter()
             .filter_map(|r| {
+                let released_at = r.released_at().to_string();
                 r.tag_name
                     .strip_prefix("swift-")
                     .and_then(|v| v.strip_suffix("-RELEASE"))
-                    .map(|v| (v.to_string(), r.created_at))
+                    .map(|v| (v.to_string(), released_at))
             })
             .rev()
             .map(|(version, created_at)| VersionInfo {

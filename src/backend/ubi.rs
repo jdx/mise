@@ -212,9 +212,10 @@ impl Backend for UbiBackend {
                             .map(|r| {
                                 let release_url =
                                     format!("{}/releases/tag/{}", release_url_base, r.tag_name);
+                                let created_at = Some(r.released_at().to_string());
                                 VersionInfo {
                                     version: strip_v_prefix(&r.tag_name),
-                                    created_at: Some(r.created_at),
+                                    created_at,
                                     release_url: Some(release_url),
                                     ..Default::default()
                                 }

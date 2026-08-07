@@ -292,11 +292,14 @@ impl Backend for RustPlugin {
         let versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
-            .map(|r| VersionInfo {
-                release_url: Some(format!("https://releases.rs/docs/{}/", r.tag_name)),
-                version: r.tag_name,
-                created_at: Some(r.created_at),
-                ..Default::default()
+            .map(|r| {
+                let created_at = Some(r.released_at().to_string());
+                VersionInfo {
+                    release_url: Some(format!("https://releases.rs/docs/{}/", r.tag_name)),
+                    version: r.tag_name,
+                    created_at,
+                    ..Default::default()
+                }
             })
             .rev()
             .chain(vec![

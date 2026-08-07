@@ -510,12 +510,15 @@ impl Backend for UnifiedGitBackend {
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: Some(r.created_at),
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    prerelease: r.prerelease,
-                    ..Default::default()
+                .map(|r| {
+                    let created_at = Some(r.released_at().to_string());
+                    VersionInfo {
+                        version: self.strip_version_prefix(&r.tag_name, &opts),
+                        created_at,
+                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                        prerelease: r.prerelease,
+                        ..Default::default()
+                    }
                 })
                 .collect()
         };
@@ -576,7 +579,10 @@ impl Backend for UnifiedGitBackend {
                 .get_github_release_for_url(&api_url, &repo, "latest")
                 .await
             {
-                Ok(r) => Some((r.tag_name, r.created_at, r.prerelease)),
+                Ok(r) => {
+                    let released_at = r.released_at().to_string();
+                    Some((r.tag_name, released_at, r.prerelease))
+                }
                 Err(e) => {
                     debug!("Failed to fetch latest GitHub release for {repo}: {e}");
                     None

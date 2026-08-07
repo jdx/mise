@@ -576,9 +576,10 @@ impl Backend for ErlangPlugin {
                 .await?
                 .into_iter()
                 .filter_map(|r| {
+                    let released_at = r.released_at().to_string();
                     r.tag_name
                         .strip_prefix("OTP-")
-                        .map(|s| (s.to_string(), Some(r.created_at)))
+                        .map(|s| (s.to_string(), Some(released_at)))
                 })
                 .map(|(version, created_at)| VersionInfo {
                     version,

@@ -505,10 +505,13 @@ impl PIPXBackend {
         releases
             .into_iter()
             .rev()
-            .map(|r| VersionInfo {
-                version: r.tag_name,
-                created_at: Some(r.created_at),
-                ..Default::default()
+            .map(|r| {
+                let created_at = Some(r.released_at().to_string());
+                VersionInfo {
+                    version: r.tag_name,
+                    created_at,
+                    ..Default::default()
+                }
             })
             .collect()
     }
@@ -1360,6 +1363,7 @@ mod tests {
             draft: false,
             prerelease: false,
             created_at: created_at.to_string(),
+            published_at: None,
             assets: vec![],
         }
     }
