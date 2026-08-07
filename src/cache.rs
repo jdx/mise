@@ -4,16 +4,15 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use eyre::{Result, bail};
+use eyre::Result;
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use path_absolutize::Absolutize;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
 use std::sync::LazyLock as Lazy;
 
 use crate::build_time::built_info;
@@ -25,94 +24,7 @@ use crate::rand::random_string;
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Default,
-    strum::EnumString,
-    strum::Display,
-    PartialEq,
-    Eq,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum CacheRemoteMode {
-    #[default]
-    ReadWrite,
-    ReadOnly,
-    WriteOnly,
-}
-
-impl CacheRemoteMode {
-    pub(crate) fn reads(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::ReadOnly)
-    }
-
-    pub(crate) fn writes(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::WriteOnly)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub(crate) struct CacheDigest {
-    pub(crate) algorithm: String,
-    pub(crate) hash: String,
-    pub(crate) size: u64,
-}
-
-impl CacheDigest {
-    pub(crate) fn blake3(bytes: &[u8]) -> Self {
-        Self {
-            algorithm: "blake3".into(),
-            hash: blake3::hash(bytes).to_hex().to_string(),
-            size: bytes.len() as u64,
-        }
-    }
-
-    pub(crate) fn validate(&self) -> Result<()> {
-        if self.algorithm != "blake3" && self.algorithm != "sha256" {
-            bail!("unsupported remote cache digest algorithm");
-        }
-        if self.hash.len() != 64
-            || !self
-                .hash
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            bail!("invalid remote cache digest");
-        }
-        Ok(())
-    }
-
-    pub(crate) fn matches_bytes(&self, bytes: &[u8]) -> Result<bool> {
-        self.validate()?;
-        if self.size != bytes.len() as u64 {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
-            "blake3" => blake3::hash(bytes).to_hex().to_string(),
-            "sha256" => hex::encode(sha2::Sha256::digest(bytes)),
-            _ => unreachable!("digest algorithm was validated"),
-        };
-        Ok(self.hash == hash)
-    }
-
-    pub(crate) fn matches_file(&self, path: &Path) -> Result<bool> {
-        self.validate()?;
-        if self.size != path.metadata()?.len() {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
-            "blake3" => crate::hash::file_hash_blake3(path, None)?,
-            "sha256" => crate::hash::file_hash_sha256(path, None)?,
-            _ => unreachable!("digest algorithm was validated"),
-        };
-        Ok(self.hash == hash)
-    }
-}
+pub use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
 
 #[derive(Debug)]
 pub struct CacheManagerBuilder {
