@@ -180,9 +180,10 @@ impl Backend for BunPlugin {
             .await?
             .into_iter()
             .filter_map(|r| {
+                let released_at = r.released_at().to_string();
                 r.tag_name
                     .strip_prefix("bun-v")
-                    .map(|v| (v.to_string(), r.created_at))
+                    .map(|v| (v.to_string(), released_at))
             })
             .unique_by(|(v, _)| v.clone())
             .sorted_by_cached_key(|(s, _)| (Versioning::new(s), s.to_string()))

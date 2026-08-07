@@ -792,14 +792,14 @@ impl RubyPlugin {
         }
     }
 
-    /// Fetch created_at timestamps for Ruby versions from GitHub releases
+    /// Fetch publication timestamps for Ruby versions from GitHub releases.
     async fn fetch_ruby_release_dates(&self) -> Result<HashMap<String, String>> {
         let mut dates = HashMap::new();
         match github::list_releases("ruby/ruby").await {
             Ok(releases) => {
                 for release in releases {
                     if let Some(version) = Self::tag_to_version(&release.tag_name) {
-                        dates.insert(version, release.created_at);
+                        dates.insert(version, release.released_at().to_string());
                     }
                 }
             }
@@ -1354,6 +1354,7 @@ mod tests {
             draft: false,
             prerelease: false,
             created_at: "2026-01-01T00:00:00Z".to_string(),
+            published_at: None,
             assets: assets
                 .iter()
                 .map(|name| crate::github::GithubAsset {

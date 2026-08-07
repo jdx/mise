@@ -171,13 +171,14 @@ impl Backend for RubyPlugin {
         let versions = releases
             .into_iter()
             .filter_map(|r| {
+                let created_at = Some(r.released_at().to_string());
                 regex!(r"RubyInstaller-([0-9.]+)-.*")
                     .replace(&r.tag_name, "$1")
                     .parse::<String>()
                     .ok()
                     .map(|version| VersionInfo {
                         version,
-                        created_at: Some(r.created_at),
+                        created_at,
                         ..Default::default()
                     })
             })

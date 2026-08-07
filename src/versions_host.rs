@@ -785,6 +785,7 @@ mod tests {
             draft: false,
             prerelease: false,
             created_at: "2026-01-01T00:00:00Z".into(),
+            published_at: None,
             assets: vec![],
         };
 
@@ -802,6 +803,7 @@ mod tests {
             draft: false,
             prerelease: false,
             created_at: "2026-01-01T00:00:00Z".into(),
+            published_at: None,
             assets: vec![],
         };
 

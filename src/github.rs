@@ -26,8 +26,17 @@ pub struct GithubRelease {
     pub draft: bool,
     pub prerelease: bool,
     pub created_at: String,
-    // pub published_at: Option<String>,
+    #[serde(default)]
+    pub published_at: Option<String>,
     pub assets: Vec<GithubAsset>,
+}
+
+impl GithubRelease {
+    /// The time this release became public. GitHub's `created_at` is the date
+    /// of the tagged commit, which may be much older than the publication date.
+    pub fn released_at(&self) -> &str {
+        self.published_at.as_deref().unwrap_or(&self.created_at)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1240,8 +1249,40 @@ something_else = "value"
             draft: false,
             prerelease: false,
             created_at: String::new(),
+            published_at: None,
             assets: vec![],
         }
+    }
+
+    #[test]
+    fn release_date_prefers_published_at() {
+        let mut release = make_release("v1.0.0");
+        release.created_at = "2026-06-28T17:38:00Z".into();
+        release.published_at = Some("2026-08-06T09:16:56Z".into());
+
+        assert_eq!(release.released_at(), "2026-08-06T09:16:56Z");
+    }
+
+    #[test]
+    fn release_date_falls_back_to_created_at() {
+        let mut release = make_release("v1.0.0");
+        release.created_at = "2026-06-28T17:38:00Z".into();
+
+        assert_eq!(release.released_at(), "2026-06-28T17:38:00Z");
+    }
+
+    #[test]
+    fn release_without_published_at_remains_deserializable() {
+        let release: GithubRelease = serde_json::from_value(serde_json::json!({
+            "tag_name": "v1.0.0",
+            "draft": false,
+            "prerelease": false,
+            "created_at": "2026-06-28T17:38:00Z",
+            "assets": []
+        }))
+        .unwrap();
+
+        assert_eq!(release.released_at(), "2026-06-28T17:38:00Z");
     }
 
     #[test]

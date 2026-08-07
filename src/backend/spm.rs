@@ -209,10 +209,13 @@ impl Backend for SPMBackend {
             _ => github::list_releases_from_url(&provider.api_url, repo.shorthand.as_str())
                 .await?
                 .into_iter()
-                .map(|r| VersionInfo {
-                    version: r.tag_name,
-                    created_at: Some(r.created_at),
-                    ..Default::default()
+                .map(|r| {
+                    let created_at = Some(r.released_at().to_string());
+                    VersionInfo {
+                        version: r.tag_name,
+                        created_at,
+                        ..Default::default()
+                    }
                 })
                 .rev()
                 .collect(),
