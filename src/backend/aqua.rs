@@ -3,7 +3,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::get_filename_from_url;
+use crate::backend::static_helpers::{ensure_safe_relative_bin_path, get_filename_from_url};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
@@ -2805,6 +2805,9 @@ impl AquaBackend {
                 Err(_) => None,
             })
             .collect();
+        for name in &bin_names {
+            ensure_safe_relative_bin_path("files", name.as_ref())?;
+        }
         if bin_names.is_empty() {
             let fallback_name = pkg
                 .name
@@ -3025,6 +3028,8 @@ impl AquaBackend {
             None => return Ok(None),
         };
         let link = f.link(pkg, version, os, arch)?;
+        ensure_safe_relative_bin_path("files", &src)?;
+        ensure_safe_relative_bin_path("files", link.as_deref().unwrap_or(f.name.as_str()))?;
 
         let mut src = install_path.join(src);
         let mut dst = src
@@ -4181,6 +4186,33 @@ packages:
                 explicit_link: true,
             }]
         );
+    }
+
+    #[test]
+    fn test_srcs_reject_path_traversal_in_registry_values() {
+        // src escaping the install dir
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "tool".to_string(),
+            src: Some("../../evil".to_string()),
+            ..Default::default()
+        }];
+        let err =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+                .unwrap_err();
+        assert!(err.to_string().contains("must be a safe relative path"));
+
+        // link escaping the install dir
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: "tool".to_string(),
+            link: Some("../../evil".to_string()),
+            ..Default::default()
+        }];
+        let err =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+                .unwrap_err();
+        assert!(err.to_string().contains("must be a safe relative path"));
     }
 
     #[test]
