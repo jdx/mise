@@ -573,28 +573,29 @@ fn rustup_path() -> PathBuf {
 }
 
 fn rustup_home() -> PathBuf {
-    let path = Settings::get()
-        .rust
-        .rustup_home
-        .clone()
-        .or(env::var_path("RUSTUP_HOME"))
-        .unwrap_or(dirs::HOME.join(".rustup"));
-    if path.is_relative() {
-        std::env::current_dir()
-            .map(|cwd| cwd.join(&path))
-            .unwrap_or(path)
-    } else {
-        path
-    }
+    resolve_rust_home(
+        Settings::get()
+            .rust
+            .rustup_home
+            .clone()
+            .or(env::var_path("RUSTUP_HOME"))
+            .unwrap_or(dirs::HOME.join(".rustup")),
+    )
 }
 
 fn cargo_home() -> PathBuf {
-    let path = Settings::get()
-        .rust
-        .cargo_home
-        .clone()
-        .or(env::var_path("CARGO_HOME"))
-        .unwrap_or(dirs::HOME.join(".cargo"));
+    resolve_rust_home(
+        Settings::get()
+            .rust
+            .cargo_home
+            .clone()
+            .or(env::var_path("CARGO_HOME"))
+            .unwrap_or(dirs::HOME.join(".cargo")),
+    )
+}
+
+fn resolve_rust_home(path: PathBuf) -> PathBuf {
+    let path = file::replace_path(path);
     if path.is_relative() {
         std::env::current_dir()
             .map(|cwd| cwd.join(&path))
@@ -700,6 +701,20 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::SettingsPartial;
+    use confique::Layer;
+
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct SettingsResetGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for SettingsResetGuard {
+        fn drop(&mut self) {
+            Settings::reset(None);
+        }
+    }
 
     fn opts_with(key: &str, value: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
@@ -866,5 +881,20 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
         let opts = opts_with("profile", "");
 
         assert_eq!(RustOptions::new(&opts).lockfile_options(), BTreeMap::new());
+    }
+
+    #[test]
+    fn rust_home_settings_expand_tilde() {
+        let lock = TEST_SETTINGS_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = SettingsResetGuard { _lock: lock };
+        let mut settings = SettingsPartial::empty();
+        settings.rust.cargo_home = Some(PathBuf::from("~/.cargo-custom"));
+        settings.rust.rustup_home = Some(PathBuf::from("~/.rustup-custom"));
+        Settings::reset(Some(settings));
+
+        assert_eq!(cargo_home(), dirs::HOME.join(".cargo-custom"));
+        assert_eq!(rustup_home(), dirs::HOME.join(".rustup-custom"));
     }
 }
