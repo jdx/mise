@@ -1767,6 +1767,21 @@ This also runs in shims if the terminal is interactive.
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
 
+[not_found_system_fallback]
+default = true
+description = "Set to false to stop shims from falling back to a same-named binary found elsewhere on PATH."
+docs = """
+When a shim cannot resolve a mise-managed tool, it falls back to the first same-named executable found on
+`PATH` outside the shims directory. That is useful for tools you also want to work outside of mise, but it
+means a configured-but-uninstalled version can silently run an unrelated system binary instead of erroring
+— common for tools the OS also ships, like `python3`.
+
+Set to false, alongside [`not_found_auto_install`](#not_found_auto_install), to make an unresolvable shim
+fail loudly instead.
+"""
+env = "MISE_NOT_FOUND_SYSTEM_FALLBACK"
+type = "Bool"
+
 
 [npm.bun]
 deprecated = "Use npm.package_manager instead."

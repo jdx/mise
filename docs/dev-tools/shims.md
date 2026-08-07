@@ -114,6 +114,18 @@ directory depends on [`not_found_auto_install`](/configuration/settings.html#not
 
 :::
 
+::: info
+When a shim cannot resolve a mise-managed tool (for example, a version pinned in `mise.toml` that hasn't
+been installed and [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) is
+disabled), it falls back to the first same-named executable found elsewhere on `PATH` rather than erroring.
+This is convenient for tools you also want available outside of mise, but for a tool the OS also ships
+(`python3` on Debian/Ubuntu, for example) it means the shim can silently run a completely different,
+unrelated binary instead of failing loudly.
+
+Set [`not_found_system_fallback`](/configuration/settings.html#not_found_system_fallback) to `false`,
+alongside `not_found_auto_install = false`, if you'd rather an unresolvable shim fail outright.
+:::
+
 - You can also decide to use only `shims` if you prefer, though this comes with some [limitations](/dev-tools/shims.html#shims-vs-path).
 - An alternative to [`mise activate --shims`](/cli/activate.html#shims) is to use `export PATH="$HOME/.local/share/mise/shims:$PATH"`. This can be helpful if `mise` is not yet available at that point in time.
 

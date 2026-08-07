@@ -1329,6 +1329,11 @@
           "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
           "type": "boolean"
         },
+        "not_found_system_fallback": {
+          "default": true,
+          "description": "Set to false to stop shims from falling back to a same-named binary found elsewhere on PATH.",
+          "type": "boolean"
+        },
         "npm": {
           "type": "object",
           "unevaluatedProperties": false,
