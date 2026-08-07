@@ -10,11 +10,9 @@
 //! `engines.aube` against the aube crate version.
 //!
 //! Only the branding and the four embedder-fixed behavior toggles differ from
-//! [`aube::embed::AUBE`]. Everything that names something on disk — the store
-//! and cache namespaces, the lockfile filename, the `package.json` config
-//! namespace mise writes `allowBuilds` into — is deliberately inherited
-//! verbatim, so an existing `npm:` install and its populated content store
-//! stay valid across this change.
+//! [`aube::embed::AUBE`]. Config and manifest names stay compatible with aube;
+//! embedded npm installs separately pass invocation-scoped mise-owned cache
+//! and store paths and disable aube's global virtual store.
 
 use std::sync::Once;
 
@@ -34,11 +32,10 @@ static MISE_HOST: Host = Host {
     version: env!("CARGO_PKG_VERSION"),
     user_agent: concat!("mise/", env!("CARGO_PKG_VERSION")),
 
-    // On-disk and config surface: inherited so this profile is not a
-    // migration. Changing `cache_namespace`/`data_namespace` would orphan the
-    // already-populated content store, and changing `manifest_namespace`
-    // would strand the `aube.allowBuilds` key that
-    // `write_aube_embed_project` writes into every install's `package.json`.
+    // Config surface: inherited so `aube.allowBuilds` and the generated
+    // lockfile keep their canonical names. Embedded npm installs override
+    // their cache/store paths per invocation instead of relying on these
+    // process-wide namespace defaults.
     self_names: AUBE.self_names,
     compatible_names: AUBE.compatible_names,
     lockfile_basename: AUBE.lockfile_basename,
@@ -92,9 +89,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mise_host_keeps_aube_on_disk_layout() {
-        // These are what an already-installed `npm:` tool and the shared
-        // content store are keyed on — a rename here is a silent migration.
+    fn mise_host_keeps_aube_config_names() {
         assert_eq!(MISE_HOST.cache_namespace, AUBE.cache_namespace);
         assert_eq!(MISE_HOST.data_namespace, AUBE.data_namespace);
         assert_eq!(MISE_HOST.manifest_namespace, AUBE.manifest_namespace);
