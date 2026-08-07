@@ -209,6 +209,30 @@ fn parse_backend_components_fallible(
     Ok((short, tool_name.to_string(), opts))
 }
 
+fn plugin_backend_type(identifier: &str) -> Option<BackendType> {
+    let (plugin_name, _tool_name) = identifier.split_once(':')?;
+    if config::is_loaded() {
+        let config = Config::get_();
+        if let Some(plugin_type) = config.get_configured_plugin_type(plugin_name) {
+            return Some(plugin_type_to_backend_type(plugin_name, plugin_type));
+        }
+        if config.get_repo_url(plugin_name).is_some() {
+            return Some(BackendType::VfoxBackend(plugin_name.to_string()));
+        }
+    }
+    install_state::get_plugin_type(plugin_name)
+        .map(|plugin_type| plugin_type_to_backend_type(plugin_name, plugin_type))
+}
+
+fn plugin_type_to_backend_type(plugin_name: &str, plugin_type: PluginType) -> BackendType {
+    match plugin_type {
+        PluginType::Vfox => BackendType::Vfox,
+        PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
+        PluginType::Asdf => BackendType::Asdf,
+        PluginType::Package => BackendType::Unknown,
+    }
+}
+
 impl BackendArg {
     pub fn matches_bin_name(&self, bin_name: &str) -> bool {
         let exe_suffix = std::env::consts::EXE_SUFFIX;
@@ -365,19 +389,9 @@ impl BackendArg {
         }
 
         // Then check if this is a vfox plugin:tool format
-        if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
-            // we cannot reliably determine backend type within install state so we check config first
-            if config::is_loaded() && Config::get_().get_repo_url(plugin_name).is_some() {
-                return BackendType::VfoxBackend(plugin_name.to_string());
-            }
-            if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
-                return match plugin_type {
-                    PluginType::Vfox => BackendType::Vfox,
-                    PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
-                    PluginType::Asdf => BackendType::Asdf,
-                    PluginType::Package => BackendType::Unknown,
-                };
-            }
+        // We cannot reliably determine backend type within install state so we check config first.
+        if let Some(backend_type) = plugin_backend_type(&self.short) {
+            return backend_type;
         }
 
         // Derive the backend type from the same resolved identifier used by
@@ -387,6 +401,9 @@ impl BackendArg {
         if let Some((backend, _)) = full.split_once(':')
             && let Ok(backend_type) = backend.parse()
         {
+            return backend_type;
+        }
+        if let Some(backend_type) = plugin_backend_type(&full) {
             return backend_type;
         }
 
