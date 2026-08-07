@@ -175,22 +175,24 @@ async fn which_shim(
         }
     }
     // fallback for "system"
-    let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
-    for path in &*env::PATH {
-        if file::is_mise_shims_dir(path) {
-            continue;
-        }
-        let bin = path.join(bin_name);
-        if bin.exists() {
-            if file::is_active_mise_shim(&bin) {
+    if Settings::get().not_found_system_fallback {
+        let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
+        for path in &*env::PATH {
+            if file::is_mise_shims_dir(path) {
                 continue;
             }
-            // Skip if this binary is a mise shim (symlink pointing to the mise binary)
-            if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
-                continue;
+            let bin = path.join(bin_name);
+            if bin.exists() {
+                if file::is_active_mise_shim(&bin) {
+                    continue;
+                }
+                // Skip if this binary is a mise shim (symlink pointing to the mise binary)
+                if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
+                    continue;
+                }
+                trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
+                return Ok((bin, ts));
             }
-            trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-            return Ok((bin, ts));
         }
     }
     let tvs = ts.list_rtvs_with_bin(config, bin_name).await?;

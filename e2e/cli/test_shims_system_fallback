@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+eval "$(mise activate bash --shims)"
+
+mise i dummy@1.0.0
+shim_dir="$MISE_DATA_DIR/shims"
+
+fake_bin="$PWD/fake-bin"
+mkdir -p "$fake_bin"
+printf '#!/bin/sh\necho fake-system-dummy\n' >"$fake_bin/dummy"
+chmod +x "$fake_bin/dummy"
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+
+export MISE_NOT_FOUND_AUTO_INSTALL=0
+export PATH="$shim_dir:$fake_bin:$PATH"
+
+# default behavior is preserved: system fallback still wins
+assert_contains "dummy" "fake-system-dummy"
+
+# with the fallback disabled via env var the shim must fail loudly instead of substituting
+output="$(MISE_NOT_FOUND_SYSTEM_FALLBACK=0 dummy 2>&1 || true)"
+assert_contains_text "$output" "Tool not installed for shim: dummy"
+assert_not_contains_text "$output" "fake-system-dummy"
+
+# same, but disabled via [settings] in mise.toml instead of an env var
+cat >mise.toml <<'EOF'
+[settings]
+not_found_system_fallback = false
+
+[tools]
+dummy = "2.0.0"
+EOF
+
+output="$(dummy 2>&1 || true)"
+assert_contains_text "$output" "Tool not installed for shim: dummy"
+assert_not_contains_text "$output" "fake-system-dummy"
+
+# removing the override restores the default fallback behavior
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+
+assert_contains "dummy" "fake-system-dummy"
