@@ -66,24 +66,35 @@ export default {
       return ele;
     }
 
+    function appendSettings(group, node, path) {
+      for (const key in node) {
+        const props = node[key];
+        if (typeof props !== "object" || props === null || props.hide) {
+          continue;
+        }
+        const settingPath = [...path, key];
+        if (props.type) {
+          group.settings.push(buildElement(settingPath.join("."), props));
+        } else {
+          appendSettings(group, props, settingPath);
+        }
+      }
+    }
+
     for (const key in doc) {
       const props = doc[key];
       if (props.hide) continue;
       if (props.type) {
         settings[key] = buildElement(key, props);
       } else {
-        for (const subkey in props) {
-          if (props[subkey].hide) continue;
-          settings[key] = settings[key] || {
-            key,
-            additionalProperties: false,
-            description: props.description,
-            settings: [],
-          };
-          settings[key].settings.push(
-            buildElement(`${key}.${subkey}`, props[subkey]),
-          );
-        }
+        const group = {
+          key,
+          additionalProperties: false,
+          description: props.description,
+          settings: [],
+        };
+        appendSettings(group, props, [key]);
+        settings[key] = group;
       }
     }
     return Object.values(settings).sort((a, b) => a.key.localeCompare(b.key));

@@ -123,15 +123,11 @@ impl SettingsLs {
     fn print_json(&self, rows: Vec<Row>) -> Result<()> {
         let mut table = serde_json::Map::new();
         for row in rows {
-            if let Some((key, subkey)) = row.key.split_once('.') {
-                let subtable = table
-                    .entry(key)
-                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-                let subtable = subtable.as_object_mut().unwrap();
-                subtable.insert(subkey.to_string(), toml_value_to_json_value(row.toml_value));
-            } else {
-                table.insert(row.key, toml_value_to_json_value(row.toml_value));
-            }
+            insert_json_value(
+                &mut table,
+                &row.path,
+                toml_value_to_json_value(row.toml_value),
+            );
         }
         miseprintln!("{}", serde_json::to_string_pretty(&table)?);
         Ok(())
@@ -152,15 +148,7 @@ impl SettingsLs {
             if let Some(source) = row.source {
                 entry.insert("source".to_string(), source.to_string_lossy().into());
             }
-            if let Some((key, subkey)) = row.key.split_once('.') {
-                let subtable = table
-                    .entry(key)
-                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-                let subtable = subtable.as_object_mut().unwrap();
-                subtable.insert(subkey.to_string(), entry.into());
-            } else {
-                table.insert(row.key, entry.into());
-            }
+            insert_json_value(&mut table, &row.path, entry.into());
         }
         miseprintln!("{}", serde_json::to_string_pretty(&table)?);
         Ok(())
@@ -169,16 +157,7 @@ impl SettingsLs {
     fn print_toml(&self, rows: Vec<Row>) -> Result<()> {
         let mut table = toml::Table::new();
         for row in rows {
-            if let Some((key, subkey)) = row.key.split_once('.') {
-                let subtable = table
-                    .entry(key)
-                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                let subtable = subtable.as_table_mut().unwrap();
-                subtable.insert(subkey.to_string(), row.toml_value);
-                continue;
-            } else {
-                table.insert(row.key, row.toml_value);
-            }
+            insert_toml_value(&mut table, &row.path, row.toml_value);
         }
         miseprintln!("{}", toml::to_string(&table)?);
         Ok(())
@@ -211,6 +190,8 @@ struct Row {
     description: Option<String>,
     #[tabled(skip)]
     type_: String,
+    #[tabled(skip)]
+    path: Vec<String>,
 }
 
 impl Row {
@@ -227,25 +208,36 @@ impl Row {
     }
 
     fn from_toml(k: String, v: toml::Value, source: Option<PathBuf>) -> Vec<Self> {
+        Self::from_toml_path(vec![k], v, source)
+    }
+
+    fn from_toml_path(path: Vec<String>, v: toml::Value, source: Option<PathBuf>) -> Vec<Self> {
+        let k = path.join(".");
         let mut rows = vec![];
         if let Some(table) = v.as_table() {
             if !table.is_empty() {
                 rows.reserve(table.len());
                 let meta = SETTINGS_META.get(k.as_str());
-                let desc = meta.map(|sm| sm.description.to_string());
-                let type_str = meta
-                    .map(|sm| settings_type_to_string(&sm.type_))
-                    .unwrap_or_default();
-
                 for (subkey, subvalue) in table {
-                    rows.push(Row {
-                        key: format!("{k}.{subkey}"),
-                        value: subvalue.to_string(),
-                        type_: type_str.clone(),
-                        source: source.clone(),
-                        toml_value: subvalue.clone(),
-                        description: desc.clone(),
-                    });
+                    let mut child_path = path.clone();
+                    child_path.push(subkey.clone());
+                    if let Some(meta) = meta {
+                        rows.push(Row {
+                            key: child_path.join("."),
+                            value: subvalue.to_string(),
+                            type_: settings_type_to_string(&meta.type_),
+                            source: source.clone(),
+                            toml_value: subvalue.clone(),
+                            description: Some(meta.description.to_string()),
+                            path: child_path,
+                        });
+                    } else {
+                        rows.extend(Self::from_toml_path(
+                            child_path,
+                            subvalue.clone(),
+                            source.clone(),
+                        ));
+                    }
                 }
             }
         } else {
@@ -259,10 +251,43 @@ impl Row {
                 source,
                 toml_value: v,
                 description: meta.map(|sm| sm.description.to_string()),
+                path,
             });
         }
         rows
     }
+}
+
+fn insert_json_value(
+    table: &mut serde_json::Map<String, serde_json::Value>,
+    path: &[String],
+    value: serde_json::Value,
+) {
+    let Some((key, rest)) = path.split_first() else {
+        return;
+    };
+    if rest.is_empty() {
+        table.insert(key.clone(), value);
+        return;
+    }
+    let subtable = table
+        .entry(key.clone())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    insert_json_value(subtable.as_object_mut().unwrap(), rest, value);
+}
+
+fn insert_toml_value(table: &mut toml::Table, path: &[String], value: toml::Value) {
+    let Some((key, rest)) = path.split_first() else {
+        return;
+    };
+    if rest.is_empty() {
+        table.insert(key.clone(), value);
+        return;
+    }
+    let subtable = table
+        .entry(key.clone())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    insert_toml_value(subtable.as_table_mut().unwrap(), rest, value);
 }
 
 fn toml_value_to_json_value(v: toml::Value) -> serde_json::Value {

@@ -1,3 +1,4 @@
+use crate::cache::{CacheDigest, CacheRemoteMode};
 use crate::file;
 use crate::task::task_cache::{
     CACHE_FORMAT_VERSION, CacheManifest, TaskCacheOutput, calculate_artifact_checksum,
@@ -13,7 +14,6 @@ use reqwest::header::{
     ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue, IF_NONE_MATCH,
 };
 use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -24,8 +24,8 @@ use tokio::io::AsyncWriteExt;
 use url::{Host, Url};
 
 const REMOTE_CACHE_PROTOCOL_VERSION: u8 = 1;
-const REMOTE_CACHE_PROTOCOL_HEADER: &str = "Mise-Cache-Protocol";
-const REMOTE_CACHE_NAMESPACE_HEADER: &str = "Mise-Cache-Namespace";
+const REMOTE_CACHE_PROTOCOL_HEADER: &str = "mise-cache-protocol";
+const REMOTE_CACHE_NAMESPACE_HEADER: &str = "mise-cache-namespace";
 const REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE: &str =
     "application/vnd.mise.cache-action-result.v1+json";
 const REMOTE_CACHE_DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
@@ -37,42 +37,11 @@ const REMOTE_CACHE_BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 /// manifest format so stores and transports can evolve without changing keys.
 pub(crate) const TASK_CACHE_STORE_VERSION: u8 = 1;
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Default,
-    strum::EnumString,
-    strum::Display,
-    PartialEq,
-    Eq,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskCacheRemoteMode {
-    #[default]
-    ReadWrite,
-    ReadOnly,
-    WriteOnly,
-}
-
-impl TaskCacheRemoteMode {
-    fn reads(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::ReadOnly)
-    }
-
-    fn writes(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::WriteOnly)
-    }
-}
-
 pub(crate) struct RemoteTaskCacheConfig {
     pub(crate) base_url: Url,
     pub(crate) namespace: String,
     pub(crate) staging_dir: PathBuf,
-    pub(crate) mode: TaskCacheRemoteMode,
+    pub(crate) mode: CacheRemoteMode,
     pub(crate) token: Option<String>,
     pub(crate) token_file: Option<PathBuf>,
     pub(crate) oidc_audience: Option<String>,
@@ -109,71 +78,6 @@ struct JwtExpiry {
     exp: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-struct CacheDigest {
-    algorithm: String,
-    hash: String,
-    size: u64,
-}
-
-impl CacheDigest {
-    fn blake3(bytes: &[u8]) -> Self {
-        Self {
-            algorithm: "blake3".into(),
-            hash: blake3::hash(bytes).to_hex().to_string(),
-            size: bytes.len() as u64,
-        }
-    }
-
-    fn validate(&self) -> Result<()> {
-        if self.algorithm != "blake3" && self.algorithm != "sha256" {
-            bail!("unsupported remote cache digest algorithm");
-        }
-        if self.hash.len() != 64
-            || !self
-                .hash
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            bail!("invalid remote cache digest");
-        }
-        Ok(())
-    }
-
-    fn matches_bytes(&self, bytes: &[u8]) -> Result<bool> {
-        self.validate()?;
-        if self.size != bytes.len() as u64 {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
-            "blake3" => blake3::hash(bytes).to_hex().to_string(),
-            "sha256" => hex::encode(sha2::Sha256::digest(bytes)),
-            _ => unreachable!("digest algorithm was validated"),
-        };
-        Ok(self.hash == hash)
-    }
-
-    fn matches_file(&self, path: &Path) -> Result<bool> {
-        self.validate()?;
-        if self.size != fs::metadata(path)?.len() {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
-            "blake3" => crate::hash::file_hash_blake3(path, None)?,
-            "sha256" => crate::hash::file_hash_sha256(path, None)?,
-            _ => unreachable!("digest algorithm was validated"),
-        };
-        Ok(self.hash == hash)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteActionResultEnvelope {
-    result: RemoteActionResult,
-    #[serde(default)]
-    signatures: Vec<RemoteSignature>,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 struct RemoteActionResult {
     action: CacheDigest,
@@ -185,19 +89,13 @@ struct RemoteActionResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct RemoteSignature {
-    algorithm: String,
-    key_id: String,
-    signature: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 struct RemoteClientMetadata {
     execution_duration_ns: u64,
     output: Vec<TaskCacheOutput>,
     restored_bytes: u64,
     roots: Vec<String>,
     task_identity: String,
+    kind: String,
     version: u8,
 }
 
@@ -213,6 +111,7 @@ impl RemoteClientMetadata {
                 .map(|path| path.to_string_lossy().replace('\\', "/"))
                 .collect(),
             task_identity: manifest.task_identity.clone(),
+            kind: "task".to_string(),
             version: 1,
         }
     }
@@ -220,6 +119,9 @@ impl RemoteClientMetadata {
     fn into_manifest(self, key: &str) -> Result<CacheManifest> {
         if self.version != 1 {
             bail!("unsupported remote cache client metadata version");
+        }
+        if self.kind != "task" {
+            bail!("remote cache metadata kind is not a task");
         }
         let roots = self.roots.into_iter().map(PathBuf::from).collect();
         Ok(CacheManifest {
@@ -368,7 +270,7 @@ pub(crate) trait TaskCacheStore: Send + Sync {
 pub(crate) struct CompositeTaskCacheStore {
     local: Arc<dyn TaskCacheStore>,
     remote: Arc<dyn TaskCacheStore>,
-    remote_mode: TaskCacheRemoteMode,
+    remote_mode: CacheRemoteMode,
     remote_read_locks: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
 }
 
@@ -376,7 +278,7 @@ impl CompositeTaskCacheStore {
     pub(crate) fn new(
         local: Arc<dyn TaskCacheStore>,
         remote: Arc<dyn TaskCacheStore>,
-        remote_mode: TaskCacheRemoteMode,
+        remote_mode: CacheRemoteMode,
     ) -> Result<Self> {
         if local.version() != remote.version() {
             bail!(
@@ -649,13 +551,13 @@ impl GithubActionsOidcCredential {
     fn from_env(audience: &str, client: reqwest::Client) -> Result<Self> {
         let request_url = std::env::var("ACTIONS_ID_TOKEN_REQUEST_URL").map_err(|_| {
             eyre!(
-                "task.cache_remote_oidc_audience requires GitHub Actions OIDC; \
+                "task.cache.remote_oidc_audience requires GitHub Actions OIDC; \
                  grant `id-token: write` or set MISE_TASK_CACHE_REMOTE_TOKEN"
             )
         })?;
         let request_token = std::env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").map_err(|_| {
             eyre!(
-                "task.cache_remote_oidc_audience requires GitHub Actions OIDC; \
+                "task.cache.remote_oidc_audience requires GitHub Actions OIDC; \
                  ACTIONS_ID_TOKEN_REQUEST_TOKEN is missing"
             )
         })?;
@@ -775,7 +677,7 @@ fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result<()> {
         return Ok(());
     }
     if base_url.scheme() != "http" {
-        bail!("task.cache_remote_url must use HTTPS");
+        bail!("task.cache.remote_url must use HTTPS");
     }
     let is_loopback = base_url.host().is_some_and(|host| match host {
         Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
@@ -783,11 +685,11 @@ fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result<()> {
         Host::Ipv6(address) => address.is_loopback(),
     });
     if !is_loopback && authenticated {
-        bail!("task.cache_remote_url must use HTTPS except for loopback development servers");
+        bail!("task.cache.remote_url must use HTTPS except for loopback development servers");
     }
     if !is_loopback {
         warn!(
-            "using an unauthenticated remote task cache over plain HTTP; cache traffic can be read \
+            "using an unauthenticated remote build cache over plain HTTP; cache traffic can be read \
              or modified in transit"
         );
     }
@@ -827,7 +729,10 @@ impl HttpTaskCacheStore {
         let request = self
             .client
             .request(method, url)
-            .header(REMOTE_CACHE_PROTOCOL_HEADER, "1")
+            .header(
+                REMOTE_CACHE_PROTOCOL_HEADER,
+                REMOTE_CACHE_PROTOCOL_VERSION.to_string(),
+            )
             .header(REMOTE_CACHE_NAMESPACE_HEADER, &self.namespace)
             .header(ACCEPT, media_type);
         if let Some(authorization) = self.credential.authorization().await? {
@@ -926,7 +831,7 @@ impl HttpTaskCacheStore {
         &self,
         key: &str,
         action_size: u64,
-        result: &RemoteActionResultEnvelope,
+        result: &RemoteActionResult,
     ) -> Result<()> {
         let url = self.action_result_endpoint(key, action_size)?;
         let body = serde_json::to_vec(result)?;
@@ -976,18 +881,17 @@ impl TaskCacheStore for HttpTaskCacheStore {
             Ok(Some(response.error_for_status()?.json().await?))
         })
         .await?;
-        let Some(envelope): Option<RemoteActionResultEnvelope> = envelope else {
+        let Some(result): Option<RemoteActionResult> = envelope else {
             return Ok(None);
         };
-        if envelope.result.version != 1
-            || envelope.result.action.algorithm != "blake3"
-            || envelope.result.action.hash != key
-            || envelope.result.action.size != action_size
+        if result.version != 1
+            || result.action.algorithm != "blake3"
+            || result.action.hash != key
+            || result.action.size != action_size
         {
             bail!("remote action result does not match requested action");
         }
-        let metadata = envelope
-            .result
+        let metadata = result
             .metadata
             .as_ref()
             .ok_or_else(|| eyre!("remote action result is missing client metadata"))?;
@@ -1002,7 +906,7 @@ impl TaskCacheStore for HttpTaskCacheStore {
         for root in &manifest.roots {
             validate_cache_path(root)?;
         }
-        let artifact = match &envelope.result.output_root {
+        let artifact = match &result.output_root {
             Some(root) => {
                 let temporary = materialize_remote_tree(self, root).await?;
                 Some(TaskCacheStoreArtifact::temporary(temporary))
@@ -1076,14 +980,11 @@ impl TaskCacheStore for HttpTaskCacheStore {
         self.put_action_result(
             key,
             action.len() as u64,
-            &RemoteActionResultEnvelope {
-                result: RemoteActionResult {
-                    action: action_digest,
-                    metadata: Some(metadata),
-                    output_root,
-                    version: 1,
-                },
-                signatures: Vec::new(),
+            &RemoteActionResult {
+                action: action_digest,
+                metadata: Some(metadata),
+                output_root,
+                version: 1,
             },
         )
         .await
@@ -1540,6 +1441,7 @@ fn remove_file(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest as _;
 
     #[test]
     fn cache_digest_verifies_its_declared_algorithm() {
@@ -1786,12 +1688,9 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> =
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "remote-hit", b"remote", Some(b"artifact")).await;
-        let composite = CompositeTaskCacheStore::new(
-            local.clone(),
-            remote.clone(),
-            TaskCacheRemoteMode::ReadWrite,
-        )
-        .unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote.clone(), CacheRemoteMode::ReadWrite)
+                .unwrap();
 
         let hit = composite.get("remote-hit", 6).await.unwrap().unwrap();
         assert_eq!(hit.manifest, b"remote");
@@ -1834,7 +1733,7 @@ mod tests {
             inner: remote_inner,
         });
         let composite =
-            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+            CompositeTaskCacheStore::new(local.clone(), remote, CacheRemoteMode::ReadWrite)
                 .unwrap();
 
         assert!(composite.get("unavailable", 6).await.unwrap().is_none());
@@ -1919,23 +1818,28 @@ mod tests {
         let action = br#"{"task":"build"}"#;
         let action_digest = CacheDigest::blake3(action);
         let key = action_digest.hash.as_str();
-        let manifest = format!(
-            r#"{{"format":2,"key":"{key}","task_identity":"build","artifact_checksum":null,"roots":[],"output":[],"restored_bytes":0,"execution_duration_ns":1}}"#
-        );
-        let local_manifest: CacheManifest = serde_json::from_str(&manifest).unwrap();
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "format": 2,
+            "key": key,
+            "task_identity": "build",
+            "artifact_checksum": null,
+            "roots": [],
+            "output": [],
+            "restored_bytes": 0,
+            "execution_duration_ns": 1,
+        }))
+        .unwrap();
+        let local_manifest: CacheManifest = serde_json::from_slice(&manifest).unwrap();
         let metadata = canonical_json(
             &serde_json::to_value(RemoteClientMetadata::from_manifest(&local_manifest)).unwrap(),
         )
         .unwrap();
         let metadata_digest = CacheDigest::blake3(&metadata);
-        let envelope = RemoteActionResultEnvelope {
-            result: RemoteActionResult {
-                action: action_digest.clone(),
-                metadata: Some(metadata_digest.clone()),
-                output_root: None,
-                version: 1,
-            },
-            signatures: Vec::new(),
+        let result = RemoteActionResult {
+            action: action_digest.clone(),
+            metadata: Some(metadata_digest.clone()),
+            output_root: None,
+            version: 1,
         };
         let action_path = format!(
             "/v1/blobs/blake3/{}/{}",
@@ -1967,7 +1871,7 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        let result_body = serde_json::to_vec(&envelope).unwrap();
+        let result_body = serde_json::to_vec(&result).unwrap();
         let result_put = server
             .mock("PUT", result_path.as_str())
             .match_header("content-type", REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
@@ -2005,7 +1909,7 @@ mod tests {
         let write = store.begin_write(key).unwrap();
 
         store
-            .commit(key, action, &write, manifest.as_bytes(), false)
+            .commit(key, action, &write, &manifest, false)
             .await
             .unwrap();
         let entry = store.get(key, action.len() as u64).await.unwrap().unwrap();
@@ -2063,12 +1967,9 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(local.as_ref(), "expired", b"local", None).await;
         seed(remote.as_ref(), "expired", b"remote", None).await;
-        let composite = CompositeTaskCacheStore::new(
-            local.clone(),
-            remote.clone(),
-            TaskCacheRemoteMode::ReadWrite,
-        )
-        .unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote.clone(), CacheRemoteMode::ReadWrite)
+                .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
 
@@ -2093,7 +1994,7 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
         let composite =
-            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+            CompositeTaskCacheStore::new(local.clone(), remote, CacheRemoteMode::ReadWrite)
                 .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
@@ -2116,7 +2017,7 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
         let composite =
-            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::WriteOnly)
+            CompositeTaskCacheStore::new(local.clone(), remote, CacheRemoteMode::WriteOnly)
                 .unwrap();
 
         assert!(composite.remove_local("expired", 6).await.is_err());

@@ -216,6 +216,24 @@
             }
           }
         },
+        "rust_cache": {
+          "description": "experimental Rust compiler action cache configuration enabled only while this task runs",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          ]
+        },
         "output": {
           "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
           "enum": [

@@ -19,7 +19,7 @@ use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
 use crate::redactions::Redactions;
-use crate::task::{Task, TaskTemplate};
+use crate::task::{Task, TaskRustCacheConfig, TaskTemplate};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
@@ -785,6 +785,7 @@ pub struct TaskConfig {
     pub dir: Option<String>,
     pub shell: Option<String>,
     pub cache: Option<crate::task::TaskCacheConfig>,
+    pub rust_cache: Option<TaskRustCacheConfig>,
     pub global_env: Vec<String>,
     pub global_pass_through_env: Vec<String>,
     pub global_inputs: Vec<String>,
