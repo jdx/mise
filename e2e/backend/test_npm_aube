@@ -17,3 +17,9 @@ assert_contains "cat '$install_dir/aube-lock.yaml'" "cowsay@1.6.0"
 # `mise cache prune npm` owns its lifecycle.
 assert_succeed "test -d '$MISE_CACHE_DIR/npm/aube/cache/packuments-full-v1'"
 assert_succeed "test -d '$MISE_CACHE_DIR/npm/aube/store/v1/files'"
+
+# Aube warnings flow through mise's event renderer without suggesting an aube
+# subcommand that mise does not expose.
+deprecation_output="$(mise install npm:inflight@1.0.6 2>&1)"
+assert_contains_text "$deprecation_output" "deprecated inflight@1.0.6"
+assert_not_contains_text "$deprecation_output" "mise deprecations"
