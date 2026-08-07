@@ -1307,6 +1307,13 @@ or a higher-precedence config. An inline block without `run`, `run_windows`, or
 dependencies. For executable file tasks, the script also remains the task's
 command and the inline definition overlays its metadata.
 
+The same overlay rule applies across layered inline task definitions. For
+example, a metadata-only task in `mise.local.toml` overlays the nearest
+lower-precedence command-bearing definition in `mise.toml`. A higher-precedence
+definition with its own command still replaces the lower task. All metadata-only
+definitions above the selected command-bearing base contribute in precedence
+order, while definitions below it do not contribute metadata.
+
 ```toml
 [task_config]
 includes = [

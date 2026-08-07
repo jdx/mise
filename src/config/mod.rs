@@ -3689,8 +3689,9 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// the script stays as the base and the TOML block is overlaid via
 /// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
 /// an included TOML file. When the same name appears in multiple inline blocks
-/// (e.g. `.config/mise.toml` and `.mise/config.toml`), the first entry wins and
-/// later ones are skipped.
+/// (e.g. `mise.toml` and `mise.local.toml`), the highest-precedence block wins.
+/// If that block has no command, it overlays the nearest lower-precedence
+/// command-bearing block; definitions below that selected base are skipped.
 /// When the same name appears in more than one file task (e.g. a local
 /// `.mise/tasks` script and a same-named task from a `git::` include), the last
 /// one wins. Callers load `file_tasks` in declared `task_config.includes`
@@ -3702,8 +3703,22 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         by_name.insert(t.name.clone(), t);
     }
     let mut seen_config_task_names = BTreeSet::new();
+    let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
         if !seen_config_task_names.insert(t.name.clone()) {
+            let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
+            if pending_inline_overlays.contains_key(&t.name) && has_command {
+                let overlays = pending_inline_overlays
+                    .shift_remove(&t.name)
+                    .expect("pending inline overlays should be present");
+                let mut base = t;
+                for overlay in overlays.into_iter().rev() {
+                    base.merge_toml_overlay(overlay);
+                }
+                by_name.insert(base.name.clone(), base);
+            } else if let Some(overlays) = pending_inline_overlays.get_mut(&t.name) {
+                overlays.push(t);
+            }
             continue;
         }
         if let Some(existing) = by_name
@@ -3722,6 +3737,12 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 existing.merge_toml_overlay(t);
             }
         } else {
+            if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+                pending_inline_overlays
+                    .entry(t.name.clone())
+                    .or_default()
+                    .push(t.clone());
+            }
             by_name.insert(t.name.clone(), t);
         }
     }
