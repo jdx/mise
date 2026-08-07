@@ -105,6 +105,23 @@ import Settings from '/components/settings.vue';
 The following [tool-options](/dev-tools/#tool-options) are available for the `pipx` backend—these
 go in `[tools]` in `mise.toml`.
 
+### `registry_url`
+
+Set the package registry URL mise uses to resolve versions for this tool. The URL must contain a
+`{}` placeholder for the package name. This overrides the `pipx.registry_url` setting only
+for this tool; installation registry arguments remain configured separately through `uvx_args` or
+`pipx_args`.
+
+```toml
+[tools]
+"pipx:my-tool" = {
+  version = "latest",
+  registry_url = "https://packages.example.com/pypi/{}/json",
+  uvx_args = "--extra-index-url https://packages.example.com/pypi/simple",
+  pipx_args = "--pip-args='--extra-index-url https://packages.example.com/pypi/simple'"
+}
+```
+
 ### `install_env`
 
 Set environment variables for `uv tool install` or `pipx install`. mise still
