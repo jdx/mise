@@ -701,20 +701,6 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::settings::SettingsPartial;
-    use confique::Layer;
-
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    struct SettingsResetGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl Drop for SettingsResetGuard {
-        fn drop(&mut self) {
-            Settings::reset(None);
-        }
-    }
 
     fn opts_with(key: &str, value: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
@@ -884,17 +870,14 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
     }
 
     #[test]
-    fn rust_home_settings_expand_tilde() {
-        let lock = TEST_SETTINGS_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let _guard = SettingsResetGuard { _lock: lock };
-        let mut settings = SettingsPartial::empty();
-        settings.rust.cargo_home = Some(PathBuf::from("~/.cargo-custom"));
-        settings.rust.rustup_home = Some(PathBuf::from("~/.rustup-custom"));
-        Settings::reset(Some(settings));
-
-        assert_eq!(cargo_home(), dirs::HOME.join(".cargo-custom"));
-        assert_eq!(rustup_home(), dirs::HOME.join(".rustup-custom"));
+    fn rust_home_paths_expand_tilde() {
+        assert_eq!(
+            resolve_rust_home(PathBuf::from("~/.cargo-custom")),
+            dirs::HOME.join(".cargo-custom")
+        );
+        assert_eq!(
+            resolve_rust_home(PathBuf::from("~/.rustup-custom")),
+            dirs::HOME.join(".rustup-custom")
+        );
     }
 }
