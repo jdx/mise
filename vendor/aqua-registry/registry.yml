@@ -2067,9 +2067,21 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("< 1.0.39747-pre")
+        asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: circleci-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
+        files:
+          - name: circleci
         checksum:
           type: github_release
           asset: circleci-cli_{{trimV .Version}}_checksums.txt
@@ -18508,6 +18520,49 @@ packages:
         checksum:
           type: github_release
           asset: changed-objects_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: babarot
+    repo_name: gh-infra
+    description: Declarative GitHub infrastructure management via YAML
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: gh-infra_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: gh-infra_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v0.1.1"
+        asset: gh-infra_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: gh-infra_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: gh-infra_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gh-infra_{{trimV .Version}}_checksums.txt
           algorithm: sha256
         overrides:
           - goos: windows
@@ -47535,7 +47590,7 @@ packages:
           darwin: macos
         checksum:
           type: github_release
-          asset: "{{.Asset}}.sha256"
+          asset: checksums.sha256
           algorithm: sha256
         github_artifact_attestations:
           signer_workflow: hadolint/hadolint/\.github/workflows/release\.yml
@@ -53907,6 +53962,199 @@ packages:
           enabled: false
       - version_constraint: semver("< 2.1.3")
         no_asset: true
+  - type: github_release
+    repo_owner: jolars
+    repo_name: arity
+    description: Language server, formatter, and linter for R
+    version_filter: Version startsWith "v"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.8.0")
+        asset: arity-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.13.0")
+        asset: arity-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: arity-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: jolars/arity/.github/workflows/packages.yml
+  - type: github_release
+    repo_owner: jolars
+    repo_name: badness
+    description: LaTeX language server, formatter, and linter
+    version_filter: Version startsWith "v"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.11.0")
+        asset: badness-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: badness-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: jolars/badness/.github/workflows/packages.yml
+  - type: github_release
+    repo_owner: jolars
+    repo_name: fatou
+    description: Julia language server, formatter, and linter built in Rust
+    version_filter: Version startsWith "v"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: fatou-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: fatou-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: jolars/fatou/.github/workflows/packages.yml
+  - type: github_release
+    repo_owner: jolars
+    repo_name: panache
+    description: Language server, formatter, and linter for Markdown, Quarto, and R Markdown
+    version_filter: Version startsWith "v"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.20.0")
+        asset: panache-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.60.0")
+        asset: panache-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.61.0")
+        asset: panache-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: jolars/panache/.github/workflows/packages.yml
+      - version_constraint: "true"
+        asset: panache-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: jolars/panache/.github/workflows/packages.yml
   - type: github_release
     repo_owner: jonaslu
     repo_name: ain
@@ -63978,6 +64226,25 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: matteo-sung
+    repo_name: lockvet
+    description: Explain any lockfile change before you merge it — bumps, breaking jumps, new vulns, release ages & deprecations across 30 lockfile formats + SBOMs. CLI, GitHub Action, browser playground, and MCP server so AI assistants can vet PRs too
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        files:
+          - name: lockvet
+            src: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}/lockvet
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: mattermost
     repo_name: mmctl
@@ -85362,6 +85629,7 @@ packages:
     repo_owner: smithy-lang
     repo_name: smithy
     description: Smithy is a protocol-agnostic interface definition language and set of tools for generating clients, servers, and documentation for any programming language
+    windows_ext: .bat
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 1.47.0")
