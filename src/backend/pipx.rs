@@ -142,6 +142,13 @@ impl Backend for PIPXBackend {
         false
     }
 
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        match self.tool_name().parse()? {
+            PipxRequest::Pypi(_) => self.get_registry_url(config).await.map(Some),
+            PipxRequest::Git(_) => Ok(None),
+        }
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let versions: Vec<VersionInfo> = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
@@ -1031,6 +1038,76 @@ mod tests {
             Some("1.0.0")
         );
         registry.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn per_tool_registries_isolate_remote_version_cache() {
+        use crate::backend::Backend;
+
+        let mut first_server = mockito::Server::new_async().await;
+        let first_registry = first_server
+            .mock("GET", "/pypi/private-tool/json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "1.0.0": [{
+                            "upload_time": "2026-01-01T00:00:00",
+                            "upload_time_iso_8601": "2026-01-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let mut second_server = mockito::Server::new_async().await;
+        let second_registry = second_server
+            .mock("GET", "/pypi/private-tool/json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "releases": {
+                        "2.0.0": [{
+                            "upload_time": "2026-02-01T00:00:00",
+                            "upload_time_iso_8601": "2026-02-01T00:00:00Z",
+                            "yanked": false
+                        }]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let config = crate::config::Config::get().await.unwrap();
+        let first_backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:private-tool[registry_url='{}/pypi/{{}}/json']",
+                first_server.url()
+            )
+            .into(),
+        );
+        let second_backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:private-tool[registry_url='{}/pypi/{{}}/json']",
+                second_server.url()
+            )
+            .into(),
+        );
+
+        assert_eq!(
+            first_backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0"]
+        );
+        assert_eq!(
+            second_backend.list_remote_versions(&config).await.unwrap(),
+            vec!["2.0.0"]
+        );
+        first_registry.assert_async().await;
+        second_registry.assert_async().await;
     }
 
     #[tokio::test]
