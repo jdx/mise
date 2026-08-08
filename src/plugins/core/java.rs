@@ -384,22 +384,12 @@ impl JavaPlugin {
             .collect();
         Ok(metadata)
     }
-}
 
-#[async_trait]
-impl Backend for JavaPlugin {
-    fn ba(&self) -> &Arc<BackendArg> {
-        &self.ba
-    }
-
-    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &["release_type"]
-    }
-
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let release_type = JavaOptions::new(&raw_opts).release_type().to_string();
-
+    async fn list_remote_versions_for_options(
+        &self,
+        opts: &ToolVersionOptions,
+    ) -> Result<Vec<VersionInfo>> {
+        let release_type = JavaOptions::new(opts).release_type().to_string();
         let versions = self
             .fetch_java_metadata(&release_type)
             .await?
@@ -457,33 +447,46 @@ impl Backend for JavaPlugin {
 
         Ok(versions)
     }
+}
+
+#[async_trait]
+impl Backend for JavaPlugin {
+    fn ba(&self) -> &Arc<BackendArg> {
+        &self.ba
+    }
+
+    fn include_prereleases(&self, _opts: &ToolVersionOptions) -> bool {
+        // Java selects early-access metadata with `release_type = "ea"`; the
+        // unrelated generic `prerelease` option has never applied here.
+        false
+    }
+
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        VERSION_REGEX.is_match(version)
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["release_type"]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        self.list_remote_versions_for_options(&raw_opts).await
+    }
 
     /// Override to bypass the shared remote_versions cache since Java has
     /// separate caches for GA and EA release types in `fetch_java_metadata`.
-    /// The override is on `_with_refresh` so install-time refresh paths also
-    /// reach the GA/EA-aware logic; the underlying fetch already handles
-    /// freshness, so the `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_with_refresh(
+    /// The underlying fetch already handles freshness, so the `_refresh` flag
+    /// is irrelevant.
+    async fn list_remote_versions_with_info_and_options(
         &self,
-        config: &Arc<Config>,
+        _config: &Arc<Config>,
+        _listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
         _refresh: bool,
+        _has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
-        self._list_remote_versions(config).await
-    }
-
-    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
-        let versions = self.list_installed_versions();
-        // Java doesn't support the `prerelease` opt-in; always filter.
-        self.fuzzy_match_filter(versions, query, true)
-    }
-
-    async fn list_versions_matching(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-    ) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query, true))
+        self.list_remote_versions_for_options(selection_opts).await
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
@@ -824,6 +827,52 @@ mod tests {
                 ("release_type".to_string(), "ea".to_string()),
                 ("shorthand_vendor".to_string(), default_vendor.clone())
             ])
+        );
+    }
+
+    #[tokio::test]
+    async fn request_options_select_java_release_metadata() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let ga_cache = CacheManagerBuilder::new(temp_dir.path().join("ga.msgpack.z")).build();
+        let ea_cache = CacheManagerBuilder::new(temp_dir.path().join("ea.msgpack.z")).build();
+        let metadata = |version: &str| JavaMetadata {
+            image_type: Some("jdk".to_string()),
+            java_version: version.to_string(),
+            jvm_impl: "hotspot".to_string(),
+            vendor: "temurin".to_string(),
+            version: version.to_string(),
+            ..Default::default()
+        };
+        ga_cache
+            .write(&HashMap::from([(
+                "ga-only".to_string(),
+                metadata("17.0.1"),
+            )]))
+            .unwrap();
+        ea_cache
+            .write(&HashMap::from([("ea-only".to_string(), metadata("26-ea"))]))
+            .unwrap();
+        let plugin = JavaPlugin {
+            ba: Arc::new(plugins::core::new_backend_arg("java")),
+            java_metadata_ea_cache: ea_cache,
+            java_metadata_ga_cache: ga_cache,
+            java_metadata_target_cache: tokio::sync::Mutex::new(HashMap::new()),
+        };
+        let config = Config::get().await.unwrap();
+        let ga_opts = opts_with_release_type("ga");
+        let ea_opts = opts_with_release_type("ea");
+
+        let versions = plugin
+            .list_remote_versions_with_info_and_options(&config, &ga_opts, &ea_opts, false, false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            versions
+                .into_iter()
+                .map(|version| version.version)
+                .collect_vec(),
+            vec!["ea-only"]
         );
     }
 

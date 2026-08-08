@@ -7,7 +7,9 @@ use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolSource, ToolVersionOptions, Toolset, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
@@ -22,6 +24,25 @@ type ToolSelectors = (BTreeSet<String>, BTreeSet<String>);
 
 fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
     a.version() == b.version() && a.options() == b.options()
+}
+
+fn options_for_lock_request(
+    tv: &crate::toolset::ToolVersion,
+    specified_request: &ToolRequest,
+) -> ToolVersionOptions {
+    specified_request
+        .ba()
+        .opts_with_config(Some(tv.request.options()))
+}
+
+fn latest_installed_for_lock(
+    backend: &dyn crate::backend::Backend,
+    selection_opts: &ToolVersionOptions,
+) -> Option<String> {
+    backend
+        .latest_installed_version_with_selection_options(Some("latest".to_string()), selection_opts)
+        .ok()
+        .flatten()
 }
 
 /// Update lockfile checksums and URLs for all specified platforms
@@ -998,10 +1019,11 @@ impl Lock {
             {
                 if let Some(Some(request)) = specified_versions.get(&ba.short) {
                     let version = request.version();
+                    let request_options = options_for_lock_request(&tv, request);
                     let request = ToolRequest::new_opts(
                         Arc::new(ba.clone()),
                         &version,
-                        tv.request.options(),
+                        request_options.clone(),
                         ToolSource::Argument,
                     );
                     let resolve_options = request
@@ -1018,12 +1040,9 @@ impl Lock {
                             Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
                     } else if version == "latest" {
-                        if let Some(latest_version) = crate::backend::get(&ba)
-                            .and_then(|b| {
-                                b.latest_installed_version(Some("latest".to_string())).ok()
-                            })
-                            .flatten()
-                        {
+                        if let Some(latest_version) = crate::backend::get(&ba).and_then(|backend| {
+                            latest_installed_for_lock(backend.as_ref(), &request_options)
+                        }) {
                             tv.version = latest_version;
                         }
                     } else {
@@ -1194,10 +1213,13 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{Lock, LockTaskResult, LockTaskStatus};
+    use super::{
+        Lock, LockTaskResult, LockTaskStatus, latest_installed_for_lock, options_for_lock_request,
+    };
+    use crate::backend::test_helpers::RemoteVersionsBackend;
     use crate::cli::args::ToolArg;
     use crate::lockfile::{Lockfile, PlatformInfo};
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
     use std::collections::BTreeMap;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -1260,6 +1282,38 @@ mod tests {
             ToolRequest::new(Arc::new(ba.clone()), version, ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, version.to_string());
         (ba, tv)
+    }
+
+    #[tokio::test]
+    async fn latest_installed_lock_fallback_uses_request_options() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = crate::cli::args::BackendArg::from("lock-request-options-installed");
+        ba.installs_path = temp_dir.path().join("installs");
+        std::fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(ba.installs_path.join("1.1.0-rc.1")).unwrap();
+        let backend = RemoteVersionsBackend::new(Arc::new(ba), vec![], None);
+        let plain_tool = ToolArg::from_str("buck2@latest").unwrap();
+        let inline_tool = ToolArg::from_str("buck2[prerelease=true]@latest").unwrap();
+        let mut config_options = ToolVersionOptions::default();
+        config_options
+            .opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(false));
+        let configured_request =
+            ToolRequest::new_opts(plain_tool.ba, "1.0.0", config_options, ToolSource::Argument)
+                .unwrap();
+        let configured_tv = ToolVersion::new(configured_request, "1.0.0".to_string());
+        let plain_options = options_for_lock_request(&configured_tv, &plain_tool.tvr.unwrap());
+        let inline_options = options_for_lock_request(&configured_tv, &inline_tool.tvr.unwrap());
+
+        assert_eq!(
+            latest_installed_for_lock(&backend, &plain_options),
+            Some("1.0.0".to_string())
+        );
+        assert_eq!(
+            latest_installed_for_lock(&backend, &inline_options),
+            Some("1.1.0-rc.1".to_string())
+        );
     }
 
     #[test]

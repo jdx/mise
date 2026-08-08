@@ -279,6 +279,7 @@ fn arch() -> &'static str {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
+    use crate::toolset::ToolVersionOptions;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
 
@@ -290,7 +291,13 @@ mod tests {
         let plugin = RubyPlugin::new();
         assert!(
             !plugin
-                .list_versions_matching(&config, "3")
+                .list_versions_matching_with_selection_options(
+                    &config,
+                    "3",
+                    &ToolVersionOptions::default(),
+                    None,
+                    false,
+                )
                 .await
                 .unwrap()
                 .is_empty(),
@@ -298,7 +305,13 @@ mod tests {
         );
         assert!(
             !plugin
-                .list_versions_matching(&config, "truffleruby-24")
+                .list_versions_matching_with_selection_options(
+                    &config,
+                    "truffleruby-24",
+                    &ToolVersionOptions::default(),
+                    None,
+                    false,
+                )
                 .await
                 .unwrap()
                 .is_empty(),
@@ -306,7 +319,13 @@ mod tests {
         );
         assert!(
             !plugin
-                .list_versions_matching(&config, "truffleruby+graalvm-24")
+                .list_versions_matching_with_selection_options(
+                    &config,
+                    "truffleruby+graalvm-24",
+                    &ToolVersionOptions::default(),
+                    None,
+                    false,
+                )
                 .await
                 .unwrap()
                 .is_empty(),

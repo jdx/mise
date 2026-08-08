@@ -868,6 +868,11 @@ impl Backend for PythonPlugin {
         crate::backend::fuzzy_match_versions_pep440(versions, query, filter_prereleases)
     }
 
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        plugins::VERSION_REGEX.is_match(version)
+            || plugins::PEP440_PRERELEASE_REGEX.is_match(version)
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
