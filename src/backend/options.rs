@@ -15,9 +15,14 @@ pub(crate) enum VersionOrder {
 }
 
 impl VersionOrder {
+    #[cfg(test)]
     pub(crate) fn from_options(options: &ToolVersionOptions) -> Result<Self> {
+        Self::from_options_or(options, Self::Source)
+    }
+
+    pub(crate) fn from_options_or(options: &ToolVersionOptions, default: Self) -> Result<Self> {
         match options.opts.get("version_order") {
-            None => Ok(Self::Source),
+            None => Ok(default),
             Some(toml::Value::String(value)) => match value.as_str() {
                 "source" => Ok(Self::Source),
                 "semver" => Ok(Self::Semver),

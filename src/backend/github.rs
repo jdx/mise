@@ -324,7 +324,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
-        VersionOrder::from_options(opts)
+        VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
     fn get_type(&self) -> BackendType {

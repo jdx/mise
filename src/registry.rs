@@ -637,24 +637,6 @@ impl RegistryTool {
     pub fn backend_options(&self, full: &str) -> ToolVersionOptions {
         let mut opts = IndexMap::new();
 
-        if matches!(
-            BackendType::guess(full),
-            BackendType::Aqua
-                | BackendType::Forgejo
-                | BackendType::Github
-                | BackendType::Gitlab
-                | BackendType::Http
-        ) {
-            let version_order = match self.version_order {
-                VersionOrder::Source => "source",
-                VersionOrder::Semver => "semver",
-            };
-            opts.insert(
-                "version_order".to_string(),
-                toml::Value::String(version_order.to_string()),
-            );
-        }
-
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
                 let value = v.parse::<toml::Value>().unwrap_or_else(|e| {
@@ -668,6 +650,18 @@ impl RegistryTool {
             opts: RawBackendOptions::from(opts),
             ..Default::default()
         }
+    }
+
+    pub(crate) fn version_order(&self, full: &str) -> Option<VersionOrder> {
+        matches!(
+            BackendType::guess(full),
+            BackendType::Aqua
+                | BackendType::Forgejo
+                | BackendType::Github
+                | BackendType::Gitlab
+                | BackendType::Http
+        )
+        .then_some(self.version_order)
     }
 }
 
@@ -849,9 +843,8 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some("example")
         );
         assert_eq!(
-            tool.backend_options("aqua:example/tool")
-                .get("version_order"),
-            Some("semver")
+            tool.version_order("aqua:example/tool"),
+            Some(VersionOrder::Semver)
         );
         assert_eq!(tool.idiomatic_files[0].path, ".example-version");
         assert!(!tool.idiomatic_files[0].has_parser());
@@ -1150,13 +1143,10 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         };
 
         assert_eq!(
-            tool.backend_options("aqua:owner/repo").get("version_order"),
-            Some("semver")
+            tool.version_order("aqua:owner/repo"),
+            Some(VersionOrder::Semver)
         );
-        assert_eq!(
-            tool.backend_options("npm:package").get("version_order"),
-            None
-        );
+        assert_eq!(tool.version_order("npm:package"), None);
     }
 
     #[tokio::test]
