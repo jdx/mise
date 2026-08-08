@@ -68,8 +68,10 @@ installs app bundles into `/Applications` while recording the version under
 ```
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
-hooks or structured `preflight_steps` or `postflight_steps`. Fonts are installed
-into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
+hooks or structured `preflight_steps` or `postflight_steps` — concepts from
+Homebrew's cask DSL, documented in the
+[Homebrew Cask Cookbook](https://docs.brew.sh/Cask-Cookbook). Fonts are
+installed into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
 
 ```toml
 [bootstrap.packages]
