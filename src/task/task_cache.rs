@@ -18,6 +18,7 @@ use eyre::{Context, Report, Result, bail, eyre};
 use glob::glob;
 use ignore::overrides::Override;
 use jdx_tar::{Builder, EntryType, Header};
+use mise_cache_core::RemoteCacheConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -406,13 +407,19 @@ impl TaskArtifactCacheBuilder {
                 })?
                 .to_string();
             Some(RemoteTaskCacheConfig {
-                base_url: base_url.parse().wrap_err("invalid task.cache.remote_url")?,
-                namespace,
+                remote: RemoteCacheConfig {
+                    base_url: base_url.parse().wrap_err("invalid task.cache.remote_url")?,
+                    namespace,
+                    token: settings.task.cache.remote_token.clone(),
+                    token_file: settings.task.cache.remote_token_file.clone(),
+                    oidc_audience: settings.task.cache.remote_oidc_audience.clone(),
+                    connect_timeout: settings.http_timeout(),
+                    read_timeout: settings.http_timeout(),
+                    download_timeout: settings.http_download_timeout(),
+                    retries: settings.http_retries(),
+                },
                 staging_dir: cache_dir.join("remote"),
                 mode: settings.task.cache.remote_mode,
-                token: settings.task.cache.remote_token.clone(),
-                token_file: settings.task.cache.remote_token_file.clone(),
-                oidc_audience: settings.task.cache.remote_oidc_audience.clone(),
             })
         } else {
             None
