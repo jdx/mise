@@ -1312,6 +1312,17 @@ mod tests {
     }
 
     #[test]
+    fn test_fuzzy_match_versions_numeric_query_accepts_v_prefix() {
+        let versions = ["v10.34.5", "v10.99.0", "v11.11.0"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            fuzzy_match_versions(versions, "10", true),
+            ["v10.34.5".to_string(), "v10.99.0".to_string()]
+        );
+    }
+
+    #[test]
     fn test_fuzzy_match_versions_pep440_drops_alphas_but_honors_exact_match() {
         let versions = vec![
             "3.13.0".to_string(),
@@ -4389,9 +4400,11 @@ pub(crate) fn fuzzy_match_versions(
 ) -> Vec<String> {
     let escaped_query = regex::escape(query);
     let query_pattern = if query == "latest" {
-        "v?[0-9].*"
+        "v?[0-9].*".to_string()
+    } else if query.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("v?{escaped_query}")
     } else {
-        &escaped_query
+        escaped_query
     };
     // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
     // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.

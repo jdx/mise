@@ -35,7 +35,11 @@ impl VersionOrder {
         let mut opaque = Vec::new();
         let mut semantic = Vec::new();
         for (source_index, version) in versions.into_iter().enumerate() {
-            match semver::Version::parse(&version) {
+            let normalized = version
+                .strip_prefix('v')
+                .or_else(|| version.strip_prefix('V'))
+                .unwrap_or(&version);
+            match semver::Version::parse(normalized) {
                 Ok(parsed) => semantic.push((source_index, version, parsed)),
                 Err(_) => opaque.push(version),
             }
@@ -374,5 +378,16 @@ mod tests {
             .map(String::from)
             .to_vec();
         assert_eq!(VersionOrder::Semver.order(versions.clone()), versions);
+    }
+
+    #[test]
+    fn test_semver_order_accepts_v_prefixed_versions() {
+        let versions = ["v11.11.0", "nightly", "v10.99.0", "v10.34.5"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            VersionOrder::Semver.order(versions),
+            ["nightly", "v10.34.5", "v10.99.0", "v11.11.0"]
+        );
     }
 }
