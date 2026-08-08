@@ -99,7 +99,11 @@ mod tests {
         assert!(!os_list_matches(&list(&["macos/arm64"]), "macos", "x64"));
         assert!(!os_list_matches(&list(&["macos/arm64"]), "linux", "arm64"));
         assert!(os_list_matches(&list(&["linux/x86_64"]), "linux", "x64"));
-        assert!(os_list_matches(&list(&["darwin/aarch64"]), "macos", "arm64"));
+        assert!(os_list_matches(
+            &list(&["darwin/aarch64"]),
+            "macos",
+            "arm64"
+        ));
         assert!(os_list_matches(&list(&["linux/amd64"]), "linux", "x64"));
     }
 
@@ -124,16 +128,28 @@ mod tests {
     fn test_unknown_names_never_match() {
         assert!(!os_list_matches(&list(&["notanos"]), "linux", "x64"));
         assert!(!os_list_matches(&list(&["solaris"]), "macos", "arm64"));
-        assert!(!os_list_matches(&list(&["linux/notanarch"]), "linux", "x64"));
+        assert!(!os_list_matches(
+            &list(&["linux/notanarch"]),
+            "linux",
+            "x64"
+        ));
         assert!(!os_list_matches(&list(&["notanos/x64"]), "linux", "x64"));
-        assert!(os_list_matches(&list(&["notanos", "linux"]), "linux", "x64"));
+        assert!(os_list_matches(
+            &list(&["notanos", "linux"]),
+            "linux",
+            "x64"
+        ));
     }
 
     #[test]
     fn test_malformed_os_arch_entries_never_match() {
         assert!(!os_list_matches(&list(&["linux/"]), "linux", "x64"));
         assert!(!os_list_matches(&list(&["/x64"]), "linux", "x64"));
-        assert!(!os_list_matches(&list(&["linux/arm64/extra"]), "linux", "arm64"));
+        assert!(!os_list_matches(
+            &list(&["linux/arm64/extra"]),
+            "linux",
+            "arm64"
+        ));
         assert!(!os_list_matches(&list(&[""]), "linux", "x64"));
     }
 

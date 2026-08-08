@@ -93,7 +93,10 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             .cloned()
             .partition(|request| request.is_os_supported());
         if !os_skipped.is_empty() {
-            info!("{name}: {} package(s) skipped (os mismatch)", os_skipped.len());
+            info!(
+                "{name}: {} package(s) skipped (os mismatch)",
+                os_skipped.len()
+            );
         }
         if requests.is_empty() {
             continue;

@@ -183,7 +183,10 @@ mod tests {
 
     #[test]
     fn os_skipped_table_row_shape() {
-        let row = os_skipped_row("brew-cask", &request("firefox", None, &["macos", "linux/arm64"]));
+        let row = os_skipped_row(
+            "brew-cask",
+            &request("firefox", None, &["macos", "linux/arm64"]),
+        );
         assert_eq!(
             row,
             vec![

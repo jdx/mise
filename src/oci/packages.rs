@@ -108,17 +108,16 @@ fn collect_apt_requests(
         if mgr.disabled {
             continue;
         }
-        let requests = mgr
-            .requests
-            .iter()
-            .filter(|request| {
-                request
-                    .os
-                    .as_ref()
-                    .is_none_or(|os| crate::os_filter::os_list_matches(os, "linux", architecture))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let requests =
+            mgr.requests
+                .iter()
+                .filter(|request| {
+                    request.os.as_ref().is_none_or(|os| {
+                        crate::os_filter::os_list_matches(os, "linux", architecture)
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
         if requests.is_empty() {
             continue;
         }

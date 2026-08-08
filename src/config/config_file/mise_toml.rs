@@ -3044,7 +3044,10 @@ mod tests {
             version_of(system.packages.get("apt:libssl-dev").unwrap()),
             "latest"
         );
-        assert_eq!(version_of(system.packages.get("apt:curl").unwrap()), "8.5.0-2");
+        assert_eq!(
+            version_of(system.packages.get("apt:curl").unwrap()),
+            "8.5.0-2"
+        );
         assert_eq!(
             version_of(system.packages.get("brew:postgresql@17").unwrap()),
             "latest"
@@ -3104,7 +3107,10 @@ mod tests {
             crate::system::PackageEntryToml::Table(t) => t,
             other => panic!("expected a table entry, got {other:?}"),
         };
-        assert_eq!(firefox.get("version").and_then(|v| v.as_str()), Some("latest"));
+        assert_eq!(
+            firefox.get("version").and_then(|v| v.as_str()),
+            Some("latest")
+        );
         let os = firefox.get("os").and_then(|v| v.as_array()).unwrap();
         assert_eq!(
             os.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
@@ -3116,7 +3122,10 @@ mod tests {
             crate::system::PackageEntryToml::Table(t) => t,
             other => panic!("expected a table entry, got {other:?}"),
         };
-        assert_eq!(curl.get("version").and_then(|v| v.as_str()), Some("8.5.0-2"));
+        assert_eq!(
+            curl.get("version").and_then(|v| v.as_str()),
+            Some("8.5.0-2")
+        );
         assert_eq!(curl.get("os").and_then(|v| v.as_str()), Some("linux"));
 
         // unknown keys survive the parse (forward compatibility; validation
@@ -3339,7 +3348,10 @@ mod tests {
     #[tokio::test]
     async fn test_update_bootstrap_package_preserves_table_entries() {
         let _config = Config::get().await.unwrap();
-        let p = CWD.as_ref().unwrap().join(".test-bootstrap-use-os.mise.toml");
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".test-bootstrap-use-os.mise.toml");
         file::write(
             &p,
             r#"[bootstrap.packages]
