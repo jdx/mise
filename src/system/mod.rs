@@ -1480,6 +1480,180 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_from_table_entries() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:libssl-dev" = "latest"
+                "apt:curl" = { version = "8.5.0-2", os = "linux" }
+                "apt:nowhere" = { version = "latest", os = [] }
+                "brew-cask:firefox" = { version = "latest", os = ["macos"] }
+                "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"] }
+            "#,
+        )])?;
+
+        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        let apt = requests
+            .get("apt")
+            .unwrap()
+            .iter()
+            .map(|req| (req.name.as_str(), req.version.clone(), req.os.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            apt,
+            vec![
+                ("libssl-dev", None, None),
+                (
+                    "curl",
+                    Some("8.5.0-2".to_string()),
+                    // bare string os -> single-entry list, raw as written
+                    Some(vec!["linux".to_string()])
+                ),
+                // empty os array is kept: it matches nothing
+                ("nowhere", None, Some(vec![])),
+            ]
+        );
+
+        let firefox = &requests.get("brew-cask").unwrap()[0];
+        assert_eq!(firefox.name, "firefox");
+        assert_eq!(firefox.version, None);
+        assert_eq!(firefox.os, Some(vec!["macos".to_string()]));
+
+        // os values stay raw (aliases and os/arch forms normalize at match time)
+        let ffmpeg = &requests.get("brew").unwrap()[0];
+        assert_eq!(
+            ffmpeg.os,
+            Some(vec!["linux".to_string(), "macos/arm64".to_string()])
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_malformed_table_entries_skipped() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:no-version" = { os = ["linux"] }
+                "apt:bad-version" = { version = 42 }
+                "apt:bad-os" = { version = "latest", os = 42 }
+                "apt:bad-os-list" = { version = "latest", os = [1, 2] }
+                "apt:good" = "latest"
+            "#,
+        )])?;
+
+        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        let apt = requests
+            .get("apt")
+            .unwrap()
+            .iter()
+            .map(|req| req.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(apt, vec!["good"]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_unknown_table_keys_warn_but_apply() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:curl" = { version = "8.5.0-2", os = ["linux"], future_key = "x" }
+            "#,
+        )])?;
+
+        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        let curl = &requests.get("apt").unwrap()[0];
+        assert_eq!(curl.name, "curl");
+        assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
+        assert_eq!(curl.os, Some(vec!["linux".to_string()]));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_local_replaces_global_wholesale() -> Result<()> {
+        // config_map_from_toml inserts local -> global (matching ConfigMap order)
+        let (_dir, config_files) = config_map_from_toml(&[
+            (
+                "local.toml",
+                r#"
+                    [bootstrap.packages]
+                    "brew-cask:firefox" = "latest"
+                    "apt:curl" = { version = "8.5.0-2", os = ["linux"] }
+                "#,
+            ),
+            (
+                "global.toml",
+                r#"
+                    [bootstrap.packages]
+                    "brew-cask:firefox" = { version = "1.0", os = ["macos"] }
+                    "apt:curl" = "latest"
+                "#,
+            ),
+        ])?;
+
+        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        // local string entry drops the global entry's os and version wholesale
+        let firefox = &requests.get("brew-cask").unwrap()[0];
+        assert_eq!(firefox.version, None);
+        assert_eq!(firefox.os, None);
+
+        // local table entry replaces the global string entry wholesale
+        let curl = &requests.get("apt").unwrap()[0];
+        assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
+        assert_eq!(curl.os, Some(vec!["linux".to_string()]));
+        Ok(())
+    }
+
+    #[test]
+    fn test_package_request_is_os_supported() {
+        fn pkg(os: Option<Vec<String>>) -> PackageRequest {
+            PackageRequest {
+                name: "pkg".to_string(),
+                version: None,
+                tap_url: None,
+                os,
+            }
+        }
+
+        assert!(pkg(None).is_os_supported());
+        assert!(pkg(Some(vec![std::env::consts::OS.to_string()])).is_os_supported());
+        let current_os_arch = format!(
+            "{}/{}",
+            crate::cli::version::OS.as_str(),
+            crate::cli::version::ARCH.as_str()
+        );
+        assert!(pkg(Some(vec![current_os_arch])).is_os_supported());
+
+        assert!(!pkg(Some(vec![])).is_os_supported());
+        assert!(!pkg(Some(vec!["notanos".to_string()])).is_os_supported());
+        let other_os = if std::env::consts::OS == "linux" {
+            "macos"
+        } else {
+            "linux"
+        };
+        assert!(!pkg(Some(vec![other_os.to_string()])).is_os_supported());
+    }
+
+    #[test]
+    fn test_parse_use_spec_has_no_os_restriction() {
+        let (_, req) = parse_use_spec("apt:curl@8.5.0-2").unwrap();
+        assert_eq!(req.os, None);
+        let (_, req) = parse_use_spec("brew:postgresql@17").unwrap();
+        assert_eq!(req.os, None);
+    }
+
     #[test]
     fn test_parse_use_spec() {
         let (mgr, req) = parse_use_spec("apt:curl").unwrap();

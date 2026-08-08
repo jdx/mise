@@ -3004,9 +3004,21 @@ mod tests {
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
-        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        fn version_of(entry: &crate::system::PackageEntryToml) -> &str {
+            match entry {
+                crate::system::PackageEntryToml::Version(v) => v,
+                other => panic!("expected a string version entry, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            version_of(system.packages.get("apt:libssl-dev").unwrap()),
+            "latest"
+        );
+        assert_eq!(version_of(system.packages.get("apt:curl").unwrap()), "8.5.0-2");
+        assert_eq!(
+            version_of(system.packages.get("brew:postgresql@17").unwrap()),
+            "latest"
+        );
         assert_eq!(
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3022,7 +3034,7 @@ mod tests {
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
-            system.packages.get("future-manager:whatever").unwrap(),
+            version_of(system.packages.get("future-manager:whatever").unwrap()),
             "latest"
         );
 
@@ -3030,6 +3042,66 @@ mod tests {
         file::write(&p, "[tools]\n").unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.bootstrap_config().is_none());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_packages_table_entries() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test-bootstrap-os.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.packages]
+        "apt:libssl-dev" = "latest"
+        "brew-cask:firefox" = { version = "latest", os = ["macos"] }
+        "apt:curl" = { version = "8.5.0-2", os = "linux" }
+        "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"], future_key = "x" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+
+        // string form still parses as a plain version
+        assert!(matches!(
+            system.packages.get("apt:libssl-dev").unwrap(),
+            crate::system::PackageEntryToml::Version(v) if v == "latest"
+        ));
+
+        // table form stays raw TOML: version + os array preserved as written
+        let firefox = match system.packages.get("brew-cask:firefox").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => t,
+            other => panic!("expected a table entry, got {other:?}"),
+        };
+        assert_eq!(firefox.get("version").and_then(|v| v.as_str()), Some("latest"));
+        let os = firefox.get("os").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            os.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+            vec!["macos"]
+        );
+
+        // os accepts a bare string
+        let curl = match system.packages.get("apt:curl").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => t,
+            other => panic!("expected a table entry, got {other:?}"),
+        };
+        assert_eq!(curl.get("version").and_then(|v| v.as_str()), Some("8.5.0-2"));
+        assert_eq!(curl.get("os").and_then(|v| v.as_str()), Some("linux"));
+
+        // unknown keys survive the parse (forward compatibility; validation
+        // warns at aggregation time, not here)
+        let ffmpeg = match system.packages.get("brew:ffmpeg").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => t,
+            other => panic!("expected a table entry, got {other:?}"),
+        };
+        let os = ffmpeg.get("os").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            os.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+            vec!["linux", "macos/arm64"]
+        );
+        assert_eq!(ffmpeg.get("future_key").and_then(|v| v.as_str()), Some("x"));
+
         file::remove_file(&p).unwrap();
     }
 
