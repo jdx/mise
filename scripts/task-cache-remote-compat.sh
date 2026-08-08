@@ -100,7 +100,7 @@ directory_hash=$(digest_file sha256 "$temp_dir/directory.json")
 directory_size=$(wc -c <"$temp_dir/directory.json" | tr -d '[:space:]')
 
 jq -cnSj --arg nonce "$nonce" \
-	'{arch:"x86_64",args:[],command_inputs:[],dependency_keys:[],environment:{},kind:"task",os:"linux",outputs:["artifact.txt"],phase:"run",root:".",run:[{task:"compatibility"}],shell:null,source_hash:("sha256:"+$nonce),task:"remote-cache-compat",tools:[],vars:{},version:1}' \
+	'{arch:"x86_64",args:[],command_inputs:[],dependency_keys:[],environment:{},kind:"task",os:"linux",outputs:["artifact.txt"],phase:"normal",root:".",run:[{task:"compatibility"}],shell:null,source_hash:("sha256:"+$nonce),task:"remote-cache-compat",tools:[],vars:{},version:1}' \
 	>"$temp_dir/action.json"
 action_hash=$(digest_file blake3 "$temp_dir/action.json")
 action_size=$(wc -c <"$temp_dir/action.json" | tr -d '[:space:]')
