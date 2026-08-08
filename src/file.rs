@@ -714,8 +714,7 @@ fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     if let Err(err) = create_windows_dir_link(target, link) {
         if err.kind() == std::io::ErrorKind::AlreadyExists {
-            let _ = fs::remove_file(link);
-            let _ = fs::remove_dir(link);
+            remove_symlink_or_junction(link)?;
             create_windows_dir_link(target, link)
         } else {
             Err(err)
@@ -770,6 +769,45 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+fn symlink_or_junction_target(link: &Path) -> Result<Option<PathBuf>> {
+    if link.is_symlink() {
+        Ok(Some(fs::read_link(link)?))
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(windows)]
+fn symlink_or_junction_target(link: &Path) -> Result<Option<PathBuf>> {
+    if link.is_symlink() {
+        Ok(Some(fs::read_link(link)?))
+    } else {
+        Ok(junction::get_target(link).ok())
+    }
+}
+
+#[cfg(unix)]
+pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    if !link.is_symlink() {
+        bail!("not a symlink: {}", display_path(link));
+    }
+    fs::remove_file(link)
+        .wrap_err_with(|| format!("failed to remove symlink: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    if link.is_symlink() {
+        fs::remove_file(link).or_else(|_| fs::remove_dir(link))
+    } else if junction::get_target(link).is_ok() {
+        junction::delete(link)
+    } else {
+        bail!("not a symlink or junction: {}", display_path(link));
+    }
+    .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+}
+
 pub fn remove_symlinks_with_target_prefix(
     symlink_dir: &Path,
     target_prefix: &Path,
@@ -781,12 +819,11 @@ pub fn remove_symlinks_with_target_prefix(
     for entry in symlink_dir.read_dir()? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_symlink() {
-            let target = path.read_link()?;
-            if target.starts_with(target_prefix) {
-                fs::remove_file(&path)?;
-                removed.push(path);
-            }
+        if let Some(target) = symlink_or_junction_target(&path)?
+            && target.starts_with(target_prefix)
+        {
+            remove_symlink_or_junction(&path)?;
+            removed.push(path);
         }
     }
     Ok(removed)
@@ -2335,6 +2372,40 @@ mod tests {
             err.downcast_ref::<std::io::Error>().map(|err| err.kind()),
             Some(std::io::ErrorKind::DirectoryNotEmpty)
         );
+    }
+
+    #[test]
+    fn test_remove_symlinks_with_target_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("provider");
+        let target = prefix.join("version");
+        let other = dir.path().join("other");
+        let link = dir.path().join("link");
+        let other_link = dir.path().join("other-link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        make_symlink(&target, &link).unwrap();
+        make_symlink(&other, &other_link).unwrap();
+
+        let removed = remove_symlinks_with_target_prefix(dir.path(), &prefix).unwrap();
+        assert_eq!(removed, vec![link.clone()]);
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert!(std::fs::symlink_metadata(&other_link).is_ok());
+        assert!(target.exists());
+    }
+
+    #[test]
+    fn test_remove_symlink_or_junction_rejects_non_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        let directory = dir.path().join("directory");
+        fs::write(&file, "contents").unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        assert!(remove_symlink_or_junction(&file).is_err());
+        assert!(remove_symlink_or_junction(&directory).is_err());
+        assert!(file.is_file());
+        assert!(directory.is_dir());
     }
 
     #[test]
