@@ -294,7 +294,7 @@ struct AggregatedPackageRequests {
     os_filters: IndexMap<String, IndexMap<PackageRequestKey, Vec<String>>>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl AggregatedPackageRequests {
     fn os_filter(&self, manager: &str, request: &PackageRequest) -> Option<&[String]> {
         self.os_filters
