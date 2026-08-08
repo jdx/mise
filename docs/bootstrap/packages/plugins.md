@@ -9,8 +9,8 @@ Declare the plugin source and packages together:
 
 ```toml
 [bootstrap.plugins]
-vscode = "https://github.com/mise-plugins/mise-vscode-extensions"
-krew = "https://github.com/mise-plugins/mise-krew"
+vscode = "https://github.com/example/mise-vscode-extensions"
+krew = "https://github.com/example/mise-krew"
 
 [bootstrap.packages]
 "vscode:ms-python.python" = "latest"
@@ -35,7 +35,7 @@ mise bootstrap packages apply
 You can install a plugin without declaring it:
 
 ```sh
-mise plugin install package:vscode https://github.com/mise-plugins/mise-vscode-extensions
+mise plugin install package:vscode https://github.com/example/mise-vscode-extensions
 ```
 
 Package plugins install into the host application's own state directory. They
