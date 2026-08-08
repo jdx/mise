@@ -15,6 +15,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use url::{Host, Url};
 
+mod agent;
+mod local;
+
+pub use agent::{AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent};
+pub use local::LocalCas;
+
 pub const PROTOCOL_VERSION: u8 = 1;
 const PROTOCOL_HEADER: &str = "mise-cache-protocol";
 const NAMESPACE_HEADER: &str = "mise-cache-namespace";
@@ -97,7 +103,7 @@ impl CacheDigest {
         Ok(())
     }
 
-    fn matches_bytes(&self, bytes: &[u8]) -> Result<bool> {
+    pub fn matches_bytes(&self, bytes: &[u8]) -> Result<bool> {
         self.validate()?;
         if self.size != bytes.len() as u64 {
             return Ok(false);
@@ -110,7 +116,7 @@ impl CacheDigest {
         Ok(self.hash == hash)
     }
 
-    fn matches_file(&self, path: &Path) -> Result<bool> {
+    pub fn matches_file(&self, path: &Path) -> Result<bool> {
         self.validate()?;
         if self.size != fs::metadata(path)?.len() {
             return Ok(false);

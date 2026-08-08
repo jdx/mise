@@ -6427,6 +6427,7 @@ dependencies = [
  "walkdir",
  "which",
  "winapi",
+ "windows-sys 0.61.2",
  "xx",
  "xz2",
  "zip 8.6.0",
