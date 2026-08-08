@@ -6464,6 +6464,7 @@ version = "0.1.0"
 dependencies = [
  "mise-cache-core",
  "serde",
+ "tempfile",
  "thiserror 2.0.19",
 ]
 
