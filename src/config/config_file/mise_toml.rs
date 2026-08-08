@@ -638,9 +638,10 @@ impl MiseToml {
 
     /// Set the version of `[bootstrap.packages]."<manager>:<package>"`,
     /// creating the tables as needed ("latest" means no pin). An existing
-    /// inline-table entry keeps its `os` and any other keys — only its
-    /// `version` key is updated in place; everything else is written as a
-    /// plain string.
+    /// table entry — in any of its TOML spellings (inline table, sub-table,
+    /// or dotted keys) — keeps its `os` and any other keys, with only its
+    /// `version` updated in place; everything else is written as a plain
+    /// string.
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
         let updated_table = {
             let mut doc = self.doc_mut()?;
@@ -658,31 +659,20 @@ impl MiseToml {
                 .or_insert_with(table)
                 .as_table_mut()
                 .unwrap();
-            // COMMENT(reviewer): [INCORRECT] Only the *inline*-table form is preserved. A
-            // standard sub-table (`[bootstrap.packages."brew-cask:firefox"]` with `version` /
-            // `os` beneath it) or a dotted key (`"brew-cask:firefox".version = "latest"`) is an
-            // `Item::Table`, so `as_value_mut()` returns None and the else-branch
-            // `insert_formatted` replaces the whole item with a plain string — silently deleting
-            // the user's `os` restriction. Both forms are legal TOML and deserialize to
-            // `PackageEntryToml::Table`, so they parse, filter, and render as skipped correctly
-            // everywhere else; only `packages use` destroys them. This contradicts the shipped
-            // docs ("`mise bootstrap packages use` on an existing table entry updates its
-            // `version` in place and preserves `os` and any other keys",
-            // docs/bootstrap/packages/index.md) and Success Criterion "…updates the version in
-            // place and preserves its `os` field", neither of which says "inline". Handle the
-            // `Item::Table` case too (set its `version` key in place), and keep the plain-string
-            // write only for a genuinely absent or string-valued entry. Add a unit test covering
-            // the sub-table form alongside the existing inline-table test.
+            // `as_table_like_mut` covers every table spelling — inline table,
+            // sub-table, and dotted keys all reach here, so none of them lose
+            // their `os` to a plain-string rewrite
             if let Some(entry) = packages
                 .get_mut(spec)
-                .and_then(|item| item.as_value_mut())
-                .and_then(|value| value.as_inline_table_mut())
+                .and_then(|item| item.as_table_like_mut())
             {
-                let mut new_version: toml_edit::Value = version.into();
-                if let Some(old) = entry.get("version") {
-                    *new_version.decor_mut() = old.decor().clone();
-                }
-                entry.insert("version", new_version);
+                let value_decor = entry
+                    .get("version")
+                    .and_then(|item| item.as_value())
+                    .map(|value| value.decor().clone());
+                let mut item = toml_edit::value(version);
+                set_value_decor(&mut item, &value_decor);
+                entry.insert("version", item);
                 true
             } else {
                 let key = get_key_with_decor(packages, spec);

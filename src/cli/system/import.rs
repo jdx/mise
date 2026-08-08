@@ -126,19 +126,9 @@ impl SystemImport {
             }
             for formula in &formulae {
                 let key = formula.config_key();
-                // COMMENT(reviewer): [GAP] `PartialEq<str> for PackageEntryToml` matches only the
-                // `Version` variant, so an existing table entry — e.g.
-                // `"brew:ffmpeg" = { version = "latest", os = ["macos"] }` — never compares equal
-                // to "latest" and this already-configured check misses it. `--dry-run` then
-                // reports `"brew:ffmpeg" = "latest"`, implying a plain-string rewrite that drops
-                // `os`, while the real (non-dry-run) path calls `update_bootstrap_package`, which
-                // updates `version` in place and keeps `os`. Dry-run therefore both over-reports
-                // and misrepresents the write. Compare against the entry's effective version
-                // (string form, or the table's `version` key) instead. Add an import unit test
-                // with a pre-existing table entry.
                 if target_packages
                     .get(&key)
-                    .is_some_and(|version| version == "latest")
+                    .is_some_and(|entry| entry.version() == Some("latest"))
                 {
                     continue;
                 }

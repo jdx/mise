@@ -144,6 +144,19 @@ pub enum PackageEntryToml {
     Table(IndexMap<String, toml::Value>),
 }
 
+impl PackageEntryToml {
+    /// The entry's effective version: the string form's value, or the table
+    /// form's `version` key. None when a table entry has no usable version
+    /// (missing or not a string) — such an entry is warned about and skipped
+    /// at aggregation time.
+    pub fn version(&self) -> Option<&str> {
+        match self {
+            PackageEntryToml::Version(version) => Some(version),
+            PackageEntryToml::Table(table) => table.get("version").and_then(|v| v.as_str()),
+        }
+    }
+}
+
 /// Equality against the plain version-string form; a table entry never equals
 /// a bare version string.
 impl PartialEq<str> for PackageEntryToml {
