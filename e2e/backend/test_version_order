@@ -59,3 +59,14 @@ v10.34.5"
 
 assert_fail 'mise install --dry-run "cargo:ripgrep[version_order=semver]@14.1.1"' \
   "cargo backend does not support version_order"
+
+cat <<'EOF' >mise.toml
+[tools."cargo:ripgrep"]
+version = "14.1.1"
+version_order = "semver"
+EOF
+
+assert_fail "MISE_OFFLINE=1 mise install --dry-run" \
+  "cargo backend does not support version_order"
+assert_fail "MISE_PREFER_OFFLINE=1 mise install --dry-run" \
+  "cargo backend does not support version_order"

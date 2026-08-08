@@ -402,6 +402,13 @@ impl ToolVersion {
 
         let build = |v| Ok(Self::new(request.clone(), v));
 
+        if v.matches('.').count() >= 2 {
+            // Fully-qualified requests can return through several offline and
+            // backend-specific shortcuts, so validate backend-gated options
+            // before any of those paths bypass version listing.
+            backend.version_order(&request.options())?;
+        }
+
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {
@@ -553,11 +560,6 @@ impl ToolVersion {
         // filtering. If the backend returns None, fall through to normal
         // prefix resolution so requests like "1.2.3" can still resolve to
         // "1.2.3.4" when that is the latest matching version.
-        if v.matches('.').count() >= 2 {
-            // Exact-version shortcuts bypass version listing, so validate
-            // backend-gated resolution options before returning early.
-            backend.version_order(&request.options())?;
-        }
         if v.matches('.').count() >= 2
             && let Some(v) = backend.resolve_exact_version(config, &v).await?
         {
