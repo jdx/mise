@@ -87,7 +87,18 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             debug!("{name}: skipping, {reason}");
             continue;
         }
-        let statuses = mp.manager.installed(&mp.requests).await?;
+        let (requests, os_skipped): (Vec<_>, Vec<_>) = mp
+            .requests
+            .iter()
+            .cloned()
+            .partition(|request| request.is_os_supported());
+        if !os_skipped.is_empty() {
+            info!("{name}: {} package(s) skipped (os mismatch)", os_skipped.len());
+        }
+        if requests.is_empty() {
+            continue;
+        }
+        let statuses = mp.manager.installed(&requests).await?;
         let mut targets: Vec<_> = statuses
             .iter()
             .filter(|s| match action {

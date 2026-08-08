@@ -46,7 +46,7 @@ pub fn build_system_packages_layer(
     managers: &[ManagerPackages],
     architecture: &str,
 ) -> Result<Option<LayerBlob>> {
-    let apt_requests = collect_apt_requests(managers)?;
+    let apt_requests = collect_apt_requests(managers, architecture)?;
     if apt_requests.is_empty() {
         return Ok(None);
     }
@@ -96,15 +96,34 @@ pub fn build_system_packages_layer(
     layer::build_layer_from_dir_preserve_metadata(&diff_dir, "").map(Some)
 }
 
-fn collect_apt_requests(managers: &[ManagerPackages]) -> Result<Vec<PackageRequest>> {
+/// Entries are filtered by the **image's** target platform, never the host's:
+/// an `os` list applies iff it matches `linux/<architecture>`.
+fn collect_apt_requests(
+    managers: &[ManagerPackages],
+    architecture: &str,
+) -> Result<Vec<PackageRequest>> {
     let mut out = vec![];
     let mut unsupported = vec![];
     for mgr in managers {
-        if mgr.disabled || mgr.requests.is_empty() {
+        if mgr.disabled {
+            continue;
+        }
+        let requests = mgr
+            .requests
+            .iter()
+            .filter(|request| {
+                request
+                    .os
+                    .as_ref()
+                    .is_none_or(|os| crate::os_filter::os_list_matches(os, "linux", architecture))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if requests.is_empty() {
             continue;
         }
         match mgr.manager.name() {
-            "apt" => out.extend(mgr.requests.clone()),
+            "apt" => out.extend(requests),
             other => unsupported.push(other.to_string()),
         }
     }

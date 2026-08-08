@@ -288,8 +288,18 @@ pub async fn plan(
             continue;
         }
 
+        let (requests, os_skipped): (Vec<_>, Vec<_>) = manager_packages
+            .requests
+            .into_iter()
+            .partition(|request| request.is_os_supported());
+        for request in &os_skipped {
+            plan.insert(os_skipped_package_plan(&manager_name, request))?;
+        }
+        if requests.is_empty() {
+            continue;
+        }
         let supports_version_pins = manager.supports_version_pins();
-        for status in manager.installed(&manager_packages.requests).await? {
+        for status in manager.installed(&requests).await? {
             let id = ResourceId::new("package", format!("{manager_name}:{}", status.request.name));
             let desired = desired_package(&status.request);
             let (current, action) =
@@ -561,6 +571,21 @@ fn add_account_dependencies(
         }
     }
     Ok(())
+}
+
+/// Plan row for an entry whose `os` list does not match the current platform:
+/// visible but never actionable, mirroring the unavailable-manager pattern.
+/// The list stays as written in config.
+fn os_skipped_package_plan(manager_name: &str, request: &PackageRequest) -> ResourcePlan {
+    ResourcePlan::new(
+        ResourceId::new("package", format!("{manager_name}:{}", request.name)),
+        format!(
+            "skipped (os: {})",
+            request.os.as_deref().unwrap_or_default().join(", ")
+        ),
+        desired_package(request),
+        ResourceAction::Unknown,
+    )
 }
 
 fn desired_package(request: &super::packages::PackageRequest) -> String {

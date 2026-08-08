@@ -164,6 +164,7 @@ impl Install {
             .flat_map(|mp| {
                 mp.requests
                     .iter()
+                    .filter(|r| r.is_os_supported())
                     .map(move |r| format!("{}:{}", mp.manager.name(), r))
             })
             .collect::<Vec<_>>()
@@ -185,7 +186,16 @@ impl Install {
             if !available.contains(mp.manager.name()) {
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            let requests = mp
+                .requests
+                .iter()
+                .filter(|r| r.is_os_supported())
+                .cloned()
+                .collect::<Vec<_>>();
+            if requests.is_empty() {
+                continue;
+            }
+            match mp.manager.installed(&requests).await {
                 Ok(statuses) => {
                     missing += statuses
                         .iter()

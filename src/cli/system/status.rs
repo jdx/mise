@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::config::Config;
 use crate::system;
-use crate::system::packages::PackageState;
+use crate::system::packages::{PackageRequest, PackageState};
 use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[bootstrap.packages]`
@@ -51,7 +51,16 @@ impl SystemStatus {
                 }
                 continue;
             }
-            let statuses = mp.manager.installed(&mp.requests).await?;
+            let (requests, os_skipped): (Vec<_>, Vec<_>) = mp
+                .requests
+                .iter()
+                .cloned()
+                .partition(|request| request.is_os_supported());
+            let statuses = if requests.is_empty() {
+                vec![]
+            } else {
+                mp.manager.installed(&requests).await?
+            };
             let mut json_pkgs = vec![];
             for s in statuses {
                 let (installed_version, state) = match &s.state {
@@ -85,6 +94,13 @@ impl SystemStatus {
                     ]);
                 }
             }
+            for request in &os_skipped {
+                if self.json {
+                    json_pkgs.push(os_skipped_json(request));
+                } else {
+                    rows.push(os_skipped_row(name, request));
+                }
+            }
             if self.json {
                 json_out.insert(
                     name.to_string(),
@@ -112,6 +128,34 @@ impl SystemStatus {
         }
         Ok(())
     }
+}
+
+/// Table row for an entry whose `os` list does not match the current platform,
+/// rendered without querying the manager. The list stays as written in config.
+fn os_skipped_row(manager: &str, request: &PackageRequest) -> Vec<String> {
+    vec![
+        manager.to_string(),
+        request.to_string(),
+        "".to_string(),
+        format!("skipped (os: {})", os_list(request)),
+    ]
+}
+
+/// JSON entry for an os-filtered package; mirrors the ordinary package shape
+/// with `"state": "skipped"` and the entry's `os` list.
+fn os_skipped_json(request: &PackageRequest) -> serde_json::Value {
+    json!({
+        "package": request.name,
+        "requested_version": request.version.clone().unwrap_or_else(|| "latest".to_string()),
+        "state": "skipped",
+        "reason": "os mismatch",
+        "os": request.os.clone().unwrap_or_default(),
+        "installed_version": "",
+    })
+}
+
+fn os_list(request: &PackageRequest) -> String {
+    request.os.as_deref().unwrap_or_default().join(", ")
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
