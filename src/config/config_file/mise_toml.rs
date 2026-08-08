@@ -658,6 +658,21 @@ impl MiseToml {
                 .or_insert_with(table)
                 .as_table_mut()
                 .unwrap();
+            // COMMENT(reviewer): [INCORRECT] Only the *inline*-table form is preserved. A
+            // standard sub-table (`[bootstrap.packages."brew-cask:firefox"]` with `version` /
+            // `os` beneath it) or a dotted key (`"brew-cask:firefox".version = "latest"`) is an
+            // `Item::Table`, so `as_value_mut()` returns None and the else-branch
+            // `insert_formatted` replaces the whole item with a plain string — silently deleting
+            // the user's `os` restriction. Both forms are legal TOML and deserialize to
+            // `PackageEntryToml::Table`, so they parse, filter, and render as skipped correctly
+            // everywhere else; only `packages use` destroys them. This contradicts the shipped
+            // docs ("`mise bootstrap packages use` on an existing table entry updates its
+            // `version` in place and preserves `os` and any other keys",
+            // docs/bootstrap/packages/index.md) and Success Criterion "…updates the version in
+            // place and preserves its `os` field", neither of which says "inline". Handle the
+            // `Item::Table` case too (set its `version` key in place), and keep the plain-string
+            // write only for a genuinely absent or string-valued entry. Add a unit test covering
+            // the sub-table form alongside the existing inline-table test.
             if let Some(entry) = packages
                 .get_mut(spec)
                 .and_then(|item| item.as_value_mut())
@@ -3391,6 +3406,70 @@ mod tests {
         }
         assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
         assert_eq!(system.packages.get("apt:jq").unwrap(), "latest");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_sub_table_entries() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".test-bootstrap-use-subtable.mise.toml");
+        // both are legal TOML spellings of a table entry and both deserialize
+        // to PackageEntryToml::Table, so `use` must preserve `os` for them too
+        file::write(
+            &p,
+            r#"[bootstrap.packages]
+"brew:ffmpeg".version = "latest"
+"brew:ffmpeg".os = ["linux"]
+
+[bootstrap.packages."brew-cask:firefox"]
+version = "latest"
+os = ["macos"]
+future_key = "x"
+"#,
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("brew-cask:firefox", "1.2.3")
+            .unwrap();
+        cf.update_bootstrap_package("brew:ffmpeg", "7.1").unwrap();
+
+        // the os restriction survives in the written document, not just in
+        // the in-memory map
+        let dumped = cf.dump().unwrap();
+        assert!(
+            dumped.contains(r#"os = ["macos"]"#),
+            "sub-table os was dropped:\n{dumped}"
+        );
+        assert!(
+            dumped.contains(r#"os = ["linux"]"#),
+            "dotted-key os was dropped:\n{dumped}"
+        );
+        assert!(
+            dumped.contains(r#"future_key = "x""#),
+            "sub-table unknown key was dropped:\n{dumped}"
+        );
+
+        file::write(&p, &dumped).unwrap();
+        let system = MiseToml::from_file(&p).unwrap().bootstrap_config().unwrap();
+        for (spec, version, os) in [
+            ("brew-cask:firefox", "1.2.3", "macos"),
+            ("brew:ffmpeg", "7.1", "linux"),
+        ] {
+            match system.packages.get(spec).unwrap() {
+                crate::system::PackageEntryToml::Table(t) => {
+                    assert_eq!(t.get("version").and_then(|v| v.as_str()), Some(version));
+                    let list = t.get("os").and_then(|v| v.as_array()).unwrap();
+                    assert_eq!(
+                        list.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+                        vec![os]
+                    );
+                }
+                other => panic!("expected {spec} to stay a table entry, got {other:?}"),
+            }
+        }
         file::remove_file(&p).unwrap();
     }
 

@@ -126,6 +126,16 @@ impl SystemImport {
             }
             for formula in &formulae {
                 let key = formula.config_key();
+                // COMMENT(reviewer): [GAP] `PartialEq<str> for PackageEntryToml` matches only the
+                // `Version` variant, so an existing table entry — e.g.
+                // `"brew:ffmpeg" = { version = "latest", os = ["macos"] }` — never compares equal
+                // to "latest" and this already-configured check misses it. `--dry-run` then
+                // reports `"brew:ffmpeg" = "latest"`, implying a plain-string rewrite that drops
+                // `os`, while the real (non-dry-run) path calls `update_bootstrap_package`, which
+                // updates `version` in place and keeps `os`. Dry-run therefore both over-reports
+                // and misrepresents the write. Compare against the entry's effective version
+                // (string form, or the table's `version` key) instead. Add an import unit test
+                // with a pre-existing table entry.
                 if target_packages
                     .get(&key)
                     .is_some_and(|version| version == "latest")
@@ -216,3 +226,78 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap packages import --manager brew --dry-run</bold>
 "#
 );
+
+#[cfg(unix)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The already-configured check `--dry-run` applies to each formula.
+    fn already_configured(
+        packages: &BTreeMap<String, crate::system::PackageEntryToml>,
+        key: &str,
+    ) -> bool {
+        packages
+            .get(key)
+            .is_some_and(|entry| entry.version() == Some("latest"))
+    }
+
+    #[test]
+    fn dry_run_treats_existing_table_entries_as_configured() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("mise.toml");
+        crate::file::write(
+            &path,
+            r#"[bootstrap.packages]
+"brew:jq" = "latest"
+"brew:ffmpeg" = { version = "latest", os = ["macos"] }
+"brew:wget" = { version = "1.21", os = ["macos"] }
+"brew:broken" = { os = ["macos"] }
+"#,
+        )
+        .unwrap();
+
+        let packages = target_bootstrap_packages(&path).unwrap();
+
+        // a table entry pinned to "latest" is already configured, exactly like
+        // the string form — reporting it would imply a plain-string rewrite
+        // that drops `os`, which the real write path never performs
+        assert!(already_configured(&packages, "brew:jq"));
+        assert!(already_configured(&packages, "brew:ffmpeg"));
+
+        // a table pinned to another version is a real change, and a table with
+        // no usable version has no effective version at all
+        assert!(!already_configured(&packages, "brew:wget"));
+        assert!(!already_configured(&packages, "brew:broken"));
+        assert!(!already_configured(&packages, "brew:absent"));
+    }
+
+    #[test]
+    fn entry_version_reads_both_forms() {
+        use crate::system::PackageEntryToml;
+
+        assert_eq!(
+            PackageEntryToml::Version("latest".to_string()).version(),
+            Some("latest")
+        );
+
+        let table = |pairs: &[(&str, toml::Value)]| {
+            PackageEntryToml::Table(
+                pairs
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+            )
+        };
+        let s = |v: &str| toml::Value::String(v.to_string());
+
+        assert_eq!(table(&[("version", s("1.21"))]).version(), Some("1.21"));
+        assert_eq!(
+            table(&[("version", s("latest")), ("os", s("macos"))]).version(),
+            Some("latest")
+        );
+        // no version key, or a non-string one, has no effective version
+        assert_eq!(table(&[("os", s("macos"))]).version(), None);
+        assert_eq!(table(&[("version", toml::Value::Integer(42))]).version(), None);
+    }
+}
