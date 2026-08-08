@@ -215,6 +215,7 @@ pub struct TaskExecutorConfig {
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
+    pub cache_session: Option<crate::cache::session::CacheSessionEnvironment>,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
@@ -239,6 +240,7 @@ pub struct TaskExecutor {
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
+    pub cache_session: Option<crate::cache::session::CacheSessionEnvironment>,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -291,6 +293,7 @@ impl TaskExecutor {
             task_cache: config.task_cache,
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
+            cache_session: config.cache_session,
             sandbox: config.sandbox,
         }
     }
@@ -393,6 +396,24 @@ impl TaskExecutor {
                 .cloned()
                 .collect(),
         };
+        if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
+            && let Some(session) = &self.cache_session
+        {
+            if sandbox.effective_deny_read() {
+                sandbox.allow_read.extend(session.sandbox_paths());
+            }
+            if sandbox.effective_deny_write() {
+                sandbox.allow_write.extend(session.sandbox_paths());
+            }
+            if sandbox.effective_deny_env() {
+                sandbox.pass_through_env.extend([
+                    "MISE_CACHE_SOCKET".into(),
+                    "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
+                    "RUSTC_WRAPPER".into(),
+                    "CARGO_INCREMENTAL".into(),
+                ]);
+            }
+        }
         sandbox.resolve_paths();
         Ok(sandbox)
     }
@@ -784,6 +805,9 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
+        if let Some(session) = &self.cache_session {
+            session.apply(task, &mut env);
+        }
         let exec_ctx = TaskExecContext {
             task,
             env: &env,

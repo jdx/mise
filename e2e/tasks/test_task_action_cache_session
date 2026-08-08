@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.disabled]
+run = 'test -z "${MISE_CACHE_SOCKET:-}"'
+
+[tasks.rust]
+rust_cache = true
+run = '''
+test -n "$MISE_CACHE_SOCKET"
+test -S "$MISE_CACHE_SOCKET"
+test "$(basename "$RUSTC_WRAPPER")" = mise-cache-rustc
+test "$CARGO_INCREMENTAL" = 0
+"$RUSTC_WRAPPER" true
+'''
+
+[tasks.sandboxed]
+rust_cache = true
+deny_env = true
+run = '''
+test -n "$MISE_CACHE_SOCKET"
+test "$CARGO_INCREMENTAL" = 0
+"$RUSTC_WRAPPER" true
+'''
+EOF
+
+mise run disabled
+RUSTC_WRAPPER=/usr/bin/env mise run rust
+RUSTC_WRAPPER=/usr/bin/env mise run sandboxed
+
+assert_fail_contains \
+  "MISE_EXPERIMENTAL=0 mise run rust" \
+  "Rust action caching is experimental"

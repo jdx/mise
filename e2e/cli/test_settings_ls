@@ -36,3 +36,18 @@ assert_contains "mise settings --json-extended" "{
 }"
 
 assert_contains "mise settings ls -T" "all_compile = false"
+
+cat >>mise.toml <<'EOF'
+
+[settings.task.cache]
+remote_mode = "read-only"
+remote_url = "https://cache.example.test"
+EOF
+
+assert_contains "mise settings ls task.cache" "task.cache.remote_mode"
+assert_contains "mise settings ls task.cache" "task.cache.remote_url"
+assert "mise settings ls task.cache --json | jq -r '.task.cache.remote_url'" \
+  "https://cache.example.test"
+assert "mise settings ls task.cache --json-extended | jq -r '.task.cache.remote_mode.value'" \
+  "read-only"
+assert_contains "mise settings ls task.cache --toml" "[task.cache]"

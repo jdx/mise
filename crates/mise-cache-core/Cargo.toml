@@ -1,0 +1,39 @@
+[package]
+name = "mise-cache-core"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Action cache protocol, CAS, authentication, and transport primitives for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+publish = false
+
+[dependencies]
+base64 = "0.23"
+blake3 = "1"
+eyre = "0.6"
+hex = "0.4"
+log = "0.4"
+rand = "0.10"
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "stream",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+strum = { version = "0.28", features = ["derive"] }
+tempfile = "3"
+tokio = { version = "1", features = ["fs", "io-util", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["io"] }
+url = "2"
+
+[dev-dependencies]
+mockito = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[features]
+default = ["rustls"]
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls"]
+rustls-native-roots = ["reqwest/rustls"]

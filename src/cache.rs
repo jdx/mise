@@ -24,6 +24,10 @@ use crate::rand::random_string;
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
 
+pub(crate) mod session;
+
+pub use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
+
 #[derive(Debug)]
 pub struct CacheManagerBuilder {
     cache_file_path: PathBuf,

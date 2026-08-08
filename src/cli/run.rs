@@ -293,6 +293,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[clap(skip)]
+    pub cache_session: Option<crate::cache::session::CacheSession>,
 }
 
 fn affected_task_args(args: &[String]) -> Vec<String> {
@@ -862,7 +865,11 @@ impl Run {
                 .await?;
         }
 
-        // Step 4: Create TaskExecutor after tool installation
+        // Step 4: Bracket action caching with this top-level task run. The
+        // session owns the local agent and is flushed before results report.
+        self.setup_cache_session(&tasks).await?;
+
+        // Step 5: Create TaskExecutor after tool installation
         self.setup_executor()?;
 
         // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
@@ -872,7 +879,7 @@ impl Run {
         let this = Arc::new(self);
         let config = config.clone();
 
-        // Step 4: Initialize scheduler and run tasks
+        // Step 6: Initialize scheduler and run tasks
         let mut scheduler = crate::task::task_scheduler::Scheduler::new(this.jobs());
         let main_deps = Arc::new(Mutex::new(tasks));
 
@@ -903,9 +910,13 @@ impl Run {
             )
             .await?;
 
-        scheduler.join_all(this.continue_on_error).await?;
+        let join_result = scheduler.join_all(this.continue_on_error).await;
+        if let Some(session) = &this.cache_session {
+            crate::cache::session::display_stats(session.finish().await?);
+        }
+        join_result?;
 
-        // Step 5: Display results and handle failures
+        // Step 7: Display results and handle failures
         let results_display = crate::task::task_results_display::TaskResultsDisplay::new(
             this.output_handler.clone().unwrap(),
             this.executor.as_ref().unwrap().failed_tasks.clone(),
@@ -1196,6 +1207,10 @@ impl Run {
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
             task_cache_explain_json: self.task_cache_explain_json,
+            cache_session: self
+                .cache_session
+                .as_ref()
+                .map(crate::cache::session::CacheSession::environment),
             sandbox: crate::sandbox::SandboxConfig::from_settings_and_cli(
                 &Settings::get().sandbox,
                 self.deny_all,
@@ -1219,6 +1234,24 @@ impl Run {
             executor_config,
         ));
 
+        Ok(())
+    }
+
+    async fn setup_cache_session(&mut self, tasks: &Deps) -> Result<()> {
+        let enabled = !self.dry_run
+            && tasks
+                .all()
+                .any(|task| task.rust_cache.as_ref().is_some_and(|cache| cache.enabled));
+        if !enabled {
+            return Ok(());
+        }
+        self.cache_session = Some(
+            crate::cache::session::CacheSession::start(
+                &self.tmpdir,
+                crate::task::task_cache::task_cache_dir().join("actions"),
+            )
+            .await?,
+        );
         Ok(())
     }
 
@@ -1303,6 +1336,9 @@ impl Run {
         use crate::ui;
         if self.task_cache.enabled() && task.cache.as_ref().is_some_and(|cache| cache.enabled) {
             Settings::get().ensure_experimental("task artifact caching")?;
+        }
+        if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled) {
+            Settings::get().ensure_experimental("Rust action caching")?;
         }
         if !task.pass_through_env.is_empty() {
             Settings::get().ensure_experimental("task environment pass-through")?;

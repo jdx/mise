@@ -107,6 +107,11 @@ pub(crate) use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 fn main() -> ExitCode {
+    // Cargo invokes the Rust cache wrapper hundreds or thousands of times per
+    // build. Dispatch on argv0 before runtime, logging, clap, or config startup.
+    if cache::session::is_rustc_shim() {
+        return cache::session::run_rustc_shim();
+    }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();

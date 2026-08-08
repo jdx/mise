@@ -3,7 +3,7 @@
 cat <<'EOF' >mise.toml
 [settings]
 experimental = true
-task.cache_remote_url = "http://127.0.0.1:9/cache"
+task.cache.remote_url = "http://127.0.0.1:9/cache"
 
 [task_config.cache]
 enabled = true
@@ -16,7 +16,7 @@ EOF
 
 printf 'input\n' >input.txt
 
-assert_fail_contains "mise run build" "task.cache_remote_namespace is required"
+assert_fail_contains "mise run build" "task.cache.remote_namespace is required"
 
 # local-only must bypass remote configuration completely.
 MISE_TASK_CACHE=local-only mise run build

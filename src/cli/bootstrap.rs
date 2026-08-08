@@ -1643,6 +1643,7 @@ impl Bootstrap {
             output_handler: None,
             context_builder: Default::default(),
             executor: None,
+            cache_session: None,
             no_cache: Default::default(),
             task_cache: crate::task::TaskCacheMode::from_env()?,
             task_cache_explain: false,

@@ -31,7 +31,10 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{RunEntry, Task, TaskCacheConfig, TaskTemplate, monorepo_scope, strip_extension};
+use crate::task::{
+    RunEntry, Task, TaskCacheConfig, TaskRustCacheConfig, TaskTemplate, monorepo_scope,
+    strip_extension,
+};
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
@@ -2736,6 +2739,12 @@ fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConf
     }
 }
 
+fn apply_task_config_rust_cache_default(task: &mut Task, rust_cache: &Option<TaskRustCacheConfig>) {
+    if task.rust_cache.is_none() {
+        task.rust_cache = rust_cache.clone();
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskEnvironment {
     global_env: Vec<String>,
@@ -2806,6 +2815,7 @@ struct ResolvedTaskConfig {
     dir: Option<String>,
     shell: Option<String>,
     cache: Option<TaskCacheConfig>,
+    rust_cache: Option<TaskRustCacheConfig>,
 }
 
 impl ResolvedTaskInputs {
@@ -3879,6 +3889,7 @@ async fn load_config_tasks(
             Ok(()) => {
                 apply_task_config_inputs(&mut t, &config, &task_config.inputs).await?;
                 apply_task_config_cache_default(&mut t, &task_config.cache);
+                apply_task_config_rust_cache_default(&mut t, &task_config.rust_cache);
                 task_config.environment.apply(&mut t)?;
                 tasks.push(t);
             }
@@ -4273,6 +4284,12 @@ fn merge_cascaded_task_config(
     if let Some(cache) = configs.iter().find_map(|cf| cf.task_config().cache.clone()) {
         cascaded.task_config.cache = Some(cache);
     }
+    if let Some(rust_cache) = configs
+        .iter()
+        .find_map(|cf| cf.task_config().rust_cache.clone())
+    {
+        cascaded.task_config.rust_cache = Some(rust_cache);
+    }
     if let Some(global_env) = configs.iter().find_map(|cf| {
         let env = &cf.task_config().global_env;
         (!env.is_empty()).then(|| env.clone())
@@ -4469,6 +4486,10 @@ async fn load_task_sources_from_configs(
             .iter()
             .find_map(|cf| cf.task_config().cache.clone())
             .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.cache.clone())),
+        rust_cache: configs
+            .iter()
+            .find_map(|cf| cf.task_config().rust_cache.clone())
+            .or_else(|| cascaded_task_config.and_then(|tc| tc.task_config.rust_cache.clone())),
     };
 
     let mut config_tasks = vec![];
@@ -4522,6 +4543,7 @@ async fn load_task_sources_from_configs(
                 }
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
+                apply_task_config_rust_cache_default(task, &task_config.rust_cache);
                 task_config.environment.apply(task)?;
             }
             if is_global || is_global_task_include_path(&p) {
@@ -4637,11 +4659,29 @@ fn mark_tasks_as_global(tasks: &mut [Task]) {
 #[cfg(unix)]
 mod tests {
     use insta::assert_debug_snapshot;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs::{self, File};
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_task_config_rust_cache_is_a_default() {
+        let rust_default = Some(TaskRustCacheConfig { enabled: true });
+        let mut inherited = Task::default();
+        apply_task_config_rust_cache_default(&mut inherited, &rust_default);
+        assert_eq!(inherited.rust_cache, rust_default);
+
+        let mut disabled = Task {
+            rust_cache: Some(TaskRustCacheConfig { enabled: false }),
+            ..Default::default()
+        };
+        apply_task_config_rust_cache_default(&mut disabled, &rust_default);
+        assert_eq!(
+            disabled.rust_cache,
+            Some(TaskRustCacheConfig { enabled: false })
+        );
+    }
 
     #[test]
     fn test_collect_task_files_skips_dangling_symlinks() -> Result<()> {
