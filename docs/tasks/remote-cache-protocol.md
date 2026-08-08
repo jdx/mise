@@ -143,7 +143,7 @@ kinds without changing the CAS or action-result APIs:
   "version": 1,
   "kind": "task",
   "task": "build",
-  "phase": "run",
+  "phase": "normal",
   "run": [{ "task": "cargo build --release" }],
   "args": [],
   "shell": null,
