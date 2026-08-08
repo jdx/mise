@@ -250,8 +250,9 @@ pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
     /// Per-formula/cask platform filters from table-form Homebrew entries,
-    /// keyed by the package name. Other managers never populate this map.
-    os_filters: IndexMap<String, Vec<String>>,
+    /// keyed by package name and version. Other managers never populate this
+    /// map.
+    os_filters: IndexMap<PackageRequestKey, Vec<String>>,
     /// excluded by the `system_packages.managers` setting — surfaced by
     /// status/doctor (nothing is silently invisible), skipped by install
     /// and the missing-packages hint
@@ -260,7 +261,9 @@ pub struct ManagerPackages {
 
 impl ManagerPackages {
     pub(crate) fn os_filter(&self, request: &PackageRequest) -> Option<&[String]> {
-        self.os_filters.get(&request.name).map(Vec::as_slice)
+        self.os_filters
+            .get(&PackageRequestKey::from(request))
+            .map(Vec::as_slice)
     }
 
     pub(crate) fn request_matches_platform(&self, request: &PackageRequest) -> bool {
@@ -269,11 +272,36 @@ impl ManagerPackages {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PackageRequestKey {
+    name: String,
+    version: Option<String>,
+}
+
+impl From<&PackageRequest> for PackageRequestKey {
+    fn from(request: &PackageRequest) -> Self {
+        Self {
+            name: request.name.clone(),
+            version: request.version.clone(),
+        }
+    }
+}
+
 #[derive(Default)]
 struct AggregatedPackageRequests {
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
     /// Only `brew` and `brew-cask` keys are populated.
-    os_filters: IndexMap<String, IndexMap<String, Vec<String>>>,
+    os_filters: IndexMap<String, IndexMap<PackageRequestKey, Vec<String>>>,
+}
+
+#[cfg(test)]
+impl AggregatedPackageRequests {
+    fn os_filter(&self, manager: &str, request: &PackageRequest) -> Option<&[String]> {
+        self.os_filters
+            .get(manager)?
+            .get(&PackageRequestKey::from(request))
+            .map(Vec::as_slice)
+    }
 }
 
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
@@ -458,7 +486,8 @@ fn merge_manager_packages(
         let manager_name = mp.manager.name().to_string();
         let requests = aggregated.by_mgr.entry(manager_name.clone()).or_default();
         for request in mp.requests {
-            let os_filter = mp.os_filters.shift_remove(&request.name);
+            let request_key = PackageRequestKey::from(&request);
+            let os_filter = mp.os_filters.shift_remove(&request_key);
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -472,7 +501,7 @@ fn merge_manager_packages(
                             .os_filters
                             .entry(manager_name.clone())
                             .or_default()
-                            .insert(request.name.clone(), os_filter);
+                            .insert(request_key, os_filter);
                     }
                     requests.push(request);
                 }
@@ -527,22 +556,19 @@ fn package_requests_from_config_files(
                 } else {
                     None
                 };
+                let request = PackageRequest {
+                    name,
+                    version,
+                    tap_url,
+                };
                 if let Some(os) = os {
                     aggregated
                         .os_filters
                         .entry(mgr.clone())
                         .or_default()
-                        .insert(name.clone(), os);
+                        .insert(PackageRequestKey::from(&request), os);
                 }
-                aggregated
-                    .by_mgr
-                    .entry(mgr)
-                    .or_default()
-                    .push(PackageRequest {
-                        name,
-                        version,
-                        tap_url,
-                    });
+                aggregated.by_mgr.entry(mgr).or_default().push(request);
             }
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
@@ -1675,6 +1701,45 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn test_tracked_package_versions_retain_distinct_os_filters() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:curl" = { version = "8.5.0", os = ["linux"] }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:curl" = { version = "8.6.0", os = ["macos"] }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .into_iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        let current = brew
+            .requests
+            .iter()
+            .find(|request| request.version.as_deref() == Some("8.5.0"))
+            .unwrap();
+        let tracked = brew
+            .requests
+            .iter()
+            .find(|request| request.version.as_deref() == Some("8.6.0"))
+            .unwrap();
+
+        assert_eq!(brew.os_filter(current).unwrap(), ["linux"]);
+        assert_eq!(brew.os_filter(tracked).unwrap(), ["macos"]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn test_package_requests_from_table_entries() -> Result<()> {
         let (_dir, config_files) = config_map_from_toml(&[(
             "mise.toml",
@@ -1696,20 +1761,23 @@ mod tests {
         let firefox = &aggregated.by_mgr.get("brew-cask").unwrap()[0];
         assert_eq!(firefox.name, "firefox");
         assert_eq!(firefox.version, None);
-        assert_eq!(aggregated.os_filters["brew-cask"]["firefox"], ["macos"]);
+        assert_eq!(
+            aggregated.os_filter("brew-cask", firefox).unwrap(),
+            ["macos"]
+        );
 
         let brew = aggregated.by_mgr.get("brew").unwrap();
         assert_eq!(brew[0].name, "curl");
         assert_eq!(brew[0].version.as_deref(), Some("8.5.0-2"));
         // bare string os -> single-entry list, raw as written
-        assert_eq!(aggregated.os_filters["brew"]["curl"], ["linux"]);
+        assert_eq!(aggregated.os_filter("brew", &brew[0]).unwrap(), ["linux"]);
         // empty os array is kept: it matches nothing
         assert_eq!(brew[1].name, "nowhere");
-        assert!(aggregated.os_filters["brew"]["nowhere"].is_empty());
+        assert!(aggregated.os_filter("brew", &brew[1]).unwrap().is_empty());
         // aliases and os/arch forms stay raw and normalize at match time
         let ffmpeg = &brew[2];
         assert_eq!(
-            aggregated.os_filters["brew"][&ffmpeg.name],
+            aggregated.os_filter("brew", ffmpeg).unwrap(),
             ["linux", "macos/arm64"]
         );
         Ok(())
@@ -1759,7 +1827,7 @@ mod tests {
         let curl = &aggregated.by_mgr.get("brew").unwrap()[0];
         assert_eq!(curl.name, "curl");
         assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
-        assert_eq!(aggregated.os_filters["brew"]["curl"], ["linux"]);
+        assert_eq!(aggregated.os_filter("brew", curl).unwrap(), ["linux"]);
         Ok(())
     }
 
@@ -1791,17 +1859,12 @@ mod tests {
         // local string entry drops the global entry's os and version wholesale
         let firefox = &aggregated.by_mgr.get("brew-cask").unwrap()[0];
         assert_eq!(firefox.version, None);
-        assert!(
-            aggregated
-                .os_filters
-                .get("brew-cask")
-                .is_none_or(|filters| !filters.contains_key("firefox"))
-        );
+        assert!(aggregated.os_filter("brew-cask", firefox).is_none());
 
         // local table entry replaces the global string entry wholesale
         let curl = &aggregated.by_mgr.get("brew").unwrap()[0];
         assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
-        assert_eq!(aggregated.os_filters["brew"]["curl"], ["linux"]);
+        assert_eq!(aggregated.os_filter("brew", curl).unwrap(), ["linux"]);
         Ok(())
     }
 
