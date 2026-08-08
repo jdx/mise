@@ -3784,8 +3784,38 @@
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
           "additionalProperties": {
-            "type": "string",
-            "description": "version pin in the manager's native format, or \"latest\""
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "version pin in the manager's native format, or \"latest\""
+              },
+              {
+                "type": "object",
+                "description": "version pin restricted to specific platforms; unknown extra keys warn and are ignored",
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "description": "version pin in the manager's native format, or \"latest\""
+                  },
+                  "os": {
+                    "description": "platforms the entry applies to, e.g. \"linux\", \"macos\", \"windows\", or \"os/arch\" forms like \"macos/arm64\"; the entry is skipped elsewhere",
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "required": ["version"],
+                "additionalProperties": true
+              }
+            ]
           }
         },
         "repos": {
