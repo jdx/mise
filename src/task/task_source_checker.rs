@@ -1088,7 +1088,8 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
     let mut file_modified = Vec::new();
     let mut directory_modified = Vec::new();
     for pattern in output_glob_patterns(patterns_or_paths) {
-        let candidates = if is_glob_pattern(&pattern) {
+        let is_glob = is_glob_pattern(&pattern);
+        let candidates = if is_glob {
             let mut candidates = Vec::new();
             for expanded in expand_glob_braces(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
@@ -1100,10 +1101,12 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
         } else {
             vec![resolve_task_path(root, &pattern)]
         };
+        let mut found_candidate = false;
         for candidate in candidates {
             if fs::symlink_metadata(&candidate).is_err() {
                 continue;
             }
+            found_candidate = true;
             for entry in WalkDir::new(candidate).follow_links(true) {
                 let entry = entry?;
                 let metadata = entry.metadata()?;
@@ -1115,6 +1118,17 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
                     }
                 }
             }
+        }
+        // Every positive output pattern represents a required artifact root.
+        // Excluded static paths are the exception; the ordered matcher makes
+        // those optional even though they remain in the enumeration list.
+        if !found_candidate
+            && (is_glob || {
+                let path = resolve_task_path(root, &pattern);
+                is_output(&matcher, &path, false) || is_output(&matcher, &path, true)
+            })
+        {
+            return Ok(None);
         }
     }
     let last_mod = file_modified.into_iter().chain(directory_modified).max();
@@ -1343,6 +1357,82 @@ mod tests {
             .unwrap();
 
         assert_eq!(modified, SystemTime::from(directory_mtime));
+    }
+
+    #[test]
+    fn output_mtime_requires_all_selected_static_paths() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &["present.txt".to_string(), "missing.txt".to_string()],
+        )
+        .unwrap();
+
+        assert!(modified.is_none());
+    }
+
+    #[test]
+    fn output_mtime_requires_each_positive_glob_to_match() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &["present.txt".to_string(), "*.generated".to_string()],
+        )
+        .unwrap();
+
+        assert!(modified.is_none());
+    }
+
+    #[test]
+    fn output_mtime_allows_missing_excluded_static_paths() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &[
+                "present.txt".to_string(),
+                "missing.txt".to_string(),
+                "!missing.txt".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(modified.is_some());
+    }
+
+    #[test]
+    fn output_mtime_brace_alternatives_require_any_match() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("a.out"), "a").unwrap();
+
+        let modified = get_last_modified(root.path(), &["{a,b}.out".to_string()]).unwrap();
+
+        assert!(modified.is_some());
+    }
+
+    #[test]
+    fn output_mtime_allows_glob_matches_that_are_all_excluded() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/vendor.js"), "vendor").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &[
+                "present.txt".to_string(),
+                "dist/*.js".to_string(),
+                "!dist/vendor.js".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(modified.is_some());
     }
 
     #[test]
