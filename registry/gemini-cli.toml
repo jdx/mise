@@ -1,6 +1,7 @@
 aliases = ["gemini"]
 description = "Gemini CLI, a command-line AI workflow tool that connects to your tools, understands your code and accelerates your workflows"
 test = { cmd = "gemini --version", expected = "{{version}}", tools = ["aube"] }
+version_order = "semver"
 
 [[backends]]
 full = "npm:@google/gemini-cli"

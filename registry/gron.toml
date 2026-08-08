@@ -2,3 +2,4 @@ backends = ["aqua:tomnomnom/gron"]
 bins = ["gron"]
 description = "Make JSON greppable"
 test = { cmd = "gron --version", expected = "gron version dev" }
+version_order = "source"

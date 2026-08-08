@@ -10,3 +10,4 @@ bins = [
   "scarb-verify",
 ]
 description = "The Cairo package manager"
+version_order = "semver"

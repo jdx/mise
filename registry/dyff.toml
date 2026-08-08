@@ -1,3 +1,4 @@
 backends = ["aqua:homeport/dyff", "asdf:https://gitlab.com/wt0f/asdf-dyff"]
 bins = ["dyff"]
 description = "A diff tool for YAML files, and sometimes JSON"
+version_order = "source"

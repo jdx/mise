@@ -2,3 +2,4 @@ aliases = ["jujutsu"]
 backends = ["aqua:jj-vcs/jj", "cargo:jj-cli"]
 bins = ["jj"]
 description = "A Git-compatible VCS that is both simple and powerful"
+version_order = "semver"

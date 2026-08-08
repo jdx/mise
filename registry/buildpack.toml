@@ -3,3 +3,4 @@ backends = ["aqua:buildpacks/pack", "asdf:johnlayton/asdf-buildpack"]
 bins = ["pack"]
 description = "CLI for building apps using Cloud Native Buildpacks"
 test = { cmd = "pack --version", expected = "{{version}}" }
+version_order = "semver"

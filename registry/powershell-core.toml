@@ -6,3 +6,4 @@ backends = [
 bins = ["pwsh"]
 description = "PowerShell for every system"
 test = { cmd = "pwsh --version", expected = "PowerShell {{version}}" }
+version_order = "semver"

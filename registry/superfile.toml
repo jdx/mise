@@ -2,3 +2,4 @@ backends = ["aqua:yorukot/superfile"]
 bins = ["spf"]
 description = "Pretty fancy and modern terminal file manager"
 test = { cmd = "spf --version", expected = "superfile version v{{version}}" }
+version_order = "source"

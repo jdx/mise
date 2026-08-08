@@ -2,3 +2,4 @@ backends = ["conda:ffmpeg", "asdf:mise-plugins/mise-ffmpeg"]
 bins = ["ffmpeg", "ffplay", "ffprobe"]
 description = "A complete, cross-platform solution to record, convert and stream audio and video"
 test = { cmd = "ffmpeg -version", expected = "ffmpeg version" }
+version_order = "source"

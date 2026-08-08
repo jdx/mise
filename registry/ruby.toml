@@ -20,3 +20,4 @@ bins = [
 description = "Ruby language"
 detect = ["Gemfile", ".ruby-version", "Rakefile"]
 idiomatic_files = [".ruby-version", "Gemfile"]
+version_order = "source"

@@ -1,5 +1,6 @@
 description = "Command-line interface for Signadot"
 test = { cmd = "signadot --version", expected = "signadot version v{{version}}" }
+version_order = "semver"
 
 bins = ["signadot"]
 [[backends]]

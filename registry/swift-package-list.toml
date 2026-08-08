@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["swift-package-list"]
 description = "A command-line tool to get all used Swift Package dependencies"
+version_order = "semver"

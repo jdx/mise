@@ -2,3 +2,4 @@ aliases = ["vp"]
 backends = ["npm:vite-plus"]
 bins = ["oxfmt", "oxlint", "vp", "vpr"]
 description = "The Unified Toolchain for the Web"
+version_order = "semver"

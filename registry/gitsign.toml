@@ -3,3 +3,4 @@ bins = ["gitsign"]
 description = "Keyless Git signing using Sigstore"
 os = ["linux", "macos"]
 test = { cmd = "gitsign --version", expected = "gitsign version v{{version}}" }
+version_order = "semver"

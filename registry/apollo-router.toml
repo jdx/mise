@@ -2,3 +2,4 @@ backends = ["github:apollographql/router", "asdf:safx/asdf-apollo-router"]
 bins = ["router"]
 description = "A configurable, high-performance routing runtime for Apollo Federation"
 test = { cmd = "router --version", expected = "{{version}}" }
+version_order = "semver"

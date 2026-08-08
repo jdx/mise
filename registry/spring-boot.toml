@@ -1,3 +1,4 @@
 backends = ["vfox:jdx/vfox-spring-boot", "asdf:mise-plugins/mise-spring-boot"]
 bins = ["spring"]
 description = "Spring Boot CLI"
+version_order = "source"

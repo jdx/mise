@@ -2,3 +2,4 @@ backends = ["aqua:ricoberger/grafana-kubernetes-plugin"]
 bins = ["kubectl-grafana"]
 description = "The Grafana Kubernetes Plugin allows you to explore your Kubernetes resources and logs directly within Grafana."
 test = { cmd = "kubectl-grafana version", expected = "kubectl grafana, version {{version}}" }
+version_order = "semver"

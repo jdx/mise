@@ -1,5 +1,6 @@
 description = "Compiler for Elm, a functional language for reliable webapps"
 test = { cmd = "elm --version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["elm"]
 [[backends]]

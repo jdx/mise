@@ -1,3 +1,4 @@
 backends = ["aqua:Versent/saml2aws", "asdf:elementalvoid/asdf-saml2aws"]
 bins = ["saml2aws"]
 description = "CLI tool which enables you to login and retrieve AWS temporary credentials using a SAML IDP"
+version_order = "semver"

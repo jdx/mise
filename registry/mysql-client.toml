@@ -19,3 +19,4 @@ bins = [
 ]
 description = "MySQL Client"
 test = { cmd = "mysql --version", expected = "{{version}}" }
+version_order = "semver"

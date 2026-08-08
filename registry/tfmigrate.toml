@@ -1,3 +1,4 @@
 backends = ["aqua:minamijoyo/tfmigrate", "asdf:dex4er/asdf-tfmigrate"]
 bins = ["tfmigrate"]
 description = "A Terraform / OpenTofu state migration tool for GitOps"
+version_order = "semver"

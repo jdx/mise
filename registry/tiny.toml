@@ -1,3 +1,4 @@
 backends = ["vfox:jdx/vfox-tiny", "asdf:mise-plugins/mise-tiny"]
 bins = ["rtx-tiny"]
 description = "rtx-tiny is mostly a fake plugin to check mise in CI"
+version_order = "source"

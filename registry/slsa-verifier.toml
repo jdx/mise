@@ -6,3 +6,4 @@ backends = [
 bins = ["slsa-verifier"]
 description = "Verify provenance from SLSA compliant builders"
 test = { cmd = "slsa-verifier version", expected = "{{version}}" }
+version_order = "semver"

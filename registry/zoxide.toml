@@ -2,3 +2,4 @@ backends = ["aqua:ajeetdsouza/zoxide", "cargo:zoxide"]
 bins = ["zoxide"]
 description = "A smarter cd command. Supports all major shells"
 test = { cmd = "zoxide --version", expected = "zoxide {{version}}" }
+version_order = "semver"

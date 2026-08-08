@@ -1,3 +1,4 @@
 backends = ["aqua:sunny0826/kubecm", "asdf:samhvw8/asdf-kubecm"]
 bins = ["kubecm"]
 description = "Manage your kubeconfig more easily"
+version_order = "semver"

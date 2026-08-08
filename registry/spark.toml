@@ -14,3 +14,4 @@ bins = [
   "sparkR",
 ]
 description = "Apache Spark - A unified analytics engine for large-scale data processing"
+version_order = "semver"

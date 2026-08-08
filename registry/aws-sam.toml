@@ -10,3 +10,4 @@ backends = [
 bins = ["sam"]
 description = "CLI tool to build, test, debug, and deploy Serverless applications using AWS SAM"
 test = { cmd = "sam --version", expected = "SAM CLI, version {{version}}" }
+version_order = "semver"

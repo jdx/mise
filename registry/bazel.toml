@@ -2,3 +2,4 @@ backends = ["aqua:bazelbuild/bazel", "asdf:rajatvig/asdf-bazel"]
 bins = ["bazel"]
 description = "a fast, scalable, multi-language and extensible build system"
 test = { cmd = "bazel --version", expected = "bazel {{version}}" }
+version_order = "semver"

@@ -2,3 +2,4 @@ backends = ["aqua:siderolabs/omni/omnictl"]
 bins = ["omnictl"]
 description = "CLI for Omni - SideroLabs' Kubernetes management platform for bare metal deployments"
 test = { cmd = "omnictl --version", expected = "omnictl version v{{version}}" }
+version_order = "semver"

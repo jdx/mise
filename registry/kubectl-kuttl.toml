@@ -4,3 +4,4 @@ bins = ["kubectl-kuttl"]
 description = "Kubernetes Test TooL (kuttl)"
 os = ["linux", "macos"]
 test = { cmd = "kubectl-kuttl --version", expected = "kubectl-kuttl version {{version}}" }
+version_order = "semver"

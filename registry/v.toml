@@ -1,3 +1,4 @@
 backends = ["vfox:jdx/vfox-v", "asdf:mise-plugins/mise-v"]
 bins = ["v"]
 description = "V - https://vlang.io"
+version_order = "source"

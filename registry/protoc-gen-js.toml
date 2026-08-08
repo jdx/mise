@@ -1,4 +1,5 @@
 description = "This directory contains the JavaScript Protocol Buffers runtime library"
+version_order = "semver"
 # test = { cmd = "protoc-gen-js --version", expected = "protoc-gen-js version {{version}}" }
 
 [[backends]]

@@ -1,3 +1,4 @@
 backends = ["aqua:yoheimuta/protolint", "asdf:spencergilbert/asdf-protolint"]
 bins = ["protoc-gen-protolint", "protolint"]
 description = "A pluggable linter and fixer to enforce Protocol Buffer style and conventions"
+version_order = "semver"

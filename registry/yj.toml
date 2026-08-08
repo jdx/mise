@@ -2,3 +2,4 @@ backends = ["aqua:sclevine/yj", "asdf:ryodocx/asdf-yj"]
 bins = ["yj"]
 description = "CLI - Convert between YAML, TOML, JSON, and HCL. Preserves map order"
 test = { cmd = "yj -v", expected = "v{{version}}" }
+version_order = "source"

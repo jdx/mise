@@ -3,3 +3,4 @@ backends = ["aqua:jsonnet-bundler/jsonnet-bundler", "asdf:beardix/asdf-jb"]
 bins = ["jb"]
 description = "A jsonnet package manager"
 test = { cmd = "jb --version", expected = "v{{version}}" }
+version_order = "semver"

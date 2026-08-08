@@ -13,3 +13,4 @@ bins = [
 ]
 description = "Android Command-line tools"
 test = { cmd = "sdkmanager --version", expected = ".0", tools = ["java"] }
+version_order = "source"

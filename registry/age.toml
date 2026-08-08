@@ -2,3 +2,4 @@ backends = ["aqua:FiloSottile/age", "asdf:threkk/asdf-age"]
 bins = ["age", "age-inspect", "age-keygen", "age-plugin-batchpass"]
 description = "A simple, modern and secure encryption tool (and Go library) with small explicit keys, no config options, and UNIX-style composability"
 test = { cmd = "age --version", expected = "v{{version}}" }
+version_order = "semver"

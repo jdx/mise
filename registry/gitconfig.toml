@@ -2,3 +2,4 @@ backends = ["github:0ghny/gitconfig", "asdf:0ghny/asdf-gitconfig"]
 bins = ["gitconfig"]
 description = "Cli to manage multiple gitconfigs with ease"
 test = { cmd = "gitconfig --version", expected = "gitconfig version {{version}}" }
+version_order = "semver"

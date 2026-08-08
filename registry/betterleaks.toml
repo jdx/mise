@@ -2,3 +2,4 @@ backends = ["aqua:betterleaks/betterleaks", "github:betterleaks/betterleaks"]
 bins = ["betterleaks"]
 description = "Betterleaks scans code, past or present, for secrets"
 test = { cmd = "betterleaks --version", expected = "betterleaks version {{version}}" }
+version_order = "semver"

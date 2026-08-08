@@ -1,3 +1,4 @@
 backends = ["aqua:goss-org/goss", "asdf:raimon49/asdf-goss"]
 bins = ["goss"]
 description = "Quick and Easy server testing/validation"
+version_order = "semver"

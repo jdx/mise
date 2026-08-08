@@ -5,3 +5,4 @@ backends = [
 bins = ["pivnet"]
 description = "CLI to interact with Tanzu Network API V2 interface"
 test = { cmd = "pivnet version", expected = "{{version}}" }
+version_order = "semver"

@@ -5,3 +5,4 @@ backends = [
 bins = ["sonar-scanner", "sonar-scanner-debug"]
 description = "Scanner CLI for SonarQube (Server, Cloud)"
 test = { cmd = "sonar-scanner --version", expected = "SonarScanner CLI {{version}}" }
+version_order = "source"

@@ -2,3 +2,4 @@ backends = ["npm:quicktype"]
 bins = ["quicktype"]
 description = "Generate types and converters from JSON, Schema, and GraphQL provided by https://quicktype.io"
 test = { cmd = "quicktype --version", expected = "quicktype version {{version}}" }
+version_order = "semver"

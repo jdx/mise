@@ -1,4 +1,5 @@
 description = "A command line UI for decoding/encoding JSON Web Tokens"
+version_order = "semver"
 # test = { cmd = "jwtui --version", expected = "jwt-ui {{version}}" }
 
 bins = ["jwtui"]

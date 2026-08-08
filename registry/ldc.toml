@@ -16,3 +16,4 @@ bins = [
 ]
 description = "LLVM-based compiler for the D programming language"
 test = { cmd = "ldc2 --version", expected = "{{version}}" }
+version_order = "semver"

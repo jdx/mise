@@ -1,6 +1,7 @@
 description = "Command line utility to export colors, typography, icons and images from Figma to Xcode / Android Studio project"
 os = ["macos"]
 test = { cmd = "figma-export --version", expected = "{{version}}" }
+version_order = "semver"
 
 [[backends]]
 full = "github:RedMadRobot/figma-export"

@@ -1,3 +1,4 @@
 backends = ["conda:sqlite", "asdf:mise-plugins/mise-sqlite"]
 bins = ["sqlite3"]
 description = "SQLite is a C-language library that implements a small, fast, self-contained, high-reliability, full-featured, SQL database engine. SQLite is the most used database engine in the world"
+version_order = "semver"

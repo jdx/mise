@@ -6,3 +6,4 @@ backends = [
 bins = ["mdbook"]
 description = "Create book from markdown files. Like Gitbook but implemented in Rust"
 test = { cmd = "mdbook --version", expected = "mdbook v{{version}}" }
+version_order = "semver"

@@ -3,3 +3,4 @@ backends = ["aqua:idursun/jjui"]
 bins = ["jjui"]
 description = "Jujutsu UI (jjui) is a Text User Interface (TUI) designed for interacting with the Jujutsu version control system"
 test = { cmd = "jjui --version", expected = "{{version}}" }
+version_order = "source"

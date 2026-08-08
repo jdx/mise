@@ -1,3 +1,4 @@
 backends = ["aqua:instrumenta/kubeval", "asdf:stefansedich/asdf-kubeval"]
 bins = ["kubeval"]
 description = "Validate your Kubernetes configuration files, supports multiple Kubernetes versions"
+version_order = "semver"

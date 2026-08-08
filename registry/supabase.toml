@@ -2,3 +2,4 @@ backends = ["aqua:supabase/cli"]
 bins = ["supabase", "supabase-go"]
 description = "Supabase CLI. Manage postgres migrations, run Supabase locally, deploy edge functions. Postgres backups. Generating types from your database schema"
 test = { cmd = "supabase --version", expected = "{{version}}" }
+version_order = "semver"

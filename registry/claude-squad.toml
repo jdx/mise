@@ -4,3 +4,4 @@ description = "Manage multiple AI agents like Claude Code, Aider, Codex, and Amp
 test = { cmd = "claude-squad version", expected = """
 claude-squad version {{version}}
 https://github.com/smtg-ai/claude-squad/releases/tag/v{{version}}""" }
+version_order = "semver"

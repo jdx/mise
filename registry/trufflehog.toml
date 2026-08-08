@@ -5,3 +5,4 @@ backends = [
 bins = ["trufflehog"]
 description = "Find, verify, and analyze leaked credentials"
 test = { cmd = "trufflehog --version", expected = "trufflehog {{version}}" }
+version_order = "semver"

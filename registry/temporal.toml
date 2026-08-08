@@ -8,3 +8,4 @@ bins = [
   "temporal-sql-tool",
 ]
 description = "Temporal service and CLI"
+version_order = "semver"

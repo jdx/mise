@@ -1,5 +1,6 @@
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
 test = { cmd = "k3k --version", expected = "k3kcli version v{{version}}" }
+version_order = "semver"
 
 bins = ["k3k"]
 [[backends]]

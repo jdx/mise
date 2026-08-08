@@ -6,3 +6,4 @@ backends = [
 bins = ["zigmod"]
 description = "A package manager for the Zig programming language"
 test = { cmd = "zigmod version", expected = "{{version}}" }
+version_order = "source"

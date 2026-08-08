@@ -1,3 +1,4 @@
 backends = ["aqua:kubernetes/kops", "asdf:Antiarchitect/asdf-kops"]
 bins = ["kops"]
 description = "Kubernetes Operations (kops) - Production Grade K8s Installation, Upgrades, and Management"
+version_order = "semver"

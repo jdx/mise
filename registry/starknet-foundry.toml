@@ -1,4 +1,5 @@
 description = "Starknet testing framework (like Truffle, Hardhat and DappTools but for Starknet)"
+version_order = "semver"
 # test = { cmd = "snforge --version", expected = "snforge {{version}}" }
 
 bins = ["sncast", "snforge"]

@@ -6,3 +6,4 @@ backends = [
 bins = ["mvn", "mvnDebug", "mvnyjp"]
 description = "Apache Maven core"
 test = { cmd = "mvn --version", expected = "Apache Maven {{version}}" }
+version_order = "semver"

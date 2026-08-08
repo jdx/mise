@@ -2,3 +2,4 @@ backends = ["aqua:yaml/yamlscript", "asdf:mise-plugins/mise-yamlscript"]
 bins = ["ys"]
 description = "YS — YAML Done Wisely"
 test = { cmd = "ys --version", expected = "{{version}}" }
+version_order = "semver"

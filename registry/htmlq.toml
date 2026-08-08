@@ -2,3 +2,4 @@ backends = ["aqua:mgdm/htmlq", "cargo:htmlq"]
 bins = ["htmlq"]
 description = "Like jq, but for HTML"
 test = { cmd = "htmlq --version", expected = "htmlq {{version}}" }
+version_order = "semver"

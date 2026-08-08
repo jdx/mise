@@ -2,3 +2,4 @@ backends = ["pipx:pdm", "asdf:1oglop1/asdf-pdm"]
 bins = ["pdm"]
 description = "A modern Python package and dependency manager supporting the latest PEP standards"
 test = { cmd = "pdm --version", expected = "PDM, version {{version}}" }
+version_order = "semver"

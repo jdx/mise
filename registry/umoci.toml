@@ -3,3 +3,4 @@ bins = ["umoci"]
 description = "umoci modifies Open Container images"
 os = ["linux"]
 test = { cmd = "umoci --version", expected = "umoci version {{version}}" }
+version_order = "semver"

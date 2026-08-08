@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["wasmtime", "wasmtime-min"]
 description = "A lightweight WebAssembly runtime that is fast, secure, and standards-compliant"
+version_order = "semver"

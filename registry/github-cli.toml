@@ -3,3 +3,4 @@ backends = ["aqua:cli/cli", "asdf:bartlomiejdanek/asdf-github-cli"]
 bins = ["gh"]
 description = "GitHub’s official command line tool"
 test = { cmd = "gh --version", expected = "gh version {{version}}" }
+version_order = "semver"

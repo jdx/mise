@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["hyperfine"]
 description = "A command-line benchmarking tool"
+version_order = "semver"

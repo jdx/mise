@@ -3,3 +3,4 @@ backends = ["aqua:newrelic/newrelic-cli", "asdf:NeoHsu/asdf-newrelic-cli"]
 bins = ["newrelic"]
 description = "The New Relic Command Line Interface"
 test = { cmd = "newrelic --version", expected = "newrelic version {{version}}" }
+version_order = "semver"

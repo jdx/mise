@@ -1,3 +1,4 @@
 backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 bins = ["nova"]
 description = "Find outdated or deprecated Helm charts running in your cluster"
+version_order = "semver"

@@ -1,6 +1,7 @@
 description = "Command line interface to the Atlassian Teamwork Graph and Cloud services"
 os = ["linux", "macos", "windows"]
 test = { cmd = "twg --version", expected = "{{version}}" }
+version_order = "source"
 
 bins = ["twg"]
 [[backends]]

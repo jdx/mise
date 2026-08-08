@@ -1,5 +1,6 @@
 description = "Modern diagram scripting language that turns text to diagrams"
 test = { cmd = "d2 --version", expected = "v{{version}}" }
+version_order = "semver"
 
 bins = ["d2"]
 [[backends]]

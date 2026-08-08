@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["container-structure-test"]
 description = "validate the structure of your container images"
+version_order = "semver"

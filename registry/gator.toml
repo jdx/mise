@@ -2,3 +2,4 @@ backends = ["aqua:open-policy-agent/gatekeeper", "asdf:MxNxPx/asdf-gator"]
 bins = ["gator"]
 description = "Gatekeeper - Policy Controller for Kubernetes"
 test = { cmd = "gator --version", expected = "gator version v{{version}}" }
+version_order = "semver"

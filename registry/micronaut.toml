@@ -1,4 +1,5 @@
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
+version_order = "semver"
 # test = { cmd = "mn --version", expected = "Micronaut Version: {{version}}" }
 
 bins = ["mn"]

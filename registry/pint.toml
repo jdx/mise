@@ -1,3 +1,4 @@
 backends = ["aqua:cloudflare/pint", "asdf:sam-burrell/asdf-pint"]
 bins = ["pint"]
 description = "Prometheus rule linter/validator"
+version_order = "semver"

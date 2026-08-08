@@ -1,3 +1,4 @@
 backends = ["aqua:minamijoyo/tfupdate", "asdf:yuokada/asdf-tfupdate"]
 bins = ["tfupdate"]
 description = "Update version constraints in your Terraform configurations"
+version_order = "semver"

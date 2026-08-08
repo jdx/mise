@@ -2,3 +2,4 @@ backends = ["github:owasp-amass/amass", "asdf:dhoeric/asdf-amass"]
 bins = ["amass"]
 description = "In-depth attack surface mapping and asset discovery"
 test = { cmd = "amass -version", expected = "v" } # version is wrong from the CLI
+version_order = "semver"

@@ -1,3 +1,4 @@
 backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 bins = ["tk"]
 description = "Flexible, reusable and concise configuration for Kubernetes"
+version_order = "semver"

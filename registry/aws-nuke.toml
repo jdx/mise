@@ -2,3 +2,4 @@ backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
 bins = ["aws-nuke"]
 description = "Remove all the resources from an AWS account"
 test = { cmd = "aws-nuke --version", expected = "aws-nuke version v{{version}}" }
+version_order = "semver"

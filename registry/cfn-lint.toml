@@ -1,4 +1,5 @@
 backends = ["pipx:cfn-lint"]
 bins = ["cfn-lint"]
 description = "Checks CloudFormation templates for practices and behaviour that could potentially be improved"
+version_order = "semver"
 # test = ["cfn-lint --version", "cfn-lint {{version}}"] # disabled: failing in CI

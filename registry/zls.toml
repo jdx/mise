@@ -2,3 +2,4 @@ backends = ["aqua:zigtools/zls"]
 bins = ["zls"]
 description = "A Zig language server supporting Zig developers with features like autocomplete and goto definition"
 test = { cmd = "zls --version", expected = "{{version}}" }
+version_order = "semver"

@@ -1,4 +1,5 @@
 backends = ["gem:bashly"]
 bins = ["bashly"]
 description = "Bashly is a command line application (written in Ruby) that lets you generate feature-rich bash command line tools"
+version_order = "semver"
 # test = ["bashly --version", "{{version}}"]  # not working in CI

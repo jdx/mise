@@ -4,3 +4,4 @@ backends = [
 bins = ["ibmcloud"]
 description = "ibmcloud cli"
 test = { cmd = "ibmcloud version", expected = "ibmcloud {{version}}" }
+version_order = "semver"

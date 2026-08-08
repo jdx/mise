@@ -1,3 +1,4 @@
 backends = ["aqua:cloudflare/cfssl/cfssl", "asdf:mathew-fleisch/asdf-cfssl"]
 bins = ["cfssl"]
 description = "CFSSL: Cloudflare's PKI and TLS toolkit"
+version_order = "semver"

@@ -20,3 +20,4 @@ bins = [
 ]
 description = "Lightweight bash package manager"
 test = { cmd = "bpkg --version", expected = "{{version}}" }
+version_order = "semver"

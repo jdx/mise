@@ -6,3 +6,4 @@ backends = [
 bins = ["pi"]
 description = "Pi is a minimal terminal coding harness"
 test = { cmd = "pi --version", expected = "{{version}}" }
+version_order = "semver"

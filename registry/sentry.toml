@@ -3,3 +3,4 @@ backends = ["aqua:getsentry/sentry-cli"]
 bins = ["sentry-cli"]
 description = "A command line utility to work with Sentry"
 test = { cmd = "sentry-cli --version", expected = "sentry-cli {{version}}" }
+version_order = "semver"

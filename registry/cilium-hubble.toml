@@ -6,3 +6,4 @@ backends = [
 bins = ["hubble"]
 description = "Hubble - Network, Service & Security Observability for Kubernetes using eBPF"
 test = { cmd = "hubble --version", expected = "{{version}}" }
+version_order = "semver"

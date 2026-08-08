@@ -5,3 +5,4 @@ backends = [
 bins = ["gh-md-toc"]
 description = "Easy TOC creation for GitHub README.md"
 test = { cmd = "gh-md-toc --version", expected = "{{version}}" }
+version_order = "semver"

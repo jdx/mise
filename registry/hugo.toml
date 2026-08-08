@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["hugo"]
 description = "The world’s fastest framework for building websites"
+version_order = "source"

@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::VersionOrder;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::http::HTTP;
@@ -115,6 +116,7 @@ impl RegistryLookup {
 pub struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
+    pub(crate) version_order: VersionOrder,
     pub backends: &'static [RegistryBackend],
     pub bins: &'static [&'static str],
     #[allow(unused)]
@@ -349,6 +351,13 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         .collect::<Result<Vec<_>>>()?;
     ensure!(!backends.is_empty(), "backends must not be empty");
 
+    let version_order = match table.get("version_order").and_then(toml::Value::as_str) {
+        Some("source") => VersionOrder::Source,
+        Some("semver") => VersionOrder::Semver,
+        Some(_) => bail!("version_order must be \"source\" or \"semver\""),
+        None => bail!("version_order must be explicitly set to \"source\" or \"semver\""),
+    };
+
     let aliases = string_array(table.get("aliases"), "aliases")?;
     let bins = string_array(table.get("bins"), "bins")?;
     let overrides = string_array(table.get("overrides"), "overrides")?;
@@ -369,6 +378,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
     Ok(RegistryTool {
         short: leak_string(short.to_string()),
         description,
+        version_order,
         backends: leak_vec(backends),
         bins: leak_vec(bins),
         aliases: leak_vec(aliases),
@@ -627,6 +637,24 @@ impl RegistryTool {
     pub fn backend_options(&self, full: &str) -> ToolVersionOptions {
         let mut opts = IndexMap::new();
 
+        if matches!(
+            BackendType::guess(full),
+            BackendType::Aqua
+                | BackendType::Forgejo
+                | BackendType::Github
+                | BackendType::Gitlab
+                | BackendType::Http
+        ) {
+            let version_order = match self.version_order {
+                VersionOrder::Source => "source",
+                VersionOrder::Semver => "semver",
+            };
+            opts.insert(
+                "version_order".to_string(),
+                toml::Value::String(version_order.to_string()),
+            );
+        }
+
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
                 let value = v.parse::<toml::Value>().unwrap_or_else(|e| {
@@ -788,6 +816,7 @@ mod tests {
             r#"
 aliases = ["example-alias"]
 description = "Example tool"
+version_order = "semver"
 bins = ["example", "example-helper"]
 backends = [
   "aqua:example/tool",
@@ -819,6 +848,11 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             tool.backend_options("github:example/tool").get("bin"),
             Some("example")
         );
+        assert_eq!(
+            tool.backend_options("aqua:example/tool")
+                .get("version_order"),
+            Some("semver")
+        );
         assert_eq!(tool.idiomatic_files[0].path, ".example-version");
         assert!(!tool.idiomatic_files[0].has_parser());
         assert_eq!(tool.idiomatic_files[1].path, "example.json");
@@ -842,6 +876,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             "example".to_string(),
             r#"
 backends = ["aqua:example/tool"]
+version_order = "source"
 idiomatic_files = [{ path = ".example-version", parser = "shell" }]
 "#
             .to_string(),
@@ -860,7 +895,10 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         use super::*;
 
         let archive = registry_archive(&[
-            ("registry/example.toml", "backends = [\"aqua:good/tool\"]"),
+            (
+                "registry/example.toml",
+                "backends = [\"aqua:good/tool\"]\nversion_order = \"source\"",
+            ),
             (
                 "e2e/registry/example.toml",
                 "backends = [\"aqua:wrong/tool\"]",
@@ -1052,6 +1090,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         let tool = RegistryTool {
             short: "test",
             description: None,
+            version_order: VersionOrder::Source,
             backends: BACKENDS,
             bins: &[],
             aliases: &[],
@@ -1077,6 +1116,46 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         assert_eq!(
             opts.get_nested_string("platforms.linux-x64.asset_pattern"),
             Some("tool-linux.tar.gz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_semver_registry_order_only_applies_to_supported_backends() {
+        use super::*;
+
+        static BACKENDS: &[RegistryBackend] = &[
+            RegistryBackend {
+                full: "aqua:owner/repo",
+                platforms: &[],
+                options: &[],
+            },
+            RegistryBackend {
+                full: "npm:package",
+                platforms: &[],
+                options: &[],
+            },
+        ];
+        let tool = RegistryTool {
+            short: "test",
+            description: None,
+            version_order: VersionOrder::Semver,
+            backends: BACKENDS,
+            bins: &[],
+            aliases: &[],
+            overrides: &[],
+            test: &None,
+            os: &[],
+            idiomatic_files: &[],
+            detect: &[],
+        };
+
+        assert_eq!(
+            tool.backend_options("aqua:owner/repo").get("version_order"),
+            Some("semver")
+        );
+        assert_eq!(
+            tool.backend_options("npm:package").get("version_order"),
+            None
         );
     }
 

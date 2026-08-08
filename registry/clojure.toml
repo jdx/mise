@@ -1,3 +1,4 @@
 backends = ["vfox:jdx/vfox-clojure", "asdf:mise-plugins/mise-clojure"]
 bins = ["clj", "clojure"]
 description = "The Clojure Programming Language"
+version_order = "source"

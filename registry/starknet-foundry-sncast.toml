@@ -1,4 +1,5 @@
 description = "All-in-one tool for interacting with Starknet smart contracts, sending transactions and getting chain data"
+version_order = "semver"
 # test = { cmd = "sncast --version", expected = "sncast {{version}}" }
 
 bins = ["sncast", "snforge"]

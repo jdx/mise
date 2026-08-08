@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["okta-aws-cli"]
 description = "A CLI for having Okta as the IdP for AWS CLI operations"
+version_order = "semver"

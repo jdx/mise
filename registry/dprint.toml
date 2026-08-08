@@ -1,3 +1,4 @@
 backends = ["aqua:dprint/dprint", "asdf:asdf-community/asdf-dprint"]
 bins = ["dprint"]
 description = "Pluggable and configurable code formatting platform written in Rust"
+version_order = "semver"

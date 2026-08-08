@@ -2,3 +2,4 @@ backends = ["aqua:tinygo-org/tinygo"]
 bins = ["tinygo", "wasm-opt"]
 description = "Go compiler for small places. Microcontrollers, WebAssembly (WASM/WASI), and command-line tools. Based on LLVM"
 test = { cmd = "tinygo version", expected = "tinygo version {{version}}" }
+version_order = "semver"

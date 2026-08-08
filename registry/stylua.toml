@@ -6,3 +6,4 @@ backends = [
 bins = ["stylua"]
 description = "A Lua code formatter"
 test = { cmd = "stylua --version", expected = "stylua {{version}}" }
+version_order = "semver"

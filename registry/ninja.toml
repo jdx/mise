@@ -1,3 +1,4 @@
 backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
 bins = ["ninja"]
 description = "a small build system with a focus on speed"
+version_order = "semver"

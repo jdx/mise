@@ -6,3 +6,4 @@ backends = [
 bins = ["bazelisk"]
 description = "A user-friendly launcher for Bazel"
 test = { cmd = "bazelisk --version", expected = "bazel" } # shows bazel version, not bazelisk version
+version_order = "semver"

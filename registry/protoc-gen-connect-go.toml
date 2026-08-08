@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["protoc-gen-connect-go"]
 description = "The Go implementation of Connect: Protobuf RPC that works"
+version_order = "semver"

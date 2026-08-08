@@ -1,5 +1,6 @@
 description = "CodeQL CLI"
 test = { cmd = "codeql --version", expected = "CodeQL command-line toolchain release {{version}}" }
+version_order = "semver"
 
 bins = ["codeql"]
 [[backends]]

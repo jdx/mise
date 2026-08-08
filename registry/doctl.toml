@@ -2,3 +2,4 @@ backends = ["aqua:digitalocean/doctl", "asdf:maristgeek/asdf-doctl"]
 bins = ["doctl"]
 description = "The official command line interface for the DigitalOcean API"
 test = { cmd = "doctl version", expected = "doctl version {{version}}" }
+version_order = "semver"

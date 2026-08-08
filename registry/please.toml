@@ -1,3 +1,4 @@
 backends = ["aqua:thought-machine/please", "asdf:asdf-community/asdf-please"]
 bins = ["build_langserver", "please", "please_sandbox"]
 description = "High-performance extensible build system for reproducible multi-language builds"
+version_order = "semver"
