@@ -3304,12 +3304,19 @@ where
             if !exact.is_empty() {
                 return Ok(exact);
             }
-            return Ok(self
+            let ext_stripped: Vec<&T> = self
                 .iter()
                 .filter(|(name, _)| task_name_matches(&matcher, name, true))
                 .map(|(_, task)| task)
                 .unique()
-                .collect());
+                .collect();
+            if !ext_stripped.is_empty() {
+                return Ok(ext_stripped);
+            }
+            if self.keys().any(|k| k.starts_with("//")) {
+                return self.get_matching(&format!("//{pat}"));
+            }
+            return Ok(vec![]);
         }
 
         // === Parse monorepo pattern ===
@@ -5920,6 +5927,49 @@ echo "test"
                 &"node:@scope/app#test:units:local".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_get_matching_monorepo_project_without_slash_prefix() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            ("//web:build".to_string(), "//web:build".to_string()),
+            ("//web:dev".to_string(), "//web:dev".to_string()),
+            ("//api:build".to_string(), "//api:build".to_string()),
+        ]);
+
+        assert_eq!(
+            tasks.get_matching("web:build").unwrap(),
+            vec![&"//web:build".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("web:*").unwrap(),
+            vec![&"//web:build".to_string(), &"//web:dev".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("api:build").unwrap(),
+            vec![&"//api:build".to_string()]
+        );
+        assert!(tasks.get_matching("web:missing").unwrap().is_empty());
+        assert!(tasks.get_matching("missing:build").unwrap().is_empty());
+
+        // A root task whose name contains `:` still wins over the project
+        // interpretation of the same pattern.
+        let shadowed = BTreeMap::from([
+            ("//web:build".to_string(), "//web:build".to_string()),
+            ("web:build".to_string(), "web:build".to_string()),
+        ]);
+        assert_eq!(
+            shadowed.get_matching("web:build").unwrap(),
+            vec![&"web:build".to_string()]
+        );
+
+        // Outside a monorepo the pattern must not gain a `//` interpretation.
+        let flat = BTreeMap::from([("test:units".to_string(), "test:units".to_string())]);
+        assert!(flat.get_matching("web:build").unwrap().is_empty());
     }
 
     #[test]
