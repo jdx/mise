@@ -6449,12 +6449,22 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_json_canonicalizer",
  "sha2 0.11.0",
  "strum 0.28.0",
  "tempfile",
  "tokio",
  "tokio-util",
  "url",
+]
+
+[[package]]
+name = "mise-cache-rustc"
+version = "0.1.0"
+dependencies = [
+ "mise-cache-core",
+ "serde",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

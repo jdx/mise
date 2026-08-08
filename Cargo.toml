@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-cache-rustc",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",

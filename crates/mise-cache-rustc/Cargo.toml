@@ -1,0 +1,20 @@
+[package]
+name = "mise-cache-rustc"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Conservative rustc action analysis and key construction for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+publish = false
+
+[dependencies]
+mise-cache-core = { path = "../mise-cache-core", default-features = false }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[features]
+default = ["rustls"]
+native-tls = ["mise-cache-core/native-tls"]
+rustls = ["mise-cache-core/rustls"]
+rustls-native-roots = ["mise-cache-core/rustls-native-roots"]
