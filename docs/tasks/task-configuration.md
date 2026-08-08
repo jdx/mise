@@ -957,7 +957,8 @@ that inherited default.
 ### `shell`
 
 - **Type**: `string`
-- **Default**: [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+- **Default**: [`task_config.shell`](#task-config-shell) when set (config-scoped); otherwise
+  [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)/[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args) (global-only).
 - **Note**: Only applies to toml-tasks.
 
 The shell to use to run the task. This is useful if you want to run a task with a different shell than
@@ -1212,7 +1213,7 @@ Change the default directory tasks are run from.
 dir = "{{cwd}}"
 ```
 
-### `task_config.shell`
+### `task_config.shell` {#task-config-shell}
 
 Set the default shell for tasks in this config scope. A task's explicit `shell` setting takes
 precedence, including a `shell` inherited from a task template. With `task_config.cascade = true`,
