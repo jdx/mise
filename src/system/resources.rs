@@ -273,7 +273,7 @@ pub async fn plan(
         let (requests, os_skipped): (Vec<_>, Vec<_>) = manager_packages
             .requests
             .into_iter()
-            .partition(|request| request.is_os_supported());
+            .partition(|request| super::package_request_matches_platform(&manager_name, request));
         for request in &os_skipped {
             plan.insert(os_skipped_package_plan(&manager_name, request))?;
         }

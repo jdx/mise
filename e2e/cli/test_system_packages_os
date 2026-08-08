@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
-# Per-entry `os` field on [bootstrap.packages]: entries scoped to another
-# platform are skipped but stay visible; entries scoped to the current
-# platform behave exactly like plain entries.
+# Per-entry `os` on brew and brew-cask packages: entries scoped to another
+# platform are skipped but stay visible. Other managers reject table entries.
 
 detect_platform
 if [[ $MISE_PLATFORM_OS == "macos" ]]; then
@@ -16,61 +15,39 @@ else
   OTHER_ARCH="arm64"
 fi
 
-MGR=""
-if [[ $MISE_PLATFORM_OS == "linux" ]] && command -v apt-get >/dev/null; then
-  MGR="apt" PKG="bc" PLAIN_PKG="curl"
-elif [[ $MISE_PLATFORM_OS == "macos" ]] && command -v brew >/dev/null; then
-  MGR="brew" PKG="jq" PLAIN_PKG="wget"
-fi
-
-if [[ -n $MGR ]]; then
-  cat <<EOF >mise.toml
-[bootstrap.packages]
-"$MGR:$PLAIN_PKG" = "latest"
-"$MGR:$PKG" = { version = "latest", os = ["$MISE_PLATFORM_OS"] }
-"$MGR:os-elsewhere" = { version = "latest", os = ["$OTHER_OS"] }
-"$MGR:os-arch-elsewhere" = { version = "latest", os = ["$MISE_PLATFORM_OS/$OTHER_ARCH"] }
-EOF
-
-  # os-mismatched entries render as skipped with the os list as written
-  assert_contains "mise bootstrap packages status" "skipped (os: $OTHER_OS)"
-  assert_contains "mise bootstrap packages status" "skipped (os: $MISE_PLATFORM_OS/$OTHER_ARCH)"
-  # entries matching the current platform are not os-skipped
-  assert_not_contains "mise bootstrap packages status" "skipped (os: $MISE_PLATFORM_OS)"
-  assert_contains "mise bootstrap packages status" "$PLAIN_PKG"
-
-  json_cmd="mise bootstrap packages status --json"
-  assert "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"os-elsewhere\") | .state'" "skipped"
-  assert "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"os-elsewhere\") | .reason'" "os mismatch"
-  assert "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"os-elsewhere\") | .os[0]'" "$OTHER_OS"
-  assert "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"os-elsewhere\") | .requested_version'" "latest"
-  assert "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"os-elsewhere\") | .installed_version | length'" "0"
-  # the os-matched entry reports a real state, never skipped
-  assert_not_empty "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"$PKG\") | .state'"
-  assert_not "$json_cmd | jq -r '.$MGR.packages[] | select(.package == \"$PKG\") | .state'" "skipped"
-
-  # os-filtered entries never count as missing and never block apply
-  cat <<EOF >mise.toml
-[bootstrap.packages]
-"$MGR:os-elsewhere" = { version = "latest", os = ["$OTHER_OS"] }
-EOF
-  assert_succeed "mise bootstrap packages status --missing"
-  assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "$MGR: 1 package(s) skipped (os mismatch)"
-fi
-
-# An unavailable manager is never queried when all of its requests are
-# OS-filtered. The entries retain their OS-skipped status in every output.
-if [[ $MISE_PLATFORM_OS == "macos" ]]; then
-  UNAVAIL="apt" UNAVAIL_PKG="bc"
-else
-  UNAVAIL="mas" UNAVAIL_PKG="497799835"
-fi
 cat <<EOF >mise.toml
 [bootstrap.packages]
-"$UNAVAIL:$UNAVAIL_PKG" = { version = "latest", os = ["$OTHER_OS"] }
+"brew-cask:firefox" = { version = "latest", os = ["$OTHER_OS"] }
+"brew:os-arch-elsewhere" = { version = "latest", os = ["$MISE_PLATFORM_OS/$OTHER_ARCH"] }
 EOF
-assert_succeed "mise bootstrap packages status"
+
+# OS-mismatched Homebrew entries render as skipped without querying brew.
 assert_contains "mise bootstrap packages status" "skipped (os: $OTHER_OS)"
-assert "mise bootstrap packages status --json | jq -r '.$UNAVAIL.packages[] | select(.package == \"$UNAVAIL_PKG\") | .state'" "skipped"
-assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "$UNAVAIL: 1 package(s) skipped (os mismatch)"
+assert_contains "mise bootstrap packages status" "skipped (os: $MISE_PLATFORM_OS/$OTHER_ARCH)"
+json_cmd="mise bootstrap packages status --json"
+assert "$json_cmd | jq -r '.\"brew-cask\".packages[] | select(.package == \"firefox\") | .state'" "skipped"
+assert "$json_cmd | jq -r '.\"brew-cask\".packages[] | select(.package == \"firefox\") | .reason'" "os mismatch"
+assert "$json_cmd | jq -r '.\"brew-cask\".packages[] | select(.package == \"firefox\") | .os[0]'" "$OTHER_OS"
+assert "$json_cmd | jq -r '.\"brew-cask\".packages[] | select(.package == \"firefox\") | .requested_version'" "latest"
+assert "$json_cmd | jq -r '.\"brew-cask\".packages[] | select(.package == \"firefox\") | .installed_version | length'" "0"
+assert_succeed "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "brew-cask: 1 package(s) skipped (os mismatch)"
 assert_contains "mise bootstrap plan" "skipped (os: $OTHER_OS)"
+
+# Matching entries behave like plain entries when brew is available.
+if command -v brew >/dev/null; then
+  cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:jq" = { version = "latest", os = ["$MISE_PLATFORM_OS"] }
+EOF
+  assert_not_contains "mise bootstrap packages status" "skipped (os: $MISE_PLATFORM_OS)"
+  assert_not "mise bootstrap packages status --json | jq -r '.brew.packages[] | select(.package == \"jq\") | .state'" "skipped"
+fi
+
+# Table entries are not accepted for non-Homebrew managers.
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"apt:curl" = { version = "latest", os = ["$MISE_PLATFORM_OS"] }
+EOF
+assert_contains "mise bootstrap packages status 2>&1" "table entries are supported only for brew and brew-cask"
+assert "mise bootstrap packages status --json 2>/dev/null | jq length" "0"

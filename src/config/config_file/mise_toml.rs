@@ -638,11 +638,14 @@ impl MiseToml {
 
     /// Set the version of `[bootstrap.packages]."<manager>:<package>"`,
     /// creating the tables as needed ("latest" means no pin). An existing
-    /// table entry — in any of its TOML spellings (inline table, sub-table,
-    /// or dotted keys) — keeps its `os` and any other keys, with only its
-    /// `version` updated in place; everything else is written as a plain
-    /// string.
+    /// brew/brew-cask table entry — in any of its TOML spellings (inline
+    /// table, sub-table, or dotted keys) — keeps its `os` and any other keys,
+    /// with only its `version` updated in place; everything else is written as
+    /// a plain string.
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
+        let preserve_table = spec
+            .split_once(':')
+            .is_some_and(|(manager, _)| crate::system::is_brew_manager(manager));
         let updated_table = {
             let mut doc = self.doc_mut()?;
             let bootstrap = doc
@@ -659,13 +662,17 @@ impl MiseToml {
                 .or_insert_with(table)
                 .as_table_mut()
                 .unwrap();
-            // `as_table_like_mut` covers every table spelling — inline table,
-            // sub-table, and dotted keys all reach here, so none of them lose
-            // their `os` to a plain-string rewrite
-            if let Some(entry) = packages
-                .get_mut(spec)
-                .and_then(|item| item.as_table_like_mut())
-            {
+            // For Homebrew, `as_table_like_mut` covers every table spelling —
+            // inline table, sub-table, and dotted keys all reach here, so none
+            // of them lose their `os` to a plain-string rewrite.
+            let existing_table = if preserve_table {
+                packages
+                    .get_mut(spec)
+                    .and_then(|item| item.as_table_like_mut())
+            } else {
+                None
+            };
+            if let Some(entry) = existing_table {
                 let value_decor = entry
                     .get("version")
                     .and_then(|item| item.as_value())
@@ -3093,7 +3100,7 @@ mod tests {
         [bootstrap.packages]
         "apt:libssl-dev" = "latest"
         "brew-cask:firefox" = { version = "latest", os = ["macos"] }
-        "apt:curl" = { version = "8.5.0-2", os = "linux" }
+        "brew:wget" = { version = "1.21.4", os = "linux" }
         "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"], future_key = "x" }
         "#,
         )
@@ -3123,15 +3130,12 @@ mod tests {
         );
 
         // os accepts a bare string
-        let curl = match system.packages.get("apt:curl").unwrap() {
+        let wget = match system.packages.get("brew:wget").unwrap() {
             crate::system::PackageEntryToml::Table(t) => t,
             other => panic!("expected a table entry, got {other:?}"),
         };
-        assert_eq!(
-            curl.get("version").and_then(|v| v.as_str()),
-            Some("8.5.0-2")
-        );
-        assert_eq!(curl.get("os").and_then(|v| v.as_str()), Some("linux"));
+        assert_eq!(wget.get("version").and_then(|v| v.as_str()), Some("1.21.4"));
+        assert_eq!(wget.get("os").and_then(|v| v.as_str()), Some("linux"));
 
         // unknown keys survive the parse (forward compatibility; validation
         // warns at aggregation time, not here)
@@ -3363,7 +3367,7 @@ mod tests {
         file::write(
             &p,
             r#"[bootstrap.packages]
-"apt:curl" = "latest"
+"apt:curl" = { version = "latest", os = ["linux"] }
 "brew-cask:firefox" = { version = "latest", os = ["macos"], future_key = "x" }
 "#,
         )
@@ -3372,7 +3376,7 @@ mod tests {
         // table entry: version updated in place, os and unknown keys preserved
         cf.update_bootstrap_package("brew-cask:firefox", "1.2.3")
             .unwrap();
-        // string entry: stays a plain string
+        // non-Homebrew table entry: normalized to the supported string form
         cf.update_bootstrap_package("apt:curl", "8.5.0-2").unwrap();
         // new entry: still written as a plain string
         cf.update_bootstrap_package("apt:jq", "latest").unwrap();

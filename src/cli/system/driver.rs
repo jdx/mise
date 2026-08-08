@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use eyre::{Result, bail};
 
 use crate::config::Settings;
-use crate::system::ManagerPackages;
 use crate::system::packages::{InstallOpts, PackageState};
+use crate::system::{ManagerPackages, package_request_matches_platform};
 use crate::ui::prompt;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -75,7 +75,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             .requests
             .iter()
             .cloned()
-            .partition(|request| request.is_os_supported());
+            .partition(|request| package_request_matches_platform(name, request));
         if !os_skipped.is_empty() {
             info!(
                 "{name}: {} package(s) skipped (os mismatch)",

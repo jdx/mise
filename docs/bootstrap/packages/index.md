@@ -21,9 +21,9 @@ mise can ensure host packages are installed via the
 Each entry is keyed `"manager:package"` — the manager prefix is required —
 and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
-pages). The value can also be a table with a required `version` and an
-optional `os` list that restricts the entry to specific platforms — see
-[OS-scoped entries](#os-scoped-entries).
+pages). For `brew:` and `brew-cask:`, the value can also be a table with a
+required `version` and an optional `os` list that restricts the entry to
+specific platforms — see [OS-scoped Homebrew entries](#os-scoped-homebrew-entries).
 
 Host packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are managed
@@ -80,9 +80,10 @@ declarative sections work the same way:
   `flatpak` and `flatpak-user` work on Linux when the `flatpak` CLI is on
   `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`. Status commands
   still list
-  unavailable managers so nothing is silently invisible. Individual entries
-  can additionally be scoped to specific platforms with a per-entry `os`
-  field — see [OS-scoped entries](#os-scoped-entries).
+  unavailable managers so nothing is silently invisible. Individual Homebrew
+  formulae and casks can additionally be scoped to specific platforms with a
+  per-entry `os` field — see
+  [OS-scoped Homebrew entries](#os-scoped-homebrew-entries).
 - **Manual installation only** — mise never installs system packages
   implicitly. `mise install` will print a one-time hint when packages are
   missing, but only `mise bootstrap packages apply` ever installs anything.
@@ -98,16 +99,16 @@ login_shell = "/bin/zsh"
 
 See [User Login Shell](/bootstrap/user.html) for details.
 
-## OS-scoped entries
+## OS-scoped Homebrew entries
 
-An entry can be restricted to specific platforms with the table form:
+A `brew:` or `brew-cask:` entry can be restricted to specific platforms with
+the table form. Other package managers accept only the version-string form.
 
 ```toml
 [bootstrap.packages]
-"apt:libssl-dev" = "latest"                                   # applies everywhere
 "brew-cask:firefox" = { version = "latest", os = ["macos"] }
 "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"] }
-"apt:curl" = { version = "8.5.0-2", os = "linux" }            # os accepts a bare string
+"brew:wget" = { version = "latest", os = "macos" } # os accepts a bare string
 ```
 
 `version` is required and means the same as the string form's value. `os`
@@ -122,19 +123,17 @@ On platforms the `os` list does not match, the entry is skipped: `apply` and
 `upgrade` print a one-line per-manager summary, `status` shows the entry as
 `skipped (os: …)` (in `--json`: `"state": "skipped"` with the entry's `os`
 list), and `status --missing` never fails because of it.
-`mise bootstrap plan` shows it as skipped, never actionable, and
-`prune` keeps os-filtered entries in the protected set. `mise oci` matches apt
-entries against the **image's** target platform rather than the host's, so
-`os = ["linux"]` entries are included when building a Linux image from macOS.
+`mise bootstrap plan` shows it as skipped, never actionable, and `prune` keeps
+os-filtered entries in the protected set.
 
 This is the opt-in fix for sharing brew-cask entries across macOS and Linux:
 `"brew-cask:firefox" = { version = "latest", os = ["macos"] }` skips cleanly
 on Linux instead of failing (only font casks install there).
 
-`mise bootstrap packages use` on an existing table entry updates its `version`
-in place and preserves `os` and any other keys. As with the rest of `use`, the
-config is written first and installation is best-effort for the current
-machine — `use` itself does not consult the entry's `os` list.
+`mise bootstrap packages use` on an existing Homebrew table entry updates its
+`version` in place and preserves `os` and any other keys. As with the rest of
+`use`, the config is written first and installation is best-effort for the
+current machine — `use` itself does not consult the entry's `os` list.
 
 ::: warning Older mise versions
 mise versions without this feature type `[bootstrap.packages]` values as plain

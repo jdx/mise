@@ -32,7 +32,7 @@ impl SystemStatus {
                 .requests
                 .iter()
                 .cloned()
-                .partition(|request| request.is_os_supported());
+                .partition(|request| system::package_request_matches_platform(name, request));
             if requests.is_empty() {
                 if self.json {
                     json_out.insert(

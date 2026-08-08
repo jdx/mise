@@ -164,7 +164,9 @@ impl Install {
             .flat_map(|mp| {
                 mp.requests
                     .iter()
-                    .filter(|r| r.is_os_supported())
+                    .filter(|r| {
+                        crate::system::package_request_matches_platform(mp.manager.name(), r)
+                    })
                     .map(move |r| format!("{}:{}", mp.manager.name(), r))
             })
             .collect::<Vec<_>>()
@@ -189,7 +191,7 @@ impl Install {
             let requests = mp
                 .requests
                 .iter()
-                .filter(|r| r.is_os_supported())
+                .filter(|r| crate::system::package_request_matches_platform(mp.manager.name(), r))
                 .cloned()
                 .collect::<Vec<_>>();
             if requests.is_empty() {

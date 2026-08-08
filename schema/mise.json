@@ -3856,40 +3856,47 @@
           "propertyNames": {
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "version pin in the manager's native format, or \"latest\""
-              },
-              {
-                "type": "object",
-                "description": "version pin restricted to specific platforms; unknown extra keys warn and are ignored",
-                "properties": {
-                  "version": {
-                    "type": "string",
-                    "description": "version pin in the manager's native format, or \"latest\""
-                  },
-                  "os": {
-                    "description": "platforms the entry applies to, e.g. \"linux\", \"macos\", \"windows\", or \"os/arch\" forms like \"macos/arm64\"; the entry is skipped elsewhere",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    ]
-                  }
+          "patternProperties": {
+            "^(brew|brew-cask):.+$": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "version pin in Homebrew's native format, or \"latest\""
                 },
-                "required": ["version"],
-                "additionalProperties": true
-              }
-            ]
-          }
+                {
+                  "type": "object",
+                  "description": "Homebrew version pin restricted to specific platforms; unknown extra keys warn and are ignored",
+                  "properties": {
+                    "version": {
+                      "type": "string",
+                      "description": "version pin in Homebrew's native format, or \"latest\""
+                    },
+                    "os": {
+                      "description": "platforms the Homebrew entry applies to, e.g. \"linux\", \"macos\", or \"os/arch\" forms like \"macos/arm64\"; the entry is skipped elsewhere",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["version"],
+                  "additionalProperties": true
+                }
+              ]
+            },
+            "^(?!(brew|brew-cask):).+$": {
+              "type": "string",
+              "description": "version pin in the manager's native format, or \"latest\""
+            }
+          },
+          "additionalProperties": false
         },
         "repos": {
           "type": "object",

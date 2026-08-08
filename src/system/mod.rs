@@ -94,9 +94,10 @@ pub struct BootstrapTomlConfig {
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,
-    /// `"manager:package"` -> version string or `{ version, os }` table. The
-    /// table variant stays raw TOML so entries with keys from newer mise
-    /// versions warn and still work instead of rejecting the whole config.
+    /// `"manager:package"` -> version string, or for brew/brew-cask a
+    /// `{ version, os }` table. The table variant stays raw TOML so entries
+    /// with keys from newer mise versions warn and still work instead of
+    /// rejecting the whole config.
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
@@ -133,9 +134,9 @@ pub struct BootstrapTomlConfig {
 }
 
 /// A single `[bootstrap.packages]` value: the plain version-string form or the
-/// `{ version, os }` table form. The table variant stays raw TOML so entries
-/// with keys from newer mise versions warn and still work instead of rejecting
-/// the whole config; validation happens at aggregation time in
+/// brew/brew-cask-only `{ version, os }` table form. The table variant stays
+/// raw TOML so entries with keys from newer mise versions warn and still work
+/// instead of rejecting the whole config; validation happens at aggregation time in
 /// [`package_requests_from_config_files`].
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -252,6 +253,12 @@ pub struct ManagerPackages {
     /// status/doctor (nothing is silently invisible), skipped by install
     /// and the missing-packages hint
     pub disabled: bool,
+}
+
+/// Whether a package request applies on this platform. Per-entry platform
+/// filtering is intentionally limited to Homebrew formulae and casks.
+pub(crate) fn package_request_matches_platform(manager: &str, request: &PackageRequest) -> bool {
+    !is_brew_manager(manager) || request.is_os_supported()
 }
 
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
@@ -478,7 +485,7 @@ fn package_requests_from_config_files(
     for (spec, entry) in merged {
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
-                let Some((version, os)) = validate_package_entry(&spec, &entry) else {
+                let Some((version, os)) = validate_package_entry(&spec, &mgr, &entry) else {
                     continue;
                 };
                 if let Err(err) = validate_package_name(&mgr, &name) {
@@ -509,11 +516,18 @@ fn package_requests_from_config_files(
 /// warn but keep the entry usable (forward compatibility).
 fn validate_package_entry(
     spec: &str,
+    manager: &str,
     entry: &PackageEntryToml,
 ) -> Option<(Option<String>, Option<Vec<String>>)> {
     let (version, os) = match entry {
         PackageEntryToml::Version(version) => (version.as_str(), None),
         PackageEntryToml::Table(table) => {
+            if !is_brew_manager(manager) {
+                warn!(
+                    "[bootstrap.packages]: entry '{spec}': table entries are supported only for brew and brew-cask"
+                );
+                return None;
+            }
             let Some(version) = table.get("version").and_then(|v| v.as_str()) else {
                 warn!("[bootstrap.packages]: entry '{spec}' requires a string 'version' key");
                 return None;
@@ -1393,7 +1407,7 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
     }
 }
 
-fn is_brew_manager(mgr: &str) -> bool {
+pub(crate) fn is_brew_manager(mgr: &str) -> bool {
     matches!(mgr, "brew" | "brew-cask")
 }
 
@@ -1578,8 +1592,8 @@ mod tests {
         let current_toml = format!(
             r#"
                 [bootstrap.packages]
-                "apt:everywhere" = "latest"
-                "apt:elsewhere" = {{ version = "latest", os = ["{other_os}"] }}
+                "brew:everywhere" = "latest"
+                "brew:elsewhere" = {{ version = "latest", os = ["{other_os}"] }}
             "#
         );
         let (_current_dir, current) = config_map_from_toml(&[("current.toml", &current_toml)])?;
@@ -1587,16 +1601,16 @@ mod tests {
             "tracked.toml",
             r#"
                 [bootstrap.packages]
-                "apt:tracked-elsewhere" = { version = "latest", os = ["macos", "linux"] }
+                "brew:tracked-elsewhere" = { version = "latest", os = ["macos", "linux"] }
             "#,
         )])?;
 
         let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
-        let apt = packages
+        let brew = packages
             .into_iter()
-            .find(|mp| mp.manager.name() == "apt")
+            .find(|mp| mp.manager.name() == "brew")
             .unwrap();
-        let names = apt
+        let names = brew
             .requests
             .iter()
             .map(|req| req.name.as_str())
@@ -1618,43 +1632,34 @@ mod tests {
             r#"
                 [bootstrap.packages]
                 "apt:libssl-dev" = "latest"
-                "apt:curl" = { version = "8.5.0-2", os = "linux" }
-                "apt:nowhere" = { version = "latest", os = [] }
                 "brew-cask:firefox" = { version = "latest", os = ["macos"] }
+                "brew:curl" = { version = "8.5.0-2", os = "linux" }
+                "brew:nowhere" = { version = "latest", os = [] }
                 "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"] }
             "#,
         )])?;
 
         let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
 
-        let apt = requests
-            .get("apt")
-            .unwrap()
-            .iter()
-            .map(|req| (req.name.as_str(), req.version.clone(), req.os.clone()))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            apt,
-            vec![
-                ("libssl-dev", None, None),
-                (
-                    "curl",
-                    Some("8.5.0-2".to_string()),
-                    // bare string os -> single-entry list, raw as written
-                    Some(vec!["linux".to_string()])
-                ),
-                // empty os array is kept: it matches nothing
-                ("nowhere", None, Some(vec![])),
-            ]
-        );
+        let apt = &requests.get("apt").unwrap()[0];
+        assert_eq!(apt.name, "libssl-dev");
+        assert_eq!(apt.os, None);
 
         let firefox = &requests.get("brew-cask").unwrap()[0];
         assert_eq!(firefox.name, "firefox");
         assert_eq!(firefox.version, None);
         assert_eq!(firefox.os, Some(vec!["macos".to_string()]));
 
-        // os values stay raw (aliases and os/arch forms normalize at match time)
-        let ffmpeg = &requests.get("brew").unwrap()[0];
+        let brew = requests.get("brew").unwrap();
+        assert_eq!(brew[0].name, "curl");
+        assert_eq!(brew[0].version.as_deref(), Some("8.5.0-2"));
+        // bare string os -> single-entry list, raw as written
+        assert_eq!(brew[0].os, Some(vec!["linux".to_string()]));
+        // empty os array is kept: it matches nothing
+        assert_eq!(brew[1].name, "nowhere");
+        assert_eq!(brew[1].os, Some(vec![]));
+        // aliases and os/arch forms stay raw and normalize at match time
+        let ffmpeg = &brew[2];
         assert_eq!(
             ffmpeg.os,
             Some(vec!["linux".to_string(), "macos/arm64".to_string()])
@@ -1669,23 +1674,23 @@ mod tests {
             "mise.toml",
             r#"
                 [bootstrap.packages]
-                "apt:no-version" = { os = ["linux"] }
-                "apt:bad-version" = { version = 42 }
-                "apt:bad-os" = { version = "latest", os = 42 }
-                "apt:bad-os-list" = { version = "latest", os = [1, 2] }
-                "apt:good" = "latest"
+                "brew:no-version" = { os = ["linux"] }
+                "brew:bad-version" = { version = 42 }
+                "brew:bad-os" = { version = "latest", os = 42 }
+                "brew:bad-os-list" = { version = "latest", os = [1, 2] }
+                "brew:good" = "latest"
             "#,
         )])?;
 
         let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
 
-        let apt = requests
-            .get("apt")
+        let brew = requests
+            .get("brew")
             .unwrap()
             .iter()
             .map(|req| req.name.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(apt, vec!["good"]);
+        assert_eq!(brew, vec!["good"]);
         Ok(())
     }
 
@@ -1696,13 +1701,13 @@ mod tests {
             "mise.toml",
             r#"
                 [bootstrap.packages]
-                "apt:curl" = { version = "8.5.0-2", os = ["linux"], future_key = "x" }
+                "brew:curl" = { version = "8.5.0-2", os = ["linux"], future_key = "x" }
             "#,
         )])?;
 
         let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
 
-        let curl = &requests.get("apt").unwrap()[0];
+        let curl = &requests.get("brew").unwrap()[0];
         assert_eq!(curl.name, "curl");
         assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
         assert_eq!(curl.os, Some(vec!["linux".to_string()]));
@@ -1719,7 +1724,7 @@ mod tests {
                 r#"
                     [bootstrap.packages]
                     "brew-cask:firefox" = "latest"
-                    "apt:curl" = { version = "8.5.0-2", os = ["linux"] }
+                    "brew:curl" = { version = "8.5.0-2", os = ["linux"] }
                 "#,
             ),
             (
@@ -1727,7 +1732,7 @@ mod tests {
                 r#"
                     [bootstrap.packages]
                     "brew-cask:firefox" = { version = "1.0", os = ["macos"] }
-                    "apt:curl" = "latest"
+                    "brew:curl" = "latest"
                 "#,
             ),
         ])?;
@@ -1740,9 +1745,30 @@ mod tests {
         assert_eq!(firefox.os, None);
 
         // local table entry replaces the global string entry wholesale
-        let curl = &requests.get("apt").unwrap()[0];
+        let curl = &requests.get("brew").unwrap()[0];
         assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
         assert_eq!(curl.os, Some(vec!["linux".to_string()]));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_non_brew_table_entries_are_skipped() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:curl" = { version = "latest", os = ["linux"] }
+                "mas:497799835" = { version = "latest" }
+                "apt:git" = "latest"
+            "#,
+        )])?;
+
+        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let apt = requests.get("apt").unwrap();
+        assert_eq!(apt.len(), 1);
+        assert_eq!(apt[0].name, "git");
+        assert!(!requests.contains_key("mas"));
         Ok(())
     }
 
@@ -1774,6 +1800,11 @@ mod tests {
             "linux"
         };
         assert!(!pkg(Some(vec![other_os.to_string()])).is_os_supported());
+
+        let request = pkg(Some(vec![other_os.to_string()]));
+        assert!(!package_request_matches_platform("brew", &request));
+        assert!(!package_request_matches_platform("brew-cask", &request));
+        assert!(package_request_matches_platform("apt", &request));
     }
 
     #[test]
