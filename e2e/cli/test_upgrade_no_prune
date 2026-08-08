@@ -44,4 +44,42 @@ assert_contains "mise ls --installed dummy" "2.0.0"
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_contains "cat mise.toml" 'dummy = "2"'
 
+# `upgrade.auto_prune = false` makes that the default without a flag. Written through
+# mise.toml rather than the env var, since being settable there is the point of the setting.
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+
+[settings]
+upgrade.auto_prune = false
+EOF
+
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise upgrade dummy
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_contains "mise ls --installed dummy" "1.0.0"
+
+# the dry-run listing follows the setting, not only the flags
+mise uninstall dummy --all
+mise install dummy@1.0.0
+assert_not_contains "mise up dummy -n" "Would uninstall"
+assert_contains "mise up dummy -n" "Would install dummy@1.1.0"
+
+# --prune overrides the setting for a single run
+mise upgrade dummy --prune
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+
+# and with the setting gone the default is back
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+EOF
+
+mise uninstall dummy --all
+mise install dummy@1.0.0
+mise upgrade dummy
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+
 rm -f mise.toml

@@ -2049,6 +2049,17 @@
           "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
           "type": "string"
         },
+        "upgrade": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "auto_prune": {
+              "default": true,
+              "description": "Uninstall the version `mise upgrade` replaced once the new one has installed.",
+              "type": "boolean"
+            }
+          }
+        },
         "url_replacements": {
           "description": "Map of URL patterns to replacement URLs applied to all requests.",
           "type": "object",

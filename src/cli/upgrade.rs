@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{Config, config_file};
+use crate::config::{Config, Settings, config_file};
 use crate::errors::split_install_result;
 use crate::file::display_path;
 use crate::install_before::{
@@ -107,8 +107,17 @@ pub struct Upgrade {
     /// By default the old version is removed once the new one installs, unless another
     /// tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
     /// something outside of mise points at the old install directory.
-    #[clap(long, verbatim_doc_comment)]
+    ///
+    /// Set `upgrade.auto_prune = false` to make this the default.
+    #[clap(long, verbatim_doc_comment, overrides_with = "prune")]
     no_prune: bool,
+
+    /// Uninstall the versions that were upgraded away from
+    ///
+    /// This is already the default. Use it to override `upgrade.auto_prune = false`
+    /// for a single run.
+    #[clap(long, verbatim_doc_comment, overrides_with = "no_prune")]
+    prune: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
@@ -119,6 +128,12 @@ pub struct Upgrade {
 impl Upgrade {
     fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
+    }
+
+    /// Whether the version being upgraded away from should be uninstalled. Either flag wins
+    /// over the setting, and `overrides_with` makes the later of the two win over the other.
+    fn should_prune(&self) -> bool {
+        self.prune || !self.no_prune && Settings::get().upgrade.auto_prune
     }
 
     fn scope(&self) -> ConfigScope {
@@ -252,7 +267,7 @@ impl Upgrade {
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
-        let to_remove: Vec<_> = if self.no_prune {
+        let to_remove: Vec<_> = if !self.should_prune() {
             vec![]
         } else {
             outdated
