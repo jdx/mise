@@ -29,6 +29,14 @@ pub const DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+
 pub const CLIENT_METADATA_MEDIA_TYPE: &str = "application/vnd.mise.cache-client-metadata.v1+json";
 pub const BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 
+/// Serialize a protocol object using the JSON Canonicalization Scheme.
+///
+/// Action digests are computed from these bytes, so callers must not use
+/// serde's struct field order as part of the wire contract.
+pub fn canonical_json(value: &impl Serialize) -> Result<Vec<u8>> {
+    Ok(serde_json_canonicalizer::to_vec(value)?)
+}
+
 #[derive(
     Debug,
     Clone,
@@ -708,6 +716,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn protocol_json_uses_jcs_key_and_number_encoding() {
+        let value = serde_json::json!({"z": 1.0e30, "a": {"d": true, "c": null}});
+        assert_eq!(
+            canonical_json(&value).unwrap(),
+            br#"{"a":{"c":null,"d":true},"z":1e+30}"#
+        );
+    }
 
     #[test]
     fn dns_errors_are_not_transient() {
