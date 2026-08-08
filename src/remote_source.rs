@@ -6,7 +6,7 @@ static SSH_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
 });
 
 static AZURE_DEVOPS_SSH_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^git::(?P<url>ssh://((?P<user>[^@]+)@)?(?P<host>[^/]+)/(?P<org>[^/]+)/(?P<project>[^/]+)/_git/(?P<repo>[^/]+))//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
+    Regex::new(r"^git::(?P<url>(ssh://((?P<user>[^@]+)@)?(?P<host>[^/]+)/(?P<org>[^/]+)/(?P<project>[^/]+)/_git/(?P<repo>[^/]+))|git@ssh.dev.azure.com:v3/(?P<cloud_org>[^/]+)/(?P<cloud_project>[^/]+)/(?P<cloud_repo>[^/]+))//(?P<path>[^?]+)(\?ref=(?P<ref>[^?&]+)(&.*)?)?$").unwrap()
 });
 
 static HTTPS_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
