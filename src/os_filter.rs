@@ -1,3 +1,43 @@
+use crate::cli::version::{ARCH, OS};
+
+/// Whether any entry in an `os` restriction list (`"linux"`, `"macos/arm64"`,
+/// alias forms) matches the given platform. Both sides are normalized.
+/// Empty list matches nothing.
+pub fn os_list_matches(os_list: &[String], os: &str, arch: &str) -> bool {
+    let os = normalize_os(os);
+    let arch = normalize_arch(arch);
+    os_list.iter().any(|entry| {
+        if let Some((entry_os, entry_arch)) = entry.split_once('/') {
+            normalize_os(entry_os) == os && normalize_arch(entry_arch) == arch
+        } else {
+            normalize_os(entry) == os
+        }
+    })
+}
+
+/// `os_list_matches` against the current platform (`cli::version::{OS, ARCH}`).
+pub fn os_list_matches_current(os_list: &[String]) -> bool {
+    os_list_matches(os_list, OS.as_str(), ARCH.as_str())
+}
+
+/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
+pub(crate) fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+/// Normalize architecture name aliases to the canonical form used by `cli::version::ARCH`.
+pub(crate) fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

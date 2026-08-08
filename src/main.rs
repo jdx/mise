@@ -70,6 +70,7 @@ mod migrate;
 mod minisign;
 mod netrc;
 mod oci;
+pub(crate) mod os_filter;
 pub(crate) mod parallel;
 mod path;
 mod path_env;
