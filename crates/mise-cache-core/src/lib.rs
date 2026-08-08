@@ -96,6 +96,16 @@ impl CacheDigest {
         }
     }
 
+    /// Hash a file while counting the bytes read in the same streaming pass.
+    pub fn blake3_file(path: &Path) -> Result<Self> {
+        let (hash, size) = hash_file_blake3(path)?;
+        Ok(Self {
+            algorithm: "blake3".into(),
+            hash,
+            size,
+        })
+    }
+
     pub fn validate(&self) -> Result<()> {
         if self.algorithm != "blake3" && self.algorithm != "sha256" {
             bail!("unsupported remote cache digest algorithm");
@@ -126,44 +136,45 @@ impl CacheDigest {
 
     pub fn matches_file(&self, path: &Path) -> Result<bool> {
         self.validate()?;
-        if self.size != fs::metadata(path)?.len() {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
+        let (hash, size) = match self.algorithm.as_str() {
             "blake3" => hash_file_blake3(path)?,
             "sha256" => hash_file_sha256(path)?,
             _ => unreachable!("digest algorithm was validated"),
         };
-        Ok(self.hash == hash)
+        Ok(self.size == size && self.hash == hash)
     }
 }
 
-fn hash_file_blake3(path: &Path) -> Result<String> {
+fn hash_file_blake3(path: &Path) -> Result<(String, u64)> {
     let mut file = File::open(path)?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0; 64 * 1024];
+    let mut size = 0;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
+        size += count as u64;
     }
-    Ok(hasher.finalize().to_hex().to_string())
+    Ok((hasher.finalize().to_hex().to_string(), size))
 }
 
-fn hash_file_sha256(path: &Path) -> Result<String> {
+fn hash_file_sha256(path: &Path) -> Result<(String, u64)> {
     let mut file = File::open(path)?;
     let mut hasher = sha2::Sha256::new();
     let mut buffer = [0; 64 * 1024];
+    let mut size = 0;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
+        size += count as u64;
     }
-    Ok(hex::encode(hasher.finalize()))
+    Ok((hex::encode(hasher.finalize()), size))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -758,6 +769,16 @@ mod tests {
         let file = tempfile::NamedTempFile::new().unwrap();
         fs::write(file.path(), bytes).unwrap();
         assert!(sha256.matches_file(file.path()).unwrap());
+        assert_eq!(
+            CacheDigest::blake3_file(file.path()).unwrap().size,
+            bytes.len() as u64
+        );
+        assert!(
+            CacheDigest::blake3_file(file.path())
+                .unwrap()
+                .matches_bytes(bytes)
+                .unwrap()
+        );
     }
 
     #[test]
