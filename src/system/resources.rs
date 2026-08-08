@@ -270,24 +270,6 @@ pub async fn plan(
     for manager_packages in super::packages_from_config(config) {
         let manager = manager_packages.manager;
         let manager_name = manager.name().to_string();
-        let unavailable = if manager_packages.disabled {
-            Some("excluded by system_packages.managers".to_string())
-        } else {
-            manager.unavailable_reason_async().await
-        };
-
-        if let Some(reason) = unavailable {
-            for request in manager_packages.requests {
-                plan.insert(ResourcePlan::new(
-                    ResourceId::new("package", format!("{manager_name}:{}", request.name)),
-                    format!("unavailable ({reason})"),
-                    desired_package(&request),
-                    ResourceAction::Unknown,
-                ))?;
-            }
-            continue;
-        }
-
         let (requests, os_skipped): (Vec<_>, Vec<_>) = manager_packages
             .requests
             .into_iter()
@@ -298,6 +280,24 @@ pub async fn plan(
         if requests.is_empty() {
             continue;
         }
+        let unavailable = if manager_packages.disabled {
+            Some("excluded by system_packages.managers".to_string())
+        } else {
+            manager.unavailable_reason_async().await
+        };
+
+        if let Some(reason) = unavailable {
+            for request in requests {
+                plan.insert(ResourcePlan::new(
+                    ResourceId::new("package", format!("{manager_name}:{}", request.name)),
+                    format!("unavailable ({reason})"),
+                    desired_package(&request),
+                    ResourceAction::Unknown,
+                ))?;
+            }
+            continue;
+        }
+
         let supports_version_pins = manager.supports_version_pins();
         for status in manager.installed(&requests).await? {
             let id = ResourceId::new("package", format!("{manager_name}:{}", status.request.name));

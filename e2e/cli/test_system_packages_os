@@ -58,7 +58,8 @@ EOF
   assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "$MGR: 1 package(s) skipped (os mismatch)"
 fi
 
-# unavailable managers keep listing every request, including os-filtered ones
+# An unavailable manager is never queried when all of its requests are
+# OS-filtered. The entries retain their OS-skipped status in every output.
 if [[ $MISE_PLATFORM_OS == "macos" ]]; then
   UNAVAIL="apt" UNAVAIL_PKG="bc"
 else
@@ -69,4 +70,7 @@ cat <<EOF >mise.toml
 "$UNAVAIL:$UNAVAIL_PKG" = { version = "latest", os = ["$OTHER_OS"] }
 EOF
 assert_succeed "mise bootstrap packages status"
-assert_contains "mise bootstrap packages status" "$UNAVAIL_PKG"
+assert_contains "mise bootstrap packages status" "skipped (os: $OTHER_OS)"
+assert "mise bootstrap packages status --json | jq -r '.$UNAVAIL.packages[] | select(.package == \"$UNAVAIL_PKG\") | .state'" "skipped"
+assert_contains "mise bootstrap packages apply --dry-run --yes 2>&1" "$UNAVAIL: 1 package(s) skipped (os mismatch)"
+assert_contains "mise bootstrap plan" "skipped (os: $OTHER_OS)"

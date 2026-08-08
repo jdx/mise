@@ -149,6 +149,7 @@ impl PackageEntryToml {
     /// form's `version` key. None when a table entry has no usable version
     /// (missing or not a string) — such an entry is warned about and skipped
     /// at aggregation time.
+    #[cfg(unix)]
     pub fn version(&self) -> Option<&str> {
         match self {
             PackageEntryToml::Version(version) => Some(version),

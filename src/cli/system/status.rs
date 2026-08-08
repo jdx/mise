@@ -28,6 +28,29 @@ impl SystemStatus {
         let mut json_out = serde_json::Map::new();
         for mp in mgrs {
             let name = mp.manager.name();
+            let (requests, os_skipped): (Vec<_>, Vec<_>) = mp
+                .requests
+                .iter()
+                .cloned()
+                .partition(|request| request.is_os_supported());
+            if requests.is_empty() {
+                if self.json {
+                    json_out.insert(
+                        name.to_string(),
+                        json!({
+                            "available": true,
+                            "packages": os_skipped.iter().map(os_skipped_json).collect::<Vec<_>>(),
+                        }),
+                    );
+                } else {
+                    rows.extend(
+                        os_skipped
+                            .iter()
+                            .map(|request| os_skipped_row(name, request)),
+                    );
+                }
+                continue;
+            }
             let reason = if mp.disabled {
                 Some("excluded by the system_packages.managers setting".to_string())
             } else {
@@ -51,16 +74,7 @@ impl SystemStatus {
                 }
                 continue;
             }
-            let (requests, os_skipped): (Vec<_>, Vec<_>) = mp
-                .requests
-                .iter()
-                .cloned()
-                .partition(|request| request.is_os_supported());
-            let statuses = if requests.is_empty() {
-                vec![]
-            } else {
-                mp.manager.installed(&requests).await?
-            };
+            let statuses = mp.manager.installed(&requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
                 let (installed_version, state) = match &s.state {

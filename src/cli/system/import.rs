@@ -288,6 +288,9 @@ mod tests {
         );
         // no version key, or a non-string one, has no effective version
         assert_eq!(table(&[("os", s("macos"))]).version(), None);
-        assert_eq!(table(&[("version", toml::Value::Integer(42))]).version(), None);
+        assert_eq!(
+            table(&[("version", toml::Value::Integer(42))]).version(),
+            None
+        );
     }
 }

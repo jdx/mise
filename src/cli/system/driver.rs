@@ -71,6 +71,20 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             continue;
         }
         let name = mp.manager.name();
+        let (requests, os_skipped): (Vec<_>, Vec<_>) = mp
+            .requests
+            .iter()
+            .cloned()
+            .partition(|request| request.is_os_supported());
+        if !os_skipped.is_empty() {
+            info!(
+                "{name}: {} package(s) skipped (os mismatch)",
+                os_skipped.len()
+            );
+        }
+        if requests.is_empty() {
+            continue;
+        }
         if mp.disabled {
             if d.manager.is_some() {
                 bail!("manager '{name}' is excluded by the system_packages.managers setting");
@@ -85,20 +99,6 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                 bail!("{name} is not available: {}", reason);
             }
             debug!("{name}: skipping, {reason}");
-            continue;
-        }
-        let (requests, os_skipped): (Vec<_>, Vec<_>) = mp
-            .requests
-            .iter()
-            .cloned()
-            .partition(|request| request.is_os_supported());
-        if !os_skipped.is_empty() {
-            info!(
-                "{name}: {} package(s) skipped (os mismatch)",
-                os_skipped.len()
-            );
-        }
-        if requests.is_empty() {
             continue;
         }
         let statuses = mp.manager.installed(&requests).await?;
