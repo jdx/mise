@@ -2340,7 +2340,8 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<Option<String>> {
         let resolved_query = query.as_deref().unwrap_or("latest");
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        if resolved_query == "latest" && self.version_order(&opts)? == VersionOrder::Source {
+        self.version_order(&opts)?;
+        if resolved_query == "latest" {
             if let Some(info) = self.latest_stable_version_info(config).await? {
                 return Ok(Some(info.version));
             }
@@ -2371,21 +2372,21 @@ pub trait Backend: Debug + Send + Sync {
         let resolved_query = query.as_deref().unwrap_or("latest");
         let mut fallback_refresh = refresh;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        let latest =
-            if resolved_query == "latest" && self.version_order(&opts)? == VersionOrder::Source {
-                match self.latest_stable_version_info(config).await? {
-                    Some(info) => Some(info),
-                    None => self
-                        .latest_stable_version(config)
-                        .await?
-                        .map(|version| VersionInfo {
-                            version,
-                            ..Default::default()
-                        }),
-                }
-            } else {
-                None
-            };
+        self.version_order(&opts)?;
+        let latest = if resolved_query == "latest" {
+            match self.latest_stable_version_info(config).await? {
+                Some(info) => Some(info),
+                None => self
+                    .latest_stable_version(config)
+                    .await?
+                    .map(|version| VersionInfo {
+                        version,
+                        ..Default::default()
+                    }),
+            }
+        } else {
+            None
+        };
         if let Some(latest) = latest {
             let version = latest.version.clone();
             match before_date {
@@ -3866,7 +3867,7 @@ mod latest_version_tests {
     }
 
     #[tokio::test]
-    async fn test_semver_order_bypasses_latest_fast_path() {
+    async fn test_semver_order_preserves_latest_fast_path() {
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-semver-order[version_order=semver]")
             .with_remote_versions(vec![
@@ -3892,10 +3893,45 @@ mod latest_version_tests {
                 .await
                 .unwrap()
                 .as_deref(),
+            Some("9.9.9")
+        );
+        assert_eq!(backend.stable_info_calls(), 1);
+        assert_eq!(backend.stable_calls(), 1);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_semver_order_applies_to_latest_fallback() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-semver-fallback[version_order=semver]")
+            .with_stable_result(None)
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "11.11.0".to_string(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "10.34.5".to_string(),
+                    ..Default::default()
+                },
+            ]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
             Some("11.11.0")
         );
-        assert_eq!(backend.stable_info_calls(), 0);
-        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.stable_info_calls(), 1);
+        assert_eq!(backend.stable_calls(), 1);
         assert_eq!(backend.list_calls(), 1);
     }
 
