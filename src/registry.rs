@@ -355,7 +355,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         Some("source") => VersionOrder::Source,
         Some("semver") => VersionOrder::Semver,
         Some(_) => bail!("version_order must be \"source\" or \"semver\""),
-        None => bail!("version_order must be explicitly set to \"source\" or \"semver\""),
+        None => VersionOrder::Source,
     };
 
     let aliases = string_array(table.get("aliases"), "aliases")?;
@@ -859,6 +859,25 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
+    }
+
+    #[test]
+    fn test_dynamic_registry_defaults_missing_version_order_to_source() {
+        use super::*;
+
+        let registry = registry_from_sources(BTreeMap::from([(
+            "example".to_string(),
+            "backends = [\"aqua:example/tool\"]".to_string(),
+        )]))
+        .unwrap();
+
+        assert_eq!(
+            registry
+                .get("example")
+                .unwrap()
+                .version_order("aqua:example/tool"),
+            Some(VersionOrder::Source)
+        );
     }
 
     #[test]
