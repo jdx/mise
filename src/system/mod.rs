@@ -94,11 +94,14 @@ pub struct BootstrapTomlConfig {
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,
-    /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
+    /// `"manager:package"` -> version string, or for brew/brew-cask a
+    /// `{ version, os }` table. The table variant stays raw TOML so entries
+    /// with keys from newer mise versions warn and still work instead of
+    /// rejecting the whole config.
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
-    pub packages: IndexMap<String, String>,
+    pub packages: IndexMap<String, PackageEntryToml>,
     /// Absolute target path -> declarative managed file.
     #[serde(default)]
     pub files: IndexMap<String, managed_files::ManagedFileTomlConfig>,
@@ -128,6 +131,32 @@ pub struct BootstrapTomlConfig {
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
     pub hooks: IndexMap<String, toml::Value>,
+}
+
+/// A single `[bootstrap.packages]` value: the plain version-string form or the
+/// brew/brew-cask-only `{ version, os }` table form. The table variant stays
+/// raw TOML so entries with keys from newer mise versions warn and still work
+/// instead of rejecting the whole config; validation happens at aggregation time in
+/// [`package_requests_from_config_files`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum PackageEntryToml {
+    Version(String),
+    Table(IndexMap<String, toml::Value>),
+}
+
+impl PackageEntryToml {
+    /// The entry's effective version: the string form's value, or the table
+    /// form's `version` key. None when a table entry has no usable version
+    /// (missing or not a string) — such an entry is warned about and skipped
+    /// at aggregation time.
+    #[cfg(unix)]
+    pub fn version(&self) -> Option<&str> {
+        match self {
+            PackageEntryToml::Version(version) => Some(version),
+            PackageEntryToml::Table(table) => table.get("version").and_then(|v| v.as_str()),
+        }
+    }
 }
 
 pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
@@ -220,10 +249,59 @@ pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
+    /// Per-formula/cask platform filters from table-form Homebrew entries,
+    /// keyed by package name and version. Other managers never populate this
+    /// map.
+    os_filters: IndexMap<PackageRequestKey, Vec<String>>,
     /// excluded by the `system_packages.managers` setting — surfaced by
     /// status/doctor (nothing is silently invisible), skipped by install
     /// and the missing-packages hint
     pub disabled: bool,
+}
+
+impl ManagerPackages {
+    pub(crate) fn os_filter(&self, request: &PackageRequest) -> Option<&[String]> {
+        self.os_filters
+            .get(&PackageRequestKey::from(request))
+            .map(Vec::as_slice)
+    }
+
+    pub(crate) fn request_matches_platform(&self, request: &PackageRequest) -> bool {
+        self.os_filter(request)
+            .is_none_or(crate::os_filter::os_list_matches_current)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PackageRequestKey {
+    name: String,
+    version: Option<String>,
+}
+
+impl From<&PackageRequest> for PackageRequestKey {
+    fn from(request: &PackageRequest) -> Self {
+        Self {
+            name: request.name.clone(),
+            version: request.version.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct AggregatedPackageRequests {
+    by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    /// Only `brew` and `brew-cask` keys are populated.
+    os_filters: IndexMap<String, IndexMap<PackageRequestKey, Vec<String>>>,
+}
+
+#[cfg(all(test, unix))]
+impl AggregatedPackageRequests {
+    fn os_filter(&self, manager: &str, request: &PackageRequest) -> Option<&[String]> {
+        self.os_filters
+            .get(manager)?
+            .get(&PackageRequestKey::from(request))
+            .map(Vec::as_slice)
+    }
 }
 
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
@@ -290,7 +368,13 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    resolve_managers(by_mgr, true)
+    resolve_managers(
+        AggregatedPackageRequests {
+            by_mgr,
+            ..Default::default()
+        },
+        true,
+    )
 }
 
 pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
@@ -344,6 +428,7 @@ pub(crate) fn pending_plugin_packages_from_config_including_disabled(
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
     package_requests_from_config_files(&config.config_files, &brew_taps)
+        .by_mgr
         .into_iter()
         .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
         .collect()
@@ -373,10 +458,10 @@ fn packages_from_config_files_and_tracked_config_files(
     current_config_files: &ConfigMap,
     tracked_config_files: &ConfigMap,
 ) -> Result<Vec<ManagerPackages>> {
-    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let mut aggregated = AggregatedPackageRequests::default();
     let current_brew_taps = brew_taps_from_config_files(current_config_files);
     merge_manager_packages(
-        &mut by_mgr,
+        &mut aggregated,
         packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
     );
 
@@ -385,21 +470,24 @@ fn packages_from_config_files_and_tracked_config_files(
         tracked_brew_taps.insert(tap, url);
     }
     merge_manager_packages(
-        &mut by_mgr,
+        &mut aggregated,
         packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
     );
 
-    resolve_managers(by_mgr, false)
+    resolve_managers(aggregated, false)
 }
 
 #[cfg(unix)]
 fn merge_manager_packages(
-    by_mgr: &mut IndexMap<String, Vec<PackageRequest>>,
+    aggregated: &mut AggregatedPackageRequests,
     manager_packages: Vec<ManagerPackages>,
 ) {
-    for mp in manager_packages {
-        let requests = by_mgr.entry(mp.manager.name().to_string()).or_default();
+    for mut mp in manager_packages {
+        let manager_name = mp.manager.name().to_string();
+        let requests = aggregated.by_mgr.entry(manager_name.clone()).or_default();
         for request in mp.requests {
+            let request_key = PackageRequestKey::from(&request);
+            let os_filter = mp.os_filters.shift_remove(&request_key);
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -407,7 +495,16 @@ fn merge_manager_packages(
                     existing.tap_url = request.tap_url;
                 }
                 Some(_) => {}
-                None => requests.push(request),
+                None => {
+                    if let Some(os_filter) = os_filter {
+                        aggregated
+                            .os_filters
+                            .entry(manager_name.clone())
+                            .or_default()
+                            .insert(request_key, os_filter);
+                    }
+                    requests.push(request);
+                }
             }
         }
     }
@@ -432,21 +529,24 @@ fn packages_from_config_files_with_brew_taps(
 fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
-) -> IndexMap<String, Vec<PackageRequest>> {
-    let mut merged: IndexMap<String, String> = IndexMap::new();
-    // config_files is ordered local -> global; reverse for global -> local
+) -> AggregatedPackageRequests {
+    let mut merged: IndexMap<String, PackageEntryToml> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local so
+    // a more local entry (string or table) replaces the global one wholesale
     for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
-            for (spec, version) in sys.packages {
-                merged.insert(spec, version);
+            for (spec, entry) in sys.packages {
+                merged.insert(spec, entry);
             }
         }
     }
-    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
-    for (spec, version) in merged {
+    let mut aggregated = AggregatedPackageRequests::default();
+    for (spec, entry) in merged {
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
-                let version = (version != "latest").then_some(version);
+                let Some((version, os)) = validate_package_entry(&spec, &mgr, &entry) else {
+                    continue;
+                };
                 if let Err(err) = validate_package_name(&mgr, &name) {
                     warn!("[bootstrap.packages]: {err}");
                     continue;
@@ -456,16 +556,82 @@ fn package_requests_from_config_files(
                 } else {
                     None
                 };
-                by_mgr.entry(mgr).or_default().push(PackageRequest {
+                let request = PackageRequest {
                     name,
                     version,
                     tap_url,
-                });
+                };
+                if let Some(os) = os {
+                    aggregated
+                        .os_filters
+                        .entry(mgr.clone())
+                        .or_default()
+                        .insert(PackageRequestKey::from(&request), os);
+                }
+                aggregated.by_mgr.entry(mgr).or_default().push(request);
             }
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
-    by_mgr
+    aggregated
+}
+
+/// Validated `(version, os)` of a single `[bootstrap.packages]` entry.
+/// `"latest"` parses to no pin; a malformed entry warns and returns None so
+/// the caller skips it without failing the whole config. Unknown table keys
+/// warn but keep the entry usable (forward compatibility).
+fn validate_package_entry(
+    spec: &str,
+    manager: &str,
+    entry: &PackageEntryToml,
+) -> Option<(Option<String>, Option<Vec<String>>)> {
+    let (version, os) = match entry {
+        PackageEntryToml::Version(version) => (version.as_str(), None),
+        PackageEntryToml::Table(table) => {
+            if !is_brew_manager(manager) {
+                warn!(
+                    "[bootstrap.packages]: entry '{spec}': table entries are supported only for brew and brew-cask"
+                );
+                return None;
+            }
+            let Some(version) = table.get("version").and_then(|v| v.as_str()) else {
+                warn!("[bootstrap.packages]: entry '{spec}' requires a string 'version' key");
+                return None;
+            };
+            let os = match table.get("os") {
+                None => None,
+                Some(toml::Value::String(os)) => Some(vec![os.clone()]),
+                Some(toml::Value::Array(entries)) => {
+                    match entries
+                        .iter()
+                        .map(|v| v.as_str().map(str::to_string))
+                        .collect::<Option<Vec<_>>>()
+                    {
+                        Some(os_list) => Some(os_list),
+                        None => {
+                            warn!(
+                                "[bootstrap.packages]: entry '{spec}' has an invalid 'os' value (expected a string or array of strings)"
+                            );
+                            return None;
+                        }
+                    }
+                }
+                Some(_) => {
+                    warn!(
+                        "[bootstrap.packages]: entry '{spec}' has an invalid 'os' value (expected a string or array of strings)"
+                    );
+                    return None;
+                }
+            };
+            for key in table.keys() {
+                if key != "version" && key != "os" {
+                    warn!("[bootstrap.packages]: entry '{spec}': ignoring unknown key '{key}'");
+                }
+            }
+            (version, os)
+        }
+    };
+    Some(((version != "latest").then(|| version.to_string()), os))
 }
 
 /// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
@@ -1288,7 +1454,13 @@ pub fn packages_from_specs_with_config(
             requests.push(request);
         }
     }
-    resolve_managers(by_mgr, true)
+    resolve_managers(
+        AggregatedPackageRequests {
+            by_mgr,
+            ..Default::default()
+        },
+        true,
+    )
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -1306,7 +1478,7 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
     }
 }
 
-fn is_brew_manager(mgr: &str) -> bool {
+pub(crate) fn is_brew_manager(mgr: &str) -> bool {
     matches!(mgr, "brew" | "brew-cask")
 }
 
@@ -1350,7 +1522,7 @@ fn brew_taps_from_config_files(config_files: &ConfigMap) -> IndexMap<String, Str
 }
 
 fn resolve_managers(
-    by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    mut aggregated: AggregatedPackageRequests,
     strict: bool,
 ) -> eyre::Result<Vec<ManagerPackages>> {
     let enabled = crate::config::Settings::get()
@@ -1362,7 +1534,7 @@ fn resolve_managers(
         .map(|manager| (manager.name().to_string(), manager))
         .collect::<IndexMap<_, _>>();
     let mut out = vec![];
-    for (name, requests) in by_mgr {
+    for (name, requests) in aggregated.by_mgr {
         let disabled = enabled.as_ref().is_some_and(|e| !e.contains(&name));
         if disabled && strict {
             bail!(
@@ -1375,6 +1547,10 @@ fn resolve_managers(
             Some(manager) => out.push(ManagerPackages {
                 manager: manager.clone(),
                 requests,
+                os_filters: aggregated
+                    .os_filters
+                    .shift_remove(&name)
+                    .unwrap_or_default(),
                 disabled,
             }),
             None => {
@@ -1477,6 +1653,239 @@ mod tests {
                 ("ffmpeg", None),
             ]
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_prune_needed_set_retains_os_filtered_entries() -> Result<()> {
+        let other_os = if std::env::consts::OS == "linux" {
+            "macos"
+        } else {
+            "linux"
+        };
+        let current_toml = format!(
+            r#"
+                [bootstrap.packages]
+                "brew:everywhere" = "latest"
+                "brew:elsewhere" = {{ version = "latest", os = ["{other_os}"] }}
+            "#
+        );
+        let (_current_dir, current) = config_map_from_toml(&[("current.toml", &current_toml)])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:tracked-elsewhere" = { version = "latest", os = ["macos", "linux"] }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .into_iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        let names = brew
+            .requests
+            .iter()
+            .map(|req| req.name.as_str())
+            .collect::<Vec<_>>();
+
+        // the prune-protected set deliberately ignores os filtering: an entry
+        // scoped away from the current platform must never become prunable
+        assert!(names.contains(&"elsewhere"));
+        assert!(names.contains(&"everywhere"));
+        assert!(names.contains(&"tracked-elsewhere"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_tracked_package_versions_retain_distinct_os_filters() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:curl" = { version = "8.5.0", os = ["linux"] }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:curl" = { version = "8.6.0", os = ["macos"] }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .into_iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        let current = brew
+            .requests
+            .iter()
+            .find(|request| request.version.as_deref() == Some("8.5.0"))
+            .unwrap();
+        let tracked = brew
+            .requests
+            .iter()
+            .find(|request| request.version.as_deref() == Some("8.6.0"))
+            .unwrap();
+
+        assert_eq!(brew.os_filter(current).unwrap(), ["linux"]);
+        assert_eq!(brew.os_filter(tracked).unwrap(), ["macos"]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_from_table_entries() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:libssl-dev" = "latest"
+                "brew-cask:firefox" = { version = "latest", os = ["macos"] }
+                "brew:curl" = { version = "8.5.0-2", os = "linux" }
+                "brew:nowhere" = { version = "latest", os = [] }
+                "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"] }
+            "#,
+        )])?;
+
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        let apt = &aggregated.by_mgr.get("apt").unwrap()[0];
+        assert_eq!(apt.name, "libssl-dev");
+
+        let firefox = &aggregated.by_mgr.get("brew-cask").unwrap()[0];
+        assert_eq!(firefox.name, "firefox");
+        assert_eq!(firefox.version, None);
+        assert_eq!(
+            aggregated.os_filter("brew-cask", firefox).unwrap(),
+            ["macos"]
+        );
+
+        let brew = aggregated.by_mgr.get("brew").unwrap();
+        assert_eq!(brew[0].name, "curl");
+        assert_eq!(brew[0].version.as_deref(), Some("8.5.0-2"));
+        // bare string os -> single-entry list, raw as written
+        assert_eq!(aggregated.os_filter("brew", &brew[0]).unwrap(), ["linux"]);
+        // empty os array is kept: it matches nothing
+        assert_eq!(brew[1].name, "nowhere");
+        assert!(aggregated.os_filter("brew", &brew[1]).unwrap().is_empty());
+        // aliases and os/arch forms stay raw and normalize at match time
+        let ffmpeg = &brew[2];
+        assert_eq!(
+            aggregated.os_filter("brew", ffmpeg).unwrap(),
+            ["linux", "macos/arm64"]
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_malformed_table_entries_skipped() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:no-version" = { os = ["linux"] }
+                "brew:bad-version" = { version = 42 }
+                "brew:bad-os" = { version = "latest", os = 42 }
+                "brew:bad-os-list" = { version = "latest", os = [1, 2] }
+                "brew:good" = "latest"
+            "#,
+        )])?;
+
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        let brew = aggregated
+            .by_mgr
+            .get("brew")
+            .unwrap()
+            .iter()
+            .map(|req| req.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(brew, vec!["good"]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_unknown_table_keys_warn_but_apply() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:curl" = { version = "8.5.0-2", os = ["linux"], future_key = "x" }
+            "#,
+        )])?;
+
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        let curl = &aggregated.by_mgr.get("brew").unwrap()[0];
+        assert_eq!(curl.name, "curl");
+        assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
+        assert_eq!(aggregated.os_filter("brew", curl).unwrap(), ["linux"]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_requests_local_replaces_global_wholesale() -> Result<()> {
+        // config_map_from_toml inserts local -> global (matching ConfigMap order)
+        let (_dir, config_files) = config_map_from_toml(&[
+            (
+                "local.toml",
+                r#"
+                    [bootstrap.packages]
+                    "brew-cask:firefox" = "latest"
+                    "brew:curl" = { version = "8.5.0-2", os = ["linux"] }
+                "#,
+            ),
+            (
+                "global.toml",
+                r#"
+                    [bootstrap.packages]
+                    "brew-cask:firefox" = { version = "1.0", os = ["macos"] }
+                    "brew:curl" = "latest"
+                "#,
+            ),
+        ])?;
+
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
+
+        // local string entry drops the global entry's os and version wholesale
+        let firefox = &aggregated.by_mgr.get("brew-cask").unwrap()[0];
+        assert_eq!(firefox.version, None);
+        assert!(aggregated.os_filter("brew-cask", firefox).is_none());
+
+        // local table entry replaces the global string entry wholesale
+        let curl = &aggregated.by_mgr.get("brew").unwrap()[0];
+        assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
+        assert_eq!(aggregated.os_filter("brew", curl).unwrap(), ["linux"]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_non_brew_table_entries_are_skipped() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:curl" = { version = "latest" }
+                "mas:497799835" = { version = "latest" }
+                "apt:git" = "latest"
+            "#,
+        )])?;
+
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let apt = aggregated.by_mgr.get("apt").unwrap();
+        assert_eq!(apt.len(), 1);
+        assert_eq!(apt[0].name, "git");
+        assert!(!aggregated.by_mgr.contains_key("mas"));
         Ok(())
     }
 

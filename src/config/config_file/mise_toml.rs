@@ -636,33 +636,75 @@ impl MiseToml {
         Ok(())
     }
 
-    /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
-    /// creating the tables as needed ("latest" means no pin)
+    /// Set the version of `[bootstrap.packages]."<manager>:<package>"`,
+    /// creating the tables as needed ("latest" means no pin). An existing
+    /// brew/brew-cask table entry — in any of its TOML spellings (inline
+    /// table, sub-table, or dotted keys) — keeps its `os` and any other keys,
+    /// with only its `version` updated in place; everything else is written as
+    /// a plain string.
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
-        self.bootstrap
-            .get_or_insert_with(Default::default)
-            .packages
-            .insert(spec.to_string(), version.to_string());
-        let mut doc = self.doc_mut()?;
-        let bootstrap = doc
-            .get_mut()
-            .unwrap()
-            .entry("bootstrap")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-        // don't render an empty [bootstrap] header above [bootstrap.packages]
-        bootstrap.set_implicit(true);
-        let packages = bootstrap
-            .entry("packages")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-        let key = get_key_with_decor(packages, spec);
-        let value_decor = get_value_decor(packages, spec);
-        let mut item = toml_edit::value(version);
-        set_value_decor(&mut item, &value_decor);
-        packages.insert_formatted(&key, item);
+        let preserve_table = spec
+            .split_once(':')
+            .is_some_and(|(manager, _)| crate::system::is_brew_manager(manager));
+        let updated_table = {
+            let mut doc = self.doc_mut()?;
+            let bootstrap = doc
+                .get_mut()
+                .unwrap()
+                .entry("bootstrap")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            // don't render an empty [bootstrap] header above [bootstrap.packages]
+            bootstrap.set_implicit(true);
+            let packages = bootstrap
+                .entry("packages")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            // For Homebrew, `as_table_like_mut` covers every table spelling —
+            // inline table, sub-table, and dotted keys all reach here, so none
+            // of them lose their `os` to a plain-string rewrite.
+            let existing_table = if preserve_table {
+                packages
+                    .get_mut(spec)
+                    .and_then(|item| item.as_table_like_mut())
+            } else {
+                None
+            };
+            if let Some(entry) = existing_table {
+                let value_decor = entry
+                    .get("version")
+                    .and_then(|item| item.as_value())
+                    .map(|value| value.decor().clone());
+                let mut item = toml_edit::value(version);
+                set_value_decor(&mut item, &value_decor);
+                entry.insert("version", item);
+                true
+            } else {
+                let key = get_key_with_decor(packages, spec);
+                let value_decor = get_value_decor(packages, spec);
+                let mut item = toml_edit::value(version);
+                set_value_decor(&mut item, &value_decor);
+                packages.insert_formatted(&key, item);
+                false
+            }
+        };
+        let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
+        match packages.get_mut(spec) {
+            Some(crate::system::PackageEntryToml::Table(entry)) if updated_table => {
+                entry.insert(
+                    "version".to_string(),
+                    toml::Value::String(version.to_string()),
+                );
+            }
+            _ => {
+                packages.insert(
+                    spec.to_string(),
+                    crate::system::PackageEntryToml::Version(version.to_string()),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -3004,9 +3046,24 @@ mod tests {
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
-        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        fn version_of(entry: &crate::system::PackageEntryToml) -> &str {
+            match entry {
+                crate::system::PackageEntryToml::Version(v) => v,
+                other => panic!("expected a string version entry, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            version_of(system.packages.get("apt:libssl-dev").unwrap()),
+            "latest"
+        );
+        assert_eq!(
+            version_of(system.packages.get("apt:curl").unwrap()),
+            "8.5.0-2"
+        );
+        assert_eq!(
+            version_of(system.packages.get("brew:postgresql@17").unwrap()),
+            "latest"
+        );
         assert_eq!(
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3022,7 +3079,7 @@ mod tests {
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
-            system.packages.get("future-manager:whatever").unwrap(),
+            version_of(system.packages.get("future-manager:whatever").unwrap()),
             "latest"
         );
 
@@ -3030,6 +3087,69 @@ mod tests {
         file::write(&p, "[tools]\n").unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.bootstrap_config().is_none());
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_packages_table_entries() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test-bootstrap-os.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [bootstrap.packages]
+        "apt:libssl-dev" = "latest"
+        "brew-cask:firefox" = { version = "latest", os = ["macos"] }
+        "brew:wget" = { version = "1.21.4", os = "linux" }
+        "brew:ffmpeg" = { version = "latest", os = ["linux", "macos/arm64"], future_key = "x" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let system = cf.bootstrap_config().unwrap();
+
+        // string form still parses as a plain version
+        assert!(matches!(
+            system.packages.get("apt:libssl-dev").unwrap(),
+            crate::system::PackageEntryToml::Version(v) if v == "latest"
+        ));
+
+        // table form stays raw TOML: version + os array preserved as written
+        let firefox = match system.packages.get("brew-cask:firefox").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => t,
+            other => panic!("expected a table entry, got {other:?}"),
+        };
+        assert_eq!(
+            firefox.get("version").and_then(|v| v.as_str()),
+            Some("latest")
+        );
+        let os = firefox.get("os").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            os.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+            vec!["macos"]
+        );
+
+        // os accepts a bare string
+        let wget = match system.packages.get("brew:wget").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => t,
+            other => panic!("expected a table entry, got {other:?}"),
+        };
+        assert_eq!(wget.get("version").and_then(|v| v.as_str()), Some("1.21.4"));
+        assert_eq!(wget.get("os").and_then(|v| v.as_str()), Some("linux"));
+
+        // unknown keys survive the parse (forward compatibility; validation
+        // warns at aggregation time, not here)
+        let ffmpeg = match system.packages.get("brew:ffmpeg").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => t,
+            other => panic!("expected a table entry, got {other:?}"),
+        };
+        let os = ffmpeg.get("os").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            os.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+            vec!["linux", "macos/arm64"]
+        );
+        assert_eq!(ffmpeg.get("future_key").and_then(|v| v.as_str()), Some("x"));
+
         file::remove_file(&p).unwrap();
     }
 
@@ -3230,7 +3350,129 @@ mod tests {
         "brew:postgresql@17" = "latest"
         "#);
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            Some("8.5.0-2")
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_table_entries() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".test-bootstrap-use-os.mise.toml");
+        file::write(
+            &p,
+            r#"[bootstrap.packages]
+"apt:curl" = { version = "latest", future_key = "x" }
+"brew-cask:firefox" = { version = "latest", os = ["macos"], future_key = "x" }
+"#,
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        // table entry: version updated in place, os and unknown keys preserved
+        cf.update_bootstrap_package("brew-cask:firefox", "1.2.3")
+            .unwrap();
+        // non-Homebrew table entry: normalized to the supported string form
+        cf.update_bootstrap_package("apt:curl", "8.5.0-2").unwrap();
+        // new entry: still written as a plain string
+        cf.update_bootstrap_package("apt:jq", "latest").unwrap();
+        assert_snapshot!(cf.dump().unwrap(), @r#"
+        [bootstrap.packages]
+        "apt:curl" = "8.5.0-2"
+        "brew-cask:firefox" = { version = "1.2.3", os = ["macos"], future_key = "x" }
+        "apt:jq" = "latest"
+        "#);
+
+        // the in-memory packages map stays consistent with the document
+        let system = cf.bootstrap_config().unwrap();
+        match system.packages.get("brew-cask:firefox").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => {
+                assert_eq!(t.get("version").and_then(|v| v.as_str()), Some("1.2.3"));
+                let os = t.get("os").and_then(|v| v.as_array()).unwrap();
+                assert_eq!(
+                    os.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+                    vec!["macos"]
+                );
+                assert_eq!(t.get("future_key").and_then(|v| v.as_str()), Some("x"));
+            }
+            other => panic!("expected a table entry, got {other:?}"),
+        }
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            Some("8.5.0-2")
+        );
+        assert_eq!(
+            system.packages.get("apt:jq").unwrap().version(),
+            Some("latest")
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_sub_table_entries() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".test-bootstrap-use-subtable.mise.toml");
+        // both are legal TOML spellings of a table entry and both deserialize
+        // to PackageEntryToml::Table, so `use` must preserve `os` for them too
+        file::write(
+            &p,
+            r#"[bootstrap.packages]
+"brew:ffmpeg".version = "latest"
+"brew:ffmpeg".os = ["linux"]
+
+[bootstrap.packages."brew-cask:firefox"]
+version = "latest"
+os = ["macos"]
+future_key = "x"
+"#,
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("brew-cask:firefox", "1.2.3")
+            .unwrap();
+        cf.update_bootstrap_package("brew:ffmpeg", "7.1").unwrap();
+
+        // the os restriction survives in the written document, not just in
+        // the in-memory map
+        let dumped = cf.dump().unwrap();
+        assert!(
+            dumped.contains(r#"os = ["macos"]"#),
+            "sub-table os was dropped:\n{dumped}"
+        );
+        assert!(
+            dumped.contains(r#"os = ["linux"]"#),
+            "dotted-key os was dropped:\n{dumped}"
+        );
+        assert!(
+            dumped.contains(r#"future_key = "x""#),
+            "sub-table unknown key was dropped:\n{dumped}"
+        );
+
+        file::write(&p, &dumped).unwrap();
+        let system = MiseToml::from_file(&p).unwrap().bootstrap_config().unwrap();
+        for (spec, version, os) in [
+            ("brew-cask:firefox", "1.2.3", "macos"),
+            ("brew:ffmpeg", "7.1", "linux"),
+        ] {
+            match system.packages.get(spec).unwrap() {
+                crate::system::PackageEntryToml::Table(t) => {
+                    assert_eq!(t.get("version").and_then(|v| v.as_str()), Some(version));
+                    let list = t.get("os").and_then(|v| v.as_array()).unwrap();
+                    assert_eq!(
+                        list.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+                        vec![os]
+                    );
+                }
+                other => panic!("expected {spec} to stay a table entry, got {other:?}"),
+            }
+        }
         file::remove_file(&p).unwrap();
     }
 

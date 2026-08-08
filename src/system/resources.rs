@@ -268,8 +268,23 @@ pub async fn plan(
         }
     }
     for manager_packages in super::packages_from_config(config) {
-        let manager = manager_packages.manager;
+        let manager = manager_packages.manager.clone();
         let manager_name = manager.name().to_string();
+        let (requests, os_skipped): (Vec<_>, Vec<_>) = manager_packages
+            .requests
+            .iter()
+            .cloned()
+            .partition(|request| manager_packages.request_matches_platform(request));
+        for request in &os_skipped {
+            plan.insert(os_skipped_package_plan(
+                &manager_name,
+                request,
+                manager_packages.os_filter(request).unwrap_or_default(),
+            ))?;
+        }
+        if requests.is_empty() {
+            continue;
+        }
         let unavailable = if manager_packages.disabled {
             Some("excluded by system_packages.managers".to_string())
         } else {
@@ -277,7 +292,7 @@ pub async fn plan(
         };
 
         if let Some(reason) = unavailable {
-            for request in manager_packages.requests {
+            for request in requests {
                 plan.insert(ResourcePlan::new(
                     ResourceId::new("package", format!("{manager_name}:{}", request.name)),
                     format!("unavailable ({reason})"),
@@ -289,7 +304,7 @@ pub async fn plan(
         }
 
         let supports_version_pins = manager.supports_version_pins();
-        for status in manager.installed(&manager_packages.requests).await? {
+        for status in manager.installed(&requests).await? {
             let id = ResourceId::new("package", format!("{manager_name}:{}", status.request.name));
             let desired = desired_package(&status.request);
             let (current, action) =
@@ -563,6 +578,22 @@ fn add_account_dependencies(
     Ok(())
 }
 
+/// Plan row for an entry whose `os` list does not match the current platform:
+/// visible but never actionable, mirroring the unavailable-manager pattern.
+/// The list stays as written in config.
+fn os_skipped_package_plan(
+    manager_name: &str,
+    request: &PackageRequest,
+    os: &[String],
+) -> ResourcePlan {
+    ResourcePlan::new(
+        ResourceId::new("package", format!("{manager_name}:{}", request.name)),
+        format!("skipped (os: {})", os.join(", ")),
+        desired_package(request),
+        ResourceAction::Unknown,
+    )
+}
+
 fn desired_package(request: &super::packages::PackageRequest) -> String {
     request
         .version
@@ -701,6 +732,31 @@ mod tests {
                 unknown: 1,
             }
         );
+    }
+
+    #[test]
+    fn os_filtered_packages_render_skipped_plan_rows() {
+        let request = PackageRequest {
+            name: "firefox".to_string(),
+            version: None,
+            tap_url: None,
+        };
+
+        let row = os_skipped_package_plan(
+            "brew-cask",
+            &request,
+            &["macos".to_string(), "linux/arm64".to_string()],
+        );
+        assert_eq!(
+            (row.id.kind.as_str(), row.id.name.as_str()),
+            ("package", "brew-cask:firefox")
+        );
+        // os values comma-joined as written (aliases stay unnormalized)
+        assert_eq!(row.current, "skipped (os: macos, linux/arm64)");
+        assert_eq!(row.desired, desired_package(&request));
+        // visible but never actionable
+        assert_eq!(row.action, ResourceAction::Unknown);
+        assert!(row.depends_on.is_empty());
     }
 
     #[test]
