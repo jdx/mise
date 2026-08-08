@@ -437,7 +437,8 @@ mod tests {
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             let mut request = [0; 1024];
-            stream.read(&mut request).unwrap();
+            let bytes_read = stream.read(&mut request).unwrap();
+            assert!(bytes_read > 0, "client closed before sending its request");
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n")
                 .unwrap();
