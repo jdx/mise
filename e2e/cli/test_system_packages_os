@@ -47,7 +47,7 @@ fi
 # Table entries are not accepted for non-Homebrew managers.
 cat <<EOF >mise.toml
 [bootstrap.packages]
-"apt:curl" = { version = "latest", os = ["$MISE_PLATFORM_OS"] }
+"apt:curl" = { version = "latest" }
 EOF
 assert_contains "mise bootstrap packages status 2>&1" "table entries are supported only for brew and brew-cask"
 assert "mise bootstrap packages status --json 2>/dev/null | jq length" "0"

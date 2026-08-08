@@ -3367,7 +3367,7 @@ mod tests {
         file::write(
             &p,
             r#"[bootstrap.packages]
-"apt:curl" = { version = "latest", os = ["linux"] }
+"apt:curl" = { version = "latest", future_key = "x" }
 "brew-cask:firefox" = { version = "latest", os = ["macos"], future_key = "x" }
 "#,
         )

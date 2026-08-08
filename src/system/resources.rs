@@ -268,14 +268,19 @@ pub async fn plan(
         }
     }
     for manager_packages in super::packages_from_config(config) {
-        let manager = manager_packages.manager;
+        let manager = manager_packages.manager.clone();
         let manager_name = manager.name().to_string();
         let (requests, os_skipped): (Vec<_>, Vec<_>) = manager_packages
             .requests
-            .into_iter()
-            .partition(|request| super::package_request_matches_platform(&manager_name, request));
+            .iter()
+            .cloned()
+            .partition(|request| manager_packages.request_matches_platform(request));
         for request in &os_skipped {
-            plan.insert(os_skipped_package_plan(&manager_name, request))?;
+            plan.insert(os_skipped_package_plan(
+                &manager_name,
+                request,
+                manager_packages.os_filter(request).unwrap_or_default(),
+            ))?;
         }
         if requests.is_empty() {
             continue;
@@ -576,13 +581,14 @@ fn add_account_dependencies(
 /// Plan row for an entry whose `os` list does not match the current platform:
 /// visible but never actionable, mirroring the unavailable-manager pattern.
 /// The list stays as written in config.
-fn os_skipped_package_plan(manager_name: &str, request: &PackageRequest) -> ResourcePlan {
+fn os_skipped_package_plan(
+    manager_name: &str,
+    request: &PackageRequest,
+    os: &[String],
+) -> ResourcePlan {
     ResourcePlan::new(
         ResourceId::new("package", format!("{manager_name}:{}", request.name)),
-        format!(
-            "skipped (os: {})",
-            request.os.as_deref().unwrap_or_default().join(", ")
-        ),
+        format!("skipped (os: {})", os.join(", ")),
         desired_package(request),
         ResourceAction::Unknown,
     )
@@ -649,7 +655,6 @@ mod tests {
             name: "example".to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            os: None,
         }
     }
 
@@ -735,10 +740,13 @@ mod tests {
             name: "firefox".to_string(),
             version: None,
             tap_url: None,
-            os: Some(vec!["macos".to_string(), "linux/arm64".to_string()]),
         };
 
-        let row = os_skipped_package_plan("brew-cask", &request);
+        let row = os_skipped_package_plan(
+            "brew-cask",
+            &request,
+            &["macos".to_string(), "linux/arm64".to_string()],
+        );
         assert_eq!(
             (row.id.kind.as_str(), row.id.name.as_str()),
             ("package", "brew-cask:firefox")

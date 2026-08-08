@@ -32,22 +32,22 @@ impl SystemStatus {
                 .requests
                 .iter()
                 .cloned()
-                .partition(|request| system::package_request_matches_platform(name, request));
+                .partition(|request| mp.request_matches_platform(request));
             if requests.is_empty() {
                 if self.json {
                     json_out.insert(
                         name.to_string(),
                         json!({
                             "available": true,
-                            "packages": os_skipped.iter().map(os_skipped_json).collect::<Vec<_>>(),
+                            "packages": os_skipped.iter().map(|request| {
+                                os_skipped_json(request, mp.os_filter(request).unwrap_or_default())
+                            }).collect::<Vec<_>>(),
                         }),
                     );
                 } else {
-                    rows.extend(
-                        os_skipped
-                            .iter()
-                            .map(|request| os_skipped_row(name, request)),
-                    );
+                    rows.extend(os_skipped.iter().map(|request| {
+                        os_skipped_row(name, request, mp.os_filter(request).unwrap_or_default())
+                    }));
                 }
                 continue;
             }
@@ -109,10 +109,11 @@ impl SystemStatus {
                 }
             }
             for request in &os_skipped {
+                let os = mp.os_filter(request).unwrap_or_default();
                 if self.json {
-                    json_pkgs.push(os_skipped_json(request));
+                    json_pkgs.push(os_skipped_json(request, os));
                 } else {
-                    rows.push(os_skipped_row(name, request));
+                    rows.push(os_skipped_row(name, request, os));
                 }
             }
             if self.json {
@@ -146,30 +147,26 @@ impl SystemStatus {
 
 /// Table row for an entry whose `os` list does not match the current platform,
 /// rendered without querying the manager. The list stays as written in config.
-fn os_skipped_row(manager: &str, request: &PackageRequest) -> Vec<String> {
+fn os_skipped_row(manager: &str, request: &PackageRequest, os: &[String]) -> Vec<String> {
     vec![
         manager.to_string(),
         request.to_string(),
         "".to_string(),
-        format!("skipped (os: {})", os_list(request)),
+        format!("skipped (os: {})", os.join(", ")),
     ]
 }
 
 /// JSON entry for an os-filtered package; mirrors the ordinary package shape
 /// with `"state": "skipped"` and the entry's `os` list.
-fn os_skipped_json(request: &PackageRequest) -> serde_json::Value {
+fn os_skipped_json(request: &PackageRequest, os: &[String]) -> serde_json::Value {
     json!({
         "package": request.name,
         "requested_version": request.version.clone().unwrap_or_else(|| "latest".to_string()),
         "state": "skipped",
         "reason": "os mismatch",
-        "os": request.os.clone().unwrap_or_default(),
+        "os": os,
         "installed_version": "",
     })
-}
-
-fn os_list(request: &PackageRequest) -> String {
-    request.os.as_deref().unwrap_or_default().join(", ")
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -186,12 +183,11 @@ mod tests {
     use super::*;
     use crate::system::packages::PackageRequest;
 
-    fn request(name: &str, version: Option<&str>, os: &[&str]) -> PackageRequest {
+    fn request(name: &str, version: Option<&str>) -> PackageRequest {
         PackageRequest {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            os: Some(os.iter().map(|s| s.to_string()).collect()),
         }
     }
 
@@ -199,7 +195,8 @@ mod tests {
     fn os_skipped_table_row_shape() {
         let row = os_skipped_row(
             "brew-cask",
-            &request("firefox", None, &["macos", "linux/arm64"]),
+            &request("firefox", None),
+            &["macos".to_string(), "linux/arm64".to_string()],
         );
         assert_eq!(
             row,
@@ -212,14 +209,18 @@ mod tests {
         );
 
         // pinned versions keep the spec rendering of ordinary rows
-        let row = os_skipped_row("apt", &request("curl", Some("8.5.0-2"), &["linux"]));
+        let row = os_skipped_row(
+            "brew",
+            &request("curl", Some("8.5.0-2")),
+            &["linux".to_string()],
+        );
         assert_eq!(row[1], "curl@8.5.0-2");
         assert_eq!(row[3], "skipped (os: linux)");
     }
 
     #[test]
     fn os_skipped_json_shape() {
-        let value = os_skipped_json(&request("firefox", None, &["macos"]));
+        let value = os_skipped_json(&request("firefox", None), &["macos".to_string()]);
         assert_eq!(
             value,
             json!({
@@ -232,7 +233,10 @@ mod tests {
             })
         );
 
-        let value = os_skipped_json(&request("curl", Some("8.5.0-2"), &["linux", "macos/arm64"]));
+        let value = os_skipped_json(
+            &request("curl", Some("8.5.0-2")),
+            &["linux".to_string(), "macos/arm64".to_string()],
+        );
         assert_eq!(value["requested_version"], "8.5.0-2");
         assert_eq!(value["os"], json!(["linux", "macos/arm64"]));
     }

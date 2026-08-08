@@ -249,16 +249,31 @@ pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
+    /// Per-formula/cask platform filters from table-form Homebrew entries,
+    /// keyed by the package name. Other managers never populate this map.
+    os_filters: IndexMap<String, Vec<String>>,
     /// excluded by the `system_packages.managers` setting — surfaced by
     /// status/doctor (nothing is silently invisible), skipped by install
     /// and the missing-packages hint
     pub disabled: bool,
 }
 
-/// Whether a package request applies on this platform. Per-entry platform
-/// filtering is intentionally limited to Homebrew formulae and casks.
-pub(crate) fn package_request_matches_platform(manager: &str, request: &PackageRequest) -> bool {
-    !is_brew_manager(manager) || request.is_os_supported()
+impl ManagerPackages {
+    pub(crate) fn os_filter(&self, request: &PackageRequest) -> Option<&[String]> {
+        self.os_filters.get(&request.name).map(Vec::as_slice)
+    }
+
+    pub(crate) fn request_matches_platform(&self, request: &PackageRequest) -> bool {
+        self.os_filter(request)
+            .is_none_or(crate::os_filter::os_list_matches_current)
+    }
+}
+
+#[derive(Default)]
+struct AggregatedPackageRequests {
+    by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    /// Only `brew` and `brew-cask` keys are populated.
+    os_filters: IndexMap<String, IndexMap<String, Vec<String>>>,
 }
 
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
@@ -293,7 +308,6 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
                 name: rest.to_string(),
                 version: None,
                 tap_url: None,
-                os: None,
             },
         ));
     }
@@ -304,7 +318,6 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
                 name: name.to_string(),
                 version: (version != "latest").then(|| version.to_string()),
                 tap_url: None,
-                os: None,
             },
         )),
         Some(_) => {
@@ -316,7 +329,6 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
                 name: rest.to_string(),
                 version: None,
                 tap_url: None,
-                os: None,
             },
         )),
     }
@@ -328,7 +340,13 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    resolve_managers(by_mgr, true)
+    resolve_managers(
+        AggregatedPackageRequests {
+            by_mgr,
+            ..Default::default()
+        },
+        true,
+    )
 }
 
 pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
@@ -382,6 +400,7 @@ pub(crate) fn pending_plugin_packages_from_config_including_disabled(
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
     package_requests_from_config_files(&config.config_files, &brew_taps)
+        .by_mgr
         .into_iter()
         .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
         .collect()
@@ -411,10 +430,10 @@ fn packages_from_config_files_and_tracked_config_files(
     current_config_files: &ConfigMap,
     tracked_config_files: &ConfigMap,
 ) -> Result<Vec<ManagerPackages>> {
-    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let mut aggregated = AggregatedPackageRequests::default();
     let current_brew_taps = brew_taps_from_config_files(current_config_files);
     merge_manager_packages(
-        &mut by_mgr,
+        &mut aggregated,
         packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
     );
 
@@ -423,21 +442,23 @@ fn packages_from_config_files_and_tracked_config_files(
         tracked_brew_taps.insert(tap, url);
     }
     merge_manager_packages(
-        &mut by_mgr,
+        &mut aggregated,
         packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
     );
 
-    resolve_managers(by_mgr, false)
+    resolve_managers(aggregated, false)
 }
 
 #[cfg(unix)]
 fn merge_manager_packages(
-    by_mgr: &mut IndexMap<String, Vec<PackageRequest>>,
+    aggregated: &mut AggregatedPackageRequests,
     manager_packages: Vec<ManagerPackages>,
 ) {
-    for mp in manager_packages {
-        let requests = by_mgr.entry(mp.manager.name().to_string()).or_default();
+    for mut mp in manager_packages {
+        let manager_name = mp.manager.name().to_string();
+        let requests = aggregated.by_mgr.entry(manager_name.clone()).or_default();
         for request in mp.requests {
+            let os_filter = mp.os_filters.shift_remove(&request.name);
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -445,7 +466,16 @@ fn merge_manager_packages(
                     existing.tap_url = request.tap_url;
                 }
                 Some(_) => {}
-                None => requests.push(request),
+                None => {
+                    if let Some(os_filter) = os_filter {
+                        aggregated
+                            .os_filters
+                            .entry(manager_name.clone())
+                            .or_default()
+                            .insert(request.name.clone(), os_filter);
+                    }
+                    requests.push(request);
+                }
             }
         }
     }
@@ -470,7 +500,7 @@ fn packages_from_config_files_with_brew_taps(
 fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
-) -> IndexMap<String, Vec<PackageRequest>> {
+) -> AggregatedPackageRequests {
     let mut merged: IndexMap<String, PackageEntryToml> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local so
     // a more local entry (string or table) replaces the global one wholesale
@@ -481,7 +511,7 @@ fn package_requests_from_config_files(
             }
         }
     }
-    let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let mut aggregated = AggregatedPackageRequests::default();
     for (spec, entry) in merged {
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
@@ -497,17 +527,27 @@ fn package_requests_from_config_files(
                 } else {
                     None
                 };
-                by_mgr.entry(mgr).or_default().push(PackageRequest {
-                    name,
-                    version,
-                    tap_url,
-                    os,
-                });
+                if let Some(os) = os {
+                    aggregated
+                        .os_filters
+                        .entry(mgr.clone())
+                        .or_default()
+                        .insert(name.clone(), os);
+                }
+                aggregated
+                    .by_mgr
+                    .entry(mgr)
+                    .or_default()
+                    .push(PackageRequest {
+                        name,
+                        version,
+                        tap_url,
+                    });
             }
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
-    by_mgr
+    aggregated
 }
 
 /// Validated `(version, os)` of a single `[bootstrap.packages]` entry.
@@ -1383,13 +1423,18 @@ pub fn packages_from_specs_with_config(
             name,
             version: None,
             tap_url,
-            os: None,
         };
         if !requests.contains(&request) {
             requests.push(request);
         }
     }
-    resolve_managers(by_mgr, true)
+    resolve_managers(
+        AggregatedPackageRequests {
+            by_mgr,
+            ..Default::default()
+        },
+        true,
+    )
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -1451,7 +1496,7 @@ fn brew_taps_from_config_files(config_files: &ConfigMap) -> IndexMap<String, Str
 }
 
 fn resolve_managers(
-    by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    mut aggregated: AggregatedPackageRequests,
     strict: bool,
 ) -> eyre::Result<Vec<ManagerPackages>> {
     let enabled = crate::config::Settings::get()
@@ -1463,7 +1508,7 @@ fn resolve_managers(
         .map(|manager| (manager.name().to_string(), manager))
         .collect::<IndexMap<_, _>>();
     let mut out = vec![];
-    for (name, requests) in by_mgr {
+    for (name, requests) in aggregated.by_mgr {
         let disabled = enabled.as_ref().is_some_and(|e| !e.contains(&name));
         if disabled && strict {
             bail!(
@@ -1476,6 +1521,10 @@ fn resolve_managers(
             Some(manager) => out.push(ManagerPackages {
                 manager: manager.clone(),
                 requests,
+                os_filters: aggregated
+                    .os_filters
+                    .shift_remove(&name)
+                    .unwrap_or_default(),
                 disabled,
             }),
             None => {
@@ -1639,30 +1688,29 @@ mod tests {
             "#,
         )])?;
 
-        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
 
-        let apt = &requests.get("apt").unwrap()[0];
+        let apt = &aggregated.by_mgr.get("apt").unwrap()[0];
         assert_eq!(apt.name, "libssl-dev");
-        assert_eq!(apt.os, None);
 
-        let firefox = &requests.get("brew-cask").unwrap()[0];
+        let firefox = &aggregated.by_mgr.get("brew-cask").unwrap()[0];
         assert_eq!(firefox.name, "firefox");
         assert_eq!(firefox.version, None);
-        assert_eq!(firefox.os, Some(vec!["macos".to_string()]));
+        assert_eq!(aggregated.os_filters["brew-cask"]["firefox"], ["macos"]);
 
-        let brew = requests.get("brew").unwrap();
+        let brew = aggregated.by_mgr.get("brew").unwrap();
         assert_eq!(brew[0].name, "curl");
         assert_eq!(brew[0].version.as_deref(), Some("8.5.0-2"));
         // bare string os -> single-entry list, raw as written
-        assert_eq!(brew[0].os, Some(vec!["linux".to_string()]));
+        assert_eq!(aggregated.os_filters["brew"]["curl"], ["linux"]);
         // empty os array is kept: it matches nothing
         assert_eq!(brew[1].name, "nowhere");
-        assert_eq!(brew[1].os, Some(vec![]));
+        assert!(aggregated.os_filters["brew"]["nowhere"].is_empty());
         // aliases and os/arch forms stay raw and normalize at match time
         let ffmpeg = &brew[2];
         assert_eq!(
-            ffmpeg.os,
-            Some(vec!["linux".to_string(), "macos/arm64".to_string()])
+            aggregated.os_filters["brew"][&ffmpeg.name],
+            ["linux", "macos/arm64"]
         );
         Ok(())
     }
@@ -1682,9 +1730,10 @@ mod tests {
             "#,
         )])?;
 
-        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
 
-        let brew = requests
+        let brew = aggregated
+            .by_mgr
             .get("brew")
             .unwrap()
             .iter()
@@ -1705,12 +1754,12 @@ mod tests {
             "#,
         )])?;
 
-        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
 
-        let curl = &requests.get("brew").unwrap()[0];
+        let curl = &aggregated.by_mgr.get("brew").unwrap()[0];
         assert_eq!(curl.name, "curl");
         assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
-        assert_eq!(curl.os, Some(vec!["linux".to_string()]));
+        assert_eq!(aggregated.os_filters["brew"]["curl"], ["linux"]);
         Ok(())
     }
 
@@ -1737,17 +1786,22 @@ mod tests {
             ),
         ])?;
 
-        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
 
         // local string entry drops the global entry's os and version wholesale
-        let firefox = &requests.get("brew-cask").unwrap()[0];
+        let firefox = &aggregated.by_mgr.get("brew-cask").unwrap()[0];
         assert_eq!(firefox.version, None);
-        assert_eq!(firefox.os, None);
+        assert!(
+            aggregated
+                .os_filters
+                .get("brew-cask")
+                .is_none_or(|filters| !filters.contains_key("firefox"))
+        );
 
         // local table entry replaces the global string entry wholesale
-        let curl = &requests.get("brew").unwrap()[0];
+        let curl = &aggregated.by_mgr.get("brew").unwrap()[0];
         assert_eq!(curl.version.as_deref(), Some("8.5.0-2"));
-        assert_eq!(curl.os, Some(vec!["linux".to_string()]));
+        assert_eq!(aggregated.os_filters["brew"]["curl"], ["linux"]);
         Ok(())
     }
 
@@ -1758,61 +1812,18 @@ mod tests {
             "mise.toml",
             r#"
                 [bootstrap.packages]
-                "apt:curl" = { version = "latest", os = ["linux"] }
+                "apt:curl" = { version = "latest" }
                 "mas:497799835" = { version = "latest" }
                 "apt:git" = "latest"
             "#,
         )])?;
 
-        let requests = package_requests_from_config_files(&config_files, &IndexMap::new());
-        let apt = requests.get("apt").unwrap();
+        let aggregated = package_requests_from_config_files(&config_files, &IndexMap::new());
+        let apt = aggregated.by_mgr.get("apt").unwrap();
         assert_eq!(apt.len(), 1);
         assert_eq!(apt[0].name, "git");
-        assert!(!requests.contains_key("mas"));
+        assert!(!aggregated.by_mgr.contains_key("mas"));
         Ok(())
-    }
-
-    #[test]
-    fn test_package_request_is_os_supported() {
-        fn pkg(os: Option<Vec<String>>) -> PackageRequest {
-            PackageRequest {
-                name: "pkg".to_string(),
-                version: None,
-                tap_url: None,
-                os,
-            }
-        }
-
-        assert!(pkg(None).is_os_supported());
-        assert!(pkg(Some(vec![std::env::consts::OS.to_string()])).is_os_supported());
-        let current_os_arch = format!(
-            "{}/{}",
-            crate::cli::version::OS.as_str(),
-            crate::cli::version::ARCH.as_str()
-        );
-        assert!(pkg(Some(vec![current_os_arch])).is_os_supported());
-
-        assert!(!pkg(Some(vec![])).is_os_supported());
-        assert!(!pkg(Some(vec!["notanos".to_string()])).is_os_supported());
-        let other_os = if std::env::consts::OS == "linux" {
-            "macos"
-        } else {
-            "linux"
-        };
-        assert!(!pkg(Some(vec![other_os.to_string()])).is_os_supported());
-
-        let request = pkg(Some(vec![other_os.to_string()]));
-        assert!(!package_request_matches_platform("brew", &request));
-        assert!(!package_request_matches_platform("brew-cask", &request));
-        assert!(package_request_matches_platform("apt", &request));
-    }
-
-    #[test]
-    fn test_parse_use_spec_has_no_os_restriction() {
-        let (_, req) = parse_use_spec("apt:curl@8.5.0-2").unwrap();
-        assert_eq!(req.os, None);
-        let (_, req) = parse_use_spec("brew:postgresql@17").unwrap();
-        assert_eq!(req.os, None);
     }
 
     #[test]
