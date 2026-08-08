@@ -3310,6 +3310,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_table_entries() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test-bootstrap-use-os.mise.toml");
+        file::write(
+            &p,
+            r#"[bootstrap.packages]
+"apt:curl" = "latest"
+"brew-cask:firefox" = { version = "latest", os = ["macos"], future_key = "x" }
+"#,
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        // table entry: version updated in place, os and unknown keys preserved
+        cf.update_bootstrap_package("brew-cask:firefox", "1.2.3")
+            .unwrap();
+        // string entry: stays a plain string
+        cf.update_bootstrap_package("apt:curl", "8.5.0-2").unwrap();
+        // new entry: still written as a plain string
+        cf.update_bootstrap_package("apt:jq", "latest").unwrap();
+        assert_snapshot!(cf.dump().unwrap(), @r#"
+        [bootstrap.packages]
+        "apt:curl" = "8.5.0-2"
+        "brew-cask:firefox" = { version = "1.2.3", os = ["macos"], future_key = "x" }
+        "apt:jq" = "latest"
+        "#);
+
+        // the in-memory packages map stays consistent with the document
+        let system = cf.bootstrap_config().unwrap();
+        match system.packages.get("brew-cask:firefox").unwrap() {
+            crate::system::PackageEntryToml::Table(t) => {
+                assert_eq!(t.get("version").and_then(|v| v.as_str()), Some("1.2.3"));
+                let os = t.get("os").and_then(|v| v.as_array()).unwrap();
+                assert_eq!(
+                    os.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+                    vec!["macos"]
+                );
+                assert_eq!(t.get("future_key").and_then(|v| v.as_str()), Some("x"));
+            }
+            other => panic!("expected a table entry, got {other:?}"),
+        }
+        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(system.packages.get("apt:jq").unwrap(), "latest");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_core_options_do_not_normalize_version_placeholder() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".test.mise.toml");
