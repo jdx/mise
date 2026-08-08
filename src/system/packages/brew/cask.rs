@@ -31,6 +31,14 @@ const CASK_SHIM_RB: &str = include_str!("cask_shim.rb");
 
 pub struct BrewCaskManager {}
 
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskUrlSpecs {
+    #[serde(default)]
+    branch: Option<String>,
+    #[serde(default)]
+    only_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct Cask {
     token: String,
@@ -40,6 +48,8 @@ struct Cask {
     old_tokens: Vec<String>,
     version: String,
     url: String,
+    #[serde(default)]
+    url_specs: CaskUrlSpecs,
     #[serde(default)]
     sha256: Option<String>,
     #[serde(default)]
@@ -664,18 +674,28 @@ fn validate_cask_path_component(kind: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+fn git_tarball_url(url: &str, url_specs: &CaskUrlSpecs) -> Option<String> {
+    if !url.ends_with(".git") {
+        return None;
+    }
+    let branch = url_specs.branch.as_deref()?;
+    let base = url.strip_suffix(".git")?;
+    Some(format!("{base}/archive/refs/heads/{branch}.tar.gz"))
+}
+
 async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
-    let filename = archive_filename(&cask.url)
+    let dl_url = git_tarball_url(&cask.url, &cask.url_specs).unwrap_or_else(|| cask.url.clone());
+    let filename = archive_filename(&dl_url)
         .ok_or_else(|| eyre!("brew-cask:{}: URL has no file name", cask.token))?;
     let cache_dir = crate::dirs::CACHE.join("system-brew").join("casks");
     file::create_dir_all(&cache_dir)?;
-    let url_hash = &hash::hash_sha256_to_str(&cask.url)[..12];
+    let url_hash = &hash::hash_sha256_to_str(&dl_url)[..12];
     let archive = cache_dir.join(format!(
         "{}-{}-{url_hash}-{filename}",
         cask.token, cask.version
     ));
     if !archive.exists() {
-        HTTP.download_file(&cask.url, &archive, pr).await?;
+        HTTP.download_file(&dl_url, &archive, pr).await?;
         // Strip macOS quarantine so it doesn't propagate into extracted/copied artifacts.
         let _ = std::process::Command::new("xattr")
             .args(["-d", "com.apple.quarantine"])
@@ -710,7 +730,9 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
         if format == ExtractionFormat::Raw {
             // Raw executable binary — copy it using the original URL filename so
             // find_file_artifact can match against the binary stanza source name (e.g. "claude").
-            let url_filename = archive_filename(&cask.url).unwrap_or_else(|| filename.to_string());
+            let dl_url =
+                git_tarball_url(&cask.url, &cask.url_specs).unwrap_or_else(|| cask.url.clone());
+            let url_filename = archive_filename(&dl_url).unwrap_or_else(|| filename.to_string());
             let dest = extract_dir.join(&url_filename);
             file::copy(archive, &dest)?;
             file::make_executable(&dest)?;
@@ -732,7 +754,49 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
             )?;
         }
     }
+    // For git-based casks with an only_path, move the subdirectory contents
+    // to the extract dir root so find_file_artifact finds them directly.
+    if let (Some(only_path), Some(top_dir)) = (
+        &cask.url_specs.only_path,
+        find_extracted_top_dir(&extract_dir),
+    ) {
+        let only_path = Path::new(only_path);
+        if only_path.as_os_str().is_empty()
+            || only_path
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            bail!("brew-cask:{}: invalid only_path", cask.token);
+        }
+        let nested = top_dir.join(only_path);
+        if !nested.is_dir() {
+            bail!("brew-cask:{}: only_path does not exist", cask.token);
+        }
+        for entry in std::fs::read_dir(&nested)? {
+            let entry = entry?;
+            let dest = extract_dir.join(entry.file_name());
+            file::rename(entry.path(), &dest)?;
+        }
+        file::remove_all(&top_dir)?;
+    }
     Ok(extract_dir)
+}
+
+/// Find the single top-level directory in an extracted tarball (e.g. `fonts-main/`).
+/// Returns `None` when the extract dir has files at the root rather than a single subdir.
+fn find_extracted_top_dir(extract_dir: &Path) -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    for entry in std::fs::read_dir(extract_dir).ok()? {
+        let entry = entry.ok()?;
+        if entry.file_type().ok()?.is_dir() && entry.file_name() != "__MACOSX" {
+            dirs.push(entry.path());
+        }
+    }
+    if dirs.len() == 1 {
+        Some(dirs.into_iter().next().unwrap())
+    } else {
+        None
+    }
 }
 
 async fn execute_lifecycle_hook(
@@ -4191,6 +4255,7 @@ mod tests {
             old_tokens: Vec::new(),
             version: version.to_string(),
             url: "https://example.com/example.zip".to_string(),
+            url_specs: CaskUrlSpecs::default(),
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
             ruby_source_path: None,
@@ -7228,6 +7293,155 @@ end
             crate::file::read_to_string(metadata.join("actual-token.json"))?,
             "metadata"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn git_tarball_url_constructs_github_archive_url() {
+        let specs = CaskUrlSpecs {
+            branch: Some("master".to_string()),
+            only_path: Some("SourceCodePro".to_string()),
+        };
+        let url = "https://github.com/powerline/fonts.git";
+        assert_eq!(
+            git_tarball_url(url, &specs),
+            Some("https://github.com/powerline/fonts/archive/refs/heads/master.tar.gz".to_string())
+        );
+    }
+
+    #[test]
+    fn git_tarball_url_returns_none_for_non_git_url() {
+        let specs = CaskUrlSpecs::default();
+        let url =
+            "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.0/SourceCodePro.tar.xz";
+        assert_eq!(git_tarball_url(url, &specs), None);
+    }
+
+    #[test]
+    fn git_tarball_url_returns_none_without_branch() {
+        let specs = CaskUrlSpecs::default();
+        let url = "https://github.com/powerline/fonts.git";
+        assert_eq!(git_tarball_url(url, &specs), None);
+    }
+
+    #[test]
+    fn find_extracted_top_dir_finds_single_subdir() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let extract_dir = tmp.path();
+        file::create_dir_all(extract_dir.join("fonts-main"))?;
+        file::write(extract_dir.join("fonts-main").join("font.ttf"), "font")?;
+
+        let top_dir = find_extracted_top_dir(extract_dir);
+        assert!(top_dir.is_some());
+        assert_eq!(top_dir.unwrap().file_name().unwrap(), "fonts-main");
+        Ok(())
+    }
+
+    #[test]
+    fn find_extracted_top_dir_ignores_macosx() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let extract_dir = tmp.path();
+        file::create_dir_all(extract_dir.join("__MACOSX"))?;
+        file::create_dir_all(extract_dir.join("fonts-main"))?;
+        file::write(extract_dir.join("fonts-main").join("font.ttf"), "font")?;
+
+        let top_dir = find_extracted_top_dir(extract_dir);
+        assert!(top_dir.is_some());
+        assert_eq!(top_dir.unwrap().file_name().unwrap(), "fonts-main");
+        Ok(())
+    }
+
+    #[test]
+    fn find_extracted_top_dir_returns_none_with_multiple_dirs() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let extract_dir = tmp.path();
+        file::create_dir_all(extract_dir.join("dir-a"))?;
+        file::create_dir_all(extract_dir.join("dir-b"))?;
+
+        assert!(find_extracted_top_dir(extract_dir).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn find_extracted_top_dir_returns_none_with_flat_files() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let extract_dir = tmp.path();
+        file::write(extract_dir.join("font.ttf"), "font")?;
+
+        assert!(find_extracted_top_dir(extract_dir).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn extract_archive_restructures_only_path() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let extract_dir = crate::dirs::CACHE
+            .join("system-brew")
+            .join("cask-extract")
+            .join("font-test-1.0");
+        // Create a mock "extracted" tarball structure: fonts-main/ofl/abeezee/font.ttf
+        file::create_dir_all(extract_dir.join("fonts-main").join("ofl").join("abeezee"))?;
+        file::write(
+            extract_dir
+                .join("fonts-main")
+                .join("ofl")
+                .join("abeezee")
+                .join("ABeeZee-Regular.ttf"),
+            "font data",
+        )?;
+        file::write(
+            extract_dir
+                .join("fonts-main")
+                .join("ofl")
+                .join("abeezee")
+                .join("ABeeZee-Italic.ttf"),
+            "font data",
+        )?;
+
+        let cask = Cask {
+            token: "font-abeezee".to_string(),
+            aliases: vec![],
+            old_tokens: vec![],
+            version: "latest".to_string(),
+            url: "https://github.com/google/fonts.git".to_string(),
+            url_specs: CaskUrlSpecs {
+                branch: Some("main".to_string()),
+                only_path: Some("ofl/abeezee".to_string()),
+            },
+            sha256: Some("no_check".to_string()),
+            artifacts: vec![],
+            ruby_source_path: None,
+            ruby_source_checksum: None,
+            tap_git_head: None,
+            raw_base: None,
+        };
+
+        // Simulate the archive path (not actually needed since extract_dir already exists)
+        let archive = tmp.path().join("dummy.tar.gz");
+        file::write(&archive, "")?;
+
+        // Run the only_path restructuring directly
+        if let (Some(only_path), Some(top_dir)) = (
+            &cask.url_specs.only_path,
+            find_extracted_top_dir(&extract_dir),
+        ) {
+            let nested = top_dir.join(only_path);
+            if nested.is_dir() {
+                for entry in std::fs::read_dir(&nested)? {
+                    let entry = entry?;
+                    let dest = extract_dir.join(entry.file_name());
+                    file::rename(entry.path(), &dest)?;
+                }
+            }
+            file::remove_all(&top_dir)?;
+        }
+
+        // Font files should now be at the extract root
+        assert!(extract_dir.join("ABeeZee-Regular.ttf").is_file());
+        assert!(extract_dir.join("ABeeZee-Italic.ttf").is_file());
+        // Top-level dir should be removed
+        assert!(!extract_dir.join("fonts-main").exists());
         Ok(())
     }
 }
