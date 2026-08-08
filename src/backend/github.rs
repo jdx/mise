@@ -1,7 +1,7 @@
 use crate::backend::VersionInfo;
 use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
+use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_with_fallback,
@@ -323,6 +323,10 @@ pub fn install_time_option_keys() -> Vec<String> {
 
 #[async_trait]
 impl Backend for UnifiedGitBackend {
+    fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        VersionOrder::from_options(opts)
+    }
+
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab

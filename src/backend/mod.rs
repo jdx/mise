@@ -55,6 +55,8 @@ use regex::Regex;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 
+use self::options::VersionOrder;
+
 pub mod aqua;
 pub mod asdf;
 pub mod asset_matcher;
@@ -2223,7 +2225,8 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_remote_versions(config).await?;
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !self.include_prereleases(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
+        let versions = self.fuzzy_match_filter(versions, query, filter);
+        Ok(self.version_order(&opts)?.order(versions))
     }
 
     /// List versions matching a query, optionally filtered by release date.
@@ -2258,7 +2261,8 @@ pub trait Backend: Debug + Send + Sync {
         };
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let filter = !self.include_prereleases(&opts);
-        Ok(self.fuzzy_match_filter(versions, query, filter))
+        let versions = self.fuzzy_match_filter(versions, query, filter);
+        Ok(self.version_order(&opts)?.order(versions))
     }
 
     async fn latest_version_for_query(
@@ -2288,6 +2292,8 @@ pub trait Backend: Debug + Send + Sync {
                         .await?
                 }
             };
+            let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+            matches = self.version_order(&opts)?.order(matches);
         }
         Ok(find_match_in_list(&matches, query))
     }
@@ -2322,7 +2328,8 @@ pub trait Backend: Debug + Send + Sync {
         query: Option<String>,
     ) -> eyre::Result<Option<String>> {
         let resolved_query = query.as_deref().unwrap_or("latest");
-        if resolved_query == "latest" {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        if resolved_query == "latest" && self.version_order(&opts)? == VersionOrder::Source {
             if let Some(info) = self.latest_stable_version_info(config).await? {
                 return Ok(Some(info.version));
             }
@@ -2352,20 +2359,22 @@ pub trait Backend: Debug + Send + Sync {
         let before_date = effective_latest_before_date(self, config, before_date).await?;
         let resolved_query = query.as_deref().unwrap_or("latest");
         let mut fallback_refresh = refresh;
-        let latest = if resolved_query == "latest" {
-            match self.latest_stable_version_info(config).await? {
-                Some(info) => Some(info),
-                None => self
-                    .latest_stable_version(config)
-                    .await?
-                    .map(|version| VersionInfo {
-                        version,
-                        ..Default::default()
-                    }),
-            }
-        } else {
-            None
-        };
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let latest =
+            if resolved_query == "latest" && self.version_order(&opts)? == VersionOrder::Source {
+                match self.latest_stable_version_info(config).await? {
+                    Some(info) => Some(info),
+                    None => self
+                        .latest_stable_version(config)
+                        .await?
+                        .map(|version| VersionInfo {
+                            version,
+                            ..Default::default()
+                        }),
+                }
+            } else {
+                None
+            };
         if let Some(latest) = latest {
             let version = latest.version.clone();
             match before_date {
@@ -3382,6 +3391,17 @@ pub trait Backend: Debug + Send + Sync {
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
+    /// Select the ordering policy supported by this backend.
+    ///
+    /// Backends must opt in explicitly before `version_order` can affect
+    /// resolution. This keeps opaque version schemes source-ordered by default.
+    fn version_order(&self, opts: &ToolVersionOptions) -> eyre::Result<VersionOrder> {
+        if opts.opts.contains_key("version_order") {
+            bail!("{} backend does not support version_order", self.get_type())
+        }
+        Ok(VersionOrder::Source)
+    }
+
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
         self.get_remote_version_cache_with_context(None)
     }
@@ -3745,6 +3765,11 @@ mod latest_version_tests {
             self
         }
 
+        fn with_remote_versions(mut self, remote_versions: Vec<VersionInfo>) -> Self {
+            self.remote_versions = remote_versions;
+            self
+        }
+
         fn stable_calls(&self) -> usize {
             self.stable_calls.load(Ordering::SeqCst)
         }
@@ -3760,6 +3785,10 @@ mod latest_version_tests {
 
     #[async_trait]
     impl Backend for LatestBackend {
+        fn version_order(&self, opts: &ToolVersionOptions) -> eyre::Result<VersionOrder> {
+            VersionOrder::from_options(opts)
+        }
+
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
         }
@@ -3823,6 +3852,40 @@ mod latest_version_tests {
         );
         assert_eq!(backend.stable_calls(), 2);
         assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_semver_order_bypasses_latest_fast_path() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-semver-order[version_order=semver]")
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "11.11.0".to_string(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "10.34.5".to_string(),
+                    ..Default::default()
+                },
+            ]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), None)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("11.11.0")
+        );
+        assert_eq!(backend.stable_info_calls(), 0);
+        assert_eq!(backend.stable_calls(), 0);
+        assert_eq!(backend.list_calls(), 1);
     }
 
     #[tokio::test]

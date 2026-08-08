@@ -1,6 +1,6 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
+use crate::backend::options::{BackendOptions, VersionOrder};
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
@@ -159,6 +159,10 @@ enum GithubAttestationStatus {
 
 #[async_trait]
 impl Backend for AquaBackend {
+    fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        VersionOrder::from_options(opts)
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
     }

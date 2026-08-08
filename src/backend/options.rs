@@ -4,6 +4,50 @@ use crate::backend::static_helpers::{
     lookup_platform_value_for_target, lookup_with_fallback,
 };
 use crate::toolset::ToolVersionOptions;
+use eyre::{Result, bail};
+
+/// The ordering policy a backend applies to eligible version candidates.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VersionOrder {
+    #[default]
+    Source,
+    Semver,
+}
+
+impl VersionOrder {
+    pub(crate) fn from_options(options: &ToolVersionOptions) -> Result<Self> {
+        match options.opts.get("version_order") {
+            None => Ok(Self::Source),
+            Some(toml::Value::String(value)) => match value.as_str() {
+                "source" => Ok(Self::Source),
+                "semver" => Ok(Self::Semver),
+                _ => bail!("version_order must be \"source\" or \"semver\""),
+            },
+            Some(_) => bail!("version_order must be \"source\" or \"semver\""),
+        }
+    }
+
+    pub(crate) fn order(self, versions: Vec<String>) -> Vec<String> {
+        if self == Self::Source {
+            return versions;
+        }
+
+        let mut opaque = Vec::new();
+        let mut semantic = Vec::new();
+        for (source_index, version) in versions.into_iter().enumerate() {
+            match semver::Version::parse(&version) {
+                Ok(parsed) => semantic.push((source_index, version, parsed)),
+                Err(_) => opaque.push(version),
+            }
+        }
+        semantic.sort_by(|(left_index, _, left), (right_index, _, right)| {
+            left.cmp_precedence(right)
+                .then_with(|| left_index.cmp(right_index))
+        });
+        opaque.extend(semantic.into_iter().map(|(_, version, _)| version));
+        opaque
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BackendOptions<'a> {
@@ -286,5 +330,49 @@ mod tests {
 
         assert!(!values.platform_bool_for_target("no_app", &linux));
         assert!(values.platform_bool_for_target("no_app", &windows));
+    }
+
+    #[test]
+    fn test_version_order_parses_options() {
+        assert_eq!(
+            VersionOrder::from_options(&ToolVersionOptions::default()).unwrap(),
+            VersionOrder::Source
+        );
+        assert_eq!(
+            VersionOrder::from_options(&opts_with_value(
+                "version_order",
+                toml::Value::String("semver".into())
+            ))
+            .unwrap(),
+            VersionOrder::Semver
+        );
+        assert_eq!(
+            VersionOrder::from_options(&opts_with_value(
+                "version_order",
+                toml::Value::String("chronological".into())
+            ))
+            .unwrap_err()
+            .to_string(),
+            "version_order must be \"source\" or \"semver\""
+        );
+    }
+
+    #[test]
+    fn test_semver_order_ranks_semver_after_opaque_versions() {
+        let versions = ["2.0.0", "nightly", "1.0.0", "edge", "3.0.0"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            VersionOrder::Semver.order(versions),
+            ["nightly", "edge", "1.0.0", "2.0.0", "3.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_semver_order_preserves_equal_precedence_and_opaque_order() {
+        let versions = ["nightly", "edge", "1.0.0+002", "1.0.0+001", "1.0.0"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(VersionOrder::Semver.order(versions.clone()), versions);
     }
 }
