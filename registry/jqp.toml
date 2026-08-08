@@ -1,3 +1,4 @@
 backends = ["aqua:noahgorstein/jqp", "asdf:https://gitlab.com/wt0f/asdf-jqp"]
 bins = ["jqp"]
 description = "A TUI playground to experiment with jq"
+version_order = "semver"

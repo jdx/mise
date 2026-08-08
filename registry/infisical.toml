@@ -4,3 +4,4 @@ backends = [
 bins = ["infisical"]
 description = "The open source secret management platform: Sync secrets across your team/infrastructure and prevent secret leaks"
 test = { cmd = "infisical --version", expected = "infisical version {{version}}" }
+version_order = "semver"

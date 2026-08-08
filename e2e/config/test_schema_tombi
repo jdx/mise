@@ -181,6 +181,7 @@ backends = [
   { full = "github:owner/repo", platforms = ["linux", "arm64"], options = { platforms = { linux-x64 = { asset_pattern = "tool-linux.tar.gz" }, darwin-aarch64 = { asset_pattern = "tool-darwin.tar.gz" } } } },
 ]
 description = "Example tool"
+version_order = "source"
 test = { cmd = "tool --version", expected = "tool {{version}}" }
 TOML
 

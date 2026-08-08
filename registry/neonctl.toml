@@ -2,3 +2,4 @@ backends = ["aqua:neondatabase/neonctl"]
 bins = ["neonctl"]
 description = "Neon CLI tool. The Neon CLI is a command-line interface that lets you manage Neon Serverless Postgres directly from the terminal"
 test = { cmd = "neonctl --version", expected = "{{version}}" }
+version_order = "semver"

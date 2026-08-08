@@ -6,3 +6,4 @@ backends = [
 bins = ["docuum"]
 description = "Docuum performs least recently used (LRU) eviction of Docker images"
 test = { cmd = "docuum --version", expected = "docuum {{version}}" }
+version_order = "semver"

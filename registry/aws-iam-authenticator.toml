@@ -5,3 +5,4 @@ backends = [
 bins = ["aws-iam-authenticator"]
 description = "A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster"
 test = { cmd = "aws-iam-authenticator version", expected = '"Version":"{{version}}"' }
+version_order = "semver"

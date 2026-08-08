@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["kyverno"]
 description = "Cloud Native Policy Management"
+version_order = "semver"

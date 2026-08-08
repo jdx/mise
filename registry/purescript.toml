@@ -1,4 +1,5 @@
 description = "A strongly-typed language that compiles to JavaScript"
+version_order = "source"
 # test = { cmd = "purs --version", expected = "{{version}}" }
 
 bins = ["purs"]

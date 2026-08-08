@@ -1,6 +1,7 @@
 description = "OpenShift installer for deploying OpenShift clusters"
 os = ["linux", "macos"]
 test = { cmd = "openshift-install version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["openshift-install"]
 [[backends]]

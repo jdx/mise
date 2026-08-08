@@ -6,3 +6,4 @@ backends = [
 bins = ["sccache"]
 description = "sccache is ccache with cloud storage"
 test = { cmd = "sccache --version", expected = "sccache {{version}}" }
+version_order = "semver"

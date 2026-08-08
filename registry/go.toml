@@ -3,3 +3,4 @@ bins = ["go", "gofmt"]
 description = "go lang (Builtin plugin)"
 detect = ["go.mod", "go.sum"]
 idiomatic_files = [".go-version", "go.mod"]
+version_order = "source"

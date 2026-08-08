@@ -2,3 +2,4 @@ backends = ["github:docker/compose"]
 bins = ["docker-compose"]
 description = "Define and run multi-container applications with Docker"
 test = { cmd = "docker-compose --version", expected = "Docker Compose version" }
+version_order = "semver"

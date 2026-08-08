@@ -2,3 +2,4 @@ backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
 bins = ["yamllint"]
 description = "A linter for YAML files"
 test = { cmd = "yamllint --version", expected = "yamllint {{version}}" }
+version_order = "semver"

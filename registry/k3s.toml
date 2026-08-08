@@ -2,3 +2,4 @@ backends = ["aqua:k3s-io/k3s", "asdf:mise-plugins/mise-k3s"]
 bins = ["k3s"]
 description = "The certified Kubernetes distribution built for IoT & Edge computing"
 test = { cmd = "k3s --version", expected = "k3s version v{{version}}" }
+version_order = "semver"

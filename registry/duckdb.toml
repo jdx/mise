@@ -2,3 +2,4 @@ backends = ["aqua:duckdb/duckdb"]
 bins = ["duckdb"]
 description = "DuckDB is an analytical in-process SQL database management system"
 test = { cmd = "duckdb --version", expected = "{{version}}" }
+version_order = "semver"

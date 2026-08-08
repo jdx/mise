@@ -1,5 +1,6 @@
 description = "Cleaner and Formatter for BibTeX files"
 test = { cmd = "bibtex-tidy --version", expected = "v{{version}}" }
+version_order = "semver"
 
 bins = ["bibtex-tidy"]
 [[backends]]

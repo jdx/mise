@@ -1,2 +1,3 @@
 backends = ["spm:danger/swift"]
 description = "Stop saying 'you forgot to …' in code review"
+version_order = "semver"

@@ -2,3 +2,4 @@ backends = ["aqua:dotenvx/dotenvx"]
 bins = ["dotenvx"]
 description = "a secure dotenv–from the creator of `dotenv`"
 test = { cmd = "dotenvx --version", expected = "{{version}}" }
+version_order = "semver"

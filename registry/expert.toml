@@ -2,3 +2,4 @@ backends = ["aqua:expert-lsp/expert", "github:expert-lsp/expert"]
 bins = ["expert"]
 description = "Official Elixir Language Server Protocol implementation"
 test = { cmd = "expert --version", expected = "{{version}}" }
+version_order = "semver"

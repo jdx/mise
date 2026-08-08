@@ -1,5 +1,6 @@
 description = "The official CLI for interacting with your Doppler secrets and configuration"
 test = { cmd = "doppler --version", expected = "v{{version}}" }
+version_order = "semver"
 
 bins = ["doppler"]
 [[backends]]

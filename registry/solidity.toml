@@ -1,4 +1,5 @@
 description = "Solidity, the Smart Contract Programming Language"
+version_order = "semver"
 # test = { cmd = "solc --version", expected = "Version: {{version}}" }
 
 bins = ["solc"]

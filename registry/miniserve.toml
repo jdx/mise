@@ -2,3 +2,4 @@ backends = ["aqua:svenstaro/miniserve"]
 bins = ["miniserve"]
 description = "For when you really just want to serve some files over HTTP right now!"
 test = { cmd = "miniserve --version", expected = "miniserve {{version}}" }
+version_order = "semver"

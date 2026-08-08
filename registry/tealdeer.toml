@@ -1,5 +1,6 @@
 description = "A very fast implementation of tldr in Rust."
 test = { cmd = "tldr -v", expected = "tealdeer {{version}}" }
+version_order = "semver"
 
 bins = ["tldr"]
 [[backends]]

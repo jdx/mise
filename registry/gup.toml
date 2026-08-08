@@ -2,3 +2,4 @@ backends = ["aqua:nao1215/gup"]
 bins = ["gup"]
 description = 'gup - Update binaries installed by "go install" with goroutines'
 test = { cmd = "gup version", expected = "gup version v{{version}}" }
+version_order = "semver"

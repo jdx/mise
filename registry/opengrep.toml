@@ -2,3 +2,4 @@ backends = ["aqua:opengrep/opengrep"]
 bins = ["opengrep"]
 description = "Static code analysis engine to find security issues in code"
 test = { cmd = "opengrep --version", expected = "{{version}}" }
+version_order = "semver"

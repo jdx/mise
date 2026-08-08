@@ -33,3 +33,4 @@ bins = [
 ]
 description = "jdk java"
 idiomatic_files = [".java-version", ".sdkmanrc"]
+version_order = "source"

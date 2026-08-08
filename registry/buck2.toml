@@ -1,4 +1,5 @@
 description = "A fast, hermetic, multi-language build system"
+version_order = "source"
 # test disabled: facebook replaces assets in-place on "latest" tag causing checksum race conditions
 # test = ["buck2 --version", "buck2"]
 

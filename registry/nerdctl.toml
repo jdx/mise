@@ -2,3 +2,4 @@ backends = ["aqua:containerd/nerdctl", "asdf:dmpe/asdf-nerdctl"]
 bins = ["containerd-rootless-setuptool.sh", "containerd-rootless.sh", "nerdctl"]
 description = "contaiNERD CTL - Docker-compatible CLI for containerd, with support for Compose, Rootless, eStargz, OCIcrypt, IPFS, "
 test = { cmd = "nerdctl --version", expected = "nerdctl version {{version}}" }
+version_order = "semver"

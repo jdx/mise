@@ -1,4 +1,5 @@
 description = "Tools to use with the controller-runtime libraries"
+version_order = "source"
 # test = { cmd = "controller-gen --version", expected = "Version: v{{version}}" }
 
 bins = ["controller-gen"]

@@ -6,3 +6,4 @@ backends = [
 bins = ["semver"]
 description = "semver bash implementation"
 test = { cmd = "semver --version", expected = "semver: {{version}}" }
+version_order = "semver"

@@ -4,3 +4,4 @@ backends = [
   "vfox:mise-plugins/vfox-clang",
 ]
 description = "Clang is an 'LLVM native' C/C++/Objective-C compiler, which aims to deliver amazingly fast compiles, extremely useful error and warning messages and to provide a platform for building great source level tools"
+version_order = "semver"

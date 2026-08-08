@@ -2,3 +2,4 @@ backends = ["aqua:psf/black"]
 bins = ["black"]
 description = "The uncompromising Python code formatter"
 test = { cmd = "black --version", expected = "black, {{version}}" }
+version_order = "source"

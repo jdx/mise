@@ -1,6 +1,7 @@
 description = "Sudo for Windows - a privilege elevation tool"
 os = ["windows"]
 test = { cmd = "gsudo --version", expected = "gsudo v{{version}}" }
+version_order = "source"
 
 [[backends]]
 full = "github:gerardog/gsudo"

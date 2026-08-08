@@ -1,5 +1,6 @@
 description = "PureScript pretty-printer"
 test = { cmd = "purty version", expected = "Purty version: {{version}}" }
+version_order = "semver"
 
 bins = ["purty"]
 [[backends]]

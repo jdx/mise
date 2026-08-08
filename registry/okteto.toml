@@ -1,3 +1,4 @@
 backends = ["aqua:okteto/okteto", "asdf:BradenM/asdf-okteto"]
 bins = ["okteto"]
 description = "Develop your applications directly in your Kubernetes Cluster"
+version_order = "semver"

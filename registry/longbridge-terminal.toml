@@ -6,3 +6,4 @@ bin = "longbridge"
 bins = ["longbridge"]
 description = "AI-native CLI for Longbridge Securities — real-time market data, portfolio, and trading"
 test = { cmd = "longbridge --version", expected = "longbridge {{version}}" }
+version_order = "semver"

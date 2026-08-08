@@ -1,3 +1,4 @@
 backends = ["github:traefik/traefik", "asdf:Dabolus/asdf-traefik"]
 bins = ["traefik"]
 description = "The Cloud Native Application Proxy"
+version_order = "semver"

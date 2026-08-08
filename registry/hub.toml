@@ -1,3 +1,4 @@
 backends = ["aqua:mislav/hub", "asdf:mise-plugins/asdf-hub"]
 bins = ["hub"]
 description = "A command-line tool that makes git easier to use with GitHub"
+version_order = "semver"

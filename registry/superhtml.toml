@@ -2,3 +2,4 @@ backends = ["github:kristoff-it/superhtml"]
 bins = ["superhtml"]
 description = "HTML Validator, Formatter, LSP, and Templating Language Library"
 test = { cmd = "superhtml version", expected = "{{version}}" }
+version_order = "semver"

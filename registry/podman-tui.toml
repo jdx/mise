@@ -2,3 +2,4 @@ backends = ["github:containers/podman-tui"]
 bins = ["podman-tui"]
 description = "Podman Terminal UI"
 test = { cmd = "podman-tui version", expected = "podman-tui v{{version}}" }
+version_order = "semver"

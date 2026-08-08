@@ -1,3 +1,4 @@
 backends = ["aqua:particledecay/kconf", "asdf:particledecay/asdf-kconf"]
 bins = ["kconf"]
 description = "Manage multiple kubeconfigs easily"
+version_order = "semver"

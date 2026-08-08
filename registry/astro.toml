@@ -1,5 +1,6 @@
 description = "CLI that makes it easy to create, test and deploy Airflow DAGs to Astronomer"
 test = { cmd = "astro version", expected = "Astro CLI Version: {{version}}" }
+version_order = "semver"
 
 bins = ["astro"]
 [[backends]]

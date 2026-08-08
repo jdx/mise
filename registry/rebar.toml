@@ -6,3 +6,4 @@ description = "Erlang build tool that makes it easy to compile and test Erlang a
 test = { cmd = "rebar3 --version", expected = "rebar {{version}}", tools = [
   "erlang",
 ] }
+version_order = "semver"

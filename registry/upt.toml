@@ -1,3 +1,4 @@
 backends = ["github:sigoden/upt", "asdf:ORCID/asdf-upt"]
 bins = ["upt"]
 description = "Universal Package-management Tool for any OS"
+version_order = "semver"

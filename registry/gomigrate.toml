@@ -2,3 +2,4 @@ backends = ["aqua:golang-migrate/migrate", "asdf:joschi/asdf-gomigrate"]
 bins = ["migrate"]
 description = "Database migrations. CLI and Golang library"
 test = { cmd = "migrate --version", expected = "{{version}}" }
+version_order = "semver"

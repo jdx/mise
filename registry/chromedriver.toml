@@ -5,3 +5,4 @@ backends = [
 bins = ["chromedriver"]
 description = "ChromeDriver is a standalone server that implements the W3C WebDriver and WebDriver BiDi standards"
 test = { cmd = "chromedriver --version", expected = "ChromeDriver {{version}}" }
+version_order = "source"

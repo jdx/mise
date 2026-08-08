@@ -2,3 +2,4 @@ backends = ["aqua:pvolok/mprocs"]
 bins = ["mprocs"]
 description = "Run multiple commands in parallel"
 test = { cmd = "mprocs --version", expected = "mprocs {{version}}" }
+version_order = "semver"

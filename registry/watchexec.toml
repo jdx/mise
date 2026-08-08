@@ -2,3 +2,4 @@ backends = ["aqua:watchexec/watchexec", "cargo:watchexec-cli"]
 bins = ["watchexec"]
 description = "Executes commands in response to file modifications"
 test = { cmd = "watchexec --version", expected = "watchexec {{version}}" }
+version_order = "semver"

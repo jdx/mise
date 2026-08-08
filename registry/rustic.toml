@@ -2,3 +2,4 @@ backends = ["aqua:rustic-rs/rustic", "cargo:rustic-rs"]
 bins = ["rustic"]
 description = "rustic - fast, encrypted, and deduplicated backups powered by Rust"
 test = { cmd = "rustic --version", expected = "rustic v{{version}}" }
+version_order = "semver"

@@ -4,3 +4,4 @@ description = "A portable devkit for CI/CD pipelines"
 idiomatic_files = [
   { path = "dagger.json", version_regex = '"engineVersion"\s*:\s*"v?([^"]+)"' },
 ]
+version_order = "source"

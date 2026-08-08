@@ -6,3 +6,4 @@ backends = [
 bins = ["cargo-make", "makers"]
 description = "Rust task runner and build tool"
 test = { cmd = "makers --version", expected = "cargo-make {{version}}" }
+version_order = "semver"

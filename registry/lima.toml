@@ -9,5 +9,6 @@ bins = [
   "podman.lima",
 ]
 description = "Linux virtual machines, with a focus on running containers"
+version_order = "semver"
 # TODO: re-enable once limactl exposes a version command that works as root in CI.
 # test = { cmd = "limactl --version", expected = "limactl version {{version}}" }

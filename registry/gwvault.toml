@@ -1,3 +1,4 @@
 backends = ["aqua:GoodwayGroup/gwvault", "asdf:GoodwayGroup/asdf-gwvault"]
 bins = ["gwvault"]
 description = "ansible-vault CLI reimplemented in go"
+version_order = "semver"

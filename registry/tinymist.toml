@@ -1,6 +1,7 @@
 backends = ["aqua:Myriad-Dreamin/tinymist", "cargo:tinymist"]
 bins = ["tinymist"]
 description = "Tinymist is an integrated language service for Typst."
+version_order = "semver"
 # 0.14.4 doesn't print version
 # expected was: "Build Git Describe:  v{{version}}"
 test = { cmd = "tinymist --version", expected = "" }

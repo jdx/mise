@@ -5,3 +5,4 @@ backends = [
 bins = ["mermaid-ascii"]
 description = "Render Mermaid graphs inside your terminal"
 test = { cmd = "which mermaid-ascii", expected = "mermaid-ascii" }
+version_order = "semver"

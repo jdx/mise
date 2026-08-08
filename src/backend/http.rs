@@ -1,7 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
+use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
 use crate::backend::static_helpers::{
@@ -879,6 +879,10 @@ pub fn install_time_option_keys() -> Vec<String> {
 
 #[async_trait]
 impl Backend for HttpBackend {
+    fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Http
     }

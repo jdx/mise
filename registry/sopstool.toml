@@ -1,3 +1,4 @@
 backends = ["aqua:ibotta/sopstool", "asdf:elementalvoid/asdf-sopstool"]
 bins = ["sopstool"]
 description = "SOPS multi-file wrapper"
+version_order = "semver"

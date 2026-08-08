@@ -10,3 +10,4 @@ description = "the package manager for JavaScript"
 idiomatic_files = ["package.json"]
 overrides = ["node"]
 test = { cmd = "npm --version", expected = "{{version}}" }
+version_order = "semver"

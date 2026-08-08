@@ -2,3 +2,4 @@ backends = ["aqua:cloudentity/oauth2c"]
 bins = ["oauth2c"]
 description = "User-friendly OAuth2 CLI"
 test = { cmd = "oauth2c version", expected = "oauth2c version {{version}}" }
+version_order = "semver"

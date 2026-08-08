@@ -4,3 +4,4 @@ description = "Scripting enhancements for Kotlin"
 test = { cmd = "kscript --version", expected = "Version   : {{version}}", tools = [
   "kotlin",
 ] }
+version_order = "semver"

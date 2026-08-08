@@ -661,10 +661,10 @@ of the full backend specification.
 2. **Add to registry/**:
 
    ```toml
-   [tools.your-tool]
+   version_order = "semver"
    description = "Brief description of the tool"
    backends = ["aqua:owner/repo", "github:owner/repo"]
-   test = ["your-tool --version", "{{version}}"]
+   test = { cmd = "your-tool --version", expected = "{{version}}" }
    ```
 
 3. **Test the tool** works properly with `mise test-tool your-tool`
@@ -730,19 +730,24 @@ The `registry/` file uses this format:
 
 ```toml
 # Tool name "your-tool" (becomes the short name for `mise use`)
-[tools.your-tool]
+version_order = "semver"
 description = "Tool description"
 backends = [
     "aqua:owner/repo",           # Preferred backend first
     "github:owner/repo",         # Fallback backend
 ]
-test = [
-    "your-tool --version",       # Command to run
-    "{{version}}"                # Expected output pattern
-]
+test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
 ```
+
+Every registry entry must explicitly set `version_order` to `semver` or
+`source`. Use `semver` only when the tool's stable releases consistently use
+strict `MAJOR.MINOR.PATCH` semantic versions. Use `source` for date versions,
+two-component versions, channels, refs, tool-specific formats, mixed histories,
+or whenever the convention is uncertain. Semantic ordering currently affects
+the Aqua, GitHub, GitLab, Forgejo, and HTTP backends; the field still documents
+the policy for tools whose current backend owns version ordering itself.
 
 #### Idiomatic version files
 

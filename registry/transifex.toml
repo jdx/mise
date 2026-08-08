@@ -1,4 +1,5 @@
 description = "The Transifex command-line client"
+version_order = "semver"
 # test = { cmd = "tx --version", expected = "version={{version}}" }
 
 bins = ["tx"]

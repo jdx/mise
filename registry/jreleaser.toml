@@ -1,3 +1,4 @@
 backends = ["aqua:jreleaser/jreleaser", "asdf:joschi/asdf-jreleaser"]
 bins = ["jreleaser"]
 description = "Release projects quickly and easily with JReleaser"
+version_order = "semver"

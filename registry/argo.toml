@@ -2,3 +2,4 @@ backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
 bins = ["argo"]
 description = "Argo Workflows CLI. Workflow engine for Kubernetes"
 test = { cmd = "argo version", expected = "argo: v{{version}}" }
+version_order = "semver"

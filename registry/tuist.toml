@@ -3,3 +3,4 @@ bins = ["tuist"]
 description = "A toolchain to generate Xcode projects from Swift packages"
 os = ["macos", "linux"]
 test = { cmd = "tuist version", expected = "{{version}}" }
+version_order = "semver"

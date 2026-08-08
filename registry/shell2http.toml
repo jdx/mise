@@ -1,3 +1,4 @@
 backends = ["aqua:msoap/shell2http", "asdf:ORCID/asdf-shell2http"]
 bins = ["shell2http"]
 description = "Executing shell commands via HTTP server"
+version_order = "source"

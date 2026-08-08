@@ -2,3 +2,4 @@ backends = ["aqua:dapr/cli", "asdf:asdf-community/asdf-dapr-cli"]
 bins = ["dapr"]
 description = "Command-line tools for Dapr"
 test = { cmd = "dapr --version", expected = "CLI version: {{version}}" }
+version_order = "semver"

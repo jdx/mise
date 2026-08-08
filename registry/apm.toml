@@ -2,3 +2,4 @@ backends = ["github:microsoft/apm"]
 bins = ["apm"]
 description = "Agent Package Manager"
 test = { cmd = "apm --version", expected = "{{version}}" }
+version_order = "semver"

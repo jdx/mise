@@ -1,5 +1,6 @@
 description = "Flyway by Redgate • Database Migrations Made Easy"
 test = { cmd = "flyway --version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["flyway"]
 [[backends]]

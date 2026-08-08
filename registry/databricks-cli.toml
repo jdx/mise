@@ -1,5 +1,6 @@
 description = "Databricks CLI"
 test = { cmd = "databricks --version", expected = "Databricks CLI v{{version}}" }
+version_order = "semver"
 
 bins = ["databricks"]
 [[backends]]

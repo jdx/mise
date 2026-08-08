@@ -6,3 +6,4 @@ backends = [
 bins = ["typos"]
 description = "Source code spell checker"
 test = { cmd = "typos --version", expected = "typos-cli {{version}}" }
+version_order = "semver"

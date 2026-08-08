@@ -34,3 +34,4 @@ bins = [
   "serialver",
 ]
 description = "An advanced JDK with ahead-of-time Native Image compilation"
+version_order = "source"

@@ -15,3 +15,4 @@ bins = [
 ]
 description = "Command-line tools for working with Architecture Decision Records"
 test = { cmd = "adr help", expected = "adr help" }
+version_order = "semver"

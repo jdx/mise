@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["cloud-sql-proxy"]
 description = "A utility for connecting securely to your Cloud SQL instances"
+version_order = "semver"

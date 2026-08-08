@@ -6,3 +6,4 @@ idiomatic_files = [
   { path = "pyproject.toml", version_regex = '''(?m)^\s*requires-pixi\s*=\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
 ]
 test = { cmd = "pixi -V", expected = "pixi {{version}}" }
+version_order = "semver"

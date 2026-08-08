@@ -1,3 +1,4 @@
 backends = ["aqua:charmbracelet/glow", "asdf:mise-plugins/asdf-glow"]
 bins = ["glow"]
 description = "Render markdown on the CLI, with pizzazz"
+version_order = "semver"

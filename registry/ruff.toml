@@ -6,3 +6,4 @@ idiomatic_files = [
   { path = ".ruff.toml", version_regex = '''(?m)^\s*required-version\s*=\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
 ]
 test = { cmd = "ruff --version", expected = "ruff {{version}}" }
+version_order = "semver"

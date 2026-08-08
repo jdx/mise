@@ -2,3 +2,4 @@ backends = ["aqua:kubernetes-sigs/kustomize", "asdf:Banno/asdf-kustomize"]
 bins = ["kustomize"]
 description = "Customization of kubernetes YAML configurations"
 test = { cmd = "kustomize version", expected = "v{{version}}" }
+version_order = "semver"

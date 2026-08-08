@@ -2,3 +2,4 @@ backends = ["aqua:hashicorp/vault", "asdf:mise-plugins/mise-hashicorp"]
 bins = ["vault"]
 description = "A tool for secrets management, encryption as a service, and privileged access management"
 test = { cmd = "vault version", expected = "Vault v{{version}}" }
+version_order = "semver"

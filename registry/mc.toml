@@ -1,3 +1,4 @@
 backends = ["aqua:minio/mc", "asdf:mise-plugins/mise-mc"]
 bins = ["mc"]
 description = "Unix like utilities for object store (minio)"
+version_order = "source"

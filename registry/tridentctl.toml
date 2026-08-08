@@ -6,3 +6,4 @@ bins = ["tridentctl"]
 description = "Storage orchestrator for containers"
 os = ["linux", "macos"]
 test = { cmd = "tridentctl version --client", expected = "{{version}}" }
+version_order = "source"

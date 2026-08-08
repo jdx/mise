@@ -2,3 +2,4 @@ backends = ["aqua:smithy-lang/smithy", "asdf:mise-plugins/mise-smithy"]
 bins = ["smithy"]
 description = "Smithy is a language for defining services and SDKs"
 test = { cmd = "smithy --version", expected = "{{version}}" }
+version_order = "semver"

@@ -1,3 +1,4 @@
 backends = ["aqua:charmbracelet/skate", "asdf:chessmango/asdf-skate"]
 bins = ["skate"]
 description = "A personal key value store"
+version_order = "semver"

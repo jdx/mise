@@ -6,3 +6,4 @@ backends = [
 bins = ["gojq"]
 description = "Pure Go implementation of jq"
 test = { cmd = "gojq --version", expected = "gojq {{version}}" }
+version_order = "semver"

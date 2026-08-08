@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["scw"]
 description = "Command Line Interface for Scaleway"
+version_order = "source"

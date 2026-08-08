@@ -1,3 +1,4 @@
 backends = ["aqua:gittools/gitversion"]
 bins = ["gitversion"]
 description = "From git log to SemVer in no time"
+version_order = "semver"

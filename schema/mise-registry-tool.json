@@ -223,8 +223,13 @@
       "required": ["cmd", "expected"],
       "unevaluatedProperties": false,
       "description": "Command to test the tool installation"
+    },
+    "version_order": {
+      "type": "string",
+      "enum": ["source", "semver"],
+      "description": "Whether version resolution preserves backend source order or uses semantic version precedence"
     }
   },
-  "required": ["backends"],
+  "required": ["backends", "version_order"],
   "unevaluatedProperties": false
 }

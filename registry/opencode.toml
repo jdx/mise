@@ -2,3 +2,4 @@ backends = ["aqua:anomalyco/opencode"]
 bins = ["opencode"]
 description = "AI coding agent, built for the terminal"
 test = { cmd = "opencode --version", expected = "{{version}}" }
+version_order = "semver"

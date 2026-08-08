@@ -2,3 +2,4 @@ backends = ["aqua:caddyserver/caddy", "asdf:salasrod/asdf-caddy"]
 bins = ["caddy"]
 description = "Fast, multi-platform web server with automatic HTTPS"
 test = { cmd = "caddy --version", expected = "v{{version}}" }
+version_order = "semver"

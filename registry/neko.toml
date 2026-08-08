@@ -1,3 +1,4 @@
 backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
 bins = ["neko", "nekoc", "nekoml", "nekotools"]
 description = "The Neko Virtual Machine"
+version_order = "source"

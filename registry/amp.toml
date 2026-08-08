@@ -4,3 +4,4 @@ backends = [
   ] } },
 ]
 description = "An agentic coding tool built by Sourcegraph"
+version_order = "source"

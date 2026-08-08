@@ -9,3 +9,4 @@ idiomatic_files = [
   { path = ".pre-commit-config.yaml", version_regex = '''(?m)^\s*minimum_pre_commit_version\s*:\s*["']?v?([0-9][0-9A-Za-z.+-]*)''' },
 ]
 test = { cmd = "pre-commit --version", expected = "pre-commit {{version}}" }
+version_order = "semver"

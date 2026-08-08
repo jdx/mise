@@ -1,3 +1,4 @@
 backends = ["aqua:aquasecurity/tfsec", "asdf:woneill/asdf-tfsec"]
 bins = ["tfsec", "tfsec-checkgen"]
 description = "Security scanner for your Terraform code"
+version_order = "semver"

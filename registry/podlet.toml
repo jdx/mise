@@ -6,3 +6,4 @@ backends = [
 bins = ["podlet"]
 description = "Generate Podman Quadlet files from a Podman command, compose file, or existing object"
 test = { cmd = "podlet --version", expected = "podlet {{version}}" }
+version_order = "semver"

@@ -1,3 +1,4 @@
 backends = ["aqua:int128/kubelogin"]
 bins = ["kubectl-oidc_login", "kubelogin"]
 description = "kubectl plugin for Kubernetes OpenID Connect authentication (kubectl oidc-login)"
+version_order = "source"

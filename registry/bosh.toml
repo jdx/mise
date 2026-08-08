@@ -5,3 +5,4 @@ backends = [
 bins = ["bosh"]
 description = "The bosh CLI is the command line tool used for interacting with all things BOSH, from deployment operations to software release management"
 test = { cmd = "bosh --version", expected = "version {{version}}" }
+version_order = "semver"

@@ -2,3 +2,4 @@ backends = ["aqua:Adembc/lazyssh"]
 bins = ["lazyssh"]
 description = "A terminal-based SSH manager inspired by lazydocker and k9s - Written in go"
 test = { cmd = "lazyssh --help", expected = "lazyssh [flags]" }
+version_order = "semver"

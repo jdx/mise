@@ -36,3 +36,4 @@ bins = [
 description = "self-contained, portable perl binaries"
 detect = [".perl-version"]
 idiomatic_files = [".perl-version"]
+version_order = "source"

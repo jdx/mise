@@ -14,3 +14,4 @@ bins = [
   "typer",
 ]
 description = "erlang"
+version_order = "source"

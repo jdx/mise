@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# version_order changes candidate selection without changing the canonical
+# source order displayed by ls-remote.
+
+VERSION_LIST_DIR="$TMPDIR/version-order-list"
+mkdir -p "$VERSION_LIST_DIR"
+cat <<'EOF' >"$VERSION_LIST_DIR/versions.txt"
+v11.11.0
+nightly
+v10.99.0
+v10.34.5
+EOF
+
+HTTP_PORT_FILE="$TMPDIR/version_order_port"
+python3 -c "
+import http.server, socketserver
+s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
+with open('$HTTP_PORT_FILE', 'w') as f:
+    f.write(str(s.server_address[1]))
+s.serve_forever()
+" &
+HTTP_SERVER_PID=$!
+
+cleanup() {
+  kill "$HTTP_SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$HTTP_PORT_FILE" "version order test server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+version_regex = '(v[0-9.]+|nightly)'
+EOF
+
+assert "mise latest http:version-order" "v10.34.5"
+
+cat <<EOF >mise.toml
+[tools."http:version-order"]
+version = "latest"
+url = "https://example.com/version-order-{{version}}.tar.gz"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
+version_regex = '(v[0-9.]+|nightly)'
+version_order = "semver"
+EOF
+
+assert "mise latest http:version-order" "v11.11.0"
+assert "mise latest http:version-order@10" "v10.99.0"
+assert "mise latest http:version-order nightly" "nightly"
+assert "mise ls-remote http:version-order" "v11.11.0
+nightly
+v10.99.0
+v10.34.5"
+
+assert_fail 'mise install --dry-run "cargo:ripgrep[version_order=semver]@14.1.1"' \
+  "cargo backend does not support version_order"
+
+cat <<'EOF' >mise.toml
+[tools."cargo:ripgrep"]
+version = "14.1.1"
+version_order = "semver"
+EOF
+
+assert_fail "MISE_OFFLINE=1 mise install --dry-run" \
+  "cargo backend does not support version_order"
+assert_fail "MISE_PREFER_OFFLINE=1 mise install --dry-run" \
+  "cargo backend does not support version_order"

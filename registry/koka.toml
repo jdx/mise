@@ -1,3 +1,4 @@
 backends = ["github:koka-lang/koka", "asdf:susurri/asdf-koka"]
 bins = ["koka"]
 description = "Koka language compiler and interpreter"
+version_order = "semver"

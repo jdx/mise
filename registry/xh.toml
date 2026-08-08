@@ -2,3 +2,4 @@ backends = ["aqua:ducaale/xh", "asdf:NeoHsu/asdf-xh", "cargo:xh"]
 bins = ["xh"]
 description = "Friendly and fast tool for sending HTTP requests"
 test = { cmd = "xh -V", expected = "xh {{version}}" }
+version_order = "semver"

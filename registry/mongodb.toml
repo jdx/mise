@@ -1,3 +1,4 @@
 backends = ["vfox:jdx/vfox-mongod", "asdf:mise-plugins/mise-mongodb"]
 bins = ["mongod", "mongos"]
 description = "MongoDB"
+version_order = "semver"

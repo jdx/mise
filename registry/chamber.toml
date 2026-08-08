@@ -2,3 +2,4 @@ backends = ["aqua:segmentio/chamber", "asdf:mintel/asdf-chamber"]
 bins = ["chamber"]
 description = "CLI for managing secrets"
 test = { cmd = "chamber version", expected = "chamber v{{version}}" }
+version_order = "semver"

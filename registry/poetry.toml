@@ -2,3 +2,4 @@ backends = ["vfox:mise-plugins/vfox-poetry", "pipx:poetry"]
 description = "Python packaging and dependency management made easy"
 detect = ["poetry.lock"]
 test = { cmd = "poetry --version", expected = "Poetry (version {{version}})" }
+version_order = "semver"

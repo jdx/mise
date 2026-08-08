@@ -2,3 +2,4 @@ backends = ["github:jckuester/awsweeper", "asdf:chessmango/asdf-awsweeper"]
 bins = ["awsweeper"]
 description = "A tool for cleaning your AWS account"
 test = { cmd = "awsweeper --version", expected = "version: {{version}}" }
+version_order = "semver"

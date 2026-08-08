@@ -1,3 +1,4 @@
 backends = ["aqua:x-motemen/ghq", "asdf:kajisha/asdf-ghq"]
 bins = ["ghq"]
 description = "Remote repository management made easy"
+version_order = "source"

@@ -2,3 +2,4 @@ backends = ["aqua:danielfoehrKn/kubeswitch", "github:danielfoehrKn/kubeswitch"]
 bins = ["switcher"]
 description = "The kubectx for operators"
 test = { cmd = "switcher --version", expected = "switcher version v{{version}}" }
+version_order = "semver"

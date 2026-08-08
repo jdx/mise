@@ -7,3 +7,4 @@ idiomatic_files = [
   { path = ".golangci.toml", version_regex = '''(?m)^\s*version\s*=\s*["']?v?([0-9]+)''' },
   { path = ".golangci.json", version_json_path = ".version" },
 ]
+version_order = "source"

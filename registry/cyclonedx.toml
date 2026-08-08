@@ -1,5 +1,6 @@
 backends = ["aqua:CycloneDX/cyclonedx-cli", "asdf:xeedio/asdf-cyclonedx"]
 bins = ["cyclonedx"]
 description = "CycloneDX CLI tool for SBOM analysis, merging, diffs and format conversions"
+version_order = "semver"
 # TODO: re-enable test when aqua-registry is updated to use gnu instead of musl
 # test = ["cyclonedx --version", "{{version}}"]

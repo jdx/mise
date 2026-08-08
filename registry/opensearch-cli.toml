@@ -5,3 +5,4 @@ backends = [
 bins = ["opensearch-cli"]
 description = "A full-featured command line interface (CLI) for OpenSearch"
 test = { cmd = "opensearch-cli --version", expected = "opensearch-cli version {{version}}" }
+version_order = "semver"

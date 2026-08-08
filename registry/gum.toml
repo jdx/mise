@@ -1,3 +1,4 @@
 backends = ["aqua:charmbracelet/gum", "asdf:lwiechec/asdf-gum"]
 bins = ["gum"]
 description = "A tool for glamorous shell scripts"
+version_order = "semver"

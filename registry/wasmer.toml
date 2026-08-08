@@ -1,3 +1,4 @@
 backends = ["aqua:wasmerio/wasmer", "asdf:tachyonicbytes/asdf-wasmer"]
 bins = ["wasmer", "wasmer-headless"]
 description = "The leading WebAssembly Runtime supporting WASI and Emscripten"
+version_order = "semver"

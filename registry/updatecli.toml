@@ -1,3 +1,4 @@
 backends = ["aqua:updatecli/updatecli", "asdf:updatecli/asdf-updatecli"]
 bins = ["updatecli"]
 description = "A Declarative Dependency Management tool"
+version_order = "semver"
