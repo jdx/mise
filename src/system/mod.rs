@@ -1563,6 +1563,49 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn test_prune_needed_set_retains_os_filtered_entries() -> Result<()> {
+        let other_os = if std::env::consts::OS == "linux" {
+            "macos"
+        } else {
+            "linux"
+        };
+        let current_toml = format!(
+            r#"
+                [bootstrap.packages]
+                "apt:everywhere" = "latest"
+                "apt:elsewhere" = {{ version = "latest", os = ["{other_os}"] }}
+            "#
+        );
+        let (_current_dir, current) = config_map_from_toml(&[("current.toml", &current_toml)])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:tracked-elsewhere" = { version = "latest", os = ["macos", "linux"] }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let apt = packages
+            .into_iter()
+            .find(|mp| mp.manager.name() == "apt")
+            .unwrap();
+        let names = apt
+            .requests
+            .iter()
+            .map(|req| req.name.as_str())
+            .collect::<Vec<_>>();
+
+        // the prune-protected set deliberately ignores os filtering: an entry
+        // scoped away from the current platform must never become prunable
+        assert!(names.contains(&"elsewhere"));
+        assert!(names.contains(&"everywhere"));
+        assert!(names.contains(&"tracked-elsewhere"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn test_package_requests_from_table_entries() -> Result<()> {
         let (_dir, config_files) = config_map_from_toml(&[(
             "mise.toml",

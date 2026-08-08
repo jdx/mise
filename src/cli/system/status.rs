@@ -122,3 +122,57 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap packages status --missing</bold> # exit 1 if anything is out of sync
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system::packages::PackageRequest;
+
+    fn request(name: &str, version: Option<&str>, os: &[&str]) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: version.map(str::to_string),
+            tap_url: None,
+            os: Some(os.iter().map(|s| s.to_string()).collect()),
+        }
+    }
+
+    #[test]
+    fn os_skipped_table_row_shape() {
+        let row = os_skipped_row("brew-cask", &request("firefox", None, &["macos", "linux/arm64"]));
+        assert_eq!(
+            row,
+            vec![
+                "brew-cask".to_string(),
+                "firefox".to_string(),
+                "".to_string(),
+                "skipped (os: macos, linux/arm64)".to_string(),
+            ]
+        );
+
+        // pinned versions keep the spec rendering of ordinary rows
+        let row = os_skipped_row("apt", &request("curl", Some("8.5.0-2"), &["linux"]));
+        assert_eq!(row[1], "curl@8.5.0-2");
+        assert_eq!(row[3], "skipped (os: linux)");
+    }
+
+    #[test]
+    fn os_skipped_json_shape() {
+        let value = os_skipped_json(&request("firefox", None, &["macos"]));
+        assert_eq!(
+            value,
+            json!({
+                "package": "firefox",
+                "requested_version": "latest",
+                "state": "skipped",
+                "reason": "os mismatch",
+                "os": ["macos"],
+                "installed_version": "",
+            })
+        );
+
+        let value = os_skipped_json(&request("curl", Some("8.5.0-2"), &["linux", "macos/arm64"]));
+        assert_eq!(value["requested_version"], "8.5.0-2");
+        assert_eq!(value["os"], json!(["linux", "macos/arm64"]));
+    }
+}

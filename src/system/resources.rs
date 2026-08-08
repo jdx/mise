@@ -705,6 +705,28 @@ mod tests {
     }
 
     #[test]
+    fn os_filtered_packages_render_skipped_plan_rows() {
+        let request = PackageRequest {
+            name: "firefox".to_string(),
+            version: None,
+            tap_url: None,
+            os: Some(vec!["macos".to_string(), "linux/arm64".to_string()]),
+        };
+
+        let row = os_skipped_package_plan("brew-cask", &request);
+        assert_eq!(
+            (row.id.kind.as_str(), row.id.name.as_str()),
+            ("package", "brew-cask:firefox")
+        );
+        // os values comma-joined as written (aliases stay unnormalized)
+        assert_eq!(row.current, "skipped (os: macos, linux/arm64)");
+        assert_eq!(row.desired, desired_package(&request));
+        // visible but never actionable
+        assert_eq!(row.action, ResourceAction::Unknown);
+        assert!(row.depends_on.is_empty());
+    }
+
+    #[test]
     fn unpinnable_missing_and_mismatched_packages_are_unknown() {
         let request = package_request(Some("1.2.3"));
 

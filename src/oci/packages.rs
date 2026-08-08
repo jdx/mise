@@ -616,10 +616,86 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::system::packages::SystemPackageManager;
+    use crate::system::packages::apt::AptManager;
+    use crate::system::packages::mas::MasManager;
+    use std::sync::Arc;
 
     fn write_file(path: &Path, contents: &str) {
         file::create_dir_all(path.parent().unwrap()).unwrap();
         file::write(path, contents).unwrap();
+    }
+
+    fn request(name: &str, os: Option<&[&str]>) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: None,
+            tap_url: None,
+            os: os.map(|list| list.iter().map(|s| s.to_string()).collect()),
+        }
+    }
+
+    fn manager_packages(
+        manager: Arc<dyn SystemPackageManager>,
+        requests: Vec<PackageRequest>,
+    ) -> ManagerPackages {
+        ManagerPackages {
+            manager,
+            requests,
+            disabled: false,
+        }
+    }
+
+    fn names(requests: &[PackageRequest]) -> Vec<&str> {
+        requests.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    #[test]
+    fn collect_apt_requests_filters_by_image_target_platform() {
+        // the entry's os is matched against the image's platform, never the
+        // host's — this test must pass identically on macOS and Linux hosts
+        let mgrs = vec![manager_packages(
+            Arc::new(AptManager::new()),
+            vec![
+                request("curl", None),
+                request("linux-only", Some(&["linux"])),
+                request("arm-only", Some(&["linux/arm64"])),
+                request("amd-only", Some(&["linux/amd64"])),
+                request("mac-only", Some(&["macos"])),
+                request("nowhere", Some(&[])),
+            ],
+        )];
+
+        let amd64 = collect_apt_requests(&mgrs, "amd64").unwrap();
+        assert_eq!(names(&amd64), vec!["curl", "linux-only", "amd-only"]);
+
+        let arm64 = collect_apt_requests(&mgrs, "arm64").unwrap();
+        assert_eq!(names(&arm64), vec!["curl", "linux-only", "arm-only"]);
+    }
+
+    #[test]
+    fn collect_apt_requests_ignores_non_apt_entries_scoped_to_other_platforms() {
+        // a shared config's `"mas:..." = { os = ["macos"] }` entry does not
+        // apply to a linux image, so it must not fail the build
+        let mgrs = vec![
+            manager_packages(Arc::new(AptManager::new()), vec![request("curl", None)]),
+            manager_packages(
+                Arc::new(MasManager::new()),
+                vec![request("497799835", Some(&["macos"]))],
+            ),
+        ];
+        let requests = collect_apt_requests(&mgrs, "amd64").unwrap();
+        assert_eq!(names(&requests), vec!["curl"]);
+    }
+
+    #[test]
+    fn collect_apt_requests_rejects_unsupported_managers_matching_image_platform() {
+        let mgrs = vec![manager_packages(
+            Arc::new(MasManager::new()),
+            vec![request("497799835", None)],
+        )];
+        let err = collect_apt_requests(&mgrs, "amd64").unwrap_err();
+        assert!(err.to_string().contains("mas"));
     }
 
     #[test]
