@@ -624,6 +624,7 @@ mod tests {
             name: "example".to_string(),
             version: version.map(str::to_string),
             tap_url: None,
+            os: None,
         }
     }
 

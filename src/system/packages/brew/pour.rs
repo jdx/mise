@@ -1003,6 +1003,7 @@ mod tests {
             name: "foo".to_string(),
             version: None,
             tap_url: None,
+            os: None,
         };
         let keg_inode = keg.metadata()?.ino();
         let receipt_modified = keg.join("INSTALL_RECEIPT.json").metadata()?.modified()?;

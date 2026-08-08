@@ -34,6 +34,18 @@ pub struct PackageRequest {
     /// and casks: `[bootstrap.brew.taps]` can attach a git URL to
     /// `owner/tap/name`.
     pub tap_url: Option<String>,
+    /// `os` restriction from the config entry (raw strings as written;
+    /// normalized at match time). None = applies on every platform.
+    pub os: Option<Vec<String>>,
+}
+
+impl PackageRequest {
+    /// Whether this request applies on the current platform per its `os` list.
+    pub fn is_os_supported(&self) -> bool {
+        self.os
+            .as_ref()
+            .is_none_or(|list| crate::os_filter::os_list_matches_current(list))
+    }
 }
 
 impl std::fmt::Display for PackageRequest {

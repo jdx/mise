@@ -94,11 +94,13 @@ pub struct BootstrapTomlConfig {
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,
-    /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
+    /// `"manager:package"` -> version string or `{ version, os }` table. The
+    /// table variant stays raw TOML so entries with keys from newer mise
+    /// versions warn and still work instead of rejecting the whole config.
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
-    pub packages: IndexMap<String, String>,
+    pub packages: IndexMap<String, PackageEntryToml>,
     /// Absolute target path -> declarative managed file.
     #[serde(default)]
     pub files: IndexMap<String, managed_files::ManagedFileTomlConfig>,
@@ -128,6 +130,26 @@ pub struct BootstrapTomlConfig {
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
     pub hooks: IndexMap<String, toml::Value>,
+}
+
+/// A single `[bootstrap.packages]` value: the plain version-string form or the
+/// `{ version, os }` table form. The table variant stays raw TOML so entries
+/// with keys from newer mise versions warn and still work instead of rejecting
+/// the whole config; validation happens at aggregation time in
+/// [`package_requests_from_config_files`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum PackageEntryToml {
+    Version(String),
+    Table(IndexMap<String, toml::Value>),
+}
+
+/// Equality against the plain version-string form; a table entry never equals
+/// a bare version string.
+impl PartialEq<str> for PackageEntryToml {
+    fn eq(&self, other: &str) -> bool {
+        matches!(self, PackageEntryToml::Version(version) if version == other)
+    }
 }
 
 pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
@@ -258,6 +280,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
                 name: rest.to_string(),
                 version: None,
                 tap_url: None,
+                os: None,
             },
         ));
     }
@@ -268,6 +291,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
                 name: name.to_string(),
                 version: (version != "latest").then(|| version.to_string()),
                 tap_url: None,
+                os: None,
             },
         )),
         Some(_) => {
@@ -279,6 +303,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
                 name: rest.to_string(),
                 version: None,
                 tap_url: None,
+                os: None,
             },
         )),
     }
@@ -433,20 +458,23 @@ fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
 ) -> IndexMap<String, Vec<PackageRequest>> {
-    let mut merged: IndexMap<String, String> = IndexMap::new();
-    // config_files is ordered local -> global; reverse for global -> local
+    let mut merged: IndexMap<String, PackageEntryToml> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local so
+    // a more local entry (string or table) replaces the global one wholesale
     for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
-            for (spec, version) in sys.packages {
-                merged.insert(spec, version);
+            for (spec, entry) in sys.packages {
+                merged.insert(spec, entry);
             }
         }
     }
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
-    for (spec, version) in merged {
+    for (spec, entry) in merged {
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
-                let version = (version != "latest").then_some(version);
+                let Some((version, os)) = validate_package_entry(&spec, &entry) else {
+                    continue;
+                };
                 if let Err(err) = validate_package_name(&mgr, &name) {
                     warn!("[bootstrap.packages]: {err}");
                     continue;
@@ -460,12 +488,64 @@ fn package_requests_from_config_files(
                     name,
                     version,
                     tap_url,
+                    os,
                 });
             }
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
     by_mgr
+}
+
+/// Validated `(version, os)` of a single `[bootstrap.packages]` entry.
+/// `"latest"` parses to no pin; a malformed entry warns and returns None so
+/// the caller skips it without failing the whole config. Unknown table keys
+/// warn but keep the entry usable (forward compatibility).
+fn validate_package_entry(
+    spec: &str,
+    entry: &PackageEntryToml,
+) -> Option<(Option<String>, Option<Vec<String>>)> {
+    let (version, os) = match entry {
+        PackageEntryToml::Version(version) => (version.as_str(), None),
+        PackageEntryToml::Table(table) => {
+            let Some(version) = table.get("version").and_then(|v| v.as_str()) else {
+                warn!("[bootstrap.packages]: entry '{spec}' requires a string 'version' key");
+                return None;
+            };
+            let os = match table.get("os") {
+                None => None,
+                Some(toml::Value::String(os)) => Some(vec![os.clone()]),
+                Some(toml::Value::Array(entries)) => {
+                    match entries
+                        .iter()
+                        .map(|v| v.as_str().map(str::to_string))
+                        .collect::<Option<Vec<_>>>()
+                    {
+                        Some(os_list) => Some(os_list),
+                        None => {
+                            warn!(
+                                "[bootstrap.packages]: entry '{spec}' has an invalid 'os' value (expected a string or array of strings)"
+                            );
+                            return None;
+                        }
+                    }
+                }
+                Some(_) => {
+                    warn!(
+                        "[bootstrap.packages]: entry '{spec}' has an invalid 'os' value (expected a string or array of strings)"
+                    );
+                    return None;
+                }
+            };
+            for key in table.keys() {
+                if key != "version" && key != "os" {
+                    warn!("[bootstrap.packages]: entry '{spec}': ignoring unknown key '{key}'");
+                }
+            }
+            (version, os)
+        }
+    };
+    Some(((version != "latest").then(|| version.to_string()), os))
 }
 
 /// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
@@ -1283,6 +1363,7 @@ pub fn packages_from_specs_with_config(
             name,
             version: None,
             tap_url,
+            os: None,
         };
         if !requests.contains(&request) {
             requests.push(request);

@@ -192,13 +192,13 @@ fn target_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 #[cfg(unix)]
-fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, String>> {
+fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, crate::system::PackageEntryToml>> {
     let mut packages = BTreeMap::new();
     if path.exists() {
         let cf = MiseToml::from_file(path)?;
         if let Some(sys) = cf.bootstrap_config() {
-            for (spec, version) in sys.packages {
-                packages.insert(spec, version);
+            for (spec, entry) in sys.packages {
+                packages.insert(spec, entry);
             }
         }
     }

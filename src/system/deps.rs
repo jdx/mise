@@ -501,6 +501,7 @@ pub async fn build_requests(
                         name: pkg,
                         version: None,
                         tap_url: None,
+                        os: None,
                     });
                 }
             }

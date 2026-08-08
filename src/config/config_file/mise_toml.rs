@@ -642,7 +642,10 @@ impl MiseToml {
         self.bootstrap
             .get_or_insert_with(Default::default)
             .packages
-            .insert(spec.to_string(), version.to_string());
+            .insert(
+                spec.to_string(),
+                crate::system::PackageEntryToml::Version(version.to_string()),
+            );
         let mut doc = self.doc_mut()?;
         let bootstrap = doc
             .get_mut()
