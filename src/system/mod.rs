@@ -157,14 +157,6 @@ impl PackageEntryToml {
     }
 }
 
-/// Equality against the plain version-string form; a table entry never equals
-/// a bare version string.
-impl PartialEq<str> for PackageEntryToml {
-    fn eq(&self, other: &str) -> bool {
-        matches!(self, PackageEntryToml::Version(version) if version == other)
-    }
-}
-
 pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
     let mut plugins = IndexMap::new();
     for cf in config.config_files.values().rev() {

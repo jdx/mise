@@ -3346,7 +3346,10 @@ mod tests {
         "brew:postgresql@17" = "latest"
         "#);
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            Some("8.5.0-2")
+        );
         file::remove_file(&p).unwrap();
     }
 
@@ -3394,8 +3397,14 @@ mod tests {
             }
             other => panic!("expected a table entry, got {other:?}"),
         }
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
-        assert_eq!(system.packages.get("apt:jq").unwrap(), "latest");
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            Some("8.5.0-2")
+        );
+        assert_eq!(
+            system.packages.get("apt:jq").unwrap().version(),
+            Some("latest")
+        );
         file::remove_file(&p).unwrap();
     }
 
