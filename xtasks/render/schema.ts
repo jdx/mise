@@ -19,7 +19,8 @@ type Props = {
   rc?: boolean;
 };
 
-type SettingsToml = Record<string, Props | Record<string, Props>>;
+type SettingsNode = Props | { [key: string]: SettingsNode };
+type SettingsToml = Record<string, SettingsNode>;
 type JsonObject = Record<string, unknown>;
 
 type Element = {
@@ -40,7 +41,7 @@ type NestedElement = {
   type: "object";
   unevaluatedProperties: false;
   deprecated?: true;
-  properties: Record<string, Element>;
+  properties: Record<string, Element | NestedElement>;
 };
 
 const writtenPaths: string[] = [];
@@ -188,33 +189,31 @@ function buildElement(key: string, props: Props): Element {
 const doc = toml.parse(
   fs.readFileSync("settings.toml", "utf-8"),
 ) as SettingsToml;
-const settings: Record<string, Element | NestedElement> = {};
-
-const hasSubkeys = (props: SettingsToml[string]): props is Props => {
-  return "type" in props;
+const isLeaf = (node: SettingsNode): node is Props => {
+  return "type" in node;
 };
 
-for (const key in doc) {
-  const props = doc[key];
-  if (hasSubkeys(props)) {
-    settings[key] = buildElement(key, props);
-  } else {
-    for (const subkey in props) {
-      settings[key] ??= {
+function buildSettings(
+  table: Record<string, SettingsNode>,
+  prefix = "",
+): Record<string, Element | NestedElement> {
+  const settings: Record<string, Element | NestedElement> = {};
+  for (const [key, node] of Object.entries(table)) {
+    const name = prefix ? `${prefix}.${key}` : key;
+    if (isLeaf(node)) {
+      settings[key] = buildElement(name, node);
+    } else {
+      settings[key] = {
         type: "object",
         unevaluatedProperties: false,
-        properties: {},
+        properties: buildSettings(node, name),
       };
-      if (props.deprecated) {
-        settings[key].deprecated = true;
-      }
-      (settings[key] as NestedElement).properties[subkey] = buildElement(
-        `${key}.${subkey}`,
-        props[subkey],
-      );
     }
   }
+  return settings;
 }
+
+const settings = buildSettings(doc);
 
 const schema = JSON.parse(fs.readFileSync("schema/mise.json", "utf-8"));
 schema["$defs"].settings.properties = settings;
@@ -227,7 +226,7 @@ const misercSettings: Record<string, Element> = {};
 
 for (const key in doc) {
   const props = doc[key];
-  if (hasSubkeys(props) && props.rc === true) {
+  if (isLeaf(props) && props.rc === true) {
     misercSettings[key] = buildElement(key, props);
   }
 }

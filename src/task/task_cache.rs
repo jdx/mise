@@ -30,6 +30,7 @@ use walkdir::WalkDir;
 pub(crate) const CACHE_FORMAT_VERSION: u8 = 2;
 const CACHE_DIR_VERSION: &str = "v2";
 const ARTIFACT_CHECKSUM_FORMAT: u8 = 1;
+const TASK_ACTION_VERSION: u8 = 1;
 
 static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(BTreeSet::new()));
@@ -94,6 +95,7 @@ impl TaskCacheMode {
 struct CacheKeyMaterial<'a> {
     #[serde(rename = "version")]
     format: u8,
+    kind: &'static str,
     task: &'a str,
     phase: crate::task::TaskRunPhase,
     run: &'a [RunEntry],
@@ -221,6 +223,7 @@ impl TaskCacheLimits {
 #[derive(Debug, Serialize)]
 pub(crate) struct TaskCacheKeyExplanation {
     format: u8,
+    action_version: u8,
     source_paths: Vec<PathBuf>,
     output_patterns: Vec<String>,
     output_paths: Vec<PathBuf>,
@@ -338,7 +341,8 @@ impl TaskArtifactCacheBuilder {
             Vec::new()
         };
         let material = CacheKeyMaterial {
-            format: CACHE_FORMAT_VERSION,
+            format: TASK_ACTION_VERSION,
+            kind: "task",
             task: &task.name,
             phase: task.run_phase,
             run: task.run(),
@@ -359,7 +363,8 @@ impl TaskArtifactCacheBuilder {
         let key = hash::hash_blake3_to_str(std::str::from_utf8(&encoded)?);
         let explanation = if explain {
             Some(TaskCacheKeyExplanation {
-                format: material.format,
+                format: CACHE_FORMAT_VERSION,
+                action_version: material.format,
                 source_paths,
                 output_patterns: material.outputs.clone(),
                 output_paths: remove_nested_roots(output_roots),
@@ -386,27 +391,28 @@ impl TaskArtifactCacheBuilder {
         let settings = Settings::get();
         let remote = if mode == TaskCacheMode::LocalOnly {
             None
-        } else if let Some(base_url) = settings.task.cache_remote_url.clone() {
+        } else if let Some(base_url) = settings.task.cache.remote_url.clone() {
             let namespace = settings
                 .task
-                .cache_remote_namespace
+                .cache
+                .remote_namespace
                 .as_deref()
                 .map(str::trim)
                 .filter(|namespace| !namespace.is_empty())
                 .ok_or_else(|| {
                     eyre!(
-                        "task.cache_remote_namespace is required when task.cache_remote_url is set"
+                        "task.cache.remote_namespace is required when task.cache.remote_url is set"
                     )
                 })?
                 .to_string();
             Some(RemoteTaskCacheConfig {
-                base_url: base_url.parse().wrap_err("invalid task.cache_remote_url")?,
+                base_url: base_url.parse().wrap_err("invalid task.cache.remote_url")?,
                 namespace,
                 staging_dir: cache_dir.join("remote"),
-                mode: settings.task.cache_remote_mode,
-                token: settings.task.cache_remote_token.clone(),
-                token_file: settings.task.cache_remote_token_file.clone(),
-                oidc_audience: settings.task.cache_remote_oidc_audience.clone(),
+                mode: settings.task.cache.remote_mode,
+                token: settings.task.cache.remote_token.clone(),
+                token_file: settings.task.cache.remote_token_file.clone(),
+                oidc_audience: settings.task.cache.remote_oidc_audience.clone(),
             })
         } else {
             None
@@ -1129,7 +1135,8 @@ impl TaskCacheKeyExplanation {
     pub(crate) fn lines(&self) -> Vec<String> {
         let mut lines = vec![
             "cache key inputs:".to_string(),
-            format!("  format: {}", self.format),
+            format!("  cache format: {}", self.format),
+            format!("  action version: {}", self.action_version),
             "  task definition: included".to_string(),
             format!("  sources: {} files", self.source_paths.len()),
         ];
@@ -1771,7 +1778,8 @@ mod tests {
     #[test]
     fn cache_explanation_omits_environment_and_variable_values() {
         let explanation = TaskCacheKeyExplanation {
-            format: 2,
+            format: CACHE_FORMAT_VERSION,
+            action_version: 1,
             source_paths: vec![
                 PathBuf::from("input.txt"),
                 PathBuf::from("src/\x1b[2J\nfile.rs"),

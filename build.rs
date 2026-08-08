@@ -614,7 +614,26 @@ pub struct Settings {"#
     let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
     let settings: toml::Table =
         toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
-    let props_to_code = |key: &str, props: &toml::Value| {
+    fn settings_struct_name(path: &[&str]) -> String {
+        if let [part] = path {
+            return format!("Settings{}", part.to_upper_camel_case());
+        }
+
+        let mut name = "SettingsNested".to_string();
+        for part in path {
+            // Encode both component boundaries and the original bytes so distinct
+            // TOML paths cannot collapse to the same generated Rust type name.
+            name.push('P');
+            name.push_str(&part.len().to_string());
+            name.push('X');
+            for byte in part.as_bytes() {
+                name.push_str(&format!("{byte:02X}"));
+            }
+        }
+        name
+    }
+
+    fn props_to_code(key: &str, props: &toml::Value, parent_path: &[&str]) -> String {
         let mut lines = vec![];
         let props = props.as_table().unwrap();
         if let Some(description) = props.get("description") {
@@ -678,38 +697,41 @@ pub struct Settings {"#
             lines.push(format!("    pub {key}: {type_},"));
         } else {
             lines.push("    #[config(nested)]".to_string());
-            lines.push(format!(
-                "    pub {}: Settings{},",
-                key,
-                key.to_upper_camel_case()
-            ));
+            let mut path = parent_path.to_vec();
+            path.push(key);
+            lines.push(format!("    pub {key}: {},", settings_struct_name(&path)));
         }
         lines.join("\n")
-    };
+    }
     for (key, props) in &settings {
-        lines.push(props_to_code(key, props));
+        lines.push(props_to_code(key, props, &[]));
     }
     lines.push("}".to_string());
 
-    let nested_settings = settings
-        .iter()
-        .filter(|(_, v)| !v.as_table().unwrap().contains_key("type"))
-        .collect::<Vec<_>>();
-    for (child, props) in &nested_settings {
-        lines.push(format!(
-            r#"
+    fn emit_nested_settings(lines: &mut Vec<String>, table: &toml::Table, parent_path: &[&str]) {
+        for (child, props) in table
+            .iter()
+            .filter(|(_, value)| !value.as_table().unwrap().contains_key("type"))
+        {
+            let mut path = parent_path.to_vec();
+            path.push(child);
+            lines.push(format!(
+                r#"
 #[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(layer_attr(derive(Clone, Serialize, Default)))]
 #[config(layer_attr(serde(deny_unknown_fields)))]
-pub struct Settings{name} {{"#,
-            name = child.to_upper_camel_case()
-        ));
+pub struct {name} {{"#,
+                name = settings_struct_name(&path)
+            ));
 
-        for (key, props) in props.as_table().unwrap() {
-            lines.push(props_to_code(key, props));
+            for (key, props) in props.as_table().unwrap() {
+                lines.push(props_to_code(key, props, &path));
+            }
+            lines.push("}".to_string());
+            emit_nested_settings(lines, props.as_table().unwrap(), &path);
         }
-        lines.push("}".to_string());
     }
+    emit_nested_settings(&mut lines, &settings, &[]);
 
     lines.push(
         r#"
@@ -717,7 +739,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
     indexmap!{"#
             .to_string(),
     );
-    let push_deprecated_fields = |lines: &mut Vec<String>, props: &toml::Table| {
+    fn push_deprecated_fields(lines: &mut Vec<String>, props: &toml::Table) {
         let deprecated = props
             .get("deprecated")
             .map(|v| v.as_str().unwrap().to_string());
@@ -748,39 +770,16 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                 .get("global_only")
                 .is_some_and(|v| v.as_bool().unwrap())
         ));
-    };
-    for (name, props) in &settings {
-        let props = props.as_table().unwrap();
-        if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
-            // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
-            // Thus, we introduce 'meta_type' here.
-            let meta_type = match type_ {
-                "IndexMap<String, String>" => "IndexMap",
-                other => other,
-            };
-            lines.push(format!(
-                r#"    "{name}" => SettingsMeta {{
-        type_: SettingsType::{meta_type},"#,
-            ));
-            if let Some(description) = props.get("description") {
-                let description = description.as_str().unwrap().to_string();
-                lines.push(format!(
-                    "        description: {},",
-                    raw_string_literal(&description)
-                ));
-            }
-            match props.get("env").and_then(|v| v.as_str()) {
-                Some(env) => lines.push(format!("        env: Some({env:?}),")),
-                None => lines.push("        env: None,".to_string()),
-            }
-            push_deprecated_fields(&mut lines, props);
-            lines.push("    },".to_string());
-        }
     }
-    for (name, props) in &nested_settings {
-        for (key, props) in props.as_table().unwrap() {
-            let props = props.as_table().unwrap();
-            if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+    fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
+        for (key, value) in table {
+            let name = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            let props = value.as_table().unwrap();
+            if let Some(type_) = props.get("type").map(|value| value.as_str().unwrap()) {
                 // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
                 // Thus, we introduce 'meta_type' here.
                 let meta_type = match type_ {
@@ -788,25 +787,28 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                     other => other,
                 };
                 lines.push(format!(
-                    r#"    "{name}.{key}" => SettingsMeta {{
+                    r#"    "{name}" => SettingsMeta {{
         type_: SettingsType::{meta_type},"#,
                 ));
+                if let Some(description) = props.get("description") {
+                    let description = description.as_str().unwrap().to_string();
+                    lines.push(format!(
+                        "        description: {},",
+                        raw_string_literal(&description)
+                    ));
+                }
+                match props.get("env").and_then(|value| value.as_str()) {
+                    Some(env) => lines.push(format!("        env: Some({env:?}),")),
+                    None => lines.push("        env: None,".to_string()),
+                }
+                push_deprecated_fields(lines, props);
+                lines.push("    },".to_string());
+            } else {
+                emit_settings_meta(lines, props, &name);
             }
-            if let Some(description) = props.get("description") {
-                let description = description.as_str().unwrap().to_string();
-                lines.push(format!(
-                    "        description: {},",
-                    raw_string_literal(&description)
-                ));
-            }
-            match props.get("env").and_then(|v| v.as_str()) {
-                Some(env) => lines.push(format!("        env: Some({env:?}),")),
-                None => lines.push("        env: None,".to_string()),
-            }
-            push_deprecated_fields(&mut lines, props);
-            lines.push("    },".to_string());
         }
     }
+    emit_settings_meta(&mut lines, &settings, "");
     lines.push(
         r#"    }
 });

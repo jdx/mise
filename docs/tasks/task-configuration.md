@@ -684,8 +684,8 @@ The existing `--no-cache` option controls fetching remote task definitions inste
 
 #### Remote cache and sensitive data
 
-Configure an experimental remote service with `task.cache_remote_url` and a non-empty
-`task.cache_remote_namespace`. The namespace is an opaque repository or organization identifier;
+Configure the experimental remote build-cache service with `task.cache.remote_url` and a non-empty
+`task.cache.remote_namespace`. The namespace is an opaque repository or organization identifier;
 the server must isolate entries by both namespace and cache key. It is routing metadata, not an
 authentication mechanism or secret. Use a distinct namespace wherever writers should not be able to
 influence one another's cache entries.
@@ -693,14 +693,14 @@ influence one another's cache entries.
 ```mise-toml
 [settings]
 experimental = true
-task.cache_remote_url = "https://cache.example.com/mise/"
-task.cache_remote_namespace = "acme/widgets"
-task.cache_remote_mode = "read-write"
+task.cache.remote_url = "https://cache.example.com/mise/"
+task.cache.remote_namespace = "acme/widgets"
+task.cache.remote_mode = "read-write"
 ```
 
 Set `MISE_TASK_CACHE_REMOTE_TOKEN` in the process environment to send a bearer credential. The
-equivalent `task.cache_remote_token` setting is global-only, but the environment variable is
-preferred so a token does not need to be written to disk. Mise redacts the token from settings trace
+equivalent `task.cache.remote_token` setting is global-only, but the environment variable is
+preferred so a token does not need to be written to disk. mise redacts the token from settings trace
 output and marks its HTTP header as sensitive. It requires HTTPS for non-loopback services; plain
 HTTP is accepted only for local development servers. Servers should still use short-lived,
 least-privilege credentials, restrict namespace access, avoid logging authorization headers, and
@@ -708,9 +708,9 @@ encrypt or otherwise protect stored cache objects according to their sensitivity
 requirements.
 
 For rotating credentials, set `MISE_TASK_CACHE_REMOTE_TOKEN_FILE` to a file containing only the
-bearer token. Mise rereads the file before every request, which supports Kubernetes projected
+bearer token. mise rereads the file before every request, which supports Kubernetes-projected
 service account tokens without restarting a long-running process. The equivalent
-`task.cache_remote_token_file` setting is global-only.
+`task.cache.remote_token_file` setting is global-only.
 
 In GitHub Actions, mise can acquire and refresh a short-lived OIDC token itself. Grant the workflow
 permission to request an identity token and set its audience explicitly:
@@ -731,7 +731,7 @@ jobs:
 ```
 
 The cache service must trust GitHub's issuer, accept the configured audience, and authorize the
-workflow's identity claims for the selected namespace. Mise obtains the token from GitHub's job
+workflow's identity claims for the selected namespace. mise obtains the token from GitHub's job
 OIDC endpoint, keeps it only in memory, and refreshes it before expiry. The audience setting is
 global-only and acquisition fails clearly when the workflow lacks `id-token: write` permission.
 
@@ -741,7 +741,7 @@ providers can supply their issued OIDC token directly through `MISE_TASK_CACHE_R
 do not need a protocol-specific integration.
 
 Task cache entries are not secret-free metadata. They contain captured stdout and stderr plus every
-declared output file. Mise applies its configured output redactions before storing logs, but this is
+declared output file. mise applies its configured output redactions before storing logs, but this is
 not a general secret scanner: a task can print an unknown credential or write one into an output
 artifact. Do not cache such a task unless those values are safe to retain and share with every
 reader of its local and remote cache. Clearing a local entry does not delete copies already uploaded
@@ -922,6 +922,37 @@ retain inherited terminal I/O and conservatively bypass artifact caching.
 Cacheable dependencies contribute their artifact keys to dependent task keys, so a dependent can
 restore the matching artifact after its dependencies execute, skip, or restore. If a dependency
 executes without a stable artifact key, its dependents conservatively execute.
+
+### `rust_cache` <Badge type="warning" text="experimental" />
+
+- **Type**: `boolean | table`
+- **Default**: `false`
+
+Enables Rust compiler action caching only for this task run. `true` and `{}` both enable the default
+configuration; `false` and `{ enabled = false }` disable it. The table form is available from the
+start so future Rust-specific options do not require renaming the field.
+
+```mise-toml
+[tasks.build]
+run = "cargo build"
+rust_cache = true
+```
+
+mise injects compiler integration only into the task's child environment. Shell activation, bare
+`cargo build`, editor processes, and release builds are not intercepted. A top-level
+`mise run` owns the cache session, flushes pending uploads, and reports hits, misses, and transferred
+bytes before it succeeds. Compiler action-key collection and prefetch land with the compiler adapter
+rather than as unused task-manifest fields.
+
+Rust action caching disables incremental compilation for that task run because the two cache models
+are incompatible. This can make a tight local edit-and-build loop slower. Use `rust_cache` for CI,
+cold clones, worktrees, and branch switches; use bare `cargo build` for the local incremental loop.
+Outside CI, action cache sessions read local and remote results but do not upload them.
+
+`rust_cache` is independent of the task result `cache`: action caching can reuse individual compiler
+operations while the task still executes, and task result caching can be used without compiler
+interception. Set `task_config.rust_cache` to provide a scoped default; task-local `false` disables
+that inherited default.
 
 ### `shell`
 
@@ -1168,8 +1199,9 @@ cascade = true
 shell = "bash -c"
 ```
 
-This applies to `dir`, `shell`, `cache`, and `includes`. Inherited include paths remain relative to
-the config root where they were defined, allowing a monorepo root to provide one shared task set.
+This applies to `dir`, `shell`, `cache`, `rust_cache`, and `includes`. Inherited include paths
+remain relative to the config root where they were defined, allowing a monorepo root to provide one
+shared task set.
 
 ### `task_config.dir`
 
@@ -1209,6 +1241,16 @@ Task-local and task-template cache configuration takes precedence, including
 enabled = true
 env = ["NODE_ENV", "CI"]
 command_inputs = ["node --version"]
+```
+
+### `task_config.rust_cache` <Badge type="warning" text="experimental" />
+
+Sets the scoped default for Rust action caching. A task-local or task-template value takes
+precedence; an explicit `false` disables the inherited default.
+
+```toml
+[task_config]
+rust_cache = true
 ```
 
 ### `task_config.global_env` <Badge type="warning" text="experimental" />

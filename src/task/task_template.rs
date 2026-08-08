@@ -2,8 +2,8 @@ use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
-    RunEntry, Silent, Task, TaskCacheConfig, TaskConfirm, TaskDep, TaskOutput, TaskToolValue,
-    TaskWatchOptions,
+    RunEntry, Silent, Task, TaskCacheConfig, TaskConfirm, TaskDep, TaskOutput, TaskRustCacheConfig,
+    TaskToolValue, TaskWatchOptions,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -38,6 +38,8 @@ pub struct TaskTemplate {
     pub outputs: TaskOutputs,
     #[serde(default)]
     pub cache: Option<TaskCacheConfig>,
+    #[serde(default)]
+    pub rust_cache: Option<TaskRustCacheConfig>,
     #[serde(default)]
     pub output: Option<TaskOutput>,
     #[serde(default)]
@@ -180,6 +182,10 @@ impl Task {
 
         if self.cache.is_none() {
             self.cache = template.cache.clone();
+        }
+
+        if self.rust_cache.is_none() {
+            self.rust_cache = template.rust_cache.clone();
         }
 
         // output: use template only if local not set
