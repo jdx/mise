@@ -636,36 +636,63 @@ impl MiseToml {
         Ok(())
     }
 
-    /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
-    /// creating the tables as needed ("latest" means no pin)
+    /// Set the version of `[bootstrap.packages]."<manager>:<package>"`,
+    /// creating the tables as needed ("latest" means no pin). An existing
+    /// inline-table entry keeps its `os` and any other keys — only its
+    /// `version` key is updated in place; everything else is written as a
+    /// plain string.
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
-        self.bootstrap
-            .get_or_insert_with(Default::default)
-            .packages
-            .insert(
-                spec.to_string(),
-                crate::system::PackageEntryToml::Version(version.to_string()),
-            );
-        let mut doc = self.doc_mut()?;
-        let bootstrap = doc
-            .get_mut()
-            .unwrap()
-            .entry("bootstrap")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-        // don't render an empty [bootstrap] header above [bootstrap.packages]
-        bootstrap.set_implicit(true);
-        let packages = bootstrap
-            .entry("packages")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
-        let key = get_key_with_decor(packages, spec);
-        let value_decor = get_value_decor(packages, spec);
-        let mut item = toml_edit::value(version);
-        set_value_decor(&mut item, &value_decor);
-        packages.insert_formatted(&key, item);
+        let updated_table = {
+            let mut doc = self.doc_mut()?;
+            let bootstrap = doc
+                .get_mut()
+                .unwrap()
+                .entry("bootstrap")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            // don't render an empty [bootstrap] header above [bootstrap.packages]
+            bootstrap.set_implicit(true);
+            let packages = bootstrap
+                .entry("packages")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            if let Some(entry) = packages
+                .get_mut(spec)
+                .and_then(|item| item.as_value_mut())
+                .and_then(|value| value.as_inline_table_mut())
+            {
+                let mut new_version: toml_edit::Value = version.into();
+                if let Some(old) = entry.get("version") {
+                    *new_version.decor_mut() = old.decor().clone();
+                }
+                entry.insert("version", new_version);
+                true
+            } else {
+                let key = get_key_with_decor(packages, spec);
+                let value_decor = get_value_decor(packages, spec);
+                let mut item = toml_edit::value(version);
+                set_value_decor(&mut item, &value_decor);
+                packages.insert_formatted(&key, item);
+                false
+            }
+        };
+        let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
+        match packages.get_mut(spec) {
+            Some(crate::system::PackageEntryToml::Table(entry)) if updated_table => {
+                entry.insert(
+                    "version".to_string(),
+                    toml::Value::String(version.to_string()),
+                );
+            }
+            _ => {
+                packages.insert(
+                    spec.to_string(),
+                    crate::system::PackageEntryToml::Version(version.to_string()),
+                );
+            }
+        }
         Ok(())
     }
 
