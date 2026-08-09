@@ -38,6 +38,14 @@ assert_matches \
   "GOPROXY=direct mise install --dry-run 'go:github.com/jdx/go-example/deep/cmd/tool/v2@latest' 2>&1" \
   'go:github.com/jdx/go-example/deep/cmd/tool/v2@2\.0\.0-[0-9]{14}-[0-9a-f]+'
 
+# The parent-path walk below misses before it hits, and `go list` complains to stderr on
+# every miss. That belongs behind --verbose rather than in the default output.
+# See https://github.com/jdx/mise/discussions/5189
+# Runs before the assertion below because a warm version cache would skip `go` entirely.
+assert_not_contains \
+  "GOPROXY=direct mise install --dry-run 'go:github.com/noperator/sol/cmd/sol@latest' 2>&1" \
+  "go: module"
+
 # Package in a subdirectory of an untagged root module; direct mode must walk
 # parent paths to resolve the module's pseudo-version.
 assert_matches \

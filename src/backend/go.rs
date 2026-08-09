@@ -5,7 +5,7 @@ use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::cmd::{CmdLineRunner, cmd};
+use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::hash::hash_to_str;
@@ -18,7 +18,6 @@ use dashmap::DashMap;
 use eyre::{Result, WrapErr};
 use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
-use std::ffi::OsString;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Semaphore;
 use versions::Versioning;
@@ -328,20 +327,29 @@ impl GoBackend {
         cache
             .get_or_try_init_async(async || {
                 let go = self.spawn_program(config, None, "go").await;
-                let raw = match cmd!(
-                    go,
-                    "list",
-                    "-mod=readonly",
-                    "-m",
-                    "-versions",
-                    "-json",
-                    mod_path
+                let raw = match crate::cmd::cmd_read_async(
+                    &go,
+                    &[
+                        "list",
+                        "-mod=readonly",
+                        "-m",
+                        "-versions",
+                        "-json",
+                        mod_path,
+                    ],
+                    self.go_list_env(config).await?,
                 )
-                .full_env(self.go_list_env(config).await?)
-                .read()
+                .await
                 {
                     Ok(raw) => raw,
-                    Err(_) => return Ok(None),
+                    Err(err) => {
+                        // `_list_remote_versions` calls this once per module-path candidate, so a
+                        // valid setup routinely produces misses. `go` writes its own complaint to
+                        // stderr for each one; capturing it into the error keeps the default output
+                        // clean and leaves it readable under `--verbose`.
+                        debug!("go list -versions failed for {mod_path}: {err:#}");
+                        return Ok(None);
+                    }
                 };
 
                 let mod_info = match serde_json::from_str::<GoModInfo>(&raw) {
@@ -370,16 +378,13 @@ impl GoBackend {
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
         let env = self.go_list_env(config).await?;
         let go = self.spawn_program(config, None, "go").await;
-        let raw = cmd!(
-            go,
-            "list",
-            "-mod=readonly",
-            "-m",
-            "-json",
-            format!("{mod_path}@latest")
+        let latest = format!("{mod_path}@latest");
+        let raw = crate::cmd::cmd_read_async(
+            &go,
+            &["list", "-mod=readonly", "-m", "-json", latest.as_str()],
+            env,
         )
-        .full_env(env)
-        .read()
+        .await
         .wrap_err_with(|| format!("failed to resolve latest Go module version for {mod_path}"))?;
         let info = serde_json::from_str::<GoModuleVersionMetadata>(&raw).wrap_err_with(|| {
             format!("failed to parse latest Go module metadata for {mod_path}")
@@ -415,16 +420,21 @@ impl GoBackend {
         let mut metadata_by_version = HashMap::with_capacity(versions.len());
         for chunk in versions.chunks(GO_LIST_VERSION_INFO_BATCH_SIZE) {
             let mut args = vec![
-                OsString::from("list"),
-                OsString::from("-mod=readonly"),
-                OsString::from("-m"),
-                OsString::from("-json"),
+                "list".to_string(),
+                "-mod=readonly".to_string(),
+                "-m".to_string(),
+                "-json".to_string(),
             ];
             for version in chunk {
-                args.push(format!("{mod_path}@{version}").into());
+                args.push(format!("{mod_path}@{version}"));
             }
-            let Ok(raw) = cmd(&go, args).full_env(&env).read() else {
-                continue;
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            let raw = match crate::cmd::cmd_read_async(&go, &args, &env).await {
+                Ok(raw) => raw,
+                Err(err) => {
+                    debug!("go list metadata batch failed for {mod_path}: {err:#}");
+                    continue;
+                }
             };
             let Ok(infos) = Deserializer::from_str(&raw)
                 .into_iter::<GoModuleVersionMetadata>()
