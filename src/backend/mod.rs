@@ -2671,9 +2671,10 @@ pub trait Backend: Debug + Send + Sync {
         // Handle dry-run mode early to avoid plugin installation
         if ctx.dry_run {
             use crate::ui::progress_report::ProgressIcon;
-            let satisfied = self
-                .is_install_satisfied_or_false(&ctx.config, &tv, true)
-                .await
+            let satisfied = !ctx.force
+                && self
+                    .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                    .await
                 && !rolling_reinstall;
             tv.install_satisfied = Some(satisfied);
             if satisfied {

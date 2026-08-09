@@ -36,7 +36,8 @@ pub struct Install {
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
-    #[clap(long, short, requires = "tool")]
+    /// With no tools specified, reinstall all configured tools
+    #[clap(long, short, verbatim_doc_comment)]
     force: bool,
 
     /// Number of jobs to run in parallel
@@ -492,15 +493,24 @@ impl Install {
             // This will error with a proper message like "tool not found in mise tool registry"
             ba.backend()?;
         }
-        let missing = measure!("fetching missing runtimes", {
-            trs.missing_tools(&install_config)
-                .await
-                .into_iter()
-                .cloned()
-                .collect_vec()
+        let requests = measure!("fetching install runtimes", {
+            if self.force {
+                trs.tools
+                    .values()
+                    .flatten()
+                    .filter(|tr| tr.is_os_supported() && !matches!(tr, ToolRequest::System { .. }))
+                    .cloned()
+                    .collect_vec()
+            } else {
+                trs.missing_tools(&install_config)
+                    .await
+                    .into_iter()
+                    .cloned()
+                    .collect_vec()
+            }
         });
-        let has_missing = !missing.is_empty();
-        let (versions, install_error) = if missing.is_empty() {
+        let has_work = !requests.is_empty();
+        let (versions, install_error) = if requests.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
                 // Nothing was installed, but postinstall still runs (idempotent
@@ -534,13 +544,13 @@ impl Install {
             let mut ts = Toolset::from(trs.clone());
             measure!("install_all_versions", {
                 split_install_result(
-                    ts.install_all_versions(&mut install_config, missing, &self.install_opts()?)
+                    ts.install_all_versions(&mut install_config, requests, &self.install_opts()?)
                         .await,
                 )
             })
         };
         if self.is_dry_run() {
-            if self.dry_run_code && has_missing {
+            if self.dry_run_code && has_work {
                 return Err(exit::request(1));
             }
             return install_error;

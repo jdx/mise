@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = ["1.0.0", "2.1.0", "system"]
+dummy = "1.0.0"
+
+[hooks]
+preinstall = "printf 'pre\\n' >> hooks.log"
+postinstall = "printf 'post:%s\\n' \"$MISE_INSTALLED_TOOLS\" >> hooks.log"
+EOF
+
+mise install
+
+tiny_1="$MISE_DATA_DIR/installs/tiny/1.0.0/force-marker"
+tiny_2="$MISE_DATA_DIR/installs/tiny/2.1.0/force-marker"
+dummy_1="$MISE_DATA_DIR/installs/dummy/1.0.0/force-marker"
+
+touch "$tiny_1" "$tiny_2" "$dummy_1"
+
+# A normal bare install remains a no-op for already-installed tools.
+mise install
+assert "test -f '$tiny_1'"
+assert "test -f '$tiny_2'"
+assert "test -f '$dummy_1'"
+
+# An explicit force continues to reinstall only the selected tool version.
+mise install --force tiny@1.0.0
+assert_fail "test -f '$tiny_1'"
+assert "test -f '$tiny_2'"
+assert "test -f '$dummy_1'"
+touch "$tiny_1"
+
+# A forced dry-run reports every configured version without changing installs.
+dry_run_output=$(mise install --force --dry-run 2>&1)
+grep -Fq "tiny@1.0.0" <<<"$dry_run_output"
+grep -Fq "tiny@2.1.0" <<<"$dry_run_output"
+grep -Fq "dummy@1.0.0" <<<"$dry_run_output"
+grep -Fq "would install" <<<"$dry_run_output"
+if grep -Fq "tiny@system" <<<"$dry_run_output"; then
+  fail "force dry-run must not attempt to reinstall system requests"
+fi
+assert "test -f '$tiny_1'"
+assert "test -f '$tiny_2'"
+assert "test -f '$dummy_1'"
+assert_fail "mise install --force --dry-run-code"
+
+# A bare force reinstalls every configured version and reports them to hooks.
+rm -f hooks.log
+mise install --force
+assert_fail "test -f '$tiny_1'"
+assert_fail "test -f '$tiny_2'"
+assert_fail "test -f '$dummy_1'"
+assert "test \"$(grep -c '^pre$' hooks.log)\" -eq 1"
+assert "test \"$(grep -c '^post:' hooks.log)\" -eq 1"
+assert_contains "cat hooks.log" '"name":"tiny","version":"1.0.0"'
+assert_contains "cat hooks.log" '"name":"tiny","version":"2.1.0"'
+assert_contains "cat hooks.log" '"name":"dummy","version":"1.0.0"'
+assert_not_contains "cat hooks.log" '"version":"system"'

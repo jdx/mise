@@ -1932,7 +1932,10 @@ Examples:
     $ mise install              # installs everything specified in mise.toml
 
 """#
-    flag "-f --force" help="Force reinstall even if already installed"
+    flag "-f --force" help=#"""
+Force reinstall even if already installed
+With no tools specified, reinstall all configured tools
+"""#
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
 Values below 1 are treated as 1
