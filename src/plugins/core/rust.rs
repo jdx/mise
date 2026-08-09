@@ -10,6 +10,7 @@ use crate::cmd::{CmdLineRunner, cmd};
 use crate::config::{Config, Settings};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lock_file::LockFile;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -105,7 +106,21 @@ impl RustPlugin {
 
     async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         let settings = Settings::get();
-        if rustup_home().join("settings.toml").exists() && cargo_bin().exists() {
+        if rustup_is_initialized() {
+            return Ok(());
+        }
+        let _installer_lock = tokio::task::spawn_blocking(|| {
+            LockFile::new(&rustup_path())
+                .with_callback(|path| {
+                    debug!(
+                        "waiting for rustup-init lock on {}",
+                        file::display_path(path)
+                    );
+                })
+                .lock()
+        })
+        .await??;
+        if rustup_is_initialized() {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
@@ -349,6 +364,7 @@ impl Backend for RustPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let _state_locks = lock_rust_state().await?;
         self.setup_rustup(ctx, &tv).await?;
         let ts = ctx.config.get_toolset().await?;
 
@@ -573,6 +589,41 @@ fn rustup_url(settings: &Settings) -> String {
 
 fn rustup_path() -> PathBuf {
     dirs::CACHE.join("rust").join(RUSTUP_INIT_BIN)
+}
+
+fn rustup_is_initialized() -> bool {
+    rustup_home().join("settings.toml").exists() && cargo_bin().exists()
+}
+
+fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<PathBuf> {
+    let mut identities = vec![
+        file::desymlink_path(rustup_home),
+        file::desymlink_path(cargo_home),
+    ];
+    identities.sort();
+    identities.dedup();
+    identities
+}
+
+async fn lock_rust_state() -> Result<Vec<fslock::LockFile>> {
+    let identities = rust_state_lock_identities(&rustup_home(), &cargo_home());
+    tokio::task::spawn_blocking(move || {
+        identities
+            .into_iter()
+            .map(|identity| {
+                let display_identity = identity.clone();
+                LockFile::new(&identity)
+                    .with_callback(move |_| {
+                        debug!(
+                            "waiting for Rust state lock on {}",
+                            file::display_path(&display_identity)
+                        );
+                    })
+                    .lock()
+            })
+            .collect()
+    })
+    .await?
 }
 
 fn rustup_home() -> PathBuf {
@@ -881,6 +932,52 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
         assert_eq!(
             resolve_rust_home(PathBuf::from("~/.rustup-custom")),
             dirs::HOME.join(".rustup-custom")
+        );
+    }
+
+    #[test]
+    fn rust_state_locks_are_shared_by_either_home() {
+        let first = rust_state_lock_identities(Path::new("/rustup/shared"), Path::new("/cargo/a"));
+        let same_rustup =
+            rust_state_lock_identities(Path::new("/rustup/shared"), Path::new("/cargo/b"));
+        let same_cargo =
+            rust_state_lock_identities(Path::new("/rustup/other"), Path::new("/cargo/a"));
+        let separate =
+            rust_state_lock_identities(Path::new("/rustup/other"), Path::new("/cargo/b"));
+
+        assert!(first.iter().any(|identity| same_rustup.contains(identity)));
+        assert!(first.iter().any(|identity| same_cargo.contains(identity)));
+        assert!(!first.iter().any(|identity| separate.contains(identity)));
+    }
+
+    #[test]
+    fn rust_state_locks_are_ordered_and_deduplicated() {
+        let cargo = file::desymlink_path(Path::new("/a/cargo"));
+        let rustup = file::desymlink_path(Path::new("/z/rustup"));
+        assert_eq!(
+            rust_state_lock_identities(Path::new("/z/rustup"), Path::new("/a/cargo")),
+            vec![cargo, rustup]
+        );
+        assert_eq!(
+            rust_state_lock_identities(Path::new("/shared"), Path::new("/shared")),
+            vec![file::desymlink_path(Path::new("/shared"))]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rust_state_locks_resolve_filesystem_aliases() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        let alias = root.path().join("alias");
+        std::fs::create_dir_all(&state).unwrap();
+        symlink(&state, &alias).unwrap();
+
+        assert_eq!(
+            rust_state_lock_identities(&state, &state),
+            rust_state_lock_identities(&alias, &alias)
         );
     }
 }
