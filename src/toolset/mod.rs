@@ -37,6 +37,7 @@ pub use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
 };
 pub use tool_source::ToolSource;
+pub(crate) use tool_version::resolve_sub_base;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_options::{

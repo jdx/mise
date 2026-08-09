@@ -12,6 +12,22 @@ assert "mise ls-remote dummy@2" "2.0.0"
 assert "mise ls-remote dummy@sub-1:2" "1.0.0
 1.1.0"
 
+# The base of a `sub-N:` spec may be an alias. It has to be resolved before subtracting —
+# passing it through raw used to panic here while `use`/`install` handled it fine.
+mise alias set dummy lts 2
+assert "mise ls-remote dummy@sub-1:lts" "1.0.0
+1.1.0"
+mise alias unset dummy lts
+
+# `latest` is not subtractable either, and an alias may resolve to it, so the alias has to
+# be resolved before the `latest` check rather than after it. dummy's latest is 2.0.0.
+assert "mise ls-remote dummy@sub-1:latest" "1.0.0
+1.1.0"
+mise alias set dummy stable latest
+assert "mise ls-remote dummy@sub-1:stable" "1.0.0
+1.1.0"
+mise alias unset dummy stable
+
 # Date filtering should happen after reading the cached full remote version list.
 # Running two cutoffs back-to-back catches regressions where the first filtered
 # result is cached and reused for the second query.
