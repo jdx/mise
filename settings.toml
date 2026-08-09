@@ -133,6 +133,18 @@ direct URL to a `registry.yaml` or `registry.yml` file, or an absolute `file://`
 registry directory or file. For repository and directory sources, mise loads `registry.yaml` from
 the source root and falls back to `registry.yml` if needed.
 
+A source that is not a URL is read as a filesystem path, resolved against the config root of the
+file that declared it. This is how you reference a registry committed alongside the project:
+
+```toml
+[settings]
+aqua.registries = ["registry.yaml"]
+```
+
+Path resolution applies only to sources set in a config file, since only those have a config root
+to resolve against. A path given via `MISE_AQUA_REGISTRIES` or the CLI must be an absolute
+`file://` URL.
+
 Downloaded registries are cached according to `aqua.registry_cache_ttl`, which defaults to one
 week. To refresh sooner, run `mise cache clear`, set `aqua.registry_cache_ttl = "0s"`, or change
 `MISE_CACHE_DIR` to use a different cache location. Local `file://` sources bypass the downloaded
