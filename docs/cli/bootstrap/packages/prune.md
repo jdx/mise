@@ -7,19 +7,20 @@
 
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning removes linked formulae
-that are not needed by the current config or by trusted, loadable tracked
-configs.
+Supports Homebrew formulae and conservatively removable, mise-owned casks.
+Pruning keeps packages needed by the current config or by trusted, loadable
+tracked configs.
 
 ## Flags
 
 ### `-m --manager <MANAGER>`
 
-Only prune packages for this manager. Currently only `brew` is supported
+Only prune packages for this manager
 
 **Choices:**
 
 - `brew`
+- `brew-cask`
 
 **Default:** `brew`
 
@@ -37,4 +38,5 @@ Examples:
 mise bootstrap packages prune --manager brew
 mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
+mise bootstrap packages prune --manager brew-cask --dry-run
 ```

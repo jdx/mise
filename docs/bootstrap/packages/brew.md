@@ -201,6 +201,21 @@ This command is mise's declarative cleanup for bootstrap packages, similar to
 [`brew bundle cleanup`](https://docs.brew.sh/Manpage). It is not upstream
 `brew prune`, which Homebrew removed in favor of cleanup commands.
 
+`mise bootstrap packages prune --manager brew-cask` applies the same merged
+config model to direct cask artifacts, with a deliberately narrower ownership
+boundary. A cask is removed only when its install-time `.mise-cask.toml`
+receipt explicitly marks it safe to prune and every recorded target still has
+the exact content fingerprint mise recorded after installation. The command
+removes those targets and the cask's Caskroom entry; `--dry-run` previews the
+plan and `--yes` skips confirmation.
+
+Casks installed before their receipt included prune metadata are skipped until
+a later upgrade or reinstall refreshes the receipt. Casks with pkg artifacts,
+install or uninstall lifecycle actions, pending transactions, Homebrew
+`.metadata`, changed targets, or targets shared with another mise cask are also
+skipped with a reason. Prune never runs `zap` metadata and never reconstructs
+historical uninstall behavior from the current Homebrew API.
+
 ## How pouring works
 
 For each formula in the dependency closure (dependencies first):
@@ -281,8 +296,10 @@ operation.
   `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
   IDs, and pkg installers with custom choices fail explicitly.
 - **`brew services` is not implemented.**
-- **Cask import/prune is not implemented.** `import` and `prune` are formulae-only
-  until cask uninstall semantics can be made safe for app and pkg artifacts.
+- **Cask import is not implemented.** Cask prune is limited to mise-owned direct
+  artifacts whose install-time receipt proves they can be removed safely. Pkg
+  artifacts and casks with lifecycle actions are skipped until their uninstall
+  semantics are supported.
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail
