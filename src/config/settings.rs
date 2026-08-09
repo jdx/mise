@@ -9,6 +9,7 @@ use confique::{Config, Layer};
 use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use serde::Serialize;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer, Serializer};
@@ -496,6 +497,59 @@ fn should_warn_ignored_global_only_value(value: &toml::Value) -> bool {
     !matches!(value, toml::Value::String(s) if s.is_empty())
 }
 
+/// `aqua.registries` entries must be URLs — `github_repo_slug` requires a
+/// parseable `https` URL, and anything else fails later with `relative URL
+/// without a base`. A value that is not a URL is therefore dead today, so
+/// reading it as a path relative to the config file that declared it is a pure
+/// widening: it lets a registry committed alongside the project be referenced
+/// portably, without changing any config that works now. See discussion #4306.
+///
+/// Returns `None` when the value should be left as written.
+fn resolve_registry_source(value: &str, config_root: &Path) -> Option<String> {
+    let looks_like_path = match Url::parse(value) {
+        Err(_) => true,
+        // A Windows path such as `C:\registry.yaml` parses as a URL whose scheme
+        // is the drive letter. No real URL scheme is a single character.
+        Ok(url) => url.scheme().len() == 1,
+    };
+    if !looks_like_path {
+        return None;
+    }
+    // Joining an absolute path returns it unchanged, so absolute entries are
+    // normalized rather than rebased onto the config root.
+    let joined = config_root.join(value);
+    let absolute = joined
+        .absolutize()
+        .map(|p| p.into_owned())
+        .unwrap_or(joined);
+    // Leave the value alone if it cannot be expressed as a file URL rather than
+    // substituting something the user did not write.
+    Url::from_file_path(&absolute).ok().map(String::from)
+}
+
+/// Rewrite relative `aqua.registries` entries so they resolve against the config
+/// root of the file that declared them. Both `aqua.registries = [..]` under
+/// `[settings]` and `[settings.aqua]` + `registries = [..]` parse to the same
+/// nested table, so navigating the table covers either spelling.
+fn resolve_aqua_registry_paths(settings: &mut toml::Table, path: &Path) {
+    let Some(registries) = settings
+        .get_mut("aqua")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|aqua| aqua.get_mut("registries"))
+        .and_then(toml::Value::as_array_mut)
+    else {
+        return;
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    for entry in registries.iter_mut() {
+        if let Some(value) = entry.as_str()
+            && let Some(resolved) = resolve_registry_source(value, &config_root)
+        {
+            *entry = toml::Value::String(resolved);
+        }
+    }
+}
+
 impl Settings {
     const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
     const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -c -o errexit";
@@ -823,6 +877,9 @@ impl Settings {
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));
             strip_env_only_settings(settings, path);
+            // After the strips, so a setting that will not survive them is
+            // never rewritten.
+            resolve_aqua_registry_paths(settings, path);
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -1786,6 +1843,114 @@ mod tests {
         let partial = Settings::parse_settings_file(&path).unwrap();
 
         assert_eq!(partial.tera_v1, Some(false));
+    }
+
+    /// Run the rewrite over a `[settings]` block and return the resulting
+    /// `aqua.registries` entries, as `parse_settings_file` would see them.
+    fn rewritten_registries(dir: &Path, body: &str) -> Vec<String> {
+        let mut settings = toml::from_str::<toml::Table>(body).unwrap();
+        resolve_aqua_registry_paths(&mut settings, &dir.join(".mise.toml"));
+        settings["aqua"]["registries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// discussion #4306: a registry committed next to the project could not be
+    /// referenced, because a relative entry failed as `relative URL without a
+    /// base`.
+    #[test]
+    fn relative_aqua_registry_resolves_against_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(dir.path(), r#"aqua.registries = ["registry.yaml"]"#);
+
+        let expected = Url::from_file_path(dir.path().join("registry.yaml"))
+            .unwrap()
+            .to_string();
+        assert_eq!(registries, vec![expected]);
+    }
+
+    /// `aqua.registries = [..]` and `[aqua]` + `registries = [..]` parse to the
+    /// same nested table, so both spellings must be picked up.
+    #[test]
+    fn table_form_registries_also_resolve() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(
+            dir.path(),
+            r#"
+            [aqua]
+            registries = ["registry.yaml"]
+            "#,
+        );
+
+        let expected = Url::from_file_path(dir.path().join("registry.yaml"))
+            .unwrap()
+            .to_string();
+        assert_eq!(registries, vec![expected]);
+    }
+
+    #[test]
+    fn absolute_registry_urls_are_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(
+            dir.path(),
+            r#"
+            aqua.registries = [
+              "https://github.com/aquaproj/aqua-registry",
+              "file:///somewhere/registry.yaml",
+            ]
+            "#,
+        );
+
+        assert_eq!(
+            registries,
+            vec![
+                "https://github.com/aquaproj/aqua-registry".to_string(),
+                "file:///somewhere/registry.yaml".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parent_relative_registry_path_is_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(
+            dir.path(),
+            r#"aqua.registries = ["../shared/registry.yaml"]"#,
+        );
+
+        assert!(
+            !registries[0].contains(".."),
+            "expected `..` to be normalized away, got {}",
+            registries[0]
+        );
+    }
+
+    #[test]
+    fn registries_without_aqua_table_are_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = toml::from_str::<toml::Table>("offline = true").unwrap();
+        resolve_aqua_registry_paths(&mut settings, &dir.path().join(".mise.toml"));
+        assert_eq!(settings["offline"].as_bool(), Some(true));
+    }
+
+    /// A drive-letter path parses as a URL whose scheme is one character, so it
+    /// must not be mistaken for an absolute URL and left unusable.
+    #[cfg(windows)]
+    #[test]
+    fn windows_drive_registry_path_is_treated_as_a_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries =
+            rewritten_registries(dir.path(), r#"aqua.registries = ['C:\reg\registry.yaml']"#);
+
+        assert_eq!(registries.len(), 1);
+        assert!(
+            registries[0].starts_with("file:///C:/reg/"),
+            "expected a file URL, got {}",
+            registries[0]
+        );
     }
 
     #[test]
