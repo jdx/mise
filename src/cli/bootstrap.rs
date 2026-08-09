@@ -2776,6 +2776,7 @@ impl BootstrapStatus {
                     PackageState::VersionMismatch { installed } => {
                         (installed.clone(), "version mismatch", None, true)
                     }
+                    #[cfg(unix)]
                     PackageState::Unavailable { reason } => {
                         ("".to_string(), "skipped", Some(reason.as_str()), false)
                     }

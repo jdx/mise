@@ -595,6 +595,7 @@ fn package_resource_state(
             ResourceAction::Unknown,
         ),
         PackageState::VersionMismatch { installed } => (installed, ResourceAction::Update),
+        #[cfg(unix)]
         PackageState::Unavailable { reason } => {
             (format!("skipped ({reason})"), ResourceAction::Unknown)
         }

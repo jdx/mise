@@ -502,8 +502,7 @@ impl Doctor {
                             !matches!(
                                 s.state,
                                 crate::system::packages::PackageState::Installed { .. }
-                                    | crate::system::packages::PackageState::Unavailable { .. }
-                            )
+                            ) && !s.state.is_unavailable()
                         })
                         .count();
                     total_missing += missing;
@@ -734,8 +733,7 @@ impl Doctor {
                             !matches!(
                                 s.state,
                                 crate::system::packages::PackageState::Installed { .. }
-                                    | crate::system::packages::PackageState::Unavailable { .. }
-                            )
+                            ) && !s.state.is_unavailable()
                         })
                         .count();
                     lines.push(format!(

@@ -49,10 +49,9 @@ fn unavailable_package_reason<'a>(
     if d.manager.is_none() && !d.explicit {
         return None;
     }
-    statuses.iter().find_map(|status| match &status.state {
-        PackageState::Unavailable { reason } => Some(reason.as_str()),
-        _ => None,
-    })
+    statuses
+        .iter()
+        .find_map(|status| status.state.unavailable_reason())
 }
 
 /// Run `action` for every manager in `mgrs`, honoring the `--manager` filter,
@@ -114,17 +113,15 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         let mut targets: Vec<_> = statuses
             .iter()
             .filter(|s| match action {
-                Action::Install => !matches!(
-                    s.state,
-                    PackageState::Installed { .. } | PackageState::Unavailable { .. }
-                ),
+                Action::Install => {
+                    !matches!(s.state, PackageState::Installed { .. }) && !s.state.is_unavailable()
+                }
                 // upgrade acts on whatever is present (the manager no-ops
                 // already-current packages); missing packages are skipped
                 // below with a pointer at `install`
-                Action::Upgrade => !matches!(
-                    s.state,
-                    PackageState::Missing | PackageState::Unavailable { .. }
-                ),
+                Action::Upgrade => {
+                    !matches!(s.state, PackageState::Missing) && !s.state.is_unavailable()
+                }
             })
             .collect();
         let missing = statuses
@@ -194,7 +191,9 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                         | PackageState::VersionMismatch { installed: version } => {
                             Some((s.request.name.clone(), version.clone()))
                         }
-                        PackageState::Missing | PackageState::Unavailable { .. } => None,
+                        PackageState::Missing => None,
+                        #[cfg(unix)]
+                        PackageState::Unavailable { .. } => None,
                     })
                     .collect();
                 mp.manager.upgrade(&targets, &opts).await?;
@@ -210,7 +209,9 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                                 (old != version)
                                     .then(|| format!("{} {old} -> {version}", s.request.name))
                             }
-                            PackageState::Missing | PackageState::Unavailable { .. } => None,
+                            PackageState::Missing => None,
+                            #[cfg(unix)]
+                            PackageState::Unavailable { .. } => None,
                         })
                         .collect();
                     if changed.is_empty() {
@@ -230,6 +231,7 @@ mod tests {
     use super::*;
     use crate::system::packages::PackageRequest;
 
+    #[cfg(unix)]
     #[test]
     fn use_allows_unavailable_manager_but_rejects_unavailable_package() {
         let opts = DriverOpts {

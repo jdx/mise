@@ -62,16 +62,34 @@ pub enum PackageState {
     },
     /// The manager is available on this host, but this individual package is
     /// not supported on the current platform.
+    #[cfg(unix)]
     Unavailable {
         reason: String,
     },
 }
 
 impl PackageState {
+    #[cfg(unix)]
     pub fn unavailable(reason: impl Into<String>) -> Self {
         Self::Unavailable {
             reason: reason.into(),
         }
+    }
+
+    pub fn is_unavailable(&self) -> bool {
+        #[cfg(unix)]
+        if matches!(self, Self::Unavailable { .. }) {
+            return true;
+        }
+        false
+    }
+
+    pub fn unavailable_reason(&self) -> Option<&str> {
+        #[cfg(unix)]
+        if let Self::Unavailable { reason } = self {
+            return Some(reason);
+        }
+        None
     }
 }
 

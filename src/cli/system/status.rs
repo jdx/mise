@@ -68,6 +68,7 @@ impl SystemStatus {
                         any_missing = true;
                         (installed.clone(), "version mismatch", None)
                     }
+                    #[cfg(unix)]
                     PackageState::Unavailable { reason } => {
                         ("".to_string(), "skipped", Some(reason.as_str()))
                     }
