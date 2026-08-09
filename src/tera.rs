@@ -1046,6 +1046,9 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
             ))
         },
     );
+    // Override v1's builtins, which drop `pat` silently. See tera1_trim_filter.
+    tera.register_filter("trim_start", tera1_trim_filter(TrimSide::Start));
+    tera.register_filter("trim_end", tera1_trim_filter(TrimSide::End));
     tera.register_filter(
         "last_modified",
         move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
@@ -1184,6 +1187,37 @@ fn tera1_path_filter(
     move |value, _| {
         let p = f(Path::new(json_path(value)?)).map_err(|e| tera1_err(e.to_string()))?;
         Ok(json!(p.to_string_lossy().to_string()))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TrimSide {
+    Start,
+    End,
+}
+
+/// Tera v2 accepts an optional `pat` on `trim_start`/`trim_end`, and that is the
+/// spelling mise recommends — `trim_start_matches`/`trim_end_matches` are only
+/// registered on v2 as deprecated aliases pointing at it. v1's builtins take no
+/// `pat` and ignore it silently, so a template written the recommended way
+/// becomes a no-op under `tera_v1` rather than failing loudly. Registry entries
+/// depend on it (azd, clickhouse, magika).
+///
+/// Without `pat` this keeps v1's existing whitespace-trimming behavior.
+fn tera1_trim_filter(
+    side: TrimSide,
+) -> impl Fn(&JsonValue, &HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |value, args| {
+        let s = value
+            .as_str()
+            .ok_or_else(|| tera1_err("trim filters expect a string"))?;
+        let trimmed = match (args.get("pat").and_then(JsonValue::as_str), side) {
+            (Some(pat), TrimSide::Start) => s.trim_start_matches(pat),
+            (Some(pat), TrimSide::End) => s.trim_end_matches(pat),
+            (None, TrimSide::Start) => s.trim_start(),
+            (None, TrimSide::End) => s.trim_end(),
+        };
+        Ok(json!(trimmed))
     }
 }
 
@@ -2044,6 +2078,25 @@ mod tests {
         render_str(&mut tera, s, &tera_ctx).unwrap()
     }
 
+    /// Render through the v1 engine explicitly. `render` goes through
+    /// `get_tera`, which picks the engine from settings; selecting v1 here
+    /// directly keeps these tests from mutating process-wide state.
+    fn render_v1(s: &str) -> String {
+        let mut tera = TeraEngine::V1(Box::new(get_tera_v1(None)));
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("cwd", "/");
+        render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
+    /// The v2 counterpart of [`render_v1`]. A cross-engine comparison must pin
+    /// both sides, or with `tera_v1` set it would compare v1 against itself.
+    fn render_v2(s: &str) -> String {
+        let mut tera = TeraEngine::V2(Box::new(get_tera_v2(None)));
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("cwd", "/");
+        render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
     #[test]
     fn test_tera_v1_setting_selects_v1_engine() {
         let _guard = SettingsGuard::tera_v1();
@@ -2179,6 +2232,40 @@ mod tests {
         );
         assert_eq!(render("{{ {'ok': true} is object }}"), "true");
         assert_eq!(render("{{ 6 is divisibleby(divisor=3) }}"), "true");
+    }
+
+    /// v1's builtin `trim_start`/`trim_end` take no `pat` and drop it silently,
+    /// which turned the spelling mise recommends into a no-op under `tera_v1`.
+    /// Failing here also means the v1 builtins can no longer be overridden.
+    #[test]
+    fn test_tera_v1_trim_honors_pat() {
+        assert_eq!(render_v1("{{ 'v1.2.3' | trim_start(pat='v') }}"), "1.2.3");
+        assert_eq!(
+            render_v1("{{ '3.27.2-stable' | trim_end(pat='-stable') }}"),
+            "3.27.2"
+        );
+        // A pattern that is not present leaves the value alone, as in v2.
+        assert_eq!(
+            render_v1("{{ '1.2.3' | trim_end(pat='-stable') }}"),
+            "1.2.3"
+        );
+    }
+
+    /// Without `pat` these must keep trimming whitespace, as v1 always has.
+    #[test]
+    fn test_tera_v1_trim_without_pat_still_trims_whitespace() {
+        assert_eq!(render_v1("[{{ '  x  ' | trim_start }}]"), "[x  ]");
+        assert_eq!(render_v1("[{{ '  x  ' | trim_end }}]"), "[  x]");
+    }
+
+    /// The engines must agree on the shape registry entries use (azd,
+    /// clickhouse, magika), so a template does not silently render differently
+    /// under `tera_v1`.
+    #[test]
+    fn test_tera_engines_agree_on_the_registry_trim_pattern() {
+        let template = "{{ '3.27.2-stable' | trim_end(pat='-stable') }}-stable";
+        assert_eq!(render_v2(template), "3.27.2-stable");
+        assert_eq!(render_v1(template), "3.27.2-stable");
     }
 
     #[test]
