@@ -4,11 +4,13 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// A validated, content-addressed store on the local filesystem.
 #[derive(Debug, Clone)]
 pub struct LocalCas {
     root: PathBuf,
 }
 
+/// A local index from action digests to their referenced cache objects.
 #[derive(Debug, Clone)]
 pub struct LocalActionCache {
     root: PathBuf,
@@ -16,14 +18,17 @@ pub struct LocalActionCache {
 }
 
 impl LocalCas {
+    /// Create a local content-addressed store beneath `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
 
+    /// Return the root shared by this store and its action-result index.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Resolve the storage path for a validated digest.
     pub fn path_for(&self, digest: &CacheDigest) -> Result<PathBuf> {
         digest.validate()?;
         Ok(self
@@ -34,6 +39,7 @@ impl LocalCas {
             .join(format!("{}-{}", digest.hash, digest.size)))
     }
 
+    /// Find and verify a stored object.
     pub fn find(&self, digest: &CacheDigest) -> Result<Option<PathBuf>> {
         let path = self.path_for(digest)?;
         if !path.exists() {
@@ -48,6 +54,7 @@ impl LocalCas {
         Ok(Some(path))
     }
 
+    /// Atomically store bytes after verifying their declared digest.
     pub fn store_bytes(&self, digest: &CacheDigest, bytes: &[u8]) -> Result<PathBuf> {
         if !digest.matches_bytes(bytes)? {
             bail!("bytes do not match the declared CAS digest");
@@ -58,6 +65,7 @@ impl LocalCas {
         })
     }
 
+    /// Atomically store a file after verifying its declared digest.
     pub fn store_file(&self, digest: &CacheDigest, source: &Path) -> Result<PathBuf> {
         if !digest.matches_file(source)? {
             bail!(
@@ -100,6 +108,7 @@ impl LocalCas {
 }
 
 impl LocalActionCache {
+    /// Create an action-result index beneath `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         let root = root.into();
         Self {
@@ -108,6 +117,7 @@ impl LocalActionCache {
         }
     }
 
+    /// Resolve the storage path for an action digest.
     pub fn path_for(&self, action: &CacheDigest) -> Result<PathBuf> {
         action.validate()?;
         if action.algorithm != "blake3" {
@@ -121,6 +131,7 @@ impl LocalActionCache {
             .join(format!("{}-{}.json", action.hash, action.size)))
     }
 
+    /// Find and strictly validate a canonical action result.
     pub fn find(&self, action: &CacheDigest) -> Result<Option<RemoteActionResult>> {
         let path = self.path_for(action)?;
         if !path.exists() {
@@ -134,6 +145,7 @@ impl LocalActionCache {
         Ok(Some(result))
     }
 
+    /// Atomically publish an action result after validating all referenced objects.
     pub fn store(&self, result: &RemoteActionResult) -> Result<PathBuf> {
         if result.version != 1 {
             bail!("unsupported local action result version");
@@ -151,12 +163,16 @@ impl LocalActionCache {
             }
         }
         let destination = self.path_for(&result.action)?;
-        if let Some(existing) = self.find(&result.action)? {
-            if existing == *result {
-                return Ok(destination);
+        let replace_invalid = match self.find(&result.action) {
+            Ok(Some(existing)) => {
+                if existing == *result {
+                    return Ok(destination);
+                }
+                bail!("local action key already has a different result");
             }
-            bail!("local action key already has a different result");
-        }
+            Ok(None) => false,
+            Err(_) => true,
+        };
         let parent = destination
             .parent()
             .expect("action-result path has a parent");
@@ -165,6 +181,12 @@ impl LocalActionCache {
         temporary.write_all(&canonical_json(result)?)?;
         temporary.flush()?;
         temporary.as_file().sync_all()?;
+        if replace_invalid {
+            temporary
+                .persist(&destination)
+                .map_err(|error| error.error)?;
+            return Ok(destination);
+        }
         match temporary.persist_noclobber(&destination) {
             Ok(_) => Ok(destination),
             Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => self
@@ -225,6 +247,28 @@ mod tests {
         cas.store_bytes(&metadata, b"metadata").unwrap();
         cas.store_bytes(&output_root, b"directory").unwrap();
         actions.store(&result).unwrap();
+        assert_eq!(actions.find(&action).unwrap(), Some(result));
+    }
+
+    #[test]
+    fn atomically_replaces_a_corrupt_action_result() {
+        let directory = tempfile::tempdir().unwrap();
+        let cas = LocalCas::new(directory.path());
+        let actions = LocalActionCache::new(directory.path());
+        let action = CacheDigest::blake3(b"action");
+        let result = RemoteActionResult {
+            action: action.clone(),
+            metadata: None,
+            output_root: None,
+            version: 1,
+        };
+        cas.store_bytes(&action, b"action").unwrap();
+        let path = actions.path_for(&action).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"truncated").unwrap();
+
+        assert!(actions.find(&action).is_err());
+        assert_eq!(actions.store(&result).unwrap(), path);
         assert_eq!(actions.find(&action).unwrap(), Some(result));
     }
 }

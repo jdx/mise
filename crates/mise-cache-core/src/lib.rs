@@ -177,6 +177,7 @@ fn hash_file_sha256(path: &Path) -> Result<(String, u64)> {
     Ok((hex::encode(hasher.finalize()), size))
 }
 
+/// A canonical action-result record referencing objects in the CAS.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoteActionResult {
@@ -188,6 +189,7 @@ pub struct RemoteActionResult {
     pub version: u8,
 }
 
+/// A canonical directory object stored in the CAS.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheDirectory {
@@ -197,6 +199,7 @@ pub struct CacheDirectory {
     pub version: u8,
 }
 
+/// A child directory entry in a canonical cache directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheDirectoryNode {
@@ -205,6 +208,7 @@ pub struct CacheDirectoryNode {
     pub name: String,
 }
 
+/// A file entry in a canonical cache directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheFileNode {
@@ -214,6 +218,7 @@ pub struct CacheFileNode {
     pub name: String,
 }
 
+/// A symbolic-link entry in a canonical cache directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheSymlinkNode {
@@ -222,6 +227,7 @@ pub struct CacheSymlinkNode {
     pub target: String,
 }
 
+/// Rust-specific action metadata stored alongside compiled outputs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RustcMetadata {

@@ -15,62 +15,83 @@ use std::process::{Command, ExitCode, ExitStatus, Output};
 
 pub(super) fn compile_miss(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode> {
     let invocation = RustcInvocation::parse(arguments)?;
-    let working_dir = std::env::current_dir()?.canonicalize()?;
+    let working_dir = std::env::current_dir()?;
     let outputs = invocation.outputs(&working_dir)?;
-    let discovery_dir = staging_directory()?;
-    let dep_info_path = discovery_dir.path().join("inputs.d");
-    let discovery_command = invocation.dep_info_command(&dep_info_path)?;
-    let discovery = Command::new(rustc)
-        .args(discovery_command.arguments())
-        .current_dir(&working_dir)
-        .output()
-        .wrap_err("failed to run rustc input discovery")?;
-    if !discovery.status.success() {
-        bail!("rustc input discovery did not succeed");
-    }
-
-    let dep_info = RustcDepInfo::read(&dep_info_path)?;
-    let discovered = invocation.discover_inputs(&dep_info, &working_dir)?;
-    let mut context = ActionContext {
-        compiler: compiler_identity(rustc)?,
-        working_dir: working_dir.clone(),
-        path_mappings: path_mappings(&working_dir),
-        environment: BTreeMap::new(),
-        inputs: Vec::new(),
-    };
-    discovered.clone().apply_to(&mut context)?;
-    let action = invocation.action(context)?;
-
     let output = Command::new(rustc)
         .args(arguments)
         .current_dir(&working_dir)
         .output()
         .wrap_err("failed to execute rustc")?;
-    let status = exit_code(output.status);
     let _ = replay_output(&output);
     if output.status.success() {
-        let publication = discovered
-            .verify()
-            .map_err(eyre::Report::from)
-            .and_then(|()| publish_result(&action.digest, &action.bytes, &outputs.files, &output));
+        let publication = (|| {
+            let dep_info = RustcDepInfo::read(&outputs.dep_info)?;
+            let discovered = invocation.discover_inputs(&dep_info, &working_dir)?;
+            let mut context = ActionContext {
+                compiler: compiler_identity(rustc)?,
+                working_dir: working_dir.clone(),
+                path_mappings: path_mappings(&working_dir),
+                environment: BTreeMap::new(),
+                inputs: Vec::new(),
+            };
+            discovered.clone().apply_to(&mut context)?;
+            let action = invocation.action(context)?;
+            discovered.verify()?;
+            publish_result(&action.digest, &action.bytes, &outputs.files, &output)
+        })();
         if let Err(error) = publication {
             eprintln!("mise rustc cache warning: result was not stored: {error:#}");
         }
     }
-    Ok(status)
+    Ok(exit_code(output.status))
 }
 
 fn compiler_identity(rustc: &OsStr) -> Result<CompilerIdentity> {
-    let responses = session::request_agent(&[AgentRequest::IdentifyExecutable {
-        executable: resolve_executable(rustc)?,
-        arguments: vec!["-vV".into()],
-        environment: ["RUSTUP_HOME", "RUSTUP_TOOLCHAIN"]
-            .into_iter()
-            .map(|name| (name.into(), std::env::var(name).ok()))
-            .collect(),
+    let executable = resolve_executable(rustc)?;
+    let environment = ["RUSTUP_HOME", "RUSTUP_TOOLCHAIN"]
+        .into_iter()
+        .map(|name| (name.into(), std::env::var(name).ok()))
+        .collect::<BTreeMap<_, _>>();
+    let responses = session::request_agent(&[AgentRequest::FindExecutableIdentity {
+        executable: executable.clone(),
+        environment: environment.clone(),
     }])?;
     let Some(AgentResponse::ExecutableIdentity { stdout }) = responses.into_iter().next() else {
         bail!("cache agent did not return the rustc identity");
+    };
+    let stdout = if let Some(stdout) = stdout {
+        stdout
+    } else {
+        let mut command = Command::new(&executable);
+        command.arg("-vV");
+        for (name, value) in &environment {
+            if let Some(value) = value {
+                command.env(name, value);
+            } else {
+                command.env_remove(name);
+            }
+        }
+        let output = command
+            .output()
+            .wrap_err("failed to query the rustc identity")?;
+        if !output.status.success() {
+            bail!(
+                "rustc identity command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let responses = session::request_agent(&[AgentRequest::StoreExecutableIdentity {
+            executable,
+            environment,
+            stdout: output.stdout,
+        }])?;
+        let Some(AgentResponse::ExecutableIdentity {
+            stdout: Some(stdout),
+        }) = responses.into_iter().next()
+        else {
+            bail!("cache agent did not store the rustc identity");
+        };
+        stdout
     };
     let verbose = std::str::from_utf8(&stdout).wrap_err("rustc identity is not UTF-8")?;
     let release = identity_field(verbose, "release")?;
@@ -157,9 +178,9 @@ fn replay_output(output: &Output) -> Result<()> {
 }
 
 fn staging_directory() -> Result<tempfile::TempDir> {
-    let root = std::env::var_os("MISE_CACHE_STAGING_DIR")
+    let root = std::env::var_os(session::STAGING_ENV)
         .map(PathBuf::from)
-        .ok_or_else(|| eyre::eyre!("MISE_CACHE_STAGING_DIR is not set"))?;
+        .ok_or_else(|| eyre::eyre!("{} is not set", session::STAGING_ENV))?;
     Ok(tempfile::tempdir_in(root)?)
 }
 
@@ -168,27 +189,12 @@ fn resolve_executable(executable: &OsStr) -> Result<PathBuf> {
     if executable.is_absolute() {
         return Ok(executable);
     }
-    if executable.components().count() > 1 {
-        return Ok(std::env::current_dir()?.join(executable));
-    }
-    let path = std::env::var_os("PATH").ok_or_else(|| eyre::eyre!("PATH is not set"))?;
-    for directory in std::env::split_paths(&path) {
-        let candidate = directory.join(&executable);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-        #[cfg(windows)]
-        {
-            let candidate = candidate.with_extension("exe");
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
-    bail!(
-        "failed to resolve compiler executable {}",
-        executable.display()
-    )
+    which::which(&executable).wrap_err_with(|| {
+        format!(
+            "failed to resolve compiler executable {}",
+            executable.display()
+        )
+    })
 }
 
 fn publish_result(

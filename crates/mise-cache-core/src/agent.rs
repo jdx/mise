@@ -7,8 +7,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
+/// Wire protocol version used between an in-process cache agent and its shims.
 pub const AGENT_PROTOCOL_VERSION: u8 = 1;
 
+/// A request accepted by the task-scoped cache agent.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentRequest {
@@ -26,13 +28,18 @@ pub enum AgentRequest {
     StoreActionResult {
         result: RemoteActionResult,
     },
-    IdentifyExecutable {
+    FindExecutableIdentity {
         executable: PathBuf,
-        arguments: Vec<String>,
         environment: BTreeMap<String, Option<String>>,
+    },
+    StoreExecutableIdentity {
+        executable: PathBuf,
+        environment: BTreeMap<String, Option<String>>,
+        stdout: Vec<u8>,
     },
 }
 
+/// A response returned by the task-scoped cache agent.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentResponse {
@@ -40,15 +47,20 @@ pub enum AgentResponse {
     Blob { path: Option<PathBuf> },
     Stored { path: PathBuf },
     ActionStored { path: PathBuf },
-    ExecutableIdentity { stdout: Vec<u8> },
+    ExecutableIdentity { stdout: Option<Vec<u8>> },
     Error { message: String },
 }
 
+/// Aggregate cache activity for one task session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AgentStats {
+    /// Number of content-addressed storage lookups.
     pub lookups: u64,
+    /// Number of lookups that found a valid local object.
     pub hits: u64,
+    /// Number of newly stored content-addressed objects.
     pub stores: u64,
+    /// Total size of newly stored objects.
     pub stored_bytes: u64,
 }
 
@@ -77,11 +89,11 @@ pub struct CacheAgent {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ExecutableIdentityKey {
     executable: PathBuf,
-    arguments: Vec<String>,
     environment: BTreeMap<String, Option<String>>,
 }
 
 impl CacheAgent {
+    /// Create an agent backed by the cache rooted at `cache_dir`.
     pub fn new(cache_dir: impl Into<PathBuf>, version: impl Into<Arc<str>>) -> Self {
         let cache_dir = cache_dir.into();
         Self {
@@ -94,6 +106,7 @@ impl CacheAgent {
         }
     }
 
+    /// Return a snapshot of this session's cache activity.
     pub fn stats(&self) -> AgentStats {
         AgentStats {
             lookups: self.stats.lookups.load(Ordering::Relaxed),
@@ -143,13 +156,15 @@ impl CacheAgent {
                 .actions
                 .store(&result)
                 .map(|path| AgentResponse::ActionStored { path }),
-            AgentRequest::IdentifyExecutable {
+            AgentRequest::FindExecutableIdentity {
                 executable,
-                arguments,
                 environment,
-            } => self
-                .identify_executable(executable, arguments, environment)
-                .map(|stdout| AgentResponse::ExecutableIdentity { stdout }),
+            } => self.find_executable_identity(executable, environment),
+            AgentRequest::StoreExecutableIdentity {
+                executable,
+                environment,
+                stdout,
+            } => self.store_executable_identity(executable, environment, stdout),
             AgentRequest::Hello { .. } => {
                 Err(eyre::eyre!("hello is only valid as the first request"))
             }
@@ -159,49 +174,59 @@ impl CacheAgent {
         })
     }
 
-    fn identify_executable(
+    fn executable_identity_key(
         &self,
         executable: PathBuf,
-        arguments: Vec<String>,
         environment: BTreeMap<String, Option<String>>,
-    ) -> Result<Vec<u8>> {
-        let key = ExecutableIdentityKey {
-            executable: executable.clone(),
-            arguments: arguments.clone(),
-            environment: environment.clone(),
-        };
-        if let Some(stdout) = self
+    ) -> Result<ExecutableIdentityKey> {
+        if !environment
+            .keys()
+            .all(|name| matches!(name.as_str(), "RUSTUP_HOME" | "RUSTUP_TOOLCHAIN"))
+        {
+            bail!("executable identity contains an unsupported environment variable");
+        }
+        Ok(ExecutableIdentityKey {
+            executable,
+            environment,
+        })
+    }
+
+    fn find_executable_identity(
+        &self,
+        executable: PathBuf,
+        environment: BTreeMap<String, Option<String>>,
+    ) -> Result<AgentResponse> {
+        let key = self.executable_identity_key(executable, environment)?;
+        let stdout = self
             .executable_identities
             .lock()
             .unwrap()
             .get(&key)
-            .cloned()
-        {
-            return Ok(stdout);
+            .cloned();
+        Ok(AgentResponse::ExecutableIdentity { stdout })
+    }
+
+    fn store_executable_identity(
+        &self,
+        executable: PathBuf,
+        environment: BTreeMap<String, Option<String>>,
+        stdout: Vec<u8>,
+    ) -> Result<AgentResponse> {
+        const MAX_IDENTITY_SIZE: usize = 64 * 1024;
+        if stdout.len() > MAX_IDENTITY_SIZE {
+            bail!("executable identity exceeds {MAX_IDENTITY_SIZE} bytes");
         }
-        let mut command = std::process::Command::new(&executable);
-        command.args(&arguments);
-        for (name, value) in environment {
-            if let Some(value) = value {
-                command.env(name, value);
-            } else {
-                command.env_remove(name);
-            }
-        }
-        let output = command.output()?;
-        if !output.status.success() {
-            bail!(
-                "executable identity command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
+        let key = self.executable_identity_key(executable, environment)?;
         self.executable_identities
             .lock()
             .unwrap()
-            .insert(key, output.stdout.clone());
-        Ok(output.stdout)
+            .insert(key, stdout.clone());
+        Ok(AgentResponse::ExecutableIdentity {
+            stdout: Some(stdout),
+        })
     }
 
+    /// Serve newline-delimited protocol requests on an authenticated session stream.
     pub async fn handle_connection<S>(&self, stream: S) -> Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin,
@@ -368,6 +393,52 @@ mod tests {
             .await;
         assert!(matches!(response, AgentResponse::ActionStored { .. }));
         assert!(agent.actions.find(&action).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn memoizes_client_observed_executable_identities() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path(), "test-version");
+        let executable = directory.path().join("rustc");
+        let environment = BTreeMap::from([("RUSTUP_TOOLCHAIN".into(), Some("stable".into()))]);
+
+        let response = agent
+            .respond(AgentRequest::FindExecutableIdentity {
+                executable: executable.clone(),
+                environment: environment.clone(),
+            })
+            .await;
+        assert!(matches!(
+            response,
+            AgentResponse::ExecutableIdentity { stdout: None }
+        ));
+
+        let response = agent
+            .respond(AgentRequest::StoreExecutableIdentity {
+                executable: executable.clone(),
+                environment: environment.clone(),
+                stdout: b"rustc identity".to_vec(),
+            })
+            .await;
+        assert!(matches!(
+            response,
+            AgentResponse::ExecutableIdentity {
+                stdout: Some(stdout)
+            } if stdout == b"rustc identity"
+        ));
+
+        let response = agent
+            .respond(AgentRequest::FindExecutableIdentity {
+                executable,
+                environment,
+            })
+            .await;
+        assert!(matches!(
+            response,
+            AgentResponse::ExecutableIdentity {
+                stdout: Some(stdout)
+            } if stdout == b"rustc identity"
+        ));
     }
 
     #[tokio::test]

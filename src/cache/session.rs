@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 
 const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
-const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
+pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
