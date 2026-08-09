@@ -469,12 +469,18 @@ pub fn get_plugin_type(short: &str) -> Option<PluginType> {
 }
 
 pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
+    try_list_tools().expect("INSTALL_STATE_TOOLS is None")
+}
+
+/// Non-panicking counterpart to [`list_tools`], mirroring [`try_list_plugins`].
+/// Callers on error paths must not panic just because install state was never
+/// initialized.
+pub fn try_list_tools() -> Option<Arc<BTreeMap<String, InstallStateTool>>> {
     INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed")
         .as_ref()
-        .expect("INSTALL_STATE_TOOLS is None")
-        .clone()
+        .cloned()
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
