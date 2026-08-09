@@ -1794,17 +1794,18 @@ impl TaskExecutor {
                     })?;
             }
         }
-        let spec = match task.parse_usage_spec_for_preflight(config).await {
-            Ok(spec) => spec,
-            Err(err) if dynamic_usage => {
-                debug!(
-                    "deferring dynamic usage validation for task {} until execution: {err:#}",
-                    task.name
-                );
-                return Ok(());
-            }
-            Err(err) => return Err(err),
-        };
+        if dynamic_usage {
+            // The side-effect-free context intentionally omits task/subproject
+            // env and vars. A dynamic template can still render successfully
+            // with those empty maps while producing a different spec from the
+            // runtime context, so only its syntax is safe to validate here.
+            debug!(
+                "deferring dynamic usage argument validation for task {} until execution",
+                task.name
+            );
+            return Ok(());
+        }
+        let spec = task.parse_usage_spec_for_preflight(config).await?;
 
         let mut env = crate::env::PRISTINE_ENV.clone();
         for directive in task.inherited_env.0.iter().chain(task.env.0.iter()) {

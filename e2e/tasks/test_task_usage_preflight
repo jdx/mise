@@ -34,6 +34,19 @@ usage = 'arg "<name>" {{'
 depends = ["dynamic-syntax-dependency"]
 run = 'echo invalid >> dynamic-syntax-runs'
 
+[tasks.dynamic-env-dependency]
+run = 'echo dependency >> dynamic-env-runs'
+
+[tasks.dynamic-env]
+usage = '''
+{% if env.DYNAMIC_USAGE == "enabled" %}
+arg "<name>"
+{% endif %}
+'''
+depends = ["dynamic-env-dependency"]
+env = { DYNAMIC_USAGE = "enabled" }
+run = 'echo "task:$usage_name" >> dynamic-env-runs'
+
 [tasks.valid-root]
 run = 'echo valid >> multi-root-runs'
 
@@ -135,6 +148,13 @@ test ! -e transitive-runs
 # Deterministic syntax errors in dynamic usage are rejected before dependencies.
 assert_fail_contains "mise run dynamic-syntax-invalid" "invalid usage template"
 test ! -e dynamic-syntax-runs
+
+# A dynamic usage template may produce a different valid spec once task env is
+# available. Its syntax is checked preflight, but argument validation is safely
+# deferred until the runtime context is available.
+mise run dynamic-env accepted
+assert "cat dynamic-env-runs" "dependency
+task:accepted"
 
 # One invalid root prevents every root in the same invocation from starting.
 assert_fail_contains "mise run valid-root ::: invalid-root" "Missing required arg: <name>"
