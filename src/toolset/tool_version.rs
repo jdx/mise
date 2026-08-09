@@ -619,19 +619,15 @@ impl ToolVersion {
             let version = request.version();
             return Ok(Self::new(request, version));
         }
-        let v = match v {
-            "latest" => backend
-                .latest_version_with_refresh(
-                    config,
-                    None,
-                    opts.before_date,
-                    opts.refresh_remote_versions,
-                )
-                .await?
-                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
-            _ => config.resolve_alias(&backend, v).await?,
-        };
-        let v = tool_request::version_sub(&v, sub);
+        let v = resolve_sub_base(
+            config,
+            &backend,
+            sub,
+            v,
+            opts.before_date,
+            opts.refresh_remote_versions,
+        )
+        .await?;
         Box::pin(Self::resolve_version(config, request, &v, opts)).await
     }
 
@@ -702,6 +698,39 @@ impl ToolVersion {
         let version = request.version();
         Ok(Self::new(request, version))
     }
+}
+
+/// Resolve the base of a `sub-N:<base>` request and subtract from it.
+///
+/// `base` may be `latest` or an alias such as `lts`, neither of which
+/// `tool_request::version_sub` can subtract from — it needs a concrete version. Every
+/// command that accepts `sub-N:` must go through here; skipping this step is what made
+/// `mise ls-remote <tool>@sub-2:lts` panic.
+pub(crate) async fn resolve_sub_base(
+    config: &Arc<Config>,
+    backend: &ABackend,
+    sub: &str,
+    base: &str,
+    before_date: Option<Timestamp>,
+    refresh_remote_versions: bool,
+) -> Result<String> {
+    // An alias can point at `latest`, so the alias is resolved first and the result is
+    // then treated exactly like a literal `latest` — otherwise the string `latest`
+    // reaches the subtraction, which cannot do anything with it.
+    let base = if base == "latest" {
+        base.to_string()
+    } else {
+        config.resolve_alias(backend, base).await?
+    };
+    let v = if base == "latest" {
+        backend
+            .latest_version_with_refresh(config, None, before_date, refresh_remote_versions)
+            .await?
+            .ok_or_else(|| ToolVersion::no_versions_found(backend, before_date))?
+    } else {
+        base
+    };
+    tool_request::version_sub(&v, sub)
 }
 
 impl Display for ToolVersion {

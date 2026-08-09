@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use versions::{Chunk, Version};
 use xx::file;
 
@@ -299,10 +299,18 @@ impl ToolRequest {
                 .local_resolve(config, orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
                 .unwrap_or_default()
-                .map(|v| {
-                    let pathname = version_sub(&v, sub.as_str());
+                .and_then(|v| {
+                    // A version that cannot be subtracted from has no install path to look
+                    // for, which is the same answer as "nothing installed matches".
+                    let pathname = version_sub(&v, sub.as_str())
+                        .inspect_err(|e| warn!("ToolRequest.version_sub: {e:#}"))
+                        .ok()?;
                     let path = backend.installs_path.join(&pathname);
-                    env::find_in_shared_installs(path, &backend.tool_dir_name(), &pathname)
+                    Some(env::find_in_shared_installs(
+                        path,
+                        &backend.tool_dir_name(),
+                        &pathname,
+                    ))
                 }),
             Self::Prefix {
                 backend, prefix, ..
@@ -581,32 +589,45 @@ fn normalize_arch(arch: &str) -> &str {
 /// e.g. version_sub("18.2.3", "2") -> "16"
 /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
 /// e.g. version_sub("2.79.0", "0.0.1") -> "2.78" (underflow, returns prefix)
-pub fn version_sub(orig: &str, sub: &str) -> String {
-    let mut orig = Version::new(orig).unwrap();
-    let sub = Version::new(sub).unwrap();
-    while orig.chunks.0.len() > sub.chunks.0.len() {
-        orig.chunks.0.pop();
+///
+/// `orig` must already be a concrete version. `latest` and aliases like `lts` have to be
+/// resolved by the caller first — there is nothing here to subtract from — which is what
+/// `tool_version::resolve_sub_base` exists for.
+pub fn version_sub(orig: &str, sub: &str) -> Result<String> {
+    fn not_numeric(orig: &str, sub: &str) -> eyre::Report {
+        eyre!("cannot subtract {sub} from {orig}: {orig} is not a numeric version")
     }
-    for i in 0..orig.chunks.0.len() {
-        let m = sub.nth(i).unwrap();
-        let orig_val = orig.chunks.0[i].single_digit().unwrap();
+    let mut version = Version::new(orig).ok_or_else(|| eyre!("invalid version: {orig}"))?;
+    let sub_version = Version::new(sub).ok_or_else(|| eyre!("invalid version: {sub}"))?;
+    while version.chunks.0.len() > sub_version.chunks.0.len() {
+        version.chunks.0.pop();
+    }
+    for i in 0..version.chunks.0.len() {
+        let m = sub_version
+            .nth(i)
+            .ok_or_else(|| eyre!("invalid version: {sub}"))?;
+        let orig_val = version.chunks.0[i]
+            .single_digit()
+            .ok_or_else(|| not_numeric(orig, sub))?;
 
         if orig_val < m {
             // Handle underflow with borrowing from higher digits
             for j in (0..i).rev() {
-                let prev_val = orig.chunks.0[j].single_digit().unwrap();
+                let prev_val = version.chunks.0[j]
+                    .single_digit()
+                    .ok_or_else(|| not_numeric(orig, sub))?;
                 if prev_val > 0 {
-                    orig.chunks.0[j] = Chunk::Numeric(prev_val - 1);
-                    orig.chunks.0.truncate(j + 1);
-                    return orig.to_string();
+                    version.chunks.0[j] = Chunk::Numeric(prev_val - 1);
+                    version.chunks.0.truncate(j + 1);
+                    return Ok(version.to_string());
                 }
             }
-            return "0".to_string();
+            return Ok("0".to_string());
         }
 
-        orig.chunks.0[i] = Chunk::Numeric(orig_val - m);
+        version.chunks.0[i] = Chunk::Numeric(orig_val - m);
     }
-    orig.to_string()
+    Ok(version.to_string())
 }
 
 impl Display for ToolRequest {
@@ -796,20 +817,33 @@ mod tests {
 
     #[test]
     fn test_version_sub() {
-        assert_str_eq!(version_sub("18.2.3", "2"), "16");
-        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
-        assert_str_eq!(version_sub("18.2.3", "0.0.1"), "18.2.2");
+        assert_str_eq!(version_sub("18.2.3", "2").unwrap(), "16");
+        assert_str_eq!(version_sub("18.2.3", "0.1").unwrap(), "18.1");
+        assert_str_eq!(version_sub("18.2.3", "0.0.1").unwrap(), "18.2.2");
     }
 
     #[test]
     fn test_version_sub_underflow() {
         // Test cases that would cause underflow return prefix for higher digit
-        assert_str_eq!(version_sub("2.0.0", "0.0.1"), "1");
-        assert_str_eq!(version_sub("2.79.0", "0.0.1"), "2.78");
-        assert_str_eq!(version_sub("1.0.0", "0.1.0"), "0");
-        assert_str_eq!(version_sub("0.1.0", "1"), "0");
-        assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
-        assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
+        assert_str_eq!(version_sub("2.0.0", "0.0.1").unwrap(), "1");
+        assert_str_eq!(version_sub("2.79.0", "0.0.1").unwrap(), "2.78");
+        assert_str_eq!(version_sub("1.0.0", "0.1.0").unwrap(), "0");
+        assert_str_eq!(version_sub("0.1.0", "1").unwrap(), "0");
+        assert_str_eq!(version_sub("1.2.3", "0.2.4").unwrap(), "0");
+        assert_str_eq!(version_sub("1.3.3", "0.2.4").unwrap(), "1.0");
+    }
+
+    #[test]
+    fn test_version_sub_rejects_non_numeric_base() {
+        // An unresolved alias must not reach here, but if it does it has to be an
+        // error rather than a panic: this used to abort the process from
+        // `mise ls-remote <tool>@sub-2:lts`.
+        let err = version_sub("lts", "2").unwrap_err().to_string();
+        assert!(err.contains("lts"), "unexpected error: {err}");
+
+        assert!(version_sub("latest", "1").is_err());
+        assert!(version_sub("1.2.3", "x").is_err());
+        assert!(version_sub("", "1").is_err());
     }
 
     #[test]

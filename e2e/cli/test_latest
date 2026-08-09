@@ -25,3 +25,16 @@ assert "mise latest ruby | grep -E '^[0-9]+(\\.[0-9]+)*$'"
 assert "mise latest ruby@truffleruby | grep -E '\\-[0-9]+(\\.[0-9]+)*$'"
 # assert vendor 22 version ends with -22.N.N
 assert "mise latest ruby@truffleruby-22 | grep -E '\\-22(\\.[0-9]+)*$'"
+
+# sub-N: is accepted by use/install/ls-remote, so it has to work here too — it used to
+# be rejected as "invalid version". dummy publishes 1.0.0, 1.1.0 and 2.0.0.
+assert "mise latest dummy@sub-1:2" "1.1.0"
+# the base may be an alias, which has to be resolved before subtracting
+mise alias set dummy lts 2
+assert "mise latest dummy@sub-1:lts" "1.1.0"
+mise alias unset dummy lts
+# ...and the base may be `latest`, directly or through an alias
+assert "mise latest dummy@sub-1:latest" "1.1.0"
+mise alias set dummy stable latest
+assert "mise latest dummy@sub-1:stable" "1.1.0"
+mise alias unset dummy stable
