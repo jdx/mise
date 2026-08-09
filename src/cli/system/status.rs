@@ -55,7 +55,9 @@ impl SystemStatus {
             let mut json_pkgs = vec![];
             for s in statuses {
                 let (installed_version, state, reason) = match &s.state {
-                    PackageState::Installed { version } => (version.clone(), "installed", None),
+                    PackageState::Installed { version } => {
+                        (version.clone(), "installed", None::<&str>)
+                    }
                     PackageState::Missing => {
                         any_missing = true;
                         ("".to_string(), "missing", None)

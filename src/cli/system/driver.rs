@@ -226,12 +226,11 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::system::packages::PackageRequest;
 
-    #[cfg(unix)]
     #[test]
     fn use_allows_unavailable_manager_but_rejects_unavailable_package() {
         let opts = DriverOpts {
