@@ -407,7 +407,7 @@ fn registry_code(entries: &[(String, String)]) -> String {
             .map(|(index, (key, _))| (key.clone(), index.to_string()))
             .collect::<Vec<_>>(),
     ));
-    code.push_str("),\n}");
+    code.push_str("),\n    missing_version_order: false,\n}");
     code
 }
 

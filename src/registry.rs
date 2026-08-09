@@ -41,7 +41,13 @@ pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     }
 
     match load_cached_floating_registry() {
-        Ok(registry) => Box::leak(Box::new(registry)),
+        Ok(registry) if !registry.missing_version_order => Box::leak(Box::new(registry)),
+        Ok(_) => {
+            warn!(
+                "cached floating mise registry predates version-order metadata, using baked-in registry"
+            );
+            &BAKED_REGISTRY
+        }
         Err(err) => {
             warn!("failed to load floating mise registry, using baked-in registry: {err:#}");
             &BAKED_REGISTRY
@@ -57,6 +63,7 @@ const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
     lookup: RegistryLookup,
+    missing_version_order: bool,
 }
 
 enum RegistryLookup {
@@ -85,7 +92,7 @@ impl Registry {
         self.entries.iter().map(|(_, tool)| tool)
     }
 
-    fn dynamic(entries: BTreeMap<String, RegistryTool>) -> Self {
+    fn dynamic(entries: BTreeMap<String, RegistryTool>, missing_version_order: bool) -> Self {
         let entries = entries
             .into_iter()
             .map(|(name, tool)| (leak_string(name), tool))
@@ -99,6 +106,7 @@ impl Registry {
         Self {
             entries,
             lookup: RegistryLookup::Dynamic(lookup),
+            missing_version_order,
         }
     }
 }
@@ -184,10 +192,13 @@ pub async fn refresh() {
 
     let cache_path = registry_cache_path();
     if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
-        if parse_registry_archive(&cache_path).is_ok() {
-            return;
+        match parse_registry_archive(&cache_path) {
+            Ok(registry) if !registry.missing_version_order => return,
+            Ok(_) => warn!(
+                "cached floating mise registry predates version-order metadata; refreshing it"
+            ),
+            Err(_) => warn!("cached floating mise registry is invalid; refreshing it"),
         }
-        warn!("cached floating mise registry is invalid; refreshing it");
     }
 
     if let Err(err) = download_registry_archive(&cache_path).await {
@@ -325,20 +336,22 @@ fn track_registry_archive_entry(
 
 fn registry_from_sources(sources: BTreeMap<String, String>) -> Result<Registry> {
     let mut entries = BTreeMap::new();
+    let mut missing_version_order = false;
     for (short, source) in sources {
         let value: toml::Value = toml::from_str(&source)
             .wrap_err_with(|| format!("failed to parse registry/{short}.toml"))?;
-        let tool = parse_registry_tool(&short, &value)
+        let (tool, tool_missing_version_order) = parse_registry_tool(&short, &value)
             .wrap_err_with(|| format!("invalid registry/{short}.toml"))?;
+        missing_version_order |= tool_missing_version_order;
         entries.insert(short, tool.clone());
         for alias in tool.aliases {
             entries.insert((*alias).to_string(), tool.clone());
         }
     }
-    Ok(Registry::dynamic(entries))
+    Ok(Registry::dynamic(entries, missing_version_order))
 }
 
-fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool> {
+fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool, bool)> {
     let table = value
         .as_table()
         .ok_or_else(|| eyre::eyre!("registry tool must be a TOML table"))?;
@@ -351,6 +364,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         .collect::<Result<Vec<_>>>()?;
     ensure!(!backends.is_empty(), "backends must not be empty");
 
+    let missing_version_order = !table.contains_key("version_order");
     let version_order = match table.get("version_order").and_then(toml::Value::as_str) {
         Some("source") => VersionOrder::Source,
         Some("semver") => VersionOrder::Semver,
@@ -375,7 +389,7 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         .transpose()?;
     let test = table.get("test").map(parse_registry_test).transpose()?;
 
-    Ok(RegistryTool {
+    let tool = RegistryTool {
         short: leak_string(short.to_string()),
         description,
         version_order,
@@ -387,7 +401,8 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         os: leak_vec(os),
         idiomatic_files: leak_vec(idiomatic_files),
         detect: leak_vec(detect),
-    })
+    };
+    Ok((tool, missing_version_order))
 }
 
 fn parse_registry_idiomatic_files(
@@ -859,6 +874,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
+        assert!(!registry.missing_version_order);
     }
 
     #[test]
@@ -878,6 +894,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
                 .version_order("aqua:example/tool"),
             Some(VersionOrder::Source)
         );
+        assert!(registry.missing_version_order);
     }
 
     #[test]
