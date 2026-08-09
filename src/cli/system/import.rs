@@ -198,7 +198,7 @@ fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, String>> {
         let cf = MiseToml::from_file(path)?;
         if let Some(sys) = cf.bootstrap_config() {
             for (spec, version) in sys.packages {
-                packages.insert(spec, version);
+                packages.insert(spec, version.version().to_string());
             }
         }
     }

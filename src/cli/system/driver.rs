@@ -88,20 +88,37 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             continue;
         }
         let statuses = mp.manager.installed(&mp.requests).await?;
+        if (d.manager.is_some() || d.explicit)
+            && let Some(status) = statuses
+                .iter()
+                .find(|status| matches!(status.state, PackageState::Unavailable { .. }))
+            && let PackageState::Unavailable { reason } = &status.state
+        {
+            bail!("{reason}");
+        }
         let mut targets: Vec<_> = statuses
             .iter()
             .filter(|s| match action {
-                Action::Install => !matches!(s.state, PackageState::Installed { .. }),
+                Action::Install => !matches!(
+                    s.state,
+                    PackageState::Installed { .. } | PackageState::Unavailable { .. }
+                ),
                 // upgrade acts on whatever is present (the manager no-ops
                 // already-current packages); missing packages are skipped
                 // below with a pointer at `install`
-                Action::Upgrade => !matches!(s.state, PackageState::Missing),
+                Action::Upgrade => !matches!(
+                    s.state,
+                    PackageState::Missing | PackageState::Unavailable { .. }
+                ),
             })
             .collect();
-        let skipped = statuses.len() - targets.len();
-        if action == Action::Upgrade && skipped > 0 {
+        let missing = statuses
+            .iter()
+            .filter(|status| matches!(status.state, PackageState::Missing))
+            .count();
+        if action == Action::Upgrade && missing > 0 {
             warn!(
-                "{name}: {skipped} package(s) not installed — run `mise bootstrap packages apply` first"
+                "{name}: {missing} package(s) not installed — run `mise bootstrap packages apply` first"
             );
         }
         // a pin this manager can never satisfy must not block the rest
@@ -122,8 +139,12 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                 }
             });
         }
-        if action == Action::Install && skipped > 0 {
-            info!("{name}: {skipped} package(s) already installed");
+        let installed = statuses
+            .iter()
+            .filter(|status| matches!(status.state, PackageState::Installed { .. }))
+            .count();
+        if action == Action::Install && installed > 0 {
+            info!("{name}: {installed} package(s) already installed");
         }
         if targets.is_empty() {
             continue;
@@ -158,7 +179,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                         | PackageState::VersionMismatch { installed: version } => {
                             Some((s.request.name.clone(), version.clone()))
                         }
-                        PackageState::Missing => None,
+                        PackageState::Missing | PackageState::Unavailable { .. } => None,
                     })
                     .collect();
                 mp.manager.upgrade(&targets, &opts).await?;
@@ -174,7 +195,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                                 (old != version)
                                     .then(|| format!("{} {old} -> {version}", s.request.name))
                             }
-                            PackageState::Missing => None,
+                            PackageState::Missing | PackageState::Unavailable { .. } => None,
                         })
                         .collect();
                     if changed.is_empty() {

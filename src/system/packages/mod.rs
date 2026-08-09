@@ -60,6 +60,11 @@ pub enum PackageState {
     VersionMismatch {
         installed: String,
     },
+    /// The manager is available on this host, but this individual package is
+    /// not supported on the current platform.
+    Unavailable {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone)]

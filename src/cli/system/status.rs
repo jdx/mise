@@ -54,34 +54,44 @@ impl SystemStatus {
             let statuses = mp.manager.installed(&mp.requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
-                let (installed_version, state) = match &s.state {
-                    PackageState::Installed { version } => (version.clone(), "installed"),
+                let (installed_version, state, reason) = match &s.state {
+                    PackageState::Installed { version } => (version.clone(), "installed", None),
                     PackageState::Missing => {
                         any_missing = true;
-                        ("".to_string(), "missing")
+                        ("".to_string(), "missing", None)
                     }
                     PackageState::NeedsRepair { installed } => {
                         any_missing = true;
-                        (installed.clone(), "needs repair")
+                        (installed.clone(), "needs repair", None)
                     }
                     PackageState::VersionMismatch { installed } => {
                         any_missing = true;
-                        (installed.clone(), "version mismatch")
+                        (installed.clone(), "version mismatch", None)
+                    }
+                    PackageState::Unavailable { reason } => {
+                        ("".to_string(), "skipped", Some(reason.as_str()))
                     }
                 };
                 if self.json {
-                    json_pkgs.push(json!({
+                    let mut package = json!({
                         "package": s.request.name,
                         "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
                         "state": state.replace(' ', "_"),
                         "installed_version": installed_version,
-                    }));
+                    });
+                    if let Some(reason) = reason {
+                        package["reason"] = json!(reason);
+                    }
+                    json_pkgs.push(package);
                 } else {
                     rows.push(vec![
                         name.to_string(),
                         s.request.to_string(),
                         installed_version,
-                        state.to_string(),
+                        reason.map_or_else(
+                            || state.to_string(),
+                            |reason| format!("{state} ({reason})"),
+                        ),
                     ]);
                 }
             }

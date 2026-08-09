@@ -94,11 +94,11 @@ pub struct BootstrapTomlConfig {
     /// Package manager plugins that must be installed, keyed by manager name.
     #[serde(default)]
     pub plugins: IndexMap<String, String>,
-    /// `"manager:package"` -> version (`"latest"` or a manager-native pin).
+    /// `"manager:package"` -> version/options (`"latest"` or a manager-native pin).
     /// String-keyed so configs using managers from newer mise versions (dnf,
     /// pacman, winget, ...) parse fine on older ones.
     #[serde(default)]
-    pub packages: IndexMap<String, String>,
+    pub packages: IndexMap<String, PackageTomlConfig>,
     /// Absolute target path -> declarative managed file.
     #[serde(default)]
     pub files: IndexMap<String, managed_files::ManagedFileTomlConfig>,
@@ -128,6 +128,93 @@ pub struct BootstrapTomlConfig {
     /// warn and be skipped without rejecting the whole config.
     #[serde(default)]
     pub hooks: IndexMap<String, toml::Value>,
+}
+
+/// A `[bootstrap.packages]` value. The string form remains the concise default;
+/// the table form adds platform selection without changing package keys.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum PackageTomlConfig {
+    Version(String),
+    Options(PackageOptionsTomlConfig),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackageOptionsTomlConfig {
+    #[serde(default = "latest_package_version")]
+    pub version: String,
+    #[serde(default, deserialize_with = "deserialize_package_os")]
+    pub os: Vec<String>,
+}
+
+impl PackageTomlConfig {
+    pub fn version(&self) -> &str {
+        match self {
+            Self::Version(version) => version,
+            Self::Options(options) => &options.version,
+        }
+    }
+
+    fn is_os_supported(&self) -> bool {
+        let Self::Options(options) = self else {
+            return true;
+        };
+        options.os.is_empty() || options.os.iter().any(|entry| package_os_matches(entry))
+    }
+}
+
+fn latest_package_version() -> String {
+    "latest".to_string()
+}
+
+fn deserialize_package_os<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    let values = match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    };
+    if values.is_empty() || values.iter().any(|value| value.is_empty()) {
+        return Err(serde::de::Error::custom(
+            "package os must contain at least one non-empty selector",
+        ));
+    }
+    Ok(values)
+}
+
+fn package_os_matches(entry: &str) -> bool {
+    let current_os = crate::cli::version::OS.as_str();
+    let current_arch = crate::cli::version::ARCH.as_str();
+    if let Some((os, arch)) = entry.split_once('/') {
+        normalize_package_os(os) == current_os && normalize_package_arch(arch) == current_arch
+    } else {
+        normalize_package_os(entry) == current_os
+    }
+}
+
+fn normalize_package_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+fn normalize_package_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
+    }
 }
 
 pub fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
@@ -307,7 +394,7 @@ pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<P
 
 /// Aggregate `[bootstrap.packages]` across all loaded config files.
 ///
-/// Keys union global -> local; a more local config overrides the version pin
+/// Keys union global -> local; a more local config overrides the declaration
 /// of a key the global config declared. Malformed keys and unknown managers
 /// warn (forward compatibility) and are skipped. The
 /// `system_packages.managers` setting restricts which managers are used at
@@ -433,7 +520,7 @@ fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
 ) -> IndexMap<String, Vec<PackageRequest>> {
-    let mut merged: IndexMap<String, String> = IndexMap::new();
+    let mut merged: IndexMap<String, PackageTomlConfig> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
@@ -443,10 +530,15 @@ fn package_requests_from_config_files(
         }
     }
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
-    for (spec, version) in merged {
+    for (spec, package) in merged {
+        if !package.is_os_supported() {
+            debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
+            continue;
+        }
         match parse_spec(&spec) {
             Ok((mgr, name)) => {
-                let version = (version != "latest").then_some(version);
+                let version = package.version();
+                let version = (version != "latest").then(|| version.to_string());
                 if let Err(err) = validate_package_name(&mgr, &name) {
                     warn!("[bootstrap.packages]: {err}");
                     continue;
@@ -1476,6 +1568,50 @@ mod tests {
                 ),
                 ("ffmpeg", None),
             ]
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_packages_from_config_files_filters_os_and_arch() -> Result<()> {
+        let current_os = crate::cli::version::OS.as_str();
+        let current_arch = crate::cli::version::ARCH.as_str();
+        let inactive_os = if current_os == "linux" {
+            "macos"
+        } else {
+            "linux"
+        };
+        let inactive_arch = if current_arch == "x64" {
+            "arm64"
+        } else {
+            "x64"
+        };
+        let config = format!(
+            r#"
+                [bootstrap.packages]
+                "brew:active-os" = {{ os = "{current_os}" }}
+                "brew:active-platform" = {{ version = "1", os = ["{current_os}/{current_arch}", "windows"] }}
+                "brew:inactive-os" = {{ os = ["{inactive_os}"] }}
+                "brew:inactive-arch" = {{ os = "{current_os}/{inactive_arch}" }}
+            "#
+        );
+        let (_dir, config_files) = config_map_from_toml(&[("config.toml", &config)])?;
+
+        let packages = packages_from_config_files(&config_files);
+        let brew = packages
+            .into_iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        let requests = brew
+            .requests
+            .iter()
+            .map(|request| (request.name.as_str(), request.version.as_deref()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            requests,
+            vec![("active-os", None), ("active-platform", Some("1"))]
         );
         Ok(())
     }

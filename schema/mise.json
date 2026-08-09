@@ -3868,8 +3868,34 @@
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
           "additionalProperties": {
-            "type": "string",
-            "description": "version pin in the manager's native format, or \"latest\""
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "version pin in the manager's native format, or \"latest\""
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "default": "latest",
+                    "description": "version pin in the manager's native format, or \"latest\""
+                  },
+                  "os": {
+                    "description": "operating system or OS/architecture selectors",
+                    "oneOf": [
+                      { "type": "string" },
+                      {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "repos": {

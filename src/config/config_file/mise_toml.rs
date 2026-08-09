@@ -35,7 +35,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
+use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig, PackageTomlConfig};
 use crate::task::workspace::WorkspaceProjectOverride;
 use crate::task::{Task, TaskTemplate, TaskTomlBoolPresence};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
@@ -642,7 +642,10 @@ impl MiseToml {
         self.bootstrap
             .get_or_insert_with(Default::default)
             .packages
-            .insert(spec.to_string(), version.to_string());
+            .insert(
+                spec.to_string(),
+                PackageTomlConfig::Version(version.to_string()),
+            );
         let mut doc = self.doc_mut()?;
         let bootstrap = doc
             .get_mut()
@@ -2986,6 +2989,8 @@ mod tests {
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
+        "brew-cask:1password" = { version = "latest", os = "macos" }
+        "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
 
         [bootstrap.brew.taps]
@@ -3004,9 +3009,34 @@ mod tests {
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
-        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        assert_eq!(
+            system.packages.get("apt:libssl-dev").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            "8.5.0-2"
+        );
+        assert_eq!(
+            system.packages.get("brew:postgresql@17").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(
+            system
+                .packages
+                .get("brew-cask:1password")
+                .unwrap()
+                .version(),
+            "latest"
+        );
+        assert_eq!(
+            system
+                .packages
+                .get("brew-cask:font-example")
+                .unwrap()
+                .version(),
+            "latest"
+        );
         assert_eq!(
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3022,7 +3052,11 @@ mod tests {
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
-            system.packages.get("future-manager:whatever").unwrap(),
+            system
+                .packages
+                .get("future-manager:whatever")
+                .unwrap()
+                .version(),
             "latest"
         );
 
@@ -3230,7 +3264,10 @@ mod tests {
         "brew:postgresql@17" = "latest"
         "#);
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            "8.5.0-2"
+        );
         file::remove_file(&p).unwrap();
     }
 

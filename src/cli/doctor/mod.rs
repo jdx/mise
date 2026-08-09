@@ -502,6 +502,7 @@ impl Doctor {
                             !matches!(
                                 s.state,
                                 crate::system::packages::PackageState::Installed { .. }
+                                    | crate::system::packages::PackageState::Unavailable { .. }
                             )
                         })
                         .count();
@@ -733,6 +734,7 @@ impl Doctor {
                             !matches!(
                                 s.state,
                                 crate::system::packages::PackageState::Installed { .. }
+                                    | crate::system::packages::PackageState::Unavailable { .. }
                             )
                         })
                         .count();
