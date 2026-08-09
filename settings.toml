@@ -1373,8 +1373,19 @@ type = "SetString"
 default_docs = '"glibc" | "musl"'
 description = "Libc implementation to use for precompiled Linux binaries."
 docs = """
-Libc implementation to use for precompiled Linux binaries. This is used by backends that publish
-separate glibc and musl builds. If unset, mise will detect the current system's libc.
+Libc implementation to use for precompiled Linux binaries, for backends that publish separate
+glibc and musl builds.
+
+mise detects the host libc, but only a musl result is carried through: a glibc host is left
+unqualified rather than pinned to glibc. That distinction matters when a backend selects an asset
+by name, because an unqualified target can still match a musl artifact on a glibc host. Set this
+to `gnu` when you need the glibc build specifically — for example when a package publishes both
+glibc and musl builds and the musl one misbehaves:
+
+```toml
+[settings]
+libc = "gnu"
+```
 
 `gnu` is accepted as an alias for `glibc`.
 """
