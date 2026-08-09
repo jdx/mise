@@ -27,6 +27,7 @@ Tool(s) to install e.g.: node@20
 ### `-f --force`
 
 Force reinstall even if already installed
+With no tools specified, reinstall all configured tools
 
 ### `-j --jobs <JOBS>`
 
