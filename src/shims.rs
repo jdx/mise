@@ -862,11 +862,11 @@ pub(crate) fn inactive_installed_tool_message(
     installed_shorts: &[String],
     bin_name: &str,
 ) -> Option<String> {
-    if ts
-        .list_current_versions()
-        .iter()
-        .any(|(_, tv)| tv.ba().matches_bin_name(bin_name))
-    {
+    // Every tool declared in config is a key here, even one that failed version
+    // resolution, is unsupported on this OS, or whose backend could not be
+    // built. `list_current_versions()` drops all three, which would let a
+    // configured tool be reported as "not in any config file".
+    if ts.versions.keys().any(|ba| ba.matches_bin_name(bin_name)) {
         return None;
     }
     let shorts = installed_shorts
@@ -900,12 +900,20 @@ pub async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
         .unwrap_or(bin_name);
     let config = Config::get().await.ok()?;
     let ts = ToolsetBuilder::new().build(&config).await.ok()?;
+    // A disabled tool is skipped by `Toolset::add_version`, so it never reaches
+    // the configured-tool check above. Suggesting `mise use` for one would be
+    // wrong twice over: it may well be in a config file, and mise has been told
+    // not to manage it.
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
     // try_list_tools rather than list_tools: an error path must not panic
     // because install state was never initialized.
     let installed_shorts = crate::toolset::install_state::try_list_tools()?
         .values()
         .filter(|t| !t.versions.is_empty())
         .map(|t| t.short.clone())
+        .filter(|short| crate::registry::tool_enabled(enable_tools.as_ref(), &disable_tools, short))
         .collect_vec();
     inactive_installed_tool_message(&ts, &installed_shorts, bin_stem)
 }
@@ -966,6 +974,23 @@ mod tests {
 
         // A configured tool that still fails to resolve has a different cause;
         // err_no_version_set/unavailable_configured_tool_message own that case.
+        assert!(inactive_installed_tool_message(&ts, &["gh".to_string()], "gh").is_none());
+    }
+
+    /// A tool can be declared in config and still be absent from
+    /// `list_current_versions()` -- version resolution failed, the OS is not
+    /// supported, or its backend could not be built. It must not then be
+    /// reported as "not in any config file".
+    #[tokio::test]
+    async fn inactive_tool_message_is_none_for_a_configured_tool_with_no_resolved_versions() {
+        let _config = Config::get().await.unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+        let ba = Arc::new(BackendArg::from("gh"));
+        ts.versions.insert(
+            ba.clone(),
+            ToolVersionList::new(ba, ToolSource::Argument), // no versions resolved
+        );
+
         assert!(inactive_installed_tool_message(&ts, &["gh".to_string()], "gh").is_none());
     }
 
