@@ -3884,10 +3884,14 @@
                   "os": {
                     "description": "operating system or OS/architecture selectors",
                     "oneOf": [
-                      { "type": "string" },
+                      {
+                        "$ref": "#/$defs/os_filter_item"
+                      },
                       {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                          "$ref": "#/$defs/os_filter_item"
+                        },
                         "minItems": 1
                       }
                     ]
