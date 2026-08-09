@@ -79,6 +79,19 @@ pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraRes
     tera.render_str(input, context, false)
 }
 
+/// Parse a template without rendering it so deterministic syntax errors can be
+/// reported before any context-dependent values or functions are evaluated.
+pub fn validate_template_syntax(input: &str) -> TeraResult<()> {
+    if use_tera_v1() {
+        let mut tera = tera1::Tera::default();
+        tera.add_raw_template("__mise_validate", input)
+            .map_err(|err| tera_err(err.to_string()))
+    } else {
+        let mut tera = Tera::default();
+        tera.add_raw_template("__mise_validate", input)
+    }
+}
+
 fn tera_err(message: impl ToString) -> tera::Error {
     tera::Error::message(message)
 }

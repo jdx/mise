@@ -560,6 +560,27 @@ impl TaskScriptParser {
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
+        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, false)
+            .await
+    }
+
+    pub async fn parse_run_scripts_for_preflight(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        scripts: &[String],
+    ) -> Result<usage::Spec> {
+        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, true)
+            .await
+    }
+
+    async fn parse_run_scripts_for_spec_only_inner(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        scripts: &[String],
+        preflight: bool,
+    ) -> Result<usage::Spec> {
         let usage_has_template = contains_template_syntax(&task.usage);
         let scripts_have_template = scripts
             .iter()
@@ -571,7 +592,11 @@ impl TaskScriptParser {
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
+        let mut tera_ctx = if preflight {
+            task.tera_ctx_for_usage_preflight(config)
+        } else {
+            task.tera_ctx_for_usage(config).await?
+        };
         // First render the usage field to collect the spec
         let rendered_usage = if usage_has_template {
             Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?

@@ -1993,6 +1993,33 @@ impl Task {
         Ok(spec)
     }
 
+    /// Parse usage metadata without resolving task- or subproject-specific
+    /// environment directives. This is used before the scheduler starts, where
+    /// source/module hooks must not run ahead of task dependencies.
+    pub(crate) async fn parse_usage_spec_for_preflight(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
+        let mut spec = if let Some(file) = self.file_path_raw() {
+            parse_task_script_usage(&file)
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(&file)
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            let scripts_only = self.run_script_strings();
+            TaskScriptParser::new(self.config_root.clone())
+                .parse_run_scripts_for_preflight(config, self, &scripts_only)
+                .await?
+        };
+        self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
+        Ok(spec)
+    }
+
     pub async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
@@ -2106,7 +2133,7 @@ impl Task {
 
     /// Get file path without templating (for display purposes)
     /// This is a non-async version used when we just need the path for display
-    fn file_path_raw(&self) -> Option<PathBuf> {
+    pub(crate) fn file_path_raw(&self) -> Option<PathBuf> {
         self.file.as_ref().map(|file| {
             if file.is_absolute() {
                 file.clone()
@@ -2124,6 +2151,14 @@ impl Task {
 
     pub(crate) async fn tera_ctx_for_usage(&self, config: &Arc<Config>) -> Result<tera::Context> {
         self.build_tera_ctx(config, !self.raw_args).await
+    }
+
+    pub(crate) fn tera_ctx_for_usage_preflight(&self, config: &Config) -> tera::Context {
+        let mut tera_ctx = config.tera_ctx.clone();
+        tera_ctx.insert("env", &EnvMap::new());
+        tera_ctx.insert("vars", &IndexMap::<String, String>::new());
+        tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx
     }
 
     async fn build_tera_ctx(
