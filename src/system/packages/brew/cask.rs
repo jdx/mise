@@ -2671,9 +2671,7 @@ fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<(
 fn platform_unavailable_state(cask: &Cask, artifacts: &CaskArtifacts) -> Option<PackageState> {
     validate_platform_support(cask, artifacts)
         .err()
-        .map(|err| PackageState::Unavailable {
-            reason: err.to_string(),
-        })
+        .map(|err| PackageState::unavailable(err.to_string()))
 }
 
 fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {

@@ -67,6 +67,14 @@ pub enum PackageState {
     },
 }
 
+impl PackageState {
+    pub fn unavailable(reason: impl Into<String>) -> Self {
+        Self::Unavailable {
+            reason: reason.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageStatus {
     pub request: PackageRequest,
