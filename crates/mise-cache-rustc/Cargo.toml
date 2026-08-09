@@ -13,6 +13,9 @@ mise-cache-core = { path = "../mise-cache-core", default-features = false }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
+[dev-dependencies]
+tempfile = "3"
+
 [features]
 default = ["rustls"]
 native-tls = ["mise-cache-core/native-tls"]

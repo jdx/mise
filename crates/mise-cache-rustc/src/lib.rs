@@ -5,6 +5,10 @@ use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
+mod dep_info;
+
+pub use dep_info::{DepInfoCommand, DiscoveredInputs, RustcDepInfo};
+
 pub const ACTION_SCHEMA_VERSION: u8 = 1;
 pub const ADAPTER_VERSION: u8 = 1;
 
@@ -91,6 +95,22 @@ pub enum BypassReason {
     InvalidInputDigest(String),
     #[error("compiler input appears more than once with different content: {0}")]
     ConflictingInput(String),
+    #[error("rustc dep-info is malformed: {0}")]
+    MalformedDepInfo(String),
+    #[error("failed to read rustc dep-info {path}: {message}")]
+    DepInfoRead { path: PathBuf, message: String },
+    #[error("rustc dep-info output path must be absolute: {0}")]
+    RelativeDepInfoPath(PathBuf),
+    #[error("rustc dep-info output path cannot contain a comma: {0}")]
+    UnsafeDepInfoPath(PathBuf),
+    #[error("failed to read compiler input {path}: {message}")]
+    InputRead { path: PathBuf, message: String },
+    #[error("compiler input changed after discovery: {0}")]
+    InputChanged(PathBuf),
+    #[error("discovered inputs were collected from a different working directory")]
+    DiscoveryWorkingDirectory,
+    #[error("compiler environment input has conflicting values: {0}")]
+    ConflictingEnvironment(String),
     #[error("failed to serialize the rustc action: {0}")]
     Serialization(String),
 }
@@ -534,6 +554,9 @@ impl<'a> ActionBuilder<'a> {
             .iter()
             .map(|argument| self.normalize_argument(argument))
             .collect::<Result<Vec<_>, _>>()?;
+        // rustc may embed these values verbatim through `env!`; unlike paths
+        // used to locate inputs and outputs, changing them changes the artifact.
+        let environment = self.context.environment.clone();
 
         let mut inputs = BTreeMap::<String, CacheDigest>::new();
         for input in &self.context.inputs {
@@ -572,7 +595,7 @@ impl<'a> ActionBuilder<'a> {
                 host: self.context.compiler.host,
             },
             arguments,
-            environment: self.context.environment,
+            environment,
             inputs,
         };
         let bytes = canonical_json(&descriptor)
@@ -790,12 +813,11 @@ mod tests {
 
     #[test]
     fn equivalent_worktrees_produce_the_same_action_key() {
-        let first = common_invocation()
-            .action(context(&[
-                ("src/lib.rs", "source"),
-                ("target/debug/deps/libserde.rlib", "serde"),
-            ]))
-            .unwrap();
+        let first_context = context(&[
+            ("src/lib.rs", "source"),
+            ("target/debug/deps/libserde.rlib", "serde"),
+        ]);
+        let first = common_invocation().action(first_context).unwrap();
         let other = absolute(&["other", "checkout"]);
         let output = other.join("target/debug/deps");
         let invocation = RustcInvocation::parse(&[
@@ -816,7 +838,7 @@ mod tests {
         let mut second_context = context(&[]);
         second_context.working_dir = other.clone();
         second_context.path_mappings[0].root = other.join("target");
-        second_context.path_mappings[1].root = other;
+        second_context.path_mappings[1].root = other.clone();
         second_context.inputs = vec![
             ActionInput {
                 path: "src/lib.rs".into(),
@@ -829,6 +851,34 @@ mod tests {
         ];
         let second = invocation.action(second_context).unwrap();
         assert_eq!(first.digest, second.digest);
+    }
+
+    #[test]
+    fn absolute_environment_values_remain_literal_action_inputs() {
+        let invocation = common_invocation();
+        let mut first_context = context(&[
+            ("src/lib.rs", "source"),
+            ("target/debug/deps/libserde.rlib", "serde"),
+        ]);
+        let first_out_dir = workspace().join("target/debug/build/widget/out");
+        first_context
+            .environment
+            .insert("OUT_DIR".into(), Some(first_out_dir.display().to_string()));
+        let first = invocation.action(first_context).unwrap();
+
+        let mut second_context = context(&[
+            ("src/lib.rs", "source"),
+            ("target/debug/deps/libserde.rlib", "serde"),
+        ]);
+        second_context.environment.insert(
+            "OUT_DIR".into(),
+            Some(absolute(&["other", "out"]).display().to_string()),
+        );
+        let second = invocation.action(second_context).unwrap();
+
+        let descriptor = String::from_utf8(first.bytes).unwrap();
+        assert!(descriptor.contains(&first_out_dir.display().to_string()));
+        assert_ne!(first.digest, second.digest);
     }
 
     #[test]
