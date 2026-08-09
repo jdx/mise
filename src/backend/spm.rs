@@ -9,7 +9,7 @@ use crate::config::{Config, Settings};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use crate::{dirs, file, github, gitlab};
 use async_trait::async_trait;
 use duct::Expression;
@@ -245,24 +245,34 @@ impl Backend for SPMBackend {
         let install_command = opts.source_install_command()?;
         let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
-        let revision = if tv.version == "latest" {
-            self.latest_version(&ctx.config, None, ctx.before_date)
-                .await?
-                .ok_or_else(|| eyre::eyre!("No stable versions found"))?
-        } else {
-            tv.version.clone()
+        let revision = match package_revision(&tv) {
+            Some(revision) => revision,
+            None if tv.version == "latest" => PackageRevision::Release(
+                self.latest_version(&ctx.config, None, ctx.before_date)
+                    .await?
+                    .ok_or_else(|| eyre::eyre!("No stable versions found"))?,
+            ),
+            None => PackageRevision::Release(tv.version.clone()),
         };
 
         let artifactbundle_mode = opts.artifactbundle_mode(None)?;
-        if artifactbundle_mode == ArtifactBundleMode::SourceOnly
-            && Settings::get().spm.artifactbundle_only
-        {
-            bail!("artifactbundle = false conflicts with spm.artifactbundle_only");
-        }
-        if artifactbundle_mode != ArtifactBundleMode::SourceOnly {
+        if should_try_artifactbundle(
+            &revision,
+            &opts,
+            artifactbundle_mode,
+            Settings::get().spm.artifactbundle_only,
+            &tv.version,
+        )? {
             let artifactbundle_required = opts.requires_artifactbundle(artifactbundle_mode);
             match self
-                .try_install_artifactbundle(ctx, &mut tv, &provider, &repo, &revision, &opts)
+                .try_install_artifactbundle(
+                    ctx,
+                    &mut tv,
+                    &provider,
+                    &repo,
+                    revision.as_str(),
+                    &opts,
+                )
                 .await
             {
                 Ok(true) => return Ok(tv),
@@ -317,7 +327,7 @@ impl SPMBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         repo: &SwiftPackageRepo,
-        revision: &str,
+        revision: &PackageRevision,
         install_command: Option<&str>,
     ) -> eyre::Result<()> {
         let repo_dir = self.clone_package_repo(ctx, tv, repo, revision)?;
@@ -385,22 +395,35 @@ impl SPMBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         package_repo: &SwiftPackageRepo,
-        revision: &str,
+        revision: &PackageRevision,
     ) -> Result<PathBuf, eyre::Error> {
         let repo = Git::new(tv.cache_path().join("repo"));
+        if revision.is_git_revision() && repo.exists() {
+            let requested = revision.as_str().to_ascii_lowercase();
+            let matches = repo
+                .current_sha()
+                .map(|sha| sha.to_ascii_lowercase().starts_with(&requested))
+                .unwrap_or(false);
+            if !matches {
+                file::remove_all(&repo.dir)?;
+            }
+        }
         if !repo.exists() {
             debug!(
                 "Cloning swift package repo {} to {}",
                 package_repo.url.as_str(),
                 repo.dir.display(),
             );
-            repo.clone(
-                package_repo.url.as_str(),
-                CloneOptions::default().pr(ctx.pr.as_ref()),
-            )?;
+            let mut clone_options = CloneOptions::default().pr(ctx.pr.as_ref());
+            if revision.is_git_revision() {
+                clone_options = clone_options.revision(revision.as_str());
+            }
+            repo.clone(package_repo.url.as_str(), clone_options)?;
         }
-        debug!("Checking out revision: {revision}");
-        repo.update_tag(revision.to_string())?;
+        if !revision.is_git_revision() {
+            debug!("Checking out release tag: {}", revision.as_str());
+            repo.update_tag(revision.as_str().to_string())?;
+        }
 
         // Updates submodules ensuring they match the checked-out revision
         repo.update_submodules()?;
@@ -579,6 +602,51 @@ impl SPMBackend {
         file::remove_all(tv.cache_path())?;
         Ok(true)
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PackageRevision {
+    Release(String),
+    Git(String),
+}
+
+impl PackageRevision {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Release(revision) | Self::Git(revision) => revision,
+        }
+    }
+
+    fn is_git_revision(&self) -> bool {
+        matches!(self, Self::Git(_))
+    }
+}
+
+fn package_revision(tv: &ToolVersion) -> Option<PackageRevision> {
+    match &tv.request {
+        ToolRequest::Ref { ref_, ref_type, .. } if matches!(ref_type.as_str(), "ref" | "rev") => {
+            Some(PackageRevision::Git(ref_.clone()))
+        }
+        _ => None,
+    }
+}
+
+fn should_try_artifactbundle(
+    revision: &PackageRevision,
+    opts: &SpmOptions<'_>,
+    mode: ArtifactBundleMode,
+    artifactbundle_only: bool,
+    display_version: &str,
+) -> eyre::Result<bool> {
+    if mode == ArtifactBundleMode::SourceOnly && artifactbundle_only {
+        bail!("artifactbundle = false conflicts with spm.artifactbundle_only");
+    }
+    if revision.is_git_revision() && (opts.requires_artifactbundle(mode) || artifactbundle_only) {
+        bail!(
+            "SwiftPM artifact bundles require a release version; {display_version} selects a Git revision and must be built from source"
+        );
+    }
+    Ok(!revision.is_git_revision() && mode != ArtifactBundleMode::SourceOnly)
 }
 
 fn with_install_env(mut command: Expression, tv: &ToolVersion) -> Expression {
@@ -1014,7 +1082,10 @@ fn filter_artifactbundle_binaries(
 #[cfg(test)]
 mod tests {
     use crate::cli::args::BackendResolution;
-    use crate::{config::Config, toolset::ToolVersionOptions};
+    use crate::{
+        config::Config,
+        toolset::{ToolSource, ToolVersionOptions},
+    };
 
     use super::*;
     use indexmap::indexmap;
@@ -1221,6 +1292,71 @@ mod tests {
             opts: indexmap![key.to_string() => value].into(),
             ..Default::default()
         }
+    }
+
+    fn tool_version(version: &str) -> ToolVersion {
+        let ba = Arc::new(BackendArg::new_raw(
+            "spm:owner/repo".to_string(),
+            Some("owner/repo".to_string()),
+            "owner/repo".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::new(ba, version, ToolSource::Argument).unwrap();
+        ToolVersion::new(request, version.to_string())
+    }
+
+    #[test]
+    fn package_revision_distinguishes_releases_from_git_revisions() {
+        assert_eq!(package_revision(&tool_version("1.2.3")), None);
+        assert_eq!(
+            package_revision(&tool_version("rev:0123456789abcdef")),
+            Some(PackageRevision::Git("0123456789abcdef".to_string()))
+        );
+        assert_eq!(
+            package_revision(&tool_version("ref:0123456789abcdef")),
+            Some(PackageRevision::Git("0123456789abcdef".to_string()))
+        );
+        assert_eq!(package_revision(&tool_version("branch:main")), None);
+    }
+
+    #[test]
+    fn git_revisions_skip_or_reject_artifact_bundles() {
+        let revision = PackageRevision::Git("0123456789abcdef".to_string());
+        let default_opts = ToolVersionOptions::default();
+        let default_opts = SpmOptions::new(&default_opts);
+        assert!(
+            !should_try_artifactbundle(
+                &revision,
+                &default_opts,
+                ArtifactBundleMode::Auto,
+                false,
+                "rev:0123456789abcdef"
+            )
+            .unwrap()
+        );
+
+        let required = opts_with("artifactbundle", toml::Value::Boolean(true));
+        let required = SpmOptions::new(&required);
+        let err = should_try_artifactbundle(
+            &revision,
+            &required,
+            ArtifactBundleMode::Required,
+            false,
+            "rev:0123456789abcdef",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("must be built from source"));
+
+        let err = should_try_artifactbundle(
+            &revision,
+            &default_opts,
+            ArtifactBundleMode::Auto,
+            true,
+            "ref:0123456789abcdef",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("must be built from source"));
     }
 
     #[test]
