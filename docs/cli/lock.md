@@ -30,6 +30,7 @@ By default, only the active project config root is locked
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 
 ### `-n --dry-run`
 

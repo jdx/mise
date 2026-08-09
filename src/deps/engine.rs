@@ -830,7 +830,7 @@ impl DepsEngine {
         }
 
         let mut rx = deps.subscribe();
-        let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
+        let semaphore = Arc::new(Semaphore::new(crate::jobs::normalize(Settings::get().jobs)));
         let mut join_set: JoinSet<JobOutput> = JoinSet::new();
         // Track which tokio task ID maps to which provider ID for JoinError recovery
         let mut inflight: HashMap<tokio::task::Id, String> = HashMap::new();

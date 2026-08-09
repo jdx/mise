@@ -21,7 +21,7 @@ Set the environment for loading `mise.<ENV>.toml`
 Force the operation
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
-How many jobs to run in parallel [default: 8]
+How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
 .TP
 \fB\-n, \-\-dry\-run\fR
 Dry run, don't actually do anything
@@ -2038,6 +2038,7 @@ Command string to execute
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
@@ -2417,6 +2418,7 @@ Force reinstall even if already installed
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-n, \-\-dry\-run\fR
@@ -2543,6 +2545,7 @@ By default, only the active project config root is locked
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would be updated without making changes
@@ -2997,6 +3000,7 @@ Reinstall even if plugin exists
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 .TP
 \fB\-v, \-\-verbose\fR
 Show installation output
@@ -3115,6 +3119,7 @@ note: this updates the plugin itself, not the runtime versions
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 Default: 4
 \fBArguments:\fR
 .PP
@@ -3394,6 +3399,7 @@ Force the tasks to run even if outputs are up to date
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
@@ -3808,6 +3814,7 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-u, \-\-unset\fR
@@ -4215,6 +4222,7 @@ Force the tasks to run even if outputs are up to date
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
@@ -4381,6 +4389,7 @@ Test every tool specified in registry/
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tool tests to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-\-all\-config\fR
@@ -4692,6 +4701,7 @@ Display multiselect menu to choose which tools to upgrade
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-l, \-\-bump\fR
@@ -4797,6 +4807,7 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-n, \-\-dry\-run\fR

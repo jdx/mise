@@ -48,6 +48,7 @@ pub struct Upgrade {
     interactive: bool,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,

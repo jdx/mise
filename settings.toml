@@ -1330,7 +1330,7 @@ type = "String"
 
 [jobs]
 default = 8
-description = "How many jobs to run concurrently such as tool installs."
+description = "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1."
 env = "MISE_JOBS"
 rust_type = "usize"
 type = "Integer"

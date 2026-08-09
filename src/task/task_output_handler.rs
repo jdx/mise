@@ -442,7 +442,7 @@ impl OutputHandler {
         if self.raw {
             1
         } else {
-            self.jobs.unwrap_or(Settings::get().jobs)
+            crate::jobs::resolve(Settings::get().jobs, self.jobs)
         }
     }
 }

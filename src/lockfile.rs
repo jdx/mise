@@ -2391,7 +2391,7 @@ pub async fn auto_lock_new_versions(
     }
 
     let settings = Settings::get();
-    let jobs = settings.jobs;
+    let jobs = crate::jobs::normalize(settings.jobs);
     let deferred_retry_only = new_versions.is_empty();
     let mut all_provenance_errors: Vec<String> = Vec::new();
 

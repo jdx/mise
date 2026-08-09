@@ -26,7 +26,7 @@ git config --global \
   url."file://$PWD/sources/missing-zeta".insteadOf \
   "https://gitlab.com/td7x/asdf/adr-tools"
 
-if output="$(mise plugins install adr-tools action-validator act --jobs 1 2>&1)"; then
+if output="$(mise plugins install adr-tools action-validator act --jobs 0 2>&1)"; then
   fail "expected batch plugin install to fail"
 fi
 assert_contains_text "$output" \
@@ -47,7 +47,7 @@ git -C "$PWD/sources/update-good" add updated
 git -C "$PWD/sources/update-good" commit -qm "update plugin"
 expected_sha="$(git -C "$PWD/sources/update-good" rev-parse HEAD)"
 
-if output="$(mise plugins update update-bad update-good --jobs 1 2>&1)"; then
+if output="$(mise plugins update update-bad update-good --jobs 0 2>&1)"; then
   fail "expected batch plugin update to fail"
 fi
 assert_contains_text "$output" "[update-bad] plugin update"

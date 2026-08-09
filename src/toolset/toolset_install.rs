@@ -405,7 +405,7 @@ impl Toolset {
         let raw = opts.raw || Settings::get().raw;
         let jobs = match raw {
             true => 1,
-            false => opts.jobs.unwrap_or(Settings::get().jobs),
+            false => crate::jobs::resolve(Settings::get().jobs, opts.jobs),
         };
         let semaphore = Arc::new(Semaphore::new(jobs));
         let ts = Arc::new(self.clone());

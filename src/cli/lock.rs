@@ -45,6 +45,7 @@ pub struct Lock {
     pub global: bool,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
@@ -1074,7 +1075,7 @@ impl Lock {
         platforms: &[Platform],
         lockfile: &mut Lockfile,
     ) -> Result<(Vec<LockTaskResult>, Vec<String>)> {
-        let jobs = self.jobs.unwrap_or(settings.jobs);
+        let jobs = crate::jobs::resolve(settings.jobs, self.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
         let mut results = Vec::new();

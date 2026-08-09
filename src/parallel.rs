@@ -11,7 +11,7 @@ where
     F: Fn(T) -> Fut + Send + Copy + 'static,
     Fut: Future<Output = Result<U>> + Send + 'static,
 {
-    let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
+    let semaphore = Arc::new(Semaphore::new(crate::jobs::normalize(Settings::get().jobs)));
     let mut jset = JoinSet::new();
     let mut results = input.iter().map(|_| None).collect::<Vec<_>>();
     for item in input.into_iter().enumerate() {

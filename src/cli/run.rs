@@ -121,6 +121,7 @@ pub struct Run {
     pub force: bool,
 
     /// Number of tasks to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]

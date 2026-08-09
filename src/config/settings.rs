@@ -552,6 +552,8 @@ impl Settings {
         }
         if settings.raw {
             settings.jobs = 1;
+        } else {
+            settings.jobs = crate::jobs::normalize(settings.jobs);
         }
         // Handle NO_COLOR environment variable
         if *env::NO_COLOR {
