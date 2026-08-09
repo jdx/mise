@@ -54,6 +54,8 @@ pub struct SettingsMeta {
     pub deprecated_warn_at: Option<&'static str>,
     pub deprecated_remove_at: Option<&'static str>,
     pub global_only: bool,
+    /// Consumed before config files are read, so a value in one can never apply.
+    pub env_only: bool,
 }
 
 #[derive(
@@ -463,6 +465,23 @@ fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global:
     }
 }
 
+/// Drop settings the config loader consumes *before* any config file is read — the config
+/// filenames and paths. A value written here can never take effect, and leaving it in the
+/// partial makes `mise settings get` report it as if it were live, which is what
+/// <https://github.com/jdx/mise/discussions/5791> ran into. Unlike the global-only strip this
+/// applies to every config, global included: the ordering problem is the same either way.
+fn strip_env_only_settings(settings: &mut toml::Table, path: &Path) {
+    for (key, meta) in SETTINGS_META.iter().filter(|(_, meta)| meta.env_only) {
+        if remove_nested_toml_value(settings, key).is_some() {
+            warn!(
+                "{key} in {} is ignored: mise reads it before config files load. Set {} instead.",
+                file::display_path(path),
+                meta.env.unwrap_or("the matching MISE_* variable")
+            );
+        }
+    }
+}
+
 fn remove_nested_toml_value(table: &mut toml::Table, key: &str) -> Option<toml::Value> {
     let mut parts = key.split('.').collect_vec();
     let last = parts.pop()?;
@@ -803,6 +822,7 @@ impl Settings {
         let tera_v1_from_env = tera_v1_from_env_config(&raw);
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));
+            strip_env_only_settings(settings, path);
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -1564,6 +1584,43 @@ mod tests {
     #[test]
     fn test_split_default_shell_or_fallback_reports_parse_errors() {
         assert!(split_default_shell_or_fallback("\"unterminated", "cmd /c").is_err());
+    }
+
+    /// The shape #5791 reported: the setting is accepted into the file, so without this it
+    /// survives into the partial and `mise settings get` echoes it back while the config
+    /// loader — which already ran — never saw it.
+    #[test]
+    fn test_parse_settings_file_strips_env_only_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings]
+            default_config_filename = ".mise.toml"
+            default_tool_versions_filename = ".tool-versions-custom"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.default_config_filename, None);
+        assert_eq!(partial.default_tool_versions_filename, None);
+    }
+
+    /// Unlike `global_only`, being in the *global* config does not rescue these — the loader
+    /// has read the file by the time the value would be applied either way.
+    #[test]
+    fn test_parse_settings_file_strips_env_only_settings_from_global_too() {
+        let mut settings = toml::Table::new();
+        settings.insert(
+            "global_config_file".to_string(),
+            toml::Value::String("/tmp/elsewhere.toml".to_string()),
+        );
+        strip_env_only_settings(&mut settings, Path::new("/tmp/global-config.toml"));
+
+        assert!(settings.get("global_config_file").is_none());
     }
 
     #[test]

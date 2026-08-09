@@ -461,12 +461,14 @@ type = "Bool"
 default = "mise.toml"
 description = "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var."
 env = "MISE_DEFAULT_CONFIG_FILENAME"
+env_only = true
 type = "String"
 
 [default_tool_versions_filename]
 default = ".tool-versions"
 description = "The default .tool-versions filename read. This will not ignore .tool-versions—use override_tool_versions_filename for that. This must be an env var."
 env = "MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+env_only = true
 type = "String"
 
 [disable_backends]
@@ -1036,12 +1038,14 @@ type = "Bool"
 [global_config_file]
 description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
 env = "MISE_GLOBAL_CONFIG_FILE"
+env_only = true
 optional = true
 type = "Path"
 
 [global_config_root]
 description = "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var."
 env = "MISE_GLOBAL_CONFIG_ROOT"
+env_only = true
 optional = true
 type = "Path"
 
@@ -2571,6 +2575,7 @@ type = "String"
 [system_config_file]
 description = "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var."
 env = "MISE_SYSTEM_CONFIG_FILE"
+env_only = true
 optional = true
 type = "Path"
 
