@@ -196,7 +196,11 @@ impl Git {
         // ("we map by name only and have no object-id in refspec") if a SHA
         // is fed to `with_ref_name`.
         let sha_branch = options.branch.as_deref().filter(|b| looks_like_sha(b));
-        let named_branch = options.branch.as_deref().filter(|b| !looks_like_sha(b));
+        let revision = options.revision.as_deref().or(sha_branch);
+        let named_branch = options
+            .branch
+            .as_deref()
+            .filter(|b| !looks_like_sha(b) && revision.is_none());
         if Settings::get().libgit2 || Settings::get().gix {
             debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
@@ -211,8 +215,8 @@ impl Git {
             prepare_checkout
                 .main_worktree(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)?;
 
-            if let Some(sha) = sha_branch {
-                self.checkout(sha)?;
+            if let Some(revision) = revision {
+                self.checkout(revision)?;
             }
             return Ok(());
         }
@@ -238,9 +242,9 @@ impl Git {
                 .arg("-c")
                 .arg("core.autocrlf=false"),
         );
-        // `--depth 1` is incompatible with checking out an arbitrary SHA later,
-        // so do a full clone when the caller passed a SHA.
-        if sha_branch.is_none() {
+        // `--depth 1` is incompatible with checking out an arbitrary revision
+        // later, so do a full clone when the caller supplied one.
+        if revision.is_none() {
             cmd = cmd.arg("--depth").arg("1");
         }
         cmd = cmd.arg(url).arg(&self.dir);
@@ -257,8 +261,8 @@ impl Git {
 
         cmd.execute()?;
 
-        if let Some(sha) = sha_branch {
-            self.checkout(sha)?;
+        if let Some(revision) = revision {
+            self.checkout(revision)?;
         }
         Ok(())
     }
@@ -651,6 +655,7 @@ impl Debug for Git {
 pub struct CloneOptions<'a> {
     pr: Option<&'a dyn SingleReport>,
     branch: Option<String>,
+    revision: Option<String>,
 }
 
 impl<'a> CloneOptions<'a> {
@@ -661,6 +666,17 @@ impl<'a> CloneOptions<'a> {
 
     pub fn branch(mut self, branch: &str) -> Self {
         self.branch = Some(branch.to_string());
+        self.revision = None;
+        self
+    }
+
+    /// Clone the complete repository and check out a revision afterwards.
+    ///
+    /// Unlike `branch`, this accepts abbreviated commit IDs and avoids passing
+    /// them to `git clone -b` or gix's ref-name-only clone API.
+    pub fn revision(mut self, revision: &str) -> Self {
+        self.branch = None;
+        self.revision = Some(revision.to_string());
         self
     }
 }
@@ -1068,10 +1084,25 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         });
         let dst_gix = tmp.path().join("dst-gix");
         Git::new(&dst_gix)
-            .clone(&url, CloneOptions::default().branch(&sha))
+            .clone(&url, CloneOptions::default().revision(&sha))
             .expect("gix clone with SHA must not panic and must succeed");
         let head = git_in(&dst_gix, &["rev-parse", "HEAD"]);
         assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
+
+        // Explicit revisions also accept an unambiguous abbreviated commit ID.
+        let short_sha = &sha[..12];
+        let dst_short = tmp.path().join("dst-short");
+        Git::new(&dst_short)
+            .clone(&url, CloneOptions::default().revision(short_sha))
+            .expect("clone with abbreviated revision must succeed");
+        let head = git_in(&dst_short, &["rev-parse", "HEAD"]);
+        assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
+
+        let dst_invalid = tmp.path().join("dst-invalid");
+        let err = Git::new(&dst_invalid)
+            .clone(&url, CloneOptions::default().revision("deadbeef"))
+            .expect_err("unknown revision must fail");
+        assert!(format!("{err:#}").contains("deadbeef"));
 
         // CLI path — `git clone -b <sha>` is rejected; verify the SHA
         // bypass works there too.

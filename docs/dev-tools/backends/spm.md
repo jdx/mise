@@ -50,14 +50,20 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ### Supported Syntax
 
-| Description                                   | Usage                                           |
-| --------------------------------------------- | ----------------------------------------------- |
-| GitHub shorthand for latest release version   | `spm:tuist/tuist`                               |
-| GitHub shorthand for specific release version | `spm:tuist/tuist@4.15.0`                        |
-| GitHub url for latest release version         | `spm:https://github.com/tuist/tuist.git`        |
-| GitHub url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0` |
+| Description                                   | Usage                                                |
+| --------------------------------------------- | ---------------------------------------------------- |
+| GitHub shorthand for latest release version   | `spm:tuist/tuist`                                    |
+| GitHub shorthand for specific release version | `spm:tuist/tuist@4.15.0`                             |
+| GitHub url for latest release version         | `spm:https://github.com/tuist/tuist.git`             |
+| GitHub url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0`      |
+| GitHub shorthand for a specific commit        | `spm:owner/repo@rev:<commit>`                        |
+| GitHub url for a specific commit              | `spm:https://github.com/owner/repo.git@rev:<commit>` |
 
 Other syntax may work but is unsupported and untested.
+
+Commit selectors (`rev:<commit>` and the compatible `ref:<commit>` form) always build the package
+from source. Use a full commit SHA for a reproducible installation. Artifact bundles are release
+assets and cannot be combined with a commit selector.
 
 ## Tool Options
 
