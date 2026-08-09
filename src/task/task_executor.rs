@@ -416,6 +416,7 @@ impl TaskExecutor {
             if sandbox.effective_deny_env() {
                 sandbox.pass_through_env.extend([
                     "MISE_CACHE_SOCKET".into(),
+                    "MISE_CACHE_STAGING_DIR".into(),
                     "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
                     "RUSTC_WRAPPER".into(),
                     "CARGO_INCREMENTAL".into(),

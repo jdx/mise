@@ -6358,6 +6358,7 @@ dependencies = [
  "miette",
  "minisign-verify",
  "mise-cache-core",
+ "mise-cache-rustc",
  "mise-interactive-config",
  "mise-sigstore",
  "mockito",

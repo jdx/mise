@@ -5,6 +5,7 @@ use mise_cache_core::CacheDigest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// A side-effect-minimized rustc invocation that emits only dependency data.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,6 +132,29 @@ pub struct DiscoveredInputs {
 }
 
 impl DiscoveredInputs {
+    /// Reject inputs whose modification time overlaps the compiler invocation.
+    ///
+    /// Input contents are first hashed after rustc reports their paths. This
+    /// timestamp barrier prevents a post-compile write from being mistaken for
+    /// the contents that produced the artifact. `verify` closes the remaining
+    /// race after hashing.
+    pub fn verify_not_modified_since(&self, started_at: SystemTime) -> Result<(), BypassReason> {
+        for input in &self.inputs {
+            let modified = std::fs::metadata(&input.path)
+                .and_then(|metadata| metadata.modified())
+                .map_err(|error| BypassReason::InputRead {
+                    path: input.path.clone(),
+                    message: error.to_string(),
+                })?;
+            if modified >= started_at {
+                return Err(BypassReason::InputModifiedDuringCompilation(
+                    input.path.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Rehash every discovered file after compilation and before publication.
     /// This closes the discovery/compile race by degrading changed inputs to a
     /// cache miss rather than storing outputs beneath a stale action key.
@@ -420,6 +444,30 @@ mod tests {
             invocation.discover_inputs(&dep_info, root),
             Err(BypassReason::InputRead { path, .. }) if path == external
         ));
+    }
+
+    #[test]
+    fn discovery_rejects_inputs_modified_during_compilation() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("lib.rs");
+        std::fs::write(&source, "pub fn library() {}\n").unwrap();
+        let invocation = RustcInvocation::parse(&[
+            "--crate-name=widget".into(),
+            "--crate-type=lib".into(),
+            "--emit=dep-info,metadata".into(),
+            source.clone().into_os_string(),
+        ])
+        .unwrap();
+        let dep_info = RustcDepInfo::parse(&format!("output: {}\n", source.display())).unwrap();
+        let discovered = invocation
+            .discover_inputs(&dep_info, directory.path())
+            .unwrap();
+        let modified = std::fs::metadata(&source).unwrap().modified().unwrap();
+
+        assert_eq!(
+            discovered.verify_not_modified_since(modified),
+            Err(BypassReason::InputModifiedDuringCompilation(source))
+        );
     }
 
     #[test]

@@ -73,6 +73,12 @@ pub enum BypassReason {
     UnsupportedEmit(String),
     #[error("rustc invocation does not emit an rlib or metadata artifact")]
     NoCacheableOutput,
+    #[error("rustc invocation does not emit dependency information")]
+    NoDepInfo,
+    #[error("rustc output paths do not share one directory")]
+    SplitOutputDirectories,
+    #[error("rustc output path has no file name: {0}")]
+    InvalidOutputPath(PathBuf),
     #[error("native library lookup is not cacheable yet")]
     NativeLibrary,
     #[error("rustc search path kind is not cacheable yet: {0}")]
@@ -107,6 +113,8 @@ pub enum BypassReason {
     InputRead { path: PathBuf, message: String },
     #[error("compiler input changed after discovery: {0}")]
     InputChanged(PathBuf),
+    #[error("compiler input was modified during compilation: {0}")]
+    InputModifiedDuringCompilation(PathBuf),
     #[error("discovered inputs were collected from a different working directory")]
     DiscoveryWorkingDirectory,
     #[error("compiler environment input has conflicting values: {0}")]
@@ -136,6 +144,19 @@ pub struct RustcInvocation {
     arguments: Vec<Argument>,
     source: PathBuf,
     required_inputs: Vec<PathBuf>,
+    crate_name: String,
+    extra_filename: String,
+    out_dir: Option<PathBuf>,
+    explicit_output: Option<PathBuf>,
+    emits: Vec<Emit>,
+}
+
+/// The cacheable files and dependency manifest produced by a rustc invocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RustcOutputs {
+    pub directory: PathBuf,
+    pub files: Vec<PathBuf>,
+    pub dep_info: PathBuf,
 }
 
 impl RustcInvocation {
@@ -149,8 +170,83 @@ impl RustcInvocation {
         Parser::new(arguments).parse()
     }
 
+    /// Return the source input passed to rustc.
     pub fn source(&self) -> &Path {
         &self.source
+    }
+
+    /// Resolve the rlib/rmeta files produced by this invocation.
+    ///
+    /// The initial cache tier requires one output directory so its artifact can
+    /// be represented by one protocol directory and restored atomically later.
+    pub fn outputs(&self, working_dir: &Path) -> Result<RustcOutputs, BypassReason> {
+        if !working_dir.is_absolute() {
+            return Err(BypassReason::RelativeWorkingDirectory(
+                working_dir.to_path_buf(),
+            ));
+        }
+        let explicit_output = self
+            .explicit_output
+            .as_deref()
+            .map(|path| absolute_path(path, working_dir));
+        let output_directory = explicit_output
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| {
+                self.out_dir
+                    .as_deref()
+                    .map(|path| absolute_path(path, working_dir))
+            })
+            .unwrap_or_else(|| normalize_components(working_dir));
+        let mut files = BTreeSet::new();
+        let mut dep_info = None;
+        for emit in &self.emits {
+            if emit.kind == "dep-info" {
+                let path = emit.path.as_ref().map_or_else(
+                    || {
+                        explicit_output.clone().map_or_else(
+                            || {
+                                output_directory
+                                    .join(format!("{}{}.d", self.crate_name, self.extra_filename))
+                            },
+                            |path| path.with_extension("d"),
+                        )
+                    },
+                    |path| absolute_path(path, working_dir),
+                );
+                if path.file_name().is_none() {
+                    return Err(BypassReason::InvalidOutputPath(path));
+                }
+                dep_info = Some(path);
+                continue;
+            }
+            let extension = match emit.kind.as_str() {
+                "link" => "rlib",
+                "metadata" => "rmeta",
+                _ => continue,
+            };
+            let path = if let Some(path) = &emit.path {
+                absolute_path(path, working_dir)
+            } else {
+                output_directory.join(format!(
+                    "lib{}{}.{}",
+                    self.crate_name, self.extra_filename, extension
+                ))
+            };
+            if path.file_name().is_none() {
+                return Err(BypassReason::InvalidOutputPath(path));
+            }
+            if path.parent() != Some(output_directory.as_path()) {
+                return Err(BypassReason::SplitOutputDirectories);
+            }
+            files.insert(path);
+        }
+        Ok(RustcOutputs {
+            directory: output_directory,
+            files: files.into_iter().collect(),
+            dep_info: dep_info.ok_or(BypassReason::NoDepInfo)?,
+        })
     }
 
     /// Build canonical action bytes after precise input discovery has run.
@@ -170,6 +266,7 @@ pub struct PathMapping {
 }
 
 impl PathMapping {
+    /// Map an absolute host path to a stable cache-key placeholder.
     pub fn new(root: impl Into<PathBuf>, placeholder: impl Into<String>) -> Self {
         Self {
             root: root.into(),
@@ -239,6 +336,10 @@ struct Parser<'a> {
     emits: Vec<Emit>,
     required_inputs: Vec<PathBuf>,
     test: bool,
+    crate_name: Option<String>,
+    extra_filename: String,
+    out_dir: Option<PathBuf>,
+    explicit_output: Option<PathBuf>,
 }
 
 impl<'a> Parser<'a> {
@@ -252,6 +353,10 @@ impl<'a> Parser<'a> {
             emits: Vec::new(),
             required_inputs: Vec::new(),
             test: false,
+            crate_name: None,
+            extra_filename: String::new(),
+            out_dir: None,
+            explicit_output: None,
         }
     }
 
@@ -273,11 +378,26 @@ impl<'a> Parser<'a> {
 
         let source = self.source.clone().ok_or(BypassReason::MissingInput)?;
         self.classify()?;
+        let crate_name = self.crate_name.clone().map_or_else(
+            || {
+                source
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.replace('-', "_"))
+                    .ok_or_else(|| BypassReason::NonUtf8Path(source.clone()))
+            },
+            Ok,
+        )?;
         self.required_inputs.push(source.clone());
         Ok(RustcInvocation {
             arguments: self.parsed,
             source,
             required_inputs: self.required_inputs,
+            crate_name,
+            extra_filename: self.extra_filename,
+            out_dir: self.out_dir,
+            explicit_output: self.explicit_output,
+            emits: self.emits,
         })
     }
 
@@ -318,7 +438,14 @@ impl<'a> Parser<'a> {
                 self.parsed.push(Argument::Plain(rendered_flag));
                 Ok(())
             }
-            "cfg" | "check-cfg" | "crate-name" | "edition" | "error-format" | "json" | "color"
+            "crate-name" => {
+                let value = self.take_value(&rendered_flag, inline)?;
+                self.crate_name = Some(value.clone());
+                self.parsed
+                    .push(Argument::Plain(format!("{rendered_flag}={value}")));
+                Ok(())
+            }
+            "cfg" | "check-cfg" | "edition" | "error-format" | "json" | "color"
             | "diagnostic-width" | "remap-path-scope" | "allow" | "warn" | "force-warn"
             | "deny" | "forbid" | "cap-lints" => {
                 let value = self.take_value(&rendered_flag, inline)?;
@@ -356,7 +483,16 @@ impl<'a> Parser<'a> {
                 self.parsed.push(Argument::Emit(emits));
                 Ok(())
             }
-            "out-dir" | "sysroot" => {
+            "out-dir" => {
+                let path = PathBuf::from(self.take_value(&rendered_flag, inline)?);
+                self.out_dir = Some(path.clone());
+                self.parsed.push(Argument::Path {
+                    flag: rendered_flag,
+                    path,
+                });
+                Ok(())
+            }
+            "sysroot" => {
                 let path = self.take_value(&rendered_flag, inline)?;
                 self.parsed.push(Argument::Path {
                     flag: rendered_flag,
@@ -443,6 +579,7 @@ impl<'a> Parser<'a> {
         }
         if let Some(attached) = value.strip_prefix("-o") {
             let path = self.take_value("-o", (!attached.is_empty()).then_some(attached))?;
+            self.explicit_output = Some(path.clone().into());
             self.parsed.push(Argument::Path {
                 flag: "-o".into(),
                 path: path.into(),
@@ -462,6 +599,11 @@ impl<'a> Parser<'a> {
         }
         self.parsed
             .push(Argument::Plain(format!("--codegen={value}")));
+        if name == "extra-filename" {
+            self.extra_filename = value
+                .split_once('=')
+                .map_or(String::new(), |(_, value)| value.to_string());
+        }
         Ok(())
     }
 
@@ -699,6 +841,14 @@ fn normalize_components(path: &Path) -> PathBuf {
     normalized
 }
 
+fn absolute_path(path: &Path, working_dir: &Path) -> PathBuf {
+    if path.is_absolute() {
+        normalize_components(path)
+    } else {
+        normalize_components(&working_dir.join(path))
+    }
+}
+
 fn slash_path(path: &Path) -> Result<String, BypassReason> {
     path.components()
         .filter_map(|component| match component {
@@ -809,6 +959,73 @@ mod tests {
         assert!(json.contains(r#""--out-dir=${target}/debug/deps""#));
         assert!(json.contains(r#""--extern=serde=${target}/debug/deps/libserde.rlib""#));
         assert_eq!(action.digest.algorithm, "blake3");
+    }
+
+    #[test]
+    fn resolves_cargo_library_outputs() {
+        let working_dir = absolute(&["workspace"]);
+        let invocation = RustcInvocation::parse(&args(&[
+            "--crate-name=widget",
+            "--crate-type=lib",
+            "--emit=dep-info,metadata,link",
+            "--out-dir=target/debug/deps",
+            "-Cextra-filename=-abc123",
+            "src/lib.rs",
+        ]))
+        .unwrap();
+        assert_eq!(
+            invocation.outputs(&working_dir).unwrap(),
+            RustcOutputs {
+                directory: working_dir.join("target/debug/deps"),
+                files: vec![
+                    working_dir.join("target/debug/deps/libwidget-abc123.rlib"),
+                    working_dir.join("target/debug/deps/libwidget-abc123.rmeta"),
+                ],
+                dep_info: working_dir.join("target/debug/deps/widget-abc123.d"),
+            }
+        );
+    }
+
+    #[test]
+    fn infers_a_valid_crate_name_from_a_hyphenated_source() {
+        let working_dir = absolute(&["workspace"]);
+        let invocation = RustcInvocation::parse(&args(&[
+            "--crate-type=lib",
+            "--emit=dep-info,metadata",
+            "my-library.rs",
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            invocation.outputs(&working_dir).unwrap().dep_info,
+            working_dir.join("my_library.d")
+        );
+    }
+
+    #[test]
+    fn resolves_multiple_outputs_with_an_explicit_output_stem() {
+        let working_dir = absolute(&["workspace"]);
+        let invocation = RustcInvocation::parse(&args(&[
+            "--crate-name=widget",
+            "--crate-type=lib",
+            "--emit=dep-info,metadata,link",
+            "-o",
+            "target/custom.rlib",
+            "src/lib.rs",
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            invocation.outputs(&working_dir).unwrap(),
+            RustcOutputs {
+                directory: working_dir.join("target"),
+                files: vec![
+                    working_dir.join("target/libwidget.rlib"),
+                    working_dir.join("target/libwidget.rmeta"),
+                ],
+                dep_info: working_dir.join("target/custom.d"),
+            }
+        );
     }
 
     #[test]

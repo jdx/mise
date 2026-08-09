@@ -117,6 +117,7 @@ flate2 = "1"
 futures-util = "0.3.32"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", default-features = false }
+mise-cache-rustc = { path = "crates/mise-cache-rustc" }
 fslock = "0.2.1"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"

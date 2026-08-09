@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 
 const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
+pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -25,6 +26,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) struct CacheSessionEnvironment {
     socket: String,
     rustc_shim: String,
+    staging: String,
 }
 
 impl CacheSessionEnvironment {
@@ -33,6 +35,7 @@ impl CacheSessionEnvironment {
             return;
         }
         environment.insert(SOCKET_ENV.into(), self.socket.clone());
+        environment.insert(STAGING_ENV.into(), self.staging.clone());
         if let Some(previous) = environment.insert("RUSTC_WRAPPER".into(), self.rustc_shim.clone())
             && previous != self.rustc_shim
         {
@@ -41,8 +44,12 @@ impl CacheSessionEnvironment {
         environment.insert("CARGO_INCREMENTAL".into(), "0".into());
     }
 
-    pub(crate) fn sandbox_paths(&self) -> [PathBuf; 2] {
-        [PathBuf::from(&self.rustc_shim), PathBuf::from(&self.socket)]
+    pub(crate) fn sandbox_paths(&self) -> [PathBuf; 3] {
+        [
+            PathBuf::from(&self.rustc_shim),
+            PathBuf::from(&self.socket),
+            PathBuf::from(&self.staging),
+        ]
     }
 }
 
@@ -56,6 +63,8 @@ pub(crate) struct CacheSession {
 impl CacheSession {
     pub(crate) async fn start(session_dir: &Path, cache_dir: PathBuf) -> Result<Self> {
         let shim = install_session_shim(session_dir)?;
+        let staging = session_dir.join("staging");
+        std::fs::create_dir(&staging)?;
         let agent = CacheAgent::new(cache_dir, VERSION);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (socket, server) = spawn_server(session_dir, agent.clone(), shutdown_rx).await?;
@@ -63,6 +72,7 @@ impl CacheSession {
             environment: CacheSessionEnvironment {
                 socket,
                 rustc_shim: shim.to_string_lossy().into_owned(),
+                staging: staging.to_string_lossy().into_owned(),
             },
             agent,
             shutdown: Mutex::new(Some(shutdown_tx)),
@@ -391,25 +401,35 @@ pub(crate) fn is_rustc_shim() -> bool {
 /// Ultra-early argv0 path used by Cargo's `RUSTC_WRAPPER` integration.
 ///
 /// This runs before mise creates a Tokio runtime, installs logging, or discovers
-/// configuration. The Rust adapter will replace the transparent compiler call;
-/// until then this establishes and benchmarks the final process/session shape.
+/// configuration. Cacheable misses publish through the task-scoped agent;
+/// unsupported invocations remain transparent compiler calls.
 pub(crate) fn run_rustc_shim() -> ExitCode {
-    if let Err(_error) = handshake_from_environment() {
-        #[cfg(debug_assertions)]
-        eprintln!("mise action-cache shim is running uncached: {_error}");
-    }
-
     let mut arguments = std::env::args_os().skip(1);
     let Some(rustc) = arguments.next() else {
         eprintln!("mise action-cache shim expected the rustc executable as its first argument");
         return ExitCode::from(1);
     };
+    let arguments = arguments.collect::<Vec<_>>();
+    if std::env::var_os(PREVIOUS_RUSTC_WRAPPER_ENV).is_none() {
+        match crate::cache::rustc::compile_miss(&rustc, &arguments) {
+            Ok(exit_code) => return exit_code,
+            Err(_error) => {
+                #[cfg(debug_assertions)]
+                eprintln!("mise rustc cache bypassed: {_error:#}");
+            }
+        }
+    }
+
+    run_transparent_rustc(rustc, arguments)
+}
+
+fn run_transparent_rustc(rustc: OsString, arguments: Vec<OsString>) -> ExitCode {
     let mut command = if let Some(wrapper) = std::env::var_os(PREVIOUS_RUSTC_WRAPPER_ENV) {
         let mut command = Command::new(wrapper);
-        command.arg(rustc);
+        command.arg(&rustc);
         command
     } else {
-        Command::new(rustc)
+        Command::new(&rustc)
     };
     command.args(arguments);
     command.env_remove(PREVIOUS_RUSTC_WRAPPER_ENV);
@@ -452,21 +472,25 @@ pub(crate) fn run_rustc_shim() -> ExitCode {
     }
 }
 
-fn handshake_from_environment() -> Result<()> {
+pub(super) fn request_agent(requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
     let socket =
         std::env::var_os(SOCKET_ENV).ok_or_else(|| eyre::eyre!("{SOCKET_ENV} is not set"))?;
-    handshake(&socket)
+    request_agent_at(&socket, requests)
 }
 
 #[cfg(unix)]
-fn handshake(socket: &OsString) -> Result<()> {
-    let stream = std::os::unix::net::UnixStream::connect(Path::new(socket))
+fn request_agent_at(socket: &OsString, requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
+    let mut stream = std::os::unix::net::UnixStream::connect(Path::new(socket))
         .wrap_err("failed to connect to the action-cache session")?;
-    sync_handshake(stream)
+    sync_handshake(&mut stream)?;
+    requests
+        .iter()
+        .map(|request| sync_request(&mut stream, request))
+        .collect()
 }
 
 #[cfg(windows)]
-fn handshake(socket: &OsString) -> Result<()> {
+fn request_agent_at(socket: &OsString, requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
     let endpoint = socket.to_string_lossy().into_owned();
     tokio::runtime::Builder::new_current_thread()
         .enable_io()
@@ -485,25 +509,51 @@ fn handshake(socket: &OsString) -> Result<()> {
             stream.write_all(&encoded).await?;
             stream.flush().await?;
             let mut response = String::new();
-            tokio::io::BufReader::new(stream)
+            tokio::io::BufReader::new(&mut stream)
                 .read_line(&mut response)
                 .await?;
-            validate_handshake_response(&response)
+            validate_handshake_response(&response)?;
+            let mut responses = Vec::with_capacity(requests.len());
+            for request in requests {
+                let mut encoded = serde_json::to_vec(request)?;
+                encoded.push(b'\n');
+                stream.write_all(&encoded).await?;
+                stream.flush().await?;
+                let mut response = String::new();
+                tokio::io::BufReader::new(&mut stream)
+                    .read_line(&mut response)
+                    .await?;
+                responses.push(serde_json::from_str(&response)?);
+            }
+            Ok(responses)
         })
 }
 
 #[cfg(unix)]
-fn sync_handshake(mut stream: impl std::io::Read + Write) -> Result<()> {
+fn sync_handshake(stream: &mut (impl std::io::Read + Write)) -> Result<()> {
     let request = AgentRequest::Hello {
         protocol: AGENT_PROTOCOL_VERSION,
         client_version: VERSION.into(),
     };
-    serde_json::to_writer(&mut stream, &request)?;
+    serde_json::to_writer(&mut *stream, &request)?;
     stream.write_all(b"\n")?;
     stream.flush()?;
     let mut response = String::new();
-    BufReader::new(stream).read_line(&mut response)?;
+    BufReader::new(&mut *stream).read_line(&mut response)?;
     validate_handshake_response(&response)
+}
+
+#[cfg(unix)]
+fn sync_request(
+    stream: &mut (impl std::io::Read + Write),
+    request: &AgentRequest,
+) -> Result<AgentResponse> {
+    serde_json::to_writer(&mut *stream, request)?;
+    stream.write_all(b"\n")?;
+    stream.flush()?;
+    let mut response = String::new();
+    BufReader::new(&mut *stream).read_line(&mut response)?;
+    Ok(serde_json::from_str(&response)?)
 }
 
 fn validate_handshake_response(response: &str) -> Result<()> {
@@ -526,6 +576,7 @@ mod tests {
         let environment = CacheSessionEnvironment {
             socket: "socket".into(),
             rustc_shim: "shim".into(),
+            staging: "staging".into(),
         };
         let mut task = Task::default();
         let mut values = BTreeMap::from([("RUSTC_WRAPPER".into(), "existing".into())]);
@@ -539,6 +590,7 @@ mod tests {
         task.rust_cache = Some(TaskRustCacheConfig { enabled: true });
         environment.apply(&task, &mut values);
         assert_eq!(values.get(SOCKET_ENV).unwrap(), "socket");
+        assert_eq!(values.get(STAGING_ENV).unwrap(), "staging");
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "shim");
         assert_eq!(values.get(PREVIOUS_RUSTC_WRAPPER_ENV).unwrap(), "existing");
         assert_eq!(values.get("CARGO_INCREMENTAL").unwrap(), "0");

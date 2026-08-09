@@ -8,7 +8,9 @@ use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
 use mise_cache_core::{
-    BlobSource, BlobUpload, CLIENT_METADATA_MEDIA_TYPE, CacheDigest, DIRECTORY_MEDIA_TYPE,
+    BlobSource, BlobUpload, CLIENT_METADATA_MEDIA_TYPE, CacheDigest,
+    CacheDirectory as RemoteDirectory, CacheDirectoryNode as RemoteDirectoryNode,
+    CacheFileNode as RemoteFileNode, CacheSymlinkNode as RemoteSymlinkNode, DIRECTORY_MEDIA_TYPE,
     RemoteActionResult, RemoteCacheClient, RemoteCacheConfig,
 };
 use serde::{Deserialize, Serialize};
@@ -74,36 +76,6 @@ impl RemoteClientMetadata {
             execution_duration_ns: self.execution_duration_ns,
         })
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteDirectory {
-    directories: Vec<RemoteDirectoryNode>,
-    files: Vec<RemoteFileNode>,
-    symlinks: Vec<RemoteSymlinkNode>,
-    version: u8,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteDirectoryNode {
-    digest: CacheDigest,
-    mode: u32,
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteFileNode {
-    digest: CacheDigest,
-    executable: bool,
-    mode: u32,
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteSymlinkNode {
-    mode: u32,
-    name: String,
-    target: String,
 }
 
 enum ArchiveNode {
