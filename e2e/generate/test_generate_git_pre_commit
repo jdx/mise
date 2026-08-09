@@ -7,6 +7,9 @@ assert_contains "mise generate git-pre-commit --quiet" "exec mise run pre-commit
 assert_contains "mise generate git-pre-commit --write" "Wrote to"
 test -x .git/hooks/pre-commit
 assert_contains "cat .git/hooks/pre-commit" "exec mise run pre-commit"
+# git hands most hooks arguments — a commit-msg hook gets the message file — and they have
+# to reach the task. pre-commit itself is called with none, so this expands to nothing there.
+assert_contains "cat .git/hooks/pre-commit" 'exec mise run pre-commit "$@"'
 
 assert_contains "mise generate git-pre-commit --write" "Moving existing hook"
 test -f .git/hooks/pre-commit.old

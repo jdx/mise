@@ -55,12 +55,16 @@ impl GitPreCommit {
 
     fn generate(&self) -> String {
         let task = &self.task;
+        // `"$@"` forwards whatever git passes the hook. `pre-commit` is called with no
+        // arguments so it is unaffected, but every other `--hook` target gets some — a
+        // `commit-msg` hook is handed the path to the message file, for instance — and
+        // without this they are dropped before the task ever sees them.
         format!(
             r#"#!/bin/sh
 STAGED="$(git diff-index --cached --name-only -z HEAD | xargs -0)"
 export STAGED
 export MISE_PRE_COMMIT=1
-exec mise run {task}
+exec mise run {task} "$@"
 "#
         )
     }
@@ -73,3 +77,36 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>git commit -m "feat: add new feature"</bold> <dim># runs `mise run pre-commit`</dim>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::GitPreCommit;
+
+    fn generate(task: &str, hook: &str) -> String {
+        GitPreCommit {
+            task: task.to_string(),
+            write: false,
+            hook: hook.to_string(),
+        }
+        .generate()
+    }
+
+    #[test]
+    fn forwards_hook_arguments_to_the_task() {
+        // Without the passthrough a `commit-msg` hook cannot reach the message file git
+        // hands it, which is the whole point of that hook.
+        let out = generate("lint-commit-msg", "commit-msg");
+        assert!(
+            out.contains(r#"exec mise run lint-commit-msg "$@""#),
+            "hook arguments must reach the task:\n{out}"
+        );
+    }
+
+    #[test]
+    fn pre_commit_output_is_unchanged_in_substance() {
+        let out = generate("pre-commit", "pre-commit");
+        assert!(out.starts_with("#!/bin/sh\n"), "{out}");
+        assert!(out.contains("export MISE_PRE_COMMIT=1"), "{out}");
+        assert!(out.contains("STAGED="), "{out}");
+    }
+}
