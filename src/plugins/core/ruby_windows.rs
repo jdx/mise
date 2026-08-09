@@ -121,13 +121,27 @@ impl RubyPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let artifact = super::ruby_common::resolve_rubyinstaller_artifact(&tv.version).await;
-        let filename = &artifact.filename;
-        let tarball_path = tv.download_path().join(filename);
+        // A lockfile pins the exact archive, and `verify_checksum` checks the
+        // download against the checksum recorded beside it. Resolving afresh
+        // here could pick a newer build revision than the lock describes and
+        // fail that check; the pinned URL has to win.
+        let locked = locked_archive(
+            tv.lock_platforms
+                .get(&self.get_platform_key())
+                .and_then(|pi| pi.url.as_deref()),
+        );
+        let (url, filename) = match locked {
+            Some(locked) => locked,
+            None => {
+                let artifact =
+                    super::ruby_common::resolve_rubyinstaller_artifact(&tv.version).await;
+                (artifact.url, artifact.filename)
+            }
+        };
+        let tarball_path = tv.download_path().join(&filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&artifact.url, &tarball_path, Some(pr))
-            .await?;
+        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
 
         Ok(tarball_path)
     }
@@ -272,6 +286,15 @@ fn parse_gemfile(body: &str) -> String {
     v
 }
 
+/// The archive a lockfile already pins for this platform, as `(url, filename)`.
+/// `None` when nothing is locked or the URL yields no filename, in which case
+/// the caller resolves the archive itself.
+fn locked_archive(locked_url: Option<&str>) -> Option<(String, String)> {
+    let url = locked_url?;
+    let filename = crate::backend::static_helpers::get_filename_from_url(url);
+    (!filename.is_empty()).then(|| (url.to_string(), filename))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
@@ -279,6 +302,23 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    /// A lockfile pins the archive whose checksum `verify_checksum` will apply,
+    /// so a locked URL has to be used verbatim rather than re-resolved to a
+    /// newer build revision.
+    #[test]
+    fn locked_archive_is_used_verbatim() {
+        let url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.4.4-1/rubyinstaller-3.4.4-1-x64.7z";
+        assert_eq!(
+            locked_archive(Some(url)),
+            Some((url.to_string(), "rubyinstaller-3.4.4-1-x64.7z".to_string()))
+        );
+    }
+
+    #[test]
+    fn locked_archive_is_none_without_a_lock() {
+        assert_eq!(locked_archive(None), None);
+    }
 
     #[tokio::test]
     async fn test_list_versions_matching() {
