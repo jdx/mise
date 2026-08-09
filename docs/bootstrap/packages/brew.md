@@ -210,11 +210,12 @@ removes those targets and the cask's Caskroom entry; `--dry-run` previews the
 plan and `--yes` skips confirmation.
 
 Casks installed before their receipt included prune metadata are skipped until
-a later upgrade or reinstall refreshes the receipt. Casks with pkg artifacts,
-install or uninstall lifecycle actions, pending transactions, Homebrew
-`.metadata`, changed targets, or targets shared with another mise cask are also
-skipped with a reason. Prune never runs `zap` metadata and never reconstructs
-historical uninstall behavior from the current Homebrew API.
+a later upgrade or reinstall refreshes the receipt. Casks with pkg or command
+wrapper artifacts, install or uninstall lifecycle actions, pending
+transactions, Homebrew `.metadata`, changed targets, or targets shared with
+another mise cask are also skipped with a reason. Prune never runs `zap`
+metadata and never reconstructs historical uninstall behavior from the current
+Homebrew API.
 
 ## How pouring works
 

@@ -196,7 +196,7 @@ struct CaskArtifacts {
     pkg_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct CaskReceipt {
     #[serde(default)]
     schema_version: u8,
@@ -3829,6 +3829,9 @@ fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> 
     if !artifacts.pkgs.is_empty() {
         return Some("pkg artifacts require uninstall support".to_string());
     }
+    if !artifacts.command_wrappers.is_empty() {
+        return Some("command wrapper artifacts are not supported for pruning".to_string());
+    }
     if !artifacts.preflight_steps.is_empty()
         || !artifacts.postflight_steps.is_empty()
         || has_lifecycle_hook(cask, "preflight")
@@ -4090,6 +4093,34 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
             continue;
         }
         let configured = keep.contains(&token);
+        let Ok(version_entries) = std::fs::read_dir(entry.path()) else {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason: "Caskroom directory could not be read".to_string(),
+                });
+            }
+            continue;
+        };
+        let versions = version_entries
+            .filter_map(|version| version.ok())
+            .filter(|version| {
+                version.file_type().is_ok_and(|kind| kind.is_dir())
+                    && !version.file_name().to_string_lossy().starts_with('.')
+            })
+            .collect::<Vec<_>>();
+        let mut receipts = BTreeMap::new();
+        for version in &versions {
+            if let Some(receipt) = read_receipt(&version.path())? {
+                for target in &receipt.targets {
+                    claims
+                        .entry(target.path.clone())
+                        .or_default()
+                        .insert(token.clone());
+                }
+                receipts.insert(version.path(), receipt);
+            }
+        }
         if entry.path().join(".metadata").symlink_metadata().is_ok() {
             if !configured {
                 plan.skipped.push(CaskPruneSkip {
@@ -4099,13 +4130,6 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
             }
             continue;
         }
-        let versions = std::fs::read_dir(entry.path())?
-            .filter_map(|version| version.ok())
-            .filter(|version| {
-                version.file_type().is_ok_and(|kind| kind.is_dir())
-                    && !version.file_name().to_string_lossy().starts_with('.')
-            })
-            .collect::<Vec<_>>();
         let [version] = versions.as_slice() else {
             if !configured {
                 plan.skipped.push(CaskPruneSkip {
@@ -4116,7 +4140,7 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
             continue;
         };
         let version_dir = version.path();
-        let Some(receipt) = read_receipt(&version_dir)? else {
+        let Some(receipt) = receipts.remove(&version_dir) else {
             if !configured {
                 plan.skipped.push(CaskPruneSkip {
                     token,
@@ -4125,12 +4149,6 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
             }
             continue;
         };
-        for target in &receipt.targets {
-            claims
-                .entry(target.path.clone())
-                .or_default()
-                .insert(token.clone());
-        }
         if configured {
             continue;
         }
@@ -4225,7 +4243,9 @@ fn apply_cask_prune_plan_in(
 
     let mut removed = 0;
     for candidate in &plan.remove {
-        if let Err(reason) = validate_cask_prune_candidate(candidate) {
+        if let Err(reason) = validate_cask_prune_candidate(candidate)
+            .and_then(|_| validate_cask_prune_claims(candidate))
+        {
             warn!(
                 "brew-cask:{}: skipped because recorded artifacts changed after planning: {reason:#}",
                 candidate.token
@@ -4254,8 +4274,48 @@ fn apply_cask_prune_plan_in(
     Ok(removed)
 }
 
+fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
+    let caskroom = prefix::prefix().join("Caskroom");
+    let mut claims = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    for entry in std::fs::read_dir(&caskroom)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let token = entry.file_name().to_string_lossy().to_string();
+        for version in std::fs::read_dir(entry.path())? {
+            let version = version?;
+            if !version.file_type()?.is_dir()
+                || version.file_name().to_string_lossy().starts_with('.')
+            {
+                continue;
+            }
+            if let Some(receipt) = read_receipt(&version.path())? {
+                for target in receipt.targets {
+                    claims.entry(target.path).or_default().insert(token.clone());
+                }
+            }
+        }
+    }
+    for target in &candidate.receipt.targets {
+        if claims
+            .get(&target.path)
+            .is_some_and(|tokens| tokens.iter().any(|token| token != &candidate.token))
+        {
+            bail!(
+                "artifact target is now claimed by another cask: {}",
+                target.path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     let receipt = &candidate.receipt;
+    if read_receipt(&candidate.version_dir)?.as_ref() != Some(receipt) {
+        bail!("ownership receipt has changed");
+    }
     if receipt.schema_version != 3 || !receipt.prune_safe || !receipt.pkg_ids.is_empty() {
         bail!("receipt is not marked safe for direct-artifact pruning");
     }
@@ -4659,6 +4719,28 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
+    }
+
+    fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {
+        let app = AppArtifact {
+            source: app_name.to_string(),
+            target: Some(format!("$HOMEBREW_PREFIX/Applications/{app_name}")),
+        };
+        let target = app_target_path(app.target_name())?;
+        file::create_dir_all(&target)?;
+        file::write(target.join("version"), "1.0.0")?;
+        let version_dir = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(version_dir.join(app_name))?;
+        file::write(version_dir.join(app_name).join("version"), "1.0.0")?;
+        write_receipt(
+            &version_dir,
+            cask,
+            &CaskArtifacts {
+                apps: vec![app],
+                ..Default::default()
+            },
+        )?;
+        Ok(target)
     }
 
     #[test]
@@ -7220,6 +7302,66 @@ end
     }
 
     #[test]
+    fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+
+        write_test_app_receipt(&test_cask("shared-a", "1.0.0"), "Shared.app")?;
+        write_test_app_receipt(&test_cask("shared-b", "1.0.0"), "Shared.app")?;
+        write_test_app_receipt(&test_cask("single", "1.0.0"), "Multi.app")?;
+        write_test_app_receipt(&test_cask("multi", "1.0.0"), "Multi.app")?;
+        write_test_app_receipt(&test_cask("multi", "2.0.0"), "Multi.app")?;
+        write_test_app_receipt(&test_cask("pending", "1.0.0"), "Pending.app")?;
+        let journal_dir = state_dir.join("brew-cask/pending");
+        file::create_dir_all(&journal_dir)?;
+        file::write(journal_dir.join("1.0.0.json"), "{}")?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert!(plan.remove.is_empty());
+        assert_eq!(plan.skipped.len(), 5);
+        for token in ["shared-a", "shared-b"] {
+            assert!(plan.skipped.iter().any(|skip| {
+                skip.token == token && skip.reason.contains("also claimed by another cask")
+            }));
+        }
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "pending"
+                && skip
+                    .reason
+                    .contains("incomplete cask transaction is pending")
+        }));
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "single" && skip.reason.contains("also claimed by another cask")
+        }));
+        assert!(
+            plan.skipped.iter().any(|skip| {
+                skip.token == "multi" && skip.reason.contains("expected exactly one")
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        let target = write_test_app_receipt(&test_cask("planned", "1.0.0"), "Shared.app")?;
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert_eq!(plan.remove.len(), 1);
+
+        write_test_app_receipt(&test_cask("late-claim", "1.0.0"), "Shared.app")?;
+
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+        assert!(target.exists());
+        assert!(caskroom_token_dir("planned").exists());
+        Ok(())
+    }
+
+    #[test]
     fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
         let mut cask = test_cask("example", "1.0.0");
         let direct = CaskArtifacts {
@@ -7243,6 +7385,22 @@ end
             ..Default::default()
         };
         assert!(cask_prune_blocker(&cask, &pkg).is_some());
+
+        let wrapper = CaskArtifacts {
+            command_wrappers: vec![CommandWrapperArtifact {
+                name: "example".to_string(),
+                target: None,
+                content: None,
+                executable: Some("$APPDIR/Example.app/Contents/MacOS/example".to_string()),
+                args: Vec::new(),
+                env: BTreeMap::new(),
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            cask_prune_blocker(&cask, &wrapper).as_deref(),
+            Some("command wrapper artifacts are not supported for pruning")
+        );
         Ok(())
     }
 
