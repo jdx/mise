@@ -687,6 +687,7 @@ impl MiseToml {
     }
 
     /// Update a package while inheriting table-form options when this file does not declare it.
+    #[cfg(unix)]
     pub fn update_bootstrap_package_with_fallback(
         &mut self,
         spec: &str,
@@ -3359,15 +3360,18 @@ mod tests {
         cf.update_bootstrap_package("brew:ripgrep", "latest")
             .unwrap();
         cf.update_bootstrap_package("brew:fd", "latest").unwrap();
-        let inherited = cf
-            .bootstrap_config()
-            .unwrap()
-            .packages
-            .get("brew:ripgrep")
-            .unwrap()
-            .clone();
-        cf.update_bootstrap_package_with_fallback("brew:bat", "latest", Some(&inherited))
-            .unwrap();
+        #[cfg(unix)]
+        {
+            let inherited = cf
+                .bootstrap_config()
+                .unwrap()
+                .packages
+                .get("brew:ripgrep")
+                .unwrap()
+                .clone();
+            cf.update_bootstrap_package_with_fallback("brew:bat", "latest", Some(&inherited))
+                .unwrap();
+        }
 
         let dump = cf.dump().unwrap();
         assert!(
@@ -3382,6 +3386,7 @@ mod tests {
             dump.contains(r#"os = ["macos"] # keep selector comment"#),
             "nested package selectors should survive: {dump}"
         );
+        #[cfg(unix)]
         assert!(
             dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"] }"#),
             "inherited package selectors should be written locally: {dump}"
@@ -3397,6 +3402,7 @@ mod tests {
             cf.bootstrap_config().unwrap().packages.get("brew:fd"),
             Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
         ));
+        #[cfg(unix)]
         assert!(matches!(
             cf.bootstrap_config().unwrap().packages.get("brew:bat"),
             Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
