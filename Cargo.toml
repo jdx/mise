@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/mise-cache-core",
+  "crates/mise-cache-rustc",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -114,6 +116,7 @@ filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3.32"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
+mise-cache-core = { path = "crates/mise-cache-core", default-features = false }
 fslock = "0.2.1"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"
@@ -257,6 +260,11 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
 ] }
 zipsign-api = "0.2"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Threading",
+] }
 
 [build-dependencies]
 aqua-registry = { path = "crates/aqua-registry" }
@@ -286,6 +294,7 @@ native-tls = [
   "rattler/native-tls",
   "rattler_repodata_gateway/native-tls",
   "mise-sigstore/native-tls",
+  "mise-cache-core/native-tls",
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
@@ -297,6 +306,7 @@ rustls = [
   "rattler/rustls",
   "rattler_repodata_gateway/rustls",
   "mise-sigstore/rustls",
+  "mise-cache-core/rustls",
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
@@ -308,6 +318,7 @@ rustls-native-roots = [
   "rattler/rustls",
   "rattler_repodata_gateway/rustls",
   "mise-sigstore/rustls",
+  "mise-cache-core/rustls-native-roots",
   "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",

@@ -71,7 +71,6 @@ pub mod workspace;
 pub(crate) use task_cache::TaskCacheOutput;
 pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
 pub(crate) use task_cache_audit::TaskCacheAudit;
-pub use task_cache_store::TaskCacheRemoteMode;
 pub use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};
@@ -568,6 +567,73 @@ pub struct TaskWatchOptions {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct TaskLanguageCacheOptions {
+    enabled: bool,
+}
+
+impl Default for TaskLanguageCacheOptions {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+macro_rules! task_language_cache_config {
+    ($name:ident) => {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub struct $name {
+            pub enabled: bool,
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self { enabled: true }
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct LanguageCacheVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for LanguageCacheVisitor {
+                    type Value = $name;
+
+                    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                        formatter.write_str("a boolean or language cache options table")
+                    }
+
+                    fn visit_bool<E>(self, enabled: bool) -> std::result::Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        Ok($name { enabled })
+                    }
+
+                    fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+                    where
+                        M: serde::de::MapAccess<'de>,
+                    {
+                        let options = TaskLanguageCacheOptions::deserialize(
+                            serde::de::value::MapAccessDeserializer::new(map),
+                        )?;
+                        Ok($name {
+                            enabled: options.enabled,
+                        })
+                    }
+                }
+
+                deserializer.deserialize_any(LanguageCacheVisitor)
+            }
+        }
+    };
+}
+
+task_language_cache_config!(TaskRustCacheConfig);
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
     /// Internal execution occurrence. A task referenced as both a regular and
@@ -649,6 +715,9 @@ pub struct Task {
     /// Experimental local artifact cache configuration.
     #[serde(default)]
     pub cache: Option<TaskCacheConfig>,
+    /// Rust compiler action caching enabled only for this task run.
+    #[serde(default)]
+    pub rust_cache: Option<TaskRustCacheConfig>,
     #[serde(skip)]
     pub raw_outputs: RawOutputTemplates,
     #[serde(default)]
@@ -1324,6 +1393,13 @@ impl Task {
             .map(|v| {
                 TaskCacheConfig::deserialize(v.clone())
                     .map_err(|e| eyre!("failed to parse cache field in task header: {e}"))
+            })
+            .transpose()?;
+        task.rust_cache = p
+            .get_raw("rust_cache")
+            .map(|value| {
+                TaskRustCacheConfig::deserialize(value.clone())
+                    .map_err(|error| eyre!("failed to parse rust_cache field: {error}"))
             })
             .transpose()?;
         task.file = Some(path.to_path_buf());
@@ -2417,6 +2493,9 @@ impl Task {
         if other.cache.is_some() {
             self.cache = other.cache;
         }
+        if other.rust_cache.is_some() {
+            self.rust_cache = other.rust_cache;
+        }
         if other.raw_outputs.templates.is_some() {
             self.raw_outputs = other.raw_outputs;
         }
@@ -2981,6 +3060,7 @@ impl Default for Task {
             watch: None,
             outputs: Default::default(),
             cache: Default::default(),
+            rust_cache: Default::default(),
             raw_outputs: Default::default(),
             shell: None,
             silent: Silent::Off,
@@ -3436,7 +3516,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::task::workspace;
-    use crate::task::{RunEntry, Task, TaskWatchOptions};
+    use crate::task::{RunEntry, Task, TaskRustCacheConfig, TaskWatchOptions};
     use crate::{config::Config, dirs};
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
@@ -3522,6 +3602,73 @@ watch = { no_vcs_ignore = true }
                 no_vcs_ignore: true
             })
         );
+    }
+
+    #[test]
+    fn test_task_rust_cache_deserializes_boolean_and_table() {
+        let enabled: Task = toml::from_str(
+            r#"
+run = "cargo build"
+rust_cache = true
+"#,
+        )
+        .unwrap();
+        let table: Task = toml::from_str(
+            r#"
+run = "cargo build"
+rust_cache = {}
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            enabled.rust_cache,
+            Some(TaskRustCacheConfig { enabled: true })
+        );
+        assert_eq!(
+            table.rust_cache,
+            Some(TaskRustCacheConfig { enabled: true })
+        );
+    }
+
+    #[test]
+    fn test_task_rust_cache_deserializes_disabled() {
+        let disabled: Task = toml::from_str(
+            r#"
+run = "cargo build"
+rust_cache = false
+"#,
+        )
+        .unwrap();
+        let table: Task = toml::from_str(
+            r#"
+run = "cargo build"
+rust_cache = { enabled = false }
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            disabled.rust_cache,
+            Some(TaskRustCacheConfig { enabled: false })
+        );
+        assert_eq!(
+            table.rust_cache,
+            Some(TaskRustCacheConfig { enabled: false })
+        );
+    }
+
+    #[test]
+    fn test_task_language_cache_rejects_unknown_option() {
+        let error = toml::from_str::<Task>(
+            r#"
+run = "cargo build"
+rust_cache = { unknown = true }
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("unknown field `unknown`"));
     }
 
     #[test]
@@ -4759,6 +4906,7 @@ echo "hello world"
 #MISE watch={no_vcs_ignore=true}
 #MISE outputs=["out1.txt"]
 #MISE cache={enabled=true,env=["PROFILE"]}
+#MISE rust_cache=true
 #MISE pass_through_env=["DEPLOY_TOKEN"]
 #MISE shell="bash -c"
 #MISE quiet=true
@@ -4802,6 +4950,7 @@ echo "test"
                 command_inputs: vec![],
             })
         );
+        assert_eq!(task.rust_cache, Some(TaskRustCacheConfig { enabled: true }));
         assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);

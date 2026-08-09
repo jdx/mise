@@ -1069,7 +1069,7 @@ Print the config/source updates without writing anything
 \fB\-\-no\-apply\fR
 Add the entry without applying it
 .TP
-\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
+\fB\-p, \-\-path\fR \fI<PATH>\fR
 Write to this config file or directory
 .TP
 \fB\-s, \-\-source\fR \fI<PATH>\fR
@@ -4742,6 +4742,14 @@ Do not uninstall the versions that were upgraded away from
 By default the old version is removed once the new one installs, unless another
 tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
 something outside of mise points at the old install directory.
+
+Set `upgrade.auto_prune = false` to make this the default.
+.TP
+\fB\-\-prune\fR
+Uninstall the versions that were upgraded away from
+
+This is already the default. Use it to override `upgrade.auto_prune = false`
+for a single run.
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
@@ -4794,7 +4802,7 @@ Number of jobs to run in parallel
 \fB\-n, \-\-dry\-run\fR
 Perform a dry run, showing what would be installed and modified without making changes
 .TP
-\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
+\fB\-p, \-\-path\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.

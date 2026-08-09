@@ -48,7 +48,11 @@ impl FromLua for AvailableVersion {
                     checksum,
                 })
             }
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "AvailableVersion".to_string(),
+                message: Some("Expected table".to_string()),
+            }),
         }
     }
 }
@@ -56,6 +60,15 @@ impl FromLua for AvailableVersion {
 #[cfg(test)]
 mod tests {
     use crate::Plugin;
+    use crate::hooks::available::AvailableVersion;
+    use mlua::{FromLua, Lua, Value};
+
+    #[test]
+    fn test_available_version_rejects_non_table() {
+        let lua = Lua::new();
+        let result = AvailableVersion::from_lua(Value::Boolean(true), &lua);
+        assert!(result.is_err(), "a non-table response must not panic");
+    }
 
     #[test]
     fn dummy() {

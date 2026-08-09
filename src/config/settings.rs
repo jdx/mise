@@ -404,6 +404,42 @@ fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPart
             partial.minimum_release_age = Some(v);
         }
     }
+    if let Some(v) = partial.task.cache_remote_mode.take() {
+        warn_deprecated("task.cache_remote_mode");
+        if partial.task.cache.remote_mode.is_none() {
+            partial.task.cache.remote_mode = Some(v);
+        }
+    }
+    if let Some(v) = partial.task.cache_remote_namespace.take() {
+        warn_deprecated("task.cache_remote_namespace");
+        if partial.task.cache.remote_namespace.is_none() {
+            partial.task.cache.remote_namespace = Some(v);
+        }
+    }
+    if let Some(v) = partial.task.cache_remote_oidc_audience.take() {
+        warn_deprecated("task.cache_remote_oidc_audience");
+        if partial.task.cache.remote_oidc_audience.is_none() {
+            partial.task.cache.remote_oidc_audience = Some(v);
+        }
+    }
+    if let Some(v) = partial.task.cache_remote_token.take() {
+        warn_deprecated("task.cache_remote_token");
+        if partial.task.cache.remote_token.is_none() {
+            partial.task.cache.remote_token = Some(v);
+        }
+    }
+    if let Some(v) = partial.task.cache_remote_token_file.take() {
+        warn_deprecated("task.cache_remote_token_file");
+        if partial.task.cache.remote_token_file.is_none() {
+            partial.task.cache.remote_token_file = Some(v);
+        }
+    }
+    if let Some(v) = partial.task.cache_remote_url.take() {
+        warn_deprecated("task.cache_remote_url");
+        if partial.task.cache.remote_url.is_none() {
+            partial.task.cache.remote_url = Some(v);
+        }
+    }
     partial
 }
 
@@ -1032,6 +1068,7 @@ impl Settings {
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
         let s = toml::to_string(partial)?;
         let mut table = toml::from_str(&s)?;
+        remove_empty_nested_settings(&mut table, "");
         redact_settings_table(&mut table);
         Ok(table)
     }
@@ -1175,19 +1212,39 @@ impl Settings {
 
 fn redacted_settings_for_debug(settings: &Settings) -> Settings {
     let mut debug_settings = settings.clone();
-    if debug_settings.task.cache_remote_token.is_some() {
-        debug_settings.task.cache_remote_token = Some("[redacted]".to_string());
+    if debug_settings.task.cache.remote_token.is_some() {
+        debug_settings.task.cache.remote_token = Some("[redacted]".to_string());
     }
     debug_settings
 }
 
+fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
+    table.retain(|key, value| {
+        let path = if prefix.is_empty() {
+            key.to_string()
+        } else {
+            format!("{prefix}.{key}")
+        };
+        let Some(child) = value.as_table_mut() else {
+            return true;
+        };
+        remove_empty_nested_settings(child, &path);
+        !child.is_empty() || SETTINGS_META.contains_key(path.as_str())
+    });
+}
+
 fn redact_settings_table(table: &mut toml::Table) {
-    let Some(task) = table.get_mut("task").and_then(toml::Value::as_table_mut) else {
+    let Some(cache) = table
+        .get_mut("task")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|task| task.get_mut("cache"))
+        .and_then(toml::Value::as_table_mut)
+    else {
         return;
     };
-    if task.contains_key("cache_remote_token") {
-        task.insert(
-            "cache_remote_token".to_string(),
+    if cache.contains_key("remote_token") {
+        cache.insert(
+            "remote_token".to_string(),
             toml::Value::String("[redacted]".to_string()),
         );
     }
@@ -1388,7 +1445,7 @@ mod tests {
     #[test]
     fn debug_settings_redact_remote_cache_token() {
         let mut settings = Settings::default();
-        settings.task.cache_remote_token = Some("super-secret-token".to_string());
+        settings.task.cache.remote_token = Some("super-secret-token".to_string());
 
         let debug = format!("{:?}", redacted_settings_for_debug(&settings));
 
@@ -1399,13 +1456,46 @@ mod tests {
     #[test]
     fn settings_dictionary_redacts_remote_cache_token() {
         let mut settings = Settings::default();
-        settings.task.cache_remote_token = Some("super-secret-token".to_string());
+        settings.task.cache.remote_token = Some("super-secret-token".to_string());
 
         let table = settings.as_dict().unwrap();
         let encoded = toml::to_string(&table).unwrap();
 
         assert!(!encoded.contains("super-secret-token"));
         assert!(encoded.contains("[redacted]"));
+    }
+
+    #[test]
+    fn settings_partial_dictionary_omits_empty_nested_groups() {
+        let settings = toml::from_str::<toml::Value>("[task.cache]")
+            .unwrap()
+            .as_table()
+            .unwrap()
+            .clone();
+        let partial = settings_partial_from_table(settings);
+
+        assert!(
+            !Settings::partial_as_dict(&partial)
+                .unwrap()
+                .contains_key("task")
+        );
+    }
+
+    #[test]
+    fn settings_partial_dictionary_preserves_empty_map_values() {
+        let settings = toml::from_str::<toml::Value>("url_replacements = {}")
+            .unwrap()
+            .as_table()
+            .unwrap()
+            .clone();
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(
+            Settings::partial_as_dict(&partial)
+                .unwrap()
+                .get("url_replacements"),
+            Some(&toml::Value::Table(toml::Table::new()))
+        );
     }
 
     fn credential_command_settings_table() -> toml::Table {
@@ -1836,6 +1926,20 @@ mod tests {
     }
 
     #[test]
+    fn test_three_level_task_cache_setting() {
+        let settings = Settings::builder().load().unwrap();
+        assert_eq!(
+            settings.task.cache.remote_mode,
+            crate::cache::CacheRemoteMode::ReadWrite
+        );
+
+        let meta = SETTINGS_META
+            .get("task.cache.remote_mode")
+            .expect("task.cache.remote_mode setting should exist");
+        assert_eq!(meta.env, Some("MISE_TASK_CACHE_REMOTE_MODE"));
+    }
+
+    #[test]
     fn test_offline_setting_enables_offline() {
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
@@ -1898,6 +2002,36 @@ mod tests {
         let settings = Settings::get();
         assert_eq!(settings.minimum_release_age.as_deref(), Some("3d"));
         Settings::reset(None);
+    }
+
+    #[test]
+    fn test_task_cache_hidden_aliases_map_to_nested_settings() {
+        let settings_file: SettingsFile = toml::from_str(
+            r#"
+            [settings.task]
+            cache_remote_mode = "read-only"
+            cache_remote_token = "secret"
+            cache_remote_url = "https://old.example.com"
+
+            [settings.task.cache]
+            remote_url = "https://new.example.com"
+            "#,
+        )
+        .unwrap();
+
+        let partial = normalize_hidden_config_aliases(settings_file.settings);
+        assert_eq!(partial.task.cache_remote_mode, None);
+        assert_eq!(partial.task.cache_remote_token, None);
+        assert_eq!(partial.task.cache_remote_url, None);
+        assert_eq!(
+            partial.task.cache.remote_mode,
+            Some(crate::cache::CacheRemoteMode::ReadOnly)
+        );
+        assert_eq!(
+            partial.task.cache.remote_url.as_deref(),
+            Some("https://new.example.com")
+        );
+        assert_eq!(partial.task.cache.remote_token.as_deref(), Some("secret"));
     }
 
     #[test]

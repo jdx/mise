@@ -70,9 +70,9 @@ impl HookScripts {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum HookDef {
-    One(HookDefItem),
     /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
     Array(Vec<HookDefItem>),
+    One(HookDefItem),
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -801,6 +801,34 @@ mod tests {
             }
             action => panic!("expected run hook, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn three_string_array_is_parsed_as_three_hooks() {
+        let parsed: TestHook = toml::from_str(
+            r#"
+            hook = ["echo ONE", "echo TWO", "echo THREE"]
+            "#,
+        )
+        .unwrap();
+        let hooks = parsed.hook.into_hooks(Hooks::Postinstall);
+
+        assert_eq!(hooks.len(), 3);
+        let runs = hooks
+            .into_iter()
+            .map(|hook| match hook.action {
+                HookAction::Run { run, .. } => run,
+                action => panic!("expected run hook, got {action:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            runs,
+            [
+                Some("echo ONE".into()),
+                Some("echo TWO".into()),
+                Some("echo THREE".into())
+            ]
+        );
     }
 
     #[test]

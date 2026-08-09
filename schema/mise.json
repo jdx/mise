@@ -1801,6 +1801,38 @@
                 "type": "string"
               }
             },
+            "cache": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "remote_mode": {
+                  "default": "read-write",
+                  "description": "[experimental] Remote task and action cache access mode.",
+                  "type": "string",
+                  "enum": ["read-write", "read-only", "write-only"]
+                },
+                "remote_namespace": {
+                  "description": "[experimental] Namespace sent to the remote build cache.",
+                  "type": "string"
+                },
+                "remote_oidc_audience": {
+                  "description": "[experimental] Audience for an automatically acquired remote cache OIDC token.",
+                  "type": "string"
+                },
+                "remote_token": {
+                  "description": "[experimental] Bearer token for remote build-cache authentication.",
+                  "type": "string"
+                },
+                "remote_token_file": {
+                  "description": "[experimental] File containing a remote build-cache bearer token.",
+                  "type": "string"
+                },
+                "remote_url": {
+                  "description": "[experimental] Base URL for the remote build-cache service.",
+                  "type": "string"
+                }
+              }
+            },
             "cache_dir": {
               "description": "[experimental] Directory for task output cache artifacts.",
               "type": "string"
@@ -1814,30 +1846,35 @@
               "type": "string"
             },
             "cache_remote_mode": {
-              "default": "read-write",
-              "description": "[experimental] Remote task cache access mode.",
+              "description": "Compatibility alias for task.cache.remote_mode.",
               "type": "string",
+              "deprecated": true,
               "enum": ["read-write", "read-only", "write-only"]
             },
             "cache_remote_namespace": {
-              "description": "[experimental] Namespace sent to the remote task cache.",
-              "type": "string"
+              "description": "Compatibility alias for task.cache.remote_namespace.",
+              "type": "string",
+              "deprecated": true
             },
             "cache_remote_oidc_audience": {
-              "description": "[experimental] Audience for an automatically acquired remote cache OIDC token.",
-              "type": "string"
+              "description": "Compatibility alias for task.cache.remote_oidc_audience.",
+              "type": "string",
+              "deprecated": true
             },
             "cache_remote_token": {
-              "description": "[experimental] Bearer token for remote task cache authentication.",
-              "type": "string"
+              "description": "Compatibility alias for task.cache.remote_token.",
+              "type": "string",
+              "deprecated": true
             },
             "cache_remote_token_file": {
-              "description": "[experimental] File containing a remote task cache bearer token.",
-              "type": "string"
+              "description": "Compatibility alias for task.cache.remote_token_file.",
+              "type": "string",
+              "deprecated": true
             },
             "cache_remote_url": {
-              "description": "[experimental] Base URL for the remote task cache service.",
-              "type": "string"
+              "description": "Compatibility alias for task.cache.remote_url.",
+              "type": "string",
+              "deprecated": true
             },
             "disable_paths": {
               "default": [],
@@ -2011,6 +2048,17 @@
           "default": "sh -c -o errexit",
           "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
           "type": "string"
+        },
+        "upgrade": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "auto_prune": {
+              "default": true,
+              "description": "Uninstall the version `mise upgrade` replaced once the new one has installed.",
+              "type": "boolean"
+            }
+          }
         },
         "url_replacements": {
           "description": "Map of URL patterns to replacement URLs applied to all requests.",
@@ -2367,6 +2415,24 @@
               "type": "array"
             }
           }
+        },
+        "rust_cache": {
+          "description": "default experimental Rust compiler action cache configuration for tasks in this config scope",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          ]
         },
         "global_env": {
           "description": "experimental ambient environment variable names added to every enabled task cache key in this config scope",
@@ -3125,6 +3191,24 @@
               "type": "array"
             }
           }
+        },
+        "rust_cache": {
+          "description": "experimental Rust compiler action cache configuration enabled only while this task runs",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          ]
         },
         "output": {
           "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",

@@ -6357,6 +6357,7 @@ dependencies = [
  "md-5 0.11.0",
  "miette",
  "minisign-verify",
+ "mise-cache-core",
  "mise-interactive-config",
  "mise-sigstore",
  "mockito",
@@ -6426,11 +6427,44 @@ dependencies = [
  "walkdir",
  "which",
  "winapi",
+ "windows-sys 0.61.2",
  "xx",
  "xz2",
  "zip 8.6.0",
  "zipsign-api 0.2.1",
  "zstd",
+]
+
+[[package]]
+name = "mise-cache-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.0",
+ "blake3",
+ "eyre",
+ "hex",
+ "log",
+ "mockito",
+ "rand 0.10.2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_json_canonicalizer",
+ "sha2 0.11.0",
+ "strum 0.28.0",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
+name = "mise-cache-rustc"
+version = "0.1.0"
+dependencies = [
+ "mise-cache-core",
+ "serde",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

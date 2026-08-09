@@ -1,194 +1,30 @@
+use crate::cache::CacheRemoteMode;
 use crate::file;
 use crate::task::task_cache::{
     CACHE_FORMAT_VERSION, CacheManifest, TaskCacheOutput, calculate_artifact_checksum,
     canonical_json,
 };
-use crate::{config::Settings, http};
 use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
-use reqwest::StatusCode;
-use reqwest::header::{
-    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue, IF_NONE_MATCH,
+use mise_cache_core::{
+    BlobSource, BlobUpload, CLIENT_METADATA_MEDIA_TYPE, CacheDigest, DIRECTORY_MEDIA_TYPE,
+    RemoteActionResult, RemoteCacheClient, RemoteCacheConfig,
 };
 use serde::{Deserialize, Serialize};
-use sha2::Digest as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::io::AsyncWriteExt;
-use url::{Host, Url};
-
-const REMOTE_CACHE_PROTOCOL_VERSION: u8 = 1;
-const REMOTE_CACHE_PROTOCOL_HEADER: &str = "Mise-Cache-Protocol";
-const REMOTE_CACHE_NAMESPACE_HEADER: &str = "Mise-Cache-Namespace";
-const REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE: &str =
-    "application/vnd.mise.cache-action-result.v1+json";
-const REMOTE_CACHE_DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
-const REMOTE_CACHE_CLIENT_METADATA_MEDIA_TYPE: &str =
-    "application/vnd.mise.cache-client-metadata.v1+json";
-const REMOTE_CACHE_BLOB_MEDIA_TYPE: &str = "application/octet-stream";
-
 /// Version of the cache-store contract. This is independent of the artifact
 /// manifest format so stores and transports can evolve without changing keys.
 pub(crate) const TASK_CACHE_STORE_VERSION: u8 = 1;
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    Default,
-    strum::EnumString,
-    strum::Display,
-    PartialEq,
-    Eq,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskCacheRemoteMode {
-    #[default]
-    ReadWrite,
-    ReadOnly,
-    WriteOnly,
-}
-
-impl TaskCacheRemoteMode {
-    fn reads(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::ReadOnly)
-    }
-
-    fn writes(self) -> bool {
-        matches!(self, Self::ReadWrite | Self::WriteOnly)
-    }
-}
-
 pub(crate) struct RemoteTaskCacheConfig {
-    pub(crate) base_url: Url,
-    pub(crate) namespace: String,
+    pub(crate) remote: RemoteCacheConfig,
     pub(crate) staging_dir: PathBuf,
-    pub(crate) mode: TaskCacheRemoteMode,
-    pub(crate) token: Option<String>,
-    pub(crate) token_file: Option<PathBuf>,
-    pub(crate) oidc_audience: Option<String>,
-}
-
-#[derive(Clone)]
-enum RemoteTaskCacheCredential {
-    None,
-    Static(HeaderValue),
-    File(PathBuf),
-    GithubActions(Arc<GithubActionsOidcCredential>),
-}
-
-struct GithubActionsOidcCredential {
-    audience: String,
-    request_url: Url,
-    request_token: HeaderValue,
-    client: reqwest::Client,
-    cached: tokio::sync::Mutex<Option<CachedOidcToken>>,
-}
-
-struct CachedOidcToken {
-    authorization: HeaderValue,
-    expires_at: u64,
-}
-
-#[derive(Deserialize)]
-struct GithubActionsOidcResponse {
-    value: String,
-}
-
-#[derive(Deserialize)]
-struct JwtExpiry {
-    exp: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-struct CacheDigest {
-    algorithm: String,
-    hash: String,
-    size: u64,
-}
-
-impl CacheDigest {
-    fn blake3(bytes: &[u8]) -> Self {
-        Self {
-            algorithm: "blake3".into(),
-            hash: blake3::hash(bytes).to_hex().to_string(),
-            size: bytes.len() as u64,
-        }
-    }
-
-    fn validate(&self) -> Result<()> {
-        if self.algorithm != "blake3" && self.algorithm != "sha256" {
-            bail!("unsupported remote cache digest algorithm");
-        }
-        if self.hash.len() != 64
-            || !self
-                .hash
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            bail!("invalid remote cache digest");
-        }
-        Ok(())
-    }
-
-    fn matches_bytes(&self, bytes: &[u8]) -> Result<bool> {
-        self.validate()?;
-        if self.size != bytes.len() as u64 {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
-            "blake3" => blake3::hash(bytes).to_hex().to_string(),
-            "sha256" => hex::encode(sha2::Sha256::digest(bytes)),
-            _ => unreachable!("digest algorithm was validated"),
-        };
-        Ok(self.hash == hash)
-    }
-
-    fn matches_file(&self, path: &Path) -> Result<bool> {
-        self.validate()?;
-        if self.size != fs::metadata(path)?.len() {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
-            "blake3" => crate::hash::file_hash_blake3(path, None)?,
-            "sha256" => crate::hash::file_hash_sha256(path, None)?,
-            _ => unreachable!("digest algorithm was validated"),
-        };
-        Ok(self.hash == hash)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteActionResultEnvelope {
-    result: RemoteActionResult,
-    #[serde(default)]
-    signatures: Vec<RemoteSignature>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteActionResult {
-    action: CacheDigest,
-    #[serde(default)]
-    metadata: Option<CacheDigest>,
-    #[serde(default)]
-    output_root: Option<CacheDigest>,
-    version: u8,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteSignature {
-    algorithm: String,
-    key_id: String,
-    signature: String,
+    pub(crate) mode: CacheRemoteMode,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -198,6 +34,7 @@ struct RemoteClientMetadata {
     restored_bytes: u64,
     roots: Vec<String>,
     task_identity: String,
+    kind: String,
     version: u8,
 }
 
@@ -213,6 +50,7 @@ impl RemoteClientMetadata {
                 .map(|path| path.to_string_lossy().replace('\\', "/"))
                 .collect(),
             task_identity: manifest.task_identity.clone(),
+            kind: "task".to_string(),
             version: 1,
         }
     }
@@ -220,6 +58,9 @@ impl RemoteClientMetadata {
     fn into_manifest(self, key: &str) -> Result<CacheManifest> {
         if self.version != 1 {
             bail!("unsupported remote cache client metadata version");
+        }
+        if self.kind != "task" {
+            bail!("remote cache metadata kind is not a task");
         }
         let roots = self.roots.into_iter().map(PathBuf::from).collect();
         Ok(CacheManifest {
@@ -263,16 +104,6 @@ struct RemoteSymlinkNode {
     mode: u32,
     name: String,
     target: String,
-}
-
-enum CasBlobSource {
-    Bytes(Vec<u8>),
-    File(tempfile::NamedTempFile),
-}
-
-struct CasBlobUpload {
-    digest: CacheDigest,
-    source: CasBlobSource,
 }
 
 enum ArchiveNode {
@@ -368,7 +199,7 @@ pub(crate) trait TaskCacheStore: Send + Sync {
 pub(crate) struct CompositeTaskCacheStore {
     local: Arc<dyn TaskCacheStore>,
     remote: Arc<dyn TaskCacheStore>,
-    remote_mode: TaskCacheRemoteMode,
+    remote_mode: CacheRemoteMode,
     remote_read_locks: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
 }
 
@@ -376,7 +207,7 @@ impl CompositeTaskCacheStore {
     pub(crate) fn new(
         local: Arc<dyn TaskCacheStore>,
         remote: Arc<dyn TaskCacheStore>,
-        remote_mode: TaskCacheRemoteMode,
+        remote_mode: CacheRemoteMode,
     ) -> Result<Self> {
         if local.version() != remote.version() {
             bail!(
@@ -559,397 +390,20 @@ pub(crate) fn compose_task_cache_stores(
 ) -> Result<Arc<dyn TaskCacheStore>> {
     match remote {
         Some(remote_config) => {
-            let authenticated = remote_config
-                .token
-                .as_deref()
-                .is_some_and(|token| !token.trim().is_empty())
-                || remote_config.token_file.is_some()
-                || remote_config
-                    .oidc_audience
-                    .as_deref()
-                    .is_some_and(|audience| !audience.trim().is_empty());
-            validate_remote_url(&remote_config.base_url, authenticated)?;
-            let client = reqwest::Client::builder()
-                .connect_timeout(Settings::get().http_timeout())
-                .read_timeout(Settings::get().http_timeout())
-                .redirect(reqwest::redirect::Policy::none())
-                .build()?;
-            let credential = remote_credential(&remote_config, client.clone())?;
+            let mode = remote_config.mode;
             let remote = Arc::new(HttpTaskCacheStore {
-                base_url: normalized_base_url(remote_config.base_url),
-                namespace: remote_config.namespace,
+                client: RemoteCacheClient::new(remote_config.remote)?,
                 staging_dir: remote_config.staging_dir,
-                client,
-                credential,
             });
-            Ok(Arc::new(CompositeTaskCacheStore::new(
-                local,
-                remote,
-                remote_config.mode,
-            )?))
+            Ok(Arc::new(CompositeTaskCacheStore::new(local, remote, mode)?))
         }
         None => Ok(local),
     }
 }
 
-fn remote_credential(
-    config: &RemoteTaskCacheConfig,
-    client: reqwest::Client,
-) -> Result<RemoteTaskCacheCredential> {
-    if let Some(authorization) = authorization_header(config.token.as_deref())? {
-        return Ok(RemoteTaskCacheCredential::Static(authorization));
-    }
-    if let Some(path) = &config.token_file {
-        return Ok(RemoteTaskCacheCredential::File(path.clone()));
-    }
-    let Some(audience) = config
-        .oidc_audience
-        .as_deref()
-        .map(str::trim)
-        .filter(|audience| !audience.is_empty())
-    else {
-        return Ok(RemoteTaskCacheCredential::None);
-    };
-    Ok(RemoteTaskCacheCredential::GithubActions(Arc::new(
-        GithubActionsOidcCredential::from_env(audience, client)?,
-    )))
-}
-
-fn authorization_header(token: Option<&str>) -> Result<Option<HeaderValue>> {
-    let Some(token) = token.map(str::trim).filter(|token| !token.is_empty()) else {
-        return Ok(None);
-    };
-    let mut value = HeaderValue::from_str(&format!("Bearer {token}"))?;
-    value.set_sensitive(true);
-    Ok(Some(value))
-}
-
-impl RemoteTaskCacheCredential {
-    async fn authorization(&self) -> Result<Option<HeaderValue>> {
-        match self {
-            Self::None => Ok(None),
-            Self::Static(value) => Ok(Some(value.clone())),
-            Self::File(path) => {
-                let token = tokio::fs::read_to_string(path).await.map_err(|err| {
-                    eyre!(
-                        "failed to read remote cache token file {}: {err}",
-                        path.display()
-                    )
-                })?;
-                authorization_header(Some(&token))?
-                    .ok_or_else(|| eyre!("remote cache token file {} is empty", path.display()))
-                    .map(Some)
-            }
-            Self::GithubActions(credential) => credential.authorization().await.map(Some),
-        }
-    }
-}
-
-impl GithubActionsOidcCredential {
-    fn from_env(audience: &str, client: reqwest::Client) -> Result<Self> {
-        let request_url = std::env::var("ACTIONS_ID_TOKEN_REQUEST_URL").map_err(|_| {
-            eyre!(
-                "task.cache_remote_oidc_audience requires GitHub Actions OIDC; \
-                 grant `id-token: write` or set MISE_TASK_CACHE_REMOTE_TOKEN"
-            )
-        })?;
-        let request_token = std::env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").map_err(|_| {
-            eyre!(
-                "task.cache_remote_oidc_audience requires GitHub Actions OIDC; \
-                 ACTIONS_ID_TOKEN_REQUEST_TOKEN is missing"
-            )
-        })?;
-        let request_url: Url = request_url
-            .parse()
-            .map_err(|err| eyre!("invalid GitHub Actions OIDC request URL: {err}"))?;
-        Self::new(audience, request_url, &request_token, client)
-    }
-
-    fn new(
-        audience: &str,
-        mut request_url: Url,
-        request_token: &str,
-        client: reqwest::Client,
-    ) -> Result<Self> {
-        validate_oidc_request_url(&request_url)?;
-        let query = request_url
-            .query_pairs()
-            .filter(|(key, _)| key != "audience")
-            .map(|(key, value)| (key.into_owned(), value.into_owned()))
-            .collect::<Vec<_>>();
-        request_url.set_query(None);
-        request_url
-            .query_pairs_mut()
-            .extend_pairs(query)
-            .append_pair("audience", audience);
-        let request_token = authorization_header(Some(request_token))?
-            .ok_or_else(|| eyre!("GitHub Actions OIDC request token is empty"))?;
-        Ok(Self {
-            audience: audience.to_string(),
-            request_url,
-            request_token,
-            client,
-            cached: tokio::sync::Mutex::new(None),
-        })
-    }
-
-    async fn authorization(&self) -> Result<HeaderValue> {
-        const REFRESH_LEEWAY_SECONDS: u64 = 60;
-        let mut cached = self.cached.lock().await;
-        let now = unix_timestamp()?;
-        if let Some(token) = cached.as_ref()
-            && token.expires_at > now.saturating_add(REFRESH_LEEWAY_SECONDS)
-        {
-            return Ok(token.authorization.clone());
-        }
-        let response: GithubActionsOidcResponse =
-            http::retry_async("GET", &self.request_url, || async {
-                Ok(self
-                    .client
-                    .get(self.request_url.clone())
-                    .header(AUTHORIZATION, self.request_token.clone())
-                    .send()
-                    .await?
-                    .error_for_status()?
-                    .json()
-                    .await?)
-            })
-            .await
-            .map_err(|err| {
-                eyre!(
-                    "failed to acquire GitHub Actions OIDC token for audience {:?}: {err}",
-                    self.audience
-                )
-            })?;
-        let expires_at = jwt_expiry(&response.value)?;
-        if expires_at <= now.saturating_add(REFRESH_LEEWAY_SECONDS) {
-            bail!("GitHub Actions OIDC token expires too soon");
-        }
-        let authorization = authorization_header(Some(&response.value))?
-            .ok_or_else(|| eyre!("GitHub Actions returned an empty OIDC token"))?;
-        *cached = Some(CachedOidcToken {
-            authorization: authorization.clone(),
-            expires_at,
-        });
-        Ok(authorization)
-    }
-}
-
-fn jwt_expiry(token: &str) -> Result<u64> {
-    let payload = token
-        .split('.')
-        .nth(1)
-        .ok_or_else(|| eyre!("GitHub Actions returned a malformed OIDC token"))?;
-    let payload = URL_SAFE_NO_PAD
-        .decode(payload)
-        .map_err(|_| eyre!("GitHub Actions returned a malformed OIDC token"))?;
-    let claims: JwtExpiry = serde_json::from_slice(&payload)
-        .map_err(|_| eyre!("GitHub Actions OIDC token is missing a valid expiry"))?;
-    Ok(claims.exp)
-}
-
-fn unix_timestamp() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| eyre!("system clock is before the Unix epoch: {err}"))?
-        .as_secs())
-}
-
-fn validate_oidc_request_url(url: &Url) -> Result<()> {
-    if url.scheme() == "https"
-        || url.scheme() == "http"
-            && url.host().is_some_and(|host| match host {
-                Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
-                Host::Ipv4(address) => address.is_loopback(),
-                Host::Ipv6(address) => address.is_loopback(),
-            })
-    {
-        Ok(())
-    } else {
-        bail!("GitHub Actions OIDC request URL must use HTTPS")
-    }
-}
-
-fn validate_remote_url(base_url: &Url, authenticated: bool) -> Result<()> {
-    if base_url.scheme() == "https" {
-        return Ok(());
-    }
-    if base_url.scheme() != "http" {
-        bail!("task.cache_remote_url must use HTTPS");
-    }
-    let is_loopback = base_url.host().is_some_and(|host| match host {
-        Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
-        Host::Ipv4(address) => address.is_loopback(),
-        Host::Ipv6(address) => address.is_loopback(),
-    });
-    if !is_loopback && authenticated {
-        bail!("task.cache_remote_url must use HTTPS except for loopback development servers");
-    }
-    if !is_loopback {
-        warn!(
-            "using an unauthenticated remote task cache over plain HTTP; cache traffic can be read \
-             or modified in transit"
-        );
-    }
-    Ok(())
-}
-
 struct HttpTaskCacheStore {
-    base_url: Url,
-    namespace: String,
+    client: RemoteCacheClient,
     staging_dir: PathBuf,
-    client: reqwest::Client,
-    credential: RemoteTaskCacheCredential,
-}
-
-impl HttpTaskCacheStore {
-    fn action_result_endpoint(&self, key: &str, action_size: u64) -> Result<Url> {
-        validate_remote_key(key)?;
-        Ok(self.base_url.join(&format!(
-            "v{REMOTE_CACHE_PROTOCOL_VERSION}/action-results/blake3/{key}/{action_size}"
-        ))?)
-    }
-
-    fn blob_endpoint(&self, digest: &CacheDigest) -> Result<Url> {
-        digest.validate()?;
-        Ok(self.base_url.join(&format!(
-            "v{REMOTE_CACHE_PROTOCOL_VERSION}/blobs/{}/{}/{}",
-            digest.algorithm, digest.hash, digest.size
-        ))?)
-    }
-
-    async fn request(
-        &self,
-        method: reqwest::Method,
-        url: Url,
-        media_type: &'static str,
-    ) -> Result<reqwest::RequestBuilder> {
-        let request = self
-            .client
-            .request(method, url)
-            .header(REMOTE_CACHE_PROTOCOL_HEADER, "1")
-            .header(REMOTE_CACHE_NAMESPACE_HEADER, &self.namespace)
-            .header(ACCEPT, media_type);
-        if let Some(authorization) = self.credential.authorization().await? {
-            Ok(request.header(AUTHORIZATION, authorization))
-        } else {
-            Ok(request)
-        }
-    }
-
-    async fn get_blob(&self, digest: &CacheDigest, media_type: &'static str) -> Result<Vec<u8>> {
-        digest.validate()?;
-        let url = self.blob_endpoint(digest)?;
-        http::retry_async("GET", &url, || async {
-            let response = self
-                .request(reqwest::Method::GET, url.clone(), media_type)
-                .await?
-                .send()
-                .await?
-                .error_for_status()?;
-            let bytes = response.bytes().await?.to_vec();
-            if !digest.matches_bytes(&bytes)? {
-                bail!("remote cache blob failed digest verification");
-            }
-            Ok(bytes)
-        })
-        .await
-    }
-
-    async fn get_blob_file(&self, digest: &CacheDigest) -> Result<tempfile::NamedTempFile> {
-        let url = self.blob_endpoint(digest)?;
-        let download = http::retry_async("GET", &url, || async {
-            let mut response = self
-                .request(
-                    reqwest::Method::GET,
-                    url.clone(),
-                    REMOTE_CACHE_BLOB_MEDIA_TYPE,
-                )
-                .await?
-                .send()
-                .await?;
-            response.error_for_status_ref()?;
-            file::create_dir_all(&self.staging_dir)?;
-            let temporary = tempfile::NamedTempFile::new_in(&self.staging_dir)?;
-            let mut output = tokio::fs::File::from_std(temporary.reopen()?);
-            while let Some(chunk) = response.chunk().await? {
-                output.write_all(&chunk).await?;
-            }
-            output.flush().await?;
-            drop(output);
-            if !digest.matches_file(temporary.path())? {
-                bail!("remote cache blob failed digest verification");
-            }
-            Ok(temporary)
-        });
-        tokio::time::timeout(Settings::get().http_download_timeout(), download)
-            .await
-            .map_err(|_| eyre!("remote task cache blob download timed out for {url}"))?
-    }
-
-    async fn put_blob(&self, upload: &CasBlobUpload) -> Result<()> {
-        let url = self.blob_endpoint(&upload.digest)?;
-        http::retry_async("PUT", &url, || async {
-            let (length, body) = match &upload.source {
-                CasBlobSource::Bytes(bytes) => {
-                    (bytes.len() as u64, reqwest::Body::from(bytes.clone()))
-                }
-                CasBlobSource::File(file) => {
-                    let file = tokio::fs::File::open(file.path()).await?;
-                    let length = file.metadata().await?.len();
-                    let stream = tokio_util::io::ReaderStream::new(file);
-                    (length, reqwest::Body::wrap_stream(stream))
-                }
-            };
-            let response = self
-                .request(
-                    reqwest::Method::PUT,
-                    url.clone(),
-                    REMOTE_CACHE_BLOB_MEDIA_TYPE,
-                )
-                .await?
-                .header(CONTENT_TYPE, REMOTE_CACHE_BLOB_MEDIA_TYPE)
-                .header(CONTENT_LENGTH, length)
-                .header(IF_NONE_MATCH, "*")
-                .body(body)
-                .send()
-                .await?;
-            if response.status() != StatusCode::PRECONDITION_FAILED {
-                response.error_for_status()?;
-            }
-            Ok(())
-        })
-        .await
-    }
-
-    async fn put_action_result(
-        &self,
-        key: &str,
-        action_size: u64,
-        result: &RemoteActionResultEnvelope,
-    ) -> Result<()> {
-        let url = self.action_result_endpoint(key, action_size)?;
-        let body = serde_json::to_vec(result)?;
-        http::retry_async("PUT", &url, || async {
-            let response = self
-                .request(
-                    reqwest::Method::PUT,
-                    url.clone(),
-                    REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
-                )
-                .await?
-                .header(CONTENT_TYPE, REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
-                .header(IF_NONE_MATCH, "*")
-                .body(body.clone())
-                .send()
-                .await?;
-            if response.status() != StatusCode::PRECONDITION_FAILED {
-                response.error_for_status()?;
-            }
-            Ok(())
-        })
-        .await
-    }
 }
 
 #[async_trait]
@@ -959,40 +413,21 @@ impl TaskCacheStore for HttpTaskCacheStore {
     }
 
     async fn get(&self, key: &str, action_size: u64) -> Result<Option<TaskCacheStoreEntry>> {
-        let url = self.action_result_endpoint(key, action_size)?;
-        let envelope = http::retry_async("GET", &url, || async {
-            let response = self
-                .request(
-                    reqwest::Method::GET,
-                    url.clone(),
-                    REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE,
-                )
-                .await?
-                .send()
-                .await?;
-            if response.status() == StatusCode::NOT_FOUND {
-                return Ok(None);
-            }
-            Ok(Some(response.error_for_status()?.json().await?))
-        })
-        .await?;
-        let Some(envelope): Option<RemoteActionResultEnvelope> = envelope else {
+        let action = CacheDigest {
+            algorithm: "blake3".into(),
+            hash: key.to_string(),
+            size: action_size,
+        };
+        let Some(result) = self.client.get_action_result(&action).await? else {
             return Ok(None);
         };
-        if envelope.result.version != 1
-            || envelope.result.action.algorithm != "blake3"
-            || envelope.result.action.hash != key
-            || envelope.result.action.size != action_size
-        {
-            bail!("remote action result does not match requested action");
-        }
-        let metadata = envelope
-            .result
+        let metadata = result
             .metadata
             .as_ref()
             .ok_or_else(|| eyre!("remote action result is missing client metadata"))?;
         let metadata_bytes = self
-            .get_blob(metadata, REMOTE_CACHE_CLIENT_METADATA_MEDIA_TYPE)
+            .client
+            .get_blob(metadata, CLIENT_METADATA_MEDIA_TYPE)
             .await?;
         let metadata: RemoteClientMetadata = serde_json::from_slice(&metadata_bytes)?;
         if canonical_json(&serde_json::to_value(&metadata)?)? != metadata_bytes {
@@ -1002,7 +437,7 @@ impl TaskCacheStore for HttpTaskCacheStore {
         for root in &manifest.roots {
             validate_cache_path(root)?;
         }
-        let artifact = match &envelope.result.output_root {
+        let artifact = match &result.output_root {
             Some(root) => {
                 let temporary = materialize_remote_tree(self, root).await?;
                 Some(TaskCacheStoreArtifact::temporary(temporary))
@@ -1049,13 +484,13 @@ impl TaskCacheStore for HttpTaskCacheStore {
             RemoteClientMetadata::from_manifest(&manifest),
         )?)?;
         let mut uploads = vec![
-            CasBlobUpload {
+            BlobUpload {
                 digest: action_digest.clone(),
-                source: CasBlobSource::Bytes(action.to_vec()),
+                source: BlobSource::Bytes(action.to_vec()),
             },
-            CasBlobUpload {
+            BlobUpload {
                 digest: CacheDigest::blake3(&metadata),
-                source: CasBlobSource::Bytes(metadata),
+                source: BlobSource::Bytes(metadata),
             },
         ];
         let metadata = uploads[1].digest.clone();
@@ -1070,23 +505,17 @@ impl TaskCacheStore for HttpTaskCacheStore {
         let mut published = BTreeSet::new();
         for upload in &uploads {
             if published.insert(upload.digest.clone()) {
-                self.put_blob(upload).await?;
+                self.client.put_blob(upload).await?;
             }
         }
-        self.put_action_result(
-            key,
-            action.len() as u64,
-            &RemoteActionResultEnvelope {
-                result: RemoteActionResult {
-                    action: action_digest,
-                    metadata: Some(metadata),
-                    output_root,
-                    version: 1,
-                },
-                signatures: Vec::new(),
-            },
-        )
-        .await
+        self.client
+            .put_action_result(&RemoteActionResult {
+                action: action_digest,
+                metadata: Some(metadata),
+                output_root,
+                version: 1,
+            })
+            .await
     }
 
     async fn remove(&self, _key: &str) -> Result<()> {
@@ -1157,7 +586,7 @@ fn validate_cache_symlink_target(path: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<CasBlobUpload>)> {
+fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<BlobUpload>)> {
     file::create_dir_all(staging_dir)?;
     let decoder = zstd::Decoder::new(File::open(path)?)?;
     let mut archive = Archive::new(decoder);
@@ -1223,7 +652,7 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<C
     fn build_directory(
         path: &Path,
         nodes: &BTreeMap<PathBuf, ArchiveNode>,
-        directory_uploads: &mut Vec<CasBlobUpload>,
+        directory_uploads: &mut Vec<BlobUpload>,
     ) -> Result<CacheDigest> {
         let mut directories = Vec::new();
         let mut files = Vec::new();
@@ -1268,9 +697,9 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<C
         })?;
         let bytes = canonical_json(&directory)?;
         let digest = CacheDigest::blake3(&bytes);
-        directory_uploads.push(CasBlobUpload {
+        directory_uploads.push(BlobUpload {
             digest: digest.clone(),
-            source: CasBlobSource::Bytes(bytes),
+            source: BlobSource::Bytes(bytes),
         });
         Ok(digest)
     }
@@ -1279,9 +708,9 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<C
     let root = build_directory(Path::new(""), &nodes, &mut uploads)?;
     for node in nodes.into_values() {
         if let ArchiveNode::File { digest, file, .. } = node {
-            uploads.push(CasBlobUpload {
+            uploads.push(BlobUpload {
                 digest,
-                source: CasBlobSource::File(file),
+                source: BlobSource::File(file),
             });
         }
     }
@@ -1313,9 +742,7 @@ async fn materialize_remote_tree(
         if !ancestors.insert(digest.clone()) {
             bail!("remote cache directory graph contains a cycle");
         }
-        let bytes = store
-            .get_blob(&digest, REMOTE_CACHE_DIRECTORY_MEDIA_TYPE)
-            .await?;
+        let bytes = store.client.get_blob(&digest, DIRECTORY_MEDIA_TYPE).await?;
         let directory: RemoteDirectory = serde_json::from_slice(&bytes)?;
         if canonical_json(&serde_json::to_value(&directory)?)? != bytes {
             bail!("remote cache directory is not canonical JSON");
@@ -1378,7 +805,13 @@ async fn materialize_remote_tree(
     let mut downloaded = BTreeMap::new();
     for (path, node) in &nodes {
         if let RestoredNode::File { digest, .. } = node {
-            downloaded.insert(path.clone(), store.get_blob_file(digest).await?);
+            downloaded.insert(
+                path.clone(),
+                store
+                    .client
+                    .get_blob_file(digest, &store.staging_dir)
+                    .await?,
+            );
         }
     }
 
@@ -1424,14 +857,6 @@ async fn materialize_remote_tree(
     let encoder = archive.into_inner()?;
     encoder.finish()?;
     Ok(archive_file)
-}
-
-fn normalized_base_url(mut url: Url) -> Url {
-    if !url.path().ends_with('/') {
-        let path = format!("{}/", url.path());
-        url.set_path(&path);
-    }
-    url
 }
 
 fn validate_remote_key(key: &str) -> Result<()> {
@@ -1540,121 +965,8 @@ fn remove_file(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cache_digest_verifies_its_declared_algorithm() {
-        let bytes = b"remote cache blob";
-        let sha256 = CacheDigest {
-            algorithm: "sha256".into(),
-            hash: hex::encode(sha2::Sha256::digest(bytes)),
-            size: bytes.len() as u64,
-        };
-        assert!(sha256.matches_bytes(bytes).unwrap());
-        assert!(!sha256.matches_bytes(b"different").unwrap());
-
-        let file = tempfile::NamedTempFile::new().unwrap();
-        fs::write(file.path(), bytes).unwrap();
-        assert!(sha256.matches_file(file.path()).unwrap());
-    }
-
-    #[test]
-    fn bearer_authorization_headers_are_sensitive() {
-        let header = authorization_header(Some(" test-token ")).unwrap().unwrap();
-        assert_eq!(header, "Bearer test-token");
-        assert!(header.is_sensitive());
-        assert!(authorization_header(Some(" ")).unwrap().is_none());
-    }
-
-    #[tokio::test]
-    async fn token_file_credentials_are_reloaded() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("cache-token");
-        fs::write(&path, "first-token\n").unwrap();
-        let credential = RemoteTaskCacheCredential::File(path.clone());
-
-        let first = credential.authorization().await.unwrap().unwrap();
-        assert_eq!(first, "Bearer first-token");
-        assert!(first.is_sensitive());
-
-        fs::write(path, "rotated-token\n").unwrap();
-        let rotated = credential.authorization().await.unwrap().unwrap();
-        assert_eq!(rotated, "Bearer rotated-token");
-    }
-
-    #[tokio::test]
-    async fn github_actions_oidc_tokens_are_acquired_and_cached() {
-        let mut server = mockito::Server::new_async().await;
-        let expires_at = unix_timestamp().unwrap() + 3600;
-        let token = test_jwt(expires_at);
-        let token_response = serde_json::json!({"value":token}).to_string();
-        let request = server
-            .mock("GET", "/oidc")
-            .match_query(mockito::Matcher::UrlEncoded(
-                "audience".into(),
-                "https://cache.example.com".into(),
-            ))
-            .match_header("authorization", "Bearer request-secret")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(token_response)
-            .expect(1)
-            .create_async()
-            .await;
-        let credential = GithubActionsOidcCredential::new(
-            "https://cache.example.com",
-            format!("{}/oidc?api-version=1&audience=old", server.url())
-                .parse()
-                .unwrap(),
-            "request-secret",
-            reqwest::Client::new(),
-        )
-        .unwrap();
-        assert_eq!(
-            credential.request_url.query_pairs().collect::<Vec<_>>(),
-            vec![
-                ("api-version".into(), "1".into()),
-                ("audience".into(), "https://cache.example.com".into()),
-            ]
-        );
-
-        let first = credential.authorization().await.unwrap();
-        let second = credential.authorization().await.unwrap();
-
-        assert_eq!(first, format!("Bearer {token}"));
-        assert_eq!(first, second);
-        assert!(first.is_sensitive());
-        request.assert_async().await;
-    }
-
-    #[test]
-    fn oidc_request_urls_require_https_except_for_loopback() {
-        validate_oidc_request_url(&"https://example.com/oidc".parse().unwrap()).unwrap();
-        validate_oidc_request_url(&"http://127.0.0.1:3000/oidc".parse().unwrap()).unwrap();
-        assert!(validate_oidc_request_url(&"http://example.com/oidc".parse().unwrap()).is_err());
-    }
-
-    fn test_jwt(expires_at: u64) -> String {
-        let header = URL_SAFE_NO_PAD.encode(b"{}");
-        let claims = URL_SAFE_NO_PAD
-            .encode(serde_json::to_vec(&serde_json::json!({"exp":expires_at})).unwrap());
-        format!("{header}.{claims}.signature")
-    }
-
-    #[test]
-    fn remote_urls_require_https_for_authenticated_requests() {
-        for url in [
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://[::1]:3000",
-            "https://cache.example.com",
-        ] {
-            validate_remote_url(&url.parse().unwrap(), true).unwrap();
-        }
-        let insecure: Url = "http://cache.example.com".parse().unwrap();
-        assert!(validate_remote_url(&insecure, true).is_err());
-        validate_remote_url(&insecure, false).unwrap();
-        assert!(validate_remote_url(&"ftp://localhost/cache".parse().unwrap(), false).is_err());
-    }
+    use mise_cache_core::{ACTION_RESULT_MEDIA_TYPE, BLOB_MEDIA_TYPE};
+    use std::time::Duration;
 
     struct FailingTaskCacheStore {
         inner: LocalTaskCacheStore,
@@ -1786,12 +1098,9 @@ mod tests {
         let remote: Arc<dyn TaskCacheStore> =
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "remote-hit", b"remote", Some(b"artifact")).await;
-        let composite = CompositeTaskCacheStore::new(
-            local.clone(),
-            remote.clone(),
-            TaskCacheRemoteMode::ReadWrite,
-        )
-        .unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote.clone(), CacheRemoteMode::ReadWrite)
+                .unwrap();
 
         let hit = composite.get("remote-hit", 6).await.unwrap().unwrap();
         assert_eq!(hit.manifest, b"remote");
@@ -1834,7 +1143,7 @@ mod tests {
             inner: remote_inner,
         });
         let composite =
-            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+            CompositeTaskCacheStore::new(local.clone(), remote, CacheRemoteMode::ReadWrite)
                 .unwrap();
 
         assert!(composite.get("unavailable", 6).await.unwrap().is_none());
@@ -1875,8 +1184,8 @@ mod tests {
             .iter()
             .find_map(|upload| {
                 (upload.digest == root).then(|| match &upload.source {
-                    CasBlobSource::Bytes(bytes) => bytes.as_slice(),
-                    CasBlobSource::File(_) => panic!("directory object must be in memory"),
+                    BlobSource::Bytes(bytes) => bytes.as_slice(),
+                    BlobSource::File(_) => panic!("directory object must be in memory"),
                 })
             })
             .unwrap();
@@ -1888,8 +1197,8 @@ mod tests {
             .iter()
             .find_map(|upload| {
                 (&upload.digest == dist_digest).then(|| match &upload.source {
-                    CasBlobSource::Bytes(bytes) => bytes.as_slice(),
-                    CasBlobSource::File(_) => panic!("directory object must be in memory"),
+                    BlobSource::Bytes(bytes) => bytes.as_slice(),
+                    BlobSource::File(_) => panic!("directory object must be in memory"),
                 })
             })
             .unwrap();
@@ -1919,23 +1228,28 @@ mod tests {
         let action = br#"{"task":"build"}"#;
         let action_digest = CacheDigest::blake3(action);
         let key = action_digest.hash.as_str();
-        let manifest = format!(
-            r#"{{"format":2,"key":"{key}","task_identity":"build","artifact_checksum":null,"roots":[],"output":[],"restored_bytes":0,"execution_duration_ns":1}}"#
-        );
-        let local_manifest: CacheManifest = serde_json::from_str(&manifest).unwrap();
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "format": 2,
+            "key": key,
+            "task_identity": "build",
+            "artifact_checksum": null,
+            "roots": [],
+            "output": [],
+            "restored_bytes": 0,
+            "execution_duration_ns": 1,
+        }))
+        .unwrap();
+        let local_manifest: CacheManifest = serde_json::from_slice(&manifest).unwrap();
         let metadata = canonical_json(
             &serde_json::to_value(RemoteClientMetadata::from_manifest(&local_manifest)).unwrap(),
         )
         .unwrap();
         let metadata_digest = CacheDigest::blake3(&metadata);
-        let envelope = RemoteActionResultEnvelope {
-            result: RemoteActionResult {
-                action: action_digest.clone(),
-                metadata: Some(metadata_digest.clone()),
-                output_root: None,
-                version: 1,
-            },
-            signatures: Vec::new(),
+        let result = RemoteActionResult {
+            action: action_digest.clone(),
+            metadata: Some(metadata_digest.clone()),
+            output_root: None,
+            version: 1,
         };
         let action_path = format!(
             "/v1/blobs/blake3/{}/{}",
@@ -1967,10 +1281,10 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
-        let result_body = serde_json::to_vec(&envelope).unwrap();
+        let result_body = serde_json::to_vec(&result).unwrap();
         let result_put = server
             .mock("PUT", result_path.as_str())
-            .match_header("content-type", REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
+            .match_header("content-type", ACTION_RESULT_MEDIA_TYPE)
             .match_header("if-none-match", "*")
             .match_body(result_body.clone())
             .with_status(201)
@@ -1979,7 +1293,7 @@ mod tests {
             .await;
         let result_get = server
             .mock("GET", result_path.as_str())
-            .match_header("accept", REMOTE_CACHE_ACTION_RESULT_MEDIA_TYPE)
+            .match_header("accept", ACTION_RESULT_MEDIA_TYPE)
             .with_status(200)
             .with_body(result_body)
             .expect(1)
@@ -1994,18 +1308,24 @@ mod tests {
             .await;
         let staging = tempfile::tempdir().unwrap();
         let store = HttpTaskCacheStore {
-            base_url: normalized_base_url(server.url().parse().unwrap()),
-            namespace: "test-namespace".into(),
+            client: RemoteCacheClient::new(RemoteCacheConfig {
+                base_url: server.url().parse().unwrap(),
+                namespace: "test-namespace".into(),
+                token: Some("test-token".into()),
+                token_file: None,
+                oidc_audience: None,
+                connect_timeout: Duration::from_secs(1),
+                read_timeout: Duration::from_secs(1),
+                download_timeout: Duration::from_secs(1),
+                retries: 0,
+            })
+            .unwrap(),
             staging_dir: staging.path().to_path_buf(),
-            client: reqwest::Client::new(),
-            credential: RemoteTaskCacheCredential::Static(HeaderValue::from_static(
-                "Bearer test-token",
-            )),
         };
         let write = store.begin_write(key).unwrap();
 
         store
-            .commit(key, action, &write, manifest.as_bytes(), false)
+            .commit(key, action, &write, &manifest, false)
             .await
             .unwrap();
         let entry = store.get(key, action.len() as u64).await.unwrap().unwrap();
@@ -2037,15 +1357,24 @@ mod tests {
             .await;
         let staging = tempfile::tempdir().unwrap();
         let store = HttpTaskCacheStore {
-            base_url: normalized_base_url(server.url().parse().unwrap()),
-            namespace: "test-namespace".into(),
+            client: RemoteCacheClient::new(RemoteCacheConfig {
+                base_url: server.url().parse().unwrap(),
+                namespace: "test-namespace".into(),
+                token: None,
+                token_file: None,
+                oidc_audience: None,
+                connect_timeout: Duration::from_secs(1),
+                read_timeout: Duration::from_secs(1),
+                download_timeout: Duration::from_secs(1),
+                retries: 0,
+            })
+            .unwrap(),
             staging_dir: staging.path().to_path_buf(),
-            client: reqwest::Client::new(),
-            credential: RemoteTaskCacheCredential::None,
         };
 
         let err = store
-            .get_blob(&digest, REMOTE_CACHE_BLOB_MEDIA_TYPE)
+            .client
+            .get_blob(&digest, BLOB_MEDIA_TYPE)
             .await
             .unwrap_err();
 
@@ -2063,12 +1392,9 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(local.as_ref(), "expired", b"local", None).await;
         seed(remote.as_ref(), "expired", b"remote", None).await;
-        let composite = CompositeTaskCacheStore::new(
-            local.clone(),
-            remote.clone(),
-            TaskCacheRemoteMode::ReadWrite,
-        )
-        .unwrap();
+        let composite =
+            CompositeTaskCacheStore::new(local.clone(), remote.clone(), CacheRemoteMode::ReadWrite)
+                .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
 
@@ -2093,7 +1419,7 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
         let composite =
-            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::ReadWrite)
+            CompositeTaskCacheStore::new(local.clone(), remote, CacheRemoteMode::ReadWrite)
                 .unwrap();
 
         composite.remove_local("expired", 6).await.unwrap();
@@ -2116,7 +1442,7 @@ mod tests {
             Arc::new(LocalTaskCacheStore::new(remote_root.path().to_path_buf()));
         seed(remote.as_ref(), "expired", b"fresh-remote", None).await;
         let composite =
-            CompositeTaskCacheStore::new(local.clone(), remote, TaskCacheRemoteMode::WriteOnly)
+            CompositeTaskCacheStore::new(local.clone(), remote, CacheRemoteMode::WriteOnly)
                 .unwrap();
 
         assert!(composite.remove_local("expired", 6).await.is_err());

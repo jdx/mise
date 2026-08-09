@@ -50,7 +50,10 @@ pub struct DotfilesAdd {
     pub(super) no_apply: bool,
 
     /// Write to this config file or directory
-    #[clap(long, short, visible_alias = "file", value_name = "PATH", conflicts_with_all = ["global", "local"])]
+    // No `--file` alias here: `-f` on this command is `--force`, and `targets` accepts any
+    // string, so `-f <path>` silently adds the config file as a dotfile instead of writing
+    // to it. See `mise unset --path` for the commands where the short form is free.
+    #[clap(long, short, value_name = "PATH", conflicts_with_all = ["global", "local"])]
     pub(super) path: Option<PathBuf>,
 
     /// Source path to use for a single target

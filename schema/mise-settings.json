@@ -6,24 +6,30 @@
   "type": "object",
   "patternProperties": {
     "^[a-zA-Z0-9_]+$": {
+      "$ref": "#/$defs/node"
+    }
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "node": {
       "oneOf": [
         {
           "$ref": "#/$defs/setting"
         },
         {
-          "type": "object",
-          "patternProperties": {
-            "^[a-zA-Z0-9_]+$": {
-              "$ref": "#/$defs/setting"
-            }
-          },
-          "unevaluatedProperties": false
+          "$ref": "#/$defs/group"
         }
       ]
-    }
-  },
-  "unevaluatedProperties": false,
-  "$defs": {
+    },
+    "group": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9_]+$": {
+          "$ref": "#/$defs/node"
+        }
+      },
+      "unevaluatedProperties": false
+    },
     "setting": {
       "type": "object",
       "properties": {

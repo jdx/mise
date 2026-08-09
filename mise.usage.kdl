@@ -428,7 +428,7 @@ Examples:
             }
             flag "-n --dry-run" help="Print the config/source updates without writing anything"
             flag --no-apply help="Add the entry without applying it"
-            flag "-p --path --file" help="Write to this config file or directory" {
+            flag "-p --path" help="Write to this config file or directory" {
                 arg <PATH>
             }
             flag "-s --source" help="Source path to use for a single target" {
@@ -1214,7 +1214,7 @@ Examples:
         }
         flag "-n --dry-run" help="Print the config/source updates without writing anything"
         flag --no-apply help="Add the entry without applying it"
-        flag "-p --path --file" help="Write to this config file or directory" {
+        flag "-p --path" help="Write to this config file or directory" {
             arg <PATH>
         }
         flag "-s --source" help="Source path to use for a single target" {
@@ -4621,6 +4621,16 @@ Do not uninstall the versions that were upgraded away from
 By default the old version is removed once the new one installs, unless another
 tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
 something outside of mise points at the old install directory.
+
+Set `upgrade.auto_prune = false` to make this the default.
+"""#
+    }
+    flag --prune help="Uninstall the versions that were upgraded away from" {
+        long_help #"""
+Uninstall the versions that were upgraded away from
+
+This is already the default. Use it to override `upgrade.auto_prune = false`
+for a single run.
 """#
     }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
@@ -4693,7 +4703,7 @@ Number of jobs to run in parallel
         arg <JOBS>
     }
     flag "-n --dry-run" help="Perform a dry run, showing what would be installed and modified without making changes"
-    flag "-p --path --file" help="Specify a path to a config file or directory" {
+    flag "-p --path" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 
