@@ -327,10 +327,22 @@ impl BrewCaskManager {
             return Ok(cask.version);
         }
         prefix::bootstrap(false)?;
+        let stage = fetch_and_stage(&cask, pr).await?;
+        let _caskroom_lock = lock_caskroom()?;
+        if homebrew_metadata_present(&cask.token) {
+            file::remove_all(&stage)?;
+            bail!(
+                "brew-cask:{}: Homebrew took ownership of this cask while installation was pending",
+                cask.token
+            );
+        }
+        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+            file::remove_all(stage)?;
+            return Ok(cask.version);
+        }
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
         let previous_completions = previous_completion_targets(&cask)?;
-        let stage = fetch_and_stage(&cask, pr).await?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
@@ -4083,11 +4095,38 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
         return Ok(plan);
     };
 
-    for entry in tokens.filter_map(|entry| entry.ok()) {
-        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+    for entry in tokens {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                claims_complete = false;
+                plan.skipped.push(CaskPruneSkip {
+                    token: "Caskroom".to_string(),
+                    reason: format!("Caskroom entry could not be read: {err}"),
+                });
+                continue;
+            }
+        };
+        let kind = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(err) => {
+                claims_complete = false;
+                plan.skipped.push(CaskPruneSkip {
+                    token: entry.file_name().to_string_lossy().to_string(),
+                    reason: format!("Caskroom entry type could not be read: {err}"),
+                });
+                continue;
+            }
+        };
+        if !kind.is_dir() {
             continue;
         }
         let Some(token) = entry.file_name().to_str().map(str::to_string) else {
+            claims_complete = false;
+            plan.skipped.push(CaskPruneSkip {
+                token: entry.file_name().to_string_lossy().to_string(),
+                reason: "Caskroom token name is not valid UTF-8".to_string(),
+            });
             continue;
         };
         if token.starts_with('.') {
@@ -4095,6 +4134,7 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
         }
         let configured = keep.contains(&token);
         let Ok(version_entries) = std::fs::read_dir(entry.path()) else {
+            claims_complete = false;
             if !configured {
                 plan.skipped.push(CaskPruneSkip {
                     token,
@@ -4103,13 +4143,38 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
             }
             continue;
         };
-        let versions = version_entries
-            .filter_map(|version| version.ok())
-            .filter(|version| {
-                version.file_type().is_ok_and(|kind| kind.is_dir())
-                    && !version.file_name().to_string_lossy().starts_with('.')
-            })
-            .collect::<Vec<_>>();
+        let mut versions = Vec::new();
+        let mut version_error = None;
+        for version in version_entries {
+            let version = match version {
+                Ok(version) => version,
+                Err(err) => {
+                    claims_complete = false;
+                    version_error =
+                        Some(format!("Caskroom version entry could not be read: {err}"));
+                    continue;
+                }
+            };
+            let kind = match version.file_type() {
+                Ok(kind) => kind,
+                Err(err) => {
+                    claims_complete = false;
+                    version_error = Some(format!(
+                        "Caskroom version entry type could not be read: {err}"
+                    ));
+                    continue;
+                }
+            };
+            if kind.is_dir() && !version.file_name().to_string_lossy().starts_with('.') {
+                versions.push(version);
+            }
+        }
+        if let Some(reason) = version_error {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip { token, reason });
+            }
+            continue;
+        }
         let mut receipts = BTreeMap::new();
         let mut receipt_error = None;
         for version in &versions {
@@ -4264,6 +4329,7 @@ fn apply_cask_prune_plan_in(
         return Ok(0);
     }
 
+    let _caskroom_lock = lock_caskroom()?;
     let mut removed = 0;
     for candidate in &plan.remove {
         if let Err(reason) = validate_cask_prune_candidate(candidate)
@@ -4295,6 +4361,18 @@ fn apply_cask_prune_plan_in(
         removed += 1;
     }
     Ok(removed)
+}
+
+fn lock_caskroom() -> Result<fslock::LockFile> {
+    let caskroom = prefix::prefix().join("Caskroom");
+    file::create_dir_all(&caskroom)?;
+    let path = caskroom.join(".mise.lock");
+    let mut lock = fslock::LockFile::open(&path)?;
+    if !lock.try_lock()? {
+        debug!("waiting for brew-cask lock on {}", path.display());
+        lock.lock()?;
+    }
+    Ok(lock)
 }
 
 fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
@@ -7400,6 +7478,34 @@ end
         assert!(plan.remove.is_empty());
         assert!(plan.skipped.iter().any(|skip| {
             skip.token == "corrupt" && skip.reason.contains("receipt could not be read")
+        }));
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "clean" && skip.reason.contains("could not be indexed completely")
+        }));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cask_prune_fails_closed_when_a_token_directory_is_unreadable() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        write_test_app_receipt(&test_cask("clean", "1.0.0"), "Clean.app")?;
+        let unreadable = caskroom_token_dir("unreadable");
+        file::create_dir_all(&unreadable)?;
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000))?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir);
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o755))?;
+        let plan = plan?;
+
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "unreadable" && skip.reason.contains("directory could not be read")
         }));
         assert!(plan.skipped.iter().any(|skip| {
             skip.token == "clean" && skip.reason.contains("could not be indexed completely")
