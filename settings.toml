@@ -1078,7 +1078,7 @@ optional = true
 type = "Bool"
 
 [go.set_gopath]
-deprecated = "Use env._go.set_goroot instead."
+deprecated = "mise no longer manages GOPATH. Set GOPATH in [env] if you need a specific value."
 description = "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages."
 env = "MISE_GO_SET_GOPATH"
 type = "Bool"
