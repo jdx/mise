@@ -673,8 +673,8 @@ impl MiseToml {
                 options.insert("version", Value::from(version));
                 return Ok(());
             }
-            if let Some(options) = item.as_table_mut() {
-                options.insert("version", value(version));
+            if item.as_table().is_some() {
+                insert_preserving_decor(item, "version", value(version));
                 return Ok(());
             }
         }
@@ -3301,23 +3301,40 @@ mod tests {
             [bootstrap.packages]
             "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"] }} # keep me
             "apt:curl" = "8.5.0"
+
+            [bootstrap.packages."brew:fd"]
+            version = "10.0.0" # keep version comment
+            os = ["macos"] # keep selector comment
             "#},
         )
         .unwrap();
         let mut cf = MiseToml::from_file(&p).unwrap();
         cf.update_bootstrap_package("brew:ripgrep", "latest")
             .unwrap();
+        cf.update_bootstrap_package("brew:fd", "latest").unwrap();
 
         let dump = cf.dump().unwrap();
         assert!(
             dump.contains(r#""brew:ripgrep" = { version = "latest", os = ["macos"] } # keep me"#),
             "package selectors and comments should survive: {dump}"
         );
+        assert!(
+            dump.contains(r#"version = "latest" # keep version comment"#),
+            "nested package version comments should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"os = ["macos"] # keep selector comment"#),
+            "nested package selectors should survive: {dump}"
+        );
         assert!(matches!(
             cf.bootstrap_config()
                 .unwrap()
                 .packages
                 .get("brew:ripgrep"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
+        assert!(matches!(
+            cf.bootstrap_config().unwrap().packages.get("brew:fd"),
             Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
         ));
         file::remove_file(&p).unwrap();
