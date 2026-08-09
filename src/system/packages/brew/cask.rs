@@ -15,6 +15,7 @@ use super::prefix;
 use super::source;
 use crate::cmd::CmdLineRunner;
 use crate::file::{self, ExtractOptions, ExtractionFormat};
+use crate::git::{CloneOptions, Git};
 use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::result::Result;
@@ -31,6 +32,14 @@ const CASK_SHIM_RB: &str = include_str!("cask_shim.rb");
 
 pub struct BrewCaskManager {}
 
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskUrlSpecs {
+    #[serde(default)]
+    branch: Option<String>,
+    #[serde(default)]
+    only_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct Cask {
     token: String,
@@ -40,6 +49,8 @@ struct Cask {
     old_tokens: Vec<String>,
     version: String,
     url: String,
+    #[serde(default)]
+    url_specs: CaskUrlSpecs,
     #[serde(default)]
     sha256: Option<String>,
     #[serde(default)]
@@ -286,8 +297,7 @@ impl BrewCaskManager {
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
         let previous_completions = previous_completion_targets(&cask)?;
-        let archive = fetch_archive(&cask, pr).await?;
-        let stage = extract_archive(&cask, &archive, pr)?;
+        let stage = fetch_and_stage(&cask, pr).await?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
@@ -662,6 +672,59 @@ fn validate_cask_path_component(kind: &str, value: &str) -> Result<()> {
         bail!("brew-cask: invalid {kind} '{value}'");
     }
     Ok(())
+}
+
+async fn fetch_and_stage(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
+    if cask.url.ends_with(".git") {
+        return fetch_git_clone_and_stage(cask, pr).await;
+    }
+    let archive = fetch_archive(cask, pr).await?;
+    extract_archive(cask, &archive, pr)
+}
+
+async fn fetch_git_clone_and_stage(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
+    let extract_dir = crate::dirs::CACHE
+        .join("system-brew")
+        .join("cask-extract")
+        .join(format!("{}-{}", cask.token, cask.version));
+    file::remove_all(&extract_dir)?;
+    file::create_dir_all(&extract_dir)?;
+    let clone_dir = crate::dirs::CACHE
+        .join("system-brew")
+        .join("cask-git-clone")
+        .join(format!("{}-{}", cask.token, cask.version));
+    file::remove_all(&clone_dir)?;
+    let mut clone_opts = CloneOptions::default();
+    if let Some(branch) = cask.url_specs.branch.as_deref() {
+        clone_opts = clone_opts.branch(branch);
+    }
+    if let Some(pr) = pr {
+        clone_opts = clone_opts.pr(pr);
+    }
+    Git::new(&clone_dir)
+        .clone(&cask.url, clone_opts)
+        .wrap_err_with(|| format!("brew-cask:{}: failed to clone {}", cask.token, cask.url))?;
+    if let Some(only_path) = &cask.url_specs.only_path {
+        let source = clone_dir.join(only_path);
+        if source.is_dir() {
+            for entry in std::fs::read_dir(&source)? {
+                let entry = entry?;
+                let dest = extract_dir.join(entry.file_name());
+                file::rename(entry.path(), &dest)?;
+            }
+        }
+    } else {
+        for entry in std::fs::read_dir(&clone_dir)? {
+            let entry = entry?;
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            let dest = extract_dir.join(entry.file_name());
+            file::rename(entry.path(), &dest)?;
+        }
+    }
+    file::remove_all(&clone_dir)?;
+    Ok(extract_dir)
 }
 
 async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
@@ -4191,6 +4254,7 @@ mod tests {
             old_tokens: Vec::new(),
             version: version.to_string(),
             url: "https://example.com/example.zip".to_string(),
+            url_specs: CaskUrlSpecs::default(),
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
             ruby_source_path: None,
@@ -6935,7 +6999,7 @@ end
         let protected_dir = target.join("Contents/Resources");
         file::create_dir_all(&protected_dir)?;
         crate::file::write(protected_dir.join("docker"), "old")?;
-        let status = std::process::Command::new("chmod")
+        let status = std::process::Command::new("/bin/chmod")
             .args(["+a", "everyone deny delete_child"])
             .arg(&protected_dir)
             .status()?;
@@ -6953,7 +7017,7 @@ end
             crate::hash::hash_to_str(&target.display().to_string())
         ));
         if old_target.exists() {
-            let status = std::process::Command::new("chmod")
+            let status = std::process::Command::new("/bin/chmod")
                 .arg("-RN")
                 .arg(&old_target)
                 .status()?;
@@ -7227,6 +7291,111 @@ end
         assert_eq!(
             crate::file::read_to_string(metadata.join("actual-token.json"))?,
             "metadata"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+
+        // Create a local git repo to clone from
+        let repo = tmp.path().join("repo.git");
+        std::fs::create_dir_all(repo.join("fonts").join("sample"))?;
+        std::fs::write(
+            repo.join("fonts").join("sample").join("font.ttf"),
+            "initial content",
+        )?;
+        std::fs::write(
+            repo.join("fonts").join("sample").join("font-bold.ttf"),
+            "bold",
+        )?;
+
+        // Use --initial-branch to avoid depending on the configured default branch name.
+        let repo_str = repo.to_string_lossy().to_string();
+        let run = |args: &[&str]| -> Result<()> {
+            let mut cmd = std::process::Command::new("git");
+            if !cmd.args(args).status()?.success() {
+                bail!("git {} failed", args.join(" "));
+            }
+            Ok(())
+        };
+        run(&["-C", &repo_str, "init", "-q", "--initial-branch=main"])?;
+        run(&[
+            "-C",
+            &repo_str,
+            "-c",
+            "user.email=test@test",
+            "-c",
+            "user.name=test",
+            "add",
+            "-A",
+        ])?;
+        run(&[
+            "-C",
+            &repo_str,
+            "-c",
+            "user.email=test@test",
+            "-c",
+            "user.name=test",
+            "commit",
+            "-q",
+            "-m",
+            "baseline",
+        ])?;
+
+        // Create a dedicated branch with different content to verify branch selection.
+        run(&["-C", &repo_str, "checkout", "-q", "-b", "fonts-v2"])?;
+        std::fs::write(
+            repo.join("fonts").join("sample").join("font.ttf"),
+            "branch content",
+        )?;
+        run(&[
+            "-C",
+            &repo_str,
+            "-c",
+            "user.email=test@test",
+            "-c",
+            "user.name=test",
+            "commit",
+            "-q",
+            "-a",
+            "-m",
+            "updated fonts",
+        ])?;
+
+        let url = format!("file://{}", repo.display());
+
+        let cask = Cask {
+            token: "font-test".to_string(),
+            aliases: vec![],
+            old_tokens: vec![],
+            version: "latest".to_string(),
+            url,
+            url_specs: CaskUrlSpecs {
+                branch: Some("fonts-v2".to_string()),
+                only_path: Some("fonts/sample".to_string()),
+            },
+            sha256: Some("no_check".to_string()),
+            artifacts: vec![],
+            ruby_source_path: None,
+            ruby_source_checksum: None,
+            tap_git_head: None,
+            raw_base: None,
+        };
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let stage = rt.block_on(fetch_git_clone_and_stage(&cask, None))?;
+
+        assert!(stage.join("font.ttf").is_file());
+        assert!(stage.join("font-bold.ttf").is_file());
+        // Verify the content from the dedicated branch, not the default branch.
+        assert_eq!(
+            std::fs::read_to_string(stage.join("font.ttf"))?,
+            "branch content"
         );
         Ok(())
     }
