@@ -3,6 +3,7 @@ os = ["linux", "macos", "windows"]
 # The version baked into the binary lags the published build number (1.0.15985488
 # reports 1.0.15857036), so it cannot be asserted against {{version}}.
 test = { cmd = "android --version", expected = "1." }
+version_order = "semver"
 
 bins = ["android"]
 [[backends]]
