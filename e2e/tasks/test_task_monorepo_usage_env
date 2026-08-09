@@ -14,8 +14,13 @@ EOF
 
 # Create backend project with env and task using usage with env= attribute
 mkdir -p backend
+cat <<EOF >backend/source-env.sh
+echo sourced >>"$PWD/backend/source-count"
+export SOURCE_MARKER=from-source
+EOF
 cat <<EOF >backend/mise.toml
 [env]
+_.source = "./source-env.sh"
 NAME = "john"
 
 [tasks.test]
@@ -25,7 +30,15 @@ usage = '''
 run = '''
 echo "Name: {{usage.name}}"
 '''
+
+[tasks.invalid]
+usage = 'arg "<required>"'
+run = 'echo should-not-run'
 EOF
+
+# Preflight must not source the child environment before rejecting invalid usage.
+assert_fail_contains "mise run '//backend:invalid'" "Missing required arg: <required>"
+test ! -e backend/source-count
 
 # Test 1: Running monorepo task with usage env should work
 echo "=== Test 1: Monorepo task with usage env= attribute ==="

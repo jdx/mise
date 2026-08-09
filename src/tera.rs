@@ -69,6 +69,15 @@ impl TeraEngine {
             }
         }
     }
+
+    pub(crate) fn validate_template_syntax(&mut self, name: &str, input: &str) -> TeraResult<()> {
+        match self {
+            Self::V2(tera) => tera.add_raw_template(name, input),
+            Self::V1(tera) => tera
+                .add_raw_template(name, input)
+                .map_err(|err| tera_err(err.to_string())),
+        }
+    }
 }
 
 pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {

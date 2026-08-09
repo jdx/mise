@@ -23,7 +23,7 @@ use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder
 use crate::ui::{ctrlc, info, style};
 use bytesize::ByteSize;
 use clap::{CommandFactory, ValueHint};
-use eyre::{Result, bail, eyre};
+use eyre::{Context, Result, bail, eyre};
 use futures_util::FutureExt;
 use itertools::Itertools;
 use serde::Serialize;
@@ -872,6 +872,24 @@ impl Run {
 
         // Step 5: Create TaskExecutor after tool installation
         self.setup_executor()?;
+
+        // Validate every scheduled invocation before starting the scheduler so
+        // an invalid parent or dependency cannot run any task commands first.
+        let executor = self.executor.as_ref().expect("task executor initialized");
+        for task in tasks.all() {
+            if let Err(err) = executor
+                .preflight_task_usage(&config, task)
+                .await
+                .wrap_err_with(|| format!("failed to validate task {}", task.name))
+            {
+                if let Some(session) = &self.cache_session
+                    && let Err(finish_err) = session.finish().await
+                {
+                    warn!("failed to finish action cache session: {finish_err:#}");
+                }
+                return Err(err);
+            }
+        }
 
         // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
         ctrlc::exit_on_ctrl_c(false);
