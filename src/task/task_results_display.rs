@@ -77,7 +77,7 @@ impl TaskResultsDisplay {
         let count = failed.len();
         safe_eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
         for (task, status) in &failed {
-            let prefix = task.estyled_prefix();
+            let prefix = task.estyled_prefix_padded(self.output_handler.prefix_width());
             let status_str = status
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
@@ -88,7 +88,7 @@ impl TaskResultsDisplay {
     /// Request a failing exit status if any tasks failed
     fn exit_if_failed(&self) -> Result<()> {
         if let Some((task, status)) = self.failed_tasks.lock().unwrap().first() {
-            let prefix = task.estyled_prefix();
+            let prefix = task.estyled_prefix_padded(self.output_handler.prefix_width());
             self.eprint(
                 task,
                 &prefix,

@@ -1070,7 +1070,12 @@ impl Run {
                     Error::get_exit_status(err)
                 };
                 if !interrupted && !this.is_stopping() && (panicked || status.is_none()) {
-                    let prefix = task.estyled_prefix();
+                    let prefix = task.estyled_prefix_padded(
+                        this.output_handler
+                            .as_ref()
+                            .map(|h| h.prefix_width())
+                            .unwrap_or(0),
+                    );
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
                     } else {
@@ -1169,6 +1174,9 @@ impl Run {
             raw: self.raw,
             is_linear: self.is_linear,
             jobs: self.jobs,
+            // Computed once here, where the whole run is known, so every task's
+            // prefix can be padded to the same width (discussion #4397).
+            prefix_width: crate::task::max_prefix_width(tasks.all()),
         };
         self.output_handler = Some(OutputHandler::new(output_config));
 

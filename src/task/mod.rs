@@ -2080,8 +2080,24 @@ impl Task {
         Ok(ctx.render_spec()?)
     }
 
-    pub fn estyled_prefix(&self) -> String {
-        style::prefix(self.prefix(), &self.display_name, true)
+    /// The task's styled `[name]` prefix, right-aligned within `width` so that
+    /// the output of every task in a run starts at the same column
+    /// (discussion #4397).
+    ///
+    /// Padding goes *before* the bracket, not after it. That keeps `[name] ` and
+    /// the line it prefixes contiguous, so anything matching on `[name] output`
+    /// — mise's own e2e tests do, and user scripts plausibly do too — is
+    /// unaffected. The spaces sit outside the styled span, so they carry no
+    /// color. A run with a single task pads to its own width, i.e. not at all;
+    /// pass 0 for an unpadded prefix.
+    pub fn estyled_prefix_padded(&self, width: usize) -> String {
+        let plain = self.prefix();
+        let pad = width.saturating_sub(console::measure_text_width(&plain));
+        format!(
+            "{}{}",
+            " ".repeat(pad),
+            style::prefix(plain, &self.display_name, true)
+        )
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
@@ -2840,6 +2856,17 @@ impl Task {
     }
 }
 
+/// Display width of the widest prefix among `tasks`, for aligning their output.
+///
+/// Measured rather than counted so a task named in CJK lines up with the rest.
+/// `Task::prefix` truncates to 40 characters, so this is bounded.
+pub fn max_prefix_width<'a>(tasks: impl Iterator<Item = &'a Task>) -> usize {
+    tasks
+        .map(|t| console::measure_text_width(&t.prefix()))
+        .max()
+        .unwrap_or(0)
+}
+
 pub(crate) fn clear_usage_env(env: &mut EnvMap) {
     env.retain(|key, _| !is_usage_env_key(key));
 }
@@ -3562,7 +3589,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::task::workspace;
-    use crate::task::{RunEntry, Task, TaskRustCacheConfig, TaskWatchOptions};
+    use crate::task::{RunEntry, Task, TaskRustCacheConfig, TaskWatchOptions, max_prefix_width};
     use crate::{config::Config, dirs};
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
@@ -6195,7 +6222,7 @@ echo "test"
                 display_name: name.to_string(),
                 ..Default::default()
             };
-            let styled = task.estyled_prefix();
+            let styled = task.estyled_prefix_padded(0);
             assert!(
                 !styled.contains(red_fg),
                 "task {name:?} prefix contains red"
@@ -6213,5 +6240,72 @@ echo "test"
                 "task {name:?} prefix contains bright yellow"
             );
         }
+    }
+
+    fn task_named(name: &str) -> Task {
+        Task {
+            display_name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// discussion #4397: prefixes from one run should line up.
+    #[test]
+    fn estyled_prefix_padded_aligns_to_width() {
+        let short = task_named("a");
+        let long = task_named("averylongtaskname");
+        let width = max_prefix_width([&short, &long].into_iter());
+
+        let padded = short.estyled_prefix_padded(width);
+        assert_eq!(console::measure_text_width(&padded), width);
+        // Padding goes before the bracket, so `[a] ` stays contiguous with whatever
+        // follows it and existing `[name] output` matchers keep working.
+        assert!(padded.starts_with("  "), "expected leading pad: {padded:?}");
+        assert!(
+            padded.contains("[a]"),
+            "lost the bracketed name: {padded:?}"
+        );
+        // Nothing is appended, so the padded and unpadded forms differ only by the
+        // leading spaces.
+        assert_eq!(
+            padded.trim_start_matches(' '),
+            short.estyled_prefix_padded(0)
+        );
+
+        // The widest task is already at the width, so it gains nothing.
+        assert_eq!(
+            long.estyled_prefix_padded(width),
+            long.estyled_prefix_padded(0),
+            "the widest prefix should be unchanged"
+        );
+    }
+
+    /// A single-task run pads to its own width, i.e. output is unchanged.
+    #[test]
+    fn estyled_prefix_padded_never_truncates() {
+        let task = task_named("averylongtaskname");
+        let unpadded = task.estyled_prefix_padded(0);
+        // A width below the prefix's own must not shorten it.
+        assert!(unpadded.contains("[averylongtaskname]"));
+        assert!(!unpadded.starts_with(' '));
+        assert_eq!(
+            task.estyled_prefix_padded(max_prefix_width([&task].into_iter())),
+            unpadded
+        );
+    }
+
+    #[test]
+    fn max_prefix_width_takes_the_widest() {
+        let a = task_named("a");
+        let b = task_named("bbb");
+        assert_eq!(max_prefix_width([&a, &b].into_iter()), "[bbb]".len());
+        assert_eq!(max_prefix_width(std::iter::empty::<&Task>()), 0);
+    }
+
+    /// Width, not character count — a CJK name is twice as wide per character.
+    #[test]
+    fn max_prefix_width_is_display_width() {
+        let cjk = task_named("ビルド");
+        assert_eq!(max_prefix_width([&cjk].into_iter()), 2 + 3 * 2);
     }
 }

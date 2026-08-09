@@ -178,6 +178,8 @@ pub struct OutputHandlerConfig {
     pub raw: bool,
     pub is_linear: bool,
     pub jobs: Option<usize>,
+    /// Width every task prefix in this run is padded to, so they line up.
+    pub prefix_width: usize,
 }
 
 /// Handles task output routing, formatting, and display
@@ -193,6 +195,7 @@ pub struct OutputHandler {
     raw: bool,
     is_linear: bool,
     jobs: Option<usize>,
+    prefix_width: usize,
 }
 
 impl Clone for OutputHandler {
@@ -207,6 +210,7 @@ impl Clone for OutputHandler {
             raw: self.raw,
             is_linear: self.is_linear,
             jobs: self.jobs,
+            prefix_width: self.prefix_width,
         }
     }
 }
@@ -218,11 +222,16 @@ impl OutputHandler {
         if let Some(pr) = prs.get(task) {
             pr.clone()
         } else {
-            let pr = MultiProgressReport::get().add(&task.estyled_prefix());
+            let pr = MultiProgressReport::get().add(&task.estyled_prefix_padded(self.prefix_width));
             let pr = Arc::new(pr);
             prs.insert(task.clone(), pr.clone());
             pr
         }
+    }
+
+    /// Width task prefixes are padded to for this run.
+    pub fn prefix_width(&self) -> usize {
+        self.prefix_width
     }
 }
 
@@ -238,6 +247,7 @@ impl OutputHandler {
             raw: config.raw,
             is_linear: config.is_linear,
             jobs: config.jobs,
+            prefix_width: config.prefix_width,
         }
     }
 
@@ -460,6 +470,7 @@ mod tests {
             raw: false,
             is_linear: true,
             jobs: None,
+            prefix_width: 0,
         });
         let task = Task::default();
 

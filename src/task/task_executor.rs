@@ -454,7 +454,7 @@ impl TaskExecutor {
             permit,
             allow_during_interruption,
         } = ctx;
-        let prefix = task.estyled_prefix();
+        let prefix = task.estyled_prefix_padded(self.output_handler.prefix_width());
         let total_start = std::time::Instant::now();
         Self::check_interruption(allow_during_interruption)?;
         if Settings::get().task.skip.contains(&task.name) {
