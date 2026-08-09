@@ -25,6 +25,8 @@ use crate::system::PackageTomlConfig;
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
+#[cfg(unix)]
+use toml_edit::{Array, InlineTable, Value};
 
 /// Import installed system packages into `[bootstrap.packages]`
 ///
@@ -136,7 +138,11 @@ impl SystemImport {
                 {
                     continue;
                 }
-                miseprintln!("{}: \"{}\" = \"latest\"", display_path(&path), key);
+                let package = imported_package_value(
+                    target_packages.get(&key),
+                    configured_packages.get(&key),
+                );
+                miseprintln!("{}: \"{}\" = {}", display_path(&path), key, package);
             }
             return Ok(());
         }
@@ -171,6 +177,32 @@ impl SystemImport {
         let _ = self.manager;
         bail!("brew import is not supported on windows")
     }
+}
+
+#[cfg(unix)]
+fn imported_package_value(
+    target: Option<&PackageTomlConfig>,
+    configured: Option<&PackageTomlConfig>,
+) -> Value {
+    let options = match target {
+        Some(PackageTomlConfig::Options(options)) => Some(options),
+        Some(PackageTomlConfig::Version(_)) => None,
+        None => match configured {
+            Some(PackageTomlConfig::Options(options)) if !options.os.is_empty() => Some(options),
+            _ => None,
+        },
+    };
+    let Some(options) = options else {
+        return Value::from("latest");
+    };
+    let mut table = InlineTable::new();
+    table.insert("version", Value::from("latest"));
+    if !options.os.is_empty() {
+        let mut os = Array::new();
+        os.extend(options.os.clone());
+        table.insert("os", Value::Array(os));
+    }
+    Value::InlineTable(table)
 }
 
 #[cfg(unix)]
@@ -212,6 +244,24 @@ fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, PackageToml
         }
     }
     Ok(packages)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::system::PackageOptionsTomlConfig;
+
+    #[test]
+    fn dry_run_preserves_inherited_selectors() {
+        let inherited = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+            version: "1.0.0".to_string(),
+            os: vec!["macos".to_string()],
+        });
+        assert_eq!(
+            imported_package_value(None, Some(&inherited)).to_string(),
+            r#"{ version = "latest", os = ["macos"] }"#
+        );
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

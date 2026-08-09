@@ -698,7 +698,10 @@ impl MiseToml {
             .bootstrap
             .as_ref()
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
-        if is_missing && let Some(PackageTomlConfig::Options(options)) = fallback {
+        if is_missing
+            && let Some(PackageTomlConfig::Options(options)) = fallback
+            && !options.os.is_empty()
+        {
             let mut options = options.clone();
             options.version = version.to_string();
             self.bootstrap
@@ -3371,6 +3374,20 @@ mod tests {
                 .clone();
             cf.update_bootstrap_package_with_fallback("brew:bat", "latest", Some(&inherited))
                 .unwrap();
+            #[cfg(unix)]
+            {
+                let inherited_without_selector =
+                    PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
+                        version: "1.0.0".to_string(),
+                        os: vec![],
+                    });
+                cf.update_bootstrap_package_with_fallback(
+                    "brew:tree",
+                    "latest",
+                    Some(&inherited_without_selector),
+                )
+                .unwrap();
+            }
         }
 
         let dump = cf.dump().unwrap();
@@ -3391,6 +3408,13 @@ mod tests {
             dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"] }"#),
             "inherited package selectors should be written locally: {dump}"
         );
+        #[cfg(unix)]
+        assert!(
+            dump.contains(r#""brew:tree" = "latest""#),
+            "an inherited options table without selectors should use scalar form: {dump}"
+        );
+        #[cfg(unix)]
+        MiseToml::from_str(&dump, &p).expect("updated package config should parse");
         assert!(matches!(
             cf.bootstrap_config()
                 .unwrap()
