@@ -46,7 +46,7 @@ fn unavailable_package_reason<'a>(
     d: &DriverOpts,
     statuses: &'a [PackageStatus],
 ) -> Option<&'a str> {
-    if d.manager.is_none() && !d.explicit {
+    if !d.explicit {
         return None;
     }
     statuses
@@ -232,8 +232,8 @@ mod tests {
     use crate::system::packages::PackageRequest;
 
     #[test]
-    fn use_allows_unavailable_manager_but_rejects_unavailable_package() {
-        let opts = DriverOpts {
+    fn explicit_packages_reject_unavailable_entries_but_manager_filters_skip_them() {
+        let explicit_opts = DriverOpts {
             manager: None,
             explicit: true,
             allow_unavailable_manager: true,
@@ -252,10 +252,21 @@ mod tests {
             },
         }];
 
-        assert!(!unavailable_manager_is_error(&opts));
+        assert!(!unavailable_manager_is_error(&explicit_opts));
         assert_eq!(
-            unavailable_package_reason(&opts, &statuses),
+            unavailable_package_reason(&explicit_opts, &statuses),
             Some("unsupported on this platform")
         );
+
+        let manager_opts = DriverOpts {
+            manager: Some("brew-cask".to_string()),
+            explicit: false,
+            allow_unavailable_manager: false,
+            dry_run: false,
+            update: false,
+            yes: true,
+        };
+        assert!(unavailable_manager_is_error(&manager_opts));
+        assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
     }
 }
