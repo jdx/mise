@@ -554,7 +554,9 @@ impl<'a> ActionBuilder<'a> {
             .iter()
             .map(|argument| self.normalize_argument(argument))
             .collect::<Result<Vec<_>, _>>()?;
-        let environment = self.normalize_environment()?;
+        // rustc may embed these values verbatim through `env!`; unlike paths
+        // used to locate inputs and outputs, changing them changes the artifact.
+        let environment = self.context.environment.clone();
 
         let mut inputs = BTreeMap::<String, CacheDigest>::new();
         for input in &self.context.inputs {
@@ -660,27 +662,6 @@ impl<'a> ActionBuilder<'a> {
                 to
             )),
         }
-    }
-
-    fn normalize_environment(&self) -> Result<BTreeMap<String, Option<String>>, BypassReason> {
-        self.context
-            .environment
-            .iter()
-            .map(|(name, value)| {
-                let value = value
-                    .as_deref()
-                    .map(|value| {
-                        let paths = std::env::split_paths(value).collect::<Vec<_>>();
-                        if paths.len() == 1 && paths[0].is_absolute() {
-                            self.normalize_path(&paths[0])
-                        } else {
-                            Ok(value.to_string())
-                        }
-                    })
-                    .transpose()?;
-                Ok((name.clone(), value))
-            })
-            .collect()
     }
 
     fn normalize_path(&self, path: &Path) -> Result<String, BypassReason> {
@@ -832,19 +813,10 @@ mod tests {
 
     #[test]
     fn equivalent_worktrees_produce_the_same_action_key() {
-        let mut first_context = context(&[
+        let first_context = context(&[
             ("src/lib.rs", "source"),
             ("target/debug/deps/libserde.rlib", "serde"),
         ]);
-        first_context.environment.insert(
-            "OUT_DIR".into(),
-            Some(
-                workspace()
-                    .join("target/debug/build/widget/out")
-                    .display()
-                    .to_string(),
-            ),
-        );
         let first = common_invocation().action(first_context).unwrap();
         let other = absolute(&["other", "checkout"]);
         let output = other.join("target/debug/deps");
@@ -867,15 +839,6 @@ mod tests {
         second_context.working_dir = other.clone();
         second_context.path_mappings[0].root = other.join("target");
         second_context.path_mappings[1].root = other.clone();
-        second_context.environment.insert(
-            "OUT_DIR".into(),
-            Some(
-                other
-                    .join("target/debug/build/widget/out")
-                    .display()
-                    .to_string(),
-            ),
-        );
         second_context.inputs = vec![
             ActionInput {
                 path: "src/lib.rs".into(),
@@ -888,6 +851,34 @@ mod tests {
         ];
         let second = invocation.action(second_context).unwrap();
         assert_eq!(first.digest, second.digest);
+    }
+
+    #[test]
+    fn absolute_environment_values_remain_literal_action_inputs() {
+        let invocation = common_invocation();
+        let mut first_context = context(&[
+            ("src/lib.rs", "source"),
+            ("target/debug/deps/libserde.rlib", "serde"),
+        ]);
+        let first_out_dir = workspace().join("target/debug/build/widget/out");
+        first_context
+            .environment
+            .insert("OUT_DIR".into(), Some(first_out_dir.display().to_string()));
+        let first = invocation.action(first_context).unwrap();
+
+        let mut second_context = context(&[
+            ("src/lib.rs", "source"),
+            ("target/debug/deps/libserde.rlib", "serde"),
+        ]);
+        second_context.environment.insert(
+            "OUT_DIR".into(),
+            Some(absolute(&["other", "out"]).display().to_string()),
+        );
+        let second = invocation.action(second_context).unwrap();
+
+        let descriptor = String::from_utf8(first.bytes).unwrap();
+        assert!(descriptor.contains(&first_out_dir.display().to_string()));
+        assert_ne!(first.digest, second.digest);
     }
 
     #[test]

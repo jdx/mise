@@ -217,11 +217,12 @@ impl RustcInvocation {
             .iter()
             .chain(&self.required_inputs)
             .map(|path| {
-                if path.is_absolute() {
-                    normalize_components(path)
+                let absolute = if path.is_absolute() {
+                    path.to_path_buf()
                 } else {
-                    normalize_components(&working_dir.join(path))
-                }
+                    working_dir.join(path)
+                };
+                normalize_components(&absolute)
             })
             .collect::<BTreeSet<_>>();
         let mut inputs = Vec::with_capacity(paths.len());
@@ -422,6 +423,28 @@ mod tests {
     }
 
     #[test]
+    fn discovery_resolves_parent_components_against_the_working_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        let shared = directory.path().join("shared.rs");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(&shared, "pub fn shared() {}\n").unwrap();
+
+        let invocation = RustcInvocation::parse(&args(&[
+            "--crate-name=widget",
+            "--crate-type=lib",
+            "--emit=metadata",
+            "../shared.rs",
+        ]))
+        .unwrap();
+        let dep_info = RustcDepInfo::parse("output: ../shared.rs\n").unwrap();
+        let discovered = invocation.discover_inputs(&dep_info, &root).unwrap();
+
+        assert_eq!(discovered.inputs.len(), 1);
+        assert_eq!(discovered.inputs[0].path, shared);
+    }
+
+    #[test]
     fn rustc_dep_info_round_trip_discovers_real_inputs() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
@@ -445,13 +468,17 @@ mod tests {
         let dep_info_path = root.join("discovery inputs.d");
         let discovery_command = invocation.dep_info_command(&dep_info_path).unwrap();
         let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-        let output = Command::new(rustc)
+        let output = match Command::new(rustc)
             .args(discovery_command.arguments())
             .current_dir(root)
             .env("MISE_CACHE_DISCOVERY_TEST", "observed")
             .env_remove("MISE_CACHE_DISCOVERY_UNSET")
             .output()
-            .unwrap();
+        {
+            Ok(output) => output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => panic!("failed to execute rustc: {error}"),
+        };
         assert!(
             output.status.success(),
             "{}",
