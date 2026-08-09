@@ -238,7 +238,11 @@ impl FromLua for PreInstall {
                     // addition,
                 })
             }
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "PreInstall".into(),
+                message: Some("Expected table".to_string()),
+            }),
         }
     }
 }
@@ -403,6 +407,13 @@ mod tests {
             err.contains("slsa_min_level requires slsa_provenance_path"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    async fn test_pre_install_rejects_non_table() {
+        let lua = Lua::new();
+        let result = PreInstall::from_lua(mlua::Value::Boolean(true), &lua);
+        assert!(result.is_err(), "a non-table response must not panic");
     }
 
     async fn run(plugin: &str, v: &str) -> PreInstall {

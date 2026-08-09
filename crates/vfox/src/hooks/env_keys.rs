@@ -59,7 +59,23 @@ impl FromLua for EnvKey {
                 key: table.get::<String>("key")?,
                 value: table.get::<String>("value")?,
             }),
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "EnvKey".to_string(),
+                message: Some("Expected table".to_string()),
+            }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_env_key_rejects_non_table() {
+        let lua = Lua::new();
+        let result = EnvKey::from_lua(Value::Boolean(true), &lua);
+        assert!(result.is_err(), "a non-table response must not panic");
     }
 }
