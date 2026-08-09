@@ -1312,6 +1312,20 @@ something_else = "value"
         assert!(pick_best_numeric_build_revision(releases, "3.3.11").is_none());
     }
 
+    /// RubyInstaller2 tags releases `RubyInstaller-<version>-<revision>`, so the
+    /// caller passes the prefixed tag as the "version" (discussion #5227). The
+    /// prefix comparison must also keep 3.4.4 from matching 3.4.10.
+    #[test]
+    fn test_numeric_build_revision_handles_prefixed_tags() {
+        let releases = vec![
+            make_release("RubyInstaller-3.4.4-1"),
+            make_release("RubyInstaller-3.4.4-2"),
+            make_release("RubyInstaller-3.4.10-1"),
+        ];
+        let best = pick_best_numeric_build_revision(releases, "RubyInstaller-3.4.4").unwrap();
+        assert_eq!(best.tag_name, "RubyInstaller-3.4.4-2");
+    }
+
     #[test]
     fn test_build_revision_falls_back_to_base() {
         let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];

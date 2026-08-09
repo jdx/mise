@@ -121,12 +121,13 @@ impl RubyPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let url = super::ruby_common::rubyinstaller_url(&tv.version);
-        let filename = url.split('/').next_back().unwrap();
+        let artifact = super::ruby_common::resolve_rubyinstaller_artifact(&tv.version).await;
+        let filename = &artifact.filename;
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("downloading {filename}"));
-        HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
+        HTTP.download_file(&artifact.url, &tarball_path, Some(pr))
+            .await?;
 
         Ok(tarball_path)
     }
@@ -137,16 +138,15 @@ impl RubyPlugin {
         tv: &ToolVersion,
         tarball_path: &Path,
     ) -> Result<()> {
-        let arch = arch();
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
         file::un7z(tarball_path, &tv.download_path(), &Default::default())?;
-        file::move_file(
-            tv.download_path()
-                .join(format!("rubyinstaller-{}-1-{arch}", tv.version)),
-            tv.install_path(),
-        )?;
+        // The archive holds a single top-level directory named after the archive
+        // itself, so derive it instead of rebuilding the version/revision/arch
+        // triple -- the build revision is no longer fixed at 1 (discussion #5227).
+        let dir_name = filename.strip_suffix(".7z").unwrap_or(&filename);
+        file::move_file(tv.download_path().join(dir_name), tv.install_path())?;
         Ok(())
     }
 
@@ -270,10 +270,6 @@ fn parse_gemfile(body: &str) -> String {
         return "".to_string();
     }
     v
-}
-
-fn arch() -> &'static str {
-    "x64"
 }
 
 #[cfg(test)]
