@@ -12,11 +12,13 @@ use std::ffi::{OsStr, OsString};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, ExitStatus, Output};
+use std::time::SystemTime;
 
 pub(super) fn compile_miss(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode> {
     let invocation = RustcInvocation::parse(arguments)?;
     let working_dir = std::env::current_dir()?;
     let outputs = invocation.outputs(&working_dir)?;
+    let compilation_started = SystemTime::now();
     let output = Command::new(rustc)
         .args(arguments)
         .current_dir(&working_dir)
@@ -27,6 +29,7 @@ pub(super) fn compile_miss(rustc: &OsStr, arguments: &[OsString]) -> Result<Exit
         let publication = (|| {
             let dep_info = RustcDepInfo::read(&outputs.dep_info)?;
             let discovered = invocation.discover_inputs(&dep_info, &working_dir)?;
+            discovered.verify_not_modified_since(compilation_started)?;
             let mut context = ActionContext {
                 compiler: compiler_identity(rustc)?,
                 working_dir: working_dir.clone(),

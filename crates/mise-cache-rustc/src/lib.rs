@@ -113,6 +113,8 @@ pub enum BypassReason {
     InputRead { path: PathBuf, message: String },
     #[error("compiler input changed after discovery: {0}")]
     InputChanged(PathBuf),
+    #[error("compiler input was modified during compilation: {0}")]
+    InputModifiedDuringCompilation(PathBuf),
     #[error("discovered inputs were collected from a different working directory")]
     DiscoveryWorkingDirectory,
     #[error("compiler environment input has conflicting values: {0}")]

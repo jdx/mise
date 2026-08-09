@@ -7,6 +7,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
+const MAX_EXECUTABLE_IDENTITIES: usize = 64;
+const MAX_EXECUTABLE_IDENTITY_SIZE: usize = 64 * 1024;
+const MAX_EXECUTABLE_IDENTITY_BYTES: usize = 256 * 1024;
+
 /// Wire protocol version used between an in-process cache agent and its shims.
 pub const AGENT_PROTOCOL_VERSION: u8 = 1;
 
@@ -212,15 +216,21 @@ impl CacheAgent {
         environment: BTreeMap<String, Option<String>>,
         stdout: Vec<u8>,
     ) -> Result<AgentResponse> {
-        const MAX_IDENTITY_SIZE: usize = 64 * 1024;
-        if stdout.len() > MAX_IDENTITY_SIZE {
-            bail!("executable identity exceeds {MAX_IDENTITY_SIZE} bytes");
+        if stdout.len() > MAX_EXECUTABLE_IDENTITY_SIZE {
+            bail!("executable identity exceeds {MAX_EXECUTABLE_IDENTITY_SIZE} bytes");
         }
         let key = self.executable_identity_key(executable, environment)?;
-        self.executable_identities
-            .lock()
-            .unwrap()
-            .insert(key, stdout.clone());
+        let mut identities = self.executable_identities.lock().unwrap();
+        let is_new = !identities.contains_key(&key);
+        let previous_size = identities.get(&key).map_or(0, Vec::len);
+        if is_new && identities.len() >= MAX_EXECUTABLE_IDENTITIES {
+            bail!("executable identity cache contains too many entries");
+        }
+        let retained_bytes = identities.values().map(Vec::len).sum::<usize>();
+        if retained_bytes - previous_size + stdout.len() > MAX_EXECUTABLE_IDENTITY_BYTES {
+            bail!("executable identity cache contains too many bytes");
+        }
+        identities.insert(key, stdout.clone());
         Ok(AgentResponse::ExecutableIdentity {
             stdout: Some(stdout),
         })
@@ -439,6 +449,56 @@ mod tests {
                 stdout: Some(stdout)
             } if stdout == b"rustc identity"
         ));
+    }
+
+    #[test]
+    fn bounds_executable_identity_entry_count() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path(), "test-version");
+        for index in 0..MAX_EXECUTABLE_IDENTITIES {
+            agent
+                .store_executable_identity(
+                    directory.path().join(format!("rustc-{index}")),
+                    BTreeMap::new(),
+                    vec![b'x'],
+                )
+                .unwrap();
+        }
+
+        assert!(
+            agent
+                .store_executable_identity(
+                    directory.path().join("one-too-many"),
+                    BTreeMap::new(),
+                    vec![b'x'],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn bounds_executable_identity_retained_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path(), "test-version");
+        for index in 0..MAX_EXECUTABLE_IDENTITY_BYTES / MAX_EXECUTABLE_IDENTITY_SIZE {
+            agent
+                .store_executable_identity(
+                    directory.path().join(format!("rustc-{index}")),
+                    BTreeMap::new(),
+                    vec![b'x'; MAX_EXECUTABLE_IDENTITY_SIZE],
+                )
+                .unwrap();
+        }
+
+        assert!(
+            agent
+                .store_executable_identity(
+                    directory.path().join("one-byte-too-many"),
+                    BTreeMap::new(),
+                    vec![b'x'],
+                )
+                .is_err()
+        );
     }
 
     #[tokio::test]
