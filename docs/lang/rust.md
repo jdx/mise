@@ -6,6 +6,16 @@ variables for the home directories and falls back to their standard location (`~
 not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like
 to isolate mise's rustup/cargo from your other rustup/cargo installations.
 
+These variables can also be set in mise configuration. They are applied to Rust operations in the same mise invocation:
+
+```toml
+[env]
+MISE_RUSTUP_HOME = "{{env.HOME}}/.local/share/rustup"
+MISE_CARGO_HOME = "{{env.HOME}}/.local/share/cargo"
+```
+
+Explicit `RUSTUP_HOME` and `CARGO_HOME` values in `[env]` take precedence over their corresponding `MISE_` variables.
+
 Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
 mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
 version, and asks rustup to install any configured components or targets when you run `mise install`.
