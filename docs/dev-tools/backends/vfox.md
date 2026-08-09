@@ -103,6 +103,12 @@ For more information, see:
 - [Plugin Development](../../tool-plugin-development.md) - Developer guide
 - [Plugin Template](https://github.com/jdx/mise-tool-plugin-template) - Quick start template for creating plugins
 
+## URL replacements
+
+The vfox backend honors mise's [`url_replacements`](/url-replacements.html) setting for both
+tool artifact downloads and requests made through the plugin's built-in Lua HTTP module. This
+includes `http.get`, `http.head`, `http.download_file`, and their `try_*` variants.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these
