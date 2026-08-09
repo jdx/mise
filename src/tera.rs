@@ -2261,11 +2261,19 @@ mod tests {
     /// The engines must agree on the shape registry entries use (azd,
     /// clickhouse, magika), so a template does not silently render differently
     /// under `tera_v1`.
+    ///
+    /// `registry/flutter.toml` leans on this: `version_expr` strips the channel
+    /// suffix and the URLs append it back, so appending has to be idempotent for
+    /// a version that already carries it and for one that does not (#4170).
     #[test]
     fn test_tera_engines_agree_on_the_registry_trim_pattern() {
-        let template = "{{ '3.27.2-stable' | trim_end(pat='-stable') }}-stable";
-        assert_eq!(render_v2(template), "3.27.2-stable");
-        assert_eq!(render_v1(template), "3.27.2-stable");
+        let suffixed = "{{ '3.27.2-stable' | trim_end(pat='-stable') }}-stable";
+        assert_eq!(render_v2(suffixed), "3.27.2-stable");
+        assert_eq!(render_v1(suffixed), "3.27.2-stable");
+
+        let bare = "{{ '3.27.2' | trim_end(pat='-stable') }}-stable";
+        assert_eq!(render_v2(bare), "3.27.2-stable");
+        assert_eq!(render_v1(bare), "3.27.2-stable");
     }
 
     #[test]
