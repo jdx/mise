@@ -1435,9 +1435,9 @@ Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning removes linked formulae
-that are not needed by the current config or by trusted, loadable tracked
-configs.
+Supports Homebrew formulae and conservatively removable, mise\-owned casks.
+Pruning keeps packages needed by the current config or by trusted, loadable
+tracked configs.
 .PP
 \fBUsage:\fR mise bootstrap packages prune [OPTIONS]
 .PP
@@ -1445,7 +1445,7 @@ configs.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only prune packages for this manager. Currently only `brew` is supported
+Only prune packages for this manager
 .RS
 \fIDefault: \fRbrew
 .RE

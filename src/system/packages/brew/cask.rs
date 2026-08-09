@@ -1,7 +1,10 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
@@ -193,7 +196,7 @@ struct CaskArtifacts {
     pkg_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct CaskReceipt {
     #[serde(default)]
     schema_version: u8,
@@ -210,6 +213,10 @@ struct CaskReceipt {
     pkg_ids: Vec<String>,
     #[serde(default)]
     targets: Vec<CaskTargetRecord>,
+    #[serde(default)]
+    prune_safe: bool,
+    #[serde(default)]
+    prune_blocker: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -238,6 +245,32 @@ struct CaskTransactionJournal<'a> {
     token: &'a str,
     version: &'a str,
     completed: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaskPruneCandidate {
+    pub token: String,
+    pub version: String,
+    version_dir: PathBuf,
+    receipt: CaskReceipt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaskPruneSkip {
+    pub token: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct CaskPrunePlan {
+    pub remove: Vec<CaskPruneCandidate>,
+    pub skipped: Vec<CaskPruneSkip>,
+}
+
+impl CaskPrunePlan {
+    pub fn is_empty(&self) -> bool {
+        self.remove.is_empty()
+    }
 }
 
 impl BrewCaskManager {
@@ -294,10 +327,22 @@ impl BrewCaskManager {
             return Ok(cask.version);
         }
         prefix::bootstrap(false)?;
+        let stage = fetch_and_stage(&cask, pr).await?;
+        let _caskroom_lock = lock_caskroom()?;
+        if homebrew_metadata_present(&cask.token) {
+            file::remove_all(&stage)?;
+            bail!(
+                "brew-cask:{}: Homebrew took ownership of this cask while installation was pending",
+                cask.token
+            );
+        }
+        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+            file::remove_all(stage)?;
+            return Ok(cask.version);
+        }
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
         let previous_completions = previous_completion_targets(&cask)?;
-        let stage = fetch_and_stage(&cask, pr).await?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
@@ -3761,7 +3806,7 @@ fn installed_cask_version_in(
     let version_dir = caskroom_version_dir(&cask.token, &version);
     match read_receipt(&version_dir)? {
         Some(receipt) => {
-            if receipt.schema_version > 2 {
+            if receipt.schema_version > 3 {
                 return Ok(None);
             }
             if receipt.schema_version >= 2 {
@@ -3792,6 +3837,35 @@ fn installed_cask_version_in(
     }
 }
 
+fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> {
+    if !artifacts.pkgs.is_empty() {
+        return Some("pkg artifacts require uninstall support".to_string());
+    }
+    if !artifacts.command_wrappers.is_empty() {
+        return Some("command wrapper artifacts are not supported for pruning".to_string());
+    }
+    if !artifacts.preflight_steps.is_empty()
+        || !artifacts.postflight_steps.is_empty()
+        || has_lifecycle_hook(cask, "preflight")
+        || has_lifecycle_hook(cask, "postflight")
+    {
+        return Some("install lifecycle actions may have untracked side effects".to_string());
+    }
+    if cask.artifacts.iter().any(|artifact| {
+        matches!(
+            artifact_type(artifact).as_str(),
+            "uninstall"
+                | "uninstall_preflight"
+                | "uninstall_preflight_steps"
+                | "uninstall_postflight"
+                | "uninstall_postflight_steps"
+        )
+    }) {
+        return Some("uninstall lifecycle actions are not supported".to_string());
+    }
+    None
+}
+
 fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Result<()> {
     let mut target_paths = artifacts
         .apps
@@ -3818,8 +3892,9 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    let prune_blocker = cask_prune_blocker(cask, artifacts);
     let receipt = CaskReceipt {
-        schema_version: 2,
+        schema_version: 3,
         version: cask.version.clone(),
         apps: artifacts
             .apps
@@ -3835,6 +3910,8 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
         completions: completion_target_paths(cask, artifacts)?,
         pkg_ids: artifacts.pkg_ids.clone(),
         targets,
+        prune_safe: prune_blocker.is_none(),
+        prune_blocker,
     };
     let body = toml::to_string_pretty(&receipt)?;
     write_durable_file(&caskroom.join(".mise-cask.toml"), body.as_bytes())?;
@@ -3936,14 +4013,26 @@ fn cask_journal_pending_in(state_dir: &Path, token: &str) -> bool {
 }
 
 fn write_cask_journal(journal: &CaskTransactionJournal<'_>) -> Result<()> {
-    let path = cask_journal_path_in(&crate::dirs::STATE, journal.token, journal.version);
+    write_cask_journal_in(&crate::dirs::STATE, journal)
+}
+
+fn write_cask_journal_in(state_dir: &Path, journal: &CaskTransactionJournal<'_>) -> Result<()> {
+    let path = cask_journal_path_in(state_dir, journal.token, journal.version);
     let body = serde_json::to_vec_pretty(journal)?;
     write_durable_file(&path, &body)
 }
 
 fn record_cask_action(journal: &mut CaskTransactionJournal<'_>, action: &str) -> Result<()> {
+    record_cask_action_in(&crate::dirs::STATE, journal, action)
+}
+
+fn record_cask_action_in(
+    state_dir: &Path,
+    journal: &mut CaskTransactionJournal<'_>,
+    action: &str,
+) -> Result<()> {
     journal.completed.push(action.to_string());
-    write_cask_journal(journal)
+    write_cask_journal_in(state_dir, journal)
 }
 
 fn remove_cask_journals(token: &str) -> Result<()> {
@@ -3986,6 +4075,478 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
     toml::from_str(&body)
         .map(Some)
         .wrap_err_with(|| format!("failed to parse {}", path.display()))
+}
+
+pub async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
+    let mut keep = BTreeSet::new();
+    for request in configured {
+        keep.insert(fetch_cask(request).await?.token);
+    }
+    cask_prune_plan_from_tokens(&keep, &crate::dirs::STATE)
+}
+
+fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Result<CaskPrunePlan> {
+    let mut plan = CaskPrunePlan::default();
+    let mut candidates = Vec::new();
+    let mut claims = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    let mut claims_complete = true;
+    let caskroom = prefix::prefix().join("Caskroom");
+    let Ok(tokens) = std::fs::read_dir(&caskroom) else {
+        return Ok(plan);
+    };
+
+    for entry in tokens {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                claims_complete = false;
+                plan.skipped.push(CaskPruneSkip {
+                    token: "Caskroom".to_string(),
+                    reason: format!("Caskroom entry could not be read: {err}"),
+                });
+                continue;
+            }
+        };
+        let kind = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(err) => {
+                claims_complete = false;
+                plan.skipped.push(CaskPruneSkip {
+                    token: entry.file_name().to_string_lossy().to_string(),
+                    reason: format!("Caskroom entry type could not be read: {err}"),
+                });
+                continue;
+            }
+        };
+        if !kind.is_dir() {
+            continue;
+        }
+        let Some(token) = entry.file_name().to_str().map(str::to_string) else {
+            claims_complete = false;
+            plan.skipped.push(CaskPruneSkip {
+                token: entry.file_name().to_string_lossy().to_string(),
+                reason: "Caskroom token name is not valid UTF-8".to_string(),
+            });
+            continue;
+        };
+        if token.starts_with('.') {
+            continue;
+        }
+        let configured = keep.contains(&token);
+        let Ok(version_entries) = std::fs::read_dir(entry.path()) else {
+            claims_complete = false;
+            if !configured {
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason: "Caskroom directory could not be read".to_string(),
+                });
+            }
+            continue;
+        };
+        let mut versions = Vec::new();
+        let mut version_error = None;
+        for version in version_entries {
+            let version = match version {
+                Ok(version) => version,
+                Err(err) => {
+                    claims_complete = false;
+                    version_error =
+                        Some(format!("Caskroom version entry could not be read: {err}"));
+                    continue;
+                }
+            };
+            let kind = match version.file_type() {
+                Ok(kind) => kind,
+                Err(err) => {
+                    claims_complete = false;
+                    version_error = Some(format!(
+                        "Caskroom version entry type could not be read: {err}"
+                    ));
+                    continue;
+                }
+            };
+            if kind.is_dir() && !version.file_name().to_string_lossy().starts_with('.') {
+                versions.push(version);
+            }
+        }
+        if let Some(reason) = version_error {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip { token, reason });
+            }
+            continue;
+        }
+        let mut receipts = BTreeMap::new();
+        let mut receipt_error = None;
+        for version in &versions {
+            match read_receipt(&version.path()) {
+                Ok(Some(receipt)) => {
+                    for target in &receipt.targets {
+                        claims
+                            .entry(target.path.clone())
+                            .or_default()
+                            .insert(token.clone());
+                    }
+                    receipts.insert(version.path(), receipt);
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    claims_complete = false;
+                    receipt_error =
+                        Some(format!("mise ownership receipt could not be read: {err:#}"));
+                }
+            }
+        }
+        if let Some(reason) = receipt_error {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip { token, reason });
+            }
+            continue;
+        }
+        if entry.path().join(".metadata").symlink_metadata().is_ok() {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason: "Homebrew owns this cask".to_string(),
+                });
+            }
+            continue;
+        }
+        let [version] = versions.as_slice() else {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason: "expected exactly one installed Caskroom version".to_string(),
+                });
+            }
+            continue;
+        };
+        let version_dir = version.path();
+        let Some(receipt) = receipts.remove(&version_dir) else {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason: "mise ownership receipt is missing".to_string(),
+                });
+            }
+            continue;
+        };
+        if configured {
+            continue;
+        }
+        if cask_journal_pending_in(state_dir, &token) {
+            plan.skipped.push(CaskPruneSkip {
+                token,
+                reason: "an incomplete cask transaction is pending".to_string(),
+            });
+            continue;
+        }
+        if receipt.schema_version != 3 {
+            plan.skipped.push(CaskPruneSkip {
+                token,
+                reason: "receipt predates safe prune metadata; upgrade or reinstall first"
+                    .to_string(),
+            });
+            continue;
+        }
+        if !receipt.prune_safe {
+            let reason = receipt
+                .prune_blocker
+                .clone()
+                .unwrap_or_else(|| "receipt does not permit pruning".to_string());
+            plan.skipped.push(CaskPruneSkip { token, reason });
+            continue;
+        }
+        let version = version.file_name().to_string_lossy().to_string();
+        let candidate = CaskPruneCandidate {
+            token,
+            version,
+            version_dir,
+            receipt,
+        };
+        if let Err(reason) = validate_cask_prune_candidate(&candidate) {
+            plan.skipped.push(CaskPruneSkip {
+                token: candidate.token,
+                reason: format!("recorded artifacts cannot be removed safely: {reason:#}"),
+            });
+            continue;
+        }
+        candidates.push(candidate);
+    }
+
+    for candidate in candidates {
+        if !claims_complete {
+            plan.skipped.push(CaskPruneSkip {
+                token: candidate.token,
+                reason: "cask ownership receipts could not be indexed completely".to_string(),
+            });
+            continue;
+        }
+        let shared = candidate
+            .receipt
+            .targets
+            .iter()
+            .filter_map(|target| {
+                claims
+                    .get(&target.path)
+                    .filter(|tokens| tokens.len() > 1)
+                    .map(|_| target.path.clone())
+            })
+            .collect::<Vec<_>>();
+        if shared.is_empty() {
+            plan.remove.push(candidate);
+        } else {
+            plan.skipped.push(CaskPruneSkip {
+                token: candidate.token,
+                reason: format!(
+                    "recorded artifact target is also claimed by another cask: {}",
+                    shared
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            });
+        }
+    }
+    plan.remove.sort_by(|a, b| a.token.cmp(&b.token));
+    plan.skipped.sort_by(|a, b| a.token.cmp(&b.token));
+    Ok(plan)
+}
+
+pub fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
+    apply_cask_prune_plan_in(plan, dry_run, &crate::dirs::STATE)
+}
+
+fn apply_cask_prune_plan_in(
+    plan: &CaskPrunePlan,
+    dry_run: bool,
+    state_dir: &Path,
+) -> Result<usize> {
+    if dry_run {
+        for candidate in &plan.remove {
+            miseprintln!("remove brew-cask:{}@{}", candidate.token, candidate.version);
+        }
+        return Ok(0);
+    }
+
+    let _caskroom_lock = lock_caskroom()?;
+    let mut removed = 0;
+    for candidate in &plan.remove {
+        if let Err(reason) = validate_cask_prune_candidate(candidate)
+            .and_then(|_| validate_cask_prune_claims(candidate))
+        {
+            warn!(
+                "brew-cask:{}: skipped because recorded artifacts changed after planning: {reason:#}",
+                candidate.token
+            );
+            continue;
+        }
+        let mut journal = CaskTransactionJournal {
+            schema_version: 1,
+            token: &candidate.token,
+            version: &candidate.version,
+            completed: Vec::new(),
+        };
+        write_cask_journal_in(state_dir, &journal)?;
+        for (index, target) in candidate.receipt.targets.iter().enumerate() {
+            remove_artifact_target_elevating(&target.path)?;
+            record_cask_action_in(state_dir, &mut journal, &format!("prune_target[{index}]"))?;
+        }
+        file::remove_all(&candidate.version_dir)?;
+        record_cask_action_in(state_dir, &mut journal, "prune_caskroom")?;
+        if let Some(token_dir) = candidate.version_dir.parent() {
+            file::remove_dir(token_dir)?;
+        }
+        remove_cask_journals_in(state_dir, &candidate.token)?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+fn lock_caskroom() -> Result<fslock::LockFile> {
+    let caskroom = prefix::prefix().join("Caskroom");
+    file::create_dir_all(&caskroom)?;
+    let path = caskroom.join(".mise.lock");
+    let mut lock = fslock::LockFile::open(&path)?;
+    if !lock.try_lock()? {
+        debug!("waiting for brew-cask lock on {}", path.display());
+        lock.lock()?;
+    }
+    Ok(lock)
+}
+
+fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
+    let caskroom = prefix::prefix().join("Caskroom");
+    let mut claims = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    for entry in std::fs::read_dir(&caskroom)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let token = entry.file_name().to_string_lossy().to_string();
+        for version in std::fs::read_dir(entry.path())? {
+            let version = version?;
+            if !version.file_type()?.is_dir()
+                || version.file_name().to_string_lossy().starts_with('.')
+            {
+                continue;
+            }
+            if let Some(receipt) = read_receipt(&version.path())? {
+                for target in receipt.targets {
+                    claims.entry(target.path).or_default().insert(token.clone());
+                }
+            }
+        }
+    }
+    for target in &candidate.receipt.targets {
+        if claims
+            .get(&target.path)
+            .is_some_and(|tokens| tokens.iter().any(|token| token != &candidate.token))
+        {
+            bail!(
+                "artifact target is now claimed by another cask: {}",
+                target.path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
+    if homebrew_metadata_present(&candidate.token) {
+        bail!("Homebrew now owns this cask");
+    }
+    let receipt = &candidate.receipt;
+    if read_receipt(&candidate.version_dir)?.as_ref() != Some(receipt) {
+        bail!("ownership receipt has changed");
+    }
+    if receipt.schema_version != 3 || !receipt.prune_safe || !receipt.pkg_ids.is_empty() {
+        bail!("receipt is not marked safe for direct-artifact pruning");
+    }
+    let records = receipt
+        .targets
+        .iter()
+        .map(|record| (record.path.clone(), record))
+        .collect::<BTreeMap<_, _>>();
+    let expected = receipt
+        .apps
+        .iter()
+        .chain(&receipt.binaries)
+        .chain(&receipt.fonts)
+        .chain(&receipt.completions)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if expected.is_empty()
+        || records.len() != receipt.targets.len()
+        || records.len() != expected.len()
+    {
+        bail!("receipt target inventory is incomplete or duplicated");
+    }
+    if records.keys().any(|path| !expected.contains(path)) {
+        bail!("receipt target inventory contains an unclassified path");
+    }
+
+    for path in &receipt.apps {
+        let record = records
+            .get(path)
+            .ok_or_else(|| eyre!("missing app target record"))?;
+        if record.fingerprint.kind != CaskTargetKind::Directory
+            || !allowed_appdir_roots()
+                .iter()
+                .any(|root| path_is_below(path, root))
+            || !path.file_name().is_some_and(|name| {
+                staged_target_matches(record, &candidate.version_dir.join(name))
+            })
+        {
+            bail!(
+                "app target is outside an allowed Applications directory: {}",
+                path.display()
+            );
+        }
+    }
+    for path in &receipt.binaries {
+        let record = records
+            .get(path)
+            .ok_or_else(|| eyre!("missing binary target record"))?;
+        if record.fingerprint.kind != CaskTargetKind::Symlink
+            || !allowed_binary_target_roots()
+                .iter()
+                .any(|root| path_is_below(path, root))
+            || !symlink_resolves_below(path, &candidate.version_dir)
+        {
+            bail!(
+                "binary target is not an owned Caskroom symlink: {}",
+                path.display()
+            );
+        }
+    }
+    for path in &receipt.fonts {
+        let record = records
+            .get(path)
+            .ok_or_else(|| eyre!("missing font target record"))?;
+        let fonts = font_dir();
+        if record.fingerprint.kind != CaskTargetKind::File
+            || !path_is_below(path, &fonts)
+            || !path.strip_prefix(&fonts).is_ok_and(|relative| {
+                staged_target_matches(record, &candidate.version_dir.join(relative))
+            })
+        {
+            bail!(
+                "font target is outside the platform font directory: {}",
+                path.display()
+            );
+        }
+    }
+    let completion_roots = [
+        CompletionShell::Bash,
+        CompletionShell::Fish,
+        CompletionShell::Zsh,
+        CompletionShell::Pwsh,
+    ]
+    .map(default_completion_dir);
+    for path in &receipt.completions {
+        let record = records
+            .get(path)
+            .ok_or_else(|| eyre!("missing completion target record"))?;
+        if record.fingerprint.kind != CaskTargetKind::Symlink
+            || !completion_roots
+                .iter()
+                .any(|root| path_is_below(path, root))
+            || !symlink_resolves_below(path, &candidate.version_dir)
+        {
+            bail!(
+                "completion target is not an owned Caskroom symlink: {}",
+                path.display()
+            );
+        }
+    }
+    for record in &receipt.targets {
+        if !cask_target_record_matches(record)? {
+            bail!("artifact target has changed: {}", record.path.display());
+        }
+    }
+    Ok(())
+}
+
+fn path_is_below(path: &Path, root: &Path) -> bool {
+    path.strip_prefix(root)
+        .is_ok_and(|relative| relative.components().next().is_some())
+}
+
+fn staged_target_matches(record: &CaskTargetRecord, staged: &Path) -> bool {
+    cask_target_fingerprint(staged).is_ok_and(|fingerprint| fingerprint == record.fingerprint)
+}
+
+fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
+    let Ok(target) = std::fs::read_link(path) else {
+        return false;
+    };
+    let target = if target.is_absolute() {
+        target
+    } else {
+        path.parent().unwrap_or_else(|| Path::new("/")).join(target)
+    };
+    path_starts_with_resolved_root(&target, root)
 }
 
 fn caskroom_token_dir(token: &str) -> PathBuf {
@@ -4262,6 +4823,28 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
+    }
+
+    fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {
+        let app = AppArtifact {
+            source: app_name.to_string(),
+            target: Some(format!("$HOMEBREW_PREFIX/Applications/{app_name}")),
+        };
+        let target = app_target_path(app.target_name())?;
+        file::create_dir_all(&target)?;
+        file::write(target.join("version"), "1.0.0")?;
+        let version_dir = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(version_dir.join(app_name))?;
+        file::write(version_dir.join(app_name).join("version"), "1.0.0")?;
+        write_receipt(
+            &version_dir,
+            cask,
+            &CaskArtifacts {
+                apps: vec![app],
+                ..Default::default()
+            },
+        )?;
+        Ok(target)
     }
 
     #[test]
@@ -6656,6 +7239,8 @@ end
             completions: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
+            prune_safe: false,
+            prune_blocker: None,
         };
         crate::file::write(
             caskroom.join(".mise-cask.toml"),
@@ -6684,7 +7269,7 @@ end
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(&caskroom)?;
         let receipt = CaskReceipt {
-            schema_version: 3,
+            schema_version: 4,
             version: cask.version.clone(),
             apps: Vec::new(),
             binaries: Vec::new(),
@@ -6692,6 +7277,8 @@ end
             completions: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
+            prune_safe: false,
+            prune_blocker: None,
         };
         file::write(
             caskroom.join(".mise-cask.toml"),
@@ -6701,6 +7288,291 @@ end
         assert_eq!(
             installed_cask_version(&cask, &CaskArtifacts::default())?,
             None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        let cask = test_cask("example", "1.0.0");
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let target = app_target_path(app.target_name())?;
+        file::create_dir_all(&target)?;
+        file::write(target.join("version"), "1.0.0")?;
+        let version_dir = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(version_dir.join("Example.app"))?;
+        file::write(version_dir.join("Example.app/version"), "1.0.0")?;
+        write_receipt(
+            &version_dir,
+            &cask,
+            &CaskArtifacts {
+                apps: vec![app],
+                ..Default::default()
+            },
+        )?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert_eq!(plan.remove.len(), 1);
+        assert!(plan.skipped.is_empty());
+        assert_eq!(apply_cask_prune_plan_in(&plan, true, &state_dir)?, 0);
+        assert!(target.exists());
+
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 1);
+        assert!(!target.exists());
+        assert!(!caskroom_token_dir(&cask.token).exists());
+        assert!(!cask_journal_pending_in(&state_dir, &cask.token));
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+
+        let configured = test_cask("configured", "1.0.0");
+        let configured_dir = caskroom_version_dir(&configured.token, &configured.version);
+        let configured_target = tmp.path().join("Applications/Configured.app");
+        file::create_dir_all(&configured_target)?;
+        file::create_dir_all(configured_dir.join("Configured.app"))?;
+        write_receipt(
+            &configured_dir,
+            &configured,
+            &CaskArtifacts {
+                apps: vec![AppArtifact {
+                    source: "Configured.app".to_string(),
+                    target: Some("$HOMEBREW_PREFIX/Applications/Configured.app".to_string()),
+                }],
+                ..Default::default()
+            },
+        )?;
+
+        let drifted = test_cask("drifted", "1.0.0");
+        let drifted_dir = caskroom_version_dir(&drifted.token, &drifted.version);
+        let drifted_target = tmp.path().join("Applications/Drifted.app");
+        file::create_dir_all(&drifted_target)?;
+        file::create_dir_all(drifted_dir.join("Drifted.app"))?;
+        write_receipt(
+            &drifted_dir,
+            &drifted,
+            &CaskArtifacts {
+                apps: vec![AppArtifact {
+                    source: "Drifted.app".to_string(),
+                    target: Some("$HOMEBREW_PREFIX/Applications/Drifted.app".to_string()),
+                }],
+                ..Default::default()
+            },
+        )?;
+        file::write(drifted_target.join("changed"), "changed")?;
+
+        let legacy = test_cask("legacy", "1.0.0");
+        let legacy_dir = caskroom_version_dir(&legacy.token, &legacy.version);
+        file::create_dir_all(&legacy_dir)?;
+        file::write(
+            legacy_dir.join(".mise-cask.toml"),
+            toml::to_string_pretty(&CaskReceipt {
+                schema_version: 2,
+                version: legacy.version.clone(),
+                apps: Vec::new(),
+                binaries: Vec::new(),
+                fonts: Vec::new(),
+                completions: Vec::new(),
+                pkg_ids: Vec::new(),
+                targets: Vec::new(),
+                prune_safe: false,
+                prune_blocker: None,
+            })?,
+        )?;
+
+        let plan =
+            cask_prune_plan_from_tokens(&BTreeSet::from([configured.token.clone()]), &state_dir)?;
+        assert!(plan.remove.is_empty());
+        assert_eq!(
+            plan.skipped
+                .iter()
+                .map(|skip| skip.token.as_str())
+                .collect::<Vec<_>>(),
+            vec!["drifted", "legacy"]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+
+        write_test_app_receipt(&test_cask("shared-a", "1.0.0"), "Shared.app")?;
+        write_test_app_receipt(&test_cask("shared-b", "1.0.0"), "Shared.app")?;
+        write_test_app_receipt(&test_cask("single", "1.0.0"), "Multi.app")?;
+        write_test_app_receipt(&test_cask("multi", "1.0.0"), "Multi.app")?;
+        write_test_app_receipt(&test_cask("multi", "2.0.0"), "Multi.app")?;
+        write_test_app_receipt(&test_cask("pending", "1.0.0"), "Pending.app")?;
+        let journal_dir = state_dir.join("brew-cask/pending");
+        file::create_dir_all(&journal_dir)?;
+        file::write(journal_dir.join("1.0.0.json"), "{}")?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert!(plan.remove.is_empty());
+        assert_eq!(plan.skipped.len(), 5);
+        for token in ["shared-a", "shared-b"] {
+            assert!(plan.skipped.iter().any(|skip| {
+                skip.token == token && skip.reason.contains("also claimed by another cask")
+            }));
+        }
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "pending"
+                && skip
+                    .reason
+                    .contains("incomplete cask transaction is pending")
+        }));
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "single" && skip.reason.contains("also claimed by another cask")
+        }));
+        assert!(
+            plan.skipped.iter().any(|skip| {
+                skip.token == "multi" && skip.reason.contains("expected exactly one")
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        let target = write_test_app_receipt(&test_cask("planned", "1.0.0"), "Shared.app")?;
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert_eq!(plan.remove.len(), 1);
+
+        write_test_app_receipt(&test_cask("late-claim", "1.0.0"), "Shared.app")?;
+
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+        assert!(target.exists());
+        assert!(caskroom_token_dir("planned").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        let target = write_test_app_receipt(&test_cask("claimed", "1.0.0"), "Claimed.app")?;
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert_eq!(plan.remove.len(), 1);
+
+        file::create_dir_all(caskroom_token_dir("claimed").join(".metadata"))?;
+
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+        assert!(target.exists());
+        assert!(caskroom_token_dir("claimed").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        write_test_app_receipt(&test_cask("clean", "1.0.0"), "Clean.app")?;
+        let corrupt_dir = caskroom_version_dir("corrupt", "1.0.0");
+        file::create_dir_all(&corrupt_dir)?;
+        file::write(corrupt_dir.join(".mise-cask.toml"), "not = [valid")?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "corrupt" && skip.reason.contains("receipt could not be read")
+        }));
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "clean" && skip.reason.contains("could not be indexed completely")
+        }));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cask_prune_fails_closed_when_a_token_directory_is_unreadable() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        write_test_app_receipt(&test_cask("clean", "1.0.0"), "Clean.app")?;
+        let unreadable = caskroom_token_dir("unreadable");
+        file::create_dir_all(&unreadable)?;
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000))?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir);
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o755))?;
+        let plan = plan?;
+
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "unreadable" && skip.reason.contains("directory could not be read")
+        }));
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "clean" && skip.reason.contains("could not be indexed completely")
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
+        let mut cask = test_cask("example", "1.0.0");
+        let direct = CaskArtifacts {
+            apps: vec![AppArtifact {
+                source: "Example.app".to_string(),
+                target: None,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(cask_prune_blocker(&cask, &direct), None);
+
+        cask.artifacts = vec![serde_json::json!({"uninstall": [{"quit": "com.example"}]})];
+        assert!(cask_prune_blocker(&cask, &direct).is_some());
+
+        cask.artifacts.clear();
+        let pkg = CaskArtifacts {
+            pkgs: vec![PkgArtifact {
+                source: "Example.pkg".to_string(),
+            }],
+            pkg_ids: vec!["com.example.pkg".to_string()],
+            ..Default::default()
+        };
+        assert!(cask_prune_blocker(&cask, &pkg).is_some());
+
+        let wrapper = CaskArtifacts {
+            command_wrappers: vec![CommandWrapperArtifact {
+                name: "example".to_string(),
+                target: None,
+                content: None,
+                executable: Some("$APPDIR/Example.app/Contents/MacOS/example".to_string()),
+                args: Vec::new(),
+                env: BTreeMap::new(),
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            cask_prune_blocker(&cask, &wrapper).as_deref(),
+            Some("command wrapper artifacts are not supported for pruning")
         );
         Ok(())
     }
@@ -6791,6 +7663,8 @@ end
             completions: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
+            prune_safe: false,
+            prune_blocker: None,
         };
         file::write(
             caskroom.join(".mise-cask.toml"),
@@ -7078,6 +7952,8 @@ end
             completions: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
+            prune_safe: false,
+            prune_blocker: None,
         };
         crate::file::write(
             caskroom.join(".mise-cask.toml"),
@@ -7200,6 +8076,8 @@ end
             completions: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
+            prune_safe: false,
+            prune_blocker: None,
         };
         file::write(
             caskroom.join(".mise-cask.toml"),

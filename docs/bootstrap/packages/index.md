@@ -67,9 +67,9 @@ declarative sections work the same way:
   [config hierarchy](/configuration.html) (global → project) as a union of
   keys. A project can add packages on top of the global list (and override a
   global entry's version pin) but not remove them. For Homebrew formulae,
-  `mise bootstrap packages prune --manager brew` is an explicit destructive command
-  that removes linked formulae no longer needed by the current config or by
-  trusted, loadable tracked configs.
+  `mise bootstrap packages prune` is an explicit destructive command that
+  removes linked formulae or safely prunable mise-owned casks no longer needed
+  by the current config or by trusted, loadable tracked configs.
 - **OS-filtered** — entries for a manager that isn't available on the current
   machine are not acted on, so the same config works across platforms: `apt`
   entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
@@ -120,6 +120,8 @@ mise bootstrap packages import --manager brew --dry-run
 mise bootstrap packages prune --manager brew    # remove unneeded linked brew formulae
 mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
+mise bootstrap packages prune --manager brew-cask # remove safely prunable mise casks
+mise bootstrap packages prune --manager brew-cask --dry-run
 
 mise bootstrap packages upgrade           # upgrade installed packages to current versions
 mise bootstrap packages upgrade --manager brew
@@ -149,6 +151,13 @@ configs. This includes formulae installed by a real Homebrew. It is mise's
 declarative cleanup command, similar in spirit to
 [Homebrew Bundle cleanup](https://docs.brew.sh/Manpage), not the old upstream
 `brew prune` command, which Homebrew removed.
+
+`mise bootstrap packages prune --manager brew-cask` removes only mise-owned
+direct artifacts backed by a current install-time receipt and unchanged content
+fingerprints. It skips older receipts, Homebrew-owned casks, pkg and command
+wrapper artifacts, casks with lifecycle actions, changed or shared targets,
+and incomplete transactions. Skips include a reason, and `zap` metadata is
+never applied.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
