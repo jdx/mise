@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PLUGIN_DIR="$PWD/vfox-url-replacements"
+SERVER_ROOT="$PWD/server"
+PORT_FILE="$PWD/server-port"
+mkdir -p "$PLUGIN_DIR/hooks" "$SERVER_ROOT/archive/bin"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "url-replacements"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/url-replacements"
+PLUGIN.license = "MIT"
+PLUGIN.description = "URL replacements test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	local http = require("http")
+	local response = http.get({ url = "https://upstream.invalid/versions.txt" })
+	return {
+		{ version = response.body:match("([^\r\n]+)") },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+		url = "https://upstream.invalid/tool.tar.gz",
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<'LUA'
+function PLUGIN:PostInstall(ctx)
+	local http = require("http")
+	http.download_file(
+		{ url = "https://upstream.invalid/supplement.txt" },
+		ctx.rootPath .. "/supplement.txt"
+	)
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {
+		{ key = "PATH", value = ctx.path .. "/bin" },
+	}
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -q -m "initial plugin"
+
+cat >"$SERVER_ROOT/archive/bin/vfox-url-test" <<'SH'
+#!/usr/bin/env sh
+echo direct-artifact
+SH
+chmod +x "$SERVER_ROOT/archive/bin/vfox-url-test"
+printf 'keep archive root\n' >"$SERVER_ROOT/archive/README"
+tar -czf "$SERVER_ROOT/tool.tar.gz" -C "$SERVER_ROOT/archive" .
+cp "$SERVER_ROOT/tool.tar.gz" "$SERVER_ROOT/mirrored-artifact"
+printf '1.0.0\n' >"$SERVER_ROOT/versions.txt"
+printf 'lua-http-download\n' >"$SERVER_ROOT/supplement.txt"
+
+python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
+import http.server
+import os
+import socketserver
+import sys
+
+root, port_file = sys.argv[1:]
+os.chdir(root)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as file:
+        file.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "vfox URL replacement server port" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[settings.url_replacements]
+"https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$SERVER_PORT/mirrored-artifact"
+"https://upstream.invalid/" = "http://127.0.0.1:$SERVER_PORT/"
+
+[tools]
+"vfox:file://$PLUGIN_DIR" = "1.0.0"
+EOF
+
+assert_contains "mise ls-remote 'vfox:file://$PLUGIN_DIR'" "1.0.0"
+mise install
+assert "mise x 'vfox:file://$PLUGIN_DIR@1.0.0' -- vfox-url-test" "direct-artifact"
+INSTALL_PATH=$(mise where "vfox:file://$PLUGIN_DIR@1.0.0")
+assert "cat '$INSTALL_PATH/supplement.txt'" "lua-http-download"

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use mlua::chunk::AsChunk;
 use mlua::{FromLuaMulti, IntoLua, Lua, Table, Value};
 use once_cell::sync::OnceCell;
+use url::Url;
 
 use crate::config::Config;
 use crate::context::Context;
@@ -14,6 +15,7 @@ use crate::error::Result;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
+use crate::vfox::UrlRewriter;
 use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
@@ -136,6 +138,16 @@ impl Plugin {
             .lua
             .create_function(move |_, ()| Ok(resolver().unwrap_or_default()))?;
         self.lua.set_named_registry_value("github_token_fn", func)?;
+        Ok(())
+    }
+
+    /// Register the URL rewriter used by the Lua http module.
+    pub(crate) fn set_url_rewriter(&self, rewriter: UrlRewriter) -> Result<()> {
+        let func = self
+            .lua
+            .create_function(move |_, value: String| Ok(rewrite_url(value, &rewriter)))?;
+        self.lua
+            .set_named_registry_value(crate::http::URL_REWRITER_REGISTRY_KEY, func)?;
         Ok(())
     }
 
@@ -308,6 +320,14 @@ impl Plugin {
     }
 }
 
+fn rewrite_url(value: String, rewriter: &UrlRewriter) -> String {
+    let Ok(mut url) = Url::parse(&value) else {
+        return value;
+    };
+    rewriter(&mut url);
+    url.to_string()
+}
+
 fn get_package(lua: &Lua) -> Result<Table> {
     let package = lua.globals().get::<Table>("package")?;
     Ok(package)
@@ -348,5 +368,19 @@ impl PartialOrd for Plugin {
 impl Ord for Plugin {
     fn cmp(&self, other: &Self) -> Ordering {
         self.name.cmp(&other.name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_rewriter_preserves_invalid_urls() {
+        let rewriter: UrlRewriter = Arc::new(|url| {
+            url.set_host(Some("mirror.example")).unwrap();
+        });
+
+        assert_eq!(rewrite_url("not a url".to_string(), &rewriter), "not a url");
     }
 }

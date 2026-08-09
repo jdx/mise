@@ -68,8 +68,11 @@ pub struct Vfox {
     pub github_token_resolver: Option<Arc<dyn Fn() -> Option<String> + Send + Sync>>,
     /// Optional runtime env type (`gnu` or `musl`) exposed to plugin hooks.
     pub runtime_env_type: Option<String>,
+    url_rewriter: Option<UrlRewriter>,
     log_tx: Option<mpsc::Sender<String>>,
 }
+
+pub(crate) type UrlRewriter = Arc<dyn Fn(&mut Url) + Send + Sync>;
 
 impl std::fmt::Debug for Vfox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -87,6 +90,10 @@ impl std::fmt::Debug for Vfox {
                 &self.github_token_resolver.as_ref().map(|_| "<closure>"),
             )
             .field("runtime_env_type", &self.runtime_env_type)
+            .field(
+                "url_rewriter",
+                &self.url_rewriter.as_ref().map(|_| "<closure>"),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -100,6 +107,19 @@ impl Vfox {
         let (tx, rx) = mpsc::channel();
         self.log_tx = Some(tx);
         rx
+    }
+
+    pub fn set_url_rewriter<F>(&mut self, rewriter: F)
+    where
+        F: Fn(&mut Url) + Send + Sync + 'static,
+    {
+        self.url_rewriter = Some(Arc::new(rewriter));
+    }
+
+    fn rewrite_url(&self, url: &mut Url) {
+        if let Some(rewriter) = &self.url_rewriter {
+            rewriter(url);
+        }
     }
 
     fn log_emit(&self, msg: String) {
@@ -159,6 +179,9 @@ impl Vfox {
         let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
         plugin.runtime_env_type = self.runtime_env_type.clone();
         self.set_cmd_shell(&plugin)?;
+        if let Some(rewriter) = &self.url_rewriter {
+            plugin.set_url_rewriter(rewriter.clone())?;
+        }
         Ok(plugin)
     }
 
@@ -537,11 +560,13 @@ impl Vfox {
         version: &str,
         download_dir: &Path,
     ) -> Result<PathBuf> {
-        self.log_emit(format!("Downloading {url}"));
         let path = Self::download_path_for(download_dir, &sdk.name, version, url)?;
-        let url_str = url.to_string();
+        let mut request_url = url.clone();
+        self.rewrite_url(&mut request_url);
+        self.log_emit(format!("Downloading {request_url}"));
+        let url_str = request_url.to_string();
         let bytes = retry_async(&url_str, || async {
-            let resp = CLIENT.get(url.clone()).send().await?;
+            let resp = CLIENT.get(request_url.clone()).send().await?;
             let resp = resp.error_for_status()?;
             resp.bytes().await
         })
@@ -743,6 +768,7 @@ impl Default for Vfox {
             github_token: None,
             github_token_resolver: None,
             runtime_env_type: None,
+            url_rewriter: None,
             log_tx: None,
         }
     }
@@ -791,6 +817,7 @@ mod tests {
                 github_token: None,
                 github_token_resolver: None,
                 runtime_env_type: None,
+                url_rewriter: None,
                 log_tx: None,
             }
         }
@@ -822,6 +849,21 @@ mod tests {
         std::fs::write(&file, ABC).unwrap();
         let vfox = Vfox::test();
         vfox.verify(&pre_install, &file).await.map(|_| ())
+    }
+
+    #[test]
+    fn url_rewriter_defaults_to_noop_and_can_be_set() {
+        let mut vfox = Vfox::test();
+        let original = Url::parse("https://upstream.example/tool.tar.gz").unwrap();
+        let mut url = original.clone();
+        vfox.rewrite_url(&mut url);
+        assert_eq!(url, original);
+
+        vfox.set_url_rewriter(|url| {
+            url.set_host(Some("mirror.example")).unwrap();
+        });
+        vfox.rewrite_url(&mut url);
+        assert_eq!(url.as_str(), "https://mirror.example/tool.tar.gz");
     }
 
     /// Both of these arms used to be `unimplemented!()`, so a plugin returning either checksum
