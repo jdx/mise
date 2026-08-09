@@ -65,14 +65,14 @@ assert_contains "mise bootstrap packages status 2>&1" "invalid system package sp
 
 # package-level OS selectors are applied before manager resolution
 case "$(uname)" in
-Darwin)
-  active_os=macos
-  inactive_os=linux
-  ;;
-*)
-  active_os=linux
-  inactive_os=macos
-  ;;
+  Darwin)
+    active_os=macos
+    inactive_os=linux
+    ;;
+  *)
+    active_os=linux
+    inactive_os=macos
+    ;;
 esac
 cat <<EOF >mise.toml
 [bootstrap.packages]

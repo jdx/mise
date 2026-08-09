@@ -59,6 +59,7 @@ impl SystemInstall {
         let opts = DriverOpts {
             manager: self.manager.clone(),
             explicit: !self.packages.is_empty(),
+            allow_unavailable_manager: false,
             dry_run: self.dry_run,
             update: self.update,
             yes: self.yes,

@@ -639,13 +639,20 @@ impl MiseToml {
     /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
     /// creating the tables as needed ("latest" means no pin)
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
-        self.bootstrap
-            .get_or_insert_with(Default::default)
-            .packages
-            .insert(
-                spec.to_string(),
-                PackageTomlConfig::Version(version.to_string()),
-            );
+        let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
+        let preserve_options = match packages.get_mut(spec) {
+            Some(PackageTomlConfig::Options(options)) => {
+                options.version = version.to_string();
+                true
+            }
+            _ => {
+                packages.insert(
+                    spec.to_string(),
+                    PackageTomlConfig::Version(version.to_string()),
+                );
+                false
+            }
+        };
         let mut doc = self.doc_mut()?;
         let bootstrap = doc
             .get_mut()
@@ -661,6 +668,16 @@ impl MiseToml {
             .or_insert_with(table)
             .as_table_mut()
             .unwrap();
+        if preserve_options && let Some(item) = packages.get_mut(spec) {
+            if let Some(options) = item.as_value_mut().and_then(Value::as_inline_table_mut) {
+                options.insert("version", Value::from(version));
+                return Ok(());
+            }
+            if let Some(options) = item.as_table_mut() {
+                options.insert("version", value(version));
+                return Ok(());
+            }
+        }
         let key = get_key_with_decor(packages, spec);
         let value_decor = get_value_decor(packages, spec);
         let mut item = toml_edit::value(version);
@@ -3268,6 +3285,41 @@ mod tests {
             system.packages.get("apt:curl").unwrap().version(),
             "8.5.0-2"
         );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".bootstrap-package-options.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [bootstrap.packages]
+            "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"] }} # keep me
+            "apt:curl" = "8.5.0"
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("brew:ripgrep", "latest")
+            .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#""brew:ripgrep" = { version = "latest", os = ["macos"] } # keep me"#),
+            "package selectors and comments should survive: {dump}"
+        );
+        assert!(matches!(
+            cf.bootstrap_config()
+                .unwrap()
+                .packages
+                .get("brew:ripgrep"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
         file::remove_file(&p).unwrap();
     }
 

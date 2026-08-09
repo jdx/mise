@@ -20,6 +20,8 @@ use crate::file::display_path;
 #[cfg(unix)]
 use crate::system;
 #[cfg(unix)]
+use crate::system::PackageTomlConfig;
+#[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
@@ -128,7 +130,7 @@ impl SystemImport {
                 let key = formula.config_key();
                 if target_packages
                     .get(&key)
-                    .is_some_and(|version| version == "latest")
+                    .is_some_and(|package| package.version() == "latest")
                 {
                     continue;
                 }
@@ -192,13 +194,13 @@ fn target_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 #[cfg(unix)]
-fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, String>> {
+fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, PackageTomlConfig>> {
     let mut packages = BTreeMap::new();
     if path.exists() {
         let cf = MiseToml::from_file(path)?;
         if let Some(sys) = cf.bootstrap_config() {
-            for (spec, version) in sys.packages {
-                packages.insert(spec, version.version().to_string());
+            for (spec, package) in sys.packages {
+                packages.insert(spec, package);
             }
         }
     }

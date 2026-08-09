@@ -1263,6 +1263,7 @@ impl Bootstrap {
                 let opts = DriverOpts {
                     manager: None,
                     explicit: false,
+                    allow_unavailable_manager: false,
                     dry_run: self.dry_run,
                     update: self.update,
                     yes: self.yes,
@@ -1551,6 +1552,7 @@ impl Bootstrap {
                     &DriverOpts {
                         manager: None,
                         explicit: false,
+                        allow_unavailable_manager: false,
                         dry_run: self.dry_run,
                         update: self.update,
                         yes: self.yes,
