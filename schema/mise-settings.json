@@ -117,6 +117,10 @@
           "type": "string",
           "description": "Environment variable name that can set this setting"
         },
+        "env_only": {
+          "type": "boolean",
+          "description": "Setting is read before config files load, so it only works as an environment variable; a value in a config file is dropped with a warning"
+        },
         "hide": {
           "type": "boolean",
           "description": "Whether to hide this setting from documentation"

@@ -770,6 +770,10 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                 .get("global_only")
                 .is_some_and(|v| v.as_bool().unwrap())
         ));
+        lines.push(format!(
+            "        env_only: {},",
+            props.get("env_only").is_some_and(|v| v.as_bool().unwrap())
+        ));
     }
     fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
         for (key, value) in table {

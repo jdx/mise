@@ -47,6 +47,17 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         }
     };
 
+    // Writing it would succeed and then be ignored, and `mise settings get` would report the
+    // stored value as if it were live. See https://github.com/jdx/mise/discussions/5791.
+    // `mise settings unset` is deliberately still allowed, so anyone who already has one of
+    // these in a config can remove it.
+    if meta.env_only {
+        bail!(
+            "{key} cannot be set in a config file: mise reads it before config files load. Use the {} environment variable instead.",
+            meta.env.unwrap_or("matching MISE_*")
+        );
+    }
+
     let value = match meta.type_ {
         SettingsType::Bool => parse_bool(value)?,
         SettingsType::Integer => parse_i64(value)?,
