@@ -24,11 +24,11 @@ pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
 
     if outputs.dep_info.is_file()
         && let Ok((action, discovered)) =
-            action_from_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)
+            action_from_current_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)
     {
         match restore_result(&action, &outputs, &discovered) {
             Ok(Some((stdout, stderr))) => {
-                replay_bytes(&stdout, &stderr)?;
+                let _ = replay_bytes(&stdout, &stderr);
                 return Ok(ExitCode::SUCCESS);
             }
             Ok(None) => {}
@@ -67,7 +67,27 @@ fn action_from_dep_info(
     working_dir: &Path,
 ) -> Result<(RustcAction, DiscoveredInputs)> {
     let dep_info = RustcDepInfo::read(dep_info)?;
-    let discovered = invocation.discover_inputs(&dep_info, working_dir)?;
+    action_from_parsed_dep_info(rustc, invocation, &dep_info, working_dir)
+}
+
+fn action_from_current_dep_info(
+    rustc: &OsStr,
+    invocation: &RustcInvocation,
+    dep_info: &Path,
+    working_dir: &Path,
+) -> Result<(RustcAction, DiscoveredInputs)> {
+    let dep_info = RustcDepInfo::read(dep_info)?;
+    verify_environment(&dep_info.environment)?;
+    action_from_parsed_dep_info(rustc, invocation, &dep_info, working_dir)
+}
+
+fn action_from_parsed_dep_info(
+    rustc: &OsStr,
+    invocation: &RustcInvocation,
+    dep_info: &RustcDepInfo,
+    working_dir: &Path,
+) -> Result<(RustcAction, DiscoveredInputs)> {
+    let discovered = invocation.discover_inputs(dep_info, working_dir)?;
     let mut context = ActionContext {
         compiler: compiler_identity(rustc)?,
         working_dir: working_dir.to_path_buf(),
@@ -78,6 +98,22 @@ fn action_from_dep_info(
     discovered.clone().apply_to(&mut context)?;
     let action = invocation.action(context)?;
     Ok((action, discovered))
+}
+
+fn verify_environment(environment: &BTreeMap<String, Option<String>>) -> Result<()> {
+    for (name, expected) in environment {
+        let actual = std::env::var_os(name)
+            .map(|value| {
+                value.into_string().map_err(|_| {
+                    eyre::eyre!("compiler environment input is not valid UTF-8: {name}")
+                })
+            })
+            .transpose()?;
+        if &actual != expected {
+            bail!("compiler environment input changed: {name}");
+        }
+    }
+    Ok(())
 }
 
 fn restore_result(
@@ -151,21 +187,53 @@ fn restore_result(
     }
 
     discovered.verify()?;
+    verify_environment(&discovered.environment)?;
+    persist_outputs(staged)?;
+    record_action_hit(&action.digest);
+    Ok(Some((stdout, stderr)))
+}
+
+fn persist_outputs(staged: Vec<(tempfile::NamedTempFile, PathBuf)>) -> Result<()> {
+    let destinations = staged
+        .iter()
+        .map(|(_, destination)| destination.clone())
+        .collect::<Vec<_>>();
     for (temporary, destination) in staged {
-        temporary
+        let persisted = temporary
             .persist(&destination)
             .map_err(|error| error.error)
-            .wrap_err_with(|| format!("failed to atomically restore {}", destination.display()))?;
+            .wrap_err_with(|| format!("failed to atomically restore {}", destination.display()));
+        if let Err(error) = persisted {
+            for destination in &destinations {
+                match std::fs::remove_file(destination) {
+                    Ok(()) => {}
+                    Err(remove_error) if remove_error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(remove_error) => eprintln!(
+                        "mise rustc cache warning: failed to roll back {}: {remove_error}",
+                        destination.display()
+                    ),
+                }
+            }
+            return Err(error);
+        }
     }
+    Ok(())
+}
+
+fn record_action_hit(action: &CacheDigest) {
     let responses = session::request_agent(&[AgentRequest::RecordActionHit {
-        action: action.digest.clone(),
-    }])?;
-    match responses.into_iter().next() {
-        Some(AgentResponse::ActionHitRecorded) => {}
-        Some(AgentResponse::Error { message }) => bail!(message),
-        _ => bail!("cache agent did not record the restored action hit"),
+        action: action.clone(),
+    }]);
+    match responses.map(|responses| responses.into_iter().next()) {
+        Ok(Some(AgentResponse::ActionHitRecorded)) => {}
+        Ok(Some(AgentResponse::Error { message })) => {
+            eprintln!("mise rustc cache warning: hit was not recorded: {message}");
+        }
+        Ok(_) => eprintln!("mise rustc cache warning: hit was not recorded"),
+        Err(error) => {
+            eprintln!("mise rustc cache warning: hit was not recorded: {error:#}");
+        }
     }
-    Ok(Some((stdout, stderr)))
 }
 
 fn find_blobs(digests: &[CacheDigest]) -> Result<Vec<PathBuf>> {
@@ -496,7 +564,7 @@ fn staged_bytes(directory: &Path, name: &str, bytes: &[u8]) -> Result<(CacheDige
 #[cfg(unix)]
 fn file_mode(metadata: &std::fs::Metadata) -> u32 {
     use std::os::unix::fs::PermissionsExt as _;
-    metadata.permissions().mode() & 0o777
+    metadata.permissions().mode() & 0o644
 }
 
 #[cfg(windows)]
@@ -506,7 +574,11 @@ fn file_mode(_metadata: &std::fs::Metadata) -> u32 {
 
 #[cfg(unix)]
 fn validate_file_mode(node: &CacheFileNode) -> Result<()> {
-    if node.executable || node.mode & !0o777 != 0 || node.mode & 0o111 != 0 {
+    if node.executable
+        || node.mode & !0o777 != 0
+        || node.mode & 0o111 != 0
+        || node.mode & 0o022 != 0
+    {
         bail!("cached rustc output has an unsafe file mode: {}", node.name);
     }
     Ok(())
@@ -637,5 +709,48 @@ mod tests {
         let mut file = test_file("libdemo.rlib");
         file.executable = true;
         assert!(validated_outputs(test_directory(vec![file]), &outputs).is_err());
+    }
+
+    #[test]
+    fn rejects_group_or_world_writable_rustc_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = test_outputs(root.path());
+        let mut file = test_file("libdemo.rlib");
+        file.mode = 0o666;
+        assert!(validated_outputs(test_directory(vec![file]), &outputs).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_masks_unsafe_rustc_output_permissions() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o666))
+            .unwrap();
+        assert_eq!(file_mode(&file.as_file().metadata().unwrap()), 0o644);
+    }
+
+    #[test]
+    fn rolls_back_outputs_after_a_partial_persist() {
+        let root = tempfile::tempdir().unwrap();
+        let first_destination = root.path().join("first.rlib");
+        let blocked_destination = root.path().join("blocked.rmeta");
+        std::fs::create_dir(&blocked_destination).unwrap();
+        let mut first = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+        first.write_all(b"first").unwrap();
+        let mut second = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+        second.write_all(b"second").unwrap();
+
+        assert!(
+            persist_outputs(vec![
+                (first, first_destination.clone()),
+                (second, blocked_destination.clone()),
+            ])
+            .is_err()
+        );
+        assert!(!first_destination.exists());
+        assert!(blocked_destination.is_dir());
     }
 }

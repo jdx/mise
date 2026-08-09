@@ -453,15 +453,22 @@ mod tests {
     async fn missing_action_result_is_a_cache_miss() {
         let directory = tempfile::tempdir().unwrap();
         let agent = CacheAgent::new(directory.path(), "test-version");
+        let action = CacheDigest::blake3(b"missing action");
         let response = agent
             .respond(AgentRequest::FindActionResult {
-                action: CacheDigest::blake3(b"missing action"),
+                action: action.clone(),
             })
             .await;
 
         assert!(matches!(
             response,
             AgentResponse::ActionResult { result: None }
+        ));
+        assert!(matches!(
+            agent
+                .respond(AgentRequest::RecordActionHit { action })
+                .await,
+            AgentResponse::Error { .. }
         ));
         assert_eq!(
             agent.stats(),
