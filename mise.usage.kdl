@@ -428,7 +428,7 @@ Examples:
             }
             flag "-n --dry-run" help="Print the config/source updates without writing anything"
             flag --no-apply help="Add the entry without applying it"
-            flag "-p --path --file" help="Write to this config file or directory" {
+            flag "-p --path" help="Write to this config file or directory" {
                 arg <PATH>
             }
             flag "-s --source" help="Source path to use for a single target" {
@@ -1214,7 +1214,7 @@ Examples:
         }
         flag "-n --dry-run" help="Print the config/source updates without writing anything"
         flag --no-apply help="Add the entry without applying it"
-        flag "-p --path --file" help="Write to this config file or directory" {
+        flag "-p --path" help="Write to this config file or directory" {
             arg <PATH>
         }
         flag "-s --source" help="Source path to use for a single target" {
@@ -4703,7 +4703,7 @@ Number of jobs to run in parallel
         arg <JOBS>
     }
     flag "-n --dry-run" help="Perform a dry run, showing what would be installed and modified without making changes"
-    flag "-p --path --file" help="Specify a path to a config file or directory" {
+    flag "-p --path" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 
