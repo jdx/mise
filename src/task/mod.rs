@@ -2020,6 +2020,10 @@ impl Task {
         Ok(spec)
     }
 
+    pub(crate) fn validate_template_syntax_for_preflight(&self, input: &str) -> Result<()> {
+        TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
+    }
+
     pub async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,

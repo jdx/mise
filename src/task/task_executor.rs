@@ -22,7 +22,7 @@ use crate::task::{
     Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
 };
 use crate::task::{TaskCompletionState, TaskDependencyState};
-use crate::tera::{contains_template_syntax, render_str, validate_template_syntax};
+use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
@@ -1779,7 +1779,7 @@ impl TaskExecutor {
                     .iter()
                     .any(|script| contains_template_syntax(script)));
         if contains_template_syntax(&task.usage) {
-            validate_template_syntax(&task.usage)
+            task.validate_template_syntax_for_preflight(&task.usage)
                 .wrap_err_with(|| format!("invalid usage template for task {}", task.name))?;
         }
         if task.usage.trim().is_empty() {
@@ -1788,9 +1788,10 @@ impl TaskExecutor {
                 .into_iter()
                 .filter(|script| contains_template_syntax(script))
             {
-                validate_template_syntax(&script).wrap_err_with(|| {
-                    format!("invalid task script template for task {}", task.name)
-                })?;
+                task.validate_template_syntax_for_preflight(&script)
+                    .wrap_err_with(|| {
+                        format!("invalid task script template for task {}", task.name)
+                    })?;
             }
         }
         let spec = match task.parse_usage_spec_for_preflight(config).await {

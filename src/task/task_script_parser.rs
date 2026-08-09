@@ -574,6 +574,12 @@ impl TaskScriptParser {
             .await
     }
 
+    pub(crate) fn validate_template_syntax(&self, task: &Task, input: &str) -> Result<()> {
+        let (mut tera, _, _, _) = self.setup_tera_for_spec_parsing(task);
+        tera.validate_template_syntax("__mise_validate", input)
+            .map_err(Self::task_script_tera_error)
+    }
+
     async fn parse_run_scripts_for_spec_only_inner(
         &self,
         config: &Arc<Config>,

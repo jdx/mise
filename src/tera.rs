@@ -69,6 +69,15 @@ impl TeraEngine {
             }
         }
     }
+
+    pub(crate) fn validate_template_syntax(&mut self, name: &str, input: &str) -> TeraResult<()> {
+        match self {
+            Self::V2(tera) => tera.add_raw_template(name, input),
+            Self::V1(tera) => tera
+                .add_raw_template(name, input)
+                .map_err(|err| tera_err(err.to_string())),
+        }
+    }
 }
 
 pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {
@@ -77,19 +86,6 @@ pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> Tera
 
 pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
     tera.render_str(input, context, false)
-}
-
-/// Parse a template without rendering it so deterministic syntax errors can be
-/// reported before any context-dependent values or functions are evaluated.
-pub fn validate_template_syntax(input: &str) -> TeraResult<()> {
-    if use_tera_v1() {
-        let mut tera = tera1::Tera::default();
-        tera.add_raw_template("__mise_validate", input)
-            .map_err(|err| tera_err(err.to_string()))
-    } else {
-        let mut tera = Tera::default();
-        tera.add_raw_template("__mise_validate", input)
-    }
 }
 
 fn tera_err(message: impl ToString) -> tera::Error {
