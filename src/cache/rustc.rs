@@ -5,19 +5,39 @@ use mise_cache_core::{
     RustcMetadata, canonical_json,
 };
 use mise_cache_rustc::{
-    ActionContext, CompilerIdentity, PathMapping, RustcDepInfo, RustcInvocation,
+    ActionContext, CompilerIdentity, DiscoveredInputs, PathMapping, RustcAction, RustcDepInfo,
+    RustcInvocation, RustcOutputs,
 };
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, ExitStatus, Output};
 use std::time::SystemTime;
 
-pub(super) fn compile_miss(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode> {
+pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode> {
     let invocation = RustcInvocation::parse(arguments)?;
     let working_dir = std::env::current_dir()?;
     let outputs = invocation.outputs(&working_dir)?;
+
+    if outputs.dep_info.is_file()
+        && let Ok((action, discovered)) =
+            action_from_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)
+    {
+        match restore_result(&action, &outputs, &discovered) {
+            Ok(Some((stdout, stderr))) => {
+                replay_bytes(&stdout, &stderr)?;
+                return Ok(ExitCode::SUCCESS);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("mise rustc cache warning: result was not restored: {error:#}");
+            }
+        }
+    }
+
     let compilation_started = SystemTime::now();
     let output = Command::new(rustc)
         .args(arguments)
@@ -27,18 +47,9 @@ pub(super) fn compile_miss(rustc: &OsStr, arguments: &[OsString]) -> Result<Exit
     let _ = replay_output(&output);
     if output.status.success() {
         let publication = (|| {
-            let dep_info = RustcDepInfo::read(&outputs.dep_info)?;
-            let discovered = invocation.discover_inputs(&dep_info, &working_dir)?;
+            let (action, discovered) =
+                action_from_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)?;
             discovered.verify_not_modified_since(compilation_started)?;
-            let mut context = ActionContext {
-                compiler: compiler_identity(rustc)?,
-                working_dir: working_dir.clone(),
-                path_mappings: path_mappings(&working_dir),
-                environment: BTreeMap::new(),
-                inputs: Vec::new(),
-            };
-            discovered.clone().apply_to(&mut context)?;
-            let action = invocation.action(context)?;
             discovered.verify()?;
             publish_result(&action.digest, &action.bytes, &outputs.files, &output)
         })();
@@ -47,6 +58,199 @@ pub(super) fn compile_miss(rustc: &OsStr, arguments: &[OsString]) -> Result<Exit
         }
     }
     Ok(exit_code(output.status))
+}
+
+fn action_from_dep_info(
+    rustc: &OsStr,
+    invocation: &RustcInvocation,
+    dep_info: &Path,
+    working_dir: &Path,
+) -> Result<(RustcAction, DiscoveredInputs)> {
+    let dep_info = RustcDepInfo::read(dep_info)?;
+    let discovered = invocation.discover_inputs(&dep_info, working_dir)?;
+    let mut context = ActionContext {
+        compiler: compiler_identity(rustc)?,
+        working_dir: working_dir.to_path_buf(),
+        path_mappings: path_mappings(working_dir),
+        environment: BTreeMap::new(),
+        inputs: Vec::new(),
+    };
+    discovered.clone().apply_to(&mut context)?;
+    let action = invocation.action(context)?;
+    Ok((action, discovered))
+}
+
+fn restore_result(
+    action: &RustcAction,
+    outputs: &RustcOutputs,
+    discovered: &DiscoveredInputs,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+    let responses = session::request_agent(&[AgentRequest::FindActionResult {
+        action: action.digest.clone(),
+    }])?;
+    let Some(response) = responses.into_iter().next() else {
+        bail!("cache agent did not return an action lookup response");
+    };
+    let result = match response {
+        AgentResponse::ActionResult { result } => match result {
+            Some(result) => result,
+            None => return Ok(None),
+        },
+        AgentResponse::Error { message } => bail!(message),
+        _ => bail!("cache agent returned an unexpected action lookup response"),
+    };
+    if result.version != 1 || result.action != action.digest {
+        bail!("cached rustc action result has an invalid identity");
+    }
+    let metadata_digest = result
+        .metadata
+        .ok_or_else(|| eyre::eyre!("cached rustc action result has no metadata"))?;
+    let output_root_digest = result
+        .output_root
+        .ok_or_else(|| eyre::eyre!("cached rustc action result has no output root"))?;
+    let roots = find_blobs(&[
+        action.digest.clone(),
+        metadata_digest.clone(),
+        output_root_digest.clone(),
+    ])?;
+    let cached_action = read_verified_blob(&roots[0], &action.digest, "action descriptor")?;
+    if cached_action != action.bytes {
+        bail!("cached rustc action descriptor does not match the invocation");
+    }
+    let metadata: RustcMetadata =
+        read_canonical_blob(&roots[1], &metadata_digest, "rustc metadata")?;
+    if metadata.version != 1 || metadata.kind != "rustc" {
+        bail!("cached rustc metadata is unsupported");
+    }
+    let directory: CacheDirectory =
+        read_canonical_blob(&roots[2], &output_root_digest, "output directory")?;
+    let files = validated_outputs(directory, outputs)?;
+
+    let mut digests = vec![metadata.stdout.clone(), metadata.stderr.clone()];
+    digests.extend(files.iter().map(|(node, _)| node.digest.clone()));
+    let blobs = find_blobs(&digests)?;
+    let stdout = read_verified_blob(&blobs[0], &metadata.stdout, "stdout")?;
+    let stderr = read_verified_blob(&blobs[1], &metadata.stderr, "stderr")?;
+
+    std::fs::create_dir_all(&outputs.directory)?;
+    let mut staged = Vec::with_capacity(files.len());
+    for ((node, destination), source) in files.into_iter().zip(&blobs[2..]) {
+        let mut temporary = tempfile::NamedTempFile::new_in(&outputs.directory)?;
+        let mut source = std::fs::File::open(source)?;
+        std::io::copy(&mut source, temporary.as_file_mut())?;
+        temporary.flush()?;
+        temporary.as_file().sync_all()?;
+        if !node.digest.matches_file(temporary.path())? {
+            bail!(
+                "cached rustc output failed digest verification: {}",
+                node.name
+            );
+        }
+        apply_file_mode(&temporary, node.mode)?;
+        staged.push((temporary, destination));
+    }
+
+    discovered.verify()?;
+    for (temporary, destination) in staged {
+        temporary
+            .persist(&destination)
+            .map_err(|error| error.error)
+            .wrap_err_with(|| format!("failed to atomically restore {}", destination.display()))?;
+    }
+    let responses = session::request_agent(&[AgentRequest::RecordActionHit {
+        action: action.digest.clone(),
+    }])?;
+    match responses.into_iter().next() {
+        Some(AgentResponse::ActionHitRecorded) => {}
+        Some(AgentResponse::Error { message }) => bail!(message),
+        _ => bail!("cache agent did not record the restored action hit"),
+    }
+    Ok(Some((stdout, stderr)))
+}
+
+fn find_blobs(digests: &[CacheDigest]) -> Result<Vec<PathBuf>> {
+    let requests = digests
+        .iter()
+        .cloned()
+        .map(|digest| AgentRequest::FindBlob { digest })
+        .collect::<Vec<_>>();
+    let responses = session::request_agent(&requests)?;
+    if responses.len() != digests.len() {
+        bail!("cache agent returned an incomplete blob lookup response");
+    }
+    responses
+        .into_iter()
+        .zip(digests)
+        .map(|(response, digest)| match response {
+            AgentResponse::Blob { path: Some(path) } => Ok(path),
+            AgentResponse::Blob { path: None } => {
+                bail!("cached rustc action is missing blob {}", digest.hash)
+            }
+            AgentResponse::Error { message } => bail!(message),
+            _ => bail!("cache agent returned an unexpected blob lookup response"),
+        })
+        .collect()
+}
+
+fn read_canonical_blob<T>(path: &Path, digest: &CacheDigest, description: &str) -> Result<T>
+where
+    T: DeserializeOwned + Serialize,
+{
+    let bytes = read_verified_blob(path, digest, description)?;
+    let value = serde_json::from_slice(&bytes)
+        .wrap_err_with(|| format!("cached {description} is not valid JSON"))?;
+    if canonical_json(&value)? != bytes {
+        bail!("cached {description} is not canonical JSON");
+    }
+    Ok(value)
+}
+
+fn read_verified_blob(path: &Path, digest: &CacheDigest, description: &str) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?.read_to_end(&mut bytes)?;
+    if !digest.matches_bytes(&bytes)? {
+        bail!("cached {description} failed digest verification");
+    }
+    Ok(bytes)
+}
+
+fn validated_outputs(
+    directory: CacheDirectory,
+    outputs: &RustcOutputs,
+) -> Result<Vec<(CacheFileNode, PathBuf)>> {
+    if directory.version != 1 || !directory.directories.is_empty() || !directory.symlinks.is_empty()
+    {
+        bail!("cached rustc output directory has unsupported entries");
+    }
+    let mut expected = outputs
+        .files
+        .iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| eyre::eyre!("expected rustc output name is not UTF-8"))?;
+            if path.parent() != Some(outputs.directory.as_path()) {
+                bail!("expected rustc output escapes its output directory");
+            }
+            Ok((name.to_string(), path.clone()))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    if directory.files.len() != expected.len() {
+        bail!("cached rustc output set does not match the invocation");
+    }
+    let mut files = Vec::with_capacity(directory.files.len());
+    for node in directory.files {
+        validate_file_mode(&node)?;
+        let destination = expected
+            .remove(&node.name)
+            .ok_or_else(|| eyre::eyre!("cached rustc output is unexpected: {}", node.name))?;
+        files.push((node, destination));
+    }
+    if !expected.is_empty() {
+        bail!("cached rustc output set is incomplete");
+    }
+    Ok(files)
 }
 
 fn compiler_identity(rustc: &OsStr) -> Result<CompilerIdentity> {
@@ -171,11 +375,15 @@ fn add_mapping(
 }
 
 fn replay_output(output: &Output) -> Result<()> {
+    replay_bytes(&output.stdout, &output.stderr)
+}
+
+fn replay_bytes(stdout_bytes: &[u8], stderr_bytes: &[u8]) -> Result<()> {
     let mut stdout = std::io::stdout().lock();
-    stdout.write_all(&output.stdout)?;
+    stdout.write_all(stdout_bytes)?;
     stdout.flush()?;
     let mut stderr = std::io::stderr().lock();
-    stderr.write_all(&output.stderr)?;
+    stderr.write_all(stderr_bytes)?;
     stderr.flush()?;
     Ok(())
 }
@@ -297,6 +505,36 @@ fn file_mode(_metadata: &std::fs::Metadata) -> u32 {
 }
 
 #[cfg(unix)]
+fn validate_file_mode(node: &CacheFileNode) -> Result<()> {
+    if node.executable || node.mode & !0o777 != 0 || node.mode & 0o111 != 0 {
+        bail!("cached rustc output has an unsafe file mode: {}", node.name);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn validate_file_mode(node: &CacheFileNode) -> Result<()> {
+    if node.executable || node.mode != 0 {
+        bail!("cached rustc output has an unsafe file mode: {}", node.name);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_file_mode(temporary: &tempfile::NamedTempFile, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    temporary
+        .as_file()
+        .set_permissions(std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn apply_file_mode(_temporary: &tempfile::NamedTempFile, _mode: u32) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
 fn exit_code(status: ExitStatus) -> ExitCode {
     use std::os::unix::process::ExitStatusExt as _;
     ExitCode::from(
@@ -316,6 +554,33 @@ fn exit_code(status: ExitStatus) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_outputs(root: &Path) -> RustcOutputs {
+        let directory = root.join("out");
+        RustcOutputs {
+            files: vec![directory.join("libdemo.rlib")],
+            dep_info: directory.join("demo.d"),
+            directory,
+        }
+    }
+
+    fn test_file(name: &str) -> CacheFileNode {
+        CacheFileNode {
+            digest: CacheDigest::blake3(b"artifact"),
+            executable: false,
+            mode: if cfg!(unix) { 0o644 } else { 0 },
+            name: name.into(),
+        }
+    }
+
+    fn test_directory(files: Vec<CacheFileNode>) -> CacheDirectory {
+        CacheDirectory {
+            directories: Vec::new(),
+            files,
+            symlinks: Vec::new(),
+            version: 1,
+        }
+    }
 
     #[test]
     fn parses_verbose_rustc_identity() {
@@ -342,5 +607,35 @@ mod tests {
             .map(|mapping| &mapping.placeholder)
             .collect::<BTreeSet<_>>();
         assert_eq!(placeholders.len(), mappings.len());
+    }
+
+    #[test]
+    fn validates_exact_rustc_output_set() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = test_outputs(root.path());
+        let files =
+            validated_outputs(test_directory(vec![test_file("libdemo.rlib")]), &outputs).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].1, outputs.files[0]);
+    }
+
+    #[test]
+    fn rejects_cached_output_path_traversal() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = test_outputs(root.path());
+        assert!(
+            validated_outputs(test_directory(vec![test_file("../libdemo.rlib")]), &outputs,)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_executable_rustc_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = test_outputs(root.path());
+        let mut file = test_file("libdemo.rlib");
+        file.executable = true;
+        assert!(validated_outputs(test_directory(vec![file]), &outputs).is_err());
     }
 }

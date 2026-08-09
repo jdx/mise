@@ -401,8 +401,8 @@ pub(crate) fn is_rustc_shim() -> bool {
 /// Ultra-early argv0 path used by Cargo's `RUSTC_WRAPPER` integration.
 ///
 /// This runs before mise creates a Tokio runtime, installs logging, or discovers
-/// configuration. Cacheable misses publish through the task-scoped agent;
-/// unsupported invocations remain transparent compiler calls.
+/// configuration. Cacheable invocations restore from or publish through the
+/// task-scoped agent; unsupported invocations remain transparent compiler calls.
 pub(crate) fn run_rustc_shim() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
     let Some(rustc) = arguments.next() else {
@@ -411,7 +411,7 @@ pub(crate) fn run_rustc_shim() -> ExitCode {
     };
     let arguments = arguments.collect::<Vec<_>>();
     if std::env::var_os(PREVIOUS_RUSTC_WRAPPER_ENV).is_none() {
-        match crate::cache::rustc::compile_miss(&rustc, &arguments) {
+        match crate::cache::rustc::compile(&rustc, &arguments) {
             Ok(exit_code) => return exit_code,
             Err(_error) => {
                 #[cfg(debug_assertions)]
