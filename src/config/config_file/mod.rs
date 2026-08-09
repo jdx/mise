@@ -504,21 +504,39 @@ pub fn is_trusted_via_config_paths(path: &Path) -> bool {
     }
 }
 
+/// Whether `path` sits under one of `ignored`.
+///
+/// Compared twice: as written, then with both sides canonicalized.
+///
+/// `Path::starts_with` is component-wise, so the as-written pass already handles
+/// separator and case conventions for ordinary input — it is what the
+/// directory-level checks in `config` do. The canonical pass is what lets a
+/// plainly-written setting value match a candidate that arrives canonicalized:
+/// on Windows `canonicalize` yields a `\\?\` verbatim path that no plain prefix
+/// matches, and on unix it resolves symlinks. `Settings::trusted_config_paths`
+/// canonicalizes its own entries for the same reason.
+fn path_is_under_any(path: &Path, ignored: &[PathBuf]) -> bool {
+    if ignored.iter().any(|p| path.starts_with(p)) {
+        return true;
+    }
+    let Some(canonical) = file::canonicalize_cached(path) else {
+        // Nothing on disk to resolve — the as-written pass above was the only
+        // chance to match.
+        return false;
+    };
+    ignored
+        .iter()
+        .filter_map(|p| file::canonicalize_cached(p))
+        .any(|p| canonical.starts_with(p))
+}
+
 /// Whether `path` is under an explicitly-configured `ignored_config_paths`
 /// (`MISE_IGNORED_CONFIG_PATHS`) entry.
 ///
 /// This is an explicit "never load this config" instruction and is a hard
 /// block: it takes precedence over `trusted_config_paths`.
 pub fn is_ignored_via_setting(path: &Path) -> bool {
-    match path.canonicalize() {
-        Ok(path) => env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| path.starts_with(p)),
-        Err(_) => {
-            debug!("is_ignored_via_setting: path canonicalize failed");
-            false
-        }
-    }
+    path_is_under_any(path, &env::MISE_IGNORED_CONFIG_PATHS)
 }
 
 /// Whether `path` is in the persisted ignore list.
@@ -790,6 +808,93 @@ pub struct TaskConfig {
     pub global_pass_through_env: Vec<String>,
     pub global_inputs: Vec<String>,
     pub input_groups: IndexMap<String, Vec<String>>,
+}
+
+/// Deliberately not `#[cfg(unix)]` like the module below: the bug these cover is
+/// one that only shows up once `canonicalize` rewrites the path, which is the
+/// normal case on Windows.
+#[cfg(test)]
+mod ignored_config_path_tests {
+    use super::*;
+
+    /// The setting is written as an ordinary path while the candidate can arrive
+    /// canonicalized — `is_trusted` passes one straight in. On Windows that is a
+    /// `\\?\` verbatim path; on macOS a tempdir under `/var` resolves to
+    /// `/private/var`. Neither matches a plainly-written prefix, so the two sides
+    /// have to be resolved together.
+    #[test]
+    fn plain_entry_matches_canonicalized_candidate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ignored_dir = tmp.path().join("cfgdir");
+        std::fs::create_dir_all(&ignored_dir).unwrap();
+        let cfg = ignored_dir.join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+
+        let ignored = vec![ignored_dir];
+        assert!(path_is_under_any(&cfg, &ignored));
+        assert!(path_is_under_any(&cfg.canonicalize().unwrap(), &ignored));
+    }
+
+    #[test]
+    fn sibling_directory_is_not_ignored() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ignored_dir = tmp.path().join("cfgdir");
+        let other_dir = tmp.path().join("other");
+        std::fs::create_dir_all(&ignored_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let cfg = other_dir.join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+
+        let ignored = vec![ignored_dir];
+        assert!(!path_is_under_any(&cfg, &ignored));
+        assert!(!path_is_under_any(&cfg.canonicalize().unwrap(), &ignored));
+    }
+
+    /// The same defect without leaving unix: an entry that reaches its directory
+    /// through a symlink never matches a candidate expressed by its real path.
+    ///
+    /// This is the case that fails on an ordinary Linux runner. The test above
+    /// only bites where the platform rewrites the path on its own — a `\\?\`
+    /// prefix on Windows, `/var` → `/private/var` on macOS — so on Linux it
+    /// passes with or without the fix.
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_entry_matches_real_candidate() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let target_dir = tmp.path().join("target");
+        let ignored_link = tmp.path().join("ignored-link");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        symlink(&target_dir, &ignored_link).unwrap();
+
+        let cfg = target_dir.join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+
+        let ignored = vec![ignored_link];
+        // The as-written pass cannot see through the link...
+        assert!(!cfg.starts_with(&ignored[0]));
+        // ...so only resolving both sides finds the match.
+        assert!(path_is_under_any(&cfg, &ignored));
+    }
+
+    /// A path that does not exist cannot be canonicalized, so the as-written
+    /// comparison is the only one that can match it.
+    #[test]
+    fn missing_path_still_matches_as_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ignored_dir = tmp.path().join("cfgdir");
+
+        let ignored = vec![ignored_dir.clone()];
+        assert!(path_is_under_any(
+            &ignored_dir.join("config.toml"),
+            &ignored
+        ));
+        assert!(!path_is_under_any(
+            &tmp.path().join("other").join("config.toml"),
+            &ignored
+        ));
+    }
 }
 
 #[cfg(test)]
