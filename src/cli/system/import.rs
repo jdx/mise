@@ -20,9 +20,13 @@ use crate::file::display_path;
 #[cfg(unix)]
 use crate::system;
 #[cfg(unix)]
+use crate::system::PackageTomlConfig;
+#[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
+#[cfg(unix)]
+use toml_edit::{Array, InlineTable, Value};
 
 /// Import installed system packages into `[bootstrap.packages]`
 ///
@@ -102,6 +106,8 @@ impl SystemImport {
         })?;
 
         let configured_taps = configured_brew_taps(&path).await?;
+        let config = Config::get().await?;
+        let configured_packages = system::package_configs_for_target(&config, &path);
         let target_taps = target_brew_taps(&path)?;
         let target_packages = target_bootstrap_packages(&path)?;
         let mut taps = BTreeMap::new();
@@ -128,11 +134,15 @@ impl SystemImport {
                 let key = formula.config_key();
                 if target_packages
                     .get(&key)
-                    .is_some_and(|version| version == "latest")
+                    .is_some_and(|package| package.version() == "latest")
                 {
                     continue;
                 }
-                miseprintln!("{}: \"{}\" = \"latest\"", display_path(&path), key);
+                let package = imported_package_value(
+                    target_packages.get(&key),
+                    configured_packages.get(&key),
+                );
+                miseprintln!("{}: \"{}\" = {}", display_path(&path), key, package);
             }
             return Ok(());
         }
@@ -146,7 +156,12 @@ impl SystemImport {
             cf.update_bootstrap_brew_tap(tap, url)?;
         }
         for formula in &formulae {
-            cf.update_bootstrap_package(&formula.config_key(), "latest")?;
+            let key = formula.config_key();
+            cf.update_bootstrap_package_with_fallback(
+                &key,
+                "latest",
+                configured_packages.get(&key),
+            )?;
         }
         cf.save()?;
         info!(
@@ -162,6 +177,32 @@ impl SystemImport {
         let _ = self.manager;
         bail!("brew import is not supported on windows")
     }
+}
+
+#[cfg(unix)]
+fn imported_package_value(
+    target: Option<&PackageTomlConfig>,
+    configured: Option<&PackageTomlConfig>,
+) -> Value {
+    let options = match target {
+        Some(PackageTomlConfig::Options(options)) => Some(options),
+        Some(PackageTomlConfig::Version(_)) => None,
+        None => match configured {
+            Some(PackageTomlConfig::Options(options)) if !options.os.is_empty() => Some(options),
+            _ => None,
+        },
+    };
+    let Some(options) = options else {
+        return Value::from("latest");
+    };
+    let mut table = InlineTable::new();
+    table.insert("version", Value::from("latest"));
+    if !options.os.is_empty() {
+        let mut os = Array::new();
+        os.extend(options.os.clone());
+        table.insert("os", Value::Array(os));
+    }
+    Value::InlineTable(table)
 }
 
 #[cfg(unix)]
@@ -192,17 +233,35 @@ fn target_brew_taps(path: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 #[cfg(unix)]
-fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, String>> {
+fn target_bootstrap_packages(path: &Path) -> Result<BTreeMap<String, PackageTomlConfig>> {
     let mut packages = BTreeMap::new();
     if path.exists() {
         let cf = MiseToml::from_file(path)?;
         if let Some(sys) = cf.bootstrap_config() {
-            for (spec, version) in sys.packages {
-                packages.insert(spec, version);
+            for (spec, package) in sys.packages {
+                packages.insert(spec, package);
             }
         }
     }
     Ok(packages)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::system::PackageOptionsTomlConfig;
+
+    #[test]
+    fn dry_run_preserves_inherited_selectors() {
+        let inherited = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+            version: "1.0.0".to_string(),
+            os: vec!["macos".to_string()],
+        });
+        assert_eq!(
+            imported_package_value(None, Some(&inherited)).to_string(),
+            r#"{ version = "latest", os = ["macos"] }"#
+        );
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

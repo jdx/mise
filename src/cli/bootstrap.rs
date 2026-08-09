@@ -1263,6 +1263,7 @@ impl Bootstrap {
                 let opts = DriverOpts {
                     manager: None,
                     explicit: false,
+                    allow_unavailable_manager: false,
                     dry_run: self.dry_run,
                     update: self.update,
                     yes: self.yes,
@@ -1551,6 +1552,7 @@ impl Bootstrap {
                     &DriverOpts {
                         manager: None,
                         explicit: false,
+                        allow_unavailable_manager: false,
                         dry_run: self.dry_run,
                         update: self.update,
                         yes: self.yes,
@@ -2763,29 +2765,40 @@ impl BootstrapStatus {
             let statuses = mp.manager.installed(&mp.requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
-                let (installed_version, state, missing) = match &s.state {
-                    PackageState::Installed { version } => (version.clone(), "installed", false),
-                    PackageState::Missing => ("".to_string(), "missing", true),
+                let (installed_version, state, reason, missing) = match &s.state {
+                    PackageState::Installed { version } => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    PackageState::Missing => ("".to_string(), "missing", None, true),
                     PackageState::NeedsRepair { installed } => {
-                        (installed.clone(), "needs repair", true)
+                        (installed.clone(), "needs repair", None, true)
                     }
                     PackageState::VersionMismatch { installed } => {
-                        (installed.clone(), "version mismatch", true)
+                        (installed.clone(), "version mismatch", None, true)
+                    }
+                    #[cfg(unix)]
+                    PackageState::Unavailable { reason } => {
+                        ("".to_string(), "skipped", Some(reason.as_str()), false)
                     }
                 };
                 report.row(
                     "packages",
                     format!("{name}:{}", s.request),
                     installed_version.clone(),
-                    state,
+                    reason
+                        .map_or_else(|| state.to_string(), |reason| format!("{state} ({reason})")),
                     missing,
                 );
-                json_pkgs.push(json!({
+                let mut package = json!({
                     "package": s.request.name,
                     "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
                     "state": state.replace(' ', "_"),
                     "installed_version": installed_version,
-                }));
+                });
+                if let Some(reason) = reason {
+                    package["reason"] = json!(reason);
+                }
+                json_pkgs.push(package);
             }
             json_out.insert(
                 name.to_string(),

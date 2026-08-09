@@ -589,7 +589,13 @@ impl SystemPackageManager for BrewCaskManager {
         for req in pkgs {
             let cask = fetch_cask(req).await?;
             let artifacts = cask_artifacts(&cask)?;
-            validate_platform_support(&cask, &artifacts)?;
+            if let Some(state) = platform_unavailable_state(&cask, &artifacts) {
+                statuses.push(PackageStatus {
+                    request: req.clone(),
+                    state,
+                });
+                continue;
+            }
             let version = installed_cask_version(&cask, &artifacts)?;
             let state = match version {
                 Some(version) => match &req.version {
@@ -2660,6 +2666,12 @@ fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<(
     #[cfg(not(target_os = "linux"))]
     let _ = (cask, artifacts);
     Ok(())
+}
+
+fn platform_unavailable_state(cask: &Cask, artifacts: &CaskArtifacts) -> Option<PackageState> {
+    validate_platform_support(cask, artifacts)
+        .err()
+        .map(|err| PackageState::unavailable(err.to_string()))
 }
 
 fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
@@ -7050,6 +7062,10 @@ end
             .unwrap_err()
             .to_string();
         assert!(err.contains("only font-only casks"));
+        assert!(matches!(
+            platform_unavailable_state(&cask, &artifacts),
+            Some(PackageState::Unavailable { .. })
+        ));
         Ok(())
     }
 

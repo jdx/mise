@@ -78,9 +78,12 @@ installed into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
 "brew-cask:font-heavy-data-nerd-font" = "latest"
 ```
 
-Other Linux casks fail with a clear unsupported-platform error. This boundary
-will expand as mise gains portable implementations for more cask artifact
-types.
+Other Linux casks are reported as unavailable and skipped when they come from
+`[bootstrap.packages]`, allowing macOS and Linux to share a package list. An
+explicit request such as `mise bootstrap packages apply brew-cask:firefox`
+still fails with a clear unsupported-platform error. You can also mark macOS
+casks explicitly with `{ os = "macos" }`. This boundary will expand as mise
+gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),

@@ -6,7 +6,7 @@ use eyre::{Result, bail};
 
 use crate::config::Settings;
 use crate::system::ManagerPackages;
-use crate::system::packages::{InstallOpts, PackageState};
+use crate::system::packages::{InstallOpts, PackageState, PackageStatus};
 use crate::ui::prompt;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -30,9 +30,28 @@ pub(crate) struct DriverOpts {
     /// packages were named explicitly on the CLI — unavailable managers are
     /// then a hard error instead of a silent (cross-platform config) skip
     pub explicit: bool,
+    /// An explicitly named manager may still be written to shared config on a
+    /// platform where that manager is unavailable.
+    pub allow_unavailable_manager: bool,
     pub dry_run: bool,
     pub update: bool,
     pub yes: bool,
+}
+
+fn unavailable_manager_is_error(d: &DriverOpts) -> bool {
+    (d.manager.is_some() || d.explicit) && !d.allow_unavailable_manager
+}
+
+fn unavailable_package_reason<'a>(
+    d: &DriverOpts,
+    statuses: &'a [PackageStatus],
+) -> Option<&'a str> {
+    if !d.explicit {
+        return None;
+    }
+    statuses
+        .iter()
+        .find_map(|status| status.state.unavailable_reason())
 }
 
 /// Run `action` for every manager in `mgrs`, honoring the `--manager` filter,
@@ -79,7 +98,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             continue;
         }
         if let Some(reason) = mp.manager.unavailable_reason_async().await {
-            if d.manager.is_some() || d.explicit {
+            if unavailable_manager_is_error(d) {
                 // explicitly requested (via --manager or manager:package
                 // specs) — failing silently would be a lie
                 bail!("{name} is not available: {}", reason);
@@ -88,20 +107,30 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             continue;
         }
         let statuses = mp.manager.installed(&mp.requests).await?;
+        if let Some(reason) = unavailable_package_reason(d, &statuses) {
+            bail!("{reason}");
+        }
         let mut targets: Vec<_> = statuses
             .iter()
             .filter(|s| match action {
-                Action::Install => !matches!(s.state, PackageState::Installed { .. }),
+                Action::Install => {
+                    !matches!(s.state, PackageState::Installed { .. }) && !s.state.is_unavailable()
+                }
                 // upgrade acts on whatever is present (the manager no-ops
                 // already-current packages); missing packages are skipped
                 // below with a pointer at `install`
-                Action::Upgrade => !matches!(s.state, PackageState::Missing),
+                Action::Upgrade => {
+                    !matches!(s.state, PackageState::Missing) && !s.state.is_unavailable()
+                }
             })
             .collect();
-        let skipped = statuses.len() - targets.len();
-        if action == Action::Upgrade && skipped > 0 {
+        let missing = statuses
+            .iter()
+            .filter(|status| matches!(status.state, PackageState::Missing))
+            .count();
+        if action == Action::Upgrade && missing > 0 {
             warn!(
-                "{name}: {skipped} package(s) not installed — run `mise bootstrap packages apply` first"
+                "{name}: {missing} package(s) not installed — run `mise bootstrap packages apply` first"
             );
         }
         // a pin this manager can never satisfy must not block the rest
@@ -122,8 +151,12 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                 }
             });
         }
-        if action == Action::Install && skipped > 0 {
-            info!("{name}: {skipped} package(s) already installed");
+        let installed = statuses
+            .iter()
+            .filter(|status| matches!(status.state, PackageState::Installed { .. }))
+            .count();
+        if action == Action::Install && installed > 0 {
+            info!("{name}: {installed} package(s) already installed");
         }
         if targets.is_empty() {
             continue;
@@ -159,6 +192,8 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                             Some((s.request.name.clone(), version.clone()))
                         }
                         PackageState::Missing => None,
+                        #[cfg(unix)]
+                        PackageState::Unavailable { .. } => None,
                     })
                     .collect();
                 mp.manager.upgrade(&targets, &opts).await?;
@@ -175,6 +210,8 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                                     .then(|| format!("{} {old} -> {version}", s.request.name))
                             }
                             PackageState::Missing => None,
+                            #[cfg(unix)]
+                            PackageState::Unavailable { .. } => None,
                         })
                         .collect();
                     if changed.is_empty() {
@@ -187,4 +224,49 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         }
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::system::packages::PackageRequest;
+
+    #[test]
+    fn explicit_packages_reject_unavailable_entries_but_manager_filters_skip_them() {
+        let explicit_opts = DriverOpts {
+            manager: None,
+            explicit: true,
+            allow_unavailable_manager: true,
+            dry_run: false,
+            update: false,
+            yes: true,
+        };
+        let statuses = vec![PackageStatus {
+            request: PackageRequest {
+                name: "example".to_string(),
+                version: None,
+                tap_url: None,
+            },
+            state: PackageState::Unavailable {
+                reason: "unsupported on this platform".to_string(),
+            },
+        }];
+
+        assert!(!unavailable_manager_is_error(&explicit_opts));
+        assert_eq!(
+            unavailable_package_reason(&explicit_opts, &statuses),
+            Some("unsupported on this platform")
+        );
+
+        let manager_opts = DriverOpts {
+            manager: Some("brew-cask".to_string()),
+            explicit: false,
+            allow_unavailable_manager: false,
+            dry_run: false,
+            update: false,
+            yes: true,
+        };
+        assert!(unavailable_manager_is_error(&manager_opts));
+        assert_eq!(unavailable_package_reason(&manager_opts, &statuses), None);
+    }
 }

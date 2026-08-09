@@ -195,7 +195,7 @@ impl Install {
                             !matches!(
                                 s.state,
                                 crate::system::packages::PackageState::Installed { .. }
-                            )
+                            ) && !s.state.is_unavailable()
                         })
                         .count();
                 }

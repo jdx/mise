@@ -23,6 +23,18 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
+Use the table form to restrict an individual package by operating system or
+OS/architecture. `os` accepts one value or a list and uses the same names and
+aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
+`macos/arm64`, and so on). `version` defaults to `"latest"` when omitted:
+
+```toml
+[bootstrap.packages]
+"brew:coreutils" = "latest"
+"brew-cask:1password" = { os = "macos" }
+"brew-cask:font-jetbrains-mono" = { os = ["linux", "macos"] }
+```
+
 Host packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are managed
 outside the project by the platform's package manager — or, for `brew` and
@@ -70,11 +82,12 @@ declarative sections work the same way:
   `mise bootstrap packages prune` is an explicit destructive command that
   removes linked formulae or safely prunable mise-owned casks no longer needed
   by the current config or by trusted, loadable tracked configs.
-- **OS-filtered** — entries for a manager that isn't available on the current
-  machine are not acted on, so the same config works across platforms: `apt`
-  entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
-  works on both macOS and Linux; `brew-cask` works on macOS and supports
-  font-only casks without lifecycle hooks or structured flight steps on Linux;
+- **OS-filtered** — entries whose `os` selector does not match and entries for
+  a manager that isn't available on the current machine are not acted on, so
+  the same config works across platforms: `apt` entries are ignored on macOS,
+  `dnf` entries on Ubuntu, and so on. `brew` works on both macOS and Linux;
+  `brew-cask` works on macOS and supports font-only casks without lifecycle
+  hooks or structured flight steps on Linux;
   `flatpak` and `flatpak-user` work on Linux when the `flatpak` CLI is on
   `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`. Status commands
   still list

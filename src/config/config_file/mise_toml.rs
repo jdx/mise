@@ -35,7 +35,7 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
+use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig, PackageTomlConfig};
 use crate::task::workspace::WorkspaceProjectOverride;
 use crate::task::{Task, TaskTemplate, TaskTomlBoolPresence};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
@@ -639,10 +639,20 @@ impl MiseToml {
     /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
     /// creating the tables as needed ("latest" means no pin)
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
-        self.bootstrap
-            .get_or_insert_with(Default::default)
-            .packages
-            .insert(spec.to_string(), version.to_string());
+        let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
+        let preserve_options = match packages.get_mut(spec) {
+            Some(PackageTomlConfig::Options(options)) => {
+                options.version = version.to_string();
+                true
+            }
+            _ => {
+                packages.insert(
+                    spec.to_string(),
+                    PackageTomlConfig::Version(version.to_string()),
+                );
+                false
+            }
+        };
         let mut doc = self.doc_mut()?;
         let bootstrap = doc
             .get_mut()
@@ -658,12 +668,73 @@ impl MiseToml {
             .or_insert_with(table)
             .as_table_mut()
             .unwrap();
+        if preserve_options && let Some(item) = packages.get_mut(spec) {
+            if let Some(options) = item.as_value_mut().and_then(Value::as_inline_table_mut) {
+                options.insert("version", Value::from(version));
+                return Ok(());
+            }
+            if item.as_table().is_some() {
+                insert_preserving_decor(item, "version", value(version));
+                return Ok(());
+            }
+        }
         let key = get_key_with_decor(packages, spec);
         let value_decor = get_value_decor(packages, spec);
         let mut item = toml_edit::value(version);
         set_value_decor(&mut item, &value_decor);
         packages.insert_formatted(&key, item);
         Ok(())
+    }
+
+    /// Update a package while inheriting table-form options when this file does not declare it.
+    #[cfg(unix)]
+    pub fn update_bootstrap_package_with_fallback(
+        &mut self,
+        spec: &str,
+        version: &str,
+        fallback: Option<&PackageTomlConfig>,
+    ) -> eyre::Result<()> {
+        let is_missing = self
+            .bootstrap
+            .as_ref()
+            .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
+        if is_missing
+            && let Some(PackageTomlConfig::Options(options)) = fallback
+            && !options.os.is_empty()
+        {
+            let mut options = options.clone();
+            options.version = version.to_string();
+            self.bootstrap
+                .get_or_insert_with(Default::default)
+                .packages
+                .insert(
+                    spec.to_string(),
+                    PackageTomlConfig::Options(options.clone()),
+                );
+
+            let mut doc = self.doc_mut()?;
+            let bootstrap = doc
+                .get_mut()
+                .unwrap()
+                .entry("bootstrap")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            bootstrap.set_implicit(true);
+            let packages = bootstrap
+                .entry("packages")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            let mut value = InlineTable::new();
+            value.insert("version", Value::from(version));
+            let mut os = Array::new();
+            os.extend(options.os);
+            value.insert("os", Value::Array(os));
+            packages.insert(spec, Item::Value(Value::InlineTable(value)));
+            return Ok(());
+        }
+        self.update_bootstrap_package(spec, version)
     }
 
     /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
@@ -2986,6 +3057,8 @@ mod tests {
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
+        "brew-cask:1password" = { version = "latest", os = "macos" }
+        "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
 
         [bootstrap.brew.taps]
@@ -3004,9 +3077,34 @@ mod tests {
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
-        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        assert_eq!(
+            system.packages.get("apt:libssl-dev").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            "8.5.0-2"
+        );
+        assert_eq!(
+            system.packages.get("brew:postgresql@17").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(
+            system
+                .packages
+                .get("brew-cask:1password")
+                .unwrap()
+                .version(),
+            "latest"
+        );
+        assert_eq!(
+            system
+                .packages
+                .get("brew-cask:font-example")
+                .unwrap()
+                .version(),
+            "latest"
+        );
         assert_eq!(
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3022,7 +3120,11 @@ mod tests {
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
-            system.packages.get("future-manager:whatever").unwrap(),
+            system
+                .packages
+                .get("future-manager:whatever")
+                .unwrap()
+                .version(),
             "latest"
         );
 
@@ -3230,7 +3332,105 @@ mod tests {
         "brew:postgresql@17" = "latest"
         "#);
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            "8.5.0-2"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".bootstrap-package-options.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [bootstrap.packages]
+            "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"] }} # keep me
+            "apt:curl" = "8.5.0"
+
+            [bootstrap.packages."brew:fd"]
+            version = "10.0.0" # keep version comment
+            os = ["macos"] # keep selector comment
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("brew:ripgrep", "latest")
+            .unwrap();
+        cf.update_bootstrap_package("brew:fd", "latest").unwrap();
+        #[cfg(unix)]
+        {
+            let inherited = cf
+                .bootstrap_config()
+                .unwrap()
+                .packages
+                .get("brew:ripgrep")
+                .unwrap()
+                .clone();
+            cf.update_bootstrap_package_with_fallback("brew:bat", "latest", Some(&inherited))
+                .unwrap();
+            #[cfg(unix)]
+            {
+                let inherited_without_selector =
+                    PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
+                        version: "1.0.0".to_string(),
+                        os: vec![],
+                    });
+                cf.update_bootstrap_package_with_fallback(
+                    "brew:tree",
+                    "latest",
+                    Some(&inherited_without_selector),
+                )
+                .unwrap();
+            }
+        }
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#""brew:ripgrep" = { version = "latest", os = ["macos"] } # keep me"#),
+            "package selectors and comments should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"version = "latest" # keep version comment"#),
+            "nested package version comments should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"os = ["macos"] # keep selector comment"#),
+            "nested package selectors should survive: {dump}"
+        );
+        #[cfg(unix)]
+        assert!(
+            dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"] }"#),
+            "inherited package selectors should be written locally: {dump}"
+        );
+        #[cfg(unix)]
+        assert!(
+            dump.contains(r#""brew:tree" = "latest""#),
+            "an inherited options table without selectors should use scalar form: {dump}"
+        );
+        #[cfg(unix)]
+        MiseToml::from_str(&dump, &p).expect("updated package config should parse");
+        assert!(matches!(
+            cf.bootstrap_config()
+                .unwrap()
+                .packages
+                .get("brew:ripgrep"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
+        assert!(matches!(
+            cf.bootstrap_config().unwrap().packages.get("brew:fd"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
+        #[cfg(unix)]
+        assert!(matches!(
+            cf.bootstrap_config().unwrap().packages.get("brew:bat"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
         file::remove_file(&p).unwrap();
     }
 
