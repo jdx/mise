@@ -107,7 +107,7 @@ impl SystemImport {
 
         let configured_taps = configured_brew_taps(&path).await?;
         let config = Config::get().await?;
-        let configured_packages = system::package_configs_from_config(&config);
+        let configured_packages = system::package_configs_for_target(&config, &path);
         let target_taps = target_brew_taps(&path)?;
         let target_packages = target_bootstrap_packages(&path)?;
         let mut taps = BTreeMap::new();

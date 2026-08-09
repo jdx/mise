@@ -404,10 +404,14 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
 }
 
-/// Merge raw `[bootstrap.packages]` declarations without applying host filters.
+/// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
+/// applying host filters. Configs more local than the target are excluded.
 #[cfg(unix)]
-pub(crate) fn package_configs_from_config(config: &Config) -> IndexMap<String, PackageTomlConfig> {
-    package_configs_from_config_files(&config.config_files)
+pub(crate) fn package_configs_for_target(
+    config: &Config,
+    target: &Path,
+) -> IndexMap<String, PackageTomlConfig> {
+    package_configs_from_config_files_for_target(&config.config_files, target)
 }
 
 /// Package requests for declared package plugins that are not installed yet.
@@ -561,9 +565,24 @@ fn package_requests_from_config_files(
 fn package_configs_from_config_files(
     config_files: &ConfigMap,
 ) -> IndexMap<String, PackageTomlConfig> {
+    merge_package_configs(config_files.values())
+}
+
+#[cfg(unix)]
+fn package_configs_from_config_files_for_target(
+    config_files: &ConfigMap,
+    target: &Path,
+) -> IndexMap<String, PackageTomlConfig> {
+    let target_index = config_files.get_index_of(target).unwrap_or(0);
+    merge_package_configs(config_files.values().skip(target_index))
+}
+
+fn merge_package_configs<'a>(
+    config_files: impl DoubleEndedIterator<Item = &'a Arc<dyn crate::config::config_file::ConfigFile>>,
+) -> IndexMap<String, PackageTomlConfig> {
     let mut merged: IndexMap<String, PackageTomlConfig> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config_files.values().rev() {
+    for cf in config_files.rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (spec, version) in sys.packages {
                 merged.insert(spec, version);
@@ -1594,6 +1613,7 @@ mod tests {
                 r#"
                     [bootstrap.packages]
                     "brew:jq" = "latest"
+                    "brew-cask:1password" = { version = "latest", os = ["linux"] }
                 "#,
             ),
             (
@@ -1605,11 +1625,22 @@ mod tests {
             ),
         ])?;
 
-        let packages = package_configs_from_config_files(&config_files);
+        let local_path = config_files.get_index(0).unwrap().0.clone();
+        let global_path = config_files.get_index(1).unwrap().0.clone();
+
+        let packages = package_configs_from_config_files_for_target(&config_files, &local_path);
         assert!(matches!(
             packages.get("brew-cask:1password"),
+            Some(PackageTomlConfig::Options(options)) if options.os == ["linux"]
+        ));
+
+        let global_packages =
+            package_configs_from_config_files_for_target(&config_files, &global_path);
+        assert!(matches!(
+            global_packages.get("brew-cask:1password"),
             Some(PackageTomlConfig::Options(options)) if options.os == ["macos"]
         ));
+        assert!(!global_packages.contains_key("brew:jq"));
         Ok(())
     }
 
