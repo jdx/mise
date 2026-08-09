@@ -1627,6 +1627,7 @@ Generates shims to run mise tasks
 
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
 so contributors to a project can execute mise tasks without installing mise into their system.
+When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 """#
         after_long_help #"""
 Examples:

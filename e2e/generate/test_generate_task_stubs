@@ -3,3 +3,106 @@
 assert "mise tasks add xxx -- echo 'running xxx'"
 assert "mise generate task-stubs"
 assert "./bin/xxx" "running xxx"
+
+mkdir -p .mise/tasks/work/containers
+cat >.mise/tasks/work/containers/_default <<'EOF'
+#!/bin/sh
+echo parent
+EOF
+cat >.mise/tasks/work/containers/pg <<'EOF'
+#!/bin/sh
+echo pg
+EOF
+cat >.mise/tasks/work/containers/redis <<'EOF'
+#!/bin/sh
+echo redis
+EOF
+chmod +x .mise/tasks/work/containers/{_default,pg,redis}
+
+assert "mise generate task-stubs"
+test -x bin/work/containers/_default
+test -x bin/work/containers/pg
+test -x bin/work/containers/redis
+assert "bin/work/containers/_default" "parent"
+assert "bin/work/containers/pg" "pg"
+assert "bin/work/containers/redis" "redis"
+assert "mise generate task-stubs"
+
+cat >.mise/tasks/legacy <<'EOF'
+#!/bin/sh
+echo legacy
+EOF
+chmod +x .mise/tasks/legacy
+assert "mise generate task-stubs --dir legacy-bin"
+test -f legacy-bin/legacy
+
+# Preserve compatibility with stubs generated before the ownership marker.
+# Generated stubs do not end with a newline, so reproduce the legacy output exactly.
+printf '%s' '#!/bin/sh
+exec mise run legacy "$@"' >legacy-bin/legacy
+
+rm .mise/tasks/legacy
+mkdir .mise/tasks/legacy
+cat >.mise/tasks/legacy/_default <<'EOF'
+#!/bin/sh
+echo legacy
+EOF
+cat >.mise/tasks/legacy/child <<'EOF'
+#!/bin/sh
+echo child
+EOF
+chmod +x .mise/tasks/legacy/{_default,child}
+assert "mise generate task-stubs --dir legacy-bin"
+test -d legacy-bin/legacy
+test -x legacy-bin/legacy/_default
+test -x legacy-bin/legacy/child
+assert "legacy-bin/legacy/_default" "legacy"
+assert "legacy-bin/legacy/child" "child"
+
+# Removing the nested task collapses the generated directory back to a leaf stub.
+cat >legacy-bin/legacy/user-script <<'EOF'
+#!/bin/sh
+exec custom-tool run user-task "$@"
+EOF
+mv .mise/tasks/legacy/_default .mise/tasks/legacy-task
+rm .mise/tasks/legacy/child
+rmdir .mise/tasks/legacy
+mv .mise/tasks/legacy-task .mise/tasks/legacy
+assert_fail_contains \
+  "mise generate task-stubs --dir legacy-bin" \
+  "legacy-bin/legacy/user-script is not a generated task stub"
+test -f legacy-bin/legacy/user-script
+rm legacy-bin/legacy/user-script
+assert "mise generate task-stubs --dir legacy-bin"
+test -f legacy-bin/legacy
+test ! -d legacy-bin/legacy
+assert "legacy-bin/legacy" "legacy"
+
+mkdir -p blocked-bin
+echo "user-owned" >blocked-bin/work
+assert_fail_contains \
+  "mise generate task-stubs --dir blocked-bin" \
+  "blocked-bin/work is not a directory"
+test ! -e blocked-bin/xxx
+assert "cat blocked-bin/work" "user-owned"
+
+mkdir -p symlink-bin
+echo "user-owned" >symlink-target
+ln -s ../symlink-target symlink-bin/xxx
+assert_fail_contains \
+  "mise generate task-stubs --dir symlink-bin" \
+  "symlink-bin/xxx is a symbolic link"
+assert "cat symlink-target" "user-owned"
+test -L symlink-bin/xxx
+test ! -e symlink-bin/work
+
+mkdir -p relocated-blocked-bin/work/containers
+cat >relocated-blocked-bin/work/containers/_default <<'EOF'
+#!/bin/sh
+exec custom-tool run work:containers "$@"
+EOF
+assert_fail_contains \
+  "mise generate task-stubs --dir relocated-blocked-bin" \
+  "relocated-blocked-bin/work/containers/_default is not a generated task stub"
+assert_contains "cat relocated-blocked-bin/work/containers/_default" "exec custom-tool run work:containers"
+test ! -e relocated-blocked-bin/xxx
