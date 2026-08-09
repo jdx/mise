@@ -404,6 +404,12 @@ pub fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
 }
 
+/// Merge raw `[bootstrap.packages]` declarations without applying host filters.
+#[cfg(unix)]
+pub(crate) fn package_configs_from_config(config: &Config) -> IndexMap<String, PackageTomlConfig> {
+    package_configs_from_config_files(&config.config_files)
+}
+
 /// Package requests for declared package plugins that are not installed yet.
 ///
 /// During a bootstrap dry run, plugin installation is intentionally not
@@ -520,15 +526,7 @@ fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
 ) -> IndexMap<String, Vec<PackageRequest>> {
-    let mut merged: IndexMap<String, PackageTomlConfig> = IndexMap::new();
-    // config_files is ordered local -> global; reverse for global -> local
-    for cf in config_files.values().rev() {
-        if let Some(sys) = cf.bootstrap_config() {
-            for (spec, version) in sys.packages {
-                merged.insert(spec, version);
-            }
-        }
-    }
+    let merged = package_configs_from_config_files(config_files);
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for (spec, package) in merged {
         if !package.is_os_supported() {
@@ -558,6 +556,21 @@ fn package_requests_from_config_files(
         }
     }
     by_mgr
+}
+
+fn package_configs_from_config_files(
+    config_files: &ConfigMap,
+) -> IndexMap<String, PackageTomlConfig> {
+    let mut merged: IndexMap<String, PackageTomlConfig> = IndexMap::new();
+    // config_files is ordered local -> global; reverse for global -> local
+    for cf in config_files.values().rev() {
+        if let Some(sys) = cf.bootstrap_config() {
+            for (spec, version) in sys.packages {
+                merged.insert(spec, version);
+            }
+        }
+    }
+    merged
 }
 
 /// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
@@ -1569,6 +1582,34 @@ mod tests {
                 ("ffmpeg", None),
             ]
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_package_configs_preserve_inherited_selectors() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[
+            (
+                "local.toml",
+                r#"
+                    [bootstrap.packages]
+                    "brew:jq" = "latest"
+                "#,
+            ),
+            (
+                "global.toml",
+                r#"
+                    [bootstrap.packages]
+                    "brew-cask:1password" = { version = "latest", os = ["macos"] }
+                "#,
+            ),
+        ])?;
+
+        let packages = package_configs_from_config_files(&config_files);
+        assert!(matches!(
+            packages.get("brew-cask:1password"),
+            Some(PackageTomlConfig::Options(options)) if options.os == ["macos"]
+        ));
         Ok(())
     }
 

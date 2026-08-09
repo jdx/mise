@@ -104,6 +104,8 @@ impl SystemImport {
         })?;
 
         let configured_taps = configured_brew_taps(&path).await?;
+        let config = Config::get().await?;
+        let configured_packages = system::package_configs_from_config(&config);
         let target_taps = target_brew_taps(&path)?;
         let target_packages = target_bootstrap_packages(&path)?;
         let mut taps = BTreeMap::new();
@@ -148,7 +150,12 @@ impl SystemImport {
             cf.update_bootstrap_brew_tap(tap, url)?;
         }
         for formula in &formulae {
-            cf.update_bootstrap_package(&formula.config_key(), "latest")?;
+            let key = formula.config_key();
+            cf.update_bootstrap_package_with_fallback(
+                &key,
+                "latest",
+                configured_packages.get(&key),
+            )?;
         }
         cf.save()?;
         info!(

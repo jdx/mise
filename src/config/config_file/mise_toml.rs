@@ -686,6 +686,53 @@ impl MiseToml {
         Ok(())
     }
 
+    /// Update a package while inheriting table-form options when this file does not declare it.
+    pub fn update_bootstrap_package_with_fallback(
+        &mut self,
+        spec: &str,
+        version: &str,
+        fallback: Option<&PackageTomlConfig>,
+    ) -> eyre::Result<()> {
+        let is_missing = self
+            .bootstrap
+            .as_ref()
+            .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
+        if is_missing && let Some(PackageTomlConfig::Options(options)) = fallback {
+            let mut options = options.clone();
+            options.version = version.to_string();
+            self.bootstrap
+                .get_or_insert_with(Default::default)
+                .packages
+                .insert(
+                    spec.to_string(),
+                    PackageTomlConfig::Options(options.clone()),
+                );
+
+            let mut doc = self.doc_mut()?;
+            let bootstrap = doc
+                .get_mut()
+                .unwrap()
+                .entry("bootstrap")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            bootstrap.set_implicit(true);
+            let packages = bootstrap
+                .entry("packages")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            let mut value = InlineTable::new();
+            value.insert("version", Value::from(version));
+            let mut os = Array::new();
+            os.extend(options.os);
+            value.insert("os", Value::Array(os));
+            packages.insert(spec, Item::Value(Value::InlineTable(value)));
+            return Ok(());
+        }
+        self.update_bootstrap_package(spec, version)
+    }
+
     /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
     /// tables as needed. Only used by the `#[cfg(unix)]` brew CLI commands.
     #[cfg(unix)]
@@ -3312,6 +3359,15 @@ mod tests {
         cf.update_bootstrap_package("brew:ripgrep", "latest")
             .unwrap();
         cf.update_bootstrap_package("brew:fd", "latest").unwrap();
+        let inherited = cf
+            .bootstrap_config()
+            .unwrap()
+            .packages
+            .get("brew:ripgrep")
+            .unwrap()
+            .clone();
+        cf.update_bootstrap_package_with_fallback("brew:bat", "latest", Some(&inherited))
+            .unwrap();
 
         let dump = cf.dump().unwrap();
         assert!(
@@ -3326,6 +3382,10 @@ mod tests {
             dump.contains(r#"os = ["macos"] # keep selector comment"#),
             "nested package selectors should survive: {dump}"
         );
+        assert!(
+            dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"] }"#),
+            "inherited package selectors should be written locally: {dump}"
+        );
         assert!(matches!(
             cf.bootstrap_config()
                 .unwrap()
@@ -3335,6 +3395,10 @@ mod tests {
         ));
         assert!(matches!(
             cf.bootstrap_config().unwrap().packages.get("brew:fd"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
+        assert!(matches!(
+            cf.bootstrap_config().unwrap().packages.get("brew:bat"),
             Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
         ));
         file::remove_file(&p).unwrap();
