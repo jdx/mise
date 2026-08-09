@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cat >mise.toml <<'EOF'
+[tools]
+neko = "2-4-1"
+EOF
+
+neko_root="$MISE_DATA_DIR/installs/neko/2-4-1"
+existing="$PWD/existing"
+expected="$neko_root:$existing"
+cache_key="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+# A cache created before installation must not hide registry environment paths
+# after the configured tool becomes installed.
+assert_not_contains "MISE_OFFLINE=1 MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY='$cache_key' NEKOPATH='$existing' mise env -s bash" "$neko_root"
+mkdir -p "$neko_root"
+assert_contains "MISE_OFFLINE=1 MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY='$cache_key' NEKOPATH='$existing' mise env -s bash" "export NEKOPATH='$expected'"
+
+assert "NEKOPATH='$existing' mise exec -- sh -c 'printf %s \"\$NEKOPATH\"'" "$expected"
+
+case "$(uname -s)" in
+  Darwin)
+    assert_contains "DYLD_LIBRARY_PATH='$existing' mise env -s bash" "export DYLD_LIBRARY_PATH='$expected'"
+    assert_not_contains "mise env -s bash" "export LD_LIBRARY_PATH="
+    ;;
+  Linux)
+    assert_contains "LD_LIBRARY_PATH='$existing' mise env -s bash" "export LD_LIBRARY_PATH='$expected'"
+    assert_not_contains "mise env -s bash" "export DYLD_LIBRARY_PATH="
+    ;;
+esac
+
+# The inherited value participates in the env cache identity.
+assert "MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY='$cache_key' NEKOPATH='$PWD/cache-a' mise exec -- sh -c 'printf %s \"\$NEKOPATH\"'" "$neko_root:$PWD/cache-a"
+assert "MISE_ENV_CACHE=1 __MISE_ENV_CACHE_KEY='$cache_key' NEKOPATH='$PWD/cache-b' mise exec -- sh -c 'printf %s \"\$NEKOPATH\"'" "$neko_root:$PWD/cache-b"
+
+# An explicit project environment remains authoritative over registry defaults.
+cat >>mise.toml <<'EOF'
+
+[env]
+NEKOPATH = "project-override"
+EOF
+assert "NEKOPATH='$existing' mise exec -- sh -c 'printf %s \"\$NEKOPATH\"'" "project-override"

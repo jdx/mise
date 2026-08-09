@@ -739,6 +739,14 @@ backends = [
 test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
+depends = ["runtime"] # Optional mise tools that must install first when configured
+
+# Optional path-valued runtime environment entries. Relative paths are resolved
+# from the selected tool's install root and prepended to any existing value.
+env_paths = [
+    { name = "TOOL_HOME", paths = ["."] },
+    { name = "LD_LIBRARY_PATH", paths = ["lib"], os = ["linux"] },
+]
 ```
 
 Every registry entry must explicitly set `version_order` to `semver` or
@@ -748,6 +756,10 @@ two-component versions, channels, refs, tool-specific formats, mixed histories,
 or whenever the convention is uncertain. Semantic ordering currently affects
 the Aqua, GitHub, GitLab, Forgejo, and HTTP backends; the field still documents
 the policy for tools whose current backend owns version ordering itself.
+
+`depends` orders tools that are already part of the current install set; it does not implicitly
+add a tool to the user's configuration. `env_paths` entries may be restricted with `os`, use the
+platform path separator, preserve existing values, and remove duplicate paths.
 
 #### Idiomatic version files
 

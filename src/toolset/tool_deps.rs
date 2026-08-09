@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::cli::args::BackendArg;
 use crate::deps_graph::DepsGraph;
+use crate::registry::REGISTRY;
 use crate::toolset::tool_request::ToolRequest;
 
 /// Unique key for a tool request (tool short name + version)
@@ -48,7 +49,12 @@ impl ToolDeps {
             if let Ok(backend) = tr.backend()
                 && let Ok(deps) = backend.get_all_dependencies(true)
             {
-                for dep_ba in deps {
+                let registry_deps = REGISTRY
+                    .get(tr.ba().short.as_str())
+                    .into_iter()
+                    .flat_map(|tool| tool.depends)
+                    .map(BackendArg::from);
+                for dep_ba in deps.into_iter().chain(registry_deps) {
                     let dep_fulls = dep_ba.all_fulls();
                     if dep_fulls.iter().any(|full| versions_hash.contains(full)) {
                         for other_tr in &requests {
@@ -129,6 +135,56 @@ mod tests {
     #[test]
     fn test_empty_deps() {
         let _deps = ToolDeps::new(vec![]).unwrap();
+    }
+
+    #[test]
+    fn test_registry_dependencies_order_configured_tools() {
+        let source = ToolSource::Argument;
+        let haxe = ToolRequest::Version {
+            backend: Arc::new(BackendArg::new(
+                "haxe".to_string(),
+                Some("github:HaxeFoundation/haxe".to_string()),
+            )),
+            version: "4.3.7".to_string(),
+            options: ToolVersionOptions::default(),
+            source: source.clone(),
+        };
+        let neko = ToolRequest::Version {
+            backend: Arc::new(BackendArg::new(
+                "neko".to_string(),
+                Some("github:HaxeFoundation/neko".to_string()),
+            )),
+            version: "2-4-1".to_string(),
+            options: ToolVersionOptions::default(),
+            source,
+        };
+
+        let mut deps = ToolDeps::new(vec![haxe.clone(), neko.clone()]).unwrap();
+        let mut rx = deps.subscribe();
+        assert_eq!(rx.try_recv().unwrap().unwrap().ba().short, "neko");
+        assert!(rx.try_recv().is_err());
+        deps.complete_success(&neko);
+        assert_eq!(rx.try_recv().unwrap().unwrap().ba().short, "haxe");
+    }
+
+    #[test]
+    fn test_registry_dependencies_do_not_add_missing_tools() {
+        let haxe = ToolRequest::Version {
+            backend: Arc::new(BackendArg::new(
+                "haxe".to_string(),
+                Some("github:HaxeFoundation/haxe".to_string()),
+            )),
+            version: "4.3.7".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+
+        let backend_deps = haxe.backend().unwrap().get_all_dependencies(true).unwrap();
+        assert!(backend_deps.iter().all(|dep| dep.short != "neko"));
+
+        let mut deps = ToolDeps::new(vec![haxe]).unwrap();
+        let mut rx = deps.subscribe();
+        assert_eq!(rx.try_recv().unwrap().unwrap().ba().short, "haxe");
     }
 
     #[tokio::test]

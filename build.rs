@@ -327,6 +327,89 @@ fn codegen_registry() {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let depends = info
+            .get("depends")
+            .map(|depends| {
+                depends
+                    .as_array()
+                    .unwrap_or_else(|| panic!("[{short}] 'depends' must be an array"))
+                    .iter()
+                    .map(|dependency| {
+                        dependency
+                            .as_str()
+                            .unwrap_or_else(|| {
+                                panic!("[{short}] 'depends' must contain only strings")
+                            })
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let env_paths = info
+            .get("env_paths")
+            .map(|env_paths| {
+                env_paths
+                    .as_array()
+                    .unwrap_or_else(|| panic!("[{short}] 'env_paths' must be an array"))
+                    .iter()
+                    .map(|entry| {
+                        let entry = entry.as_table().unwrap_or_else(|| {
+                            panic!("[{short}] 'env_paths' entries must be tables")
+                        });
+                        for key in entry.keys() {
+                            assert!(
+                                matches!(key.as_str(), "name" | "paths" | "os"),
+                                "[{short}] unknown env_paths field: {key}"
+                            );
+                        }
+                        let name = entry
+                            .get("name")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_else(|| {
+                                panic!("[{short}] 'env_paths.name' must be a string")
+                            });
+                        let string_array = |key: &str| {
+                            entry
+                                .get(key)
+                                .map(|value| {
+                                    value
+                                        .as_array()
+                                        .unwrap_or_else(|| {
+                                            panic!("[{short}] 'env_paths.{key}' must be an array")
+                                        })
+                                        .iter()
+                                        .map(|value| {
+                                            value.as_str().unwrap_or_else(|| {
+                                                panic!(
+                                                    "[{short}] 'env_paths.{key}' must contain only strings"
+                                                )
+                                            })
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                                .unwrap_or_default()
+                        };
+                        let paths = string_array("paths");
+                        assert!(!paths.is_empty(), "[{short}] 'env_paths.paths' must not be empty");
+                        let env_os = string_array("os");
+                        format!(
+                            "RegistryEnvPath {{ name: {}, paths: &[{}], os: &[{}] }}",
+                            raw_string_literal(name),
+                            paths
+                                .iter()
+                                .map(|path| raw_string_literal(path))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            env_os
+                                .iter()
+                                .map(|os| raw_string_literal(os))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let overrides = info
             .get("overrides")
             .map(|overrides| {
@@ -339,7 +422,7 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], depends: &[{depends}], env_paths: &[{env_paths}], overrides: &[{overrides}]}}"#,
             version_order = version_order,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
@@ -378,6 +461,12 @@ fn codegen_registry() {
                 .map(|f| format!("\"{f}\""))
                 .collect::<Vec<_>>()
                 .join(", "),
+            depends = depends
+                .iter()
+                .map(|dependency| raw_string_literal(dependency))
+                .collect::<Vec<_>>()
+                .join(", "),
+            env_paths = env_paths.join(", "),
             overrides = overrides
                 .iter()
                 .map(|f| format!("\"{f}\""))

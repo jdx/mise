@@ -2,3 +2,17 @@ backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
 bins = ["neko", "nekoc", "nekoml", "nekotools"]
 description = "The Neko Virtual Machine"
 version_order = "source"
+
+[[env_paths]]
+name = "NEKOPATH"
+paths = ["."]
+
+[[env_paths]]
+name = "LD_LIBRARY_PATH"
+os = ["linux"]
+paths = ["."]
+
+[[env_paths]]
+name = "DYLD_LIBRARY_PATH"
+os = ["macos"]
+paths = ["."]

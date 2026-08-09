@@ -1,18 +1,20 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use eyre::Result;
 
+use crate::backend::Backend;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{Config, Settings};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
 use crate::path_env::PathEnv;
-use crate::toolset::Toolset;
+use crate::registry::{REGISTRY, RegistryEnvPath};
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::{env, github, parallel, uv};
 
 /// PATH with mise-managed install dirs filtered out. mise re-adds the current
@@ -29,7 +31,98 @@ fn pristine_path_without_install_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
+fn merge_registry_env_paths(
+    backend_env: Vec<(String, String, String)>,
+    registry_paths: Vec<(String, PathBuf, String)>,
+) -> Vec<(String, String, String)> {
+    if registry_paths.is_empty() {
+        return backend_env;
+    }
+
+    // env() gives the first tool's value precedence by reversing this list before
+    // collecting it. Reproduce that precedence when a registry path augments an
+    // environment variable that a backend already emitted.
+    let mut effective_backend_env = BTreeMap::new();
+    for (key, value, _) in backend_env.iter().rev() {
+        effective_backend_env.insert(key.clone(), value.clone());
+    }
+
+    let mut paths_by_name: BTreeMap<String, (Vec<PathBuf>, String)> = BTreeMap::new();
+    for (name, path, source) in registry_paths {
+        let (paths, current_source) = paths_by_name.entry(name).or_default();
+        paths.push(path);
+        if current_source.is_empty() {
+            *current_source = source;
+        }
+    }
+
+    let names = paths_by_name.keys().cloned().collect::<HashSet<_>>();
+    let mut merged = Vec::with_capacity(paths_by_name.len() + backend_env.len());
+    for (name, (registry_paths, source)) in paths_by_name {
+        let inherited = effective_backend_env
+            .get(&name)
+            .cloned()
+            .or_else(|| env::PRISTINE_ENV.get(&name).cloned());
+        let mut seen = HashSet::new();
+        let paths = registry_paths
+            .into_iter()
+            .chain(inherited.iter().flat_map(env::split_paths))
+            .filter(|path| seen.insert(path.clone()))
+            .collect::<Vec<_>>();
+        match env::join_paths(paths) {
+            Ok(value) => merged.push((name, value.to_string_lossy().into_owned(), source)),
+            Err(err) => warn!("failed to construct registry environment path: {err}"),
+        }
+    }
+    merged.extend(
+        backend_env
+            .into_iter()
+            .filter(|(name, _, _)| !names.contains(name)),
+    );
+    merged
+}
+
+type RegistryEnvCacheContext = BTreeMap<String, Vec<(Vec<String>, Vec<String>, Option<String>)>>;
+
+fn extend_registry_env_cache_context(
+    context: &mut RegistryEnvCacheContext,
+    tool: &str,
+    env_paths: &[RegistryEnvPath],
+) {
+    for entry in env_paths.iter().filter(|entry| entry.is_supported_os()) {
+        context
+            .entry(format!("{tool}:{}", entry.name))
+            .or_default()
+            .push((
+                entry.paths.iter().map(|path| path.to_string()).collect(),
+                entry.os.iter().map(|os| os.to_string()).collect(),
+                env::PRISTINE_ENV.get(entry.name).cloned(),
+            ));
+    }
+}
+
+fn settings_hash_with_registry_env_context(
+    mut settings_hash: String,
+    context: &RegistryEnvCacheContext,
+) -> String {
+    if !context.is_empty() {
+        settings_hash.push_str("\nregistry-env-paths:");
+        settings_hash.push_str(&format!("{context:?}"));
+    }
+    settings_hash
+}
+
 impl Toolset {
+    fn list_registry_env_versions(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+        self.list_current_installed_versions(config)
+            .into_iter()
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
+            .collect()
+    }
+
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         env.extend(self.env_with_path(config).await?.clone());
@@ -270,14 +363,30 @@ impl Toolset {
             .collect();
 
         // Collect tool versions
-        let tool_versions: Vec<(String, String)> = self
-            .list_current_versions()
-            .into_iter()
+        let current_versions = self.list_current_versions();
+        let tool_versions: Vec<(String, String)> = current_versions
+            .iter()
             .map(|(b, tv)| (b.id().to_string(), tv.version.clone()))
             .collect();
 
-        // Get settings hash
-        let settings_hash = compute_settings_hash();
+        // Floating registry metadata can change independently of the config and
+        // selected version. Include both the applicable declarations and the
+        // inherited values they augment so the cache never reuses an environment
+        // produced with stale runtime paths.
+        let mut registry_env_context = BTreeMap::new();
+        for (_, tv) in self.list_registry_env_versions(config) {
+            let Some(tool) = REGISTRY.get(tv.ba().short.as_str()) else {
+                continue;
+            };
+            extend_registry_env_cache_context(
+                &mut registry_env_context,
+                tool.short,
+                tool.env_paths,
+            );
+        }
+
+        let settings_hash =
+            settings_hash_with_registry_env_context(compute_settings_hash(), &registry_env_context);
 
         // Get base PATH using platform-appropriate separator
         let base_path = std::env::join_paths(env::PATH.iter())
@@ -309,10 +418,39 @@ impl Toolset {
 
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
         let this = Arc::new(self.clone());
-        let items: Vec<_> = self
-            .list_current_installed_versions(config)
+        let installed = self.list_registry_env_versions(config);
+        let registry_env_paths = installed
+            .iter()
+            .flat_map(|(_, tv)| {
+                REGISTRY
+                    .get(tv.ba().short.as_str())
+                    .into_iter()
+                    .flat_map(move |tool| {
+                        tool.env_paths
+                            .iter()
+                            .filter(|entry| entry.is_supported_os())
+                            .flat_map(move |entry| {
+                                entry.paths.iter().map(move |path| {
+                                    let path = PathBuf::from(path);
+                                    let path = if path.is_absolute() {
+                                        path
+                                    } else if path == std::path::Path::new(".") {
+                                        tv.runtime_path()
+                                    } else {
+                                        tv.runtime_path().join(path)
+                                    };
+                                    (
+                                        entry.name.to_string(),
+                                        path,
+                                        format!("registry:{}", tool.short),
+                                    )
+                                })
+                            })
+                    })
+            })
+            .collect::<Vec<_>>();
+        let items: Vec<_> = installed
             .into_iter()
-            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
             .map(|(b, tv)| (config.clone(), this.clone(), b, tv))
             .collect();
 
@@ -332,10 +470,12 @@ impl Toolset {
         .await
         .unwrap_or_default();
 
-        envs.into_iter()
+        let envs = envs
+            .into_iter()
             .flatten()
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")
-            .collect()
+            .collect();
+        merge_registry_env_paths(envs, registry_env_paths)
     }
 
     pub async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
@@ -498,5 +638,106 @@ impl Toolset {
             .into_iter()
             .map(|(k, (v, _))| (k, v))
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_registry_env_paths_prepends_preserves_and_deduplicates() {
+        let existing = env::join_paths(["/existing", "/duplicate"])
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let merged = merge_registry_env_paths(
+            vec![
+                ("NEKOPATH".to_string(), existing, "backend:neko".to_string()),
+                (
+                    "OTHER".to_string(),
+                    "value".to_string(),
+                    "backend".to_string(),
+                ),
+            ],
+            vec![
+                (
+                    "NEKOPATH".to_string(),
+                    PathBuf::from("/runtime/neko"),
+                    "registry:neko".to_string(),
+                ),
+                (
+                    "NEKOPATH".to_string(),
+                    PathBuf::from("/duplicate"),
+                    "registry:neko".to_string(),
+                ),
+            ],
+        );
+
+        let value = merged
+            .iter()
+            .find(|(name, _, _)| name == "NEKOPATH")
+            .unwrap();
+        assert_eq!(value.2, "registry:neko");
+        assert_eq!(
+            env::split_paths(&value.1).collect::<Vec<_>>(),
+            [
+                PathBuf::from("/runtime/neko"),
+                PathBuf::from("/duplicate"),
+                PathBuf::from("/existing"),
+            ]
+        );
+        assert!(merged.iter().any(|entry| entry.0 == "OTHER"));
+    }
+
+    #[test]
+    fn test_registry_env_cache_context_preserves_duplicate_declarations() {
+        let original = [
+            RegistryEnvPath {
+                name: "LIBRARY_PATH",
+                paths: &["lib/first"],
+                os: &[],
+            },
+            RegistryEnvPath {
+                name: "LIBRARY_PATH",
+                paths: &["lib/second"],
+                os: &[],
+            },
+        ];
+        let changed = [
+            RegistryEnvPath {
+                name: "LIBRARY_PATH",
+                paths: &["lib/changed"],
+                os: &[],
+            },
+            RegistryEnvPath {
+                name: "LIBRARY_PATH",
+                paths: &["lib/second"],
+                os: &[],
+            },
+        ];
+
+        let cache_key = |entries: &[RegistryEnvPath]| {
+            let mut context = RegistryEnvCacheContext::new();
+            extend_registry_env_cache_context(&mut context, "example", entries);
+            let settings_hash =
+                settings_hash_with_registry_env_context("settings".to_string(), &context);
+            (
+                context,
+                CachedEnv::compute_cache_key(&[], &[], &settings_hash, ""),
+            )
+        };
+
+        let (original_context, original_key) = cache_key(&original);
+        let (changed_context, changed_key) = cache_key(&changed);
+
+        assert_eq!(original_context["example:LIBRARY_PATH"].len(), 2);
+        assert_eq!(original_context["example:LIBRARY_PATH"][0].0, ["lib/first"]);
+        assert_eq!(
+            original_context["example:LIBRARY_PATH"][1].0,
+            ["lib/second"]
+        );
+        assert_ne!(original_key, changed_key);
+        assert_ne!(original_context, changed_context);
     }
 }
