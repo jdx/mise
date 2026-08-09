@@ -4077,6 +4077,7 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
     let mut plan = CaskPrunePlan::default();
     let mut candidates = Vec::new();
     let mut claims = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    let mut claims_complete = true;
     let caskroom = prefix::prefix().join("Caskroom");
     let Ok(tokens) = std::fs::read_dir(&caskroom) else {
         return Ok(plan);
@@ -4110,16 +4111,31 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
             })
             .collect::<Vec<_>>();
         let mut receipts = BTreeMap::new();
+        let mut receipt_error = None;
         for version in &versions {
-            if let Some(receipt) = read_receipt(&version.path())? {
-                for target in &receipt.targets {
-                    claims
-                        .entry(target.path.clone())
-                        .or_default()
-                        .insert(token.clone());
+            match read_receipt(&version.path()) {
+                Ok(Some(receipt)) => {
+                    for target in &receipt.targets {
+                        claims
+                            .entry(target.path.clone())
+                            .or_default()
+                            .insert(token.clone());
+                    }
+                    receipts.insert(version.path(), receipt);
                 }
-                receipts.insert(version.path(), receipt);
+                Ok(None) => {}
+                Err(err) => {
+                    claims_complete = false;
+                    receipt_error =
+                        Some(format!("mise ownership receipt could not be read: {err:#}"));
+                }
             }
+        }
+        if let Some(reason) = receipt_error {
+            if !configured {
+                plan.skipped.push(CaskPruneSkip { token, reason });
+            }
+            continue;
         }
         if entry.path().join(".metadata").symlink_metadata().is_ok() {
             if !configured {
@@ -4193,6 +4209,13 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
     }
 
     for candidate in candidates {
+        if !claims_complete {
+            plan.skipped.push(CaskPruneSkip {
+                token: candidate.token,
+                reason: "cask ownership receipts could not be indexed completely".to_string(),
+            });
+            continue;
+        }
         let shared = candidate
             .receipt
             .targets
@@ -7358,6 +7381,29 @@ end
         assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
         assert!(target.exists());
         assert!(caskroom_token_dir("planned").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        write_test_app_receipt(&test_cask("clean", "1.0.0"), "Clean.app")?;
+        let corrupt_dir = caskroom_version_dir("corrupt", "1.0.0");
+        file::create_dir_all(&corrupt_dir)?;
+        file::write(corrupt_dir.join(".mise-cask.toml"), "not = [valid")?;
+
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "corrupt" && skip.reason.contains("receipt could not be read")
+        }));
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "clean" && skip.reason.contains("could not be indexed completely")
+        }));
         Ok(())
     }
 
