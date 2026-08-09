@@ -1,4 +1,4 @@
-use crate::{CacheDigest, LocalCas};
+use crate::{CacheDigest, LocalActionCache, LocalCas, RemoteActionResult};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,6 +23,14 @@ pub enum AgentRequest {
         digest: CacheDigest,
         source: PathBuf,
     },
+    StoreActionResult {
+        result: RemoteActionResult,
+    },
+    IdentifyExecutable {
+        executable: PathBuf,
+        arguments: Vec<String>,
+        environment: BTreeMap<String, Option<String>>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,6 +39,8 @@ pub enum AgentResponse {
     Hello { protocol: u8, agent_version: String },
     Blob { path: Option<PathBuf> },
     Stored { path: PathBuf },
+    ActionStored { path: PathBuf },
+    ExecutableIdentity { stdout: Vec<u8> },
     Error { message: String },
 }
 
@@ -57,18 +67,30 @@ struct AtomicAgentStats {
 #[derive(Clone)]
 pub struct CacheAgent {
     cas: LocalCas,
+    actions: LocalActionCache,
     version: Arc<str>,
     write_locks: Arc<Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>>,
     stats: Arc<AtomicAgentStats>,
+    executable_identities: Arc<Mutex<BTreeMap<ExecutableIdentityKey, Vec<u8>>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct ExecutableIdentityKey {
+    executable: PathBuf,
+    arguments: Vec<String>,
+    environment: BTreeMap<String, Option<String>>,
 }
 
 impl CacheAgent {
     pub fn new(cache_dir: impl Into<PathBuf>, version: impl Into<Arc<str>>) -> Self {
+        let cache_dir = cache_dir.into();
         Self {
-            cas: LocalCas::new(cache_dir.into()),
+            cas: LocalCas::new(cache_dir.clone()),
+            actions: LocalActionCache::new(cache_dir),
             version: version.into(),
             write_locks: Arc::new(Mutex::new(BTreeMap::new())),
             stats: Arc::new(AtomicAgentStats::default()),
+            executable_identities: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -117,6 +139,17 @@ impl CacheAgent {
                     AgentResponse::Stored { path }
                 })
             }
+            AgentRequest::StoreActionResult { result } => self
+                .actions
+                .store(&result)
+                .map(|path| AgentResponse::ActionStored { path }),
+            AgentRequest::IdentifyExecutable {
+                executable,
+                arguments,
+                environment,
+            } => self
+                .identify_executable(executable, arguments, environment)
+                .map(|stdout| AgentResponse::ExecutableIdentity { stdout }),
             AgentRequest::Hello { .. } => {
                 Err(eyre::eyre!("hello is only valid as the first request"))
             }
@@ -124,6 +157,49 @@ impl CacheAgent {
         result.unwrap_or_else(|error| AgentResponse::Error {
             message: error.to_string(),
         })
+    }
+
+    fn identify_executable(
+        &self,
+        executable: PathBuf,
+        arguments: Vec<String>,
+        environment: BTreeMap<String, Option<String>>,
+    ) -> Result<Vec<u8>> {
+        let key = ExecutableIdentityKey {
+            executable: executable.clone(),
+            arguments: arguments.clone(),
+            environment: environment.clone(),
+        };
+        if let Some(stdout) = self
+            .executable_identities
+            .lock()
+            .unwrap()
+            .get(&key)
+            .cloned()
+        {
+            return Ok(stdout);
+        }
+        let mut command = std::process::Command::new(&executable);
+        command.args(&arguments);
+        for (name, value) in environment {
+            if let Some(value) = value {
+                command.env(name, value);
+            } else {
+                command.env_remove(name);
+            }
+        }
+        let output = command.output()?;
+        if !output.status.success() {
+            bail!(
+                "executable identity command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        self.executable_identities
+            .lock()
+            .unwrap()
+            .insert(key, output.stdout.clone());
+        Ok(output.stdout)
     }
 
     pub async fn handle_connection<S>(&self, stream: S) -> Result<()>
@@ -264,6 +340,34 @@ mod tests {
                 ..AgentStats::default()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn publishes_a_complete_action_result() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path().join("cache"), "test-version");
+        let action = CacheDigest::blake3(b"action");
+        let metadata = CacheDigest::blake3(b"metadata");
+        let output_root = CacheDigest::blake3(b"directory");
+        for (digest, contents) in [
+            (&action, b"action".as_slice()),
+            (&metadata, b"metadata".as_slice()),
+            (&output_root, b"directory".as_slice()),
+        ] {
+            agent.cas.store_bytes(digest, contents).unwrap();
+        }
+        let response = agent
+            .respond(AgentRequest::StoreActionResult {
+                result: RemoteActionResult {
+                    action: action.clone(),
+                    metadata: Some(metadata),
+                    output_root: Some(output_root),
+                    version: 1,
+                },
+            })
+            .await;
+        assert!(matches!(response, AgentResponse::ActionStored { .. }));
+        assert!(agent.actions.find(&action).unwrap().is_some());
     }
 
     #[tokio::test]

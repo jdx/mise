@@ -19,7 +19,7 @@ mod agent;
 mod local;
 
 pub use agent::{AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent};
-pub use local::LocalCas;
+pub use local::{LocalActionCache, LocalCas};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 const PROTOCOL_HEADER: &str = "mise-cache-protocol";
@@ -177,7 +177,8 @@ fn hash_file_sha256(path: &Path) -> Result<(String, u64)> {
     Ok((hex::encode(hasher.finalize()), size))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RemoteActionResult {
     pub action: CacheDigest,
     #[serde(default)]
@@ -185,6 +186,49 @@ pub struct RemoteActionResult {
     #[serde(default)]
     pub output_root: Option<CacheDigest>,
     pub version: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheDirectory {
+    pub directories: Vec<CacheDirectoryNode>,
+    pub files: Vec<CacheFileNode>,
+    pub symlinks: Vec<CacheSymlinkNode>,
+    pub version: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheDirectoryNode {
+    pub digest: CacheDigest,
+    pub mode: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheFileNode {
+    pub digest: CacheDigest,
+    pub executable: bool,
+    pub mode: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheSymlinkNode {
+    pub mode: u32,
+    pub name: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RustcMetadata {
+    pub version: u8,
+    pub kind: String,
+    pub stdout: CacheDigest,
+    pub stderr: CacheDigest,
 }
 
 pub enum BlobSource {
