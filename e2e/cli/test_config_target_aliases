@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # `mise use` names its config-file option --path while `mise set` names it --file, so which one
-# works depends on the command. Each now accepts the other's name.
+# works depends on the command. `--path` reaches every one of them; `--file` is accepted as an
+# alias wherever `-f` is not already `--force` (which excludes `use` and `dotfiles add`).
 # See: https://github.com/jdx/mise/discussions/4881
 
 mkdir -p "$HOME/workdir/aliases"
 cd "$HOME/workdir/aliases" || exit 1
 
-# `mise use --file` is `mise use --path`
-mise use --file alias.toml dummy@1
+# `--path` is the spelling that works everywhere
+mise use --path alias.toml dummy@1
 assert "cat alias.toml" '[tools]
 dummy = "1"'
 
@@ -23,6 +24,11 @@ mise use --path alias.toml dummy@2
 assert_contains "cat alias.toml" 'dummy = "2"'
 mise set --file alias.toml ALIAS_VAR=set-via-file
 assert_contains "cat alias.toml" 'ALIAS_VAR = "set-via-file"'
+
+# `mise use` does not take --file: -f there is --force, so the alias would teach a flag that
+# does something else entirely. Match the parser's own message — a bare exit-status check
+# would also pass if --file were still accepted and the install failed for its own reasons.
+assert_fail "mise use --file alias.toml dummy@1" "unexpected argument '--file' found"
 
 # the commands that undo those two take the same pair of names
 # `mise unuse --file` is `mise unuse --path`
@@ -41,11 +47,11 @@ assert_not_contains "cat alias.toml" "dummy"
 mise unset --file alias.toml ALIAS_VAR
 assert_not_contains "cat alias.toml" "ALIAS_VAR"
 
-# all four accept a directory as well as a file, under either name: the argument resolves to
-# the config file inside that directory
+# all four accept a directory as well as a file, under whichever names they take: the argument
+# resolves to the config file inside that directory
 mkdir -p subdir
 
-mise use --file subdir dummy@1
+mise use --path subdir dummy@1
 assert_contains "cat subdir/mise.toml" 'dummy = "1"'
 mise set --path subdir SUBDIR_VAR=via-dir
 assert_contains "cat subdir/mise.toml" 'SUBDIR_VAR = "via-dir"'

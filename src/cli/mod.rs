@@ -1036,14 +1036,14 @@ mod tests {
     #[test]
     fn test_config_target_options_accept_both_names() {
         // (command path, argument id, expected alias, available on this platform)
+        // `use` and `dotfiles add` are deliberately absent: `-f` is `--force` on both, so
+        // they carry `--path` only. See the shadowing test below.
         let cases: &[(&[&str], &str, &str, bool)] = &[
-            (&["use"], "path", "file", true),
             (&["unuse"], "path", "file", true),
             (&["set"], "file", "path", true),
             (&["unset"], "file", "path", true),
             (&["config", "get"], "file", "path", true),
             (&["config", "set"], "file", "path", true),
-            (&["dotfiles", "add"], "path", "file", true),
             (&["bootstrap", "packages", "use"], "path", "file", true),
             (&["bootstrap", "packages", "import"], "path", "file", true),
             // the brew manager is not registered on Windows
@@ -1084,6 +1084,52 @@ mod tests {
                 path.join(" ")
             );
         }
+    }
+
+    /// A `--file`/`--path` alias whose natural short form belongs to a *different* argument
+    /// on the same command teaches the wrong flag. `mise dotfiles add` carried `--file` as an
+    /// alias of `--path` while `-f` was `--force`, and because its targets accept any string,
+    /// `mise dotfiles add -f <path>` silently adopted that config file as a dotfile instead of
+    /// writing to it — no error, and `--force` meant no prompt either.
+    ///
+    /// Walks the whole CLI rather than a fixed list, so re-adding the alias anywhere fails
+    /// even if the case table above is left alone.
+    #[test]
+    fn config_target_aliases_do_not_shadow_another_short_flag() {
+        fn check(command: &clap::Command, path: &mut Vec<String>) {
+            for arg in command.get_arguments() {
+                let Some(aliases) = arg.get_visible_aliases() else {
+                    continue;
+                };
+                for alias in aliases {
+                    // Only this vocabulary — an unrelated alias sharing a letter with some
+                    // other flag is ordinary and not what this is about.
+                    if alias != "file" && alias != "path" {
+                        continue;
+                    }
+                    let short = alias.chars().next().unwrap();
+                    if let Some(owner) = command.get_arguments().find(|other| {
+                        other.get_id() != arg.get_id() && other.get_short() == Some(short)
+                    }) {
+                        panic!(
+                            "mise {}: --{alias} aliases --{}, but -{short} is --{} — \
+                             drop the alias or the collision",
+                            path.join(" "),
+                            arg.get_id().as_str(),
+                            owner.get_id().as_str()
+                        );
+                    }
+                }
+            }
+            for subcommand in command.get_subcommands() {
+                path.push(subcommand.get_name().to_string());
+                check(subcommand, path);
+                path.pop();
+            }
+        }
+
+        let root = expand_deferred_subcommands(Cli::command());
+        check(&root, &mut Vec::new());
     }
 
     #[test]

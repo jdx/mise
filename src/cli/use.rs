@@ -79,7 +79,10 @@ pub struct Use {
     ///
     /// If a directory is specified, it will look for a config file in that directory following
     /// the rules above.
-    #[clap(short, long, visible_alias = "file", overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    // No `--file` alias here: `-f` on this command is `--force`, so offering `--file`
+    // invites `-f <path>`, which is a different action. See `mise unset --path` for the
+    // commands where the short form is free.
+    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Like --dry-run but exits with code 1 if there are changes to make
