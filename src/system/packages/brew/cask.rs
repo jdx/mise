@@ -4413,6 +4413,9 @@ fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
 }
 
 fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
+    if homebrew_metadata_present(&candidate.token) {
+        bail!("Homebrew now owns this cask");
+    }
     let receipt = &candidate.receipt;
     if read_receipt(&candidate.version_dir)?.as_ref() != Some(receipt) {
         bail!("ownership receipt has changed");
@@ -7459,6 +7462,24 @@ end
         assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
         assert!(target.exists());
         assert!(caskroom_token_dir("planned").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let state_dir = tmp.path().join("state");
+        let target = write_test_app_receipt(&test_cask("claimed", "1.0.0"), "Claimed.app")?;
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+        assert_eq!(plan.remove.len(), 1);
+
+        file::create_dir_all(caskroom_token_dir("claimed").join(".metadata"))?;
+
+        assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+        assert!(target.exists());
+        assert!(caskroom_token_dir("claimed").exists());
         Ok(())
     }
 
