@@ -12,3 +12,4 @@ test = { cmd = "cmake --version", expected = """
 cmake version {{version}}
 
 CMake suite maintained and supported by Kitware (kitware.com/cmake).""" }
+version_order = "semver"

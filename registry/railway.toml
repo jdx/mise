@@ -1,5 +1,6 @@
 description = "Railway CLI"
 test = { cmd = "railway --version", expected = "railway {{version}}" }
+version_order = "semver"
 
 bins = ["railway"]
 [[backends]]

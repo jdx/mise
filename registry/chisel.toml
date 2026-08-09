@@ -6,3 +6,4 @@ backends = [
 bins = ["chisel"]
 description = "A fast TCP/UDP tunnel over HTTP"
 test = { cmd = "chisel --version", expected = "{{version}}" }
+version_order = "semver"

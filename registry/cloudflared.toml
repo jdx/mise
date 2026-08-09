@@ -2,3 +2,4 @@ backends = ["aqua:cloudflare/cloudflared", "asdf:threkk/asdf-cloudflared"]
 bins = ["cloudflared"]
 description = "cloudflared connects your machine or user identity to Cloudflare's global network"
 test = { cmd = "cloudflared -v", expected = "cloudflared version {{version}}" }
+version_order = "semver"

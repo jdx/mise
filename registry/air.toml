@@ -2,3 +2,4 @@ backends = ["aqua:air-verse/air", "asdf:pdemagny/asdf-air"]
 bins = ["air"]
 description = "Live reload for Go apps"
 test = { cmd = "air -v", expected = "{{version}}" }
+version_order = "semver"

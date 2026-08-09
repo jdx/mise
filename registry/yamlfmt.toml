@@ -6,3 +6,4 @@ backends = [
 bins = ["yamlfmt"]
 description = "An extensible command line tool or library to format yaml files"
 test = { cmd = "yamlfmt --version", expected = "yamlfmt {{version}}" }
+version_order = "semver"

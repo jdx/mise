@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["terraform-docs"]
 description = "Generate documentation from Terraform modules in various output formats"
+version_order = "semver"

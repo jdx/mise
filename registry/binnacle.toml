@@ -2,3 +2,4 @@ backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 bins = ["binnacle"]
 description = "An opinionated tool to interact with Kubernetes' Helm"
 test = { cmd = "binnacle --version", expected = "binnacle version {{version}}" }
+version_order = "semver"

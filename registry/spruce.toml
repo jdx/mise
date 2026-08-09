@@ -1,3 +1,4 @@
 backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 bins = ["spruce"]
 description = "Standalone, daemon-less, unprivileged Dockerfile and OCI compatible container image builder"
+version_order = "semver"

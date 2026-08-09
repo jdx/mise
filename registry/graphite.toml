@@ -1,5 +1,6 @@
 description = "Code review for the age of AI"
 test = { cmd = "gt --version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["gt"]
 [[backends]]

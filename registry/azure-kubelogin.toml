@@ -2,3 +2,4 @@ backends = ["aqua:Azure/kubelogin", "asdf:sechmann/asdf-kubelogin"]
 bins = ["kubelogin"]
 description = "A Kubernetes credential (exec) plugin implementing azure authentication"
 test = { cmd = "kubelogin --version", expected = "git hash: v{{version}}" }
+version_order = "semver"

@@ -2,6 +2,7 @@ description = "Build and deploy on the Vercel cloud"
 test = { cmd = "vc --version", expected = "{{version}}", tools = [
   "aube@1.26.0",
 ] }
+version_order = "semver"
 
 bins = ["vc", "vercel"]
 [[backends]]

@@ -1,3 +1,4 @@
 backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 bins = ["krew"]
 description = "Find and install kubectl plugins"
+version_order = "semver"

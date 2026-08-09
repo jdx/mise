@@ -2,3 +2,4 @@ backends = ["aqua:checkmake/checkmake"]
 bins = ["checkmake"]
 description = "Linter/analyzer for Makefiles"
 test = { cmd = "checkmake --version", expected = "checkmake v{{version}}" }
+version_order = "semver"

@@ -123,6 +123,14 @@ fn codegen_registry() {
     let tools = load_registry_tools();
     for (short, info) in &tools {
         let info = info.as_table().unwrap();
+        let version_order = match info.get("version_order").and_then(|v| v.as_str()) {
+            Some("source") => "VersionOrder::Source",
+            Some("semver") => "VersionOrder::Semver",
+            Some(_) => panic!("[{short}] 'version_order' must be 'source' or 'semver'"),
+            None => {
+                panic!("[{short}] 'version_order' must be explicitly set to 'source' or 'semver'")
+            }
+        };
         let aliases = info
             .get("aliases")
             .cloned()
@@ -331,7 +339,8 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            version_order = version_order,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
@@ -398,7 +407,7 @@ fn registry_code(entries: &[(String, String)]) -> String {
             .map(|(index, (key, _))| (key.clone(), index.to_string()))
             .collect::<Vec<_>>(),
     ));
-    code.push_str("),\n}");
+    code.push_str("),\n    missing_version_order: false,\n}");
     code
 }
 

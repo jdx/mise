@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["protoc-gen-go"]
 description = "protoc-gen-go is a plugin for the Google protocol buffer compiler to generate Go code"
+version_order = "semver"

@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["tfstate-lookup"]
 description = "Lookup resource attributes in tfstate"
+version_order = "semver"

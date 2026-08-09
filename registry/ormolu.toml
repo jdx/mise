@@ -2,3 +2,4 @@ backends = ["github:tweag/ormolu"]
 bins = ["ormolu"]
 description = "A formatter for Haskell source code"
 test = { cmd = "ormolu --version", expected = "ormolu {{version}}" }
+version_order = "source"

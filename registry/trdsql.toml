@@ -1,3 +1,4 @@
 backends = ["aqua:noborus/trdsql", "asdf:johnlayton/asdf-trdsql"]
 bins = ["trdsql"]
 description = "CLI tool that can execute SQL queries on CSV, LTSV, JSON and TBLN. Can output to various formats"
+version_order = "semver"

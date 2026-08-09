@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["kubectl-rolesum"]
 description = "Summarize Kubernetes RBAC roles for the specified subjects"
+version_order = "semver"

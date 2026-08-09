@@ -3,3 +3,4 @@ bins = ["desk"]
 description = "A lightweight workspace manager for the shell"
 os = ["linux", "macos"]
 test = { cmd = "desk version", expected = "desk {{version}}" }
+version_order = "semver"

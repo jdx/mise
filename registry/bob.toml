@@ -2,3 +2,4 @@ backends = ["aqua:MordechaiHadad/bob", "cargo:bob-nvim"]
 bins = ["bob"]
 description = "A version manager for neovim"
 test = { cmd = "bob --version", expected = "bob-nvim {{version}}" }
+version_order = "semver"

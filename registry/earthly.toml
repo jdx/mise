@@ -4,3 +4,4 @@ description = "Repeatable builds"
 idiomatic_files = [
   { path = "Earthfile", version_regex = '(?m)^\s*VERSION(?:\s+--\S+)*\s+v?([0-9]+(?:\.[0-9]+){1,2})' },
 ]
+version_order = "semver"

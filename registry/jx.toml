@@ -1,3 +1,4 @@
 backends = ["aqua:jenkins-x/jx", "asdf:vbehar/asdf-jx"]
 bins = ["jx"]
 description = "Jenkins X provides automated CI+CD for Kubernetes with Preview Environments on Pull Requests using Cloud Native pipelines from Tekton"
+version_order = "semver"

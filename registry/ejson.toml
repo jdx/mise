@@ -1,3 +1,4 @@
 backends = ["aqua:Shopify/ejson", "asdf:cipherstash/asdf-ejson"]
 bins = ["ejson"]
 description = "EJSON is a small library to manage encrypted secrets using asymmetric encryption"
+version_order = "semver"

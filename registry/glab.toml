@@ -1,5 +1,6 @@
 description = "gitlab cli"
 test = { cmd = "glab version", expected = "glab {{version}}" }
+version_order = "semver"
 
 bins = ["glab"]
 [[backends]]

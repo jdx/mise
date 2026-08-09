@@ -2,3 +2,4 @@ backends = ["aqua:suzuki-shunsuke/cmdx"]
 bins = ["cmdx"]
 description = "Task runner. It provides useful help messages and supports interactive prompts and validation of arguments"
 test = { cmd = "cmdx version", expected = "cmdx version {{version}}" }
+version_order = "semver"

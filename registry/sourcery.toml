@@ -1,5 +1,6 @@
 description = "Meta-programming for Swift, stop writing boilerplate code"
 os = ["linux", "macos"]
+version_order = "semver"
 # test = { cmd = "which sourcery", expected = "sourcery" }
 
 bins = ["sourcery"]

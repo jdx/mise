@@ -1,3 +1,4 @@
 backends = ["aqua:charmbracelet/vhs", "asdf:chessmango/asdf-vhs"]
 bins = ["vhs"]
 description = "Your CLI home video recorder"
+version_order = "semver"

@@ -2,3 +2,4 @@ backends = ["aqua:cargo-bins/cargo-binstall", "cargo:cargo-binstall"]
 bins = ["cargo-binstall"]
 description = "Binary installation for rust projects"
 test = { cmd = "cargo binstall -V", expected = "{{version}}" }
+version_order = "semver"

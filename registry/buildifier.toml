@@ -2,3 +2,4 @@ backends = ["aqua:bazelbuild/buildtools/buildifier"]
 bins = ["buildifier"]
 description = "buildifier: For formatting BUILD, BUILD.bazel and BUCK files in a standard way"
 test = { cmd = "buildifier --version", expected = "buildifier version: {{version}}" }
+version_order = "semver"

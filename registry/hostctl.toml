@@ -1,3 +1,4 @@
 backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
 bins = ["hostctl"]
 description = "Your dev tool to manage /etc/hosts like a pro"
+version_order = "semver"

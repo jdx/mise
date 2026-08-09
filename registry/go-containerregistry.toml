@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["crane", "gcrane", "krane"]
 description = "Go library and CLIs for working with container registries"
+version_order = "semver"

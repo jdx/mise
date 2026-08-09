@@ -2,3 +2,4 @@ backends = ["github:ndmitchell/hlint"]
 bins = ["hlint"]
 description = "Haskell source code suggestions"
 test = { cmd = "hlint --version", expected = "HLint v{{version}}" }
+version_order = "source"

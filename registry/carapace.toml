@@ -2,3 +2,4 @@ backends = ["aqua:carapace-sh/carapace-bin"]
 bins = ["carapace"]
 description = "A multi-shell completion binary"
 test = { cmd = "carapace --version", expected = "carapace-bin {{version}}" }
+version_order = "semver"

@@ -6,3 +6,4 @@ backends = [
 bins = ["choose"]
 description = "A human-friendly and fast alternative to cut (and sometimes awk)"
 test = { cmd = "choose --version", expected = "{{version}}" }
+version_order = "semver"

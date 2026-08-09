@@ -23,3 +23,4 @@ idiomatic_files = [
   { path = ".config/lefthook.jsonc", version_regex = '''(?m)^\s*["']?min_version["']?\s*[:=]\s*["']?([><=~^]*v?[0-9][0-9A-Za-z.+<>=~^,*-]*)''' },
 ]
 test = { cmd = "lefthook version", expected = "{{version}}" }
+version_order = "semver"

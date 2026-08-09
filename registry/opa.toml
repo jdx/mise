@@ -1,3 +1,4 @@
 backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 bins = ["opa"]
 description = "Open Policy Agent (OPA) is an open source, general-purpose policy engine"
+version_order = "semver"

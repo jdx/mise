@@ -1,3 +1,4 @@
 backends = ["vfox:mise-plugins/vfox-neovim", "aqua:neovim/neovim"]
 bins = ["nvim"]
 description = "Vim-fork focused on extensibility and usability"
+version_order = "source"

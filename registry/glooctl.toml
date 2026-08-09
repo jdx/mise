@@ -1,3 +1,4 @@
 backends = ["github:solo-io/gloo", "asdf:halilkaya/asdf-glooctl"]
 bins = ["glooctl"]
 description = "The Cloud-Native API Gateway and AI Gateway"
+version_order = "semver"

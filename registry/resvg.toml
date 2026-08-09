@@ -2,3 +2,4 @@ backends = ["aqua:linebender/resvg", "cargo:resvg"]
 bins = ["resvg"]
 description = "An SVG rendering library."
 test = { cmd = "resvg --version", expected = "{{version}}" }
+version_order = "semver"

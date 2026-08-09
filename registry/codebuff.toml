@@ -1,4 +1,5 @@
 description = "Codebuff is a CLI tool that writes code for you"
+version_order = "semver"
 
 bins = ["cb", "codebuff"]
 [[backends]]

@@ -8,3 +8,4 @@ backends = [
 bins = ["eza"]
 description = "A modern, maintained replacement for ls"
 test = { cmd = "eza --version", expected = "v{{version}}" }
+version_order = "semver"

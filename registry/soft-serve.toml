@@ -1,4 +1,5 @@
 description = "The mighty, self-hostable Git server for the command line"
+version_order = "semver"
 # test = { cmd = "soft --version", expected = "soft version v{{version}}" }
 
 bins = ["soft"]

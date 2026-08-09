@@ -8,3 +8,4 @@ backends = [
 bins = ["golines"]
 description = "A golang formatter that fixes long lines"
 test = { cmd = "golines --version", expected = "golines v{{version}}" }
+version_order = "semver"

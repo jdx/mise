@@ -1,3 +1,4 @@
 backends = ["aqua:dundee/gdu"]
 bins = ["gdu"]
 description = "Fast disk usage analyzer with console interface written in Go"
+version_order = "semver"

@@ -3,3 +3,4 @@ bins = ["bats"]
 description = "Bash Automated Testing System"
 os = ["linux", "macos"]
 test = { cmd = "bats -v", expected = "Bats" }
+version_order = "semver"

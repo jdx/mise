@@ -1,3 +1,4 @@
 backends = ["aqua:rust-lang/rust-analyzer", "asdf:Xyven1/asdf-rust-analyzer"]
 bins = ["rust-analyzer"]
 description = "A Rust compiler front-end for IDEs"
+version_order = "source"

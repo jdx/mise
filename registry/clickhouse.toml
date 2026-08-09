@@ -14,3 +14,4 @@ bins = [
 ]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
 test = { cmd = "clickhouse --version", expected = "ClickHouse local version {{version | trim_end(pat='-lts') | trim_end(pat='-stable')}}" }
+version_order = "source"

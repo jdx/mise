@@ -1,5 +1,6 @@
 description = "A command-line tool and Xcode Extension for formatting Swift code"
 test = { cmd = "swiftformat --version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["swiftformat"]
 [[backends]]

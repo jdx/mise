@@ -1,5 +1,6 @@
 description = "This package provides the awslocal command, which is a thin wrapper around the aws command line interface for use with LocalStack"
 test = { cmd = "awslocal --version", expected = "aws-cli/" }
+version_order = "source"
 
 bins = ["awslocal"]
 [[backends]]

@@ -6,3 +6,4 @@ backends = [
 bins = ["topgrade"]
 description = "Upgrade all the things"
 test = { cmd = "topgrade --version", expected = "topgrade {{version}}" }
+version_order = "semver"

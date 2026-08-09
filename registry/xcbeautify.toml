@@ -2,3 +2,4 @@ backends = ["aqua:cpisciotta/xcbeautify", "asdf:mise-plugins/asdf-xcbeautify"]
 bins = ["xcbeautify"]
 description = "A little beautifier tool for xcodebuild"
 test = { cmd = "which xcbeautify", expected = "xcbeautify" }
+version_order = "semver"

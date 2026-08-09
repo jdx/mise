@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["fly"]
 description = "fly cli for concourse ci"
+version_order = "semver"

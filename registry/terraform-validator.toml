@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["terraform-validator"]
 description = "A norms and conventions validator for Terraform"
+version_order = "semver"

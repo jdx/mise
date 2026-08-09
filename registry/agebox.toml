@@ -2,3 +2,4 @@ backends = ["aqua:slok/agebox", "asdf:slok/asdf-agebox"]
 bins = ["agebox"]
 description = "Age based repository file encryption gitops tool"
 test = { cmd = "agebox --version", expected = "v{{version}}" }
+version_order = "semver"

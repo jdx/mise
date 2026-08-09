@@ -402,6 +402,13 @@ impl ToolVersion {
 
         let build = |v| Ok(Self::new(request.clone(), v));
 
+        if v.matches('.').count() >= 2 {
+            // Fully-qualified requests can return through several offline and
+            // backend-specific shortcuts, so validate backend-gated options
+            // before any of those paths bypass version listing.
+            backend.version_order(&request.options())?;
+        }
+
         if let Some(plugin) = backend.plugin()
             && !plugin.is_installed()
         {

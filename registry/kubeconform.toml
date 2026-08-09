@@ -1,3 +1,4 @@
 backends = ["aqua:yannh/kubeconform", "asdf:lirlia/asdf-kubeconform"]
 bins = ["kubeconform"]
 description = "A FAST Kubernetes manifests validator, with support for Custom Resources"
+version_order = "semver"

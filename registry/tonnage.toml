@@ -1,3 +1,4 @@
 backends = ["github:elementalvoid/tonnage", "asdf:elementalvoid/asdf-tonnage"]
 bins = ["tonnage"]
 description = "Tonnage is a small utility to summarize the resource capacity and allocation of a Kubernetes cluster"
+version_order = "semver"

@@ -11,3 +11,4 @@ bins = [
   "danger-runner",
 ]
 description = "Danger runs during your CI process, and gives teams the chance to automate common code review chores"
+version_order = "semver"

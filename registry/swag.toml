@@ -1,3 +1,4 @@
 backends = ["aqua:swaggo/swag", "asdf:behoof4mind/asdf-swag"]
 bins = ["swag"]
 description = "Automatically generate RESTful API documentation with Swagger 2.0 for Go"
+version_order = "semver"

@@ -2,3 +2,4 @@ backends = ["aqua:jesseduffield/lazydocker"]
 bins = ["lazydocker"]
 description = "The lazier way to manage everything docker"
 test = { cmd = "lazydocker --version", expected = "Version: {{version}}" }
+version_order = "source"

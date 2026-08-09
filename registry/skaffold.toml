@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["skaffold"]
 description = "Easy and Repeatable Kubernetes Development"
+version_order = "semver"

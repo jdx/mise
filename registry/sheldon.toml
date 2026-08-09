@@ -7,3 +7,4 @@ bins = ["sheldon"]
 description = "Fast, configurable, shell plugin manager"
 os = ["linux", "macos"]
 test = { cmd = "sheldon --version", expected = "{{version}}" }
+version_order = "semver"

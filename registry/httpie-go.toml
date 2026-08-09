@@ -3,3 +3,4 @@ bins = ["ht"]
 description = "httpie-like HTTP client written in Go"
 os = ["linux", "macos"]
 test = { cmd = "ht --version", expected = "httpie-go {{version}}" }
+version_order = "semver"

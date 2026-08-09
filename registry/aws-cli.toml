@@ -7,3 +7,4 @@ bins = ["aws", "aws_completer"]
 description = "The AWS Command Line Interface (AWS CLI v2) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
 os = ["linux", "macos"]
 test = { cmd = "aws --version", expected = "aws-cli/{{version}}" }
+version_order = "source"

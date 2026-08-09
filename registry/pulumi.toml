@@ -16,3 +16,4 @@ bins = [
 ]
 description = "Pulumi - Infrastructure as Code in any programming language"
 test = { cmd = "pulumi version", expected = "v{{version}}" }
+version_order = "semver"

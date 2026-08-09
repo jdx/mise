@@ -10,3 +10,4 @@ bins = [
   "startGroovy",
 ]
 description = "A flexible and extensible Java-like language for the JVM"
+version_order = "semver"

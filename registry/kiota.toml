@@ -1,3 +1,4 @@
 backends = ["aqua:microsoft/kiota", "asdf:asdf-community/asdf-kiota"]
 bins = ["kiota"]
 description = "OpenAPI based HTTP Client code generator"
+version_order = "semver"

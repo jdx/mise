@@ -6,3 +6,4 @@ backends = [
 ]
 description = ".NET SDK"
 idiomatic_files = ["global.json"]
+version_order = "semver"

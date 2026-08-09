@@ -3,3 +3,4 @@ bins = ["bundle", "bundler"]
 description = "The best way to manage a Ruby application's gems"
 overrides = ["ruby"]
 test = { cmd = "bundle --version", expected = "{{version}}" }
+version_order = "semver"

@@ -1,5 +1,6 @@
 description = "A backend for `mdbook` which will check your links for you"
 test = { cmd = "mdbook-linkcheck --version", expected = "mdbook-linkcheck {{version}}" }
+version_order = "semver"
 
 bins = ["mdbook-linkcheck"]
 [[backends]]

@@ -6,3 +6,4 @@ backends = [
 bins = ["actionlint"]
 description = ":octocat: Static checker for GitHub Actions workflow files"
 test = { cmd = "actionlint --version", expected = "{{version}}" }
+version_order = "semver"

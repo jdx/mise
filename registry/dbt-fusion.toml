@@ -2,3 +2,4 @@ backends = ["aqua:getdbt.com/dbt-fusion"]
 bins = ["dbt"]
 description = "dbt Fusion is a fast, integrated dbt runtime"
 test = { cmd = "dbt --version", expected = "dbt-fusion {{version}}" }
+version_order = "semver"

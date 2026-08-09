@@ -2,3 +2,4 @@ backends = ["aqua:fluxcd/flux2", "asdf:tablexi/asdf-flux2"]
 bins = ["flux"]
 description = "Open and extensible continuous delivery solution for Kubernetes. Powered by GitOps Toolkit"
 test = { cmd = "flux --version", expected = "flux version {{version}}" }
+version_order = "semver"

@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["hurl", "hurlfmt"]
 description = "Hurl, run and test HTTP requests with plain text"
+version_order = "semver"

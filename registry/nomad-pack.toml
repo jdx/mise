@@ -1,5 +1,6 @@
 description = "Nomad Pack is a templating and packaging tool used with HashiCorp Nomad"
 test = { cmd = "nomad-pack version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["nomad-pack"]
 [[backends]]

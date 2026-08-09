@@ -2,3 +2,4 @@ backends = ["aqua:thomasschafer/scooter", "cargo:scooter"]
 bins = ["scooter"]
 description = "Interactive find-and-replace in the terminal"
 test = { cmd = "scooter --version", expected = "scooter {{version}}" }
+version_order = "semver"

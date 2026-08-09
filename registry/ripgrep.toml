@@ -7,3 +7,4 @@ backends = [
 bins = ["rg"]
 description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
 test = { cmd = "rg --version", expected = "ripgrep {{version}}" }
+version_order = "semver"

@@ -1,5 +1,6 @@
 backends = ["aqua:aristocratos/btop"]
 bins = ["btop"]
 description = "A monitor of resources"
+version_order = "semver"
 # TODO: re-enable once upstream aquaproj/aqua-registry uses the current .tar.gz assets for recent btop releases.
 # test = { cmd = "btop --version", expected = "btop version: {{version}}" }

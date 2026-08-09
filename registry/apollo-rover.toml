@@ -2,3 +2,4 @@ backends = ["github:apollographql/rover"]
 bins = ["rover"]
 description = "The CLI for Apollo GraphOS"
 test = { cmd = "rover --version", expected = "Rover {{version}}" }
+version_order = "semver"

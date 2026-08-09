@@ -1,4 +1,5 @@
 description = "Odin Programming Language"
+version_order = "source"
 # test = { cmd = "odin version", expected = "version {{version}}" }
 
 bins = ["odin"]

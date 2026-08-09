@@ -152,6 +152,34 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
+### Version ordering
+
+Backends normally preserve the order returned by their version source. Aqua,
+GitHub, GitLab, Forgejo, and HTTP tools can opt into semantic version precedence
+when an upstream publishes backports after newer release lines:
+
+```toml
+[tools]
+"github:owner/tool" = { version = "latest", version_order = "semver" }
+```
+
+For `latest`, an authoritative result from the backend still wins—for example,
+the release marked **Latest** on GitHub or Forgejo. If that release does not
+match the requested package, or the backend has no authoritative latest result,
+mise falls back to the version list and applies `version_order` there. This is
+important for repositories containing multiple products: their repository-wide
+Latest release may not contain an asset for every package.
+
+With `version_order = "semver"`, mise orders valid semantic versions by
+precedence when resolving that fallback list or a version prefix. Opaque versions
+retain their source order before semantic versions, so exact requests such as
+`nightly` continue to work. Build metadata does not affect precedence. Registry
+entries may set this option for tools known to follow semantic versioning; users
+can set `version_order = "source"` to restore the backend's default ordering.
+
+The option affects version resolution only. `mise ls-remote` continues to show
+the canonical order returned by the backend.
+
 ### Tool postinstall commands
 
 Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only to when a specific tool is installed.

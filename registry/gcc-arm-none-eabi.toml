@@ -37,3 +37,4 @@ bins = [
   "arm-none-eabi-strip",
 ]
 description = "Arm GNU Toolchain"
+version_order = "source"

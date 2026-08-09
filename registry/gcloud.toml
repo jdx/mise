@@ -1,3 +1,4 @@
+version_order = "semver"
 # no python dependency - gcloud bundles its own Python since v352.0.0
 backends = ["vfox:mise-plugins/vfox-gcloud", "asdf:mise-plugins/mise-gcloud"]
 bins = [

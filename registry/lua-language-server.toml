@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["lua-language-server"]
 description = "A language server that offers Lua language support - programmed in Lua"
+version_order = "semver"

@@ -2,3 +2,4 @@ backends = ["aqua:hadolint/hadolint", "asdf:devlincashman/asdf-hadolint"]
 bins = ["hadolint"]
 description = "Dockerfile linter, validate inline bash, written in Haskell"
 test = { cmd = "hadolint --version", expected = "Haskell Dockerfile Linter {{version}}" }
+version_order = "semver"

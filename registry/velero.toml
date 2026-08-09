@@ -1,3 +1,4 @@
 backends = ["aqua:vmware-tanzu/velero", "asdf:looztra/asdf-velero"]
 bins = ["velero"]
 description = "Backup and migrate Kubernetes applications and their persistent volumes"
+version_order = "semver"

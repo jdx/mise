@@ -2,3 +2,4 @@ backends = ["aqua:sharkdp/hexyl", "cargo:hexyl"]
 bins = ["hexyl"]
 description = "A command-line hex viewer"
 test = { cmd = "hexyl --version", expected = "hexyl {{version}}" }
+version_order = "semver"

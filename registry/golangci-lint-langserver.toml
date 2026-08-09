@@ -5,3 +5,4 @@ backends = [
 bins = ["golangci-lint-langserver"]
 description = "golangci-lint language server"
 test = { cmd = "which golangci-lint-langserver", expected = "golangci-lint-langserver" }
+version_order = "semver"

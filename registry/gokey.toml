@@ -2,3 +2,4 @@ backends = ["aqua:cloudflare/gokey"]
 bins = ["gokey"]
 description = "A simple vaultless password manager in Go"
 test = { cmd = "gokey -p master -r realm -l 8", expected = "hJ2gXSy[" }
+version_order = "semver"

@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["kubebuilder"]
 description = "Kubebuilder - SDK for building Kubernetes APIs using CRDs"
+version_order = "semver"

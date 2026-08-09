@@ -5,3 +5,4 @@ backends = [
 bins = ["iam-policy-json-to-terraform"]
 description = "Small tool to convert an IAM Policy in JSON format into a Terraform aws_iam_policy_document"
 test = { cmd = "iam-policy-json-to-terraform --version", expected = "{{version}}" }
+version_order = "semver"

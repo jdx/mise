@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["crictl"]
 description = "crictl is a command-line interface for CRI-compatible container runtimes. You can use it to inspect and debug container runtimes and applications on a Kubernetes node"
+version_order = "semver"

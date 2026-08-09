@@ -1,3 +1,4 @@
 backends = ["aqua:flux-iac/tofu-controller/tfctl", "asdf:deas/asdf-tfctl"]
 bins = ["tfctl"]
 description = "A GitOps OpenTofu and Terraform controller for Flux"
+version_order = "semver"

@@ -17,3 +17,4 @@ bins = [
 ]
 description = "Rust language"
 idiomatic_files = ["rust-toolchain.toml"]
+version_order = "source"
