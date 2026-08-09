@@ -383,7 +383,7 @@ fn build_env(
         ldflags.push(format!("-Wl,-rpath,{}", prefix.join("lib").display()));
     }
 
-    let jobs = Settings::get().jobs.max(1);
+    let jobs = crate::jobs::normalize(Settings::get().jobs);
     let stable_version = rf.formula.versions.stable.clone().unwrap_or_default();
     let mut env = HashMap::from(
         [

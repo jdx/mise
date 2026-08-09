@@ -58,6 +58,7 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 
 ### `-n --dry-run`

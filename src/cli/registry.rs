@@ -166,7 +166,7 @@ impl Registry {
 
         let mut outputs: Vec<RegistryToolOutput> = Vec::with_capacity(tools.len());
         if self.security {
-            let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
+            let semaphore = Arc::new(Semaphore::new(crate::jobs::normalize(Settings::get().jobs)));
             let mut jset: JoinSet<RegistryToolOutput> = JoinSet::new();
             for tool in tools {
                 let permit = semaphore.clone().acquire_owned().await?;

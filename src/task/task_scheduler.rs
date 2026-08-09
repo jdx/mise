@@ -39,7 +39,7 @@ impl Scheduler {
     pub fn new(jobs: usize) -> Self {
         let (sched_tx, sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
         Self {
-            semaphore: Arc::new(Semaphore::new(jobs)),
+            semaphore: Arc::new(Semaphore::new(crate::jobs::normalize(jobs))),
             jset: Arc::new(Mutex::new(JoinSet::new())),
             sched_tx: Arc::new(sched_tx),
             sched_rx: Some(sched_rx),

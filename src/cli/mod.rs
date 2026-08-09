@@ -121,7 +121,7 @@ pub struct Cli {
     /// Force the operation
     #[clap(long, short, hide = true)]
     pub force: bool,
-    /// How many jobs to run in parallel [default: 8]
+    /// How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
     #[clap(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     /// Dry run, don't actually do anything

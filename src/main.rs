@@ -62,6 +62,7 @@ mod hooks;
 mod http;
 mod install_before;
 mod install_context;
+mod jobs;
 mod lock_file;
 mod lockfile;
 pub(crate) mod logger;

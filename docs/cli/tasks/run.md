@@ -88,6 +88,7 @@ Force the tasks to run even if outputs are up to date
 ### `-j --jobs <JOBS>`
 
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 

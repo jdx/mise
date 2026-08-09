@@ -54,6 +54,7 @@ pub struct PluginsInstall {
     force: bool,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     #[clap(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 
@@ -105,7 +106,8 @@ impl PluginsInstall {
     ) -> Result<()> {
         let mut jset: JoinSet<PluginTaskResult> = JoinSet::new();
         let mut task_names = PluginTaskNames::new();
-        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(Settings::get().jobs)));
+        let jobs = crate::jobs::resolve(Settings::get().jobs, self.jobs);
+        let semaphore = Arc::new(Semaphore::new(jobs));
         for plugin in plugins {
             let this = self.clone();
             let config = config.clone();
