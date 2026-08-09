@@ -2088,6 +2088,15 @@ mod tests {
         render_str(&mut tera, s, &tera_ctx).unwrap()
     }
 
+    /// The v2 counterpart of [`render_v1`]. A cross-engine comparison must pin
+    /// both sides, or with `tera_v1` set it would compare v1 against itself.
+    fn render_v2(s: &str) -> String {
+        let mut tera = TeraEngine::V2(Box::new(get_tera_v2(None)));
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("cwd", "/");
+        render_str(&mut tera, s, &tera_ctx).unwrap()
+    }
+
     #[test]
     fn test_tera_v1_setting_selects_v1_engine() {
         let _guard = SettingsGuard::tera_v1();
@@ -2255,7 +2264,7 @@ mod tests {
     #[test]
     fn test_tera_engines_agree_on_the_registry_trim_pattern() {
         let template = "{{ '3.27.2-stable' | trim_end(pat='-stable') }}-stable";
-        assert_eq!(render(template), "3.27.2-stable");
+        assert_eq!(render_v2(template), "3.27.2-stable");
         assert_eq!(render_v1(template), "3.27.2-stable");
     }
 
