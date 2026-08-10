@@ -568,70 +568,76 @@ pub struct TaskWatchOptions {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct TaskLanguageCacheOptions {
+struct TaskRustCacheOptions {
     enabled: bool,
+    verify: bool,
 }
 
-impl Default for TaskLanguageCacheOptions {
+impl Default for TaskRustCacheOptions {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            verify: false,
+        }
     }
 }
 
-macro_rules! task_language_cache_config {
-    ($name:ident) => {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct $name {
-            pub enabled: bool,
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self { enabled: true }
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                struct LanguageCacheVisitor;
-
-                impl<'de> serde::de::Visitor<'de> for LanguageCacheVisitor {
-                    type Value = $name;
-
-                    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                        formatter.write_str("a boolean or language cache options table")
-                    }
-
-                    fn visit_bool<E>(self, enabled: bool) -> std::result::Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        Ok($name { enabled })
-                    }
-
-                    fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
-                    where
-                        M: serde::de::MapAccess<'de>,
-                    {
-                        let options = TaskLanguageCacheOptions::deserialize(
-                            serde::de::value::MapAccessDeserializer::new(map),
-                        )?;
-                        Ok($name {
-                            enabled: options.enabled,
-                        })
-                    }
-                }
-
-                deserializer.deserialize_any(LanguageCacheVisitor)
-            }
-        }
-    };
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskRustCacheConfig {
+    pub enabled: bool,
+    pub verify: bool,
 }
 
-task_language_cache_config!(TaskRustCacheConfig);
+impl Default for TaskRustCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            verify: false,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskRustCacheConfig {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RustCacheVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for RustCacheVisitor {
+            type Value = TaskRustCacheConfig;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or Rust cache options table")
+            }
+
+            fn visit_bool<E>(self, enabled: bool) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskRustCacheConfig {
+                    enabled,
+                    verify: false,
+                })
+            }
+
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let options = TaskRustCacheOptions::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                Ok(TaskRustCacheConfig {
+                    enabled: options.enabled,
+                    verify: options.verify,
+                })
+            }
+        }
+
+        deserializer.deserialize_any(RustCacheVisitor)
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -3667,13 +3673,22 @@ rust_cache = {}
         )
         .unwrap();
 
+        assert_eq!(enabled.rust_cache, Some(TaskRustCacheConfig::default()));
+        assert_eq!(table.rust_cache, Some(TaskRustCacheConfig::default()));
+
+        let verify: Task = toml::from_str(
+            r#"
+run = "cargo build"
+rust_cache = { verify = true }
+"#,
+        )
+        .unwrap();
         assert_eq!(
-            enabled.rust_cache,
-            Some(TaskRustCacheConfig { enabled: true })
-        );
-        assert_eq!(
-            table.rust_cache,
-            Some(TaskRustCacheConfig { enabled: true })
+            verify.rust_cache,
+            Some(TaskRustCacheConfig {
+                verify: true,
+                ..TaskRustCacheConfig::default()
+            })
         );
     }
 
@@ -3696,11 +3711,17 @@ rust_cache = { enabled = false }
 
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig { enabled: false })
+            Some(TaskRustCacheConfig {
+                enabled: false,
+                ..TaskRustCacheConfig::default()
+            })
         );
         assert_eq!(
             table.rust_cache,
-            Some(TaskRustCacheConfig { enabled: false })
+            Some(TaskRustCacheConfig {
+                enabled: false,
+                ..TaskRustCacheConfig::default()
+            })
         );
     }
 
@@ -4996,7 +5017,7 @@ echo "test"
                 command_inputs: vec![],
             })
         );
-        assert_eq!(task.rust_cache, Some(TaskRustCacheConfig { enabled: true }));
+        assert_eq!(task.rust_cache, Some(TaskRustCacheConfig::default()));
         assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);

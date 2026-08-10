@@ -29,6 +29,53 @@ pub(crate) mod session;
 
 pub use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
 
+pub(crate) fn effective_remote_cache_mode(configured: CacheRemoteMode) -> Option<CacheRemoteMode> {
+    effective_remote_cache_mode_with(configured, |name| std::env::var(name).ok())
+}
+
+fn effective_remote_cache_mode_with(
+    configured: CacheRemoteMode,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> Option<CacheRemoteMode> {
+    if trusted_cache_writer(&get_env) {
+        return Some(configured);
+    }
+    match configured {
+        CacheRemoteMode::ReadWrite | CacheRemoteMode::ReadOnly => Some(CacheRemoteMode::ReadOnly),
+        CacheRemoteMode::WriteOnly => None,
+    }
+}
+
+pub(crate) fn release_cache_context() -> bool {
+    release_cache_context_with(|name| std::env::var(name).ok())
+}
+
+fn trusted_cache_writer(get_env: &impl Fn(&str) -> Option<String>) -> bool {
+    if env_truthy(get_env("GITHUB_ACTIONS")) {
+        return get_env("GITHUB_EVENT_NAME").as_deref() == Some("push")
+            && get_env("GITHUB_REF_TYPE").as_deref() == Some("branch")
+            && env_truthy(get_env("GITHUB_REF_PROTECTED"));
+    }
+    if env_truthy(get_env("GITLAB_CI")) {
+        return get_env("CI_PIPELINE_SOURCE").as_deref() == Some("push")
+            && get_env("CI_COMMIT_TAG").is_none()
+            && get_env("CI_MERGE_REQUEST_IID").is_none()
+            && env_truthy(get_env("CI_COMMIT_REF_PROTECTED"));
+    }
+    false
+}
+
+fn release_cache_context_with(get_env: impl Fn(&str) -> Option<String>) -> bool {
+    (env_truthy(get_env("GITHUB_ACTIONS"))
+        && (get_env("GITHUB_REF_TYPE").as_deref() == Some("tag")
+            || get_env("GITHUB_EVENT_NAME").as_deref() == Some("release")))
+        || (env_truthy(get_env("GITLAB_CI")) && get_env("CI_COMMIT_TAG").is_some())
+}
+
+fn env_truthy(value: Option<String>) -> bool {
+    value.is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+}
+
 #[derive(Debug)]
 pub struct CacheManagerBuilder {
     cache_file_path: PathBuf,
@@ -443,10 +490,69 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
 #[cfg(test)]
 mod tests {
     use crate::config::Config;
+    use std::collections::BTreeMap;
     use std::fs;
 
     use super::*;
     use pretty_assertions::assert_eq;
+
+    fn environment(values: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let values = values
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect::<BTreeMap<_, _>>();
+        move |key| values.get(key).cloned()
+    }
+
+    #[test]
+    fn remote_writes_require_a_protected_branch_ci_context() {
+        assert_eq!(
+            effective_remote_cache_mode_with(CacheRemoteMode::ReadWrite, environment(&[])),
+            Some(CacheRemoteMode::ReadOnly)
+        );
+        assert_eq!(
+            effective_remote_cache_mode_with(CacheRemoteMode::WriteOnly, environment(&[])),
+            None
+        );
+        assert_eq!(
+            effective_remote_cache_mode_with(
+                CacheRemoteMode::ReadWrite,
+                environment(&[
+                    ("GITHUB_ACTIONS", "true"),
+                    ("GITHUB_EVENT_NAME", "pull_request"),
+                    ("GITHUB_REF_PROTECTED", "true"),
+                    ("GITHUB_REF_TYPE", "branch"),
+                ]),
+            ),
+            Some(CacheRemoteMode::ReadOnly)
+        );
+        assert_eq!(
+            effective_remote_cache_mode_with(
+                CacheRemoteMode::ReadWrite,
+                environment(&[
+                    ("GITHUB_ACTIONS", "true"),
+                    ("GITHUB_EVENT_NAME", "push"),
+                    ("GITHUB_REF_PROTECTED", "true"),
+                    ("GITHUB_REF_TYPE", "branch"),
+                ]),
+            ),
+            Some(CacheRemoteMode::ReadWrite)
+        );
+    }
+
+    #[test]
+    fn release_ci_contexts_are_cache_ineligible() {
+        assert!(release_cache_context_with(environment(&[
+            ("GITHUB_ACTIONS", "true"),
+            ("GITHUB_EVENT_NAME", "push"),
+            ("GITHUB_REF_TYPE", "tag"),
+        ])));
+        assert!(!release_cache_context_with(environment(&[
+            ("GITHUB_ACTIONS", "true"),
+            ("GITHUB_EVENT_NAME", "push"),
+            ("GITHUB_REF_TYPE", "branch"),
+        ])));
+    }
 
     #[tokio::test]
     async fn test_cache() {

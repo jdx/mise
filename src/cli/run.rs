@@ -1264,6 +1264,10 @@ impl Run {
         if !enabled {
             return Ok(());
         }
+        if crate::cache::release_cache_context() {
+            warn!("Rust action caching is disabled for release CI contexts");
+            return Ok(());
+        }
         self.cache_session = Some(
             crate::cache::session::CacheSession::start(
                 &self.tmpdir,

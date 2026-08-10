@@ -4667,19 +4667,25 @@ mod tests {
 
     #[test]
     fn test_task_config_rust_cache_is_a_default() {
-        let rust_default = Some(TaskRustCacheConfig { enabled: true });
+        let rust_default = Some(TaskRustCacheConfig::default());
         let mut inherited = Task::default();
         apply_task_config_rust_cache_default(&mut inherited, &rust_default);
         assert_eq!(inherited.rust_cache, rust_default);
 
         let mut disabled = Task {
-            rust_cache: Some(TaskRustCacheConfig { enabled: false }),
+            rust_cache: Some(TaskRustCacheConfig {
+                enabled: false,
+                ..TaskRustCacheConfig::default()
+            }),
             ..Default::default()
         };
         apply_task_config_rust_cache_default(&mut disabled, &rust_default);
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig { enabled: false })
+            Some(TaskRustCacheConfig {
+                enabled: false,
+                ..TaskRustCacheConfig::default()
+            })
         );
     }
 

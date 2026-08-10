@@ -23,6 +23,7 @@ const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
 pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
 pub(super) const TASK_ENV: &str = "MISE_CACHE_TASK";
+pub(super) const VERIFY_ENV: &str = "MISE_CACHE_RUST_VERIFY";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -60,6 +61,11 @@ impl CacheSessionEnvironment {
         environment.insert(SOCKET_ENV.into(), self.socket.clone());
         environment.insert(STAGING_ENV.into(), self.staging.clone());
         environment.insert(TASK_ENV.into(), protocol_task);
+        if task.rust_cache.as_ref().is_some_and(|cache| cache.verify) {
+            environment.insert(VERIFY_ENV.into(), "1".into());
+        } else {
+            environment.remove(VERIFY_ENV);
+        }
         if let Some(previous) = environment.insert("RUSTC_WRAPPER".into(), self.rustc_shim.clone())
             && previous != self.rustc_shim
         {
@@ -201,9 +207,13 @@ fn action_remote_cache(cache_dir: &Path) -> Result<Option<AgentRemoteCache>> {
         download_timeout: settings.http_download_timeout(),
         retries: settings.http_retries(),
     })?;
+    let Some(mode) = crate::cache::effective_remote_cache_mode(settings.task.cache.remote_mode)
+    else {
+        return Ok(None);
+    };
     Ok(Some(AgentRemoteCache {
         client,
-        mode: settings.task.cache.remote_mode,
+        mode,
         staging_dir: cache_dir.join("remote"),
     }))
 }
@@ -220,16 +230,37 @@ impl Drop for CacheSession {
 }
 
 pub(crate) fn display_stats(stats: AgentStats) {
-    if stats.lookups == 0 && stats.stores == 0 {
+    if stats.lookups == 0
+        && stats.stores == 0
+        && stats.verifications == 0
+        && stats.downloaded_bytes == 0
+        && stats.uploaded_bytes == 0
+    {
         return;
     }
     safe_eprintln!(
-        "Action cache: {}/{} hits, {} stored ({})",
+        "Action cache: {} hits, {} misses, {} prefetched; {} downloaded, {} uploaded, {} stored locally",
         stats.hits,
-        stats.lookups,
-        stats.stores,
+        cache_misses(&stats),
+        stats.prefetched_actions,
+        ByteSize::b(stats.downloaded_bytes).display().iec(),
+        ByteSize::b(stats.uploaded_bytes).display().iec(),
         ByteSize::b(stats.stored_bytes).display().iec(),
     );
+    if stats.verifications > 0 {
+        safe_eprintln!(
+            "Action cache qualification: {} verified, {} diverged",
+            stats.verifications,
+            stats.divergences,
+        );
+    }
+}
+
+fn cache_misses(stats: &AgentStats) -> u64 {
+    stats
+        .lookups
+        .saturating_sub(stats.hits)
+        .saturating_sub(stats.verifications)
 }
 
 fn install_session_shim(session_dir: &Path) -> Result<PathBuf> {
@@ -698,12 +729,18 @@ mod tests {
         assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
-        task.rust_cache = Some(TaskRustCacheConfig { enabled: false });
+        task.rust_cache = Some(TaskRustCacheConfig {
+            enabled: false,
+            ..TaskRustCacheConfig::default()
+        });
         let run = environment.apply(&task, &mut values).await;
         assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
-        task.rust_cache = Some(TaskRustCacheConfig { enabled: true });
+        task.rust_cache = Some(TaskRustCacheConfig {
+            verify: true,
+            ..TaskRustCacheConfig::default()
+        });
         let run = environment.apply(&task, &mut values).await;
         assert!(run.is_some());
         assert_eq!(values.get(SOCKET_ENV).unwrap(), "socket");
@@ -712,6 +749,7 @@ mod tests {
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "shim");
         assert_eq!(values.get(PREVIOUS_RUSTC_WRAPPER_ENV).unwrap(), "existing");
         assert_eq!(values.get("CARGO_INCREMENTAL").unwrap(), "0");
+        assert_eq!(values.get(VERIFY_ENV).unwrap(), "1");
     }
 
     #[test]
@@ -722,5 +760,16 @@ mod tests {
         })
         .unwrap();
         assert!(validate_handshake_response(&response).is_err());
+    }
+
+    #[test]
+    fn qualification_results_are_not_reported_as_misses() {
+        let stats = AgentStats {
+            lookups: 5,
+            hits: 2,
+            verifications: 2,
+            ..AgentStats::default()
+        };
+        assert_eq!(cache_misses(&stats), 1);
     }
 }
