@@ -3,7 +3,7 @@ use eyre::{Result, bail, eyre};
 use log::warn;
 use reqwest::StatusCode;
 use reqwest::header::{
-    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue, IF_NONE_MATCH,
+    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, ETAG, HeaderValue, IF_MATCH, IF_NONE_MATCH,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
@@ -19,7 +19,8 @@ mod agent;
 mod local;
 
 pub use agent::{
-    AGENT_PROTOCOL_VERSION, ActionPrediction, AgentRequest, AgentResponse, AgentStats, CacheAgent,
+    AGENT_PROTOCOL_VERSION, ActionPrediction, AgentRemoteCache, AgentRequest, AgentResponse,
+    AgentStats, CacheAgent,
 };
 pub use local::{LocalActionCache, LocalCas};
 
@@ -29,6 +30,8 @@ const NAMESPACE_HEADER: &str = "mise-cache-namespace";
 pub const ACTION_RESULT_MEDIA_TYPE: &str = "application/vnd.mise.cache-action-result.v1+json";
 pub const DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
 pub const CLIENT_METADATA_MEDIA_TYPE: &str = "application/vnd.mise.cache-client-metadata.v1+json";
+pub const TASK_ACTION_MANIFEST_MEDIA_TYPE: &str =
+    "application/vnd.mise.cache-task-action-manifest.v1+json";
 pub const BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 
 /// Serialize a protocol object using the JSON Canonicalization Scheme.
@@ -242,11 +245,23 @@ pub struct RustcMetadata {
 pub enum BlobSource {
     Bytes(Vec<u8>),
     File(tempfile::NamedTempFile),
+    Path(PathBuf),
 }
 
 pub struct BlobUpload {
     pub digest: CacheDigest,
     pub source: BlobSource,
+}
+
+pub struct RemoteActionManifest {
+    pub bytes: Vec<u8>,
+    pub etag: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestPutOutcome {
+    Stored,
+    PreconditionFailed,
 }
 
 pub struct RemoteCacheClient {
@@ -302,6 +317,17 @@ impl RemoteCacheClient {
         Ok(self.base_url.join(&format!(
             "v{PROTOCOL_VERSION}/blobs/{}/{}/{}",
             digest.algorithm, digest.hash, digest.size
+        ))?)
+    }
+
+    fn action_manifest_endpoint(&self, key: &CacheDigest) -> Result<Url> {
+        key.validate()?;
+        if key.algorithm != "blake3" {
+            bail!("remote action manifest keys must use blake3");
+        }
+        Ok(self.base_url.join(&format!(
+            "v{PROTOCOL_VERSION}/action-manifests/{}/{}/{}",
+            key.algorithm, key.hash, key.size
         ))?)
     }
 
@@ -374,6 +400,69 @@ impl RemoteCacheClient {
         .await
     }
 
+    pub async fn get_action_manifest(
+        &self,
+        key: &CacheDigest,
+    ) -> Result<Option<RemoteActionManifest>> {
+        let url = self.action_manifest_endpoint(key)?;
+        retry_async("GET", &url, self.retries, || async {
+            let response = self
+                .request(
+                    reqwest::Method::GET,
+                    url.clone(),
+                    TASK_ACTION_MANIFEST_MEDIA_TYPE,
+                )
+                .await?
+                .send()
+                .await?;
+            if response.status() == StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            let response = response.error_for_status()?;
+            let etag = parse_strong_etag(response.headers().get(ETAG))?;
+            let bytes = response.bytes().await?.to_vec();
+            if blake3::hash(&bytes).to_hex().as_str() != etag {
+                bail!("remote action manifest ETag does not match its body");
+            }
+            Ok(Some(RemoteActionManifest { bytes, etag }))
+        })
+        .await
+    }
+
+    pub async fn put_action_manifest(
+        &self,
+        key: &CacheDigest,
+        bytes: &[u8],
+        expected_etag: Option<&str>,
+    ) -> Result<ManifestPutOutcome> {
+        let url = self.action_manifest_endpoint(key)?;
+        let body = bytes.to_vec();
+        let expected_etag = expected_etag.map(quoted_etag).transpose()?;
+        retry_async("PUT", &url, self.retries, || async {
+            let mut request = self
+                .request(
+                    reqwest::Method::PUT,
+                    url.clone(),
+                    TASK_ACTION_MANIFEST_MEDIA_TYPE,
+                )
+                .await?
+                .header(CONTENT_TYPE, TASK_ACTION_MANIFEST_MEDIA_TYPE)
+                .body(body.clone());
+            request = if let Some(etag) = &expected_etag {
+                request.header(IF_MATCH, etag)
+            } else {
+                request.header(IF_NONE_MATCH, "*")
+            };
+            let response = request.send().await?;
+            if response.status() == StatusCode::PRECONDITION_FAILED {
+                return Ok(ManifestPutOutcome::PreconditionFailed);
+            }
+            response.error_for_status()?;
+            Ok(ManifestPutOutcome::Stored)
+        })
+        .await
+    }
+
     pub async fn get_blob(
         &self,
         digest: &CacheDigest,
@@ -441,6 +530,12 @@ impl RemoteCacheClient {
                     let stream = tokio_util::io::ReaderStream::new(file);
                     (length, reqwest::Body::wrap_stream(stream))
                 }
+                BlobSource::Path(path) => {
+                    let file = tokio::fs::File::open(path).await?;
+                    let length = file.metadata().await?.len();
+                    let stream = tokio_util::io::ReaderStream::new(file);
+                    (length, reqwest::Body::wrap_stream(stream))
+                }
             };
             let response = self
                 .request(reqwest::Method::PUT, url.clone(), BLOB_MEDIA_TYPE)
@@ -458,6 +553,32 @@ impl RemoteCacheClient {
         })
         .await
     }
+}
+
+fn parse_strong_etag(value: Option<&HeaderValue>) -> Result<String> {
+    let value = value
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| eyre!("remote action manifest response is missing an ETag"))?;
+    let etag = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .filter(|value| is_lower_hex_digest(value))
+        .ok_or_else(|| eyre!("remote action manifest response has an invalid ETag"))?;
+    Ok(etag.to_owned())
+}
+
+fn quoted_etag(etag: &str) -> Result<HeaderValue> {
+    if !is_lower_hex_digest(etag) {
+        bail!("invalid remote action manifest ETag");
+    }
+    Ok(HeaderValue::from_str(&format!("\"{etag}\""))?)
+}
+
+fn is_lower_hex_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Clone)]

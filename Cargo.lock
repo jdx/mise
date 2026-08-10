@@ -6443,6 +6443,7 @@ dependencies = [
  "base64 0.23.0",
  "blake3",
  "eyre",
+ "fslock",
  "hex",
  "log",
  "mockito",

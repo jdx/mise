@@ -1157,7 +1157,9 @@ mod tests {
             .find_map(|upload| {
                 (upload.digest == root).then(|| match &upload.source {
                     BlobSource::Bytes(bytes) => bytes.as_slice(),
-                    BlobSource::File(_) => panic!("directory object must be in memory"),
+                    BlobSource::File(_) | BlobSource::Path(_) => {
+                        panic!("directory object must be in memory")
+                    }
                 })
             })
             .unwrap();
@@ -1170,7 +1172,9 @@ mod tests {
             .find_map(|upload| {
                 (&upload.digest == dist_digest).then(|| match &upload.source {
                     BlobSource::Bytes(bytes) => bytes.as_slice(),
-                    BlobSource::File(_) => panic!("directory object must be in memory"),
+                    BlobSource::File(_) | BlobSource::Path(_) => {
+                        panic!("directory object must be in memory")
+                    }
                 })
             })
             .unwrap();
