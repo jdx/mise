@@ -13804,7 +13804,7 @@ packages:
     version_overrides:
       - version_constraint: Version == "v2.1.88"
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.1.117") or Version == "v2.1.126"
         format: raw
         url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}/claude
         files:
@@ -13824,6 +13824,31 @@ packages:
         supported_envs:
           - darwin
           - linux
+      - version_constraint: "true"
+        type: github_release
+        asset: claude-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: claude-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
+          - goos: windows
+            format: zip
+        files:
+          - name: claude
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: SHASUMS256.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: antonmedv
     repo_name: fx
@@ -64232,6 +64257,19 @@ packages:
     description: Explain any lockfile change before you merge it — bumps, breaking jumps, new vulns, release ages & deprecations across 30 lockfile formats + SBOMs. CLI, GitHub Action, browser playground, and MCP server so AI assistants can vet PRs too
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.4.4")
+        asset: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        files:
+          - name: lockvet
+            src: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}/lockvet
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -64245,6 +64283,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: matteo-sung/lockvet/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: mattermost
     repo_name: mmctl
