@@ -1785,11 +1785,18 @@ docs = """
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
 Disable this if experiencing strange behavior in your shell when a command is not found.
 
-**Important limitation**: This handler only installs missing versions of tools that already have
-at least one version installed. mise cannot determine which tool provides a binary without having
-the tool installed first, so it cannot auto-install completely new tools.
+The handler works out which tool provides a command from the `bins` metadata in mise's registry, so
+it can install a tool that is configured but has never been installed — not only a missing version
+of a tool you already have.
 
-This also runs in shims if the terminal is interactive.
+**Limitation**: this only covers tools mise's registry knows. A tool configured by a raw backend
+spec (`ubi:owner/repo`, `cargo:…`, `npm:…`) carries no bin metadata, so a command name cannot be
+traced back to it. Install those explicitly instead — `mise install`, or [`mise x`](/cli/exec) to
+install and run in one step — since both materialise the whole configured toolset whatever the
+backend. The tool also has to be configured in a config file that applies to the current directory:
+mise will not install something you have not asked for.
+
+This also runs in shims.
 """
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
