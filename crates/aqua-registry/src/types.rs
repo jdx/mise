@@ -2636,17 +2636,17 @@ packages:
 "#;
         let pkg = first_registry_package(yml);
 
-        for (os, arch) in [
-            ("linux", "amd64"),
-            ("darwin", "arm64"),
-            ("windows", "amd64"),
+        // What is under test is that the `envs: [all]` override supplied the URL on every
+        // platform. A raw-format URL additionally picks up the Windows executable extension,
+        // which `test_url_adds_exe_when_missing` covers on its own.
+        for (os, arch, expected) in [
+            ("linux", "amd64", "https://example.com/tool-all"),
+            ("darwin", "arm64", "https://example.com/tool-all"),
+            ("windows", "amd64", "https://example.com/tool-all.exe"),
         ] {
             let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
 
-            assert_eq!(
-                resolved.url("1.0.0", os, arch).unwrap(),
-                "https://example.com/tool-all"
-            );
+            assert_eq!(resolved.url("1.0.0", os, arch).unwrap(), expected);
         }
     }
 
