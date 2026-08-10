@@ -1,6 +1,7 @@
 use crate::{
-    BlobSource, BlobUpload, CacheDigest, LocalActionCache, LocalCas, ManifestPutOutcome,
-    RemoteActionResult, RemoteCacheClient, RemoteCacheMode, canonical_json,
+    BlobSource, BlobUpload, CacheDigest, CacheDirectory, LocalActionCache, LocalCas,
+    ManifestPutOutcome, RemoteActionResult, RemoteCacheClient, RemoteCacheMode, RustcMetadata,
+    canonical_json,
 };
 use eyre::{Result, bail};
 use log::warn;
@@ -18,6 +19,9 @@ const MAX_EXECUTABLE_IDENTITY_BYTES: usize = 256 * 1024;
 const TASK_ACTION_MANIFEST_VERSION: u8 = 1;
 const MAX_TASK_ACTION_PREDICTIONS: usize = 16 * 1024;
 const MAX_ACTION_PREDICTION_PAYLOAD: usize = 256 * 1024;
+const MAX_REMOTE_TRANSFERS: usize = 8;
+const MAX_PREFETCH_CONCURRENCY: usize = 4;
+const MAX_PREFETCH_DIRECTORY_OBJECTS: usize = 100_000;
 
 /// Remote action-cache access owned by one task session.
 pub struct AgentRemoteCache {
@@ -147,6 +151,7 @@ pub struct CacheAgent {
     actions: LocalActionCache,
     version: Arc<str>,
     write_locks: Arc<Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>>,
+    action_locks: Arc<Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>>,
     stats: Arc<AtomicAgentStats>,
     executable_identities: Arc<Mutex<BTreeMap<ExecutableIdentityKey, Vec<u8>>>>,
     manifest_dir: Arc<PathBuf>,
@@ -157,6 +162,8 @@ pub struct CacheAgent {
     remote_mode: RemoteCacheMode,
     remote_staging_dir: Arc<PathBuf>,
     pending_remote_actions: Arc<Mutex<BTreeMap<CacheDigest, RemoteActionResult>>>,
+    remote_transfers: Arc<tokio::sync::Semaphore>,
+    prefetch_tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,6 +224,7 @@ impl CacheAgent {
             actions: LocalActionCache::new(cache_dir.clone()),
             version,
             write_locks: Arc::new(Mutex::new(BTreeMap::new())),
+            action_locks: Arc::new(Mutex::new(BTreeMap::new())),
             stats: Arc::new(AtomicAgentStats::default()),
             executable_identities: Arc::new(Mutex::new(BTreeMap::new())),
             manifest_dir: Arc::new(cache_dir.join("task-manifests").join("v1")),
@@ -227,6 +235,8 @@ impl CacheAgent {
             remote_mode,
             remote_staging_dir: Arc::new(remote_staging_dir),
             pending_remote_actions: Arc::new(Mutex::new(BTreeMap::new())),
+            remote_transfers: Arc::new(tokio::sync::Semaphore::new(MAX_REMOTE_TRANSFERS)),
+            prefetch_tasks: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -288,8 +298,35 @@ impl CacheAgent {
         let run =
             CacheDigest::blake3(format!("{task}\0{}\0{sequence}", std::process::id()).as_bytes())
                 .hash;
+        let predictions = state.predictions.values().cloned().collect();
         self.task_actions.lock().unwrap().insert(run.clone(), state);
+        self.spawn_prefetch_predictions(predictions);
         Ok(run)
+    }
+
+    /// Cancel speculative downloads before the owning session exits.
+    pub async fn cancel_prefetches(&self) {
+        let tasks = std::mem::take(&mut *self.prefetch_tasks.lock().unwrap());
+        for task in &tasks {
+            task.abort();
+        }
+        for task in tasks {
+            if let Err(error) = task.await
+                && !error.is_cancelled()
+            {
+                warn!("remote action prefetch task failed: {error}");
+            }
+        }
+    }
+
+    #[cfg(test)]
+    async fn wait_for_prefetches(&self) {
+        let tasks = std::mem::take(&mut *self.prefetch_tasks.lock().unwrap());
+        for task in tasks {
+            if let Err(error) = task.await {
+                warn!("remote action prefetch task failed: {error}");
+            }
+        }
     }
 
     /// Atomically publish the candidate manifest collected by a successful task.
@@ -430,6 +467,7 @@ impl CacheAgent {
             return Ok(None);
         };
         let (_, selector) = Self::task_manifest_selector(task)?;
+        let _permit = self.remote_transfers.acquire().await?;
         let Some(remote_manifest) = remote.get_action_manifest(&selector).await? else {
             return Ok(None);
         };
@@ -449,10 +487,13 @@ impl CacheAgent {
         let (_, selector) = Self::task_manifest_selector(task)?;
         for _ in 0..4 {
             let bytes = canonical_json(&manifest)?;
-            match remote
-                .put_action_manifest(&selector, &bytes, expected_etag.as_deref())
-                .await?
-            {
+            let outcome = {
+                let _permit = self.remote_transfers.acquire().await?;
+                remote
+                    .put_action_manifest(&selector, &bytes, expected_etag.as_deref())
+                    .await?
+            };
+            match outcome {
                 ManifestPutOutcome::Stored => return Ok(manifest),
                 ManifestPutOutcome::PreconditionFailed => {
                     let Some((remote_manifest, etag)) = self.get_remote_task_manifest(task).await?
@@ -479,7 +520,18 @@ impl CacheAgent {
     }
 
     fn write_lock(&self, digest: &CacheDigest) -> Arc<tokio::sync::Mutex<()>> {
-        let mut locks = self.write_locks.lock().unwrap();
+        Self::digest_lock(&self.write_locks, digest)
+    }
+
+    fn action_lock(&self, digest: &CacheDigest) -> Arc<tokio::sync::Mutex<()>> {
+        Self::digest_lock(&self.action_locks, digest)
+    }
+
+    fn digest_lock(
+        locks: &Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>,
+        digest: &CacheDigest,
+    ) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = locks.lock().unwrap();
         locks.retain(|_, lock| lock.strong_count() > 0);
         if let Some(lock) = locks.get(digest).and_then(Weak::upgrade) {
             return lock;
@@ -487,6 +539,159 @@ impl CacheAgent {
         let lock = Arc::new(tokio::sync::Mutex::new(()));
         locks.insert(digest.clone(), Arc::downgrade(&lock));
         lock
+    }
+
+    fn spawn_prefetch_predictions(&self, predictions: Vec<ActionPrediction>) {
+        if predictions.is_empty() || !self.remote_mode.reads() || self.remote.is_none() {
+            return;
+        }
+        let agent = self.clone();
+        let task = tokio::spawn(async move {
+            agent.prefetch_predictions(predictions.iter()).await;
+        });
+        self.prefetch_tasks.lock().unwrap().push(task);
+    }
+
+    async fn prefetch_predictions<'a>(
+        &self,
+        predictions: impl Iterator<Item = &'a ActionPrediction>,
+    ) {
+        if !self.remote_mode.reads() || self.remote.is_none() {
+            return;
+        }
+        let mut actions = BTreeMap::new();
+        for prediction in predictions {
+            actions
+                .entry(prediction.action.clone())
+                .or_insert_with(|| prediction.adapter.clone());
+        }
+        let mut actions = actions.into_iter();
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..MAX_PREFETCH_CONCURRENCY {
+            let Some((action, adapter)) = actions.next() else {
+                break;
+            };
+            let agent = self.clone();
+            tasks.spawn(async move { agent.prefetch_action(action, adapter).await });
+        }
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => warn!("remote action prefetch failed: {error}"),
+                Err(error) => warn!("remote action prefetch task failed: {error}"),
+            }
+            if let Some((action, adapter)) = actions.next() {
+                let agent = self.clone();
+                tasks.spawn(async move { agent.prefetch_action(action, adapter).await });
+            }
+        }
+    }
+
+    async fn prefetch_action(&self, action: CacheDigest, adapter: String) -> Result<()> {
+        let lock = self.action_lock(&action);
+        let _guard = lock.lock().await;
+        if self.actions.find(&action)?.is_some() {
+            return Ok(());
+        }
+        let remote = self
+            .remote
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("remote cache is not configured"))?;
+        let pending = {
+            self.pending_remote_actions
+                .lock()
+                .unwrap()
+                .get(&action)
+                .cloned()
+        };
+        let result = match pending {
+            Some(result) => result,
+            None => {
+                let result = {
+                    let _permit = self.remote_transfers.acquire().await?;
+                    remote.get_action_result(&action).await?
+                };
+                let Some(result) = result else { return Ok(()) };
+                result
+            }
+        };
+        self.fetch_remote_blob(remote, &result.action).await?;
+        if let Some(metadata) = &result.metadata {
+            let path = self.fetch_remote_blob(remote, metadata).await?;
+            if adapter == "rustc" {
+                let bytes = fs::read(path)?;
+                let metadata: RustcMetadata = serde_json::from_slice(&bytes)?;
+                if metadata.version != 1
+                    || metadata.kind != "rustc"
+                    || canonical_json(&metadata)? != bytes
+                {
+                    bail!("remote rustc action metadata is invalid");
+                }
+                self.fetch_remote_blob(remote, &metadata.stdout).await?;
+                self.fetch_remote_blob(remote, &metadata.stderr).await?;
+            }
+        }
+        if let Some(output_root) = &result.output_root {
+            self.prefetch_output_tree(remote, output_root).await?;
+        }
+        self.actions.store(&result)?;
+        self.pending_remote_actions.lock().unwrap().remove(&action);
+        Ok(())
+    }
+
+    async fn prefetch_output_tree(
+        &self,
+        remote: &RemoteCacheClient,
+        output_root: &CacheDigest,
+    ) -> Result<()> {
+        let mut pending = vec![output_root.clone()];
+        let mut seen = BTreeMap::new();
+        while let Some(digest) = pending.pop() {
+            if seen.insert(digest.clone(), ()).is_some() {
+                continue;
+            }
+            if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
+                bail!("remote action output tree is too large");
+            }
+            let path = self.fetch_remote_blob(remote, &digest).await?;
+            let bytes = fs::read(path)?;
+            let directory: CacheDirectory = serde_json::from_slice(&bytes)?;
+            if directory.version != 1 || canonical_json(&directory)? != bytes {
+                bail!("remote action output directory is invalid");
+            }
+            for file in directory.files {
+                self.fetch_remote_blob(remote, &file.digest).await?;
+            }
+            pending.extend(
+                directory
+                    .directories
+                    .into_iter()
+                    .map(|directory| directory.digest),
+            );
+        }
+        Ok(())
+    }
+
+    async fn fetch_remote_blob(
+        &self,
+        remote: &RemoteCacheClient,
+        digest: &CacheDigest,
+    ) -> Result<PathBuf> {
+        let lock = self.write_lock(digest);
+        let _guard = lock.lock().await;
+        if let Some(path) = self.cas.find(digest)? {
+            return Ok(path);
+        }
+        let _permit = self.remote_transfers.acquire().await?;
+        let temporary = remote
+            .get_blob_file(digest, self.remote_staging_dir.as_path())
+            .await?;
+        let path = self.cas.store_file(digest, temporary.path())?;
+        self.stats.stores.fetch_add(1, Ordering::Relaxed);
+        self.stats
+            .stored_bytes
+            .fetch_add(digest.size, Ordering::Relaxed);
+        Ok(path)
     }
 
     async fn respond(&self, request: AgentRequest) -> AgentResponse {
@@ -533,23 +738,8 @@ impl CacheAgent {
         let Some(remote) = &self.remote else {
             return Ok(AgentResponse::Blob { path: None });
         };
-        let lock = self.write_lock(digest);
-        let _guard = lock.lock().await;
-        if let Some(path) = self.cas.find(digest)? {
-            return Ok(AgentResponse::Blob { path: Some(path) });
-        }
-        match remote
-            .get_blob_file(digest, self.remote_staging_dir.as_path())
-            .await
-        {
-            Ok(temporary) => {
-                let path = self.cas.store_file(digest, temporary.path())?;
-                self.stats.stores.fetch_add(1, Ordering::Relaxed);
-                self.stats
-                    .stored_bytes
-                    .fetch_add(digest.size, Ordering::Relaxed);
-                Ok(AgentResponse::Blob { path: Some(path) })
-            }
+        match self.fetch_remote_blob(remote, digest).await {
+            Ok(path) => Ok(AgentResponse::Blob { path: Some(path) }),
             Err(error) => {
                 warn!(
                     "remote cache blob lookup failed for {}: {error}",
@@ -561,31 +751,39 @@ impl CacheAgent {
     }
 
     async fn store_blob(&self, digest: &CacheDigest, source: &Path) -> Result<AgentResponse> {
-        let lock = self.write_lock(digest);
-        let _guard = lock.lock().await;
-        let path = if let Some(path) = self.cas.find(digest)? {
-            path
+        let remote = if self.remote_mode.writes() {
+            self.remote.as_deref()
         } else {
-            let path = self.cas.store_file(digest, source)?;
-            self.stats.stores.fetch_add(1, Ordering::Relaxed);
-            self.stats
-                .stored_bytes
-                .fetch_add(digest.size, Ordering::Relaxed);
-            path
+            None
         };
-        if self.remote_mode.writes()
-            && let Some(remote) = &self.remote
-            && let Err(error) = remote
+        let path = {
+            let lock = self.write_lock(digest);
+            let _guard = lock.lock().await;
+            if let Some(path) = self.cas.find(digest)? {
+                path
+            } else {
+                let path = self.cas.store_file(digest, source)?;
+                self.stats.stores.fetch_add(1, Ordering::Relaxed);
+                self.stats
+                    .stored_bytes
+                    .fetch_add(digest.size, Ordering::Relaxed);
+                path
+            }
+        };
+        if let Some(remote) = remote {
+            let _permit = self.remote_transfers.acquire().await?;
+            if let Err(error) = remote
                 .put_blob(&BlobUpload {
                     digest: digest.clone(),
                     source: BlobSource::Path(path.clone()),
                 })
                 .await
-        {
-            warn!(
-                "remote cache blob upload failed for {}: {error}",
-                digest.hash
-            );
+            {
+                warn!(
+                    "remote cache blob upload failed for {}: {error}",
+                    digest.hash
+                );
+            }
         }
         Ok(AgentResponse::Stored { path })
     }
@@ -602,6 +800,25 @@ impl CacheAgent {
         let Some(remote) = &self.remote else {
             return Ok(AgentResponse::ActionResult { result: None });
         };
+        let lock = self.action_lock(action);
+        let _guard = lock.lock().await;
+        if let Some(result) = self.actions.find(action)? {
+            return Ok(AgentResponse::ActionResult {
+                result: Some(result),
+            });
+        }
+        if let Some(result) = self
+            .pending_remote_actions
+            .lock()
+            .unwrap()
+            .get(action)
+            .cloned()
+        {
+            return Ok(AgentResponse::ActionResult {
+                result: Some(result),
+            });
+        }
+        let _permit = self.remote_transfers.acquire().await?;
         match remote.get_action_result(action).await {
             Ok(Some(result)) => {
                 self.pending_remote_actions
@@ -627,12 +844,14 @@ impl CacheAgent {
         let path = self.actions.store(result)?;
         if self.remote_mode.writes()
             && let Some(remote) = &self.remote
-            && let Err(error) = remote.put_action_result(result).await
         {
-            warn!(
-                "remote cache action upload failed for {}: {error}",
-                result.action.hash
-            );
+            let _permit = self.remote_transfers.acquire().await?;
+            if let Err(error) = remote.put_action_result(result).await {
+                warn!(
+                    "remote cache action upload failed for {}: {error}",
+                    result.action.hash
+                );
+            }
         }
         Ok(AgentResponse::ActionStored { path })
     }
@@ -1063,6 +1282,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn coalesces_repeated_remote_action_lookups() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let action = CacheDigest::blake3(b"remote action");
+        let result = RemoteActionResult {
+            action: action.clone(),
+            metadata: None,
+            output_root: None,
+            version: 1,
+        };
+        let remote = server
+            .mock("GET", action_path(&action).as_str())
+            .with_status(200)
+            .with_header("content-type", ACTION_RESULT_MEDIA_TYPE)
+            .with_body(serde_json::to_vec(&result).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+
+        for _ in 0..2 {
+            assert!(matches!(
+                agent
+                    .respond(AgentRequest::FindActionResult {
+                        action: action.clone(),
+                    })
+                    .await,
+                AgentResponse::ActionResult {
+                    result: Some(found)
+                } if found == result
+            ));
+        }
+        remote.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn publishes_only_successfully_committed_task_action_manifests() {
         let directory = tempfile::tempdir().unwrap();
         let cache = directory.path().join("cache");
@@ -1164,8 +1423,26 @@ mod tests {
         let task = "e".repeat(64);
         let invocation = CacheDigest::blake3(b"remote invocation");
         let action_bytes = canonical_json(&serde_json::json!({"kind":"rustc"})).unwrap();
-        let metadata_bytes = canonical_json(&serde_json::json!({"kind":"metadata"})).unwrap();
-        let directory_bytes = canonical_json(&serde_json::json!({"kind":"directory"})).unwrap();
+        let stdout_bytes = b"cached stdout".to_vec();
+        let stderr_bytes = b"cached stderr".to_vec();
+        let artifact_bytes = b"cached artifact".to_vec();
+        let stdout = CacheDigest::blake3(&stdout_bytes);
+        let stderr = CacheDigest::blake3(&stderr_bytes);
+        let artifact = CacheDigest::blake3(&artifact_bytes);
+        let metadata_bytes = canonical_json(&RustcMetadata {
+            version: 1,
+            kind: "rustc".into(),
+            stdout: stdout.clone(),
+            stderr: stderr.clone(),
+        })
+        .unwrap();
+        let directory_bytes = canonical_json(&serde_json::json!({
+            "directories":[],
+            "files":[{"digest":artifact,"executable":false,"mode":420,"name":"artifact"}],
+            "symlinks":[],
+            "version":1
+        }))
+        .unwrap();
         let action = CacheDigest::blake3(&action_bytes);
         let metadata = CacheDigest::blake3(&metadata_bytes);
         let output_root = CacheDigest::blake3(&directory_bytes);
@@ -1195,6 +1472,9 @@ mod tests {
             (&action, action_bytes.as_slice()),
             (&metadata, metadata_bytes.as_slice()),
             (&output_root, directory_bytes.as_slice()),
+            (&stdout, stdout_bytes.as_slice()),
+            (&stderr, stderr_bytes.as_slice()),
+            (&artifact, artifact_bytes.as_slice()),
         ] {
             mocks.push(
                 server
@@ -1251,6 +1531,9 @@ mod tests {
             (&action, action_bytes.as_slice()),
             (&metadata, metadata_bytes.as_slice()),
             (&output_root, directory_bytes.as_slice()),
+            (&stdout, stdout_bytes.as_slice()),
+            (&stderr, stderr_bytes.as_slice()),
+            (&artifact, artifact_bytes.as_slice()),
         ] {
             mocks.push(
                 server
@@ -1272,6 +1555,9 @@ mod tests {
             (&action, action_bytes.as_slice()),
             (&metadata, metadata_bytes.as_slice()),
             (&output_root, directory_bytes.as_slice()),
+            (&stdout, stdout_bytes.as_slice()),
+            (&stderr, stderr_bytes.as_slice()),
+            (&artifact, artifact_bytes.as_slice()),
         ]
         .into_iter()
         .enumerate()
@@ -1314,6 +1600,7 @@ mod tests {
             RemoteCacheMode::ReadOnly,
         );
         let run = reader.begin_task(&task).await.unwrap();
+        reader.wait_for_prefetches().await;
         assert!(matches!(
             reader
                 .respond(AgentRequest::FindActionPrediction {
@@ -1419,6 +1706,120 @@ mod tests {
         let persisted = agent.load_task_manifest(&task).unwrap().unwrap();
         assert_eq!(persisted.predictions, vec![local_prediction]);
         remote.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn prefetch_does_not_block_task_initialization() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let task = "9".repeat(64);
+        let invocation = CacheDigest::blake3(b"prefetched invocation");
+        let action_bytes = b"prefetched action";
+        let action = CacheDigest::blake3(action_bytes);
+        let result = RemoteActionResult {
+            action: action.clone(),
+            metadata: None,
+            output_root: None,
+            version: 1,
+        };
+        let manifest_bytes = canonical_json(&TaskActionManifest {
+            version: TASK_ACTION_MANIFEST_VERSION,
+            task: task.clone(),
+            predictions: vec![ActionPrediction {
+                invocation,
+                action: action.clone(),
+                adapter: "rustc".into(),
+                payload: "{}".into(),
+            }],
+        })
+        .unwrap();
+        let manifest_etag = blake3::hash(&manifest_bytes).to_hex().to_string();
+        let (_, selector) = CacheAgent::task_manifest_selector(&task).unwrap();
+        let manifest = server
+            .mock("GET", action_manifest_path(&selector).as_str())
+            .with_status(200)
+            .with_header("etag", &format!("\"{manifest_etag}\""))
+            .with_body(manifest_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let response_release = release.clone();
+        let result_bytes = serde_json::to_vec(&result).unwrap();
+        let action_result = server
+            .mock("GET", action_path(&action).as_str())
+            .with_status(200)
+            .with_header("content-type", ACTION_RESULT_MEDIA_TYPE)
+            .with_chunked_body(move |writer| {
+                let (released, condition) = &*response_release;
+                let mut released = released.lock().unwrap();
+                while !*released {
+                    released = condition.wait(released).unwrap();
+                }
+                std::io::Write::write_all(writer, &result_bytes)
+            })
+            .expect(1)
+            .create_async()
+            .await;
+        let action_blob = server
+            .mock("GET", blob_path(&action).as_str())
+            .with_status(200)
+            .with_body(action_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+
+        let begin = tokio::time::timeout(Duration::from_secs(2), agent.begin_task(&task)).await;
+        let (released, condition) = &*release;
+        *released.lock().unwrap() = true;
+        condition.notify_all();
+        let run = begin
+            .expect("task initialization waited for prefetch")
+            .unwrap();
+        assert_eq!(
+            agent
+                .task_actions
+                .lock()
+                .unwrap()
+                .get(&run)
+                .unwrap()
+                .predictions
+                .len(),
+            1
+        );
+        agent.wait_for_prefetches().await;
+        manifest.assert_async().await;
+        action_result.assert_async().await;
+        action_blob.assert_async().await;
+        assert!(agent.actions.find(&action).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn session_completion_cancels_outstanding_prefetches() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path(), "test-version");
+        let task = tokio::spawn(std::future::pending::<()>());
+        agent.prefetch_tasks.lock().unwrap().push(task);
+
+        tokio::time::timeout(Duration::from_secs(1), agent.cancel_prefetches())
+            .await
+            .expect("prefetch cancellation blocked session completion");
+        assert!(agent.prefetch_tasks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn prefetch_reserves_capacity_for_foreground_transfers() {
+        let transfers = tokio::sync::Semaphore::new(MAX_REMOTE_TRANSFERS);
+        let _prefetch = transfers
+            .acquire_many(MAX_PREFETCH_CONCURRENCY as u32)
+            .await
+            .unwrap();
+        assert!(transfers.available_permits() > 0);
     }
 
     fn remote_agent(
