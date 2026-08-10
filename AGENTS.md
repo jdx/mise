@@ -199,6 +199,23 @@ All commit messages and PR titles MUST follow conventional commit format:
 3. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
 4. Never run e2e tests by executing them directly - always use the mise task
 
+### Dependency Updates
+
+- Use the lowest-specificity dependency requirement that expresses compatibility in `Cargo.toml` (for example, prefer `"1"` over `"1.2.3"`, and `"0.12"` over `"0.12.1"` for a pre-1.0 crate).
+- Routine dependency updates should only change `Cargo.lock`. If the existing `Cargo.toml` requirement accepts the target version, do not change it merely to force or record the update; use `cargo update -p <crate> --precise <version>` instead.
+- Keep lockfile updates focused on the requested dependency and its required transitive changes. Remove unrelated resolver churn before committing.
+
+#### Updating embedded aube
+
+- Update `aube` and `aube-registry` together and refresh all aube workspace crates in `Cargo.lock`.
+- Review the upstream changes for embedder API or behavior changes and make any required mise integration changes.
+- Do not update the standalone `aube` tool entry in `mise.lock` unless the development tool is also intentionally being updated.
+- Run these focused checks:
+  - `cargo check --locked`
+  - `cargo test --locked --bin mise aube`
+  - `cargo test --locked --bin mise task::workspace::node::tests`
+  - `mise run test:e2e e2e/backend/test_npm_aube`
+
 ## Deprecation Policy
 
 When deprecating a feature or backend:
