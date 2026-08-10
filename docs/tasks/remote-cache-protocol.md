@@ -10,11 +10,13 @@ storage, authentication, and integrity model. It does not expose mise's local ca
 manifests, or archive formats. Local storage is an implementation detail and may use archives or
 packs without changing the remote protocol.
 
-Version 1 separates two kinds of immutable data:
+Version 1 separates immutable build data from mutable discovery state:
 
 - **Content-addressable storage (CAS)** contains blobs and directory objects identified by their
   digest.
 - **Action results** map the digest of a canonical build action to its output directory and logs.
+- **Action manifests** are ETag-guarded, task-scoped indexes used to prefetch prior action results on
+  fresh workers. Clients merge and retry stale writes so concurrent builds do not lose discoveries.
 
 This separation deduplicates content between actions, permits partial and parallel transfers, and
 allows a server to verify all referenced content before publishing a cache hit.
@@ -66,6 +68,11 @@ not require unused prediction fields in task metadata.
 Outside CI, mise action-cache sessions may read local and remote entries but do not upload. CI write
 authorization remains a server decision based on verified workload identity; a client-side mode is
 only defense in depth.
+
+GitHub Actions protected-branch `push` jobs and GitLab protected-branch push pipelines may use the
+configured write mode. Pull requests, tags/releases, unprotected branches, unknown CI systems, and
+local runs are restricted to reads; a configured write-only client disables its remote rather than
+silently broadening to read access. Tag and release pipelines do not activate compiler caching.
 
 ## Digests
 
@@ -330,6 +337,20 @@ The response is `201 Created`, `204 No Content` for an identical committed resul
 when a different result already owns the action key, or `412 Precondition Failed` when the immutable
 precondition is absent or fails. Concurrent valid writers may upload identical CAS data, but only one
 action-result commit wins.
+
+## Action-manifest operations
+
+`GET /v1/action-manifests/{algorithm}/{hash}/{size}` returns the latest canonical task action
+manifest and a strong BLAKE3 `ETag`, or `404 Not Found`. The URL key is the digest of the canonical
+selector `{"kind":"task_action_manifest","task":"<task identity>","version":1}`; the server
+rejects a manifest whose task identity does not produce that key.
+
+`PUT /v1/action-manifests/{algorithm}/{hash}/{size}` creates a manifest with `If-None-Match: *` or
+updates the version named by `If-Match: "<etag>"`. The server returns `201 Created` for a new
+manifest, `204 No Content` for an update, `412 Precondition Failed` for a stale writer, and `428
+Precondition Required` when neither conditional header is present. After `412`, clients read the
+current manifest, merge predictions by invocation digest, and retry. This mutable index never
+changes the immutability of action results or CAS objects.
 
 Ordinary cache writers do not receive delete permission. Administrative deletion uses a separately
 authorized endpoint and must remove the action-result mapping before unreachable CAS data is garbage

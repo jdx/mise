@@ -418,6 +418,7 @@ impl TaskExecutor {
                     "MISE_CACHE_SOCKET".into(),
                     "MISE_CACHE_STAGING_DIR".into(),
                     "MISE_CACHE_TASK".into(),
+                    "MISE_CACHE_RUST_VERIFY".into(),
                     "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
                     "RUSTC_WRAPPER".into(),
                     "CARGO_INCREMENTAL".into(),

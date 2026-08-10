@@ -406,9 +406,11 @@ impl TaskArtifactCacheBuilder {
                     )
                 })?
                 .to_string();
-            Some(RemoteTaskCacheConfig {
+            let mode = crate::cache::effective_remote_cache_mode(settings.task.cache.remote_mode);
+            let base_url = base_url.parse().wrap_err("invalid task.cache.remote_url")?;
+            mode.map(|mode| RemoteTaskCacheConfig {
                 remote: RemoteCacheConfig {
-                    base_url: base_url.parse().wrap_err("invalid task.cache.remote_url")?,
+                    base_url,
                     namespace,
                     token: settings.task.cache.remote_token.clone(),
                     token_file: settings.task.cache.remote_token_file.clone(),
@@ -419,7 +421,7 @@ impl TaskArtifactCacheBuilder {
                     retries: settings.http_retries(),
                 },
                 staging_dir: cache_dir.join("remote"),
-                mode: settings.task.cache.remote_mode,
+                mode,
             })
         } else {
             None

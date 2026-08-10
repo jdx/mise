@@ -109,6 +109,6 @@ printf 'cached stderr\n' >&2
 EOF
 chmod +x fake-rustc
 
-assert_contains "mise run restore 2>&1" "Action cache: 1/3 hits"
+assert_contains "mise run restore 2>&1" "Action cache: 1 hits, 2 misses, 0 prefetched;"
 rm -rf out
-assert_contains "mise run restore 2>&1" "Action cache: 1/1 hits"
+assert_contains "mise run restore 2>&1" "Action cache: 1 hits, 0 misses, 0 prefetched;"

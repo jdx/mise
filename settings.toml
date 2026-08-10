@@ -2694,7 +2694,10 @@ Control access to the remote cache used by task result and action caching:
 - `write-only` uploads results without reading remote entries.
 
 The per-run `--task-cache=local-only` mode disables remote task-result access. Action-cache adapters
-may further restrict this mode; local developer task runs are read-only by default.
+may further restrict this mode. Remote writes are allowed only from protected-branch push pipelines
+in GitHub Actions and GitLab CI; pull requests, unprotected branches, other CI systems, and local
+developer runs are read-only. The server must independently enforce the same policy from verified
+OIDC claims.
 """
 enum = ["read-write", "read-only", "write-only"]
 env = "MISE_TASK_CACHE_REMOTE_MODE"

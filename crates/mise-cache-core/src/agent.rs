@@ -54,6 +54,9 @@ pub enum AgentRequest {
     RecordActionHit {
         action: CacheDigest,
     },
+    RecordActionVerification {
+        matched: bool,
+    },
     StoreActionResult {
         result: RemoteActionResult,
     },
@@ -94,6 +97,7 @@ pub enum AgentResponse {
         result: Option<RemoteActionResult>,
     },
     ActionHitRecorded,
+    ActionVerificationRecorded,
     ActionStored {
         path: PathBuf,
     },
@@ -120,6 +124,16 @@ pub struct AgentStats {
     pub stores: u64,
     /// Total size of newly stored objects.
     pub stored_bytes: u64,
+    /// Number of cache hits compiled again for qualification.
+    pub verifications: u64,
+    /// Number of qualification builds that diverged from the cached result.
+    pub divergences: u64,
+    /// CAS payload bytes downloaded from the remote cache.
+    pub downloaded_bytes: u64,
+    /// CAS payload bytes uploaded to the remote cache.
+    pub uploaded_bytes: u64,
+    /// Complete actions staged before an adapter requested them.
+    pub prefetched_actions: u64,
 }
 
 /// Adapter-owned data needed to reconstruct an action before fresh dependency
@@ -139,6 +153,11 @@ struct AtomicAgentStats {
     hits: AtomicU64,
     stores: AtomicU64,
     stored_bytes: AtomicU64,
+    verifications: AtomicU64,
+    divergences: AtomicU64,
+    downloaded_bytes: AtomicU64,
+    uploaded_bytes: AtomicU64,
+    prefetched_actions: AtomicU64,
 }
 
 /// Shared state for an agent hosted by the top-level `mise run` process.
@@ -516,6 +535,11 @@ impl CacheAgent {
             hits: self.stats.hits.load(Ordering::Relaxed),
             stores: self.stats.stores.load(Ordering::Relaxed),
             stored_bytes: self.stats.stored_bytes.load(Ordering::Relaxed),
+            verifications: self.stats.verifications.load(Ordering::Relaxed),
+            divergences: self.stats.divergences.load(Ordering::Relaxed),
+            downloaded_bytes: self.stats.downloaded_bytes.load(Ordering::Relaxed),
+            uploaded_bytes: self.stats.uploaded_bytes.load(Ordering::Relaxed),
+            prefetched_actions: self.stats.prefetched_actions.load(Ordering::Relaxed),
         }
     }
 
@@ -636,6 +660,9 @@ impl CacheAgent {
         }
         self.actions.store(&result)?;
         self.pending_remote_actions.lock().unwrap().remove(&action);
+        self.stats
+            .prefetched_actions
+            .fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
@@ -691,6 +718,9 @@ impl CacheAgent {
         self.stats
             .stored_bytes
             .fetch_add(digest.size, Ordering::Relaxed);
+        self.stats
+            .downloaded_bytes
+            .fetch_add(digest.size, Ordering::Relaxed);
         Ok(path)
     }
 
@@ -703,6 +733,13 @@ impl CacheAgent {
                 self.find_action_result(&action).await
             }
             AgentRequest::RecordActionHit { action } => self.record_action_hit(&action),
+            AgentRequest::RecordActionVerification { matched } => {
+                self.stats.verifications.fetch_add(1, Ordering::Relaxed);
+                if !matched {
+                    self.stats.divergences.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(AgentResponse::ActionVerificationRecorded)
+            }
             AgentRequest::StoreActionResult { result } => self.store_action_result(&result).await,
             AgentRequest::FindActionPrediction { task, invocation } => {
                 self.find_action_prediction(&task, &invocation)
@@ -783,6 +820,10 @@ impl CacheAgent {
                     "remote cache blob upload failed for {}: {error}",
                     digest.hash
                 );
+            } else {
+                self.stats
+                    .uploaded_bytes
+                    .fetch_add(digest.size, Ordering::Relaxed);
             }
         }
         Ok(AgentResponse::Stored { path })
@@ -1279,6 +1320,15 @@ mod tests {
                 ..AgentStats::default()
             }
         );
+
+        assert!(matches!(
+            agent
+                .respond(AgentRequest::RecordActionVerification { matched: false })
+                .await,
+            AgentResponse::ActionVerificationRecorded
+        ));
+        assert_eq!(agent.stats().verifications, 1);
+        assert_eq!(agent.stats().divergences, 1);
     }
 
     #[tokio::test]

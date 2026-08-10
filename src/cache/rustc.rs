@@ -17,22 +17,40 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, ExitStatus, Output};
 use std::time::SystemTime;
 
+struct CachedCompilation {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    outputs: Vec<CachedOutput>,
+}
+
+struct CachedOutput {
+    path: PathBuf,
+    digest: CacheDigest,
+    mode: u32,
+}
+
 pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode> {
     let invocation = RustcInvocation::parse(arguments)?;
     let working_dir = std::env::current_dir()?;
     let outputs = invocation.outputs(&working_dir)?;
 
+    let verify = std::env::var_os(session::VERIFY_ENV).is_some();
+    let mut verification = None;
     let mut action_lookup_attempted = false;
     if outputs.dep_info.is_file()
         && let Ok((action, discovered)) =
             action_from_current_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)
     {
         action_lookup_attempted = true;
-        match restore_result(&action, &outputs, &discovered) {
-            Ok(Some((stdout, stderr))) => {
+        match restore_result(&action, &outputs, &discovered, !verify) {
+            Ok(Some(cached)) => {
                 record_prediction(rustc, &invocation, &action, &discovered, &working_dir);
-                let _ = replay_bytes(&stdout, &stderr);
-                return Ok(ExitCode::SUCCESS);
+                if verify {
+                    verification = Some(cached);
+                } else {
+                    let _ = replay_bytes(&cached.stdout, &cached.stderr);
+                    return Ok(ExitCode::SUCCESS);
+                }
             }
             Ok(None) => {}
             Err(error) => {
@@ -41,10 +59,14 @@ pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
         }
     }
     if !action_lookup_attempted {
-        match restore_predicted_result(rustc, &invocation, &outputs, &working_dir) {
-            Ok(Some((stdout, stderr))) => {
-                let _ = replay_bytes(&stdout, &stderr);
-                return Ok(ExitCode::SUCCESS);
+        match restore_predicted_result(rustc, &invocation, &outputs, &working_dir, !verify) {
+            Ok(Some(cached)) => {
+                if verify {
+                    verification = Some(cached);
+                } else {
+                    let _ = replay_bytes(&cached.stdout, &cached.stderr);
+                    return Ok(ExitCode::SUCCESS);
+                }
             }
             Ok(None) => {}
             Err(error) => {
@@ -60,6 +82,14 @@ pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
         .output()
         .wrap_err("failed to execute rustc")?;
     let _ = replay_output(&output);
+    if let Some(cached) = verification {
+        let matched = cached_matches(&cached, &output);
+        record_verification(matched);
+        if !matched {
+            eprintln!("mise rustc cache warning: shadow verification diverged from cached output");
+        }
+        return Ok(exit_code(output.status));
+    }
     if output.status.success() {
         let publication: Result<()> = (|| {
             let (action, discovered) =
@@ -84,7 +114,8 @@ fn restore_predicted_result(
     invocation: &RustcInvocation,
     outputs: &RustcOutputs,
     working_dir: &Path,
-) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+    restore_outputs: bool,
+) -> Result<Option<CachedCompilation>> {
     let task = std::env::var(session::TASK_ENV)
         .wrap_err_with(|| format!("{} is not set", session::TASK_ENV))?;
     let mut context = base_action_context(rustc, working_dir)?;
@@ -114,7 +145,7 @@ fn restore_predicted_result(
     let discovered = input_prediction.discover(working_dir, &context.path_mappings)?;
     discovered.clone().apply_to(&mut context)?;
     let action = invocation.action(context)?;
-    let restored = restore_result(&action, outputs, &discovered)?;
+    let restored = restore_result(&action, outputs, &discovered, restore_outputs)?;
     if restored.is_some() {
         record_prediction_value(invocation_digest, action.digest.clone(), prediction.payload);
     }
@@ -229,7 +260,8 @@ fn restore_result(
     action: &RustcAction,
     outputs: &RustcOutputs,
     discovered: &DiscoveredInputs,
-) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+    restore_outputs: bool,
+) -> Result<Option<CachedCompilation>> {
     let responses = session::request_agent(&[AgentRequest::FindActionResult {
         action: action.digest.clone(),
     }])?;
@@ -270,6 +302,14 @@ fn restore_result(
     let directory: CacheDirectory =
         read_canonical_blob(&roots[2], &output_root_digest, "output directory")?;
     let files = validated_outputs(directory, outputs)?;
+    let cached_outputs = files
+        .iter()
+        .map(|(node, destination)| CachedOutput {
+            path: destination.clone(),
+            digest: node.digest.clone(),
+            mode: node.mode,
+        })
+        .collect();
 
     let mut digests = vec![metadata.stdout.clone(), metadata.stderr.clone()];
     digests.extend(files.iter().map(|(node, _)| node.digest.clone()));
@@ -297,9 +337,54 @@ fn restore_result(
 
     discovered.verify()?;
     verify_environment(&discovered.environment)?;
-    persist_outputs(staged)?;
-    record_action_hit(&action.digest);
-    Ok(Some((stdout, stderr)))
+    finalize_restored_outputs(staged, restore_outputs)?;
+    if restore_outputs {
+        record_action_hit(&action.digest);
+    }
+    Ok(Some(CachedCompilation {
+        stdout,
+        stderr,
+        outputs: cached_outputs,
+    }))
+}
+
+fn finalize_restored_outputs(
+    staged: Vec<(tempfile::NamedTempFile, PathBuf)>,
+    restore_outputs: bool,
+) -> Result<()> {
+    if restore_outputs {
+        persist_outputs(staged)?;
+    }
+    Ok(())
+}
+
+fn cached_matches(cached: &CachedCompilation, output: &Output) -> bool {
+    output.status.success()
+        && cached.stdout == output.stdout
+        && cached.stderr == output.stderr
+        && cached.outputs.iter().all(|expected| {
+            std::fs::metadata(&expected.path).is_ok_and(|metadata| {
+                file_mode(&metadata) == expected.mode
+                    && expected
+                        .digest
+                        .matches_file(&expected.path)
+                        .unwrap_or(false)
+            })
+        })
+}
+
+fn record_verification(matched: bool) {
+    let responses = session::request_agent(&[AgentRequest::RecordActionVerification { matched }]);
+    match responses.map(|responses| responses.into_iter().next()) {
+        Ok(Some(AgentResponse::ActionVerificationRecorded)) => {}
+        Ok(Some(AgentResponse::Error { message })) => {
+            eprintln!("mise rustc cache warning: verification was not recorded: {message}");
+        }
+        Ok(_) => eprintln!("mise rustc cache warning: verification was not recorded"),
+        Err(error) => {
+            eprintln!("mise rustc cache warning: verification was not recorded: {error:#}");
+        }
+    }
 }
 
 fn persist_outputs(staged: Vec<(tempfile::NamedTempFile, PathBuf)>) -> Result<()> {
@@ -870,5 +955,17 @@ mod tests {
         );
         assert!(!first_destination.exists());
         assert!(blocked_destination.is_dir());
+    }
+
+    #[test]
+    fn qualification_does_not_publish_cached_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("cached.rlib");
+        let mut cached = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+        cached.write_all(b"cached").unwrap();
+
+        finalize_restored_outputs(vec![(cached, destination.clone())], false).unwrap();
+
+        assert!(!destination.exists());
     }
 }

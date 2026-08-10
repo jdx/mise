@@ -938,6 +938,11 @@ run = "cargo build"
 rust_cache = true
 ```
 
+Set `rust_cache = { verify = true }` while qualifying the cache for a project or compiler upgrade.
+On a would-be hit, mise restores the cached result into a staging build, runs rustc anyway, compares
+diagnostics, output contents, and file modes, reports any divergence, and always returns rustc's live
+result. Verification hits are never served and are reported separately in the session statistics.
+
 mise injects compiler integration only into the task's child environment. Shell activation, bare
 `cargo build`, editor processes, and release builds are not intercepted. A top-level
 `mise run` owns the cache session, flushes pending uploads, and reports hits, misses, and transferred
