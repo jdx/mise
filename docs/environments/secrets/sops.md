@@ -3,7 +3,7 @@
 mise reads encrypted secret files and makes values available as environment variables via `env._.file`.
 
 - **Formats**: `.env.json`, `.env.yaml`, `.env.toml`
-- **Encryption**: [sops](https://getsops.io) backed by [age](https://github.com/FiloSottile/age)
+- **Encryption**: [sops](https://getsops.io), using the built-in age support or the external `sops` CLI
 
 ## Example
 
@@ -24,7 +24,10 @@ mise will automatically decrypt the file if it is sops-encrypted.
 ## Encrypt with sops
 
 :::: info
-Currently age is the only sops encryption method supported.
+The default `sops.rops = true` implementation supports age-encrypted files. Set
+`sops.rops = false` to use the external `sops` CLI for other key services and
+methods supported by SOPS, such as AWS KMS, GCP KMS, Azure Key Vault, Vault,
+and PGP.
 ::::
 
 :::: warning
