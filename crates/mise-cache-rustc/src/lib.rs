@@ -1,5 +1,5 @@
 use mise_cache_core::{CacheDigest, canonical_json};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
@@ -121,6 +121,10 @@ pub enum BypassReason {
     ConflictingEnvironment(String),
     #[error("failed to serialize the rustc action: {0}")]
     Serialization(String),
+    #[error("rustc action prediction is unsupported")]
+    UnsupportedPrediction,
+    #[error("rustc action prediction contains an invalid input path: {0}")]
+    InvalidPredictedInput(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -242,10 +246,14 @@ impl RustcInvocation {
             }
             files.insert(path);
         }
+        let dep_info = dep_info.ok_or(BypassReason::NoDepInfo)?;
+        if dep_info.parent() != Some(output_directory.as_path()) {
+            return Err(BypassReason::SplitOutputDirectories);
+        }
         Ok(RustcOutputs {
             directory: output_directory,
             files: files.into_iter().collect(),
-            dep_info: dep_info.ok_or(BypassReason::NoDepInfo)?,
+            dep_info,
         })
     }
 
@@ -256,6 +264,37 @@ impl RustcInvocation {
     /// dep-info.
     pub fn action(&self, context: ActionContext) -> Result<RustcAction, BypassReason> {
         ActionBuilder::new(self, context).build()
+    }
+
+    /// Fingerprint the modeled invocation before dependency contents are known.
+    pub fn invocation_digest(&self, context: &ActionContext) -> Result<CacheDigest, BypassReason> {
+        let descriptor = ActionBuilder::new(self, context.clone()).invocation_descriptor()?;
+        let bytes = canonical_json(&descriptor)
+            .map_err(|error| BypassReason::Serialization(error.to_string()))?;
+        Ok(CacheDigest::blake3(&bytes))
+    }
+
+    /// Capture normalized dependency paths for a future invocation that has no
+    /// dep-info file yet.
+    pub fn prediction(
+        &self,
+        context: &ActionContext,
+        discovered: &DiscoveredInputs,
+    ) -> Result<RustcInputPrediction, BypassReason> {
+        let builder = ActionBuilder::new(self, context.clone());
+        builder.validate_mappings()?;
+        let inputs = discovered
+            .inputs
+            .iter()
+            .map(|input| builder.normalize_path(&input.path))
+            .collect::<Result<BTreeSet<_>, _>>()?
+            .into_iter()
+            .collect();
+        Ok(RustcInputPrediction {
+            version: 1,
+            inputs,
+            environment: discovered.environment.keys().cloned().collect(),
+        })
     }
 }
 
@@ -303,6 +342,56 @@ pub struct RustcAction {
     pub bytes: Vec<u8>,
 }
 
+/// Normalized input names from the last successful execution of one modeled
+/// rustc invocation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RustcInputPrediction {
+    pub version: u8,
+    pub inputs: Vec<String>,
+    pub environment: Vec<String>,
+}
+
+impl RustcInputPrediction {
+    /// Rehash the predicted paths and read the current environment. The caller
+    /// still recomputes the full action digest, so changed inputs are misses.
+    pub fn discover(
+        &self,
+        working_dir: &Path,
+        path_mappings: &[PathMapping],
+    ) -> Result<DiscoveredInputs, BypassReason> {
+        if self.version != 1 {
+            return Err(BypassReason::UnsupportedPrediction);
+        }
+        if self.inputs.len() > 16 * 1024 || self.environment.len() > 4 * 1024 {
+            return Err(BypassReason::UnsupportedPrediction);
+        }
+        let paths = self
+            .inputs
+            .iter()
+            .map(|path| denormalize_path(path, path_mappings))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let environment = self
+            .environment
+            .iter()
+            .map(|name| {
+                if name.is_empty() || name.contains(['=', '\0']) {
+                    return Err(BypassReason::UnsupportedPrediction);
+                }
+                let value = std::env::var_os(name)
+                    .map(|value| {
+                        value
+                            .into_string()
+                            .map_err(|_| BypassReason::UnsupportedPrediction)
+                    })
+                    .transpose()?;
+                Ok((name.clone(), value))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        DiscoveredInputs::from_paths(working_dir, paths, environment)
+    }
+}
+
 #[derive(Serialize)]
 struct ActionDescriptor {
     version: u8,
@@ -312,6 +401,16 @@ struct ActionDescriptor {
     arguments: Vec<String>,
     environment: BTreeMap<String, Option<String>>,
     inputs: Vec<InputDescriptor>,
+}
+
+#[derive(Serialize)]
+struct InvocationDescriptor {
+    version: u8,
+    kind: &'static str,
+    adapter_version: u8,
+    compiler: CompilerDescriptor,
+    arguments: Vec<String>,
+    required_inputs: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -690,12 +789,7 @@ impl<'a> ActionBuilder<'a> {
 
     fn build(self) -> Result<RustcAction, BypassReason> {
         self.validate_mappings()?;
-        let arguments = self
-            .invocation
-            .arguments
-            .iter()
-            .map(|argument| self.normalize_argument(argument))
-            .collect::<Result<Vec<_>, _>>()?;
+        let invocation = self.invocation_descriptor()?;
         // rustc may embed these values verbatim through `env!`; unlike paths
         // used to locate inputs and outputs, changing them changes the artifact.
         let environment = self.context.environment.clone();
@@ -731,12 +825,8 @@ impl<'a> ActionBuilder<'a> {
             version: ACTION_SCHEMA_VERSION,
             kind: "rustc",
             adapter_version: ADAPTER_VERSION,
-            compiler: CompilerDescriptor {
-                toolchain: self.context.compiler.toolchain,
-                rustc_version: self.context.compiler.rustc_version,
-                host: self.context.compiler.host,
-            },
-            arguments,
+            compiler: invocation.compiler,
+            arguments: invocation.arguments,
             environment,
             inputs,
         };
@@ -744,6 +834,36 @@ impl<'a> ActionBuilder<'a> {
             .map_err(|error| BypassReason::Serialization(error.to_string()))?;
         let digest = CacheDigest::blake3(&bytes);
         Ok(RustcAction { digest, bytes })
+    }
+
+    fn invocation_descriptor(&self) -> Result<InvocationDescriptor, BypassReason> {
+        self.validate_mappings()?;
+        let arguments = self
+            .invocation
+            .arguments
+            .iter()
+            .map(|argument| self.normalize_argument(argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        let required_inputs = self
+            .invocation
+            .required_inputs
+            .iter()
+            .map(|path| self.normalize_path(path))
+            .collect::<Result<BTreeSet<_>, _>>()?
+            .into_iter()
+            .collect();
+        Ok(InvocationDescriptor {
+            version: ACTION_SCHEMA_VERSION,
+            kind: "rustc",
+            adapter_version: ADAPTER_VERSION,
+            compiler: CompilerDescriptor {
+                toolchain: self.context.compiler.toolchain.clone(),
+                rustc_version: self.context.compiler.rustc_version.clone(),
+                host: self.context.compiler.host.clone(),
+            },
+            arguments,
+            required_inputs,
+        })
     }
 
     fn validate_mappings(&self) -> Result<(), BypassReason> {
@@ -825,6 +945,33 @@ impl<'a> ActionBuilder<'a> {
         }
         Err(BypassReason::UnmappedAbsolutePath(absolute))
     }
+}
+
+fn denormalize_path(value: &str, mappings: &[PathMapping]) -> Result<PathBuf, BypassReason> {
+    for mapping in mappings {
+        let prefix = format!("${{{}}}", mapping.placeholder);
+        let suffix = if value == prefix {
+            ""
+        } else if let Some(suffix) = value.strip_prefix(&format!("{prefix}/")) {
+            suffix
+        } else {
+            continue;
+        };
+        if !mapping.root.is_absolute()
+            || (!suffix.is_empty()
+                && suffix.split('/').any(|component| {
+                    component.is_empty()
+                        || matches!(component, "." | "..")
+                        || component.contains('\\')
+                }))
+        {
+            return Err(BypassReason::InvalidPredictedInput(value.into()));
+        }
+        let mut path = normalize_components(&mapping.root);
+        path.extend(suffix.split('/').filter(|component| !component.is_empty()));
+        return Ok(path);
+    }
+    Err(BypassReason::InvalidPredictedInput(value.into()))
 }
 
 fn normalize_components(path: &Path) -> PathBuf {
@@ -1029,6 +1176,24 @@ mod tests {
     }
 
     #[test]
+    fn dep_info_must_share_the_artifact_output_directory() {
+        let working_dir = absolute(&["workspace"]);
+        let invocation = RustcInvocation::parse(&args(&[
+            "--crate-name=widget",
+            "--crate-type=lib",
+            "--emit=dep-info=target/dep-info/widget.d,metadata,link",
+            "--out-dir=target/debug/deps",
+            "src/lib.rs",
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            invocation.outputs(&working_dir),
+            Err(BypassReason::SplitOutputDirectories)
+        );
+    }
+
+    #[test]
     fn equivalent_worktrees_produce_the_same_action_key() {
         let first_context = context(&[
             ("src/lib.rs", "source"),
@@ -1068,6 +1233,71 @@ mod tests {
         ];
         let second = invocation.action(second_context).unwrap();
         assert_eq!(first.digest, second.digest);
+    }
+
+    #[test]
+    fn predicts_inputs_without_reusing_stale_contents() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().canonicalize().unwrap();
+        std::fs::create_dir(workspace.join("src")).unwrap();
+        std::fs::write(workspace.join("src/lib.rs"), "pub fn value() -> u8 { 1 }").unwrap();
+        let invocation = RustcInvocation::parse(&args(&[
+            "--crate-name=widget",
+            "--crate-type=lib",
+            "--emit=dep-info,metadata,link",
+            "--out-dir=target/debug/deps",
+            "src/lib.rs",
+        ]))
+        .unwrap();
+        let compiler = CompilerIdentity {
+            toolchain: "stable".into(),
+            rustc_version: "rustc test".into(),
+            host: "test-host".into(),
+        };
+        let context = ActionContext {
+            compiler,
+            working_dir: workspace.clone(),
+            path_mappings: vec![PathMapping::new(&workspace, "workspace")],
+            environment: BTreeMap::new(),
+            inputs: Vec::new(),
+        };
+        let dep_info = RustcDepInfo {
+            files: vec!["src/lib.rs".into()],
+            environment: BTreeMap::new(),
+        };
+        let discovered = invocation.discover_inputs(&dep_info, &workspace).unwrap();
+        let mut initial_context = context.clone();
+        discovered.clone().apply_to(&mut initial_context).unwrap();
+        let initial = invocation.action(initial_context).unwrap();
+        let prediction = invocation.prediction(&context, &discovered).unwrap();
+        assert_eq!(prediction.inputs, ["${workspace}/src/lib.rs"]);
+
+        let predicted = prediction
+            .discover(&workspace, &context.path_mappings)
+            .unwrap();
+        let mut predicted_context = context.clone();
+        predicted.apply_to(&mut predicted_context).unwrap();
+        assert_eq!(invocation.action(predicted_context).unwrap(), initial);
+
+        std::fs::write(workspace.join("src/lib.rs"), "pub fn value() -> u8 { 2 }").unwrap();
+        let changed = prediction
+            .discover(&workspace, &context.path_mappings)
+            .unwrap();
+        let mut changed_context = context;
+        changed.apply_to(&mut changed_context).unwrap();
+        assert_ne!(
+            invocation.action(changed_context).unwrap().digest,
+            initial.digest
+        );
+    }
+
+    #[test]
+    fn predicted_mapping_root_round_trips() {
+        let workspace = workspace();
+        assert_eq!(
+            denormalize_path("${workspace}", &[PathMapping::new(&workspace, "workspace")]).unwrap(),
+            workspace
+        );
     }
 
     #[test]

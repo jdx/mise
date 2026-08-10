@@ -18,7 +18,9 @@ use url::{Host, Url};
 mod agent;
 mod local;
 
-pub use agent::{AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent};
+pub use agent::{
+    AGENT_PROTOCOL_VERSION, ActionPrediction, AgentRequest, AgentResponse, AgentStats, CacheAgent,
+};
 pub use local::{LocalActionCache, LocalCas};
 
 pub const PROTOCOL_VERSION: u8 = 1;

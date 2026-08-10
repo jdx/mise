@@ -23,6 +23,7 @@ deny_env = true
 run = '''
 test -n "$MISE_CACHE_SOCKET"
 test -n "$MISE_CACHE_STAGING_DIR"
+test -n "$MISE_CACHE_TASK"
 test "$CARGO_INCREMENTAL" = 0
 "$RUSTC_WRAPPER" true
 '''

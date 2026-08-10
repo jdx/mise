@@ -2,6 +2,7 @@ use crate::{CacheDigest, LocalActionCache, LocalCas, RemoteActionResult};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -10,6 +11,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 const MAX_EXECUTABLE_IDENTITIES: usize = 64;
 const MAX_EXECUTABLE_IDENTITY_SIZE: usize = 64 * 1024;
 const MAX_EXECUTABLE_IDENTITY_BYTES: usize = 256 * 1024;
+const TASK_ACTION_MANIFEST_VERSION: u8 = 1;
+const MAX_TASK_ACTION_PREDICTIONS: usize = 16 * 1024;
+const MAX_ACTION_PREDICTION_PAYLOAD: usize = 256 * 1024;
 
 /// Wire protocol version used between an in-process cache agent and its shims.
 pub const AGENT_PROTOCOL_VERSION: u8 = 1;
@@ -38,6 +42,14 @@ pub enum AgentRequest {
     StoreActionResult {
         result: RemoteActionResult,
     },
+    FindActionPrediction {
+        task: String,
+        invocation: CacheDigest,
+    },
+    RecordActionPrediction {
+        task: String,
+        prediction: ActionPrediction,
+    },
     FindExecutableIdentity {
         executable: PathBuf,
         environment: BTreeMap<String, Option<String>>,
@@ -53,14 +65,33 @@ pub enum AgentRequest {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentResponse {
-    Hello { protocol: u8, agent_version: String },
-    Blob { path: Option<PathBuf> },
-    Stored { path: PathBuf },
-    ActionResult { result: Option<RemoteActionResult> },
+    Hello {
+        protocol: u8,
+        agent_version: String,
+    },
+    Blob {
+        path: Option<PathBuf>,
+    },
+    Stored {
+        path: PathBuf,
+    },
+    ActionResult {
+        result: Option<RemoteActionResult>,
+    },
     ActionHitRecorded,
-    ActionStored { path: PathBuf },
-    ExecutableIdentity { stdout: Option<Vec<u8>> },
-    Error { message: String },
+    ActionStored {
+        path: PathBuf,
+    },
+    ActionPrediction {
+        prediction: Option<ActionPrediction>,
+    },
+    ActionPredictionRecorded,
+    ExecutableIdentity {
+        stdout: Option<Vec<u8>>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// Aggregate cache activity for one task session.
@@ -74,6 +105,17 @@ pub struct AgentStats {
     pub stores: u64,
     /// Total size of newly stored objects.
     pub stored_bytes: u64,
+}
+
+/// Adapter-owned data needed to reconstruct an action before fresh dependency
+/// discovery is available.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActionPrediction {
+    pub invocation: CacheDigest,
+    pub action: CacheDigest,
+    pub adapter: String,
+    pub payload: String,
 }
 
 #[derive(Default)]
@@ -96,6 +138,25 @@ pub struct CacheAgent {
     write_locks: Arc<Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>>,
     stats: Arc<AtomicAgentStats>,
     executable_identities: Arc<Mutex<BTreeMap<ExecutableIdentityKey, Vec<u8>>>>,
+    manifest_dir: Arc<PathBuf>,
+    task_actions: Arc<Mutex<BTreeMap<String, TaskActionState>>>,
+    next_task_run: Arc<AtomicU64>,
+    manifest_write_lock: Arc<Mutex<()>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TaskActionManifest {
+    version: u8,
+    task: String,
+    predictions: Vec<ActionPrediction>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TaskActionState {
+    manifest: String,
+    baseline_loaded: bool,
+    predictions: BTreeMap<CacheDigest, ActionPrediction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -110,12 +171,100 @@ impl CacheAgent {
         let cache_dir = cache_dir.into();
         Self {
             cas: LocalCas::new(cache_dir.clone()),
-            actions: LocalActionCache::new(cache_dir),
+            actions: LocalActionCache::new(cache_dir.clone()),
             version: version.into(),
             write_locks: Arc::new(Mutex::new(BTreeMap::new())),
             stats: Arc::new(AtomicAgentStats::default()),
             executable_identities: Arc::new(Mutex::new(BTreeMap::new())),
+            manifest_dir: Arc::new(cache_dir.join("task-manifests").join("v1")),
+            task_actions: Arc::new(Mutex::new(BTreeMap::new())),
+            next_task_run: Arc::new(AtomicU64::new(0)),
+            manifest_write_lock: Arc::new(Mutex::new(())),
         }
+    }
+
+    /// Load the last successful action manifest for a task into this session.
+    pub fn begin_task(&self, task: &str) -> Result<String> {
+        validate_task_identity(task)?;
+        let path = self.task_manifest_path(task);
+        let state = match fs::read(&path) {
+            Ok(contents) => {
+                let manifest: TaskActionManifest = serde_json::from_slice(&contents)?;
+                validate_task_manifest(&manifest, task)?;
+                TaskActionState {
+                    manifest: task.to_string(),
+                    baseline_loaded: true,
+                    predictions: manifest
+                        .predictions
+                        .into_iter()
+                        .map(|prediction| (prediction.invocation.clone(), prediction))
+                        .collect(),
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => TaskActionState {
+                manifest: task.to_string(),
+                baseline_loaded: true,
+                ..TaskActionState::default()
+            },
+            Err(error) => return Err(error.into()),
+        };
+        let sequence = self.next_task_run.fetch_add(1, Ordering::Relaxed);
+        let run =
+            CacheDigest::blake3(format!("{task}\0{}\0{sequence}", std::process::id()).as_bytes())
+                .hash;
+        self.task_actions.lock().unwrap().insert(run.clone(), state);
+        Ok(run)
+    }
+
+    /// Atomically publish the candidate manifest collected by a successful task.
+    pub fn commit_task(&self, run: &str) -> Result<()> {
+        validate_task_identity(run)?;
+        let state = self
+            .task_actions
+            .lock()
+            .unwrap()
+            .get(run)
+            .cloned()
+            .ok_or_else(|| eyre::eyre!("task action manifest baseline was not loaded"))?;
+        if !state.baseline_loaded {
+            bail!("task action manifest baseline was not loaded");
+        }
+        let task = state.manifest;
+        validate_task_identity(&task)?;
+        let _write_guard = self.manifest_write_lock.lock().unwrap();
+        let mut predictions = match fs::read(self.task_manifest_path(&task)) {
+            Ok(contents) => {
+                let current: TaskActionManifest = serde_json::from_slice(&contents)?;
+                validate_task_manifest(&current, &task)?;
+                current
+                    .predictions
+                    .into_iter()
+                    .map(|prediction| (prediction.invocation.clone(), prediction))
+                    .collect::<BTreeMap<_, _>>()
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
+            Err(error) => return Err(error.into()),
+        };
+        predictions.extend(state.predictions);
+        let manifest = TaskActionManifest {
+            version: TASK_ACTION_MANIFEST_VERSION,
+            task: task.clone(),
+            predictions: predictions.into_values().collect(),
+        };
+        validate_task_manifest(&manifest, &task)?;
+        fs::create_dir_all(self.manifest_dir.as_path())?;
+        let mut temporary = tempfile::NamedTempFile::new_in(self.manifest_dir.as_path())?;
+        serde_json::to_writer(temporary.as_file_mut(), &manifest)?;
+        temporary.as_file_mut().sync_all()?;
+        temporary
+            .persist(self.task_manifest_path(&task))
+            .map_err(|error| error.error)?;
+        self.task_actions.lock().unwrap().remove(run);
+        Ok(())
+    }
+
+    fn task_manifest_path(&self, task: &str) -> PathBuf {
+        self.manifest_dir.join(format!("{task}.json"))
     }
 
     /// Return a snapshot of this session's cache activity.
@@ -170,6 +319,12 @@ impl CacheAgent {
                 .actions
                 .store(&result)
                 .map(|path| AgentResponse::ActionStored { path }),
+            AgentRequest::FindActionPrediction { task, invocation } => {
+                self.find_action_prediction(&task, &invocation)
+            }
+            AgentRequest::RecordActionPrediction { task, prediction } => {
+                self.record_action_prediction(&task, prediction)
+            }
             AgentRequest::FindExecutableIdentity {
                 executable,
                 environment,
@@ -194,6 +349,43 @@ impl CacheAgent {
         }
         self.stats.hits.fetch_add(1, Ordering::Relaxed);
         Ok(AgentResponse::ActionHitRecorded)
+    }
+
+    fn find_action_prediction(
+        &self,
+        task: &str,
+        invocation: &CacheDigest,
+    ) -> Result<AgentResponse> {
+        validate_task_identity(task)?;
+        invocation.validate()?;
+        let prediction = self
+            .task_actions
+            .lock()
+            .unwrap()
+            .get(task)
+            .and_then(|state| state.predictions.get(invocation))
+            .cloned();
+        Ok(AgentResponse::ActionPrediction { prediction })
+    }
+
+    fn record_action_prediction(
+        &self,
+        task: &str,
+        prediction: ActionPrediction,
+    ) -> Result<AgentResponse> {
+        validate_task_identity(task)?;
+        validate_action_prediction(&prediction)?;
+        let mut tasks = self.task_actions.lock().unwrap();
+        let state = tasks.entry(task.to_string()).or_default();
+        if !state.predictions.contains_key(&prediction.invocation)
+            && state.predictions.len() >= MAX_TASK_ACTION_PREDICTIONS
+        {
+            bail!("task action manifest contains too many predictions");
+        }
+        state
+            .predictions
+            .insert(prediction.invocation.clone(), prediction);
+        Ok(AgentResponse::ActionPredictionRecorded)
     }
 
     fn executable_identity_key(
@@ -318,6 +510,52 @@ impl CacheAgent {
         }
         Ok(())
     }
+}
+
+fn validate_task_identity(task: &str) -> Result<()> {
+    if task.len() != 64
+        || !task
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        bail!("invalid task action identity");
+    }
+    Ok(())
+}
+
+fn validate_action_prediction(prediction: &ActionPrediction) -> Result<()> {
+    prediction.invocation.validate()?;
+    prediction.action.validate()?;
+    if prediction.adapter.is_empty()
+        || !prediction
+            .adapter
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        bail!("invalid action prediction adapter");
+    }
+    if prediction.payload.len() > MAX_ACTION_PREDICTION_PAYLOAD {
+        bail!("action prediction payload is too large");
+    }
+    serde_json::from_str::<serde_json::Value>(&prediction.payload)?;
+    Ok(())
+}
+
+fn validate_task_manifest(manifest: &TaskActionManifest, task: &str) -> Result<()> {
+    if manifest.version != TASK_ACTION_MANIFEST_VERSION || manifest.task != task {
+        bail!("task action manifest has an invalid identity");
+    }
+    if manifest.predictions.len() > MAX_TASK_ACTION_PREDICTIONS {
+        bail!("task action manifest contains too many predictions");
+    }
+    let mut invocations = BTreeMap::new();
+    for prediction in &manifest.predictions {
+        validate_action_prediction(prediction)?;
+        if invocations.insert(&prediction.invocation, ()).is_some() {
+            bail!("task action manifest contains duplicate predictions");
+        }
+    }
+    Ok(())
 }
 
 async fn send_response(
@@ -477,6 +715,150 @@ mod tests {
                 ..AgentStats::default()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn publishes_only_successfully_committed_task_action_manifests() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = directory.path().join("cache");
+        let task = "a".repeat(64);
+        let first_invocation = CacheDigest::blake3(b"first invocation");
+        let first = ActionPrediction {
+            invocation: first_invocation.clone(),
+            action: CacheDigest::blake3(b"first action"),
+            adapter: "rustc".into(),
+            payload: "{}".into(),
+        };
+
+        let agent = CacheAgent::new(&cache, "test-version");
+        let first_run = agent.begin_task(&task).unwrap();
+        assert!(matches!(
+            agent
+                .respond(AgentRequest::RecordActionPrediction {
+                    task: first_run.clone(),
+                    prediction: first.clone(),
+                })
+                .await,
+            AgentResponse::ActionPredictionRecorded
+        ));
+        agent.commit_task(&first_run).unwrap();
+
+        let uncommitted = CacheAgent::new(&cache, "test-version");
+        let uncommitted_run = uncommitted.begin_task(&task).unwrap();
+        let second_invocation = CacheDigest::blake3(b"second invocation");
+        assert!(matches!(
+            uncommitted
+                .respond(AgentRequest::RecordActionPrediction {
+                    task: uncommitted_run,
+                    prediction: ActionPrediction {
+                        invocation: second_invocation.clone(),
+                        action: CacheDigest::blake3(b"second action"),
+                        adapter: "rustc".into(),
+                        payload: "{}".into(),
+                    },
+                })
+                .await,
+            AgentResponse::ActionPredictionRecorded
+        ));
+
+        let next_session = CacheAgent::new(&cache, "test-version");
+        let next_run = next_session.begin_task(&task).unwrap();
+        assert!(matches!(
+            next_session
+                .respond(AgentRequest::FindActionPrediction {
+                    task: next_run.clone(),
+                    invocation: first_invocation,
+                })
+                .await,
+            AgentResponse::ActionPrediction {
+                prediction: Some(prediction)
+            } if prediction == first
+        ));
+        assert!(matches!(
+            next_session
+                .respond(AgentRequest::FindActionPrediction {
+                    task: next_run,
+                    invocation: second_invocation,
+                })
+                .await,
+            AgentResponse::ActionPrediction { prediction: None }
+        ));
+
+        let corrupt_task = "b".repeat(64);
+        fs::create_dir_all(next_session.manifest_dir.as_path()).unwrap();
+        fs::write(next_session.task_manifest_path(&corrupt_task), b"not json").unwrap();
+        assert!(next_session.begin_task(&corrupt_task).is_err());
+        let corrupt_run = "c".repeat(64);
+        next_session.task_actions.lock().unwrap().insert(
+            corrupt_run.clone(),
+            TaskActionState {
+                manifest: corrupt_task.clone(),
+                ..TaskActionState::default()
+            },
+        );
+        assert!(matches!(
+            next_session
+                .respond(AgentRequest::RecordActionPrediction {
+                    task: corrupt_run.clone(),
+                    prediction: first,
+                })
+                .await,
+            AgentResponse::ActionPredictionRecorded
+        ));
+        assert!(next_session.commit_task(&corrupt_run).is_err());
+        assert_eq!(
+            fs::read(next_session.task_manifest_path(&corrupt_task)).unwrap(),
+            b"not json"
+        );
+    }
+
+    #[tokio::test]
+    async fn merges_overlapping_runs_into_one_task_manifest() {
+        let directory = tempfile::tempdir().unwrap();
+        let cache = directory.path().join("cache");
+        let task = "d".repeat(64);
+        let agent = CacheAgent::new(&cache, "test-version");
+        let first_run = agent.begin_task(&task).unwrap();
+        let second_run = agent.begin_task(&task).unwrap();
+        assert_ne!(first_run, second_run);
+        let first_invocation = CacheDigest::blake3(b"overlap one");
+        let second_invocation = CacheDigest::blake3(b"overlap two");
+        for (run, invocation) in [
+            (&first_run, &first_invocation),
+            (&second_run, &second_invocation),
+        ] {
+            assert!(matches!(
+                agent
+                    .respond(AgentRequest::RecordActionPrediction {
+                        task: run.clone(),
+                        prediction: ActionPrediction {
+                            invocation: invocation.clone(),
+                            action: CacheDigest::blake3(invocation.hash.as_bytes()),
+                            adapter: "rustc".into(),
+                            payload: "{}".into(),
+                        },
+                    })
+                    .await,
+                AgentResponse::ActionPredictionRecorded
+            ));
+        }
+        agent.commit_task(&first_run).unwrap();
+        agent.commit_task(&second_run).unwrap();
+
+        let next = CacheAgent::new(cache, "test-version");
+        let run = next.begin_task(&task).unwrap();
+        for invocation in [first_invocation, second_invocation] {
+            assert!(matches!(
+                next.respond(AgentRequest::FindActionPrediction {
+                    task: run.clone(),
+                    invocation,
+                })
+                .await,
+                AgentResponse::ActionPrediction {
+                    prediction: Some(_)
+                }
+            ));
+        }
     }
 
     #[tokio::test]

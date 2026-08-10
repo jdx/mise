@@ -1,12 +1,12 @@
 use super::session;
 use eyre::{Context, Result, bail};
 use mise_cache_core::{
-    AgentRequest, AgentResponse, CacheDigest, CacheDirectory, CacheFileNode, RemoteActionResult,
-    RustcMetadata, canonical_json,
+    ActionPrediction, AgentRequest, AgentResponse, CacheDigest, CacheDirectory, CacheFileNode,
+    RemoteActionResult, RustcMetadata, canonical_json,
 };
 use mise_cache_rustc::{
     ActionContext, CompilerIdentity, DiscoveredInputs, PathMapping, RustcAction, RustcDepInfo,
-    RustcInvocation, RustcOutputs,
+    RustcInputPrediction, RustcInvocation, RustcOutputs,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -22,18 +22,33 @@ pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
     let working_dir = std::env::current_dir()?;
     let outputs = invocation.outputs(&working_dir)?;
 
+    let mut action_lookup_attempted = false;
     if outputs.dep_info.is_file()
         && let Ok((action, discovered)) =
             action_from_current_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)
     {
+        action_lookup_attempted = true;
         match restore_result(&action, &outputs, &discovered) {
             Ok(Some((stdout, stderr))) => {
+                record_prediction(rustc, &invocation, &action, &discovered, &working_dir);
                 let _ = replay_bytes(&stdout, &stderr);
                 return Ok(ExitCode::SUCCESS);
             }
             Ok(None) => {}
             Err(error) => {
                 eprintln!("mise rustc cache warning: result was not restored: {error:#}");
+            }
+        }
+    }
+    if !action_lookup_attempted {
+        match restore_predicted_result(rustc, &invocation, &outputs, &working_dir) {
+            Ok(Some((stdout, stderr))) => {
+                let _ = replay_bytes(&stdout, &stderr);
+                return Ok(ExitCode::SUCCESS);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("mise rustc cache warning: prediction was not restored: {error:#}");
             }
         }
     }
@@ -46,18 +61,64 @@ pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
         .wrap_err("failed to execute rustc")?;
     let _ = replay_output(&output);
     if output.status.success() {
-        let publication = (|| {
+        let publication: Result<()> = (|| {
             let (action, discovered) =
                 action_from_dep_info(rustc, &invocation, &outputs.dep_info, &working_dir)?;
             discovered.verify_not_modified_since(compilation_started)?;
             discovered.verify()?;
-            publish_result(&action.digest, &action.bytes, &outputs.files, &output)
+            let mut cacheable_outputs = outputs.files.clone();
+            cacheable_outputs.push(outputs.dep_info.clone());
+            publish_result(&action.digest, &action.bytes, &cacheable_outputs, &output)?;
+            record_prediction(rustc, &invocation, &action, &discovered, &working_dir);
+            Ok(())
         })();
         if let Err(error) = publication {
             eprintln!("mise rustc cache warning: result was not stored: {error:#}");
         }
     }
     Ok(exit_code(output.status))
+}
+
+fn restore_predicted_result(
+    rustc: &OsStr,
+    invocation: &RustcInvocation,
+    outputs: &RustcOutputs,
+    working_dir: &Path,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+    let task = std::env::var(session::TASK_ENV)
+        .wrap_err_with(|| format!("{} is not set", session::TASK_ENV))?;
+    let mut context = base_action_context(rustc, working_dir)?;
+    let invocation_digest = invocation.invocation_digest(&context)?;
+    let responses = session::request_agent(&[AgentRequest::FindActionPrediction {
+        task,
+        invocation: invocation_digest.clone(),
+    }])?;
+    let Some(response) = responses.into_iter().next() else {
+        bail!("cache agent did not return an action prediction response");
+    };
+    let prediction = match response {
+        AgentResponse::ActionPrediction {
+            prediction: Some(prediction),
+        } => prediction,
+        AgentResponse::ActionPrediction { prediction: None } => return Ok(None),
+        AgentResponse::Error { message } => bail!(message),
+        _ => bail!("cache agent returned an unexpected action prediction response"),
+    };
+    if prediction.adapter != "rustc" || prediction.invocation != invocation_digest {
+        bail!("cache agent returned an incompatible rustc action prediction");
+    }
+    let input_prediction: RustcInputPrediction = serde_json::from_str(&prediction.payload)?;
+    if String::from_utf8(canonical_json(&input_prediction)?)? != prediction.payload {
+        bail!("cache agent returned a non-canonical rustc action prediction");
+    }
+    let discovered = input_prediction.discover(working_dir, &context.path_mappings)?;
+    discovered.clone().apply_to(&mut context)?;
+    let action = invocation.action(context)?;
+    let restored = restore_result(&action, outputs, &discovered)?;
+    if restored.is_some() {
+        record_prediction_value(invocation_digest, action.digest.clone(), prediction.payload);
+    }
+    Ok(restored)
 }
 
 fn action_from_dep_info(
@@ -88,16 +149,64 @@ fn action_from_parsed_dep_info(
     working_dir: &Path,
 ) -> Result<(RustcAction, DiscoveredInputs)> {
     let discovered = invocation.discover_inputs(dep_info, working_dir)?;
-    let mut context = ActionContext {
+    let mut context = base_action_context(rustc, working_dir)?;
+    discovered.clone().apply_to(&mut context)?;
+    let action = invocation.action(context)?;
+    Ok((action, discovered))
+}
+
+fn base_action_context(rustc: &OsStr, working_dir: &Path) -> Result<ActionContext> {
+    Ok(ActionContext {
         compiler: compiler_identity(rustc)?,
         working_dir: working_dir.to_path_buf(),
         path_mappings: path_mappings(working_dir),
         environment: BTreeMap::new(),
         inputs: Vec::new(),
-    };
-    discovered.clone().apply_to(&mut context)?;
-    let action = invocation.action(context)?;
-    Ok((action, discovered))
+    })
+}
+
+fn record_prediction(
+    rustc: &OsStr,
+    invocation: &RustcInvocation,
+    action: &RustcAction,
+    discovered: &DiscoveredInputs,
+    working_dir: &Path,
+) {
+    let result = (|| {
+        let context = base_action_context(rustc, working_dir)?;
+        let invocation_digest = invocation.invocation_digest(&context)?;
+        let prediction = invocation.prediction(&context, discovered)?;
+        let payload = String::from_utf8(canonical_json(&prediction)?)?;
+        record_prediction_value(invocation_digest, action.digest.clone(), payload);
+        Result::<()>::Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("mise rustc cache warning: action prediction was not recorded: {error:#}");
+    }
+}
+
+fn record_prediction_value(invocation: CacheDigest, action: CacheDigest, payload: String) {
+    let result = (|| {
+        let task = std::env::var(session::TASK_ENV)
+            .wrap_err_with(|| format!("{} is not set", session::TASK_ENV))?;
+        let responses = session::request_agent(&[AgentRequest::RecordActionPrediction {
+            task,
+            prediction: ActionPrediction {
+                invocation,
+                action,
+                adapter: "rustc".into(),
+                payload,
+            },
+        }])?;
+        match responses.into_iter().next() {
+            Some(AgentResponse::ActionPredictionRecorded) => Ok(()),
+            Some(AgentResponse::Error { message }) => bail!(message),
+            _ => bail!("cache agent returned an unexpected prediction response"),
+        }
+    })();
+    if let Err(error) = result {
+        eprintln!("mise rustc cache warning: action prediction was not recorded: {error:#}");
+    }
 }
 
 fn verify_environment(environment: &BTreeMap<String, Option<String>>) -> Result<()> {
@@ -293,6 +402,7 @@ fn validated_outputs(
     let mut expected = outputs
         .files
         .iter()
+        .chain(std::iter::once(&outputs.dep_info))
         .map(|path| {
             let name = path
                 .file_name()
@@ -654,6 +764,10 @@ mod tests {
         }
     }
 
+    fn test_output_directory(file: CacheFileNode) -> CacheDirectory {
+        test_directory(vec![file, test_file("demo.d")])
+    }
+
     #[test]
     fn parses_verbose_rustc_identity() {
         let verbose = "rustc 1.97.0 (abc 2026-08-01)\n\
@@ -686,10 +800,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let outputs = test_outputs(root.path());
         let files =
-            validated_outputs(test_directory(vec![test_file("libdemo.rlib")]), &outputs).unwrap();
+            validated_outputs(test_output_directory(test_file("libdemo.rlib")), &outputs).unwrap();
 
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].1, outputs.files[0]);
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|(_, path)| path == &outputs.files[0]));
+        assert!(files.iter().any(|(_, path)| path == &outputs.dep_info));
     }
 
     #[test]
@@ -697,8 +812,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let outputs = test_outputs(root.path());
         assert!(
-            validated_outputs(test_directory(vec![test_file("../libdemo.rlib")]), &outputs,)
-                .is_err()
+            validated_outputs(
+                test_output_directory(test_file("../libdemo.rlib")),
+                &outputs,
+            )
+            .is_err()
         );
     }
 
@@ -708,7 +826,7 @@ mod tests {
         let outputs = test_outputs(root.path());
         let mut file = test_file("libdemo.rlib");
         file.executable = true;
-        assert!(validated_outputs(test_directory(vec![file]), &outputs).is_err());
+        assert!(validated_outputs(test_output_directory(file), &outputs).is_err());
     }
 
     #[test]
@@ -717,7 +835,7 @@ mod tests {
         let outputs = test_outputs(root.path());
         let mut file = test_file("libdemo.rlib");
         file.mode = 0o666;
-        assert!(validated_outputs(test_directory(vec![file]), &outputs).is_err());
+        assert!(validated_outputs(test_output_directory(file), &outputs).is_err());
     }
 
     #[cfg(unix)]
