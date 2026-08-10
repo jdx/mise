@@ -168,8 +168,11 @@ impl Backend for AquaBackend {
     }
 
     async fn description(&self) -> Option<String> {
+        // `self.id`, not `ba.tool_name`: the registry is keyed by aqua package name, and
+        // `from_arg` is what turns a bare `jq` into `jqlang/jq`. Looking it up by the
+        // short name misses every tool named the usual way, and `.ok()` hides that.
         AQUA_REGISTRY
-            .package(&self.ba.tool_name)
+            .package(&self.id)
             .await
             .ok()
             .and_then(|p| p.description.clone())
@@ -199,7 +202,8 @@ impl Backend for AquaBackend {
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
-        let pkg = match AQUA_REGISTRY.package(&self.ba.tool_name).await {
+        // Keyed by aqua package name, same as `description` above.
+        let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(_) => return vec![],
         };

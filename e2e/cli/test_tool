@@ -28,6 +28,15 @@ mise tool aqua:cli/cli --json | jq -e '.security | type == "array"' || fail "sec
 # Test that security features have type field when present
 mise tool aqua:cli/cli --json | jq -e '.security | if length > 0 then .[0].type else true end' || fail "security feature missing type field"
 
+# Naming an aqua tool by its registry short name must reach the same package as spelling
+# the backend out. Both are cli/cli; only the second form used to resolve, because the
+# lookup went through the short name rather than the aqua package name.
+# See https://github.com/jdx/mise/discussions/4917
+short_desc=$(mise tool github-cli --description)
+[[ -n $short_desc && $short_desc != "[none]" ]] || fail "short name should carry a description"
+[[ $short_desc == "$(mise tool aqua:cli/cli --description)" ]] || fail "description differs by spelling"
+[[ $(mise tool github-cli --json | jq -c '.security') == "$(mise tool aqua:cli/cli --json | jq -c '.security')" ]] || fail "security differs by spelling"
+
 # Test core plugin security features
 # Node has checksum + gpg
 mise tool node --json | jq -e '.security | length >= 1' || fail "node should have security features"
