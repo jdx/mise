@@ -648,10 +648,11 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
-        let action_cache_run = self
-            .cache_session
-            .as_ref()
-            .and_then(|session| session.apply(task, &mut env));
+        let action_cache_run = if let Some(session) = self.cache_session.as_ref() {
+            session.apply(task, &mut env).await
+        } else {
+            None
+        };
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
@@ -748,7 +749,7 @@ impl TaskExecutor {
             None
         };
         if let Some(run) = action_cache_run
-            && let Err(err) = run.commit()
+            && let Err(err) = run.commit().await
         {
             warn!("task {} action manifest write failed: {err}", task.name);
         }

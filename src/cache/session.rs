@@ -1,11 +1,12 @@
+use crate::config::Settings;
 use crate::task::Task;
 #[cfg(test)]
 use crate::task::TaskRustCacheConfig;
 use bytesize::ByteSize;
 use eyre::{Context, Result, bail};
 use mise_cache_core::{
-    AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent, CacheDigest,
-    canonical_json,
+    AGENT_PROTOCOL_VERSION, AgentRemoteCache, AgentRequest, AgentResponse, AgentStats, CacheAgent,
+    CacheDigest, RemoteCacheClient, RemoteCacheConfig, canonical_json,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -34,7 +35,7 @@ pub(crate) struct CacheSessionEnvironment {
 }
 
 impl CacheSessionEnvironment {
-    pub(crate) fn apply(
+    pub(crate) async fn apply(
         &self,
         task: &Task,
         environment: &mut BTreeMap<String, String>,
@@ -43,7 +44,7 @@ impl CacheSessionEnvironment {
             return None;
         }
         let task_identity = task_action_identity(task);
-        let (protocol_task, action_run) = match self.agent.begin_task(&task_identity) {
+        let (protocol_task, action_run) = match self.agent.begin_task(&task_identity).await {
             Ok(run) => (
                 run.clone(),
                 Some(TaskActionRun {
@@ -83,8 +84,8 @@ pub(crate) struct TaskActionRun {
 }
 
 impl TaskActionRun {
-    pub(crate) fn commit(self) -> Result<()> {
-        self.agent.commit_task(&self.run)
+    pub(crate) async fn commit(self) -> Result<()> {
+        self.agent.commit_task(&self.run).await
     }
 }
 
@@ -136,7 +137,11 @@ impl CacheSession {
         let shim = install_session_shim(session_dir)?;
         let staging = session_dir.join("staging");
         std::fs::create_dir(&staging)?;
-        let agent = CacheAgent::new(cache_dir, VERSION);
+        let agent = if let Some(remote) = action_remote_cache(&cache_dir)? {
+            CacheAgent::new_remote(cache_dir, VERSION, remote)
+        } else {
+            CacheAgent::new(cache_dir, VERSION)
+        };
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (socket, server) = spawn_server(session_dir, agent.clone(), shutdown_rx).await?;
         Ok(Self {
@@ -166,6 +171,40 @@ impl CacheSession {
         }
         Ok(self.agent.stats())
     }
+}
+
+fn action_remote_cache(cache_dir: &Path) -> Result<Option<AgentRemoteCache>> {
+    let settings = Settings::get();
+    let Some(base_url) = settings.task.cache.remote_url.clone() else {
+        return Ok(None);
+    };
+    let namespace = settings
+        .task
+        .cache
+        .remote_namespace
+        .as_deref()
+        .map(str::trim)
+        .filter(|namespace| !namespace.is_empty())
+        .ok_or_else(|| {
+            eyre::eyre!("task.cache.remote_namespace is required when task.cache.remote_url is set")
+        })?
+        .to_string();
+    let client = RemoteCacheClient::new(RemoteCacheConfig {
+        base_url: base_url.parse().wrap_err("invalid task.cache.remote_url")?,
+        namespace,
+        token: settings.task.cache.remote_token.clone(),
+        token_file: settings.task.cache.remote_token_file.clone(),
+        oidc_audience: settings.task.cache.remote_oidc_audience.clone(),
+        connect_timeout: settings.http_timeout(),
+        read_timeout: settings.http_timeout(),
+        download_timeout: settings.http_download_timeout(),
+        retries: settings.http_retries(),
+    })?;
+    Ok(Some(AgentRemoteCache {
+        client,
+        mode: settings.task.cache.remote_mode,
+        staging_dir: cache_dir.join("remote"),
+    }))
 }
 
 impl Drop for CacheSession {
@@ -643,8 +682,8 @@ fn validate_handshake_response(response: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn session_environment_is_scoped_to_selected_adapters() {
+    #[tokio::test]
+    async fn session_environment_is_scoped_to_selected_adapters() {
         let cache = tempfile::tempdir().unwrap();
         let environment = CacheSessionEnvironment {
             socket: "socket".into(),
@@ -654,17 +693,17 @@ mod tests {
         };
         let mut task = Task::default();
         let mut values = BTreeMap::from([("RUSTC_WRAPPER".into(), "existing".into())]);
-        let run = environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values).await;
         assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
         task.rust_cache = Some(TaskRustCacheConfig { enabled: false });
-        let run = environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values).await;
         assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
         task.rust_cache = Some(TaskRustCacheConfig { enabled: true });
-        let run = environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values).await;
         assert!(run.is_some());
         assert_eq!(values.get(SOCKET_ENV).unwrap(), "socket");
         assert_eq!(values.get(STAGING_ENV).unwrap(), "staging");
