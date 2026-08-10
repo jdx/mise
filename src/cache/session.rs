@@ -4,8 +4,10 @@ use crate::task::TaskRustCacheConfig;
 use bytesize::ByteSize;
 use eyre::{Context, Result, bail};
 use mise_cache_core::{
-    AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent,
+    AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent, CacheDigest,
+    canonical_json,
 };
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 #[cfg(unix)]
@@ -19,29 +21,51 @@ use tokio::task::JoinHandle;
 const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
 pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
+pub(super) const TASK_ENV: &str = "MISE_CACHE_TASK";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct CacheSessionEnvironment {
     socket: String,
     rustc_shim: String,
     staging: String,
+    agent: CacheAgent,
 }
 
 impl CacheSessionEnvironment {
-    pub(crate) fn apply(&self, task: &Task, environment: &mut BTreeMap<String, String>) {
+    pub(crate) fn apply(
+        &self,
+        task: &Task,
+        environment: &mut BTreeMap<String, String>,
+    ) -> Option<TaskActionRun> {
         if !task.rust_cache.as_ref().is_some_and(|cache| cache.enabled) {
-            return;
+            return None;
         }
+        let task_identity = task_action_identity(task);
+        let (protocol_task, action_run) = match self.agent.begin_task(&task_identity) {
+            Ok(run) => (
+                run.clone(),
+                Some(TaskActionRun {
+                    run,
+                    agent: self.agent.clone(),
+                }),
+            ),
+            Err(error) => {
+                warn!("task {} action manifest was not loaded: {error}", task.name);
+                (task_identity, None)
+            }
+        };
         environment.insert(SOCKET_ENV.into(), self.socket.clone());
         environment.insert(STAGING_ENV.into(), self.staging.clone());
+        environment.insert(TASK_ENV.into(), protocol_task);
         if let Some(previous) = environment.insert("RUSTC_WRAPPER".into(), self.rustc_shim.clone())
             && previous != self.rustc_shim
         {
             environment.insert(PREVIOUS_RUSTC_WRAPPER_ENV.into(), previous);
         }
         environment.insert("CARGO_INCREMENTAL".into(), "0".into());
+        action_run
     }
 
     pub(crate) fn sandbox_paths(&self) -> [PathBuf; 3] {
@@ -51,6 +75,53 @@ impl CacheSessionEnvironment {
             PathBuf::from(&self.staging),
         ]
     }
+}
+
+pub(crate) struct TaskActionRun {
+    run: String,
+    agent: CacheAgent,
+}
+
+impl TaskActionRun {
+    pub(crate) fn commit(self) -> Result<()> {
+        self.agent.commit_task(&self.run)
+    }
+}
+
+#[derive(Serialize)]
+struct TaskActionIdentity<'a> {
+    version: u8,
+    name: &'a str,
+    phase: crate::task::TaskRunPhase,
+    run: &'a [crate::task::RunEntry],
+    args: &'a [String],
+    shell: &'a Option<String>,
+    dir: &'a Option<String>,
+    source: String,
+}
+
+fn task_action_identity(task: &Task) -> String {
+    let source = task
+        .config_root
+        .as_deref()
+        .and_then(|root| task.config_source.strip_prefix(root).ok())
+        .map(Path::to_path_buf)
+        .or_else(|| task.config_source.file_name().map(PathBuf::from))
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let material = TaskActionIdentity {
+        version: 1,
+        name: &task.name,
+        phase: task.run_phase,
+        run: task.run(),
+        args: &task.args,
+        shell: &task.shell,
+        dir: &task.dir,
+        source,
+    };
+    let bytes = canonical_json(&material).expect("task action identity must serialize");
+    CacheDigest::blake3(&bytes).hash
 }
 
 pub(crate) struct CacheSession {
@@ -73,6 +144,7 @@ impl CacheSession {
                 socket,
                 rustc_shim: shim.to_string_lossy().into_owned(),
                 staging: staging.to_string_lossy().into_owned(),
+                agent: agent.clone(),
             },
             agent,
             shutdown: Mutex::new(Some(shutdown_tx)),
@@ -573,24 +645,30 @@ mod tests {
 
     #[test]
     fn session_environment_is_scoped_to_selected_adapters() {
+        let cache = tempfile::tempdir().unwrap();
         let environment = CacheSessionEnvironment {
             socket: "socket".into(),
             rustc_shim: "shim".into(),
             staging: "staging".into(),
+            agent: CacheAgent::new(cache.path(), VERSION),
         };
         let mut task = Task::default();
         let mut values = BTreeMap::from([("RUSTC_WRAPPER".into(), "existing".into())]);
-        environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values);
+        assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
         task.rust_cache = Some(TaskRustCacheConfig { enabled: false });
-        environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values);
+        assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
         task.rust_cache = Some(TaskRustCacheConfig { enabled: true });
-        environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values);
+        assert!(run.is_some());
         assert_eq!(values.get(SOCKET_ENV).unwrap(), "socket");
         assert_eq!(values.get(STAGING_ENV).unwrap(), "staging");
+        assert_eq!(values.get(TASK_ENV).unwrap().len(), 64);
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "shim");
         assert_eq!(values.get(PREVIOUS_RUSTC_WRAPPER_ENV).unwrap(), "existing");
         assert_eq!(values.get("CARGO_INCREMENTAL").unwrap(), "0");

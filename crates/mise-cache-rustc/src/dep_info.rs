@@ -132,6 +132,43 @@ pub struct DiscoveredInputs {
 }
 
 impl DiscoveredInputs {
+    pub(crate) fn from_paths(
+        working_dir: &Path,
+        paths: BTreeSet<PathBuf>,
+        environment: BTreeMap<String, Option<String>>,
+    ) -> Result<Self, BypassReason> {
+        if !working_dir.is_absolute() {
+            return Err(BypassReason::RelativeWorkingDirectory(
+                working_dir.to_path_buf(),
+            ));
+        }
+        let working_dir = normalize_components(working_dir);
+        let mut inputs = Vec::with_capacity(paths.len());
+        for path in paths {
+            let metadata = std::fs::metadata(&path).map_err(|error| BypassReason::InputRead {
+                path: path.clone(),
+                message: error.to_string(),
+            })?;
+            if !metadata.is_file() {
+                return Err(BypassReason::InputRead {
+                    path,
+                    message: "input is not a regular file".into(),
+                });
+            }
+            let digest =
+                CacheDigest::blake3_file(&path).map_err(|error| BypassReason::InputRead {
+                    path: path.clone(),
+                    message: error.to_string(),
+                })?;
+            inputs.push(ActionInput { path, digest });
+        }
+        Ok(Self {
+            working_dir,
+            inputs,
+            environment,
+        })
+    }
+
     /// Reject inputs whose modification time overlaps the compiler invocation.
     ///
     /// Input contents are first hashed after rustc reports their paths. This
@@ -249,30 +286,7 @@ impl RustcInvocation {
                 normalize_components(&absolute)
             })
             .collect::<BTreeSet<_>>();
-        let mut inputs = Vec::with_capacity(paths.len());
-        for path in paths {
-            let metadata = std::fs::metadata(&path).map_err(|error| BypassReason::InputRead {
-                path: path.clone(),
-                message: error.to_string(),
-            })?;
-            if !metadata.is_file() {
-                return Err(BypassReason::InputRead {
-                    path,
-                    message: "input is not a regular file".into(),
-                });
-            }
-            let digest =
-                CacheDigest::blake3_file(&path).map_err(|error| BypassReason::InputRead {
-                    path: path.clone(),
-                    message: error.to_string(),
-                })?;
-            inputs.push(ActionInput { path, digest });
-        }
-        Ok(DiscoveredInputs {
-            working_dir,
-            inputs,
-            environment: dep_info.environment.clone(),
-        })
+        DiscoveredInputs::from_paths(&working_dir, paths, dep_info.environment.clone())
     }
 }
 
