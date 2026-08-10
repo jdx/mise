@@ -26,7 +26,7 @@ serde_json_canonicalizer = "0.3"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3"
-tokio = { version = "1", features = ["fs", "io-util", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["io"] }
 url = "2"
 

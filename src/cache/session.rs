@@ -169,6 +169,7 @@ impl CacheSession {
         if let Some(server) = server {
             server.await??;
         }
+        self.agent.cancel_prefetches().await;
         Ok(self.agent.stats())
     }
 }
