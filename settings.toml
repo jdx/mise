@@ -33,6 +33,7 @@ type = "Bool"
 description = "[experimental] List of age identity files to use for decryption."
 env = "MISE_AGE_IDENTITY_FILES"
 optional = true
+parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
@@ -47,6 +48,7 @@ type = "Path"
 description = "[experimental] List of SSH identity files to use for age decryption."
 env = "MISE_AGE_SSH_IDENTITY_FILES"
 optional = true
+parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
@@ -105,6 +107,7 @@ type = "Bool"
 description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
 env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
 optional = true
+parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
@@ -1919,6 +1922,7 @@ insecure_registries = ["registry.lan:5000", "10.0.0.8:5000"]
 """
 env = "MISE_OCI_INSECURE_REGISTRIES"
 optional = true
+parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
