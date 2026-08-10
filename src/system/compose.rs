@@ -222,7 +222,7 @@ pub fn apply_with_dry_run_actions(
     }
     if dry_run {
         for request in changes {
-            for argv in request.action_argvs()? {
+            for argv in request.dry_run_action_argvs()? {
                 miseprintln!("would run {}", shell_words::join(argv));
             }
         }
@@ -576,9 +576,12 @@ impl ComposeRequest {
         }
     }
 
-    fn action_argvs(&self) -> Result<Vec<Vec<String>>> {
-        Ok(self
-            .action_commands()?
+    fn dry_run_action_argvs(&self) -> Result<Vec<Vec<String>>> {
+        Ok(self.commands_to_argvs(self.dry_run_action_commands()?))
+    }
+
+    fn commands_to_argvs(&self, commands: Vec<(String, Vec<String>)>) -> Vec<Vec<String>> {
+        commands
             .into_iter()
             .map(|(program, args)| {
                 if self.sudo {
@@ -587,7 +590,7 @@ impl ComposeRequest {
                     std::iter::once(program).chain(args).collect()
                 }
             })
-            .collect())
+            .collect()
     }
 
     fn run_action(&self) -> Result<()> {
@@ -598,13 +601,31 @@ impl ComposeRequest {
     }
 
     fn action_commands(&self) -> Result<Vec<(String, Vec<String>)>> {
-        let (program, mut args) = self.compose_command()?;
+        let (program, args) = self.compose_command()?;
+        Ok(self.action_commands_with(program, args, self.stopped_orphan_removal_command()?))
+    }
+
+    fn dry_run_action_commands(&self) -> Result<Vec<(String, Vec<String>)>> {
+        let (program, args) = self.dry_run_compose_command()?;
+        Ok(self.action_commands_with(
+            program,
+            args,
+            self.dry_run_stopped_orphan_removal_command()?,
+        ))
+    }
+
+    fn action_commands_with(
+        &self,
+        program: String,
+        mut args: Vec<String>,
+        orphan_removal: Option<(String, Vec<String>)>,
+    ) -> Vec<(String, Vec<String>)> {
         args.extend(self.action_args());
         let mut commands = vec![(program, args)];
-        if let Some(command) = self.stopped_orphan_removal_command()? {
+        if let Some(command) = orphan_removal {
             commands.push(command);
         }
-        Ok(commands)
+        commands
     }
 
     fn run_command(&self, program: &str, args: &[String]) -> Result<()> {
@@ -624,8 +645,23 @@ impl ComposeRequest {
     }
 
     fn stopped_orphan_removal_command(&self) -> Result<Option<(String, Vec<String>)>> {
-        if self.state != ComposeState::Stopped || !self.remove_orphans {
+        let Some(args) = self.stopped_orphan_removal_args() else {
             return Ok(None);
+        };
+        let command = self.resolved_engine_command()?;
+        command_with_args(command, args).map(Some)
+    }
+
+    fn dry_run_stopped_orphan_removal_command(&self) -> Result<Option<(String, Vec<String>)>> {
+        let Some(args) = self.stopped_orphan_removal_args() else {
+            return Ok(None);
+        };
+        command_with_args(self.configured_engine_command(), args).map(Some)
+    }
+
+    fn stopped_orphan_removal_args(&self) -> Option<Vec<String>> {
+        if self.state != ComposeState::Stopped || !self.remove_orphans {
+            return None;
         }
         let Some(ComposeInspection::Present {
             configured_services,
@@ -633,7 +669,7 @@ impl ComposeRequest {
             ..
         }) = &self.inspection
         else {
-            return Ok(None);
+            return None;
         };
         let orphan_ids = containers
             .iter()
@@ -641,16 +677,12 @@ impl ComposeRequest {
             .map(|container| container.id.clone())
             .collect::<Vec<_>>();
         if orphan_ids.is_empty() {
-            return Ok(None);
+            return None;
         }
-        let command = self.resolved_engine_command()?;
-        let (program, prefix) = command
-            .split_first()
-            .ok_or_else(|| eyre!("resolved engine command is empty"))?;
-        let mut args = prefix.to_vec();
+        let mut args = vec![];
         args.extend(["rm".to_string(), "--force".to_string()]);
         args.extend(orphan_ids);
-        Ok(Some((program.clone(), args)))
+        Some(args)
     }
 
     fn action_args(&self) -> Vec<String> {
@@ -752,6 +784,20 @@ impl ComposeRequest {
 
     fn compose_command(&self) -> Result<(String, Vec<String>)> {
         let command = self.resolved_compose_command()?;
+        self.compose_command_from(command)
+    }
+
+    fn dry_run_compose_command(&self) -> Result<(String, Vec<String>)> {
+        let command = if self.command.is_empty() {
+            self.detected_compose_command()?
+                .unwrap_or_else(default_compose_command)
+        } else {
+            resolve_command(&self.command)?
+        };
+        self.compose_command_from(command)
+    }
+
+    fn compose_command_from(&self, command: Vec<String>) -> Result<(String, Vec<String>)> {
         let (program, prefix) = command
             .split_first()
             .ok_or_else(|| eyre!("resolved compose command is empty"))?;
@@ -782,22 +828,27 @@ impl ComposeRequest {
         if !self.command.is_empty() {
             return resolve_command(&self.command);
         }
+        self.detected_compose_command()?
+            .ok_or_else(|| eyre!("neither 'docker compose' nor 'docker-compose' was found"))
+    }
+
+    fn detected_compose_command(&self) -> Result<Option<Vec<String>>> {
         if let Some(docker) = crate::file::which("docker") {
             let docker = docker.to_string_lossy().to_string();
             if compose_plugin_available(&docker) {
-                return Ok(vec![docker, "compose".to_string()]);
+                return Ok(Some(vec![docker, "compose".to_string()]));
             }
         }
         if let Some(compose) = crate::file::which("docker-compose") {
             let compose = compose.to_string_lossy().to_string();
             if standalone_compose_v2_available(&compose) {
-                return Ok(vec![compose]);
+                return Ok(Some(vec![compose]));
             }
             bail!(
                 "legacy 'docker-compose' v1 is unsupported; install Docker Compose v2 or set command to a compatible frontend"
             );
         }
-        bail!("neither 'docker compose' nor 'docker-compose' was found")
+        Ok(None)
     }
 
     fn resolved_engine_command(&self) -> Result<Vec<String>> {
@@ -811,6 +862,15 @@ impl ComposeRequest {
             return Ok(vec![docker.to_string_lossy().to_string()]);
         }
         bail!("container engine command 'docker' was not found; set engine_command explicitly")
+    }
+
+    fn configured_engine_command(&self) -> Vec<String> {
+        if !self.engine_command.is_empty() {
+            return self.engine_command.clone();
+        }
+        engine_command_from_compose_command(&self.command)
+            .map(<[String]>::to_vec)
+            .unwrap_or_else(|| vec!["docker".to_string()])
     }
 }
 
@@ -873,6 +933,16 @@ fn checked_stdout(output: Output, program: &str, args: &[String]) -> Result<Stri
         );
     }
     Ok(String::from_utf8(output.stdout)?)
+}
+
+fn command_with_args(command: Vec<String>, args: Vec<String>) -> Result<(String, Vec<String>)> {
+    let (program, prefix) = command
+        .split_first()
+        .ok_or_else(|| eyre!("resolved engine command is empty"))?;
+    Ok((
+        program.clone(),
+        prefix.iter().cloned().chain(args).collect(),
+    ))
 }
 
 fn parse_ps(output: &str) -> Result<Vec<ComposeContainer>> {
@@ -1059,6 +1129,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_compose_command() -> Vec<String> {
+    vec!["docker".to_string(), "compose".to_string()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1217,6 +1291,34 @@ mod tests {
     }
 
     #[test]
+    fn dry_run_removes_orphans_before_the_engine_is_installed() {
+        let mut request = request(ComposeState::Stopped);
+        let executable = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        request.command = vec![executable, "compose".to_string()];
+        request.engine_command = vec!["engine-not-installed-yet".to_string()];
+        request.inspection = Some(ComposeInspection::Present {
+            configured_services: IndexSet::from(["api".to_string()]),
+            target_services: IndexSet::from(["api".to_string()]),
+            containers: vec![ComposeContainer {
+                id: "old-1".to_string(),
+                service: "removed".to_string(),
+                state: "running".to_string(),
+                health: String::new(),
+                exit_code: 0,
+                config_hash: None,
+            }],
+            config_hashes: HashMap::new(),
+        });
+
+        let commands = request.dry_run_action_commands().unwrap();
+        assert_eq!(commands[1].0, "engine-not-installed-yet");
+        assert_eq!(commands[1].1, ["rm", "--force", "old-1"]);
+    }
+
+    #[test]
     fn builds_full_lifecycle_commands() {
         let running = request(ComposeState::Running);
         let args = running.action_args();
@@ -1267,5 +1369,26 @@ mod tests {
         assert!(!is_compose_v2_version("1.29.2\n"));
         assert!(!is_compose_v2_version("Docker Compose version 1.29.2"));
         assert!(!is_compose_v2_version("unknown"));
+    }
+
+    #[test]
+    fn dry_run_prints_default_compose_command_before_it_is_installed() {
+        let mut request = request(ComposeState::Running);
+        request.command.clear();
+        request.engine_command.clear();
+        request.inspection = Some(ComposeInspection::Unavailable(
+            "neither 'docker compose' nor 'docker-compose' was found".to_string(),
+        ));
+
+        assert_eq!(default_compose_command(), ["docker", "compose"]);
+
+        request.command = vec!["mise-compose-command-that-does-not-exist".to_string()];
+        assert!(
+            request
+                .dry_run_action_commands()
+                .unwrap_err()
+                .to_string()
+                .contains("command not found")
+        );
     }
 }
