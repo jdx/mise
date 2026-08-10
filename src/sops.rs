@@ -35,7 +35,7 @@ where
 
     let (age, age_key_file) = resolve_age_key(exec_env, &mut parse_template);
 
-    if age.is_none() && !Settings::get().sops.strict {
+    if use_rops && age.is_none() && !Settings::get().sops.strict {
         debug!("age key not found, skipping decryption in non-strict mode");
         return Ok(String::new());
     }
@@ -110,15 +110,14 @@ where
             }
             Some(sops_path) => {
                 let sops = sops_path.to_string_lossy().to_string();
-                // TODO: this obviously won't work on windows
+                // sops reads stdin when no input filename is provided.
                 match cmd!(
                     sops,
+                    "decrypt",
                     "--input-type",
                     format,
                     "--output-type",
-                    format,
-                    "-d",
-                    "/dev/stdin"
+                    format
                 )
                 .stdin_bytes(input.as_bytes())
                 .read()
