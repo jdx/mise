@@ -278,6 +278,30 @@ pub fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
         .map(|_| ())
 }
 
+/// Give `from`'s content a second name at `to` without duplicating it, falling back to a
+/// copy.
+///
+/// A hard link needs both paths on one volume and a filesystem that supports them, so
+/// failing is an ordinary outcome rather than an error worth surfacing.
+pub fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    match fs::hard_link(from, to) {
+        Ok(()) => {
+            trace!("ln {} {}", from.display(), to.display());
+            Ok(())
+        }
+        Err(err) => {
+            trace!(
+                "ln {} {} failed ({err}), copying instead",
+                from.display(),
+                to.display()
+            );
+            copy(from, to)
+        }
+    }
+}
+
 pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -2072,6 +2096,32 @@ mod tests {
     fn test_run_blocking_outside_runtime() {
         // no tokio runtime at all — must run the closure inline, not panic
         assert_eq!(run_blocking(|| 42), 42);
+    }
+
+    #[test]
+    fn hard_link_or_copy_reproduces_the_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("libexample.dll");
+        let to = tmp.path().join("copy.dll");
+        fs::write(&from, b"payload").unwrap();
+
+        hard_link_or_copy(&from, &to).unwrap();
+        assert_eq!(fs::read(&to).unwrap(), b"payload");
+    }
+
+    /// The fallback has to be reachable, not just present: linking onto a name that is
+    /// already taken fails, and callers still expect the destination to be usable.
+    #[test]
+    fn hard_link_or_copy_falls_back_when_linking_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("libexample.dll");
+        let to = tmp.path().join("existing.dll");
+        fs::write(&from, b"new").unwrap();
+        fs::write(&to, b"old").unwrap();
+
+        // `fs::hard_link` refuses an existing destination, so this exercises the copy arm.
+        hard_link_or_copy(&from, &to).unwrap();
+        assert_eq!(fs::read(&to).unwrap(), b"new");
     }
 
     fn utf16le(s: &str) -> Vec<u8> {

@@ -596,6 +596,82 @@ impl CondaBackend {
                 file::make_symlink_or_copy(&src, &dst)?;
             }
         }
+
+        // On Windows the entries above are copies, and a copied executable resolves its
+        // imports from its own directory before anything on PATH. The DLLs it needs sit
+        // next to the original and mostly belong to dependency packages, so the
+        // main-package filter leaves them behind and the copy dies with
+        // STATUS_DLL_NOT_FOUND (`conda:postgresql` needs 91 of them). Bring every DLL
+        // along: they are libraries, not commands, so this does not put dependency
+        // executables on PATH, which is what this directory exists to prevent.
+        //
+        // unix does not need it — the entries there are symlinks, and `$ORIGIN` in an
+        // ELF RPATH resolves against the *target's* directory, so `../lib` still lands
+        // inside the install.
+        if cfg!(windows) {
+            for dir in bin_dirs {
+                let bin_dir = install_path.join(dir);
+                // Only some of these exist in any given package. Anything other than a
+                // missing directory has to surface: swallowing it would drop a DLL and
+                // still report the install as a success, which lands the user right back
+                // on the STATUS_DLL_NOT_FOUND this is meant to prevent.
+                let entries = match std::fs::read_dir(&bin_dir) {
+                    Ok(entries) => entries,
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(err) => {
+                        return Err(err).wrap_err_with(|| {
+                            format!("failed to read {}", file::display_path(&bin_dir))
+                        });
+                    }
+                };
+                for entry in entries {
+                    let entry = entry.wrap_err_with(|| {
+                        format!(
+                            "failed to read an entry in {}",
+                            file::display_path(&bin_dir)
+                        )
+                    })?;
+                    let src = entry.path();
+                    if !src
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
+                    {
+                        continue;
+                    }
+                    // Asked of the `DirEntry` rather than the path: `Path::is_file`
+                    // reports a metadata failure as "not a file", which would skip a DLL
+                    // that antivirus or a permission problem merely made unreadable for a
+                    // moment. Anything not a directory is fair game, including a symlink.
+                    let file_type = entry.file_type().wrap_err_with(|| {
+                        format!(
+                            "failed to stat {} in {}",
+                            entry.file_name().to_string_lossy(),
+                            file::display_path(&bin_dir)
+                        )
+                    })?;
+                    if file_type.is_dir() {
+                        continue;
+                    }
+                    let Some(name) = src.file_name() else {
+                        continue;
+                    };
+                    let dst = symlink_dir.join(name);
+                    if dst.exists() {
+                        // First writer wins, and the order is deliberate: the main
+                        // package's own DLLs are placed above, then `Library/bin` before
+                        // `Scripts` and `bin`. A name reaching here twice means two bin
+                        // directories disagree, which is worth seeing under --verbose.
+                        trace!(
+                            "conda: {} already present in {}, keeping the earlier one",
+                            name.to_string_lossy(),
+                            file::display_path(&symlink_dir)
+                        );
+                        continue;
+                    }
+                    file::hard_link_or_copy(&src, &dst)?;
+                }
+            }
+        }
         Ok(())
     }
 
