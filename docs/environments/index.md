@@ -131,6 +131,37 @@ _.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true } # directives may also
 NODE_VERSION = { value = "{{ tools.node.version }}", tools = true }
 ```
 
+These are resolved in a second pass, once tools are available. Two things follow from that.
+
+A value can only be referenced by values declared after it. This holds in either pass:
+
+```toml
+[env]
+SOME_REF = "/default/{{ env.SERVICE_NAME }}" # error: Field `SERVICE_NAME` is not defined
+SERVICE_NAME = "api"
+```
+
+And the two passes are separate, so an ordinary value cannot see a `tools = true` one no matter
+where it is declared — the second pass has not run yet:
+
+```toml
+[env]
+SERVICE_NAME = { value = "api", tools = true }
+SOME_REF = "/default/{{ env.SERVICE_NAME }}" # error: Field `SERVICE_NAME` is not defined
+```
+
+Mark the value doing the referencing `tools = true` as well, keeping it after the one it
+references, and both are resolved together:
+
+```toml
+[env]
+SERVICE_NAME = { value = "api", tools = true }
+SOME_REF = { value = "/default/{{ env.SERVICE_NAME }}", tools = true }
+```
+
+The other direction needs nothing: a `tools = true` value can reference a plain one, because the
+first pass has already finished by the time it runs.
+
 ## Redactions
 
 Variables can be redacted from the output by setting `redact = true`:
