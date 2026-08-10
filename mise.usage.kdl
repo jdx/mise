@@ -1558,6 +1558,9 @@ Examples:
     $ mise generate git-pre-commit --write --task=pre-commit
     $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
 
+    # config lives in a subdirectory, so the hook has to change into it first
+    $ mise generate git-pre-commit --write -- -C subdir
+
 """#
         flag "-t --task" help="The task to run when the pre-commit hook is triggered" default=pre-commit {
             arg <TASK>
@@ -1566,6 +1569,13 @@ Examples:
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" default=pre-commit {
             arg <HOOK>
         }
+        arg "[-- MISE_ARG]…" help="mise flags to embed in the generated hook, given after `--`" help_long=#"""
+mise flags to embed in the generated hook, given after `--`
+
+These are inserted between `mise` and `run`, so the hook carries the same context you
+would pass on the command line. Useful when the config is not at the repository root,
+since git runs hooks from the top level: `-- -C subdir` makes the hook find it.
+"""# required=#false var=#true
     }
     cmd github-action help="Generate a GitHub Action workflow file" effect=write {
         long_help #"""
