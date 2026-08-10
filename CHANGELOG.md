@@ -1,5 +1,109 @@
 # Changelog
 
+## [2026.8.4](https://github.com/jdx/mise/compare/v2026.8.3..v2026.8.4) - 2026-08-10
+
+### 🚀 Features
+
+- **(aqua)** resolve relative aqua.registries against the declaring config by @JamBalaya56562 in [#11804](https://github.com/jdx/mise/pull/11804)
+- **(backend)** classify and apply semantic version ordering by @jdx in [#11774](https://github.com/jdx/mise/pull/11774)
+- **(bootstrap)** prune mise-owned brew casks by @jdx in [#11810](https://github.com/jdx/mise/pull/11810)
+- **(bootstrap)** add platform filters to packages by @jdx in [#11809](https://github.com/jdx/mise/pull/11809)
+- **(brew)** add support for font artifact types from git urls by @roele in [#11781](https://github.com/jdx/mise/pull/11781)
+- **(cache)** add in-process cache session foundation by @jdx in [#11767](https://github.com/jdx/mise/pull/11767)
+- **(cache)** add rustc action key foundation by @jdx in [#11777](https://github.com/jdx/mise/pull/11777)
+- **(cache)** discover rustc action inputs by @jdx in [#11783](https://github.com/jdx/mise/pull/11783)
+- **(cache)** store rustc compilation misses by @jdx in [#11812](https://github.com/jdx/mise/pull/11812)
+- **(cache)** restore local rustc action hits by @jdx in [#11817](https://github.com/jdx/mise/pull/11817)
+- **(cache)** persist task rust action manifests by @jdx in [#11821](https://github.com/jdx/mise/pull/11821)
+- **(cache)** sync rust actions with remote cache by @jdx in [#11842](https://github.com/jdx/mise/pull/11842)
+- **(cache)** enforce CI trust and qualification policy by @jdx in [#11844](https://github.com/jdx/mise/pull/11844)
+- **(generate)** let git hooks carry mise flags by @JamBalaya56562 in [#11820](https://github.com/jdx/mise/pull/11820)
+- **(ls)** match a tool name across backends by @JamBalaya56562 in [#11822](https://github.com/jdx/mise/pull/11822)
+- **(spm)** support commit revisions by @Marukome0743 in [#11815](https://github.com/jdx/mise/pull/11815)
+- **(upgrade)** add `upgrade.auto_prune`, and --prune to override it by @JamBalaya56562 in [#11788](https://github.com/jdx/mise/pull/11788)
+
+### 🐛 Bug Fixes
+
+- **(activate)** forward --silent and --log-level into the generated hook by @JamBalaya56562 in [#11831](https://github.com/jdx/mise/pull/11831)
+- **(aqua)** look up package metadata by aqua package name by @JamBalaya56562 in [#11828](https://github.com/jdx/mise/pull/11828)
+- **(aqua)** accept version bounds with four components and the != operator by @JamBalaya56562 in [#11832](https://github.com/jdx/mise/pull/11832)
+- **(bootstrap)** plan compose before dependency installation by @jdx in [#11829](https://github.com/jdx/mise/pull/11829)
+- **(cache)** align task phase protocol examples by @jdx in [#11776](https://github.com/jdx/mise/pull/11776)
+- **(cli)** resolve the base of `sub-N:` before subtracting by @JamBalaya56562 in [#11796](https://github.com/jdx/mise/pull/11796)
+- **(conda)** keep dependency DLLs beside the binaries on Windows by @JamBalaya56562 in [#11825](https://github.com/jdx/mise/pull/11825)
+- **(config)** drop the --file alias where -f is --force by @JamBalaya56562 in [#11789](https://github.com/jdx/mise/pull/11789)
+- **(config)** make `ignored_config_paths` match on Windows by @JamBalaya56562 in [#11818](https://github.com/jdx/mise/pull/11818)
+- **(core)** treat zero jobs as one by @Marukome0743 in [#11790](https://github.com/jdx/mise/pull/11790)
+- **(exec)** name installed-but-inactive tools on resolution failure by @JamBalaya56562 in [#11803](https://github.com/jdx/mise/pull/11803)
+- **(generate)** forward hook arguments in generated git hooks by @JamBalaya56562 in [#11801](https://github.com/jdx/mise/pull/11801)
+- **(generate)** handle nested task stub conflicts by @Marukome0743 in [#11800](https://github.com/jdx/mise/pull/11800)
+- **(go)** keep `go list` diagnostics out of the default output by @JamBalaya56562 in [#11816](https://github.com/jdx/mise/pull/11816)
+- **(hooks)** parse arrays before run tables by @jgillich in [#11792](https://github.com/jdx/mise/pull/11792)
+- **(install)** force reinstall configured tools by @Marukome0743 in [#11802](https://github.com/jdx/mise/pull/11802)
+- **(link)** reject install path aliases by @NgoQuocViet2001 in [#11785](https://github.com/jdx/mise/pull/11785)
+- **(registry)** stop flutter URLs doubling the -stable suffix by @JamBalaya56562 in [#11808](https://github.com/jdx/mise/pull/11808)
+- **(ruby)** install the highest RubyInstaller2 build revision on Windows by @JamBalaya56562 in [#11807](https://github.com/jdx/mise/pull/11807)
+- **(rust)** serialize concurrent toolchain installs by @Marukome0743 in [#11794](https://github.com/jdx/mise/pull/11794)
+- **(rust)** resolve homes from config environment by @Marukome0743 in [#11798](https://github.com/jdx/mise/pull/11798)
+- **(settings)** refuse config-file writes for env-only settings by @JamBalaya56562 in [#11791](https://github.com/jdx/mise/pull/11791)
+- **(settings)** correct the `go.set_gopath` deprecation message by @JamBalaya56562 in [#11799](https://github.com/jdx/mise/pull/11799)
+- **(sops)** invoke cli without age keys by @Marukome0743 in [#11834](https://github.com/jdx/mise/pull/11834)
+- **(task)** handle azure devops remote git includes by @cheesemans in [#11768](https://github.com/jdx/mise/pull/11768)
+- **(task)** detect incomplete task outputs by @Marukome0743 in [#11786](https://github.com/jdx/mise/pull/11786)
+- **(task)** match project-qualified monorepo tasks without // by @williamsjokvist in [#11782](https://github.com/jdx/mise/pull/11782)
+- **(task)** validate arguments before dependencies by @Marukome0743 in [#11787](https://github.com/jdx/mise/pull/11787)
+- **(tera)** honor `pat` on v1 trim_start/trim_end by @JamBalaya56562 in [#11811](https://github.com/jdx/mise/pull/11811)
+- **(vfox)** return an error instead of panicking on a non-table hook response by @JamBalaya56562 in [#11793](https://github.com/jdx/mise/pull/11793)
+- **(vfox)** honor url replacements by @Marukome0743 in [#11795](https://github.com/jdx/mise/pull/11795)
+- **(watch)** run default task when omitted by @Marukome0743 in [#11836](https://github.com/jdx/mise/pull/11836)
+
+### 🚜 Refactor
+
+- **(cache)** generalize remote action protocol by @jdx in [#11763](https://github.com/jdx/mise/pull/11763)
+- **(cache)** extract remote cache client by @jdx in [#11765](https://github.com/jdx/mise/pull/11765)
+
+### 📚 Documentation
+
+- **(brew)** link homebrew cask cookbook for cask lifecycle concepts by @himkt in [#11773](https://github.com/jdx/mise/pull/11773)
+- **(settings)** describe what libc detection actually does by @JamBalaya56562 in [#11813](https://github.com/jdx/mise/pull/11813)
+- mention `task_config.shell` in `task.shell` defaults by @pynappo in [#11775](https://github.com/jdx/mise/pull/11775)
+- fix dead bootstrap package-plugin example URLs by @Bartok9 in [#11780](https://github.com/jdx/mise/pull/11780)
+- correct what the not-found handler can install by @JamBalaya56562 in [#11830](https://github.com/jdx/mise/pull/11830)
+
+### ⚡ Performance
+
+- **(cache)** prefetch remote rust actions by @jdx in [#11843](https://github.com/jdx/mise/pull/11843)
+
+### 🧪 Testing
+
+- **(vfox)** handle HTTP request read count by @jdx in [#11771](https://github.com/jdx/mise/pull/11771)
+
+### 📦️ Dependency Updates
+
+- update aube and simplify version requirements by @jdx in [#11819](https://github.com/jdx/mise/pull/11819)
+- update rust crate usage-lib to v5.1.0 by @renovate[bot] in [#11824](https://github.com/jdx/mise/pull/11824)
+
+### 📦 Registry
+
+- add android-cli by @ggoggam in [#11797](https://github.com/jdx/mise/pull/11797)
+- add zk ([aqua:zk-org/zk](https://github.com/zk-org/zk)) by @laraochan in [#11827](https://github.com/jdx/mise/pull/11827)
+
+### New Contributors
+
+- @laraochan made their first contribution in [#11827](https://github.com/jdx/mise/pull/11827)
+- @williamsjokvist made their first contribution in [#11782](https://github.com/jdx/mise/pull/11782)
+- @NgoQuocViet2001 made their first contribution in [#11785](https://github.com/jdx/mise/pull/11785)
+- @jgillich made their first contribution in [#11792](https://github.com/jdx/mise/pull/11792)
+- @pynappo made their first contribution in [#11775](https://github.com/jdx/mise/pull/11775)
+- @cheesemans made their first contribution in [#11768](https://github.com/jdx/mise/pull/11768)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`anthropics/claude-code`](https://github.com/anthropics/claude-code)
+- [`matteo-sung/lockvet`](https://github.com/matteo-sung/lockvet)
+
 ## [2026.8.3](https://github.com/jdx/mise/compare/v2026.8.2..v2026.8.3) - 2026-08-07
 
 ### 🚀 Features
