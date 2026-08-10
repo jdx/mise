@@ -38,3 +38,16 @@ assert_contains "mise ls" "cargo:usage-cli"
 assert_not_contains "mise ls" "cargo-usage-cli" # if the backend meta file isn't working right these will be displayed
 
 assert_contains "mise ls --prunable" "cargo:usage-cli"
+
+# The same tool from two backends should both answer to its name. `mise ls` with no
+# filter already listed both; `mise ls jq` used to show only the registry one, which is
+# what made a second install look like it had vanished.
+# See https://github.com/jdx/mise/discussions/4491
+mise use jq@1.7.1
+mise use "ubi:jqlang/jq@jq-1.8.1"
+assert_contains "mise ls jq" "ubi:jqlang/jq"
+assert_contains "mise ls jq" "jq-1.8.1"
+assert_contains "mise ls jq" "1.7.1"
+# Spelling a backend out is a narrowing request, so it must not pull the other one in.
+assert_contains "mise ls ubi:jqlang/jq" "jq-1.8.1"
+assert_not_contains "mise ls ubi:jqlang/jq" "1.7.1"

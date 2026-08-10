@@ -169,7 +169,7 @@ impl Ls {
             // only runtimes for 1 plugin
             let runtimes: Vec<RuntimeRow<'_>> = runtimes
                 .into_iter()
-                .filter(|(_, p, _, _)| plugins.contains(p.ba()))
+                .filter(|(_, p, _, _)| matches_requested_tool(plugins, p.ba()))
                 .collect();
             let mut r = vec![];
             for row in runtimes {
@@ -267,6 +267,14 @@ impl Ls {
         table.truncate(true).print()
     }
 
+    /// Deliberately does *not* widen the tool filter the way the other listings do.
+    ///
+    /// `--prunable` previews `mise prune`, and both share `prune::prunable_tools`, which
+    /// matches on `BackendArg` equality. Accepting a name from another backend here would
+    /// either disagree with what `mise prune <name>` then deletes, or — if the widening
+    /// were pushed down into `prunable_tools` — make a destructive command act on an
+    /// install the user did not name. Agreeing with `prune` is the more useful of the two
+    /// consistencies.
     async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let installed_tool = self.installed_tool.clone().unwrap_or_default();
         Ok(
@@ -317,7 +325,7 @@ impl Ls {
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
             .filter(|((b, _), _)| match &self.installed_tool {
-                Some(p) => p.contains(b.ba()),
+                Some(p) => matches_requested_tool(p, b.ba()),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
@@ -333,7 +341,7 @@ impl Ls {
                 !source.is_unknown() || p.is_version_installed(config, tv, true)
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
-                Some(backend) => backend.contains(p.ba()),
+                Some(backend) => matches_requested_tool(backend, p.ba()),
                 None => true,
             })
             .collect();
@@ -364,7 +372,7 @@ impl Ls {
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
             .filter(|((b, _), _)| match &self.installed_tool {
-                Some(p) => p.contains(b.ba()),
+                Some(p) => matches_requested_tool(p, b.ba()),
                 None => true,
             })
             .sorted_by_cached_key(|((plugin_name, version), _)| {
@@ -381,13 +389,27 @@ impl Ls {
                 !source.is_unknown() || p.is_version_installed(config, tv, true)
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
-                Some(backend) => backend.contains(p.ba()),
+                Some(backend) => matches_requested_tool(backend, p.ba()),
                 None => true,
             })
             .collect();
 
         Ok((rvs, sources_map))
     }
+}
+
+/// Whether `ba` is one of the tools named on the command line.
+///
+/// A bare name also matches an entry from another backend that installs the same binary,
+/// so `mise ls navi` shows `cargo:.../navi` next to the registry one rather than hiding
+/// it — `mise ls` with no filter already lists both (discussion #4491).
+///
+/// Spelling a backend out keeps matching only itself: `mise ls ubi:jqlang/jq` passes the
+/// whole string as the bin name, which cannot match a trailing segment.
+fn matches_requested_tool(requested: &[BackendArg], ba: &BackendArg) -> bool {
+    requested
+        .iter()
+        .any(|req| req == ba || ba.matches_bin_name(&req.short))
 }
 
 type JSONOutput = IndexMap<String, Vec<JSONToolVersion>>;
@@ -658,3 +680,58 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
                     ~/.config/mise/config.toml  latest
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ba(short: &str) -> BackendArg {
+        BackendArg::from(short.to_string())
+    }
+
+    /// The case from discussion #4491: the same tool installed twice, once from the
+    /// registry and once straight from a backend, should both answer to its name.
+    #[test]
+    fn bare_name_matches_another_backend() {
+        let requested = vec![ba("navi")];
+        assert!(matches_requested_tool(
+            &requested,
+            &ba("cargo:https://github.com/denisidoro/navi")
+        ));
+        assert!(matches_requested_tool(&requested, &ba("navi")));
+        assert!(matches_requested_tool(
+            &requested,
+            &ba("ubi:denisidoro/navi")
+        ));
+    }
+
+    /// Naming a backend is a narrowing request, so it must not pull in the others.
+    #[test]
+    fn explicit_backend_matches_only_itself() {
+        let requested = vec![ba("ubi:jqlang/jq")];
+        assert!(matches_requested_tool(&requested, &ba("ubi:jqlang/jq")));
+        assert!(!matches_requested_tool(&requested, &ba("jq")));
+    }
+
+    /// Matching is on the whole trailing segment, not a prefix, so neighbouring tool
+    /// names stay separate.
+    #[test]
+    fn unrelated_tool_does_not_match() {
+        let requested = vec![ba("node")];
+        assert!(!matches_requested_tool(&requested, &ba("npm:node-gyp")));
+        assert!(!matches_requested_tool(&requested, &ba("nodemon")));
+    }
+
+    /// A registry alias resolves before any of this, so the two spellings are already the
+    /// same `BackendArg` and match on plain equality rather than by name.
+    #[test]
+    fn registry_aliases_still_match() {
+        assert!(matches_requested_tool(&[ba("node")], &ba("nodejs")));
+        assert!(matches_requested_tool(&[ba("nodejs")], &ba("node")));
+    }
+
+    #[test]
+    fn no_filter_entries_match_nothing() {
+        assert!(!matches_requested_tool(&[], &ba("node")));
+    }
+}
