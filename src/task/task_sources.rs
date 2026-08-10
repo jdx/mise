@@ -92,7 +92,9 @@ impl TaskOutputs {
                     .get("env")
                     .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok());
                 for file in files.iter_mut() {
-                    if contains_template_syntax(file) {
+                    if contains_template_syntax(file)
+                        && !crate::task::template_has_usage_input(file)
+                    {
                         *file = render_str(tera, file, ctx)?;
                     }
                 }
@@ -132,7 +134,9 @@ impl TaskOutputs {
                 *files = raw_templates
                     .iter()
                     .map(|tmpl| {
-                        if contains_template_syntax(tmpl) {
+                        if contains_template_syntax(tmpl)
+                            && !crate::task::template_has_usage_input(tmpl)
+                        {
                             render_str(&mut tera, tmpl, &ctx)
                         } else {
                             Ok(tmpl.clone())

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+mise use -g watchexec@latest
+
+cat <<'EOF' >mise.toml
+[tasks.watched]
+usage = 'arg "<source>"'
+sources = ["{{usage.source}}"]
+run = "echo watched"
+EOF
+touch selected.txt
+
+assert_fail_contains "mise watch --postpone watched" "Missing required arg: <source>"
+
+wait_for_watchexec() {
+  local log_file="$1"
+  for _ in $(seq 1 150); do
+    grep -Fq '$ watchexec ' "$log_file" && return 0
+    sleep 0.1
+  done
+  fail "timed out waiting for watchexec command in $log_file"
+}
+
+MISE_DEBUG=1 mise watch --postpone watched selected.txt >watch.log 2>&1 &
+watch_pid=$!
+trap 'kill "$watch_pid" 2>/dev/null || true' EXIT
+wait_for_watchexec watch.log
+kill "$watch_pid"
+wait "$watch_pid" 2>/dev/null || true
+assert_contains "grep -F '\$ watchexec ' watch.log" "-f selected.txt"
+
+MISE_DEBUG=1 mise watch --skip-deps --postpone watched selected.txt >skip.log 2>&1 &
+watch_pid=$!
+wait_for_watchexec skip.log
+kill "$watch_pid"
+wait "$watch_pid" 2>/dev/null || true
+assert_contains "grep -F '\$ watchexec ' skip.log" "-f selected.txt"

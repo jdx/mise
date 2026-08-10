@@ -86,7 +86,9 @@ used with Tera's `for` loops and filters like `length`. The `usage` map is
 the same task.
 
 <span v-pre>`{{usage.*}}`</span> templates can also be used in `depends`, `depends_post`, and
-`wait_for` to forward arguments to dependency tasks. See
+`wait_for` to forward arguments to dependency tasks. They are also available in task
+`sources` and `outputs`, allowing freshness checks, artifact caching, `task_source_files()`,
+and `mise watch` to use the files selected by the current invocation. See
 [Passing parent task arguments to dependencies](/tasks/task-configuration#passing-parent-task-arguments-to-dependencies)
 for details.
 

@@ -708,6 +708,16 @@ pub struct Task {
     pub interactive: bool,
     #[serde(default)]
     pub sources: Vec<String>,
+    /// Unrendered source templates retained for per-invocation argument rendering.
+    #[serde(skip)]
+    pub raw_sources: Vec<String>,
+    /// Config environment captured during the ordinary task render. Reusing it
+    /// for pre-scheduler file-template rendering avoids executing env hooks a
+    /// second time before dependencies have run.
+    #[serde(skip)]
+    pub(crate) file_template_env: EnvMap,
+    #[serde(skip)]
+    pub(crate) file_template_vars: Option<IndexMap<String, String>>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
     #[serde(default)]
@@ -1934,7 +1944,7 @@ impl Task {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            let spec = parse_task_script_usage(&file)
+            let file_spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
@@ -1942,21 +1952,98 @@ impl Task {
                     )
                 })
                 .unwrap_or_default();
+            let file_templates = self.usage_file_templates();
+            let parser = Self::make_script_parser(self.config_root.clone(), extra_vars);
+            let (_, mut spec) = parser
+                .parse_run_scripts_with_spec_templates(config, self, &[], &file_templates, &env)
+                .await?;
+            spec.merge(file_spec);
             (spec, vec![])
         } else {
             let scripts_only = self.run_script_strings();
+            let file_templates = self.usage_file_templates();
             let parser_dir = match cwd {
                 Some(cwd) => Some(cwd),
                 None => self.dir(config).await?,
             };
             let (scripts, spec) = Self::make_script_parser(parser_dir, extra_vars)
-                .parse_run_scripts(config, self, &scripts_only, &env)
+                .parse_run_scripts_with_spec_templates(
+                    config,
+                    self,
+                    &scripts_only,
+                    &file_templates,
+                    &env,
+                )
                 .await?;
             (spec, scripts)
         };
         self.populate_spec_metadata(&mut spec);
         self.populate_usage_about(&mut spec);
         Ok((spec, scripts))
+    }
+
+    pub(crate) fn usage_file_templates(&self) -> Vec<String> {
+        let sources = if self.raw_sources.is_empty() {
+            &self.sources
+        } else {
+            &self.raw_sources
+        };
+        sources
+            .iter()
+            .chain(
+                self.raw_outputs
+                    .templates
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter(),
+            )
+            .filter(|template| template_has_usage_input(template))
+            .cloned()
+            .collect()
+    }
+
+    pub fn has_usage_file_templates(&self) -> bool {
+        !self.usage_file_templates().is_empty()
+    }
+
+    pub async fn render_file_templates_with_args(
+        &mut self,
+        config: &Arc<Config>,
+        env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> Result<()> {
+        if !self.has_usage_file_templates() {
+            return Ok(());
+        }
+        if self.should_bypass_usage_parser() {
+            bail!(
+                "task '{}' cannot use argument templates in sources or outputs when usage parsing is disabled",
+                self.name
+            );
+        }
+
+        let (spec, _) = self
+            .parse_usage_spec_with_vars(config, None, env, extra_vars.clone())
+            .await?;
+        let parser = Self::make_script_parser(self.config_root.clone(), extra_vars);
+        let raw_sources = if self.raw_sources.is_empty() {
+            self.sources.clone()
+        } else {
+            self.raw_sources.clone()
+        };
+        self.sources = parser
+            .render_file_templates_with_args(config, self, &raw_sources, env, &self.args, &spec)
+            .await?;
+
+        if let Some(raw_outputs) = self.raw_outputs.templates.clone() {
+            let rendered_outputs = parser
+                .render_file_templates_with_args(config, self, &raw_outputs, env, &self.args, &spec)
+                .await?;
+            if let TaskOutputs::Files(files) = &mut self.outputs {
+                *files = rendered_outputs;
+            }
+        }
+        Ok(())
     }
 
     fn make_script_parser(
@@ -1974,18 +2061,30 @@ impl Task {
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
-            parse_task_script_usage(&file)
+            let file_spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
                         file::display_path(&file)
                     )
                 })
-                .unwrap_or_default()
+                .unwrap_or_default();
+            let file_templates = self.usage_file_templates();
+            let mut spec = TaskScriptParser::new(dir)
+                .parse_run_scripts_for_spec_only_with_templates(config, self, &[], &file_templates)
+                .await?;
+            spec.merge(file_spec);
+            spec
         } else {
             let scripts_only = self.run_script_strings();
+            let file_templates = self.usage_file_templates();
             TaskScriptParser::new(dir)
-                .parse_run_scripts_for_spec_only(config, self, &scripts_only)
+                .parse_run_scripts_for_spec_only_with_templates(
+                    config,
+                    self,
+                    &scripts_only,
+                    &file_templates,
+                )
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
@@ -2001,18 +2100,30 @@ impl Task {
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
         let mut spec = if let Some(file) = self.file_path_raw() {
-            parse_task_script_usage(&file)
+            let file_spec = parse_task_script_usage(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
                         file::display_path(&file)
                     )
                 })
-                .unwrap_or_default()
+                .unwrap_or_default();
+            let file_templates = self.usage_file_templates();
+            let mut spec = TaskScriptParser::new(self.config_root.clone())
+                .parse_run_scripts_for_preflight_with_templates(config, self, &[], &file_templates)
+                .await?;
+            spec.merge(file_spec);
+            spec
         } else {
             let scripts_only = self.run_script_strings();
+            let file_templates = self.usage_file_templates();
             TaskScriptParser::new(self.config_root.clone())
-                .parse_run_scripts_for_preflight(config, self, &scripts_only)
+                .parse_run_scripts_for_preflight_with_templates(
+                    config,
+                    self,
+                    &scripts_only,
+                    &file_templates,
+                )
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
@@ -2522,7 +2633,13 @@ impl Task {
         if other.output.is_some() {
             self.output = other.output;
         }
+        let other_raw_sources = if other.raw_sources.is_empty() {
+            other.sources.clone()
+        } else {
+            other.raw_sources.clone()
+        };
         self.sources.extend(other.sources);
+        self.raw_sources.extend(other_raw_sources);
         if other.watch.is_some() {
             self.watch = other.watch;
         }
@@ -2611,6 +2728,7 @@ impl Task {
         if !self.sources.is_empty() && self.outputs.is_empty() {
             self.outputs = TaskOutputs::Auto;
         }
+        self.raw_sources = self.sources.clone();
         self.raw_outputs = self.outputs.raw_templates_without_env();
         // Save unrendered dependency templates so they can be re-rendered later
         // with parent task args available (for passing args to dependencies).
@@ -2641,6 +2759,13 @@ impl Task {
 
         let mut tera = get_tera(Some(config_root));
         let tera_ctx = self.tera_ctx(config).await?;
+        self.file_template_env = tera_ctx
+            .get("env")
+            .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok())
+            .unwrap_or_default();
+        self.file_template_vars = tera_ctx
+            .get("vars")
+            .and_then(|value| serde::Deserialize::deserialize(value.clone()).ok());
         for a in &mut self.aliases {
             if contains_template_syntax(a) {
                 *a = render_str(&mut tera, a, &tera_ctx)?;
@@ -2650,12 +2775,16 @@ impl Task {
         if contains_template_syntax(&self.description) {
             self.description = render_str(&mut tera, &self.description, &tera_ctx)?;
         }
+        let raw_sources = self.sources.clone();
         for s in &mut self.sources {
-            if contains_template_syntax(s) {
+            if contains_template_syntax(s) && !template_has_usage_input(s) {
                 *s = render_str(&mut tera, s, &tera_ctx)?;
             }
         }
+        // Preserve the raw source templates captured before ordinary config
+        // rendering so usage-dependent patterns can be rendered per invocation.
         self.store_raw_render_inputs();
+        self.raw_sources = raw_sources;
         self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
         // Render deps that don't contain {{usage.*}} references. Deps with usage
         // references are deferred until render_depends_with_usage() is called with
@@ -3096,6 +3225,9 @@ impl Default for Task {
             trailing_args: vec![],
             interactive: false,
             sources: vec![],
+            raw_sources: vec![],
+            file_template_env: Default::default(),
+            file_template_vars: None,
             watch: None,
             outputs: Default::default(),
             cache: Default::default(),
@@ -3505,6 +3637,38 @@ fn tera_template_has_usage_ref(s: &str) -> bool {
     false
 }
 
+/// Whether a template needs the invocation's parsed usage values. In addition
+/// to the preferred `usage.*` map, keep the deprecated helper functions working
+/// in file patterns for backwards compatibility with task run templates.
+pub(crate) fn template_has_usage_input(s: &str) -> bool {
+    if tera_template_has_usage_ref(s) {
+        return true;
+    }
+    const TAGS: [(&str, &str); 2] = [("{{", "}}"), ("{%", "%}")];
+    TAGS.into_iter().any(|(open, close)| {
+        let mut rest = s;
+        while let Some(start) = rest.find(open) {
+            rest = &rest[start + open.len()..];
+            let Some(end) = rest.find(close) else {
+                break;
+            };
+            let tag = &rest[..end];
+            if ["arg", "option", "flag"].into_iter().any(|name| {
+                tag.match_indices(name).any(|(idx, _)| {
+                    let before = tag[..idx].chars().next_back();
+                    let after = tag[idx + name.len()..].trim_start().chars().next();
+                    before.is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_')
+                        && after == Some('(')
+                })
+            }) {
+                return true;
+            }
+            rest = &rest[end + close.len()..];
+        }
+        false
+    })
+}
+
 fn tera_tag_has_usage_ref(tag: &str) -> bool {
     ["usage.", "usage["].iter().any(|needle| {
         tag.match_indices(needle).any(|(idx, _)| {
@@ -3572,9 +3736,22 @@ mod tests {
     #[cfg(unix)]
     use super::{TaskCacheConfig, TaskOutput};
     use super::{
-        clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
-        tera_template_has_usage_ref,
+        clear_usage_env, env_contains_key, name_from_path, template_has_usage_input,
+        tera_tag_has_usage_ref, tera_template_has_usage_ref,
     };
+
+    #[test]
+    fn test_template_has_usage_input() {
+        assert!(template_has_usage_input("{{ usage.target }}"));
+        assert!(template_has_usage_input("{{usage['target']}}"));
+        assert!(template_has_usage_input("{{ arg(name='target') }}"));
+        assert!(template_has_usage_input(
+            "{% if flag(name='release') %}x{% endif %}"
+        ));
+        assert!(template_has_usage_input("{{ option(name='profile') }}"));
+        assert!(!template_has_usage_input("{{ vars.target }}"));
+        assert!(!template_has_usage_input("{{ target_flag(value='x') }}"));
+    }
 
     #[derive(Debug)]
     struct BrokenWorkspaceProvider;

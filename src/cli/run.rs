@@ -875,12 +875,11 @@ impl Run {
 
         // Validate every scheduled invocation before starting the scheduler so
         // an invalid parent or dependency cannot run any task commands first.
-        let executor = self.executor.as_ref().expect("task executor initialized");
         for task in tasks.all() {
-            if let Err(err) = executor
-                .preflight_task_usage(&config, task)
-                .await
-                .wrap_err_with(|| format!("failed to validate task {}", task.name))
+            if let Err(err) =
+                crate::task::task_executor::TaskExecutor::preflight_task_usage(&config, task)
+                    .await
+                    .wrap_err_with(|| format!("failed to validate task {}", task.name))
             {
                 if let Some(session) = &self.cache_session
                     && let Err(finish_err) = session.finish().await

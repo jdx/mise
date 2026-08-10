@@ -406,6 +406,36 @@ outputs = ["target/debug/mycli"]
 Running the above will only execute `cargo build` if `mise.toml`, `Cargo.toml`, or any ".rs" file in the `src` directory
 has changed since the last build.
 
+Sources and outputs may use parsed task arguments. This keeps freshness checks and
+`mise watch` aligned with the files selected by the invocation:
+
+```mise-toml
+[tasks.validate]
+usage = 'arg "<input>"'
+sources = ["{{usage.input}}"]
+outputs = ["{{usage.input}}.validated"]
+run = "validate {{usage.input}} > {{usage.input}}.validated"
+```
+
+Flags can select different artifacts in the same way:
+
+```mise-toml
+[tasks.build]
+usage = 'flag "--release"'
+outputs = ["{% if usage.release %}dist/release{% else %}dist/debug{% endif %}/app"]
+run = "build {% if usage.release %}--release{% endif %}"
+```
+
+The deprecated `arg()`, `option()`, and `flag()` template functions are also
+supported for compatibility, but new tasks should define a `usage` spec and use
+the typed <span v-pre>`{{usage.*}}`</span> map.
+
+Argument templates in `sources` and `outputs` require mise to parse the task
+arguments. They cannot be used with `raw_args = true` or when task arguments are
+passed after `--` (for example, `mise run task -- --help`), because both forms
+bypass usage parsing. In those cases, mise reports an error before starting the
+task; use static patterns or invoke the task through the usage parser instead.
+
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
 

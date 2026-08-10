@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+mkdir argument-patterns
+cd argument-patterns || exit 1
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+usage = '''
+arg "<name>"
+flag "--release"
+'''
+sources = ["{% if usage.release %}release{% else %}debug{% endif %}/{{usage.name}}.in"]
+outputs = ["{% if usage.release %}release{% else %}debug{% endif %}/{{usage.name}}.out"]
+run = '''
+mkdir -p {% if usage.release %}release{% else %}debug{% endif %}
+cp {% if usage.release %}release{% else %}debug{% endif %}/{{usage.name}}.in {% if usage.release %}release{% else %}debug{% endif %}/{{usage.name}}.out
+echo "{{ task_source_files() | join(sep=' ') }}"
+'''
+
+[tasks.legacy]
+sources = ["{{arg(name='input')}}"]
+outputs = ["{{arg(name='output')}}"]
+run = "cp {{arg(name='input')}} {{arg(name='output')}}"
+
+[tasks.side-effect]
+run = "touch side-effect"
+
+[tasks.invalid]
+usage = 'arg "<required>"'
+depends = ["side-effect"]
+sources = ["{{usage.required}}.in"]
+outputs = ["{{usage.required}}.out"]
+run = "touch {{usage.required}}.out"
+
+[tasks.cached]
+usage = 'arg "<profile>"'
+sources = ["cache-input.txt"]
+outputs = ["cache/{{usage.profile}}.txt"]
+cache = { enabled = true }
+run = '''
+mkdir -p cache
+printf '%s\n' "{{usage.profile}}" > "cache/{{usage.profile}}.txt"
+printf '%s\n' "{{usage.profile}}" >> cache-runs
+'''
+
+[tasks.raw-pattern]
+raw_args = true
+sources = ["{{arg(name='input')}}"]
+run = "true"
+
+[tasks.help-pattern]
+usage = 'arg "<input>"'
+sources = ["{{usage.input}}"]
+run = "true"
+
+[tasks.metadata]
+usage = 'arg "<name>"'
+sources = ["{{env.MISE_TASK_NAME}}/{{usage.name}}.in"]
+outputs = ["{{env.MISE_TASK_NAME}}/{{usage.name}}.out"]
+run = "cp {{env.MISE_TASK_NAME}}/{{usage.name}}.in {{env.MISE_TASK_NAME}}/{{usage.name}}.out"
+EOF
+
+mkdir debug release
+touch debug/app.in release/app.in
+
+assert "mise run -q build app" "debug/app.in"
+assert_empty "mise run -q build app"
+assert "mise run -q build app --release" "release/app.in"
+[[ -f debug/app.out ]] || fail "debug output was not created"
+[[ -f release/app.out ]] || fail "release output was not created"
+
+sleep 1
+touch debug/app.in
+assert "mise run -q build app" "debug/app.in"
+
+echo legacy >"input file.txt"
+assert "mise run -q legacy 'input file.txt' 'output file.txt'"
+cmp "input file.txt" "output file.txt" || fail "legacy helper paths were shell-quoted"
+help=$(mise run legacy --help 2>&1)
+[[ $(grep -c '^  <input>' <<<"$help") == 1 ]] || fail "input argument was duplicated"
+[[ $(grep -c '^  <output>' <<<"$help") == 1 ]] || fail "output argument was duplicated"
+
+assert_fail_contains "mise run invalid" "Missing required arg: <required>"
+[[ ! -e side-effect ]] || fail "dependency ran before usage validation"
+
+touch cache-input.txt
+mise run cached debug
+mise run cached release
+rm cache/debug.txt cache/release.txt
+assert_contains "mise run cached debug 2>&1" "restored outputs from cache"
+assert_contains "mise run cached release 2>&1" "restored outputs from cache"
+assert "cat cache/debug.txt" "debug"
+assert "cat cache/release.txt" "release"
+assert "wc -l < cache-runs | tr -d ' '" "2"
+
+assert_fail_contains \
+  "mise run raw-pattern input.txt" \
+  "cannot use argument templates in sources or outputs when usage parsing is disabled"
+assert_fail_contains \
+  "mise run help-pattern -- --help" \
+  "cannot use argument templates in sources or outputs when usage parsing is disabled"
+
+mkdir metadata
+echo metadata >metadata/context.in
+mise run metadata context
+assert "cat metadata/context.out" "metadata"

@@ -23,6 +23,7 @@ type TeraSpecParsingResult = (
 );
 
 type TaskTemplateResult = std::result::Result<JsonValue, String>;
+const CONFLICTING_DEFINITION_PREFIX: &str = "conflicting definitions for task";
 
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
@@ -82,6 +83,19 @@ impl TaskScriptParser {
         }
     }
 
+    fn collect_spec_template(
+        tera: &mut TeraEngine,
+        template: &str,
+        ctx: &tera::Context,
+    ) -> Result<()> {
+        if let Err(err) = Self::render_script_with_context(tera, template, ctx)
+            && format!("{err:#}").contains(CONFLICTING_DEFINITION_PREFIX)
+        {
+            return Err(err);
+        }
+        Ok(())
+    }
+
     fn render_usage_with_context(
         tera: &mut TeraEngine,
         usage: &str,
@@ -105,7 +119,7 @@ impl TaskScriptParser {
             "2026.5.0",
             "2027.5.0",
             "tera_template_task_args",
-            "Task '{}' uses deprecated Tera template functions (arg(), option(), flag()) in run scripts. \
+            "Task '{}' uses deprecated Tera template functions (arg(), option(), flag()). \
              Use the 'usage' field instead. See https://mise.jdx.dev/tasks/task-arguments.html",
             task_name
         );
@@ -292,8 +306,8 @@ impl TaskScriptParser {
     fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
-        let input_args = Arc::new(Mutex::new(vec![]));
-        let input_flags = Arc::new(Mutex::new(vec![]));
+        let input_args: Arc<Mutex<Vec<usage::SpecArg>>> = Arc::new(Mutex::new(vec![]));
+        let input_flags: Arc<Mutex<Vec<usage::SpecFlag>>> = Arc::new(Mutex::new(vec![]));
         // override throw function to do nothing
         Self::register_template_function(&mut tera, "throw", move |_| Ok(JsonValue::Null));
         // render args, options, and flags as null
@@ -309,14 +323,6 @@ impl TaskScriptParser {
                 let required = Self::template_arg::<bool>(args, "required")?.unwrap_or(true);
                 let var = Self::template_arg::<bool>(args, "var")?.unwrap_or(false);
                 let name = Self::template_arg::<String>(args, "name")?.unwrap_or(i.to_string());
-
-                let mut arg_order = arg_order.lock().map_err(Self::lock_error)?;
-
-                if arg_order.contains_key(&name) {
-                    trace!("already seen {name}");
-                    return Ok(json!(""));
-                }
-                arg_order.insert(name.clone(), i);
 
                 let usage = Self::template_arg::<String>(args, "usage")?.unwrap_or_default();
                 let help = Self::template_arg::<String>(args, "help")?;
@@ -364,7 +370,21 @@ impl TaskScriptParser {
                 arg.env = env;
                 arg.usage = arg.usage();
 
-                input_args.lock().map_err(Self::lock_error)?.push(arg);
+                {
+                    let mut input_args = input_args.lock().map_err(Self::lock_error)?;
+                    if let Some(existing) = input_args.iter().find(|existing| existing.name == name)
+                    {
+                        if format!("{existing:?}") != format!("{arg:?}") {
+                            return Err(format!(
+                                "{CONFLICTING_DEFINITION_PREFIX} argument '{name}'"
+                            ));
+                        }
+                        trace!("already seen {name}");
+                        return Ok(json!(""));
+                    }
+                    input_args.push(arg);
+                }
+                arg_order.lock().map_err(Self::lock_error)?.insert(name, i);
                 Ok(json!(""))
             }
         });
@@ -448,7 +468,15 @@ impl TaskScriptParser {
                 flag.arg = Some(value_arg);
                 flag.usage = flag.usage();
 
-                input_flags.lock().map_err(Self::lock_error)?.push(flag);
+                let mut input_flags = input_flags.lock().map_err(Self::lock_error)?;
+                if let Some(existing) = input_flags.iter().find(|existing| existing.name == name) {
+                    if format!("{existing:?}") != format!("{flag:?}") {
+                        return Err(format!("{CONFLICTING_DEFINITION_PREFIX} option '{name}'"));
+                    }
+                    trace!("already seen {name}");
+                    return Ok(json!(""));
+                }
+                input_flags.push(flag);
 
                 Ok(json!(""))
             }
@@ -543,7 +571,15 @@ impl TaskScriptParser {
                 flag.arg = arg;
                 flag.usage = flag.usage();
 
-                input_flags.lock().map_err(Self::lock_error)?.push(flag);
+                let mut input_flags = input_flags.lock().map_err(Self::lock_error)?;
+                if let Some(existing) = input_flags.iter().find(|existing| existing.name == name) {
+                    if format!("{existing:?}") != format!("{flag:?}") {
+                        return Err(format!("{CONFLICTING_DEFINITION_PREFIX} flag '{name}'"));
+                    }
+                    trace!("already seen {name}");
+                    return Ok(json!(""));
+                }
+                input_flags.push(flag);
 
                 Ok(json!(""))
             }
@@ -554,23 +590,36 @@ impl TaskScriptParser {
         (tera, arg_order, input_args, input_flags)
     }
 
+    #[cfg(test)]
     pub async fn parse_run_scripts_for_spec_only(
         &self,
         config: &Arc<Config>,
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
-        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, false)
+        self.parse_run_scripts_for_spec_only_with_templates(config, task, scripts, &[])
             .await
     }
 
-    pub async fn parse_run_scripts_for_preflight(
+    pub async fn parse_run_scripts_for_spec_only_with_templates(
         &self,
         config: &Arc<Config>,
         task: &Task,
         scripts: &[String],
+        spec_templates: &[String],
     ) -> Result<usage::Spec> {
-        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, true)
+        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, spec_templates, false)
+            .await
+    }
+
+    pub async fn parse_run_scripts_for_preflight_with_templates(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        scripts: &[String],
+        spec_templates: &[String],
+    ) -> Result<usage::Spec> {
+        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, spec_templates, true)
             .await
     }
 
@@ -585,14 +634,19 @@ impl TaskScriptParser {
         config: &Arc<Config>,
         task: &Task,
         scripts: &[String],
+        spec_templates: &[String],
         preflight: bool,
     ) -> Result<usage::Spec> {
         let usage_has_template = contains_template_syntax(&task.usage);
         let scripts_have_template = scripts
             .iter()
             .any(|script| contains_template_syntax(script));
+        let spec_templates_have_template = spec_templates
+            .iter()
+            .any(|template| contains_template_syntax(template));
         if !usage_has_template
-            && (!scripts_have_template || Settings::get().task.disable_spec_from_run_scripts)
+            && (!(scripts_have_template || spec_templates_have_template)
+                || Settings::get().task.disable_spec_from_run_scripts)
         {
             return task.usage.trim().parse().map_err(Into::into);
         }
@@ -627,7 +681,14 @@ impl TaskScriptParser {
         if scripts_have_template {
             for script in scripts {
                 if contains_template_syntax(script) {
-                    let _ = Self::render_script_with_context(&mut tera, script, &tera_ctx);
+                    Self::collect_spec_template(&mut tera, script, &tera_ctx)?;
+                }
+            }
+        }
+        if spec_templates_have_template {
+            for template in spec_templates {
+                if contains_template_syntax(template) {
+                    Self::collect_spec_template(&mut tera, template, &tera_ctx)?;
                 }
             }
         }
@@ -657,6 +718,7 @@ impl TaskScriptParser {
         Ok(spec)
     }
 
+    #[cfg(test)]
     pub async fn parse_run_scripts(
         &self,
         config: &Arc<Config>,
@@ -664,11 +726,26 @@ impl TaskScriptParser {
         scripts: &[String],
         env: &EnvMap,
     ) -> Result<(Vec<String>, usage::Spec)> {
+        self.parse_run_scripts_with_spec_templates(config, task, scripts, &[], env)
+            .await
+    }
+
+    pub async fn parse_run_scripts_with_spec_templates(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        scripts: &[String],
+        spec_templates: &[String],
+        env: &EnvMap,
+    ) -> Result<(Vec<String>, usage::Spec)> {
         let usage_has_template = contains_template_syntax(&task.usage);
         let scripts_have_template = scripts
             .iter()
             .any(|script| contains_template_syntax(script));
-        if !usage_has_template && !scripts_have_template {
+        let spec_templates_have_template = spec_templates
+            .iter()
+            .any(|template| contains_template_syntax(template));
+        if !usage_has_template && !scripts_have_template && !spec_templates_have_template {
             let scripts = scripts.iter().map(|s| s.trim().to_string()).collect();
             return Ok((scripts, task.usage.trim().parse()?));
         }
@@ -703,6 +780,13 @@ impl TaskScriptParser {
         } else {
             scripts.iter().map(|s| s.trim().to_string()).collect()
         };
+        if spec_templates_have_template {
+            for template in spec_templates {
+                if contains_template_syntax(template) {
+                    Self::collect_spec_template(&mut tera, template, &tera_ctx)?;
+                }
+            }
+        }
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
         let arg_order = arg_order.lock().unwrap();
@@ -834,6 +918,90 @@ impl TaskScriptParser {
             )?);
         }
         Ok(out)
+    }
+
+    /// Render source/output templates with parsed task arguments. Unlike run
+    /// scripts, values are not shell-quoted because the result is a filesystem
+    /// pattern rather than shell source code.
+    pub async fn render_file_templates_with_args(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        templates: &[String],
+        env: &EnvMap,
+        args: &[String],
+        spec: &usage::Spec,
+    ) -> Result<Vec<String>> {
+        let parser_args = once(String::new())
+            .chain(task.args_for_usage_parser(spec, args))
+            .collect::<Vec<_>>();
+        let env_map: HashMap<String, String> =
+            env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let parsed = match usage::Parser::new(spec)
+            .with_env(env_map)
+            .parse(&parser_args)
+        {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                // Match run-script usage failures: print usage's output directly so help and
+                // parse errors are not wrapped as source/output rendering failures.
+                eprintln!("{}", format!("{err}").trim_end());
+                return Err(request_exit(1));
+            }
+        };
+
+        let mut tera = self.get_tera();
+        self.register_task_source_files_function(&mut tera, task);
+        Self::register_template_function(&mut tera, "arg", {
+            let usage_args = parsed.args.clone();
+            move |args| {
+                let i = Self::template_arg::<i64>(args, "i")?
+                    .map(|i| i as usize)
+                    .unwrap_or_default();
+                let name =
+                    Self::template_arg::<String>(args, "name")?.unwrap_or_else(|| i.to_string());
+                Ok(json!(
+                    usage_args
+                        .iter()
+                        .find(|(arg, _)| arg.name == name)
+                        .map(|(_, value)| value.to_string())
+                        .unwrap_or_default()
+                ))
+            }
+        });
+        let flag_func = |default_value: String| {
+            let usage_flags = parsed.flags.clone();
+            move |args: &HashMap<String, JsonValue>| {
+                let name = Self::string_arg(args, "name")?;
+                Ok(json!(
+                    usage_flags
+                        .iter()
+                        .find(|(flag, _)| flag.name == name)
+                        .map(|(_, value)| value.to_string())
+                        .unwrap_or(default_value.clone())
+                ))
+            }
+        };
+        Self::register_template_function(&mut tera, "option", flag_func(String::new()));
+        Self::register_template_function(&mut tera, "flag", flag_func(false.to_string()));
+
+        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
+        self.inject_extra_vars(&mut tera_ctx);
+        tera_ctx.insert("env", env);
+        let mut usage_map = Self::make_usage_ctx_from_spec_defaults(spec);
+        usage_map.extend(Self::make_usage_ctx(&parsed));
+        tera_ctx.insert("usage", &usage_map);
+
+        templates
+            .iter()
+            .map(|template| {
+                if contains_template_syntax(template) {
+                    Self::render_script_with_context(&mut tera, template, &tera_ctx)
+                } else {
+                    Ok(template.clone())
+                }
+            })
+            .collect()
     }
 
     pub(crate) fn make_usage_ctx(
@@ -1027,6 +1195,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
+    }
+
+    #[tokio::test]
+    async fn test_spec_templates_deduplicate_identical_flags() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let templates = vec![
+            "{{ flag(name='release') }}".to_string(),
+            "{% if flag(name='release') %}release{% endif %}".to_string(),
+        ];
+        let spec = parser
+            .parse_run_scripts_for_spec_only_with_templates(&config, &task, &[], &templates)
+            .await
+            .unwrap();
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.flags[0].name, "release");
+    }
+
+    #[tokio::test]
+    async fn test_spec_templates_reject_conflicting_flags() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let templates = vec![
+            "{{ flag(name='release') }}".to_string(),
+            "{{ flag(name='release', required=true) }}".to_string(),
+        ];
+        let err = parser
+            .parse_run_scripts_for_spec_only_with_templates(&config, &task, &[], &templates)
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("conflicting definitions for task flag 'release'"));
     }
 
     #[tokio::test]

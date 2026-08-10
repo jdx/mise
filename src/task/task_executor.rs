@@ -9,7 +9,9 @@ use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
     CommandInput, TaskCacheContext, TaskCacheMissReason, TaskCacheRestore,
 };
-use crate::task::task_context_builder::TaskContextBuilder;
+use crate::task::task_context_builder::{
+    ResolvedTaskContext, TASK_METADATA_ENV_KEYS, TaskContextBuilder,
+};
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
@@ -456,15 +458,29 @@ impl TaskExecutor {
             permit,
             allow_during_interruption,
         } = ctx;
-        let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         Self::check_interruption(allow_during_interruption)?;
+        let mut task = task.clone();
+        let prefix = task.estyled_prefix();
         if Settings::get().task.skip.contains(&task.name) {
-            if !self.quiet(Some(task)) {
-                self.eprint(task, &prefix, "skipping task");
+            if !self.quiet(Some(&task)) {
+                self.eprint(&task, &prefix, "skipping task");
             }
             return Ok(TaskRunOutcome::default());
         }
+        let mut prepared_context = None;
+        let mut prepared_task_file = None;
+        if task.has_usage_file_templates() {
+            let mut context = self.prepare_task_context(config, &task).await?;
+            task.render_file_templates_with_args(config, &context.env, context.extra_vars.clone())
+                .await?;
+            prepared_task_file = Some(
+                self.parse_task_usage(config, &task, &mut context.env, context.extra_vars.clone())
+                    .await?,
+            );
+            prepared_context = Some(context);
+        }
+        let task = &task;
         // If any dependency executed or restored, skip the source freshness check
         // so that downstream tasks are invalidated by upstream changes.
         let artifact_cache_enabled =
@@ -485,10 +501,17 @@ impl TaskExecutor {
             mut env,
             task_env,
             extra_vars,
-        } = self.prepare_task_context(config, task).await?;
-        let task_file = self
-            .parse_task_usage(config, task, &mut env, extra_vars.clone())
-            .await?;
+        } = match prepared_context {
+            Some(context) => context,
+            None => self.prepare_task_context(config, task).await?,
+        };
+        let task_file = match prepared_task_file {
+            Some(task_file) => task_file,
+            None => {
+                self.parse_task_usage(config, task, &mut env, extra_vars.clone())
+                    .await?
+            }
+        };
 
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
@@ -994,6 +1017,11 @@ impl TaskExecutor {
                 }
                 to_run.push(t);
             }
+        }
+        for task in &to_run {
+            Self::preflight_task_usage(config, task)
+                .await
+                .wrap_err_with(|| format!("failed to validate task {}", task.name))?;
         }
         let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
         let sub_deps = Arc::new(Mutex::new(sub_deps));
@@ -1771,7 +1799,7 @@ impl TaskExecutor {
     /// Validate a task invocation before the scheduler starts any task commands.
     /// Runtime execution repeats this work so configuration changes made while
     /// dependencies run are still detected.
-    pub async fn preflight_task_usage(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+    pub(crate) async fn preflight_task_usage(config: &Arc<Config>, task: &Task) -> Result<()> {
         if task.should_bypass_usage_parser() {
             return Ok(());
         }
@@ -1801,6 +1829,12 @@ impl TaskExecutor {
                         format!("invalid task script template for task {}", task.name)
                     })?;
             }
+        }
+        for template in task.usage_file_templates() {
+            task.validate_template_syntax_for_preflight(&template)
+                .wrap_err_with(|| {
+                    format!("invalid source/output template for task {}", task.name)
+                })?;
         }
         if dynamic_usage {
             // The side-effect-free context intentionally omits task/subproject
@@ -1833,12 +1867,12 @@ impl TaskExecutor {
                 .chain(task.args.iter().cloned())
                 .collect()
         };
-        match self.parse_usage_spec_and_init_env_from_spec(task, &mut env, &usage_args, &spec) {
+        match Self::parse_usage_spec_and_init_env_from_spec(task, &mut env, &usage_args, &spec) {
             Ok(()) => Ok(()),
             Err(_) if Self::has_unavailable_required_env_input(&spec.cmd, &env) => {
                 let mut probe_env = env.clone();
                 Self::fill_unavailable_required_env_inputs(&spec.cmd, &mut probe_env);
-                match self.parse_usage_spec_and_init_env_from_spec(
+                match Self::parse_usage_spec_and_init_env_from_spec(
                     task,
                     &mut probe_env,
                     &usage_args,
@@ -1921,41 +1955,20 @@ impl TaskExecutor {
         config: &Arc<Config>,
         task: &Task,
     ) -> Result<PreparedTaskContext> {
-        let mut tools = self.tool.clone();
-        tools.extend(task.tool_args()?);
         let ts_build_start = std::time::Instant::now();
-
-        // Remote tasks need tools from the full config hierarchy rather than a
-        // config file rooted at their downloaded source.
-        let task_cf = if task.is_remote() {
-            None
-        } else {
-            task.cf(config)
-        };
-        let toolset = self
+        let ResolvedTaskContext {
+            toolset,
+            mut env,
+            task_env,
+            extra_vars,
+        } = self
             .context_builder
-            .build_toolset_for_task(config, task, task_cf, &tools)
+            .resolve_task_context(config, task, &self.tool)
             .await?;
         trace!(
-            "task {} ToolsetBuilder::build took {}ms",
+            "task {} context resolution took {}ms",
             task.name,
             ts_build_start.elapsed().as_millis()
-        );
-
-        let env_render_start = std::time::Instant::now();
-        // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars) = if let Some(task_cf) = task_cf {
-            self.context_builder
-                .resolve_task_env_with_config(config, task, task_cf, &toolset)
-                .await?
-        } else {
-            let (env, task_env) = task.render_env(config, &toolset).await?;
-            (env, task_env, None)
-        };
-        trace!(
-            "task {} render_env took {}ms",
-            task.name,
-            env_render_start.elapsed().as_millis()
         );
 
         let mut nested_mise_diff_exclude_keys: HashSet<String> = task_env
@@ -1963,6 +1976,7 @@ impl TaskExecutor {
             .map(|(key, _)| key.clone())
             .filter(|key| key.as_str() != crate::env::PATH_KEY.as_str())
             .chain(once("__MISE_DIFF".to_string()))
+            .chain(TASK_METADATA_ENV_KEYS.iter().copied().map(str::to_string))
             .collect();
         if !self.timings {
             Self::insert_env_excluded_from_nested_mise_diff(
@@ -1989,61 +2003,6 @@ impl TaskExecutor {
             );
         }
 
-        // Prefer the task's own config root for project tasks. Global and
-        // remote tasks retain the invoking project's root.
-        let project_root = if task.global || task.is_remote() {
-            config.project_root.clone().or(task.config_root.clone())
-        } else {
-            task.config_root.clone().or(config.project_root.clone())
-        };
-        if let Some(root) = project_root {
-            Self::insert_env_excluded_from_nested_mise_diff(
-                &mut env,
-                &mut nested_mise_diff_exclude_keys,
-                "MISE_PROJECT_ROOT",
-                root.display().to_string(),
-            );
-        }
-        if let Some(monorepo_root) = config.monorepo_root() {
-            Self::insert_env_excluded_from_nested_mise_diff(
-                &mut env,
-                &mut nested_mise_diff_exclude_keys,
-                "MISE_MONOREPO_ROOT",
-                monorepo_root.display().to_string(),
-            );
-        }
-        Self::insert_env_excluded_from_nested_mise_diff(
-            &mut env,
-            &mut nested_mise_diff_exclude_keys,
-            "MISE_TASK_NAME",
-            task.name.clone(),
-        );
-        let task_file = task
-            .file_path(config)
-            .await?
-            .unwrap_or(task.config_source.clone());
-        Self::insert_env_excluded_from_nested_mise_diff(
-            &mut env,
-            &mut nested_mise_diff_exclude_keys,
-            "MISE_TASK_FILE",
-            task_file.display().to_string(),
-        );
-        if let Some(dir) = task_file.parent() {
-            Self::insert_env_excluded_from_nested_mise_diff(
-                &mut env,
-                &mut nested_mise_diff_exclude_keys,
-                "MISE_TASK_DIR",
-                dir.display().to_string(),
-            );
-        }
-        if let Some(config_root) = &task.config_root {
-            Self::insert_env_excluded_from_nested_mise_diff(
-                &mut env,
-                &mut nested_mise_diff_exclude_keys,
-                "MISE_CONFIG_ROOT",
-                config_root.display().to_string(),
-            );
-        }
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();
             Self::insert_env_excluded_from_nested_mise_diff(
@@ -2115,11 +2074,10 @@ impl TaskExecutor {
             return Ok(());
         }
         let args = get_args();
-        self.parse_usage_spec_and_init_env_from_spec(task, env, &args, &spec)
+        Self::parse_usage_spec_and_init_env_from_spec(task, env, &args, &spec)
     }
 
     fn parse_usage_spec_and_init_env_from_spec(
-        &self,
         task: &Task,
         env: &mut BTreeMap<String, String>,
         args: &[String],

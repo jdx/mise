@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.prepare]
+usage = 'arg "<name>"'
+sources = ["{{env.SELECTOR}}/{{usage.name}}.in"]
+outputs = ["{{env.SELECTOR}}/{{usage.name}}.prepared"]
+run = "cp {{env.SELECTOR}}/{{usage.name}}.in {{env.SELECTOR}}/{{usage.name}}.prepared"
+
+[tasks.cleanup]
+usage = 'arg "<name>"'
+sources = ["{{env.SELECTOR}}/{{usage.name}}.prepared"]
+outputs = ["{{env.SELECTOR}}/{{usage.name}}.cleaned"]
+run = "cp {{env.SELECTOR}}/{{usage.name}}.prepared {{env.SELECTOR}}/{{usage.name}}.cleaned"
+
+[tasks.pipeline]
+usage = 'arg "<name>"'
+depends = [{ task = "prepare", args = ["{{usage.name}}"], env = { SELECTOR = "selected" } }]
+depends_post = [{ task = "cleanup", args = ["{{usage.name}}"], env = { SELECTOR = "selected" } }]
+run = "test -f selected/{{usage.name}}.prepared"
+
+[tasks.generate-selector]
+run = '''
+mkdir -p generated
+printf 'SELECTOR=generated\n' > selector.env
+printf 'dependency\n' > generated/item.in
+'''
+
+[tasks.from-generated-env]
+usage = 'arg "<name>"'
+depends = ["generate-selector"]
+sources = ["{{env.SELECTOR}}/{{usage.name}}.in"]
+outputs = ["{{env.SELECTOR}}/{{usage.name}}.out"]
+run = "cp {{env.SELECTOR}}/{{usage.name}}.in {{env.SELECTOR}}/{{usage.name}}.out"
+
+[tasks.from-generated-env.env]
+_.file = "selector.env"
+EOF
+
+mkdir selected
+echo selected >selected/artifact.in
+assert_succeed "mise run pipeline artifact"
+assert "cat selected/artifact.prepared" "selected"
+assert "cat selected/artifact.cleaned" "selected"
+
+assert_succeed "mise run from-generated-env item"
+assert "cat generated/item.out" "dependency"
