@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.restore]
+rust_cache = true
+run = '''
+invoke() {
+  "$RUSTC_WRAPPER" "$PWD/fake-rustc" \
+    --crate-name demo \
+    --crate-type lib \
+    --emit=dep-info,link \
+    --out-dir "$PWD/out" \
+    "$PWD/lib.rs"
+}
+
+export CACHE_TEST_ENV=first
+first="$(invoke 2>&1)"
+test "$first" = "$(printf 'cached stdout\ncached stderr')"
+test "$(cat compile-count)" = 1
+test "$(cat out/libdemo.rlib)" = 'cached artifact first'
+
+printf 'stale artifact' >out/libdemo.rlib
+second="$(invoke 2>&1)"
+test "$second" = "$first"
+test "$(cat compile-count)" = 1
+test "$(cat out/libdemo.rlib)" = 'cached artifact first'
+
+export CACHE_TEST_ENV=second
+third="$(invoke 2>&1)"
+test "$third" = "$first"
+test "$(cat compile-count)" = 2
+test "$(cat out/libdemo.rlib)" = 'cached artifact second'
+
+cache_blob_root="$(mise cache path)/task-artifacts/v2/actions/cas/v1/blake3"
+if ! test -d "$cache_blob_root"; then
+  echo "cache blob layout was not found: $cache_blob_root" >&2
+  exit 1
+fi
+artifact_blob=''
+for blob in "$cache_blob_root"/*/*; do
+  if test -f "$blob" && cmp -s "$blob" out/libdemo.rlib; then
+    artifact_blob="$blob"
+    break
+  fi
+done
+if test -z "$artifact_blob"; then
+  echo "cached artifact blob was not found under: $cache_blob_root/*/*" >&2
+  exit 1
+fi
+rm "$artifact_blob"
+printf 'stale artifact' >out/libdemo.rlib
+
+fourth="$(invoke 2>&1)"
+case "$fourth" in
+  *'result was not restored'*) ;;
+  *) exit 1 ;;
+esac
+test "$(cat compile-count)" = 3
+test "$(cat out/libdemo.rlib)" = 'cached artifact second'
+'''
+EOF
+
+cat <<'EOF' >lib.rs
+pub fn cached_library() -> usize { 42 }
+EOF
+
+cat <<'EOF' >fake-rustc
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ${1:-} == -vV ]]; then
+  cat <<'IDENTITY'
+rustc 1.97.0 (cache-test 2026-08-01)
+binary: rustc
+commit-hash: cache-test
+commit-date: 2026-08-01
+host: x86_64-unknown-linux-gnu
+release: 1.97.0
+LLVM version: 22.0.0
+IDENTITY
+  exit 0
+fi
+
+count=0
+if [[ -f compile-count ]]; then
+  count="$(cat compile-count)"
+fi
+printf '%s\n' "$((count + 1))" >compile-count
+mkdir -p out
+printf 'cached artifact %s' "${CACHE_TEST_ENV-}" >out/libdemo.rlib
+printf '%s: %s\n' "$PWD/out/libdemo.rlib" "$PWD/lib.rs" >out/demo.d
+printf '# env-dep:CACHE_TEST_ENV=%s\n' "${CACHE_TEST_ENV-}" >>out/demo.d
+printf 'cached stdout\n'
+printf 'cached stderr\n' >&2
+EOF
+chmod +x fake-rustc
+
+assert_contains "mise run restore 2>&1" "Action cache: 1/2 hits"

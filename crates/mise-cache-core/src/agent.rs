@@ -29,6 +29,12 @@ pub enum AgentRequest {
         digest: CacheDigest,
         source: PathBuf,
     },
+    FindActionResult {
+        action: CacheDigest,
+    },
+    RecordActionHit {
+        action: CacheDigest,
+    },
     StoreActionResult {
         result: RemoteActionResult,
     },
@@ -50,6 +56,8 @@ pub enum AgentResponse {
     Hello { protocol: u8, agent_version: String },
     Blob { path: Option<PathBuf> },
     Stored { path: PathBuf },
+    ActionResult { result: Option<RemoteActionResult> },
+    ActionHitRecorded,
     ActionStored { path: PathBuf },
     ExecutableIdentity { stdout: Option<Vec<u8>> },
     Error { message: String },
@@ -58,9 +66,9 @@ pub enum AgentResponse {
 /// Aggregate cache activity for one task session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AgentStats {
-    /// Number of content-addressed storage lookups.
+    /// Number of action-result lookups.
     pub lookups: u64,
-    /// Number of lookups that found a valid local object.
+    /// Number of lookups that found a valid local action result.
     pub hits: u64,
     /// Number of newly stored content-addressed objects.
     pub stores: u64,
@@ -133,15 +141,10 @@ impl CacheAgent {
 
     async fn respond(&self, request: AgentRequest) -> AgentResponse {
         let result = match request {
-            AgentRequest::FindBlob { digest } => {
-                self.stats.lookups.fetch_add(1, Ordering::Relaxed);
-                self.cas.find(&digest).map(|path| {
-                    if path.is_some() {
-                        self.stats.hits.fetch_add(1, Ordering::Relaxed);
-                    }
-                    AgentResponse::Blob { path }
-                })
-            }
+            AgentRequest::FindBlob { digest } => self
+                .cas
+                .find(&digest)
+                .map(|path| AgentResponse::Blob { path }),
             AgentRequest::StoreBlob { digest, source } => {
                 let lock = self.write_lock(&digest);
                 let _guard = lock.lock().await;
@@ -156,6 +159,13 @@ impl CacheAgent {
                     AgentResponse::Stored { path }
                 })
             }
+            AgentRequest::FindActionResult { action } => {
+                self.stats.lookups.fetch_add(1, Ordering::Relaxed);
+                self.actions
+                    .find(&action)
+                    .map(|result| AgentResponse::ActionResult { result })
+            }
+            AgentRequest::RecordActionHit { action } => self.record_action_hit(&action),
             AgentRequest::StoreActionResult { result } => self
                 .actions
                 .store(&result)
@@ -176,6 +186,14 @@ impl CacheAgent {
         result.unwrap_or_else(|error| AgentResponse::Error {
             message: error.to_string(),
         })
+    }
+
+    fn record_action_hit(&self, action: &CacheDigest) -> Result<AgentResponse> {
+        if self.actions.find(action)?.is_none() {
+            bail!("cannot record a hit for a missing action result");
+        }
+        self.stats.hits.fetch_add(1, Ordering::Relaxed);
+        Ok(AgentResponse::ActionHitRecorded)
     }
 
     fn executable_identity_key(
@@ -402,7 +420,63 @@ mod tests {
             })
             .await;
         assert!(matches!(response, AgentResponse::ActionStored { .. }));
-        assert!(agent.actions.find(&action).unwrap().is_some());
+        let response = agent
+            .respond(AgentRequest::FindActionResult {
+                action: action.clone(),
+            })
+            .await;
+        assert!(matches!(
+            response,
+            AgentResponse::ActionResult {
+                result: Some(result)
+            } if result.action == action
+        ));
+        assert!(matches!(
+            agent
+                .respond(AgentRequest::RecordActionHit {
+                    action: action.clone()
+                })
+                .await,
+            AgentResponse::ActionHitRecorded
+        ));
+        assert_eq!(
+            agent.stats(),
+            AgentStats {
+                lookups: 1,
+                hits: 1,
+                ..AgentStats::default()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_action_result_is_a_cache_miss() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path(), "test-version");
+        let action = CacheDigest::blake3(b"missing action");
+        let response = agent
+            .respond(AgentRequest::FindActionResult {
+                action: action.clone(),
+            })
+            .await;
+
+        assert!(matches!(
+            response,
+            AgentResponse::ActionResult { result: None }
+        ));
+        assert!(matches!(
+            agent
+                .respond(AgentRequest::RecordActionHit { action })
+                .await,
+            AgentResponse::Error { .. }
+        ));
+        assert_eq!(
+            agent.stats(),
+            AgentStats {
+                lookups: 1,
+                ..AgentStats::default()
+            }
+        );
     }
 
     #[tokio::test]
