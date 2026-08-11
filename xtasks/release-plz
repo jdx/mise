@@ -121,6 +121,23 @@ version_relation() {
 	'
 }
 
+set_path_dependency_version() {
+	local manifest="$1"
+	local dependency="$2"
+	local new_version="$3"
+
+	sed -i.bak -E \
+		"/^$dependency = /s/version = \"[^\"]+\"/version = \"$new_version\"/" \
+		"$manifest"
+	rm -f "$manifest.bak"
+	awk -v dependency="$dependency" -v version="$new_version" '
+		index($0, dependency " = {") == 1 &&
+			index($0, "path = \"") &&
+			index($0, "version = \"" version "\"") { found = 1 }
+		END { exit !found }
+	' "$manifest"
+}
+
 set_package_version() {
 	local crate_name="$1"
 	local manifest="$2"
@@ -139,16 +156,19 @@ set_package_version() {
 	sed -i.bak "s/^version = \"$old_pattern\"$/version = \"$new_version\"/" "$manifest"
 	rm -f "$manifest.bak"
 
-	# Keep the workspace path dependency compatible when the calver year changes.
-	if [[ $crate_name == mise-interactive-config ]]; then
-		sed -i.bak -E \
-			"/^mise-interactive-config = /s/version = \"[^\"]+\"/version = \"$new_version\"/" \
-			Cargo.toml
-		rm -f Cargo.toml.bak
-		grep -Fqx \
-			"mise-interactive-config = { path = \"crates/mise-interactive-config\", version = \"$new_version\" }" \
-			Cargo.toml
-	fi
+	# Keep workspace path dependencies compatible before Cargo resolves the bump.
+	case "$crate_name" in
+	mise-cache-core)
+		set_path_dependency_version Cargo.toml mise-cache-core "$new_version"
+		set_path_dependency_version crates/mise-cache-rustc/Cargo.toml mise-cache-core "$new_version"
+		;;
+	mise-cache-rustc)
+		set_path_dependency_version Cargo.toml mise-cache-rustc "$new_version"
+		;;
+	mise-interactive-config)
+		set_path_dependency_version Cargo.toml mise-interactive-config "$new_version"
+		;;
+	esac
 
 	cargo update --offline -p "$crate_name" --precise "$new_version"
 }
