@@ -27,6 +27,15 @@ EOF
 path_output=$(mise env -s bash | grep PATH)
 assert_not_contains "$path_output" "$MISE_CONFIG_DIR"
 
+# PATH changes other than prepends are intentionally unsupported. Appending must not be
+# misinterpreted as a prepend or leak into the activated environment.
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export PATH="\$PATH:/unsupported-append-test-dir"
+EOF
+
+path_output=$(mise env -s bash | grep PATH)
+assert_not_contains "$path_output" "/unsupported-append-test-dir"
+
 # Env vars exported by `_.source` are visible to a later `_.path` template.
 # Directives inside `[env]._` now resolve in the order they are written, so
 # `_.source` (written first) runs before `_.path`. Regression test for

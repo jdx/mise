@@ -37,7 +37,10 @@ impl EnvResults {
                 match p {
                     EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
                         if k == *env::PATH_KEY {
-                            // TODO: perhaps deal with path removals as well
+                            // `_.source` intentionally supports PATH prepends only. Preserving the
+                            // original PATH as an exact suffix lets mise represent the additions in
+                            // env_paths, where activation ordering and cleanup are managed. General
+                            // PATH edits cannot be reproduced safely by that model.
                             if let Some(new_path) = v.strip_suffix(&orig_path) {
                                 for p in env::split_paths(new_path) {
                                     if p.as_os_str().is_empty() {
