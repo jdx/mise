@@ -6444,6 +6444,7 @@ dependencies = [
  "blake3",
  "eyre",
  "fslock",
+ "futures-util",
  "hex",
  "log",
  "mockito",
