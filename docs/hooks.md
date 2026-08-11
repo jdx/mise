@@ -34,6 +34,8 @@ leave = "echo 'I left the project'"
 ## Preinstall/postinstall hook
 
 These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
+They run with the project root as their working directory, even when `mise install` is invoked from
+a subdirectory. The invocation directory remains available in `MISE_ORIGINAL_CWD`.
 
 ```toml
 [hooks]
