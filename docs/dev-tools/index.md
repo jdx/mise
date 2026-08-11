@@ -428,7 +428,7 @@ If you type a command in your shell (e.g., `node`) and it is not found, mise can
 - **When it triggers:** When a command is not found in the shell and the handler is enabled.
 - **How to control:**
   - Setting: [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) (default: true)
-- **Limitation:** Only works for tools that already have at least one version installed, since mise cannot know which tool provides a binary otherwise.
+- **Limitation:** mise identifies the provider from the registry's bin metadata, so this covers configured tools even if they have never been installed — but not tools configured by a raw backend spec (e.g. `cargo:some-crate`), which carry no such metadata. Install those explicitly with `mise install`, or `mise x` to install and run in one step. See [troubleshooting](/troubleshooting.html#auto-install-on-command-not-found-does-not-trigger).
 
 ::: tip
 Disable auto_install for specific tools by setting [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools) to a list of tool names.

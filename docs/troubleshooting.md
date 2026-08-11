@@ -376,15 +376,18 @@ eval "$(mise hook-env)"
 
 See also the [CI/CD section](/tips-and-tricks.html#ci-cd) in Tips & Tricks.
 
-## Auto-install on command not found handler does not work for new tools
+## Auto-install on command not found does not trigger
 
-If you are expecting mise to automatically install a tool when you run a command that is not found (using the [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) feature), be aware of an important limitation:
+When you run a command that is not found, mise can install the tool that provides it (the [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) feature). It maps the command back to a tool using the `bins` metadata in mise's registry, which means a tool that is configured but has never been installed is handled too — not only a missing version of a tool you already have.
 
-**mise can only auto-install missing versions of tools that already have at least one version installed.**
+If nothing happens, it is usually one of these:
 
-This is because mise does not have a way of knowing which binaries a tool provides unless there is already an installed (even inactive) version of that tool. If you have never installed any version of a tool, mise cannot determine which tool is responsible for a given binary name, and so it cannot auto-install it on demand.
+- **The tool is configured by a raw backend spec.** `"cargo:some-crate" = "1.0.0"` or `"ubi:owner/repo" = "1.0.0"` is not a registry entry, so it carries no bin metadata and nothing connects the command you typed to it.
+- **The tool is not configured at all.** The handler only installs tools your config already asks for in the current directory; it will not pick a tool for a command you have never declared.
+- **The feature is off for that tool** — either [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) is `false`, or the tool is listed in [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools).
 
 **Workarounds:**
 
-- Manually install at least one version of the tool you want to be auto-installed in the future. After that, the auto-install feature will work for missing versions of that tool.
-- Use [`mise x|exec`](/cli/exec) or [`mise r|run`](/cli/run) to trigger auto-install for missing tools, even if no version is currently installed. These commands will attempt to install the required tool versions automatically.
+- Where a registry entry exists, refer to the tool by its registry name (`ripgrep`) rather than by a raw backend spec (`ubi:BurntSushi/ripgrep`), so the handler can map the command to it.
+- Otherwise install it explicitly instead of on demand: `mise install`, or [`mise x|exec`](/cli/exec) to install and then run something in one step. Both materialise the whole configured toolset, so the backend does not matter. [`mise r|run`](/cli/run) does the same, but only as part of running a task.
+- Installing once by hand is enough to make the handler work from then on: with a version present, mise can also discover the mapping from the installed executables.

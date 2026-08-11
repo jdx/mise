@@ -41,12 +41,24 @@ mod tests {
 
     #[test]
     async fn dummy() {
+        // A temp dir, not a relative path: the dummy plugin's PostInstall writes a VERSION file
+        // and a bin/ directory under rootPath, which would otherwise land in the crate directory.
+        //
+        // The apostrophe is deliberate. PostInstall builds a shell command to create the
+        // directory, so a path like this is what breaks naive quoting.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("O'Brien");
         let p = Plugin::test("dummy");
         let ctx = PostInstallContext {
-            root_path: PathBuf::from("root_path"),
+            root_path: root.clone(),
             runtime_version: "runtime_version".to_string(),
             sdk_info: BTreeMap::new(),
         };
         p.post_install(ctx).await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join("VERSION")).unwrap(),
+            "runtime_version"
+        );
+        assert!(root.join("bin").join("dummy").exists());
     }
 }

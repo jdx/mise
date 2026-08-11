@@ -33,6 +33,7 @@ type = "Bool"
 description = "[experimental] List of age identity files to use for decryption."
 env = "MISE_AGE_IDENTITY_FILES"
 optional = true
+parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
@@ -47,6 +48,7 @@ type = "Path"
 description = "[experimental] List of SSH identity files to use for age decryption."
 env = "MISE_AGE_SSH_IDENTITY_FILES"
 optional = true
+parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
@@ -105,6 +107,7 @@ type = "Bool"
 description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
 env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
 optional = true
+parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
@@ -1785,11 +1788,18 @@ docs = """
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
 Disable this if experiencing strange behavior in your shell when a command is not found.
 
-**Important limitation**: This handler only installs missing versions of tools that already have
-at least one version installed. mise cannot determine which tool provides a binary without having
-the tool installed first, so it cannot auto-install completely new tools.
+The handler works out which tool provides a command from the `bins` metadata in mise's registry, so
+it can install a tool that is configured but has never been installed — not only a missing version
+of a tool you already have.
 
-This also runs in shims if the terminal is interactive.
+**Limitation**: this only covers tools mise's registry knows. A tool configured by a raw backend
+spec (`ubi:owner/repo`, `cargo:…`, `npm:…`) carries no bin metadata, so a command name cannot be
+traced back to it. Install those explicitly instead — `mise install`, or [`mise x`](/cli/exec) to
+install and run in one step — since both materialise the whole configured toolset whatever the
+backend. The tool also has to be configured in a config file that applies to the current directory:
+mise will not install something you have not asked for.
+
+This also runs in shims.
 """
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
@@ -1912,6 +1922,7 @@ insecure_registries = ["registry.lan:5000", "10.0.0.8:5000"]
 """
 env = "MISE_OCI_INSECURE_REGISTRIES"
 optional = true
+parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 

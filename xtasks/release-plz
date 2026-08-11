@@ -121,6 +121,23 @@ version_relation() {
 	'
 }
 
+set_path_dependency_version() {
+	local manifest="$1"
+	local dependency="$2"
+	local new_version="$3"
+
+	sed -i.bak -E \
+		"/^$dependency = /s/version = \"[^\"]+\"/version = \"$new_version\"/" \
+		"$manifest"
+	rm -f "$manifest.bak"
+	awk -v dependency="$dependency" -v version="$new_version" '
+		index($0, dependency " = {") == 1 &&
+			index($0, "path = \"") &&
+			index($0, "version = \"" version "\"") { found = 1 }
+		END { exit !found }
+	' "$manifest"
+}
+
 set_package_version() {
 	local crate_name="$1"
 	local manifest="$2"
@@ -139,16 +156,19 @@ set_package_version() {
 	sed -i.bak "s/^version = \"$old_pattern\"$/version = \"$new_version\"/" "$manifest"
 	rm -f "$manifest.bak"
 
-	# This is the only constrained workspace path dependency.
-	if [[ $crate_name == mise-interactive-config ]]; then
-		grep -Fqx \
-			"mise-interactive-config = { path = \"crates/mise-interactive-config\", version = \"$old_version\" }" \
-			Cargo.toml
-		sed -i.bak \
-			"/^mise-interactive-config = /s/version = \"$old_pattern\"/version = \"$new_version\"/" \
-			Cargo.toml
-		rm -f Cargo.toml.bak
-	fi
+	# Keep workspace path dependencies compatible before Cargo resolves the bump.
+	case "$crate_name" in
+	mise-cache-core)
+		set_path_dependency_version Cargo.toml mise-cache-core "$new_version"
+		set_path_dependency_version crates/mise-cache-rustc/Cargo.toml mise-cache-core "$new_version"
+		;;
+	mise-cache-rustc)
+		set_path_dependency_version Cargo.toml mise-cache-rustc "$new_version"
+		;;
+	mise-interactive-config)
+		set_path_dependency_version Cargo.toml mise-interactive-config "$new_version"
+		;;
+	esac
 
 	cargo update --offline -p "$crate_name" --precise "$new_version"
 }
@@ -322,6 +342,15 @@ if [[ $cur_version != "$latest_version" ]]; then
 	AQUA_REGISTRY_VERSION=""
 	INTERACTIVE_CONFIG_VERSION=""
 	MISE_SIGSTORE_VERSION=""
+	MISE_CACHE_CORE_VERSION=""
+	MISE_CACHE_RUSTC_VERSION=""
+
+	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
+	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+	cargo add -p mise-cache-rustc "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+
+	bump_and_publish_subcrate "mise-cache-rustc" "crates/mise-cache-rustc" "MISE_CACHE_RUSTC_VERSION"
+	cargo add -p mise "mise-cache-rustc@$MISE_CACHE_RUSTC_VERSION"
 
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features

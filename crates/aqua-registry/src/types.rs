@@ -836,7 +836,7 @@ impl AquaPackage {
                 .unwrap()
                 .replace(' ', "")
                 .split(',')
-                .map(versions::Requirement::new)
+                .map(AquaRequirement::parse)
                 .collect::<Vec<_>>();
             if requirements.iter().any(|r| r.is_none()) {
                 return Err("invalid semver requirement".to_string().into());
@@ -844,7 +844,7 @@ impl AquaPackage {
             if let Some(ver) = &ver {
                 Ok(requirements
                     .iter()
-                    .all(|r| r.clone().is_some_and(|r| r.matches(ver)))
+                    .all(|r| r.as_ref().is_some_and(|r| r.matches(ver)))
                     .into())
             } else {
                 Err("invalid version".to_string().into())
@@ -857,6 +857,64 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+/// One comma-separated term of an aqua `semver()` constraint, e.g. `<=5.34.1.0` or `!=0.0.45`.
+///
+/// `versions::Requirement::new` cannot express these. It requires the whole string to parse,
+/// and the `Versioning::parse` inside it tries `SemVer` first — so a bound like `5.34.1.0` is
+/// consumed as `5.34.1` with `.0` left over and the requirement is rejected outright. It also
+/// has no operator for `!=`. Either way the caller only sees `None`, which
+/// `AquaPackage::version_override` turns into a silently false constraint.
+///
+/// aqua evaluates these with `hashicorp/go-version`, which accepts any number of components and
+/// supports `!=`, so the operator is split off here and the bound read with `Versioning::new`,
+/// which does fall back to `Version` for such strings. The comparison itself is still
+/// `versions::Requirement::matches`, so ordering, tilde and caret semantics are unchanged.
+struct AquaRequirement {
+    inner: versions::Requirement,
+    /// `!=` has no `versions::Op`, so it is `Exact` read backwards.
+    negated: bool,
+}
+
+impl AquaRequirement {
+    fn parse(s: &str) -> Option<Self> {
+        if s == "*" {
+            return Some(Self {
+                inner: versions::Requirement {
+                    op: versions::Op::Wildcard,
+                    version: None,
+                },
+                negated: false,
+            });
+        }
+        // Longest operators first, or `>=` would be read as `>` with a leading `=` on the bound.
+        let (op, negated, bound) = [
+            (">=", versions::Op::GreaterEq, false),
+            ("<=", versions::Op::LessEq, false),
+            ("!=", versions::Op::Exact, true),
+            (">", versions::Op::Greater, false),
+            ("<", versions::Op::Less, false),
+            ("=", versions::Op::Exact, false),
+            ("~", versions::Op::Tilde, false),
+            ("^", versions::Op::Caret, false),
+        ]
+        .into_iter()
+        .find_map(|(prefix, op, negated)| {
+            s.strip_prefix(prefix).map(|bound| (op, negated, bound))
+        })?;
+        Some(Self {
+            inner: versions::Requirement {
+                op,
+                version: Some(Versioning::new(bound)?),
+            },
+            negated,
+        })
+    }
+
+    fn matches(&self, v: &Versioning) -> bool {
+        self.inner.matches(v) != self.negated
     }
 }
 
@@ -1938,6 +1996,82 @@ packages:
         assert!(result.asset.is_empty());
     }
 
+    /// Two overrides that differ only in which branch is picked, so `version_override`
+    /// reports the answer: `Some("first")` when the constraint held, `Some("fallback")` otherwise.
+    fn constraint_probe(constraint: &str) -> AquaPackage {
+        AquaPackage {
+            version_constraint: "false".to_string(),
+            version_overrides: vec![
+                AquaPackage {
+                    version_constraint: constraint.to_string(),
+                    asset: "first".to_string(),
+                    ..Default::default()
+                },
+                AquaPackage {
+                    version_constraint: "true".to_string(),
+                    asset: "fallback".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn constraint_holds(constraint: &str, version: &str) -> bool {
+        constraint_probe(constraint)
+            .version_override(&[version])
+            .map(|pkg| pkg.asset == "first")
+            .expect("a version_override always matches, since the last one is unconditional")
+    }
+
+    #[test]
+    fn test_semver_constraint_accepts_four_component_bounds() {
+        // https://github.com/jdx/mise/discussions/4813: relocatable-perl selects the linux asset
+        // name for old releases with semver("<= 5.34.1.0"). Rejecting that bound sent 5.32.1.0
+        // to the fallback branch, which asks for an asset the release does not have.
+        assert!(constraint_holds("semver(\"<= 5.34.1.0\")", "5.32.1.0"));
+        assert!(constraint_holds("semver(\"<= 5.34.1.0\")", "5.34.1.0"));
+        assert!(!constraint_holds("semver(\"<= 5.34.1.0\")", "5.36.0.0"));
+
+        // Both directions, so "the bound is rejected and everything is false" cannot pass.
+        assert!(constraint_holds("semver(\">= 1.0.0.0\")", "5.32.1.0"));
+        assert!(!constraint_holds("semver(\"< 1.0.0.0\")", "5.32.1.0"));
+    }
+
+    #[test]
+    fn test_semver_constraint_compares_bounds_against_shorter_versions() {
+        // haskell/cabal pins 4-component bounds while its releases are 3-component.
+        assert!(constraint_holds("semver(\"<= 3.16.1.0\")", "3.16.1"));
+        assert!(!constraint_holds("semver(\"<= 3.16.1.0\")", "3.17.0"));
+    }
+
+    #[test]
+    fn test_semver_constraint_supports_not_equal() {
+        // mattn/efm-langserver and sheepla/qiitaz exclude a single bad release this way.
+        assert!(constraint_holds("semver(\"!= 0.0.45\")", "0.0.46"));
+        assert!(!constraint_holds("semver(\"!= 0.0.45\")", "0.0.45"));
+    }
+
+    #[test]
+    fn test_semver_constraint_still_ands_comma_separated_terms() {
+        assert!(constraint_holds(
+            "semver(\">= 1.0.0, <= 9.0.0\")",
+            "5.32.1.0"
+        ));
+        assert!(!constraint_holds(
+            "semver(\">= 1.0.0, <= 5.0.0\")",
+            "5.32.1.0"
+        ));
+    }
+
+    #[test]
+    fn test_semver_constraint_without_an_operator_is_not_satisfied() {
+        // aqua requires an operator; an unparseable term errors, and the caller reads that
+        // as "does not apply" rather than propagating it.
+        assert!(!constraint_holds("semver(\"5.32.1.0\")", "5.32.1.0"));
+        assert!(!constraint_holds("semver(\"<= \")", "5.32.1.0"));
+    }
+
     #[test]
     fn test_version_override_matches_version_prefix() {
         let pkg = AquaPackage {
@@ -2636,17 +2770,17 @@ packages:
 "#;
         let pkg = first_registry_package(yml);
 
-        for (os, arch) in [
-            ("linux", "amd64"),
-            ("darwin", "arm64"),
-            ("windows", "amd64"),
+        // What is under test is that the `envs: [all]` override supplied the URL on every
+        // platform. A raw-format URL additionally picks up the Windows executable extension,
+        // which `test_url_adds_exe_when_missing` covers on its own.
+        for (os, arch, expected) in [
+            ("linux", "amd64", "https://example.com/tool-all"),
+            ("darwin", "arm64", "https://example.com/tool-all"),
+            ("windows", "amd64", "https://example.com/tool-all.exe"),
         ] {
             let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
 
-            assert_eq!(
-                resolved.url("1.0.0", os, arch).unwrap(),
-                "https://example.com/tool-all"
-            );
+            assert_eq!(resolved.url("1.0.0", os, arch).unwrap(), expected);
         }
     }
 

@@ -11,7 +11,6 @@ use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
 use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
-use eyre::bail;
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
@@ -30,6 +29,7 @@ pub struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+    /// Defaults to `default`
     #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
     task: Option<String>,
 
@@ -77,13 +77,13 @@ impl Watch {
                 return Err(request_exit(1));
             }
         }
-        let args = once(self.task)
+        let mut args = once(self.task)
             .flatten()
             .chain(self.task_flag.iter().cloned())
             .chain(self.args.iter().cloned())
             .collect::<Vec<_>>();
         if args.is_empty() {
-            bail!("No tasks specified");
+            args.push("default".to_string());
         }
         let tasks = crate::task::task_list::get_task_lists(&config, &args, false, false).await?;
         let watched_tasks = if self.skip_deps {

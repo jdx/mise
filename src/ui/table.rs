@@ -58,7 +58,9 @@ impl MiseTable {
         if let Some(w) = *crate::env::TERM_WIDTH_OVERRIDE {
             table.set_width(w.min(u16::MAX as usize) as u16);
         }
-        if !console::colors_enabled() {
+        if console::colors_enabled() {
+            table.enforce_styling();
+        } else {
             table.force_no_tty();
         }
         if !no_header && console::user_attended() {

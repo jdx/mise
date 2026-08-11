@@ -1323,8 +1323,15 @@ mod tests {
         );
         let second = invocation.action(second_context).unwrap();
 
+        // The descriptor is canonical JSON, so the value appears the way JSON writes it --
+        // on Windows that means escaped separators. Quote it with the same serializer instead
+        // of hand-rolling the escaping; that also pins the surrounding quotes, so this only
+        // matches a whole JSON string rather than any substring.
         let descriptor = String::from_utf8(first.bytes).unwrap();
-        assert!(descriptor.contains(&first_out_dir.display().to_string()));
+        let expected =
+            String::from_utf8(canonical_json(&first_out_dir.display().to_string()).unwrap())
+                .unwrap();
+        assert!(descriptor.contains(&expected), "{descriptor}");
         assert_ne!(first.digest, second.digest);
     }
 

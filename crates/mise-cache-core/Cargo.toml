@@ -6,7 +6,6 @@ license = "MIT"
 description = "Action cache protocol, CAS, authentication, and transport primitives for mise"
 homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
-publish = false
 
 [dependencies]
 base64 = "0.23"

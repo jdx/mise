@@ -161,8 +161,13 @@ mod tests {
         // Common settings should be valid
         assert!(is_valid_setting("experimental"));
         assert!(is_valid_setting("color"));
-        // Nested settings should use dot notation
+        // Nested settings should use dot notation. More than one group, and one nested two
+        // levels deep, so a partial extraction cannot pass this.
         assert!(is_valid_setting("aqua.baked_registry"));
+        assert!(is_valid_setting("python.compile"));
+        assert!(is_valid_setting("task.cache.remote_url"));
+        // A group is not a setting on its own
+        assert!(!is_valid_setting("aqua"));
         // Invalid settings
         assert!(!is_valid_setting("invalid_setting"));
     }
@@ -177,8 +182,9 @@ mod tests {
     fn test_setting_types() {
         // quiet is a boolean
         assert_eq!(setting_type("quiet"), Some(SchemaType::Boolean));
-        // jobs is a number
-        assert_eq!(setting_type("jobs"), Some(SchemaType::Number));
+        // jobs is an integer: the schema started distinguishing integers from numbers in
+        // jdx/mise#11037. Both land in the same arm where the editor consumes the type.
+        assert_eq!(setting_type("jobs"), Some(SchemaType::Integer));
     }
 
     #[test]

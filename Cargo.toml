@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.8.3"
+version = "2026.8.4"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -116,8 +116,8 @@ filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
-mise-cache-core = { path = "crates/mise-cache-core", default-features = false }
-mise-cache-rustc = { path = "crates/mise-cache-rustc" }
+mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
+mise-cache-rustc = { path = "crates/mise-cache-rustc", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"

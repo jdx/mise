@@ -912,11 +912,18 @@ mod tests {
             )
             .await
             .unwrap();
-        let output = format!("{keys:?}").replace(
-            &vfox.install_dir.to_string_lossy().to_string(),
-            "<INSTALL_DIR>",
-        );
-        assert_snapshot!(output);
+        // Asserted rather than snapshotted: the dummy plugin reports the install dir itself on
+        // Windows and its `bin` subdirectory elsewhere (see test_env_keys_for_install_dir), and
+        // the separators differ too, so one snapshot cannot describe both.
+        let install_dir = vfox.install_dir.join("dummy").join("1.0.0");
+        let expected = if cfg!(windows) {
+            install_dir
+        } else {
+            install_dir.join("bin")
+        };
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key, "PATH");
+        assert_eq!(keys[0].value, expected.to_string_lossy().into_owned());
     }
 
     #[tokio::test]
