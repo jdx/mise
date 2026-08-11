@@ -33,7 +33,9 @@ rust_cache = true
 deny_write = true
 allow_write = ["target"]
 run = '''
-cargo build
+# Cargo creates lock files in CARGO_HOME even for a dependency-free crate. Keep
+# those writes inside the path permitted by this task's deny_write sandbox.
+CARGO_HOME=target/cargo-home CARGO_TARGET_DIR=target cargo build
 test -f target/debug/libcache_e2e.rlib
 '''
 EOF
