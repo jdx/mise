@@ -8,7 +8,7 @@
         "@tsconfig/node24": "^24.0.0",
         "@types/markdown-it": "^14.1.2",
         "@types/node": "^26.0.0",
-        "js-toml": "^1.0.2",
+        "js-toml": "^2.0.0",
         "markdown-it": "^15.0.0",
         "toml": "^5.0.0",
         "vitepress": "1.6.4",
@@ -488,7 +488,7 @@
 
     "is-what": ["is-what@5.5.0", "", {}, "sha512-oG7cgbmg5kLYae2N5IVd3jm2s+vldjxJzK1pcu9LfpGuQ93MQSzo0okvRna+7y5ifrD+20FE8FvjusyGaz14fw=="],
 
-    "js-toml": ["js-toml@1.2.1", "", { "dependencies": { "chevrotain": "^12.0.0", "xregexp": "^5.1.2" } }, "sha512-alpDea3b3mKroupsayNq96hMkqQg1gdRTq55TPRLI+cqwhBbm6/0y8plFCZyZrAJhFZDgWwu56JB/HiYP/QRlg=="],
+    "js-toml": ["js-toml@2.0.1", "", { "dependencies": { "chevrotain": "^12.0.0", "xregexp": "^5.1.2" } }, "sha512-HH5e3fCXraX+FDTjpu0IuITue9AjKxAATaIoRDcUqqUyZnBdPCYlxHPpjGEwZW93WT6r8lPY73O0ADugrtQR1g=="],
 
     "katex": ["katex@0.16.47", "", { "dependencies": { "commander": "^8.3.0" }, "bin": { "katex": "cli.js" } }, "sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg=="],
 
