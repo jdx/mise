@@ -2618,14 +2618,21 @@ impl Debug for Config {
 
 #[derive(Clone, Debug, Default)]
 struct TaskDefinitions {
-    templates: IndexMap<String, TaskTemplate>,
+    templates: IndexMap<String, SourcedTaskTemplate>,
     workspace_defaults: Option<WorkspaceTaskDefaults>,
+}
+
+#[derive(Clone, Debug)]
+struct SourcedTaskTemplate {
+    template: TaskTemplate,
+    source: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 struct WorkspaceTaskDefaults {
     project_roots: BTreeSet<PathBuf>,
     tasks: IndexMap<String, TaskTemplate>,
+    source: PathBuf,
 }
 
 /// Collect all task templates from the config file hierarchy and task-name defaults from the
@@ -2635,12 +2642,18 @@ fn collect_task_definitions(
     config_files: &ConfigMap,
     workspace_graph: Option<&crate::task::workspace::WorkspaceProjectGraph>,
 ) -> TaskDefinitions {
-    let mut templates = IndexMap::new();
+    let mut definitions = TaskDefinitions::default();
 
     // Iterate in reverse order (global -> local) so child directories override parent configs
     for cf in config_files.values().rev() {
         for (name, template) in cf.task_templates() {
-            templates.insert(name, template);
+            definitions.templates.insert(
+                name,
+                SourcedTaskTemplate {
+                    template,
+                    source: cf.get_path().to_path_buf(),
+                },
+            );
         }
     }
 
@@ -2674,14 +2687,13 @@ fn collect_task_definitions(
             (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
                 project_roots,
                 tasks,
+                source: cf.get_path().to_path_buf(),
             })
         })
         .flatten();
 
-    TaskDefinitions {
-        templates,
-        workspace_defaults,
-    }
+    definitions.workspace_defaults = workspace_defaults;
+    definitions
 }
 
 /// Resolve task definition layers from highest to lowest precedence.
@@ -2707,7 +2719,8 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             )
         })?;
 
-        task.merge_template(template);
+        task.merge_template(&template.template);
+        task.add_config_source(&template.source);
     }
     if let Some(defaults) = &definitions.workspace_defaults
         && !task.global
@@ -2724,6 +2737,7 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             .map_or(task.name.as_str(), |(_, name)| name);
         if let Some(default) = defaults.tasks.get(task_name) {
             task.merge_template(default);
+            task.add_config_source(&defaults.source);
         }
     }
     Ok(())
@@ -4226,18 +4240,16 @@ pub async fn load_tasks_in_dir(
     config: &Arc<Config>,
     dir: &Path,
     config_files: &ConfigMap,
-    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
         .then(|| config.workspace_project_graph_for_task_loading());
-    let mut definitions = collect_task_definitions(
+    let definitions = collect_task_definitions(
         config_files,
         workspace_graph
             .as_ref()
             .and_then(|graph| graph.as_ref().ok())
             .map(Arc::as_ref),
     );
-    definitions.templates = templates.clone();
     load_tasks_in_dir_with_definitions(config, dir, config_files, &definitions).await
 }
 
@@ -4664,6 +4676,55 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_resolve_task_template_tracks_definition_sources() -> Result<()> {
+        let project_root = PathBuf::from("/workspace/packages/app");
+        let template_source = PathBuf::from("/workspace/mise.toml");
+        let defaults_source = PathBuf::from("/workspace/mise.local.toml");
+        let mut definitions = TaskDefinitions::default();
+        definitions.templates.insert(
+            "build-template".to_string(),
+            SourcedTaskTemplate {
+                template: TaskTemplate {
+                    run: vec![RunEntry::Script("echo build".to_string())],
+                    ..Default::default()
+                },
+                source: template_source.clone(),
+            },
+        );
+        definitions.workspace_defaults = Some(WorkspaceTaskDefaults {
+            project_roots: BTreeSet::from([project_root.clone()]),
+            tasks: IndexMap::from([(
+                "build".to_string(),
+                TaskTemplate {
+                    description: "default description".to_string(),
+                    ..Default::default()
+                },
+            )]),
+            source: defaults_source.clone(),
+        });
+        let primary_source = project_root.join("mise.toml");
+        let mut task = Task {
+            name: "build".to_string(),
+            extends: Some("build-template".to_string()),
+            config_source: primary_source.clone(),
+            config_root: Some(project_root),
+            ..Default::default()
+        };
+
+        resolve_task_template(&mut task, &definitions)?;
+
+        assert_eq!(
+            task.config_sources(),
+            vec![
+                primary_source.as_path(),
+                template_source.as_path(),
+                defaults_source.as_path(),
+            ]
+        );
+        Ok(())
+    }
 
     #[test]
     fn test_task_config_rust_cache_is_a_default() {
