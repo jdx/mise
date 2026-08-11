@@ -25,7 +25,7 @@ flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 
 run = '''
 echo "Deploying to ${usage_environment?} in ${usage_region?}"
-[[ "${usage_verbose?}" == "true" ]] && set -x
+[[ "${usage_verbose:-false}" == "true" ]] && set -x
 ./deploy.sh "${usage_environment?}" "${usage_region?}"
 '''
 ```
@@ -659,7 +659,7 @@ flag "-v --verbose"
 '''
 run = [
   'cargo build ${usage_target?}',
-  './package.sh ${usage_verbose?}'
+  './package.sh ${usage_verbose:-false}'
 ]
 ```
 
@@ -699,7 +699,7 @@ flag "--env <env>" {
 }
 flag "--force"
 '''
-run = 'deploy --env ${usage_env?} ${usage_force?}'
+run = 'deploy --env ${usage_env?} ${usage_force:+--force}'
 ```
 
 </div>
