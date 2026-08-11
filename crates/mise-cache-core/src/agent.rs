@@ -615,31 +615,35 @@ impl CacheAgent {
     }
 
     async fn prefetch_action(&self, action: CacheDigest, adapter: String) -> Result<()> {
-        let lock = self.action_lock(&action);
-        let _guard = lock.lock().await;
-        if self.actions.find(&action)?.is_some() {
-            return Ok(());
-        }
         let remote = self
             .remote
             .as_ref()
             .ok_or_else(|| eyre::eyre!("remote cache is not configured"))?;
-        let pending = {
-            self.pending_remote_actions
+        let result = {
+            let lock = self.action_lock(&action);
+            let _guard = lock.lock().await;
+            if self.actions.find(&action)?.is_some() {
+                return Ok(());
+            }
+            if let Some(result) = self
+                .pending_remote_actions
                 .lock()
                 .unwrap()
                 .get(&action)
                 .cloned()
-        };
-        let result = match pending {
-            Some(result) => result,
-            None => {
+            {
+                result
+            } else {
                 let _prefetch_permit = self.prefetch_transfers.acquire().await?;
                 let result = {
                     let _permit = self.remote_transfers.acquire().await?;
                     remote.get_action_result(&action).await?
                 };
                 let Some(result) = result else { return Ok(()) };
+                self.pending_remote_actions
+                    .lock()
+                    .unwrap()
+                    .insert(action.clone(), result.clone());
                 result
             }
         };
@@ -1883,6 +1887,113 @@ mod tests {
         action_result.assert_async().await;
         action_blob.assert_async().await;
         assert!(agent.actions.find(&action).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn foreground_action_lookup_does_not_wait_for_prefetch_output() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let action_bytes = b"prefetched action";
+        let artifact_bytes = b"prefetched artifact";
+        let action = CacheDigest::blake3(action_bytes);
+        let artifact = CacheDigest::blake3(artifact_bytes);
+        let directory_bytes = canonical_json(&serde_json::json!({
+            "directories": [],
+            "files": [{
+                "digest": artifact,
+                "executable": false,
+                "mode": 420,
+                "name": "artifact",
+            }],
+            "symlinks": [],
+            "version": 1,
+        }))
+        .unwrap();
+        let output_root = CacheDigest::blake3(&directory_bytes);
+        let result = RemoteActionResult {
+            action: action.clone(),
+            metadata: None,
+            output_root: Some(output_root.clone()),
+            version: 1,
+        };
+        let action_result = server
+            .mock("GET", action_path(&action).as_str())
+            .with_status(200)
+            .with_header("content-type", ACTION_RESULT_MEDIA_TYPE)
+            .with_body(serde_json::to_vec(&result).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let action_blob = server
+            .mock("GET", blob_path(&action).as_str())
+            .with_status(200)
+            .with_body(action_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let output_directory = server
+            .mock("GET", blob_path(&output_root).as_str())
+            .with_status(200)
+            .with_body(directory_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let response_started = started.clone();
+        let response_release = release.clone();
+        let artifact_blob = server
+            .mock("GET", blob_path(&artifact).as_str())
+            .with_status(200)
+            .with_chunked_body(move |writer| {
+                response_started.store(true, Ordering::Release);
+                while !response_release.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                std::io::Write::write_all(writer, artifact_bytes)
+            })
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let prefetch_agent = agent.clone();
+        let prefetch_action = action.clone();
+        let prefetch = tokio::spawn(async move {
+            prefetch_agent
+                .prefetch_action(prefetch_action, "rustc".into())
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !started.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("prefetch did not request the output blob");
+
+        let foreground = tokio::time::timeout(
+            Duration::from_millis(250),
+            agent.find_action_result(&action),
+        )
+        .await;
+        release.store(true, Ordering::Release);
+        prefetch.await.unwrap().unwrap();
+        let foreground = foreground.expect("foreground action lookup waited for output prefetch");
+
+        assert!(matches!(
+            foreground.unwrap(),
+            AgentResponse::ActionResult {
+                result: Some(found)
+            } if found == result
+        ));
+        action_result.assert_async().await;
+        action_blob.assert_async().await;
+        output_directory.assert_async().await;
+        artifact_blob.assert_async().await;
     }
 
     #[tokio::test]
