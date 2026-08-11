@@ -47,14 +47,7 @@ impl TaskDocs {
     pub async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let templates = config
-            .config_files
-            .values()
-            .rev()
-            .flat_map(|cf| cf.task_templates())
-            .collect();
-        let tasks =
-            config::load_tasks_in_dir(&config, dir, &config.config_files, &templates).await?;
+        let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
         let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
         if let Some(output) = &self.output {
             if self.multi {
