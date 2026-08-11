@@ -4,6 +4,7 @@ use crate::{
     canonical_json,
 };
 use eyre::{Result, bail};
+use futures_util::{StreamExt, stream};
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -19,8 +20,8 @@ const MAX_EXECUTABLE_IDENTITY_BYTES: usize = 256 * 1024;
 const TASK_ACTION_MANIFEST_VERSION: u8 = 1;
 const MAX_TASK_ACTION_PREDICTIONS: usize = 16 * 1024;
 const MAX_ACTION_PREDICTION_PAYLOAD: usize = 256 * 1024;
-const MAX_REMOTE_TRANSFERS: usize = 8;
-const MAX_PREFETCH_CONCURRENCY: usize = 4;
+const MAX_REMOTE_TRANSFERS: usize = 64;
+const MAX_PREFETCH_TRANSFERS: usize = 48;
 const MAX_PREFETCH_DIRECTORY_OBJECTS: usize = 100_000;
 
 /// Remote action-cache access owned by one task session.
@@ -182,6 +183,7 @@ pub struct CacheAgent {
     remote_staging_dir: Arc<PathBuf>,
     pending_remote_actions: Arc<Mutex<BTreeMap<CacheDigest, RemoteActionResult>>>,
     remote_transfers: Arc<tokio::sync::Semaphore>,
+    prefetch_transfers: Arc<tokio::sync::Semaphore>,
     prefetch_tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
@@ -255,6 +257,7 @@ impl CacheAgent {
             remote_staging_dir: Arc::new(remote_staging_dir),
             pending_remote_actions: Arc::new(Mutex::new(BTreeMap::new())),
             remote_transfers: Arc::new(tokio::sync::Semaphore::new(MAX_REMOTE_TRANSFERS)),
+            prefetch_transfers: Arc::new(tokio::sync::Semaphore::new(MAX_PREFETCH_TRANSFERS)),
             prefetch_tasks: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -591,7 +594,7 @@ impl CacheAgent {
         }
         let mut actions = actions.into_iter();
         let mut tasks = tokio::task::JoinSet::new();
-        for _ in 0..MAX_PREFETCH_CONCURRENCY {
+        for _ in 0..MAX_PREFETCH_TRANSFERS {
             let Some((action, adapter)) = actions.next() else {
                 break;
             };
@@ -612,36 +615,42 @@ impl CacheAgent {
     }
 
     async fn prefetch_action(&self, action: CacheDigest, adapter: String) -> Result<()> {
-        let lock = self.action_lock(&action);
-        let _guard = lock.lock().await;
-        if self.actions.find(&action)?.is_some() {
-            return Ok(());
-        }
         let remote = self
             .remote
             .as_ref()
             .ok_or_else(|| eyre::eyre!("remote cache is not configured"))?;
-        let pending = {
-            self.pending_remote_actions
+        let result = {
+            let lock = self.action_lock(&action);
+            let _guard = lock.lock().await;
+            if self.actions.find(&action)?.is_some() {
+                return Ok(());
+            }
+            if let Some(result) = self
+                .pending_remote_actions
                 .lock()
                 .unwrap()
                 .get(&action)
                 .cloned()
-        };
-        let result = match pending {
-            Some(result) => result,
-            None => {
+            {
+                result
+            } else {
+                let _prefetch_permit = self.prefetch_transfers.acquire().await?;
                 let result = {
                     let _permit = self.remote_transfers.acquire().await?;
                     remote.get_action_result(&action).await?
                 };
                 let Some(result) = result else { return Ok(()) };
+                self.pending_remote_actions
+                    .lock()
+                    .unwrap()
+                    .insert(action.clone(), result.clone());
                 result
             }
         };
-        self.fetch_remote_blob(remote, &result.action).await?;
+        self.fetch_remote_blob_prefetch(remote, &result.action)
+            .await?;
         if let Some(metadata) = &result.metadata {
-            let path = self.fetch_remote_blob(remote, metadata).await?;
+            let path = self.fetch_remote_blob_prefetch(remote, metadata).await?;
             if adapter == "rustc" {
                 let bytes = fs::read(path)?;
                 let metadata: RustcMetadata = serde_json::from_slice(&bytes)?;
@@ -651,8 +660,10 @@ impl CacheAgent {
                 {
                     bail!("remote rustc action metadata is invalid");
                 }
-                self.fetch_remote_blob(remote, &metadata.stdout).await?;
-                self.fetch_remote_blob(remote, &metadata.stderr).await?;
+                self.fetch_remote_blob_prefetch(remote, &metadata.stdout)
+                    .await?;
+                self.fetch_remote_blob_prefetch(remote, &metadata.stderr)
+                    .await?;
             }
         }
         if let Some(output_root) = &result.output_root {
@@ -680,14 +691,20 @@ impl CacheAgent {
             if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
                 bail!("remote action output tree is too large");
             }
-            let path = self.fetch_remote_blob(remote, &digest).await?;
+            let path = self.fetch_remote_blob_prefetch(remote, &digest).await?;
             let bytes = fs::read(path)?;
             let directory: CacheDirectory = serde_json::from_slice(&bytes)?;
             if directory.version != 1 || canonical_json(&directory)? != bytes {
                 bail!("remote action output directory is invalid");
             }
-            for file in directory.files {
-                self.fetch_remote_blob(remote, &file.digest).await?;
+            let mut transfers = stream::iter(directory.files.into_iter().map(|file| async move {
+                self.fetch_remote_blob_prefetch(remote, &file.digest)
+                    .await
+                    .map(|_| ())
+            }))
+            .buffer_unordered(MAX_PREFETCH_TRANSFERS);
+            while let Some(result) = transfers.next().await {
+                result?;
             }
             pending.extend(
                 directory
@@ -699,16 +716,39 @@ impl CacheAgent {
         Ok(())
     }
 
+    async fn fetch_remote_blob_prefetch(
+        &self,
+        remote: &RemoteCacheClient,
+        digest: &CacheDigest,
+    ) -> Result<PathBuf> {
+        self.fetch_remote_blob_with_limit(remote, digest, Some(&self.prefetch_transfers))
+            .await
+    }
+
     async fn fetch_remote_blob(
         &self,
         remote: &RemoteCacheClient,
         digest: &CacheDigest,
+    ) -> Result<PathBuf> {
+        self.fetch_remote_blob_with_limit(remote, digest, None)
+            .await
+    }
+
+    async fn fetch_remote_blob_with_limit(
+        &self,
+        remote: &RemoteCacheClient,
+        digest: &CacheDigest,
+        prefetch_limit: Option<&tokio::sync::Semaphore>,
     ) -> Result<PathBuf> {
         let lock = self.write_lock(digest);
         let _guard = lock.lock().await;
         if let Some(path) = self.cas.find(digest)? {
             return Ok(path);
         }
+        let _prefetch_permit = match prefetch_limit {
+            Some(limit) => Some(limit.acquire().await?),
+            None => None,
+        };
         let _permit = self.remote_transfers.acquire().await?;
         let temporary = remote
             .get_blob_file(digest, self.remote_staging_dir.as_path())
@@ -1850,6 +1890,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn foreground_action_lookup_does_not_wait_for_prefetch_output() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let action_bytes = b"prefetched action";
+        let artifact_bytes = b"prefetched artifact";
+        let action = CacheDigest::blake3(action_bytes);
+        let artifact = CacheDigest::blake3(artifact_bytes);
+        let directory_bytes = canonical_json(&serde_json::json!({
+            "directories": [],
+            "files": [{
+                "digest": artifact,
+                "executable": false,
+                "mode": 420,
+                "name": "artifact",
+            }],
+            "symlinks": [],
+            "version": 1,
+        }))
+        .unwrap();
+        let output_root = CacheDigest::blake3(&directory_bytes);
+        let result = RemoteActionResult {
+            action: action.clone(),
+            metadata: None,
+            output_root: Some(output_root.clone()),
+            version: 1,
+        };
+        let action_result = server
+            .mock("GET", action_path(&action).as_str())
+            .with_status(200)
+            .with_header("content-type", ACTION_RESULT_MEDIA_TYPE)
+            .with_body(serde_json::to_vec(&result).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let action_blob = server
+            .mock("GET", blob_path(&action).as_str())
+            .with_status(200)
+            .with_body(action_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let output_directory = server
+            .mock("GET", blob_path(&output_root).as_str())
+            .with_status(200)
+            .with_body(directory_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let response_started = started.clone();
+        let response_release = release.clone();
+        let artifact_blob = server
+            .mock("GET", blob_path(&artifact).as_str())
+            .with_status(200)
+            .with_chunked_body(move |writer| {
+                response_started.store(true, Ordering::Release);
+                while !response_release.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                std::io::Write::write_all(writer, artifact_bytes)
+            })
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let prefetch_agent = agent.clone();
+        let prefetch_action = action.clone();
+        let prefetch = tokio::spawn(async move {
+            prefetch_agent
+                .prefetch_action(prefetch_action, "rustc".into())
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !started.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("prefetch did not request the output blob");
+
+        let foreground = tokio::time::timeout(
+            Duration::from_millis(250),
+            agent.find_action_result(&action),
+        )
+        .await;
+        release.store(true, Ordering::Release);
+        prefetch.await.unwrap().unwrap();
+        let foreground = foreground.expect("foreground action lookup waited for output prefetch");
+
+        assert!(matches!(
+            foreground.unwrap(),
+            AgentResponse::ActionResult {
+                result: Some(found)
+            } if found == result
+        ));
+        action_result.assert_async().await;
+        action_blob.assert_async().await;
+        output_directory.assert_async().await;
+        artifact_blob.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn session_completion_cancels_outstanding_prefetches() {
         let directory = tempfile::tempdir().unwrap();
         let agent = CacheAgent::new(directory.path(), "test-version");
@@ -1866,10 +2013,168 @@ mod tests {
     async fn prefetch_reserves_capacity_for_foreground_transfers() {
         let transfers = tokio::sync::Semaphore::new(MAX_REMOTE_TRANSFERS);
         let _prefetch = transfers
-            .acquire_many(MAX_PREFETCH_CONCURRENCY as u32)
+            .acquire_many(MAX_PREFETCH_TRANSFERS as u32)
             .await
             .unwrap();
         assert!(transfers.available_permits() > 0);
+    }
+
+    #[tokio::test]
+    async fn prefetches_output_files_concurrently() {
+        let directory = tempfile::tempdir().unwrap();
+        let (responses, output_root) = output_tree_responses(8);
+        let (base_url, maximum_in_flight, server) =
+            delayed_blob_server(responses, Duration::from_millis(50)).await;
+        let agent = remote_agent_url(
+            base_url,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+
+        agent
+            .prefetch_output_tree(agent.remote.as_deref().unwrap(), &output_root)
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        assert!(maximum_in_flight.load(Ordering::Relaxed) > 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "local remote-cache throughput benchmark"]
+    async fn benchmark_prefetch_output_tree_latency() {
+        let files = std::env::var("MISE_CACHE_BENCH_FILES")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(96);
+        let latency = Duration::from_millis(
+            std::env::var("MISE_CACHE_BENCH_LATENCY_MS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(100),
+        );
+
+        let directory = tempfile::tempdir().unwrap();
+        let (responses, output_root) = output_tree_responses(files);
+        let (base_url, maximum_in_flight, server) = delayed_blob_server(responses, latency).await;
+        let agent = remote_agent_url(
+            base_url,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let remote = agent.remote.as_deref().unwrap();
+
+        let started = std::time::Instant::now();
+        agent
+            .prefetch_output_tree(remote, &output_root)
+            .await
+            .unwrap();
+        let elapsed = started.elapsed();
+
+        eprintln!(
+            "prefetched {files} blobs with {} ms latency in {elapsed:?}",
+            latency.as_millis()
+        );
+        server.await.unwrap();
+        eprintln!(
+            "maximum concurrent requests: {}",
+            maximum_in_flight.load(Ordering::Relaxed)
+        );
+    }
+
+    fn output_tree_responses(files: usize) -> (BTreeMap<String, Vec<u8>>, CacheDigest) {
+        let mut entries = Vec::with_capacity(files);
+        let mut responses = BTreeMap::new();
+        for index in 0..files {
+            let body = format!("cached artifact {index}").into_bytes();
+            let digest = CacheDigest::blake3(&body);
+            entries.push(serde_json::json!({
+                "digest": digest,
+                "executable": false,
+                "mode": 420,
+                "name": format!("artifact-{index}"),
+            }));
+            responses.insert(blob_path(&digest), body);
+        }
+        let directory = canonical_json(&serde_json::json!({
+            "directories": [],
+            "files": entries,
+            "symlinks": [],
+            "version": 1,
+        }))
+        .unwrap();
+        let output_root = CacheDigest::blake3(&directory);
+        responses.insert(blob_path(&output_root), directory);
+        (responses, output_root)
+    }
+
+    async fn delayed_blob_server(
+        responses: BTreeMap<String, Vec<u8>>,
+        latency: Duration,
+    ) -> (
+        url::Url,
+        Arc<std::sync::atomic::AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use std::sync::atomic::AtomicUsize;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let responses = Arc::new(responses);
+        let request_count = responses.len();
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let maximum_in_flight = Arc::new(AtomicUsize::new(0));
+        let observed_maximum = maximum_in_flight.clone();
+        let server = tokio::spawn(async move {
+            let mut requests = tokio::task::JoinSet::new();
+            for _ in 0..request_count {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let responses = responses.clone();
+                let in_flight = in_flight.clone();
+                let maximum_in_flight = maximum_in_flight.clone();
+                requests.spawn(async move {
+                    let mut request = Vec::new();
+                    loop {
+                        let mut chunk = [0; 1024];
+                        let size = socket.read(&mut chunk).await.unwrap();
+                        assert!(size > 0, "client closed before sending request headers");
+                        request.extend_from_slice(&chunk[..size]);
+                        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    let request = String::from_utf8_lossy(&request);
+                    let path = request
+                        .lines()
+                        .next()
+                        .and_then(|line| line.split_whitespace().nth(1))
+                        .unwrap();
+                    let body = responses.get(path).unwrap();
+                    let active = in_flight.fetch_add(1, Ordering::Relaxed) + 1;
+                    maximum_in_flight.fetch_max(active, Ordering::Relaxed);
+                    tokio::time::sleep(latency).await;
+                    socket
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                                body.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .await
+                        .unwrap();
+                    socket.write_all(body).await.unwrap();
+                    in_flight.fetch_sub(1, Ordering::Relaxed);
+                });
+            }
+            while requests.join_next().await.is_some() {}
+        });
+        (
+            format!("http://{address}").parse().unwrap(),
+            observed_maximum,
+            server,
+        )
     }
 
     fn remote_agent(
@@ -1877,8 +2182,16 @@ mod tests {
         cache_dir: PathBuf,
         mode: RemoteCacheMode,
     ) -> CacheAgent {
+        remote_agent_url(server.url().parse().unwrap(), cache_dir, mode)
+    }
+
+    fn remote_agent_url(
+        base_url: url::Url,
+        cache_dir: PathBuf,
+        mode: RemoteCacheMode,
+    ) -> CacheAgent {
         let client = RemoteCacheClient::new(crate::RemoteCacheConfig {
-            base_url: server.url().parse().unwrap(),
+            base_url,
             namespace: "test".into(),
             token: None,
             token_file: None,
