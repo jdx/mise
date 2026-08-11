@@ -189,11 +189,11 @@ impl Backend for AquaBackend {
         // Count checksum operation if explicitly configured OR if this is a GitHub release
         // (GitHub API may provide a digest even without explicit checksum config)
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled())
-            || pkg.r#type == AquaPackageType::GithubRelease
+            || pkg.package_type() == AquaPackageType::GithubRelease
         {
             count += 1;
         }
-        if needs_extraction(format, &pkg.r#type) {
+        if needs_extraction(format, &pkg.package_type()) {
             count += 1;
         }
         count
@@ -494,7 +494,7 @@ impl Backend for AquaBackend {
         // Only validate for GithubRelease packages - other types use fixed URL formats
         // In locked mode, trust the lockfile URL without validation to avoid API calls
         let validated_url = if let Some(ref url) = existing_platform {
-            if ctx.locked || pkg.r#type != AquaPackageType::GithubRelease {
+            if ctx.locked || pkg.package_type() != AquaPackageType::GithubRelease {
                 existing_platform // Trust lockfile URL in locked mode or for non-release types
             } else {
                 let cached_filename = get_filename_from_url(url);
@@ -561,7 +561,7 @@ impl Backend for AquaBackend {
                 platform_key
             );
         } else {
-            let (url, url_api, v, digest) = if pkg.r#type == AquaPackageType::Http {
+            let (url, url_api, v, digest) = if pkg.package_type() == AquaPackageType::Http {
                 let (url, resolved_version) =
                     resolve_aqua_http_url(&pkg, &v, v_prefixed.as_deref(), os(), arch()).await?;
                 (url, None, resolved_version, None)
@@ -630,7 +630,7 @@ impl Backend for AquaBackend {
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
 
         // Advance to extraction operation if applicable
-        if needs_extraction(format, &pkg.r#type) {
+        if needs_extraction(format, &pkg.package_type()) {
             ctx.pr.next_operation();
         }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
@@ -833,7 +833,7 @@ impl Backend for AquaBackend {
         }
 
         // Get URL and checksum for the target platform
-        let (url, url_api, checksum) = match pkg.r#type {
+        let (url, url_api, checksum) = match pkg.package_type() {
             AquaPackageType::GithubRelease => {
                 // Try v-prefixed version first (most aqua packages use v-prefixed tags),
                 // then fall back to the non-prefixed version.
@@ -1977,7 +1977,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
     ) -> Result<(String, Option<String>, bool, Option<String>)> {
-        match pkg.r#type {
+        match pkg.package_type() {
             AquaPackageType::GithubRelease => self
                 .github_release_url(pkg, v)
                 .await
@@ -2780,7 +2780,7 @@ impl AquaBackend {
             bail!("unsupported aqua package format: {format}");
         }
         let extraction_format = extraction_format.unwrap_or(ExtractionFormat::Raw);
-        if pkg.r#type == AquaPackageType::GithubArchive
+        if pkg.package_type() == AquaPackageType::GithubArchive
             && extraction_format == ExtractionFormat::Raw
         {
             // The aqua registry can omit format for GitHub-generated archive downloads.
@@ -2838,7 +2838,7 @@ impl AquaBackend {
         };
         let extraction_format = Self::effective_extraction_format(pkg, format)?;
         let mut make_executable = false;
-        if let AquaPackageType::GithubArchive = pkg.r#type {
+        if let AquaPackageType::GithubArchive = pkg.package_type() {
             file::extract_archive(
                 &tarball_path,
                 &install_path,
@@ -2846,7 +2846,7 @@ impl AquaBackend {
                 &extract_opts,
             )?;
             make_executable = true;
-        } else if let AquaPackageType::GithubContent = pkg.r#type {
+        } else if let AquaPackageType::GithubContent = pkg.package_type() {
             if let Some(parent) = first_bin_path.parent() {
                 file::create_dir_all(parent)?;
             }
@@ -3582,7 +3582,7 @@ mod tests {
     #[test]
     fn test_github_archive_omitted_format_defaults_to_targz() {
         let mut pkg = AquaPackage::default();
-        pkg.r#type = AquaPackageType::GithubArchive;
+        pkg.r#type = Some(AquaPackageType::GithubArchive);
 
         assert_eq!(
             AquaBackend::effective_extraction_format(&pkg, "").unwrap(),
@@ -3855,7 +3855,7 @@ packages:
     #[test]
     fn test_complete_windows_ext_can_default_to_sh() {
         let mut pkg = AquaPackage::default();
-        pkg.r#type = AquaPackageType::GithubContent;
+        pkg.r#type = Some(AquaPackageType::GithubContent);
         pkg.complete_windows_ext = Some(true);
 
         assert_eq!(
@@ -4539,7 +4539,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
             pkg.supported_envs
         );
     }
-    match pkg.r#type {
+    match pkg.package_type() {
         AquaPackageType::Cargo => {
             bail!(
                 "package type `cargo` is not supported in the aqua backend. Use the cargo backend instead{}.",
@@ -4553,7 +4553,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
         AquaPackageType::GoInstall | AquaPackageType::GoBuild => {
             bail!(
                 "package type `{}` is not supported in the aqua backend. Use the go backend instead{}.",
-                pkg.r#type,
+                pkg.package_type(),
                 pkg.path
                     .as_ref()
                     .map(|path| format!(": go:{path}"))
