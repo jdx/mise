@@ -658,8 +658,8 @@ pub struct Task {
     pub config_source: PathBuf,
     /// Additional files that contributed to this task's definition.
     ///
-    /// The primary definition remains in `config_source`; this contains
-    /// metadata overlays merged from same-named `[tasks.<name>]` blocks.
+    /// The primary definition remains in `config_source`; this contains task
+    /// templates, workspace defaults, and metadata overlays merged into it.
     #[serde(skip)]
     pub additional_config_sources: Vec<PathBuf>,
     #[serde(skip)]
@@ -1266,6 +1266,17 @@ fn usage_flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
 }
 
 impl Task {
+    pub fn add_config_source(&mut self, source: &Path) {
+        if source != self.config_source
+            && !self
+                .additional_config_sources
+                .iter()
+                .any(|existing| existing == source)
+        {
+            self.additional_config_sources.push(source.to_path_buf());
+        }
+    }
+
     pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
@@ -2443,14 +2454,7 @@ impl Task {
     /// TOML file they were written in rather than the file task's script path.
     pub fn merge_toml_overlay(&mut self, other: Task) {
         for source in other.config_sources() {
-            if source != self.config_source
-                && !self
-                    .additional_config_sources
-                    .iter()
-                    .any(|existing| existing == source)
-            {
-                self.additional_config_sources.push(source.to_path_buf());
-            }
+            self.add_config_source(source);
         }
 
         fn merge_bool(base: &mut bool, overlay: bool, explicit: bool) {

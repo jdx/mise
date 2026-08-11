@@ -28,10 +28,13 @@ test "$CARGO_INCREMENTAL" = 0
 "$RUSTC_WRAPPER" true
 '''
 
+# No deny_write here: it needs Landlock, and the CI runners do not have it —
+# `landlock: NotEnabled` in RestrictionStatus — so mise correctly refuses to run a task
+# it cannot sandbox and this task failed on every run. The write sandbox is not what
+# this test is asserting; `stored` and the action-results file below are. `sandboxed`
+# above still covers rust_cache under a sandbox, via deny_env, which needs no Landlock.
 [tasks.compile]
 rust_cache = true
-deny_write = true
-allow_write = ["target"]
 run = '''
 cargo build
 test -f target/debug/libcache_e2e.rlib

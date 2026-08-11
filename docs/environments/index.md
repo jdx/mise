@@ -496,6 +496,19 @@ The `env._.source` directive supports:
 - Using relative or absolute paths
 - The `redact` and `tools` options
 
+For `PATH`, sourced scripts may prepend entries by preserving the original value as an exact
+suffix:
+
+```sh
+export PATH="/new/bin:$PATH"
+```
+
+Appending, removing, reordering, or replacing existing `PATH` entries is not supported. Those
+changes are ignored because mise tracks path additions separately so it can preserve activation
+ordering and remove them cleanly when the environment changes. Relative prepended entries are
+resolved against <span v-pre>`{{config_root}}`</span>, and empty entries are ignored rather than
+adding the current directory to `PATH`.
+
 ```toml
 [env]
 _.source = 'source.sh'

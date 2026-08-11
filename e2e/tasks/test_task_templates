@@ -170,4 +170,35 @@ EOF
 
 assert_fail "mise run failing-task" "from template"
 
+# A template's config file contributes to the resolved task definition and
+# must invalidate source freshness when it changes.
+mkdir -p pkgs/a
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["pkgs/*"]
+
+[task_templates.demo]
+run = "printf v1 > out.txt"
+sources = ["in.txt"]
+outputs = ["out.txt"]
+EOF
+cat <<'EOF' >pkgs/a/mise.toml
+[tasks.demo]
+extends = "demo"
+EOF
+touch pkgs/a/in.txt
+
+mise run '//...:demo'
+assert "cat pkgs/a/out.txt" "v1"
+assert_contains "mise run '//...:demo' 2>&1" "sources up-to-date, skipping"
+assert_contains "mise task info '//pkgs/a:demo' --json" "$PWD/mise.toml"
+assert_contains "mise task info '//pkgs/a:demo' --json" "$PWD/pkgs/a/mise.toml"
+
+sleep 1
+sed -i.bak 's/printf v1/printf v2/' mise.toml
+mise run '//...:demo'
+assert "cat pkgs/a/out.txt" "v2"
+
 echo '' >mise.toml

@@ -200,9 +200,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "1.1.4"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
+checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
 dependencies = [
  "memchr",
 ]
@@ -585,7 +585,7 @@ dependencies = [
  "aube-store",
  "aube-util",
  "aube-workspace",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "bytes",
  "ci_info",
@@ -672,7 +672,7 @@ dependencies = [
  "aube-manifest",
  "aube-settings",
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "glob",
  "memchr",
@@ -718,7 +718,7 @@ dependencies = [
  "aube-settings",
  "aube-store",
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "bytes",
  "miette",
@@ -773,7 +773,7 @@ dependencies = [
  "aube-codes",
  "aube-manifest",
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "flate2",
  "hex",
  "node-semver",
@@ -830,7 +830,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3089af6fdf3c1a76cc361bff0f51b9eff89cbf72b8d238239e81996f62ad3bac"
 dependencies = [
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "decmpfs",
  "flate2",
@@ -1384,9 +1384,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "base64-simd"
@@ -2999,7 +2999,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5454,9 +5454,9 @@ dependencies = [
 
 [[package]]
 name = "ignore"
-version = "0.4.31"
+version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f8a7b8211e695a1d0cd91cace480d4d0bd57667ab10277cc412c5f7f4884f83"
+checksum = "00b69833ed729dc5aa7d19541d96d6cf8e9137194207a04916d658e43168402f"
 dependencies = [
  "crossbeam-deque",
  "globset",
@@ -5845,7 +5845,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "160f2eade097f30263b548aae5deb12ad349c909baa710fa24b92c9090b2e006"
 dependencies = [
  "scopeguard",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5898,7 +5898,7 @@ version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1886916523694cd6ea3d175f03a1e5010699a2a4cc13696d83d7bea1d80638"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6304,7 +6304,7 @@ dependencies = [
  "aws-config",
  "aws-lc-rs",
  "aws-sdk-s3",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "built",
  "bytesize",
@@ -6440,7 +6440,7 @@ dependencies = [
 name = "mise-cache-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "eyre",
  "fslock",
@@ -6493,7 +6493,7 @@ name = "mise-sigstore"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.23.0",
+ "base64 0.23.1",
  "hex",
  "reqwest",
  "rustls-pki-types",
@@ -6730,7 +6730,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8392,9 +8392,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.16"
+version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fcfdb36bda0c880c5931cdc7a2bcdc8ba4556847b9d912bca70bc94708711ad"
+checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -8578,7 +8578,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcd2b6dd3b18129368955f32661a7718969e8c152c7d8866434c09cf15a512e0"
 dependencies = [
  "async-trait",
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "pastey",
@@ -10267,7 +10267,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

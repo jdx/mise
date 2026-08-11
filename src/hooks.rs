@@ -692,6 +692,9 @@ async fn execute(
             }
             c.env_clear();
             c.envs(env.iter());
+            if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
+                c.current_dir(root);
+            }
             // Send the hook's stdout to mise's stderr (matching the duct
             // `stdout_to_stderr()` the non-cmd path uses) by handing the child a
             // clone of our stderr handle. Redirecting the descriptor directly —
@@ -707,11 +710,13 @@ async fn execute(
         }
     }
 
-    cmd(&shell[0], args)
-        .stdout_to_stderr()
-        // .dir(root)
-        .full_env(env)
-        .run()?;
+    let command = cmd(&shell[0], args).stdout_to_stderr().full_env(env);
+    let command = if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
+        command.dir(root)
+    } else {
+        command
+    };
+    command.run()?;
     Ok(())
 }
 
