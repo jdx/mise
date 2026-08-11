@@ -1823,8 +1823,9 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         })
         .collect::<Vec<_>>();
 
-    config_files.extend(global_config_files());
-    config_files.extend(system_config_files());
+    // rev: these groups are lowest-first, this list is highest-first
+    config_files.extend(global_config_files().into_iter().rev());
+    config_files.extend(system_config_files().into_iter().rev());
 
     config_files
         .into_iter()
@@ -2067,9 +2068,9 @@ pub async fn load_config_hierarchy_from_dir(
         })
         .collect::<Vec<_>>();
 
-    // Add global and system configs
-    config_files.extend(global_config_files());
-    config_files.extend(system_config_files());
+    // rev: these groups are lowest-first, this list is highest-first
+    config_files.extend(global_config_files().into_iter().rev());
+    config_files.extend(system_config_files().into_iter().rev());
 
     let paths = config_files
         .into_iter()
@@ -2209,13 +2210,12 @@ pub fn global_config_files() -> IndexSet<PathBuf> {
     if let Some(global_config_file) = &*env::MISE_GLOBAL_CONFIG_FILE {
         return vec![global_config_file.clone()].into_iter().collect();
     }
-    let mut config_files = IndexSet::new();
+    let mut config_files: IndexSet<PathBuf> = config_files_from_dir(&dirs::CONFIG);
     if !*env::MISE_USE_TOML {
         // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
         // because that's how the user overrides the default
         config_files.insert(dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()));
     };
-    config_files.extend(config_files_from_dir(&dirs::CONFIG));
     *g = Some(config_files.clone());
     config_files
 }
@@ -2248,6 +2248,8 @@ static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     filenames
 });
 
+/// Config files in a global/system config dir, lowest precedence first: `conf.d`,
+/// then `config.toml`/`mise.toml`, then the `.local` variants.
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
     for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
