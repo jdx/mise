@@ -1,0 +1,5 @@
+backends = ["aqua:owenlamont/ryl"]
+bins = ["ryl"]
+description = "Fast YAML linter written in Rust"
+test = { cmd = "ryl --version", expected = "ryl {{version}}" }
+version_order = "semver"
