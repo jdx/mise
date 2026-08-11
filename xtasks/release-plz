@@ -139,17 +139,6 @@ set_package_version() {
 	sed -i.bak "s/^version = \"$old_pattern\"$/version = \"$new_version\"/" "$manifest"
 	rm -f "$manifest.bak"
 
-	# This is the only constrained workspace path dependency.
-	if [[ $crate_name == mise-interactive-config ]]; then
-		grep -Fqx \
-			"mise-interactive-config = { path = \"crates/mise-interactive-config\", version = \"$old_version\" }" \
-			Cargo.toml
-		sed -i.bak \
-			"/^mise-interactive-config = /s/version = \"$old_pattern\"/version = \"$new_version\"/" \
-			Cargo.toml
-		rm -f Cargo.toml.bak
-	fi
-
 	cargo update --offline -p "$crate_name" --precise "$new_version"
 }
 
