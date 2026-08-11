@@ -139,6 +139,17 @@ set_package_version() {
 	sed -i.bak "s/^version = \"$old_pattern\"$/version = \"$new_version\"/" "$manifest"
 	rm -f "$manifest.bak"
 
+	# Keep the workspace path dependency compatible when the calver year changes.
+	if [[ $crate_name == mise-interactive-config ]]; then
+		sed -i.bak -E \
+			"/^mise-interactive-config = /s/version = \"[^\"]+\"/version = \"$new_version\"/" \
+			Cargo.toml
+		rm -f Cargo.toml.bak
+		grep -Fqx \
+			"mise-interactive-config = { path = \"crates/mise-interactive-config\", version = \"$new_version\" }" \
+			Cargo.toml
+	fi
+
 	cargo update --offline -p "$crate_name" --precise "$new_version"
 }
 
