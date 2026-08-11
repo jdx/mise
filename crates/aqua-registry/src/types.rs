@@ -17,6 +17,7 @@ use versions::Versioning;
     RkyvDeserialize,
     RkyvSerialize,
     Default,
+    Copy,
     Clone,
     PartialEq,
     strum::Display,
@@ -38,7 +39,7 @@ pub enum AquaPackageType {
 ///
 /// rkyv archives parsed package data only. Runtime-only fields mirror serde's
 /// skipped behavior with `rkyv::with::Skip`.
-#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Default, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[rkyv(serialize_bounds(
     __S: rkyv::ser::Writer + rkyv::ser::Allocator,
     __S::Error: rkyv::rancor::Source,
@@ -52,7 +53,7 @@ pub enum AquaPackageType {
 ))]
 #[serde(default)]
 pub struct AquaPackage {
-    pub r#type: AquaPackageType,
+    pub r#type: Option<AquaPackageType>,
     pub repo_owner: String,
     pub repo_name: String,
     pub name: Option<String>,
@@ -371,49 +372,13 @@ fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
     }
 }
 
-impl Default for AquaPackage {
-    fn default() -> Self {
-        Self {
-            r#type: AquaPackageType::GithubRelease,
-            repo_owner: String::new(),
-            repo_name: String::new(),
-            name: None,
-            asset: String::new(),
-            url: String::new(),
-            description: None,
-            format: String::new(),
-            rosetta2: None,
-            windows_arm_emulation: None,
-            complete_windows_ext: None,
-            windows_ext: String::new(),
-            append_ext: None,
-            supported_envs: Vec::new(),
-            files: Vec::new(),
-            vars: Vec::new(),
-            replacements: HashMap::new(),
-            version_prefix: None,
-            version_filter: None,
-            version_filter_expr: None,
-            version_source: None,
-            cosign: None,
-            checksum: None,
-            slsa_provenance: None,
-            minisign: None,
-            github_artifact_attestations: None,
-            format_overrides: Vec::new(),
-            overrides: Vec::new(),
-            version_constraint: String::new(),
-            version_overrides: Vec::new(),
-            no_asset: None,
-            private: false,
-            error_message: None,
-            path: None,
-            var_values: HashMap::new(),
-        }
-    }
-}
-
 impl AquaPackage {
+    /// Return the package type, preserving aqua's default of `github_release`
+    /// when the field is omitted.
+    pub fn package_type(&self) -> AquaPackageType {
+        self.r#type.unwrap_or_default()
+    }
+
     /// Apply version-specific configurations and overrides
     pub fn with_version(self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
         self.with_version_runtime(versions, os, arch, AquaRuntime::default())
@@ -528,7 +493,7 @@ impl AquaPackage {
 
     pub fn windows_ext(&self) -> &str {
         if self.windows_ext.is_empty() {
-            match self.r#type {
+            match self.package_type() {
                 AquaPackageType::GithubArchive | AquaPackageType::GithubContent => ".sh",
                 _ => ".exe",
             }
@@ -541,7 +506,7 @@ impl AquaPackage {
         match self.complete_windows_ext {
             Some(complete) => complete,
             None => !matches!(
-                self.r#type,
+                self.package_type(),
                 AquaPackageType::GithubArchive | AquaPackageType::GithubContent
             ),
         }
@@ -597,7 +562,7 @@ impl AquaPackage {
 
     /// Get the format for this package and version
     pub fn format(&self, v: &str, os: &str, arch: &str) -> Result<&str> {
-        if self.r#type == AquaPackageType::GithubArchive {
+        if self.package_type() == AquaPackageType::GithubArchive {
             return Ok("tar.gz");
         }
         let format = if self.format.is_empty() {
@@ -1044,8 +1009,8 @@ impl AquaFile {
 }
 
 fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
-    if avo.r#type != AquaPackageType::GithubRelease {
-        orig.r#type = avo.r#type.clone();
+    if let Some(r#type) = avo.r#type {
+        orig.r#type = Some(r#type);
     }
     if !avo.repo_owner.is_empty() {
         orig.repo_owner = avo.repo_owner.clone();
@@ -1275,7 +1240,7 @@ impl AquaChecksum {
         arch: &str,
     ) -> Result<HashMap<String, String>> {
         let mut ctx = pkg.template_context(&self.effective_replacements(pkg), v, os, arch);
-        if pkg.r#type == AquaPackageType::Http {
+        if pkg.package_type() == AquaPackageType::Http {
             ctx.insert("AssetURL".to_string(), pkg.url(v, os, arch)?);
         }
         Ok(ctx)
@@ -1588,6 +1553,104 @@ packages:
         .with_version(&["1.0.0"], "linux", "amd64");
 
         assert!(pkg.private);
+    }
+
+    #[test]
+    fn test_package_type_defaults_to_github_release_when_omitted() {
+        let pkg = first_registry_package("packages:\n  - name: example/tool\n");
+
+        assert_eq!(pkg.r#type, None);
+        assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
+    }
+
+    #[test]
+    fn test_version_override_can_explicitly_select_github_release() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    repo_owner: anthropics
+    repo_name: claude-code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        type: github_release
+        asset: claude-{{.OS}}-{{.Arch}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+"#,
+        )
+        .with_version(&["2.1.226"], "linux", "amd64");
+
+        assert_eq!(pkg.r#type, Some(AquaPackageType::GithubRelease));
+        assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(pkg.format("2.1.226", "linux", "amd64").unwrap(), "tar.gz");
+        assert_eq!(
+            pkg.asset("2.1.226", "linux", "amd64").unwrap(),
+            "claude-linux-x64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_omitted_version_override_type_preserves_http() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.r#type, Some(AquaPackageType::Http));
+        assert_eq!(pkg.package_type(), AquaPackageType::Http);
+    }
+
+    #[test]
+    fn test_version_override_can_select_http() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: github_release
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        type: http
+        url: https://example.com/tool
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.r#type, Some(AquaPackageType::Http));
+        assert_eq!(pkg.package_type(), AquaPackageType::Http);
+    }
+
+    #[test]
+    fn test_platform_override_can_explicitly_select_github_release() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool
+    overrides:
+      - goos: linux
+        type: github_release
+        asset: tool-{{.OS}}-{{.Arch}}
+"#,
+        );
+
+        let linux = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let darwin = pkg.with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(linux.r#type, Some(AquaPackageType::GithubRelease));
+        assert_eq!(linux.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(darwin.r#type, Some(AquaPackageType::Http));
+        assert_eq!(darwin.package_type(), AquaPackageType::Http);
     }
 
     #[test]
@@ -2365,7 +2428,7 @@ packages:
     #[test]
     fn test_github_content_does_not_complete_windows_ext_by_default() {
         let pkg = AquaPackage {
-            r#type: AquaPackageType::GithubContent,
+            r#type: Some(AquaPackageType::GithubContent),
             path: Some("install".to_string()),
             asset: "install".to_string(),
             format: "raw".to_string(),
@@ -2380,7 +2443,7 @@ packages:
     #[test]
     fn test_github_content_complete_windows_ext_defaults_to_sh() {
         let pkg = AquaPackage {
-            r#type: AquaPackageType::GithubContent,
+            r#type: Some(AquaPackageType::GithubContent),
             path: Some("install".to_string()),
             asset: "install".to_string(),
             format: "raw".to_string(),
