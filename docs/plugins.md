@@ -131,8 +131,11 @@ The python `virtualenv` tool option is deprecated and will be removed in a futur
 Use [`_.python.venv`](/lang/python.html#automatic-virtualenv-activation) in the `[env]` section instead.
 :::
 
-This will be passed to all plugin scripts as `MISE_TOOL_OPTS__VIRTUALENV=.venv`. The user can specify
-any option, and it will be passed to the plugin in that format.
+For asdf plugins and version-specific vfox lifecycle hooks, this is passed as
+`MISE_TOOL_OPTS__VIRTUALENV=.venv` and the legacy-compatible
+`RTX_TOOL_OPTS__VIRTUALENV=.venv`. These variables are scoped to the plugin hook environment; mise
+does not export them to the user's shell. Custom backend options are passed to the plugin in that
+format; mise-managed fields such as `depends`, `install_env`, and `os` are not exported.
 
 Currently, this only supports simple strings, but we can make it compatible with more complex types
 (arrays, tables) fairly easily if there is a need for it.

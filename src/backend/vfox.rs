@@ -22,7 +22,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::toolset::{ToolVersion, Toolset, install_state};
+use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
@@ -50,6 +50,45 @@ fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
     }
     #[cfg(not(windows))]
     env.shift_remove(key);
+}
+
+fn set_env_var(
+    env: &mut indexmap::IndexMap<String, String>,
+    key: impl Into<String>,
+    value: impl Into<String>,
+) {
+    let key = key.into();
+    remove_env_var(env, &key);
+    env.insert(key, value.into());
+}
+
+fn add_tool_option_env(env: &mut indexmap::IndexMap<String, String>, options: &ToolOptions) {
+    for (key, value) in options.opts_as_strings() {
+        let key = key.to_uppercase();
+        set_env_var(env, format!("RTX_TOOL_OPTS__{key}"), value.clone());
+        set_env_var(env, format!("MISE_TOOL_OPTS__{key}"), value);
+    }
+}
+
+fn is_tool_option_env_key(key: &str) -> bool {
+    let matches =
+        |key: &str| key.starts_with("MISE_TOOL_OPTS__") || key.starts_with("RTX_TOOL_OPTS__");
+    if cfg!(windows) {
+        matches(&key.to_uppercase())
+    } else {
+        matches(key)
+    }
+}
+
+fn restore_config_tool_option_env(
+    env: &mut indexmap::IndexMap<String, String>,
+    config_env: &indexmap::IndexMap<String, String>,
+) {
+    for (key, value) in config_env {
+        if is_tool_option_env_key(key) {
+            set_env_var(env, key.clone(), value.clone());
+        }
+    }
 }
 
 #[async_trait]
@@ -176,11 +215,13 @@ impl Backend for VfoxBackend {
             .unwrap_or_default()
             .into_iter()
             .collect();
+        let tool_options = self.tool_options_for_tv(&ctx.config, &tv).await;
+        add_tool_option_env(&mut cmd_env, &tool_options);
         let mut install_env_removals = Vec::new();
         for (key, value) in tv.install_env() {
             match value.into_string() {
                 Some(value) => {
-                    cmd_env.insert(key, value);
+                    set_env_var(&mut cmd_env, key, value);
                 }
                 None => {
                     remove_env_var(&mut cmd_env, &key);
@@ -223,7 +264,7 @@ impl Backend for VfoxBackend {
                             k.as_str() == crate::env::PATH_KEY.as_str()
                         };
                         if !is_path {
-                            cmd_env.insert(k, v);
+                            set_env_var(&mut cmd_env, k, v);
                         }
                     }
                 }
@@ -233,6 +274,9 @@ impl Backend for VfoxBackend {
         for key in install_env_removals {
             remove_env_var(&mut cmd_env, &key);
         }
+        if let Ok(config_env) = ctx.config.env().await {
+            restore_config_tool_option_env(&mut cmd_env, &config_env);
+        }
         if !cmd_env.is_empty() {
             vfox.cmd_env = Some(cmd_env);
         }
@@ -240,14 +284,13 @@ impl Backend for VfoxBackend {
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
             let tool_name = self.get_tool_name()?;
-            let tool_opts = tv.request.options();
             vfox.backend_install(
                 &self.pathname,
                 tool_name,
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.into_backend_options().into_map(),
+                tool_options.into_backend_options().into_map(),
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -380,9 +423,7 @@ impl Backend for VfoxBackend {
 
         let (mut vfox, log_rx) = self.plugin.vfox()?;
         Self::forward_plugin_logs(log_rx);
-        if let Ok(dep_env) = self.dependency_env(config).await {
-            vfox.cmd_env = Some(dep_env.into_iter().collect());
-        }
+        vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
         vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
             .await?;
         Ok(())
@@ -414,7 +455,8 @@ impl Backend for VfoxBackend {
 
         let (os, arch) = Self::to_vfox_platform(target);
 
-        let (vfox, _log_rx) = self.plugin.vfox()?;
+        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
         let pre_install = vfox
             .pre_install_for_platform(&self.pathname, &tv.version, os, arch)
             .await?;
@@ -438,7 +480,8 @@ impl Backend for VfoxBackend {
 
         let (os, arch) = Self::to_vfox_platform(target);
 
-        let (vfox, _log_rx) = self.plugin.vfox()?;
+        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
         let (url, att) = vfox
             .pre_install_provenance_for_platform(&self.pathname, &tv.version, os, arch)
             .await?;
@@ -484,6 +527,33 @@ impl VfoxBackend {
         self.tool_name
             .as_deref()
             .ok_or_else(|| eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)"))
+    }
+
+    async fn cmd_env_for_tv(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> indexmap::IndexMap<String, String> {
+        let mut cmd_env = self
+            .dependency_env(config)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+        add_tool_option_env(&mut cmd_env, &self.tool_options_for_tv(config, tv).await);
+        if let Ok(config_env) = config.env().await {
+            restore_config_tool_option_env(&mut cmd_env, &config_env);
+        }
+        cmd_env
+    }
+
+    async fn tool_options_for_tv(&self, config: &Arc<Config>, tv: &ToolVersion) -> ToolOptions {
+        let mut options = config
+            .get_tool_opts_with_overrides(&self.ba)
+            .await
+            .unwrap_or_default();
+        options.apply_overrides(&tv.request.options());
+        options
     }
 
     pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
@@ -551,7 +621,7 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let opts = tv.request.options();
+        let opts = self.tool_options_for_tv(config, tv).await;
         let install_path = tv.install_path();
         let opts_hash = {
             use std::hash::{Hash, Hasher};
@@ -579,9 +649,7 @@ impl VfoxBackend {
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
                 let (mut vfox, _log_rx) = self.plugin.vfox()?;
-                if let Ok(dep_env) = self.dependency_env(config).await {
-                    vfox.cmd_env = Some(dep_env.into_iter().collect());
-                }
+                vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
@@ -651,6 +719,84 @@ fn verified_attestation_to_provenance(att: vfox::VerifiedAttestation) -> Provena
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_add_tool_option_env() {
+        let mut options = ToolOptions::default();
+        options
+            .insert_option(
+                "extensions".to_string(),
+                toml::Value::String("opentelemetry\nswoole".to_string()),
+            )
+            .unwrap();
+        options
+            .insert_option("retries".to_string(), toml::Value::Integer(2))
+            .unwrap();
+        options.depends = Some(vec!["dependency".to_string()]);
+        options.install_env.insert(
+            "PRIVATE".to_string(),
+            crate::config::env_directive::EnvValue::String("value".to_string()),
+        );
+
+        let mut env = indexmap::indexmap! {
+            "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "ambient".to_string(),
+            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "ambient".to_string(),
+        };
+        add_tool_option_env(&mut env, &options);
+
+        assert_eq!(
+            env.get("MISE_TOOL_OPTS__EXTENSIONS").unwrap(),
+            "opentelemetry\nswoole"
+        );
+        assert_eq!(
+            env.get("RTX_TOOL_OPTS__EXTENSIONS").unwrap(),
+            "opentelemetry\nswoole"
+        );
+        assert_eq!(env.get("MISE_TOOL_OPTS__RETRIES").unwrap(), "2");
+        assert_eq!(env.get("RTX_TOOL_OPTS__RETRIES").unwrap(), "2");
+        assert!(!env.contains_key("MISE_TOOL_OPTS__DEPENDS"));
+        assert!(!env.contains_key("MISE_TOOL_OPTS__INSTALL_ENV"));
+    }
+
+    #[test]
+    fn test_restore_config_tool_option_env() {
+        let mut env = indexmap::indexmap! {
+            "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "generated".to_string(),
+            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "generated".to_string(),
+        };
+        let config_env = indexmap::indexmap! {
+            "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "configured".to_string(),
+            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "configured".to_string(),
+            "UNRELATED".to_string() => "ignored".to_string(),
+        };
+
+        restore_config_tool_option_env(&mut env, &config_env);
+
+        assert_eq!(env["MISE_TOOL_OPTS__EXTENSIONS"], "configured");
+        assert_eq!(env["RTX_TOOL_OPTS__EXTENSIONS"], "configured");
+        assert!(!env.contains_key("UNRELATED"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_tool_option_env_names_are_case_insensitive_on_windows() {
+        let mut env = indexmap::indexmap! {
+            "mise_tool_opts__extensions".to_string() => "ambient".to_string(),
+        };
+        let mut options = ToolOptions::default();
+        options
+            .insert_option(
+                "extensions".to_string(),
+                toml::Value::String("configured".to_string()),
+            )
+            .unwrap();
+
+        add_tool_option_env(&mut env, &options);
+
+        assert_eq!(env.len(), 2);
+        assert_eq!(env["MISE_TOOL_OPTS__EXTENSIONS"], "configured");
+        assert_eq!(env["RTX_TOOL_OPTS__EXTENSIONS"], "configured");
+    }
 
     #[tokio::test]
     async fn test_vfox_props() {
