@@ -1,4 +1,5 @@
-backends = ["github:jgm/pandoc", "asdf:Fbrisset/asdf-pandoc"]
+backends = ["aqua:jgm/pandoc", "github:jgm/pandoc", "asdf:Fbrisset/asdf-pandoc"]
 bins = ["pandoc", "pandoc-lua", "pandoc-server"]
 description = "Universal markup converter"
+test = { cmd = "pandoc --version", expected = "pandoc {{version}}" }
 version_order = "source"
