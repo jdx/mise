@@ -1,0 +1,5 @@
+backends = ["aqua:reteps/dockerfmt"]
+bins = ["dockerfmt"]
+description = "An opinionated Dockerfile formatter"
+test = { cmd = "dockerfmt version", expected = "dockerfmt v{{version}}" }
+version_order = "semver"
