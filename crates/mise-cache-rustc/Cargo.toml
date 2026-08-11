@@ -6,10 +6,9 @@ license = "MIT"
 description = "Conservative rustc action analysis and key construction for mise"
 homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
-publish = false
 
 [dependencies]
-mise-cache-core = { path = "../mise-cache-core", default-features = false }
+mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 

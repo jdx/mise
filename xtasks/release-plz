@@ -322,6 +322,15 @@ if [[ $cur_version != "$latest_version" ]]; then
 	AQUA_REGISTRY_VERSION=""
 	INTERACTIVE_CONFIG_VERSION=""
 	MISE_SIGSTORE_VERSION=""
+	MISE_CACHE_CORE_VERSION=""
+	MISE_CACHE_RUSTC_VERSION=""
+
+	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
+	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+	cargo add -p mise-cache-rustc "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+
+	bump_and_publish_subcrate "mise-cache-rustc" "crates/mise-cache-rustc" "MISE_CACHE_RUSTC_VERSION"
+	cargo add -p mise "mise-cache-rustc@$MISE_CACHE_RUSTC_VERSION"
 
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
