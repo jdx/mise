@@ -163,6 +163,7 @@ impl Upgrade {
         let opts = ResolveOptions {
             use_locked_version: false,
             latest_versions: true,
+            prefer_exact_version: false,
             before_date,
             before_date_from_default: false,
             filter_installed_versions_by_release_date: false,
@@ -341,6 +342,7 @@ impl Upgrade {
             resolve_options: ResolveOptions {
                 use_locked_version: false,
                 latest_versions: true,
+                prefer_exact_version: false,
                 before_date,
                 before_date_from_default: false,
                 filter_installed_versions_by_release_date: false,
