@@ -397,6 +397,7 @@ impl Install {
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
+                prefer_exact_version: false,
                 before_date: self.get_before_date()?,
                 before_date_from_default: false,
                 filter_installed_versions_by_release_date: false,
