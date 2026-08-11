@@ -585,7 +585,7 @@ dependencies = [
  "aube-store",
  "aube-util",
  "aube-workspace",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "bytes",
  "ci_info",
@@ -672,7 +672,7 @@ dependencies = [
  "aube-manifest",
  "aube-settings",
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "glob",
  "memchr",
@@ -718,7 +718,7 @@ dependencies = [
  "aube-settings",
  "aube-store",
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "bytes",
  "miette",
@@ -773,7 +773,7 @@ dependencies = [
  "aube-codes",
  "aube-manifest",
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "flate2",
  "hex",
  "node-semver",
@@ -830,7 +830,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3089af6fdf3c1a76cc361bff0f51b9eff89cbf72b8d238239e81996f62ad3bac"
 dependencies = [
  "aube-util",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "decmpfs",
  "flate2",
@@ -1384,9 +1384,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "base64-simd"
@@ -6304,7 +6304,7 @@ dependencies = [
  "aws-config",
  "aws-lc-rs",
  "aws-sdk-s3",
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "built",
  "bytesize",
@@ -6440,7 +6440,7 @@ dependencies = [
 name = "mise-cache-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.23.0",
+ "base64 0.23.1",
  "blake3",
  "eyre",
  "fslock",
@@ -6493,7 +6493,7 @@ name = "mise-sigstore"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.23.0",
+ "base64 0.23.1",
  "hex",
  "reqwest",
  "rustls-pki-types",
@@ -8578,7 +8578,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fcd2b6dd3b18129368955f32661a7718969e8c152c7d8866434c09cf15a512e0"
 dependencies = [
  "async-trait",
- "base64 0.23.0",
+ "base64 0.23.1",
  "chrono",
  "futures",
  "pastey",
