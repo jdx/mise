@@ -167,6 +167,11 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
+      # `cargo test` above resolves to the root package, so the workspace members are built as
+      # dependencies but never tested. Run them separately rather than adding --workspace to the
+      # line above, which would extend --all-features to members whose features are exclusive.
+      - name: cargo test (workspace members)
+        run: cargo test --workspace --exclude mise
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: sccache --show-stats
         if: always()
@@ -441,6 +446,10 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: cargo test
+      # Windows is where the members rot fastest: their tests assume POSIX paths and shells
+      # unless something runs them here.
+      - name: cargo test (workspace members)
+        run: cargo test --workspace --exclude mise
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 40
