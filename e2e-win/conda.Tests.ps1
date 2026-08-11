@@ -9,5 +9,21 @@ Describe 'conda' {
     # (0xC0000135) and printed nothing.
     It 'runs a binary that links DLLs from dependency packages' {
         mise x conda:zstd@1.5.7 -- zstd --version | Out-String | Should -Match "Zstandard CLI"
+
+        $installPath = (mise where conda:zstd@1.5.7).Trim()
+        $launcherPath = Join-Path $installPath '.mise-bins\zstd.cmd'
+        $directExePath = Join-Path $installPath '.mise-bins\zstd.exe'
+        $activateDir = Join-Path $installPath 'etc\conda\activate.d'
+        $activationMarker = Join-Path $installPath 'native-activation-marker'
+        New-Item -ItemType Directory -Path $activateDir -Force | Out-Null
+        "@echo activated>`"$activationMarker`"" |
+            Out-File -FilePath (Join-Path $activateDir 'mise-test.cmd') -Encoding ascii
+
+        $launcherPath | Should -Exist
+        $directExePath | Should -Not -Exist
+        Remove-Item -LiteralPath $activationMarker -ErrorAction SilentlyContinue
+        $activationMarker | Should -Not -Exist
+        mise x conda:zstd@1.5.7 -- zstd --version | Out-String | Should -Match "Zstandard CLI"
+        (Get-Content $activationMarker).Trim() | Should -Be 'activated'
     }
 }

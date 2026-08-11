@@ -30,7 +30,7 @@ use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use versions::Versioning;
@@ -433,7 +433,7 @@ impl CondaBackend {
         }
 
         Self::make_bins_executable(&install_path)?;
-        self.create_symlink_bin_dir(tv, &main_paths)?;
+        self.create_bin_launcher_dir(tv, &main_paths)?;
 
         // Store lockfile info
         let n_deps = all_records.len() - 1; // all except main
@@ -529,7 +529,7 @@ impl CondaBackend {
         }
 
         Self::make_bins_executable(&install_path)?;
-        self.create_symlink_bin_dir(tv, &main_paths)?;
+        self.create_bin_launcher_dir(tv, &main_paths)?;
 
         // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
         for basename in &dep_basenames {
@@ -562,10 +562,12 @@ impl CondaBackend {
         Ok(())
     }
 
-    /// Creates a `.mise-bins` directory with symlinks only to binaries from the main package.
+    /// Creates a `.mise-bins` directory with launchers only for binaries from the main package.
     /// Uses the PathsEntry list returned by rattler's link_package to identify which files
-    /// belong to the main package (excluding transitive dependency binaries).
-    fn create_symlink_bin_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
+    /// belong to the main package (excluding transitive dependency binaries). The launchers
+    /// activate the package prefix only for the command they start, so dependencies are
+    /// available to that command without exposing their binaries on the user's PATH.
+    fn create_bin_launcher_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
         let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
 
@@ -591,9 +593,9 @@ impl CondaBackend {
                 continue;
             };
             let src = install_path.join(&entry.relative_path);
-            let dst = symlink_dir.join(bin_name);
+            let dst = Self::bin_launcher_path(&symlink_dir, bin_name, cfg!(windows));
             if src.exists() && !dst.exists() {
-                file::make_symlink_or_copy(&src, &dst)?;
+                Self::create_bin_launcher(&install_path, &src, &dst)?;
             }
         }
 
@@ -673,6 +675,91 @@ impl CondaBackend {
             }
         }
         Ok(())
+    }
+
+    fn bin_launcher_path(
+        launcher_dir: &Path,
+        bin_name: &std::ffi::OsStr,
+        windows: bool,
+    ) -> PathBuf {
+        let launcher = launcher_dir.join(bin_name);
+        if windows
+            && launcher
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+        {
+            launcher.with_extension("cmd")
+        } else {
+            launcher
+        }
+    }
+
+    fn create_bin_launcher(prefix: &Path, target: &Path, launcher: &Path) -> Result<()> {
+        #[cfg(unix)]
+        {
+            file::write(launcher, Self::render_unix_launcher(prefix, target))?;
+            file::make_executable(launcher)?;
+        }
+
+        #[cfg(windows)]
+        {
+            let needs_activation_launcher = target
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("exe")
+                        || ext.eq_ignore_ascii_case("cmd")
+                        || ext.eq_ignore_ascii_case("bat")
+                });
+            if needs_activation_launcher {
+                file::write(launcher, Self::render_windows_launcher(prefix, target))?;
+            } else {
+                // Preserve the existing fallback for uncommon executable formats. Native
+                // .exe files remain at their original path and are invoked by a .cmd launcher
+                // so their adjacent dependency DLLs and prefix activation are both available.
+                file::make_symlink_or_copy(target, launcher)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(any(unix, test))]
+    fn render_unix_launcher(prefix: &Path, target: &Path) -> String {
+        let prefix = shell_quote(&prefix.to_string_lossy());
+        let target = shell_quote(&target.to_string_lossy());
+        format!(
+            "#!/bin/sh\n\
+             export CONDA_PREFIX={prefix}\n\
+             export CONDA_DEFAULT_ENV={prefix}\n\
+             export CONDA_SHLVL=1\n\
+             export PATH=\"$CONDA_PREFIX/bin${{PATH:+:$PATH}}\"\n\
+             for _mise_conda_script in \"$CONDA_PREFIX\"/etc/conda/activate.d/*.sh; do\n\
+             \tif [ -f \"$_mise_conda_script\" ]; then\n\
+             \t\t. \"$_mise_conda_script\" || exit $?\n\
+             \tfi\n\
+             done\n\
+             unset _mise_conda_script\n\
+             exec {target} \"$@\"\n"
+        )
+    }
+
+    #[cfg(any(windows, test))]
+    fn render_windows_launcher(prefix: &Path, target: &Path) -> String {
+        let prefix = cmd_escape_value(&prefix.to_string_lossy());
+        let target = cmd_escape_value(&target.to_string_lossy());
+        format!(
+            "@echo off\r\n\
+             setlocal\r\n\
+             set \"CONDA_PREFIX={prefix}\"\r\n\
+             set \"CONDA_DEFAULT_ENV={prefix}\"\r\n\
+             set \"CONDA_SHLVL=1\"\r\n\
+             set \"PATH={prefix};{prefix}\\Library\\mingw-w64\\bin;{prefix}\\Library\\usr\\bin;{prefix}\\Library\\bin;{prefix}\\Scripts;{prefix}\\bin;%PATH%\"\r\n\
+             for %%F in (\"{prefix}\\etc\\conda\\activate.d\\*.bat\") do if exist \"%%~fF\" call \"%%~fF\"\r\n\
+             for %%F in (\"{prefix}\\etc\\conda\\activate.d\\*.cmd\") do if exist \"%%~fF\" call \"%%~fF\"\r\n\
+             call \"{target}\" %*\r\n\
+             exit /b %ERRORLEVEL%\r\n"
+        )
     }
 
     /// Resolve conda packages for lockfile's shared conda-packages section.
@@ -908,15 +995,37 @@ impl Backend for CondaBackend {
     }
 }
 
+#[cfg(any(unix, test))]
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(any(windows, test))]
+fn cmd_escape_value(value: &str) -> String {
+    value
+        .replace('^', "^^")
+        .replace('%', "%%")
+        .replace('&', "^&")
+        .replace('|', "^|")
+        .replace('<', "^<")
+        .replace('>', "^>")
+        .replace('"', "^\"")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CondaBackend, CondaOptions};
+    #[cfg(unix)]
+    use crate::file;
     use crate::toolset::ToolVersionOptions;
     use rattler_conda_types::package::{ArchiveIdentifier, CondaArchiveType, DistArchiveType};
     use rattler_conda_types::{
         PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
     };
     use std::collections::BTreeMap;
+    use std::path::Path;
+    #[cfg(unix)]
+    use std::process::Command;
     use std::str::FromStr;
     use url::Url;
 
@@ -979,6 +1088,91 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.parent(), dest.parent());
         assert_eq!(second.parent(), dest.parent());
+    }
+
+    #[test]
+    fn unix_launcher_quotes_prefix_and_target() {
+        let launcher = CondaBackend::render_unix_launcher(
+            Path::new("/tmp/prefix with ' quote"),
+            Path::new("/tmp/prefix with ' quote/bin/tool"),
+        );
+
+        assert!(launcher.contains("export CONDA_PREFIX='/tmp/prefix with '\\'' quote'"));
+        assert!(launcher.contains("exec '/tmp/prefix with '\\'' quote/bin/tool' \"$@\""));
+    }
+
+    #[test]
+    fn windows_launcher_escapes_cmd_metacharacters() {
+        let launcher = CondaBackend::render_windows_launcher(
+            Path::new(r"C:\prefix&tools%name%"),
+            Path::new(r"C:\prefix&tools%name%\Scripts\tool.cmd"),
+        );
+
+        assert!(launcher.contains(r#"set "CONDA_PREFIX=C:\prefix^&tools%%name%%""#));
+        assert!(launcher.contains(r#"call "C:\prefix^&tools%%name%%\Scripts\tool.cmd" %*"#));
+    }
+
+    #[test]
+    fn windows_native_executable_uses_cmd_launcher_path() {
+        let launcher = CondaBackend::bin_launcher_path(
+            Path::new("/prefix/.mise-bins"),
+            std::ffi::OsStr::new("tool.exe"),
+            true,
+        );
+
+        assert_eq!(launcher, Path::new("/prefix/.mise-bins/tool.cmd"));
+        assert_eq!(
+            CondaBackend::bin_launcher_path(
+                Path::new("/prefix/.mise-bins"),
+                std::ffi::OsStr::new("tool.cmd"),
+                true,
+            ),
+            Path::new("/prefix/.mise-bins/tool.cmd")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_launcher_activates_only_its_own_prefix() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("prefix with ' quote");
+        let bin_dir = prefix.join("bin");
+        let activate_dir = prefix.join("etc/conda/activate.d");
+        let target = bin_dir.join("tool");
+        let dependency = bin_dir.join("dependency-command");
+        let launcher = temp.path().join("launcher");
+        file::create_dir_all(&bin_dir).unwrap();
+        file::create_dir_all(&activate_dir).unwrap();
+        file::write(
+            &target,
+            "#!/bin/sh\nprintf '%s\\n' \"$CONDA_PREFIX\" \"$CONDA_DEFAULT_ENV\" \"$CONDA_SHLVL\" \"$CONDA_TEST_ACTIVATED\" \"$(dependency-command)\" \"$1\"\nexit 23\n",
+        )
+        .unwrap();
+        file::make_executable(&target).unwrap();
+        file::write(&dependency, "#!/bin/sh\nprintf dependency-output\n").unwrap();
+        file::make_executable(&dependency).unwrap();
+        file::write(
+            activate_dir.join("test.sh"),
+            "export CONDA_TEST_ACTIVATED=activated\n",
+        )
+        .unwrap();
+        CondaBackend::create_bin_launcher(&prefix, &target, &launcher).unwrap();
+
+        let output = Command::new(&launcher)
+            .arg("forwarded argument")
+            .env("CONDA_PREFIX", "/wrong/prefix")
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(23));
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!(
+                "{0}\n{0}\n1\nactivated\ndependency-output\nforwarded argument\n",
+                prefix.display()
+            )
+        );
     }
 
     /// Regression test for https://github.com/jdx/mise/discussions/9829:
