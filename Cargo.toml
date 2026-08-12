@@ -43,7 +43,7 @@ include = [
   "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
-rust-version = "1.91"
+rust-version = "1.93"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
