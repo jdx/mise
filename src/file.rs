@@ -967,7 +967,9 @@ pub fn ensure_executable_bits(dir: &Path) -> Result<()> {
     for entry in WalkDir::new(dir) {
         let entry = entry.wrap_err("walking directory during ensure_executable_bits")?;
         let path = entry.path();
-        if !path.is_file() {
+        // Use file_type() (lstat-based) instead of path.is_file() (stat-based)
+        // to avoid following symlinks that could escape the extraction directory.
+        if !entry.file_type().is_file() {
             continue;
         }
         // Skip files that already have execute permission
@@ -2168,6 +2170,37 @@ mod tests {
         );
         // Plain text files should remain non-executable
         assert!(!is_executable(&readme), "README should not be executable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_ensure_executable_bits_does_not_follow_symlinks() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let tmp = tempfile::tempdir().unwrap();
+
+        // Create an ELF binary *outside* the scan directory with restrictive perms.
+        let outside = tmp.path().join("outside-elf");
+        fs::write(&outside, b"\x7fELF\x02\x01\x01\x00fake binary").unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o600)).unwrap();
+
+        // Create a symlink *inside* the scan directory pointing to it.
+        let scan_dir = tmp.path().join("scan");
+        fs::create_dir_all(&scan_dir).unwrap();
+        let link = scan_dir.join("evil-link");
+        symlink(&outside, &link).unwrap();
+
+        ensure_executable_bits(&scan_dir).unwrap();
+
+        // The target's permissions must NOT have been changed.
+        let mode = fs::metadata(&outside)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 == 0,
+            "symlink target should not have gained execute bits, got {:o}",
+            mode
+        );
     }
 
     #[test]
