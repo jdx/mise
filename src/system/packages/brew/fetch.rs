@@ -14,7 +14,7 @@ use crate::ui::progress_report::SingleReport;
 #[derive(Debug, Clone)]
 pub struct OciBottleMetadata {
     pub tab: Value,
-    pub sbom_supplement: Value,
+    pub sbom_supplement: Option<Value>,
 }
 
 /// Download a bottle to the mise cache (or reuse a verified cached copy).
@@ -71,6 +71,16 @@ pub async fn fetch_oci_bottle_metadata(
         .await?
         .error_for_status()?;
     let index: Value = response.json().await?;
+    oci_metadata_from_index(name, pkg_version, tag, &bottle.sha256, &index).map(Some)
+}
+
+fn oci_metadata_from_index(
+    name: &str,
+    pkg_version: &str,
+    tag: &str,
+    bottle_sha256: &str,
+    index: &Value,
+) -> Result<OciBottleMetadata> {
     let expected_ref = format!("{pkg_version}.{tag}");
     let descriptor = index
         .get("manifests")
@@ -81,7 +91,7 @@ pub async fn fetch_oci_bottle_metadata(
                 annotations
                     .and_then(|value| value.get("sh.brew.bottle.digest"))
                     .and_then(Value::as_str)
-                    == Some(bottle.sha256.as_str())
+                    == Some(bottle_sha256)
                     || annotations
                         .and_then(|value| value.get("org.opencontainers.image.ref.name"))
                         .and_then(Value::as_str)
@@ -97,16 +107,19 @@ pub async fn fetch_oci_bottle_metadata(
         .get("sh.brew.tab")
         .and_then(Value::as_str)
         .ok_or_else(|| eyre::eyre!("brew:{name}: OCI descriptor has no sh.brew.tab"))?;
-    let sbom = annotations
+    let sbom_supplement = annotations
         .get("sh.brew.sbom.supplement")
         .and_then(Value::as_str)
-        .ok_or_else(|| eyre::eyre!("brew:{name}: OCI descriptor has no SBOM supplement"))?;
-    Ok(Some(OciBottleMetadata {
+        .map(|sbom| {
+            serde_json::from_str(sbom)
+                .wrap_err_with(|| format!("brew:{name}: invalid SBOM supplement annotation"))
+        })
+        .transpose()?;
+    Ok(OciBottleMetadata {
         tab: serde_json::from_str(tab)
             .wrap_err_with(|| format!("brew:{name}: invalid sh.brew.tab annotation"))?,
-        sbom_supplement: serde_json::from_str(sbom)
-            .wrap_err_with(|| format!("brew:{name}: invalid SBOM supplement annotation"))?,
-    }))
+        sbom_supplement,
+    })
 }
 
 #[cfg(test)]
@@ -126,5 +139,22 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn oci_sbom_supplement_is_optional_like_homebrew() {
+        let index = serde_json::json!({
+            "manifests": [{
+                "annotations": {
+                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe",
+                    "sh.brew.bottle.digest": "abc123",
+                    "sh.brew.tab": "{\"compiler\":\"clang\"}"
+                }
+            }]
+        });
+        let metadata =
+            oci_metadata_from_index("foo", "1.0", "arm64_tahoe", "abc123", &index).unwrap();
+        assert_eq!(metadata.tab["compiler"], "clang");
+        assert!(metadata.sbom_supplement.is_none());
     }
 }

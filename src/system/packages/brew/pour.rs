@@ -32,7 +32,8 @@ struct RecordRepair {
 pub(super) enum FormulaInstallProvenance {
     OciBottle {
         tab: Value,
-        sbom_supplement: Value,
+        sbom: Value,
+        sbom_supplement: Option<Value>,
     },
     ArchiveBottle {
         tab: Value,
@@ -309,6 +310,7 @@ pub async fn pour(input: BottlePour<'_>) -> Result<()> {
     let provenance = match oci_metadata {
         Some(metadata) => FormulaInstallProvenance::OciBottle {
             tab: metadata.tab.clone(),
+            sbom: read_bottle_sbom(rf, &tmp, "OCI bottle")?,
             sbom_supplement: metadata.sbom_supplement.clone(),
         },
         None => archive_bottle_provenance(rf, &tmp)?,
@@ -362,21 +364,20 @@ fn archive_bottle_provenance(rf: &ResolvedFormula, keg: &Path) -> Result<Formula
             rf.formula.name
         )
     })?;
+    let sbom = read_bottle_sbom(rf, keg, "non-OCI archive bottle")?;
+    Ok(FormulaInstallProvenance::ArchiveBottle { tab, sbom })
+}
+
+fn read_bottle_sbom(rf: &ResolvedFormula, keg: &Path, kind: &str) -> Result<Value> {
     let sbom_path = keg.join("sbom.spdx.json");
-    let sbom: Value = serde_json::from_slice(&std::fs::read(&sbom_path).wrap_err_with(|| {
+    serde_json::from_slice(&std::fs::read(&sbom_path).wrap_err_with(|| {
         format!(
-            "brew:{}: non-OCI archive bottle has no embedded SBOM at {}",
+            "brew:{}: {kind} has no embedded SBOM at {}",
             rf.formula.name,
             sbom_path.display()
         )
     })?)
-    .wrap_err_with(|| {
-        format!(
-            "brew:{}: malformed embedded archive-bottle SBOM",
-            rf.formula.name
-        )
-    })?;
-    Ok(FormulaInstallProvenance::ArchiveBottle { tab, sbom })
+    .wrap_err_with(|| format!("brew:{}: malformed embedded {kind} SBOM", rf.formula.name))
 }
 
 fn validate_bottle_provenance(
@@ -384,7 +385,9 @@ fn validate_bottle_provenance(
     provenance: &FormulaInstallProvenance,
 ) -> Result<()> {
     let (kind, tab, sbom, require_receipt_identity) = match provenance {
-        FormulaInstallProvenance::OciBottle { tab, .. } => ("OCI bottle", tab, None, false),
+        FormulaInstallProvenance::OciBottle { tab, sbom, .. } => {
+            ("OCI bottle", tab, Some(sbom), false)
+        }
         FormulaInstallProvenance::ArchiveBottle { tab, sbom } => {
             ("archive bottle", tab, Some(sbom), true)
         }
@@ -790,8 +793,20 @@ pub fn write_receipt(
     )?;
     match provenance {
         FormulaInstallProvenance::OciBottle {
-            sbom_supplement, ..
-        } => update_sbom(keg, now, sbom_supplement)?,
+            sbom,
+            sbom_supplement,
+            ..
+        } => {
+            let current: Value =
+                serde_json::from_slice(&std::fs::read(keg.join("sbom.spdx.json"))?)?;
+            if &current != sbom {
+                bail!(
+                    "brew:{}: OCI bottle SBOM changed after validation",
+                    rf.formula.name
+                );
+            }
+            update_sbom(keg, now, sbom_supplement.as_ref())?;
+        }
         FormulaInstallProvenance::ArchiveBottle { sbom, .. } => {
             let current: Value =
                 serde_json::from_slice(&std::fs::read(keg.join("sbom.spdx.json"))?)?;
@@ -807,7 +822,7 @@ pub fn write_receipt(
     Ok(())
 }
 
-fn update_sbom(keg: &Path, time: u64, supplement: &Value) -> Result<()> {
+fn update_sbom(keg: &Path, time: u64, supplement: Option<&Value>) -> Result<()> {
     let path = keg.join("sbom.spdx.json");
     let mut sbom: Value = serde_json::from_slice(
         &std::fs::read(&path)
@@ -827,22 +842,24 @@ fn update_sbom(keg: &Path, time: u64, supplement: &Value) -> Result<()> {
             "Tool: https://github.com/Homebrew/brew@{EMULATED_BREW_VERSION}"
         )]),
     );
-    let sbom_object = sbom
-        .as_object_mut()
-        .ok_or_else(|| eyre::eyre!("bottle SBOM is not an object"))?;
-    let supplement = supplement
-        .as_object()
-        .ok_or_else(|| eyre::eyre!("bottle SBOM supplement is not an object"))?;
-    for key in ["documentDescribes", "packages", "relationships"] {
-        let Some(values) = supplement.get(key).and_then(Value::as_array) else {
-            continue;
-        };
-        sbom_object
-            .entry(key.to_string())
-            .or_insert_with(|| Value::Array(Vec::new()))
-            .as_array_mut()
-            .ok_or_else(|| eyre::eyre!("bottle SBOM {key} is not an array"))?
-            .extend(values.iter().cloned());
+    if let Some(supplement) = supplement {
+        let sbom_object = sbom
+            .as_object_mut()
+            .ok_or_else(|| eyre::eyre!("bottle SBOM is not an object"))?;
+        let supplement = supplement
+            .as_object()
+            .ok_or_else(|| eyre::eyre!("bottle SBOM supplement is not an object"))?;
+        for key in ["documentDescribes", "packages", "relationships"] {
+            let Some(values) = supplement.get(key).and_then(Value::as_array) else {
+                continue;
+            };
+            sbom_object
+                .entry(key.to_string())
+                .or_insert_with(|| Value::Array(Vec::new()))
+                .as_array_mut()
+                .ok_or_else(|| eyre::eyre!("bottle SBOM {key} is not an array"))?
+                .extend(values.iter().cloned());
+        }
     }
     crate::file::write(path, serde_json::to_vec_pretty(&sbom)?)
 }
@@ -1407,7 +1424,8 @@ mod tests {
             &[],
             &FormulaInstallProvenance::OciBottle {
                 tab: tab.clone(),
-                sbom_supplement: json!({}),
+                sbom: base_sbom.clone(),
+                sbom_supplement: None,
             },
         )?;
         write_receipt(

@@ -2042,7 +2042,6 @@ mod tests {
         );
         let mut sandbox = crate::sandbox::SandboxConfig {
             deny_write: true,
-            deny_net: true,
             deny_env: true,
             allow_write: vec![allowed.clone()],
             deny_system_temp_write: true,
@@ -2063,6 +2062,26 @@ mod tests {
         let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
         assert!(child_env.contains("DOCUMENTED=yes"));
         assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn test_sandbox_network_is_denied_or_fails_closed() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut runner = super::CmdLineRunner::new("/bin/bash")
+            .args(["-c", &format!("exec 3<>/dev/tcp/127.0.0.1/{port}")])
+            .with_sandbox(crate::sandbox::SandboxConfig {
+                deny_net: true,
+                ..Default::default()
+            });
+        runner.apply_sandbox().await.unwrap();
+        assert!(runner.execute_async().await.is_err());
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
     }
 
     #[test]
