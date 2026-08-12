@@ -82,6 +82,14 @@ Different configuration sections merge in different ways:
 # Result: node@20, python@3.11, go@1.21
 ```
 
+**Tool policy** (`[tool_config]`): Applies only to tools declared by configs
+sharing the same config root; it is not merged into invocation-wide settings
+
+```toml
+[tool_config]
+locked = true
+```
+
 **Environment Variables** (`[env]`): Additive with overrides
 
 ```toml
@@ -187,6 +195,24 @@ Examples:
 [tools]
 node = { version = "22", postinstall = "corepack enable" }
 ```
+
+### `[tool_config]` - Config-root-scoped tool policy
+
+`[tool_config]` applies policy to tools declared by configs sharing the same
+config root. For example, policy in `mise.local.toml` also applies to tools in
+`mise.toml` beside it. It does not affect tools inherited from global, system,
+or parent config roots.
+
+```toml
+[tool_config]
+locked = true
+
+[tools]
+node = "24"
+```
+
+Currently, `locked` is the only supported policy. It requires this config
+root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-tools/mise-lock.html#strict-lockfile-mode).
 
 ### `[env]` - Arbitrary Environment Variables
 

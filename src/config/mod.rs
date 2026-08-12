@@ -39,7 +39,7 @@ use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_ter
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
-    ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -111,6 +111,27 @@ pub fn is_loaded() -> bool {
 }
 
 impl Config {
+    /// Whether the config root that owns this tool request opted it into strict
+    /// lockfile enforcement. Non-config sources remain governed only by the
+    /// invocation-wide `locked` setting/flag.
+    pub fn tool_config_locked(&self, source: &ToolSource) -> bool {
+        let ToolSource::MiseToml(path) = source else {
+            return false;
+        };
+        let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
+            return false;
+        };
+        // The global config root defaults to $HOME, which can also be the
+        // config_root of a local config stored directly in $HOME. Keep those
+        // conceptual roots separate even when their path values coincide.
+        let is_global = is_global_config(path);
+        self.config_files.values().any(|cf| {
+            is_global_config(cf.get_path()) == is_global
+                && cf.config_root() == root
+                && cf.tool_config().locked
+        })
+    }
+
     pub async fn get() -> Result<Arc<Self>> {
         if let Some(config) = &*_CONFIG.read().unwrap() {
             return Ok(config.clone());

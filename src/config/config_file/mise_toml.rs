@@ -20,7 +20,7 @@ use versions::Versioning;
 use crate::backend::unalias_backend;
 use crate::cli::args::BackendArg;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{
@@ -395,6 +395,8 @@ pub struct MiseToml {
     redactions: Redactions,
     #[serde(default)]
     task_config: TaskConfig,
+    #[serde(default)]
+    tool_config: ToolConfig,
     #[serde(default)]
     tasks: Tasks,
     #[serde(default)]
@@ -1587,6 +1589,10 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn tool_config(&self) -> &ToolConfig {
+        &self.tool_config
+    }
+
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
         self.task_config
             .includes
@@ -1838,6 +1844,7 @@ impl Clone for MiseToml {
             tasks: self.tasks.clone(),
             task_templates: self.task_templates.clone(),
             task_config: self.task_config.clone(),
+            tool_config: self.tool_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),

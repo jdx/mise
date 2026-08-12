@@ -566,7 +566,7 @@ impl Toolset {
             pr: mpr.add_with_options(&tv.style(), opts.dry_run),
             force: opts.force,
             dry_run: opts.dry_run,
-            locked: opts.locked,
+            locked: opts.locked || config.tool_config_locked(tr.source()),
             before_date,
         };
 
