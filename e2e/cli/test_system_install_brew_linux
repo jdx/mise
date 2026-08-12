@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# e2e:writable-rootfs
 
-# Linuxbrew pour test: the dedicated disposable job runs this as root with an
-# absent Linuxbrew prefix and user. Namespace runners may provide an empty,
-# root-owned /home/linuxbrew scaffold; validate and restore it exactly.
+# Linuxbrew pour test: the dedicated job runs this as root in the e2e
+# container's fresh writable rootfs and fresh /home bind mount. The host's
+# /home/linuxbrew is never a mutation target.
 if [[ $(uname) != Linux ]]; then
   echo "SKIP: brew formula oracle requires Linux" >&2
   exit 0

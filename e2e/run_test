@@ -82,6 +82,10 @@ within_isolated_env() {
         MISE_BREW_ORACLE_RUNNER_TEMP="${MISE_BREW_ORACLE_RUNNER_TEMP:-}"
         MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
         MISE_BREW_LIFECYCLE_TEST_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
+        MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION:-}"
+        MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
+        MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION:-}"
+        MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}"
       )
       ;;
   esac
@@ -224,6 +228,11 @@ run_in_docker() {
   local docker_args=(
     docker run --rm
   )
+  local is_disposable_brew_oracle=0
+  if [[ $(realpath "$TEST_SCRIPT") == "$ROOT/e2e/cli/test_system_install_brew_linux" &&
+  ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
+    is_disposable_brew_oracle=1
+  fi
   # tests that install real system packages (e.g. apt) must write to /var and
   # /usr and declare that with an "# e2e:writable-rootfs" marker; the container
   # is still ephemeral and the host mounts below stay read-only
@@ -238,8 +247,6 @@ run_in_docker() {
     -v "$ROOT:/mise-src:ro"
     -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
     -e ROOT=/mise-src
-    -e CI="${CI:-}"
-    -e GITHUB_ACTION="${GITHUB_ACTION:-}"
     -e MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}"
     -e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
     -e MISE_DEBUG="${MISE_DEBUG:-0}"
@@ -249,6 +256,33 @@ run_in_docker() {
     -e MISE_E2E_INSIDE_DOCKER=1
     -e CARGO_TARGET_DIR=/usr/local/lib/mise
   )
+  if [[ $is_disposable_brew_oracle == 0 ]]; then
+    docker_args+=(
+      -e CI="${CI:-}"
+      -e GITHUB_ACTION="${GITHUB_ACTION:-}"
+    )
+  fi
+  case "$(realpath "$TEST_SCRIPT")" in
+    "$ROOT/e2e/cli/test_system_install_brew_linux")
+      if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
+        [[ -d ${MISE_BREW_ORACLE_RESULT_DIR:-} ]] || {
+          err "brew oracle result directory must exist before container isolation"
+          return 1
+        }
+        docker_args+=(
+          -v "$MISE_BREW_ORACLE_RESULT_DIR:/oracle/results"
+          -e MISE_BREW_ORACLE_DISPOSABLE=1
+          -e MISE_BREW_ORACLE_RESULT_DIR=/oracle/results
+          -e MISE_BREW_ORACLE_RUNNER_TEMP=/oracle
+          -e MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}"
+        )
+      fi
+      ;;
+  esac
 
   local rc=0
   "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?

@@ -9,6 +9,30 @@ brew_oracle_fail() {
   return 1
 }
 
+brew_oracle_validate_homebrew_identity() {
+  local reference_version=$1 reference_sha=$2 runtime_version=$3 runtime_sha=$4 value
+
+  for value in "$reference_version" "$runtime_version"; do
+    if [[ -z $value || $value == *$'\n'* || $value == *$'\r'* ]]; then
+      brew_oracle_fail "Homebrew versions must be nonempty single-line values"
+      return 1
+    fi
+  done
+  if [[ ! $reference_sha =~ ^[0-9a-f]{40}$ ]]; then
+    brew_oracle_fail "exact Homebrew reference SHA is required"
+    return 1
+  fi
+  if [[ $runtime_version == not-installed || $runtime_sha == not-installed ]]; then
+    if [[ $runtime_version != not-installed || $runtime_sha != not-installed ]]; then
+      brew_oracle_fail "Homebrew runtime version and SHA must both be not-installed"
+      return 1
+    fi
+  elif [[ ! $runtime_sha =~ ^[0-9a-f]{40}$ ]]; then
+    brew_oracle_fail "exact Homebrew runtime SHA is required"
+    return 1
+  fi
+}
+
 brew_oracle_require_disposable() {
   local marker_name=$1 expected_prefix=$2
   local runner_temp result_dir runner_real result_real checkout_sha
@@ -73,6 +97,11 @@ brew_oracle_require_disposable() {
     brew_oracle_fail "checkout SHA $checkout_sha does not match expected $MISE_BREW_ORACLE_MISE_SHA"
     return 1
   fi
+  brew_oracle_validate_homebrew_identity \
+    "${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION:-}" \
+    "${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}" \
+    "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION:-}" \
+    "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}" || return 1
 
   # These are deliberately set by the workflow but must not cross env -i.
   if [[ -n ${CI+x} ]]; then
@@ -117,31 +146,38 @@ brew_oracle_complete() {
     printf 'fixture_count=%s\n' "$fixture_count"
     printf 'prefix=%s\n' "$actual_prefix"
     printf 'mise_sha=%s\n' "$MISE_BREW_ORACLE_MISE_SHA"
+    printf 'homebrew_reference_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION"
+    printf 'homebrew_reference_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
+    printf 'homebrew_runtime_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION"
+    printf 'homebrew_runtime_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
   } >"$tmp"
   mv "$tmp" "$BREW_ORACLE_MARKER"
 }
 
 brew_oracle_verify_marker() {
   local marker=$1 test_name=$2 fixture_count=$3 prefix=$4 mise_sha=$5
+  local reference_version=$6 reference_sha=$7 runtime_version=$8 runtime_sha=$9
 
   if [[ ! -f $marker || -L $marker ]]; then
     brew_oracle_fail "missing completion marker: $marker"
     return 1
   fi
-  if ! grep -Fxq "test_name=$test_name" "$marker"; then
-    brew_oracle_fail "wrong test name in $marker"
+  if [[ ! $fixture_count =~ ^[1-9][0-9]*$ || ! $mise_sha =~ ^[0-9a-f]{40}$ ]]; then
+    brew_oracle_fail "invalid expected fixture count or mise SHA"
     return 1
   fi
-  if ! grep -Fxq "fixture_count=$fixture_count" "$marker"; then
-    brew_oracle_fail "wrong fixture count in $marker"
-    return 1
-  fi
-  if ! grep -Fxq "prefix=$prefix" "$marker"; then
-    brew_oracle_fail "wrong prefix in $marker"
-    return 1
-  fi
-  if ! grep -Fxq "mise_sha=$mise_sha" "$marker"; then
-    brew_oracle_fail "wrong mise SHA in $marker"
+  brew_oracle_validate_homebrew_identity \
+    "$reference_version" "$reference_sha" "$runtime_version" "$runtime_sha" || return 1
+  if ! cmp -s "$marker" <(printf '%s\n' \
+    "test_name=$test_name" \
+    "fixture_count=$fixture_count" \
+    "prefix=$prefix" \
+    "mise_sha=$mise_sha" \
+    "homebrew_reference_version=$reference_version" \
+    "homebrew_reference_sha=$reference_sha" \
+    "homebrew_runtime_version=$runtime_version" \
+    "homebrew_runtime_sha=$runtime_sha"); then
+    brew_oracle_fail "completion marker does not exactly match expected proof: $marker"
     return 1
   fi
 }
