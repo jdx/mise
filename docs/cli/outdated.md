@@ -19,10 +19,6 @@ If not specified, all tools in global and local configs will be shown
 
 ## Flags
 
-### `-J --json`
-
-Output in JSON format
-
 ### `-b --bump`
 
 Compares against the latest versions available, not what matches the current config
@@ -31,6 +27,10 @@ For example, if you have `node = "20"` in your config by default `mise outdated`
 show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+
+### `-J --json`
+
+Output in JSON format
 
 ### `--inactive`
 

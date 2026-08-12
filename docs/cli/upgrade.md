@@ -24,16 +24,6 @@ If not specified, all current tools will be upgraded
 
 ## Flags
 
-### `-i --interactive`
-
-Display multiselect menu to choose which tools to upgrade
-
-### `-j --jobs <JOBS>`
-
-Number of jobs to run in parallel
-Values below 1 are treated as 1
-[default: 4]
-
 ### `-b --bump`
 
 Upgrades to the latest version available, bumping the version in mise.toml
@@ -43,6 +33,16 @@ this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
 It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
 would change your config to `node = "22"`.
+
+### `-i --interactive`
+
+Display multiselect menu to choose which tools to upgrade
+
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+[default: 4]
 
 ### `-n --dry-run`
 

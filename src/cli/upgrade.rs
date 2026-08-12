@@ -43,16 +43,6 @@ pub struct Upgrade {
     #[clap(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Display multiselect menu to choose which tools to upgrade
-    #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
-    interactive: bool,
-
-    /// Number of jobs to run in parallel
-    /// Values below 1 are treated as 1
-    /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
-    jobs: Option<usize>,
-
     /// Upgrades to the latest version available, bumping the version in mise.toml
     ///
     /// For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
@@ -62,6 +52,16 @@ pub struct Upgrade {
     /// would change your config to `node = "22"`.
     #[clap(long, short = 'b', verbatim_doc_comment)]
     bump: bool,
+
+    /// Display multiselect menu to choose which tools to upgrade
+    #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
+    interactive: bool,
+
+    /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
+    /// [default: 4]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
 
     /// Deprecated shorthand for --bump
     #[clap(short = 'l', hide = true)]

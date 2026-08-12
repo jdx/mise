@@ -2702,7 +2702,6 @@ Examples:
     node    20         20.0.0   20.1.0
 
 """#
-    flag "-J --json" help="Output in JSON format"
     flag "-b --bump" help="Compares against the latest versions available, not what matches the current config" {
         long_help #"""
 Compares against the latest versions available, not what matches the current config
@@ -2713,6 +2712,7 @@ show other 20.x versions, not 21.x or 22.x versions.
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 """#
     }
+    flag "-J --json" help="Output in JSON format"
     flag -l help="Deprecated shorthand for --bump" hide=#true
     flag --inactive help="Show outdated tools including installed-but-inactive tools not present in the current config" {
         long_help #"""
@@ -4602,14 +4602,6 @@ Examples:
     $ mise upgrade --local
 
 """#
-    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
-    flag "-j --jobs" help=#"""
-Number of jobs to run in parallel
-Values below 1 are treated as 1
-[default: 4]
-"""# {
-        arg <JOBS>
-    }
     flag "-b --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
         long_help #"""
 Upgrades to the latest version available, bumping the version in mise.toml
@@ -4620,6 +4612,14 @@ this will install 22.1.0 and set `node = "22.1.0"` in your config.
 It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
 would change your config to `node = "22"`.
 """#
+    }
+    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
+    flag "-j --jobs" help=#"""
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+[default: 4]
+"""# {
+        arg <JOBS>
     }
     flag -l help="Deprecated shorthand for --bump" hide=#true
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
