@@ -941,6 +941,52 @@ pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
+/// Check if a file looks like a native executable or script based on its content.
+/// Returns true for ELF binaries and scripts starting with a shebang (`#!`).
+#[cfg(unix)]
+fn looks_like_executable(path: &Path) -> bool {
+    let mut buf = [0u8; 4];
+    let n = match File::open(path).and_then(|mut f| f.read(&mut buf)) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    // ELF magic: \x7fELF
+    n >= 4 && &buf[..4] == b"\x7fELF" ||
+    // Shebang: #!
+    n >= 2 && &buf[..2] == b"#!"
+}
+
+/// Walk a directory and ensure files that look like executables (ELF binaries
+/// or scripts with shebangs) have execute permission.
+///
+/// Some archives—particularly ZIPs created on Windows or CI—don't store Unix
+/// execute bits. After extraction, binaries end up mode `0644` and fail with
+/// "permission denied" when invoked.
+#[cfg(unix)]
+pub fn ensure_executable_bits(dir: &Path) -> Result<()> {
+    for entry in WalkDir::new(dir) {
+        let entry = entry.wrap_err("walking directory during ensure_executable_bits")?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        // Skip files that already have execute permission
+        if is_executable(path) {
+            continue;
+        }
+        if looks_like_executable(path) {
+            debug!("fixing execute permission: {}", display_path(path));
+            make_executable(path)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn ensure_executable_bits(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
 #[cfg(unix)]
 pub async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()> {
     trace!("chmod +x {}", display_path(&path));
@@ -2090,6 +2136,38 @@ mod tests {
         assert_eq!(executable_mode(0o755), 0o755);
         // group/other write bits are preserved
         assert_eq!(executable_mode(0o660), 0o775);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_ensure_executable_bits_fixes_archive_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+
+        // Simulate a binary that lost its execute bit (like from a ZIP that
+        // doesn't store Unix permissions).
+        let elf = tmp.path().join("myapp");
+        fs::write(&elf, b"\x7fELF\x02\x01\x01\x00fake binary").unwrap();
+        fs::set_permissions(&elf, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let script = tmp.path().join("myscript");
+        fs::write(&script, b"#!/bin/sh\necho hi").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let readme = tmp.path().join("README.md");
+        fs::write(&readme, b"# My App\n").unwrap();
+        fs::set_permissions(&readme, fs::Permissions::from_mode(0o644)).unwrap();
+
+        ensure_executable_bits(tmp.path()).unwrap();
+
+        // ELF and shebang files should now have execute bits
+        assert!(is_executable(&elf), "ELF binary should be executable after fix");
+        assert!(
+            is_executable(&script),
+            "script with shebang should be executable after fix"
+        );
+        // Plain text files should remain non-executable
+        assert!(!is_executable(&readme), "README should not be executable");
     }
 
     #[test]

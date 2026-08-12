@@ -544,6 +544,10 @@ impl HttpBackend {
 
         file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
 
+        // Fix execute permissions for archives (especially ZIPs) that don't
+        // preserve Unix execute bits. See https://github.com/jdx/mise/issues/11135
+        file::ensure_executable_bits(dest)?;
+
         // Handle rename_exe option for archives
         if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
