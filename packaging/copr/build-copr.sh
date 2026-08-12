@@ -255,8 +255,8 @@ export AWS_LC_SYS_PREBUILT_NASM=1
 %endif
 %endif
 
-# Build with specified profile
-cargo build --profile __BUILD_PROFILE__ --frozen --bin mise
+# CI verifies that the locked dependencies actually compile with mise's MSRV.
+cargo build --profile __BUILD_PROFILE__ --frozen --bin mise --ignore-rust-version
 
 %install
 mkdir -p %{buildroot}%{_bindir}

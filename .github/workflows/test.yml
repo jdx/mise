@@ -271,9 +271,11 @@ jobs:
             env:
               HK_SKIP_STEPS: cargo-check
           # MSRV uses a separate target directory so its older compiler cannot
-          # invalidate stable's build artifacts.
+          # invalidate stable's build artifacts. Some AWS crates declare a newer
+          # rust-version than their code requires; rustc still rejects genuinely
+          # incompatible syntax and APIs when the metadata check is ignored.
           - name: Verify MSRV
-            run: cargo msrv verify
+            run: cargo msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
           - name: Run Clippy
