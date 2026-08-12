@@ -5,6 +5,8 @@ use std::env::consts::{ARCH, OS};
 use crate::{backend, config, dirs, env, file};
 use crate::{config::Config, env::PYENV_ROOT};
 
+use super::reconcile;
+
 /// Symlinks all tool versions from an external tool into mise
 ///
 /// For example, use this to import all pyenv installs into mise
@@ -46,19 +48,17 @@ impl SyncPython {
         let python = backend::get(&"python".into()).unwrap();
 
         let pyenv_versions_path = PYENV_ROOT.join("versions");
-        let installed_python_versions_path = dirs::INSTALLS.join("python");
-
-        file::remove_symlinks_with_target_prefix(
-            &installed_python_versions_path,
-            &pyenv_versions_path,
-        )?;
 
         let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
+        let mut links = vec![];
         for v in sorted(subdirs) {
             if v.starts_with(".") {
                 continue;
             }
-            python.create_symlink(&v, &pyenv_versions_path.join(&v))?;
+            links.push((v.clone(), pyenv_versions_path.join(&v)));
+        }
+        let ownership = reconcile::LinkOwnership::resolved(&pyenv_versions_path);
+        for v in reconcile::reconcile(python.ba(), ownership, links)? {
             miseprintln!("Synced python@{} from pyenv", v);
         }
         Ok(())
@@ -69,24 +69,22 @@ impl SyncPython {
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
 
-        file::remove_symlinks_with_target_prefix(
-            &installed_python_versions_path,
-            uv_versions_path,
-        )?;
-
         let subdirs = file::dir_subdirs(uv_versions_path)?;
+        let mut links = vec![];
         for name in sorted(subdirs) {
             if name.starts_with(".") {
                 continue;
             }
             // name is like cpython-3.13.1-macos-aarch64-none
-            let v = name.split('-').nth(1).unwrap();
-            if python
-                .create_symlink(v, &uv_versions_path.join(&name))?
-                .is_some()
-            {
-                miseprintln!("Synced python@{v} from uv to mise");
-            }
+            let Some(v) = name.split('-').nth(1).filter(|v| !v.is_empty()) else {
+                debug!("skipping unrecognized uv python dir: {name}");
+                continue;
+            };
+            links.push((v.to_string(), uv_versions_path.join(&name)));
+        }
+        let ownership = reconcile::LinkOwnership::resolved(uv_versions_path);
+        for v in reconcile::reconcile(python.ba(), ownership, links)? {
+            miseprintln!("Synced python@{v} from uv to mise");
         }
 
         let subdirs = file::dir_subdirs(&installed_python_versions_path)?;

@@ -3,6 +3,7 @@ use eyre::Result;
 
 mod node;
 mod python;
+mod reconcile;
 mod ruby;
 
 #[derive(Debug, clap::Args)]

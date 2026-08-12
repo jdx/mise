@@ -6,8 +6,10 @@ use itertools::sorted;
 use crate::{
     backend,
     config::{self, Config},
-    dirs, file,
+    file,
 };
+
+use super::reconcile;
 
 /// Symlinks all ruby tool versions from an external tool into mise
 #[derive(Debug, clap::Args)]
@@ -45,12 +47,10 @@ impl SyncRuby {
     async fn run_brew(&self) -> Result<()> {
         let ruby = backend::get(&"ruby".into()).unwrap();
 
-        let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
-        let installed_versions_path = dirs::INSTALLS.join("ruby");
+        let brew_opt = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
 
-        file::remove_symlinks_with_target_prefix(&installed_versions_path, &brew_prefix)?;
-
-        let subdirs = file::dir_subdirs(&brew_prefix)?;
+        let subdirs = file::dir_subdirs(&brew_opt)?;
+        let mut links = vec![];
         for entry in sorted(subdirs) {
             if entry.starts_with(".") {
                 continue;
@@ -59,9 +59,11 @@ impl SyncRuby {
                 continue;
             }
             let v = entry.trim_start_matches("ruby@");
-            if ruby.create_symlink(v, &brew_prefix.join(&entry))?.is_some() {
-                miseprintln!("Synced ruby@{} from Homebrew", v);
-            }
+            links.push((v.to_string(), brew_opt.join(&entry)));
+        }
+        let ownership = reconcile::LinkOwnership::direct(&brew_opt);
+        for v in reconcile::reconcile(ruby.ba(), ownership, links)? {
+            miseprintln!("Synced ruby@{} from Homebrew", v);
         }
         Ok(())
     }
