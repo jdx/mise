@@ -2678,6 +2678,11 @@ Shows outdated tool versions
 See `mise upgrade` to upgrade these versions.
 """#
     after_long_help #"""
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
 Examples:
 
     $ mise outdated
@@ -2698,7 +2703,7 @@ Examples:
 
 """#
     flag "-J --json" help="Output in JSON format"
-    flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
+    flag "-b --bump" help="Compares against the latest versions available, not what matches the current config" {
         long_help #"""
 Compares against the latest versions available, not what matches the current config
 
@@ -2708,6 +2713,7 @@ show other 20.x versions, not 21.x or 22.x versions.
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 """#
     }
+    flag -l help="Deprecated shorthand for --bump" hide=#true
     flag --inactive help="Show outdated tools including installed-but-inactive tools not present in the current config" {
         long_help #"""
 Show outdated tools including installed-but-inactive tools not present in the current config
@@ -4561,6 +4567,11 @@ and bump the version in mise.toml.
 This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 """#
     after_long_help #"""
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
 Examples:
 
     # Upgrades node to the latest version matching the range in mise.toml
@@ -4599,7 +4610,7 @@ Values below 1 are treated as 1
 """# {
         arg <JOBS>
     }
-    flag "-l --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
+    flag "-b --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
         long_help #"""
 Upgrades to the latest version available, bumping the version in mise.toml
 
@@ -4610,6 +4621,7 @@ It keeps the same precision as what was there before, so if you instead had `nod
 would change your config to `node = "22"`.
 """#
     }
+    flag -l help="Deprecated shorthand for --bump" hide=#true
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
     flag "-x --exclude" help=#"""
 Tool(s) to exclude from upgrading

@@ -23,7 +23,7 @@ If not specified, all tools in global and local configs will be shown
 
 Output in JSON format
 
-### `-l --bump`
+### `-b --bump`
 
 Compares against the latest versions available, not what matches the current config
 
@@ -52,6 +52,11 @@ Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is n
 ### `--no-header`
 
 Don't show table header
+
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
 Examples:
 

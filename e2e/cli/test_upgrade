@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+assert_contains "mise upgrade --help" "-b, --bump"
+assert_not_contains "mise upgrade --help" "-l, --bump"
+
 echo 'dummy 1' >.tool-versions
 mise install dummy@1.0.0
 
@@ -10,8 +13,10 @@ mise upgrade dummy
 
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise upgrade dummy 2>&1" "Newer versions are available outside the configured version ranges"
+assert_contains "mise upgrade dummy -l --dry-run 2>&1" "deprecated [cli.upgrade.bump-l]"
 
-mise upgrade dummy --bump
+mise upgrade dummy -b
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 rm .tool-versions

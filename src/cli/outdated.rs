@@ -32,8 +32,12 @@ pub struct Outdated {
     /// show other 20.x versions, not 21.x or 22.x versions.
     ///
     /// Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
-    #[clap(long, short = 'l', verbatim_doc_comment)]
+    #[clap(long, short = 'b', verbatim_doc_comment)]
     pub bump: bool,
+
+    /// Deprecated shorthand for --bump
+    #[clap(short = 'l', hide = true)]
+    pub legacy_bump: bool,
 
     /// Show outdated tools including installed-but-inactive tools not present in the current config
     ///
@@ -58,7 +62,16 @@ pub struct Outdated {
 }
 
 impl Outdated {
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
+        if self.legacy_bump {
+            deprecated_at!(
+                "2026.8.5",
+                "2027.8.5",
+                "cli.outdated.bump-l",
+                "`mise outdated -l` is deprecated. Use `mise outdated -b` or `mise outdated --bump` instead. After removal, `-l` will become shorthand for `--local`."
+            );
+            self.bump = true;
+        }
         if self.monorepo {
             unimplemented!("mise outdated --monorepo is not implemented yet");
         }
@@ -90,26 +103,39 @@ impl Outdated {
                 },
             )
             .await;
-        self.display(outdated).await?;
+        let bump_available = if !self.json && !self.bump && outdated.is_empty() {
+            ts.list_outdated_versions(
+                &config,
+                true,
+                &ResolveOptions {
+                    inactive: self.inactive,
+                    ..Default::default()
+                },
+            )
+            .await
+            .iter()
+            .any(|o| o.bump.is_some())
+        } else {
+            false
+        };
+        self.display(outdated, bump_available)?;
         Ok(())
     }
 
-    async fn display(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    fn display(&self, outdated: Vec<OutdatedInfo>, bump_available: bool) -> Result<()> {
         match self.json {
             true => self.display_json(outdated)?,
-            false => self.display_table(outdated)?,
+            false => self.display_table(outdated, bump_available)?,
         }
         Ok(())
     }
 
-    fn display_table(&self, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    fn display_table(&self, outdated: Vec<OutdatedInfo>, bump_available: bool) -> Result<()> {
         if outdated.is_empty() {
             info!("All tools are up to date");
-            if !self.bump {
-                hint!(
-                    "outdated_bump",
-                    r#"By default, `mise outdated` only shows versions that match your config. Use `mise outdated --bump` to see all new versions."#,
-                    ""
+            if bump_available {
+                info!(
+                    "Newer versions are available outside the configured version ranges. Use `mise outdated --bump` to view them."
                 );
             }
             return Ok(());
@@ -134,7 +160,12 @@ impl Outdated {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
+    r#"<bold><underline>Deprecation:</underline></bold>
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
+<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise outdated</bold>
     Plugin  Requested  Current  Latest

@@ -34,7 +34,7 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
-### `-l --bump`
+### `-b --bump`
 
 Upgrades to the latest version available, bumping the version in mise.toml
 
@@ -104,6 +104,11 @@ for a single run.
 ### `--raw`
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
 Examples:
 

@@ -60,8 +60,12 @@ pub struct Upgrade {
     ///
     /// It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
     /// would change your config to `node = "22"`.
-    #[clap(long, short = 'l', verbatim_doc_comment)]
+    #[clap(long, short = 'b', verbatim_doc_comment)]
     bump: bool,
+
+    /// Deprecated shorthand for --bump
+    #[clap(short = 'l', hide = true)]
+    legacy_bump: bool,
 
     /// Just print what would be done, don't actually do it
     #[clap(long, short = 'n', verbatim_doc_comment)]
@@ -145,7 +149,16 @@ impl Upgrade {
         }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
+        if self.legacy_bump {
+            deprecated_at!(
+                "2026.8.5",
+                "2027.8.5",
+                "cli.upgrade.bump-l",
+                "`mise upgrade -l` is deprecated. Use `mise upgrade -b` or `mise upgrade --bump` instead. After removal, `-l` will become shorthand for `--local`."
+            );
+            self.bump = true;
+        }
         if self.monorepo {
             unimplemented!("mise upgrade --monorepo is not implemented yet");
         }
@@ -199,11 +212,20 @@ impl Upgrade {
         if outdated.is_empty() {
             info!("All tools are up to date");
             if !self.bump {
-                hint!(
-                    "outdated_bump",
-                    r#"By default, `mise upgrade` only upgrades versions that match your config. Use `mise upgrade --bump` to upgrade all new versions."#,
-                    ""
-                );
+                let bump_outdated = ts
+                    .list_outdated_versions_filtered(
+                        &config,
+                        true,
+                        &opts,
+                        filter_tools,
+                        exclude_tools,
+                    )
+                    .await;
+                if bump_outdated.iter().any(|o| o.bump.is_some()) {
+                    info!(
+                        "Newer versions are available outside the configured version ranges. Use `mise upgrade --bump` to upgrade them."
+                    );
+                }
             }
         } else {
             self.upgrade(&mut config, outdated, before_date).await?;
@@ -914,7 +936,12 @@ fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> 
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
+    r#"<bold><underline>Deprecation:</underline></bold>
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
+<bold><underline>Examples:</underline></bold>
 
     # Upgrades node to the latest version matching the range in mise.toml
     $ <bold>mise upgrade node</bold>
