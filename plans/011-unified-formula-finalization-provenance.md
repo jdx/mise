@@ -100,6 +100,14 @@ reported `Installed`; it must retain enough phase data for plan 012 repair.
 
 Completed proof:
 
+- Exact-head Linux source execution at
+  `https://github.com/jdx/mise/actions/runs/31648682993/job/94288067860`
+  compiled GNU hello successfully, then exposed that Ubuntu identifies GCC as
+  `cc (Ubuntu ...)` rather than including the literal `gcc`. Commit
+  `8f28b453847133bc6cc097963b7a62a970c8985c` recognizes the authoritative GNU
+  banner and records Homebrew-compatible `gcc-<major>` from the compiler's
+  version probe; focused source tests pass.
+
 - `rtk cargo test --bin mise system::packages::brew` — 204 passed at the
   formula head.
 - `rtk cargo test --bin mise archive_bottle` — 2 passed; malformed/missing
