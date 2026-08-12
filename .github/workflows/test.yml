@@ -160,8 +160,8 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
-      - name: Install fd
-        run: brew install fd
+      - name: Install test tools
+        run: brew install fd tmux
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -173,6 +173,7 @@ jobs:
       - name: cargo test (workspace members)
         run: cargo test --workspace --exclude mise
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+      - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       - run: sccache --show-stats
         if: always()
 
