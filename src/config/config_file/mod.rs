@@ -815,10 +815,10 @@ pub struct TaskConfig {
     pub input_groups: IndexMap<String, Vec<String>>,
 }
 
-/// Policy applied only to tools declared by the config file containing it.
+/// Policy applied to tools declared by configs sharing this config's root.
 ///
-/// Unlike `[settings]`, this is intentionally config-owned rather than an
-/// invocation-wide merged value.
+/// Unlike `[settings]`, this is intentionally config-root-owned rather than
+/// an invocation-wide merged value.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ToolConfig {

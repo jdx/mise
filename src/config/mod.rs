@@ -111,16 +111,19 @@ pub fn is_loaded() -> bool {
 }
 
 impl Config {
-    /// Whether the config that owns this tool request opted it into strict
+    /// Whether the config root that owns this tool request opted it into strict
     /// lockfile enforcement. Non-config sources remain governed only by the
     /// invocation-wide `locked` setting/flag.
     pub fn tool_config_locked(&self, source: &ToolSource) -> bool {
         let ToolSource::MiseToml(path) = source else {
             return false;
         };
+        let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
+            return false;
+        };
         self.config_files
-            .get(path)
-            .is_some_and(|cf| cf.tool_config().locked)
+            .values()
+            .any(|cf| cf.config_root() == root && cf.tool_config().locked)
     }
 
     pub async fn get() -> Result<Arc<Self>> {

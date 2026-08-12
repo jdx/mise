@@ -2480,13 +2480,13 @@
       }
     },
     "tool_config": {
-      "description": "policy for tools declared by the containing config file",
+      "description": "policy for tools declared by configs sharing the containing config root",
       "type": "object",
       "unevaluatedProperties": false,
       "properties": {
         "locked": {
           "default": false,
-          "description": "require tools declared by this config to resolve and install from its lockfile",
+          "description": "require tools declared by this config root to resolve and install from their lockfiles",
           "type": "boolean"
         }
       }
@@ -4667,7 +4667,7 @@
       "$ref": "#/$defs/task_config"
     },
     "tool_config": {
-      "description": "policy for tools declared by this config file",
+      "description": "policy for tools declared by this config root",
       "$ref": "#/$defs/tool_config"
     },
     "tasks": {

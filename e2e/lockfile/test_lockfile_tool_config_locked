@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Config-scoped locked policy applies only to tools declared by that config.
+# Config-root-scoped locked policy applies only to tools declared at that root.
 export MISE_LOCKFILE=1
 detect_platform
 PLATFORM="$MISE_PLATFORM"
@@ -11,11 +11,14 @@ dummy = "latest"
 EOF
 
 cat <<'EOF' >mise.toml
-[tool_config]
-locked = true
-
 [tools]
 tiny = "1"
+EOF
+
+# Policy in a sibling config applies to tools from the same config root.
+cat <<'EOF' >mise.local.toml
+[tool_config]
+locked = true
 EOF
 
 # The project tool must be locked, but the unrelated global tool must not be
@@ -36,4 +39,5 @@ assert_fail_contains "mise install --dry-run 2>&1" "disable locked mode"
 
 # Invocation-wide locked mode retains its existing behavior for global tools.
 rm mise.toml
+rm mise.local.toml
 assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "dummy@latest is not in the lockfile"
