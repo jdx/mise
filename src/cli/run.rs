@@ -61,12 +61,9 @@ pub struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-    #[clap(
-        allow_hyphen_values = true,
-        verbatim_doc_comment,
-        default_value = "default"
-    )]
-    pub task: String,
+    /// Defaults to `default` when omitted
+    #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
+    pub task: Option<String>,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
     #[clap(allow_hyphen_values = true)]
@@ -76,8 +73,8 @@ pub struct Run {
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
 
-    /// Load all tasks from the entire monorepo in the interactive selector
-    #[clap(long, verbatim_doc_comment)]
+    /// Open the interactive selector with all tasks from the entire monorepo
+    #[clap(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
     pub all: bool,
 
     /// Run matching tasks only for projects affected by Git changes
@@ -335,7 +332,6 @@ async fn get_affected_task_list(
     head: Option<&str>,
     explain: bool,
     json: bool,
-    all: bool,
 ) -> Result<Vec<Task>> {
     Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
@@ -400,7 +396,7 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only, all).await?;
+    let mut tasks = get_task_lists(config, &args, true, only, false).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -563,14 +559,16 @@ fn display_affected_text(text: &str) -> String {
 impl Run {
     pub async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
-        if self.task == "-h" {
+        if self.task.as_deref() == Some("-h") {
             self.get_clap_command().print_help()?;
             return Ok(());
         }
-        if self.task == "--help" {
+        if self.task.as_deref() == Some("--help") {
             self.get_clap_command().print_long_help()?;
             return Ok(());
         }
+
+        let task = self.task.clone().unwrap_or_else(|| "default".to_string());
 
         Settings::ensure_not_safe("running tasks")?;
 
@@ -594,7 +592,7 @@ impl Run {
         // Handle task help early to avoid unnecessary toolset/deps work
         if has_help_in_task_args {
             // Build args list to get the task (filter out --help/-h for task lookup)
-            let args = once(self.task.clone())
+            let args = once(task.clone())
                 .chain(
                     self.args
                         .iter()
@@ -638,9 +636,11 @@ impl Run {
         self.tmpdir = tmpdir.path().to_path_buf();
 
         // Build args list - don't include args_last yet, they'll be added after task resolution
-        let args = once(self.task.clone())
-            .chain(self.args.clone())
-            .collect_vec();
+        let args = if self.all {
+            vec![]
+        } else {
+            once(task).chain(self.args.clone()).collect_vec()
+        };
 
         let mut task_list = if self.affected {
             get_affected_task_list(
@@ -651,7 +651,6 @@ impl Run {
                 self.affected_head.as_deref(),
                 self.affected_explain,
                 self.affected_json,
-                self.all,
             )
             .await?
         } else {

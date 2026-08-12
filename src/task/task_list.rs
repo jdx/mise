@@ -367,8 +367,8 @@ async fn err_no_task(
 }
 
 /// Prompt the user to select a task interactively
-async fn prompt_for_task(config: &Arc<Config>, all: bool) -> Result<Task> {
-    let ctx = all.then(TaskLoadContext::all);
+async fn prompt_for_task(config: &Arc<Config>, load_all: bool) -> Result<Task> {
+    let ctx = load_all.then(TaskLoadContext::all);
     let tasks = config.tasks_with_context(ctx.as_ref()).await?;
     ensure!(
         !tasks.is_empty(),
@@ -410,8 +410,18 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
     only: bool,
-    all: bool,
+    prompt_all: bool,
 ) -> Result<Vec<Task>> {
+    if prompt_all {
+        let mut task = prompt_for_task(config, true).await?;
+        if only {
+            task.depends.clear();
+            task.depends_post.clear();
+            task.wait_for.clear();
+        }
+        return Ok(vec![task]);
+    }
+
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -547,7 +557,7 @@ pub async fn get_task_lists(
                 tasks.push(task.with_args(args));
                 continue;
             }
-            tasks.push(prompt_for_task(config, all).await?);
+            tasks.push(prompt_for_task(config, false).await?);
         } else {
             cur_tasks
                 .into_iter()

@@ -3215,7 +3215,7 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
-    flag --all help="Load all tasks from the entire monorepo in the interactive selector"
+    flag --all help="Open the interactive selector with all tasks from the entire monorepo"
     flag --affected help="Run matching tasks only for projects affected by Git changes"
     flag --affected-base help=#"""
 Git base revision for --affected
@@ -4071,7 +4071,7 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
-        flag --all help="Load all tasks from the entire monorepo in the interactive selector"
+        flag --all help="Open the interactive selector with all tasks from the entire monorepo"
         flag --affected help="Run matching tasks only for projects affected by Git changes"
         flag --affected-base help=#"""
 Git base revision for --affected
@@ -4208,7 +4208,8 @@ Default to always show with `MISE_TASK_TIMINGS=1`
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-"""# required=#false default=default
+Defaults to `default` when omitted
+"""# required=#false
         arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true
         arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true
         mount run="mise tasks --usage"

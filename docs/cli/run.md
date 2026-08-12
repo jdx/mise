@@ -39,7 +39,7 @@ $ mise run build
 
 ### `--all`
 
-Load all tasks from the entire monorepo in the interactive selector
+Open the interactive selector with all tasks from the entire monorepo
 
 ### `--affected`
 

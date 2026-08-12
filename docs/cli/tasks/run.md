@@ -42,8 +42,7 @@ $ mise run build
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-
-**Default:** `default`
+Defaults to `default` when omitted
 
 ### `[ARGS]…`
 
@@ -53,7 +52,7 @@ Arguments to pass to the tasks. Use ":::" to separate tasks
 
 ### `--all`
 
-Load all tasks from the entire monorepo in the interactive selector
+Open the interactive selector with all tasks from the entire monorepo
 
 ### `--affected`
 
