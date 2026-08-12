@@ -95,6 +95,7 @@ impl LocalCas {
         let temporary = staging.path().join("blob");
         reflink_copy::reflink_or_copy(source, &temporary)?;
         let temporary = tempfile::TempPath::try_from_path(temporary)?;
+        make_owner_writable(&temporary)?;
         fs::OpenOptions::new()
             .write(true)
             .open(&temporary)?
@@ -140,6 +141,23 @@ impl LocalCas {
             Err(error) => Err(error.error.into()),
         }
     }
+}
+
+#[cfg(unix)]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o200);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
 }
 
 impl LocalActionCache {
@@ -276,6 +294,24 @@ mod tests {
 
         assert!(cas.store_file(&digest, &source).is_err());
         assert!(!cas.path_for(&digest).unwrap().exists());
+    }
+
+    #[test]
+    fn stores_read_only_source_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let cas = LocalCas::new(directory.path().join("cache"));
+        let source = directory.path().join("source");
+        fs::write(&source, b"cached object").unwrap();
+        let mut permissions = fs::metadata(&source).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&source, permissions).unwrap();
+        let digest = CacheDigest::blake3(b"cached object");
+
+        let stored = cas.store_file(&digest, &source).unwrap();
+
+        assert_eq!(fs::read(stored).unwrap(), b"cached object");
+        assert!(fs::metadata(&source).unwrap().permissions().readonly());
+        make_owner_writable(&source).unwrap();
     }
 
     #[test]

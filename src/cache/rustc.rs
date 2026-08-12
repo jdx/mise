@@ -364,6 +364,7 @@ fn stage_cached_output(
     reflink_copy::reflink_or_copy(source, &temporary)
         .wrap_err_with(|| format!("failed to materialize cached rustc output {}", node.name))?;
     let temporary = tempfile::TempPath::try_from_path(temporary)?;
+    make_owner_writable(&temporary)?;
     std::fs::OpenOptions::new()
         .write(true)
         .open(&temporary)?
@@ -824,6 +825,23 @@ fn apply_file_mode(_temporary: &Path, _mode: u32) -> Result<()> {
 }
 
 #[cfg(unix)]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o200);
+    std::fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn make_owner_writable(path: &Path) -> Result<()> {
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(unix)]
 fn exit_code(status: ExitStatus) -> ExitCode {
     use std::os::unix::process::ExitStatusExt as _;
     ExitCode::from(
@@ -1028,6 +1046,24 @@ mod tests {
         let node = test_file("artifact.rlib");
 
         assert!(stage_cached_output(staging.path(), 0, &source, &node).is_err());
+    }
+
+    #[test]
+    fn materializes_read_only_cached_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("cas-blob");
+        std::fs::write(&source, b"artifact").unwrap();
+        let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&source, permissions).unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        let node = test_file("artifact.rlib");
+
+        let output = stage_cached_output(staging.path(), 0, &source, &node).unwrap();
+
+        assert_eq!(std::fs::read(output).unwrap(), b"artifact");
+        assert!(std::fs::metadata(&source).unwrap().permissions().readonly());
+        make_owner_writable(&source).unwrap();
     }
 
     #[test]
