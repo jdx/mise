@@ -1103,8 +1103,8 @@ pub fn remove_symlinks_with_target_prefix(
     let mut removed = vec![];
     for entry in symlink_dir.read_dir()? {
         let path = entry?.path();
-        if let Some(target) = dir_link_target(&path)?
-            && target.starts_with(target_prefix)
+        if is_symlink_target_directly_within(&path, target_prefix)?
+            || is_symlink_target_within(&path, target_prefix)?
         {
             remove_symlink_or_junction(&path)?;
             removed.push(path);
