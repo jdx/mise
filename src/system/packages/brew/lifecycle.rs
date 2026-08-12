@@ -183,11 +183,22 @@ struct RawRun {
 struct LifecycleState {
     complete: bool,
     #[serde(default)]
+    phase: LifecyclePhase,
+    #[serde(default)]
     symlinks: Vec<LifecycleSymlink>,
     #[serde(default)]
     required_paths: Vec<PathBuf>,
     #[serde(default)]
     absent_patterns: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LifecyclePhase {
+    #[default]
+    Initial,
+    SharedState,
+    Complete,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -541,6 +552,7 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
         &state_path,
         &LifecycleState {
             complete: false,
+            phase: LifecyclePhase::Initial,
             symlinks: vec![],
             required_paths: vec![],
             absent_patterns: vec![],
@@ -559,6 +571,16 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
                 &prefix::prefix().join(root),
             )?);
         }
+        write_state(
+            &state_path,
+            &LifecycleState {
+                complete: false,
+                phase: LifecyclePhase::SharedState,
+                symlinks: vec![],
+                required_paths: required_paths.clone(),
+                absent_patterns: vec![],
+            },
+        )?;
         for step in &prepared.steps {
             let effects = execute_step(prepared, step).await?;
             symlinks.extend(effects.symlinks);
@@ -573,6 +595,7 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
             &state_path,
             &LifecycleState {
                 complete: true,
+                phase: LifecyclePhase::Complete,
                 symlinks,
                 required_paths,
                 absent_patterns,
@@ -680,7 +703,7 @@ fn install_destination(
     Ok(default)
 }
 
-fn atomic_copy(source: &Path, destination: &Path) -> Result<()> {
+pub(super) fn atomic_copy(source: &Path, destination: &Path) -> Result<()> {
     crate::file::create_dir_all(destination.parent().unwrap())?;
     let temp = destination.with_file_name(format!(
         ".{}.mise-new",
@@ -869,12 +892,11 @@ fn remove_prepared_node(
     let Ok(metadata) = path.symlink_metadata() else {
         return Ok(());
     };
-    if let Some(required) = symlink_target_contains {
-        if !metadata.file_type().is_symlink()
-            || !fs::read_link(path)?.to_string_lossy().contains(required)
-        {
-            return Ok(());
-        }
+    if let Some(required) = symlink_target_contains
+        && (!metadata.file_type().is_symlink()
+            || !fs::read_link(path)?.to_string_lossy().contains(required))
+    {
+        return Ok(());
     }
     if metadata.file_type().is_symlink() || !recursive {
         crate::file::remove_file(path)?;
@@ -1330,6 +1352,53 @@ mod tests {
     }
 
     #[test]
+    fn shared_state_preserves_removed_upstream_and_type_conflicts() -> Result<()> {
+        for root in ["etc", "var"] {
+            let tmp = tempfile::tempdir()?;
+            let rack = tmp.path().join("Cellar/foo");
+            let old_default = rack.join("1/.bottle").join(root).join("foo/removed");
+            let keg = rack.join("2");
+            let destination = tmp.path().join(root).join("foo/removed");
+            crate::file::create_dir_all(old_default.parent().unwrap())?;
+            crate::file::create_dir_all(destination.parent().unwrap())?;
+            crate::file::write(&old_default, "old-default")?;
+            crate::file::write(&destination, "user-kept")?;
+
+            let installed = install_shared_tree(
+                "foo",
+                &keg,
+                root,
+                &keg.join(".bottle").join(root),
+                &tmp.path().join(root),
+            )?;
+            assert!(installed.is_empty());
+            assert_eq!(crate::file::read_to_string(&destination)?, "user-kept");
+
+            let source = keg.join(".bottle").join(root).join("foo/conflict");
+            let destination = tmp.path().join(root).join("foo/conflict");
+            crate::file::create_dir_all(source.parent().unwrap())?;
+            crate::file::write(&source, "new-default")?;
+            crate::file::create_dir_all(&destination)?;
+            install_shared_tree(
+                "foo",
+                &keg,
+                root,
+                &keg.join(".bottle").join(root),
+                &tmp.path().join(root),
+            )?;
+            assert!(destination.is_dir());
+            assert_eq!(
+                crate::file::read_to_string(PathBuf::from(format!(
+                    "{}.default",
+                    destination.display()
+                )))?,
+                "new-default"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn preparation_rejects_unknown_fields_and_path_escape() {
         let keg = prefix::cellar().join("openssl@3/1");
         for step in [
@@ -1474,6 +1543,7 @@ mod tests {
         crate::file::make_symlink(&source, &target)?;
         let state = LifecycleState {
             complete: true,
+            phase: LifecyclePhase::Complete,
             symlinks: vec![LifecycleSymlink {
                 source: source.clone(),
                 target: target.clone(),

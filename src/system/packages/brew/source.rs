@@ -97,7 +97,7 @@ pub fn check_buildable(formula: &Formula) -> Result<()> {
 pub async fn build(
     rf: &ResolvedFormula,
     closure: &[ResolvedFormula],
-    _lifecycle: &super::lifecycle::PreparedFormulaLifecycle,
+    lifecycle: &super::lifecycle::PreparedFormulaLifecycle,
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let formula = &rf.formula;
@@ -126,9 +126,7 @@ pub async fn build(
     // formulae bake the final keg path into binaries, so the build installs
     // straight into the Cellar (same as brew); a failed build removes the keg
     let keg = pour::keg_path(name, &pkg_version);
-    if keg.exists() {
-        crate::file::remove_all(&keg)?;
-    }
+    let existing_backup = pour::backup_existing_keg(&keg)?;
 
     pr.set_message("build from source".to_string());
     let cmd = CmdLineRunner::new(&ruby)
@@ -144,38 +142,107 @@ pub async fn build(
         .with_pr(pr);
     let built = cmd.execute_async().await;
     if let Err(err) = built {
-        let _ = crate::file::remove_all(&keg);
+        pour::restore_keg_backup(&keg, existing_backup.as_deref())?;
         return Err(err.wrap_err(format!("failed to build {name} {pkg_version} from source")));
     }
     if !keg.is_dir() {
+        pour::restore_keg_backup(&keg, existing_backup.as_deref())?;
         bail!(
             "build of {name} finished but produced no keg at {}",
             keg.display()
         );
     }
 
-    let host_tag = tag::host_tag();
-    let receipt = pour::write_receipt(
-        rf,
-        &host_tag,
-        &keg,
-        &Default::default(),
-        closure,
-        /* poured_from_bottle */ false,
-    );
-    let linked = receipt.and_then(|()| pour::link_keg(name, &pkg_version, formula.keg_only));
-    if let Err(err) = linked {
-        if let Err(rm_err) = crate::file::remove_all(&keg) {
-            warn!(
-                "failed to remove {} after link failure: {rm_err}\n\
-                 remove it manually, then re-run `mise bootstrap packages apply`",
-                keg.display(),
-            );
+    let formula_snapshot = keg.join(".brew").join(format!("{name}.rb"));
+    let provenance = (|| {
+        super::lifecycle::atomic_copy(&formula_rb, &formula_snapshot)?;
+        Ok(pour::FormulaInstallProvenance::SourceBuild {
+            formula_snapshot,
+            compiler: source_compiler()?,
+            built_on: native_build_system_info()?,
+        })
+    })();
+    let provenance = match provenance {
+        Ok(provenance) => provenance,
+        Err(error) => {
+            pour::restore_keg_backup(&keg, existing_backup.as_deref())?;
+            return Err(error);
         }
-        return Err(err);
+    };
+    let host_tag = tag::host_tag();
+    let report = Default::default();
+    let finalized = pour::finalize_formula(pour::FormulaFinalizer {
+        rf,
+        tag: &host_tag,
+        staged_keg: &keg,
+        keg: &keg,
+        report: &report,
+        closure,
+        provenance,
+        lifecycle,
+        pr,
+        existing_backup,
+    })
+    .await;
+    if finalized.is_ok() {
+        crate::file::remove_all(&build_root)?;
     }
-    crate::file::remove_all(&build_root)?;
-    Ok(())
+    finalized
+}
+
+fn source_compiler() -> Result<String> {
+    let output = std::process::Command::new("cc").arg("--version").output()?;
+    if !output.status.success() {
+        bail!("cannot determine source-build compiler")
+    }
+    let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+    if text.contains("clang") {
+        Ok("clang".to_string())
+    } else if text.contains("gcc") {
+        Ok("gcc".to_string())
+    } else {
+        bail!("unrecognized source-build compiler")
+    }
+}
+
+fn native_build_system_info() -> Result<serde_json::Value> {
+    let os = if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    };
+    let os_version = if cfg!(target_os = "macos") {
+        command_output("/usr/bin/sw_vers", &["-productVersion"])
+    } else {
+        std::fs::read_to_string("/etc/os-release")
+            .ok()
+            .and_then(|contents| {
+                contents.lines().find_map(|line| {
+                    line.strip_prefix("PRETTY_NAME=")
+                        .map(|value| value.trim_matches('"').to_string())
+                })
+            })
+    }
+    .ok_or_else(|| eyre::eyre!("cannot determine source-build operating system version"))?;
+    let cpu_family = command_output("uname", &["-m"])
+        .ok_or_else(|| eyre::eyre!("cannot determine source-build CPU family"))?;
+    Ok(serde_json::json!({
+        "os": os,
+        "os_version": os_version,
+        "cpu_family": cpu_family,
+    }))
+}
+
+fn command_output(program: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// Ensure a mise-managed ruby is installed (precompiled by default) and
@@ -523,5 +590,12 @@ mod tests {
         let mut no_url = formula(&[]);
         no_url.urls.clear();
         assert!(check_buildable(&no_url).is_err());
+    }
+
+    #[test]
+    fn source_shim_stages_shared_defaults_and_defers_post_install() {
+        assert!(SHIM_RB.contains("def etc = prefix + \".bottle/etc\""));
+        assert!(SHIM_RB.contains("def var = prefix + \".bottle/var\""));
+        assert!(!SHIM_RB.contains("formula.post_install"));
     }
 }

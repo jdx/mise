@@ -187,7 +187,20 @@ impl BrewManager {
                     async {
                         let tarball =
                             fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
-                        pour::pour(rf, &tag, bottle, &tarball, &closure, lifecycle, &*pr).await?;
+                        let metadata =
+                            fetch::fetch_oci_bottle_metadata(name, &pkg_version, &tag, bottle)
+                                .await?;
+                        pour::pour(pour::BottlePour {
+                            rf,
+                            tag: &tag,
+                            bottle,
+                            oci_metadata: metadata.as_ref(),
+                            tarball: &tarball,
+                            closure: &closure,
+                            lifecycle,
+                            pr: &*pr,
+                        })
+                        .await?;
                         Ok(pkg_version.clone())
                     }
                     .await

@@ -2056,7 +2056,7 @@ mod tests {
             .env("DOCUMENTED", "yes")
             .with_sandbox(sandbox);
         runner.apply_sandbox().await.unwrap();
-        runner.execute_async().await.unwrap_err();
+        let _error = runner.execute_async().await.unwrap_err();
 
         assert!(allowed.join("inside").is_file());
         assert!(!outside.join("escaped").exists());

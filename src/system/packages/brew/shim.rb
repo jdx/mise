@@ -710,9 +710,11 @@ class Formula
   def fish_completion = share + "fish/vendor_completions.d"
   def pkgetc = etc + name
 
-  # etc/var live in the prefix, outside the keg (survive upgrades)
-  def etc = MISE_BREW_PREFIX + "etc"
-  def var = MISE_BREW_PREFIX + "var"
+  # Formula install must stage persistent defaults privately. The common Rust
+  # finalizer performs Homebrew's install_etc_var merge after the receipt and
+  # public link are ready, preserving existing user configuration.
+  def etc = prefix + ".bottle/etc"
+  def var = prefix + ".bottle/var"
 
   def buildpath = MISE_BREW_BUILDPATH
   def testpath = shim_unsupported!("testpath")
@@ -895,7 +897,11 @@ def main
   ohai "#{MISE_BREW_NAME}: running install"
   formula.prefix.mkpath
   formula.install
-  formula.post_install
+
+  # Post-install is a separate Homebrew lifecycle phase. Rust executes the
+  # preflighted typed representation only after receipt, linking, and
+  # install_etc_var; invoking the Ruby hook here would be unsandboxed, out of
+  # order, and duplicate typed steps.
 
   if formula.prefix.children.empty?
     odie "install completed but the keg at #{formula.prefix} is empty"

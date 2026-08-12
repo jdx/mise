@@ -1,6 +1,6 @@
 # Plan 011: Unify formula finalization and preserve truthful provenance
 
-Status: TODO
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
