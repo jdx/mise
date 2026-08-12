@@ -1654,6 +1654,21 @@ env = "MISE_NO_HOOKS"
 optional = true
 type = "Bool"
 
+[node.apply_patches]
+description = "A list of patch files or URLs to apply to node source."
+docs = """
+Newline-separated list of patch files or URLs, applied to the extracted node source before
+`./configure` runs.
+
+They only reach a source build. `node.compile = true` forces one; failing that, they still apply
+whenever no precompiled archive exists for the version and mise falls back to compiling on its own.
+When a precompiled binary is what gets installed, mise warns rather than dropping the patches
+silently.
+"""
+env = "MISE_NODE_APPLY_PATCHES"
+optional = true
+type = "String"
+
 [node.cflags]
 description = "Additional CFLAGS options (e.g., to override -O3)."
 env = "MISE_NODE_CFLAGS"
