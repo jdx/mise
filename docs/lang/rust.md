@@ -16,6 +16,11 @@ MISE_CARGO_HOME = "{{env.HOME}}/.local/share/cargo"
 
 Explicit `RUSTUP_HOME` and `CARGO_HOME` values in `[env]` take precedence over their corresponding `MISE_` variables.
 
+When the standard Rust homes have not been initialized and no home override is configured, mise can also reuse a
+package-manager installation of rustup. The original `PATH` must contain a directory with the `rustup`, `cargo`, and
+`rustc` proxies, as provided by package managers such as Homebrew, APT, and pacman. An explicit Rust or Cargo home
+continues to use mise's managed rustup initialization instead of an external proxy directory.
+
 Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
 mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
 version, and asks rustup to install any configured components or targets when you run `mise install`.
