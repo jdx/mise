@@ -1701,6 +1701,7 @@ fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
     files
         .iter()
         .find(|p| !is_tool_versions_file(p) && !is_conf_d_file(p))
+        .or_else(|| files.iter().find(|p| is_tool_versions_file(p)))
         .or_else(|| files.first())
 }
 
