@@ -41,7 +41,7 @@
 - [Node.js](https://mise.jdx.dev/lang/node.html): Like nvm, (or volta, fnm or asdf...), mise can manage multiple versions of Node.js on the same system.
 - [Python](https://mise.jdx.dev/lang/python.html): Like pyenv, mise can manage multiple versions of Python on the same system. Mise can also automatically create virtual environments for your projects and integrates with uv.
 - [Ruby](https://mise.jdx.dev/lang/ruby.html): Like rvm, rbenv, or asdf, mise can manage multiple versions of Ruby on the same system.
-- [Rust](https://mise.jdx.dev/lang/rust.html): Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already installed and install the requested toolchain, components, and targets.
+- [Rust](https://mise.jdx.dev/lang/rust.html): mise can be used to manage Rust/Cargo. Under the hood, it uses rustup to install the requested toolchains, components, and targets.
 - [Swift](https://mise.jdx.dev/lang/swift.html): mise can be used to manage multiple versions of swift on the same system. Swift is supported for macos and linux.
 - [Zig](https://mise.jdx.dev/lang/zig.html): mise can be used to install and manage multiple versions of zig on the same system.
 - [Backends](https://mise.jdx.dev/dev-tools/backends/): Backends are package managers or ecosystems that mise uses to install tools and plugins. Each backend can install and manage multiple tools from its ecosystem.

@@ -145,12 +145,7 @@ impl RustPlugin {
         tv: &ToolVersion,
         runtime: &RustRuntime,
     ) -> Result<()> {
-        if runtime.is_external() {
-            return Ok(());
-        }
-        let homes = &runtime.homes;
-        let settings = Settings::get();
-        if rustup_is_initialized(homes) {
+        if runtime.rustup_is_initialized() {
             return Ok(());
         }
         let _installer_lock = tokio::task::spawn_blocking(|| {
@@ -164,9 +159,11 @@ impl RustPlugin {
                 .lock()
         })
         .await??;
-        if rustup_is_initialized(homes) {
+        if runtime.rustup_is_initialized() {
             return Ok(());
         }
+        let homes = &runtime.homes;
+        let settings = Settings::get();
         ctx.pr.set_message("Downloading rustup-init".into());
         HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(ctx.pr.as_ref()))
             .await?;
@@ -760,7 +757,6 @@ async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {
 struct RustHomes {
     cargo: PathBuf,
     rustup: PathBuf,
-    explicit: bool,
 }
 
 impl RustHomes {
@@ -770,8 +766,10 @@ impl RustHomes {
         Ok(Self::from_sources(
             &config_env,
             settings.rust.cargo_home.clone(),
+            env::var_path("MISE_CARGO_HOME"),
             env::var_path("CARGO_HOME"),
             settings.rust.rustup_home.clone(),
+            env::var_path("MISE_RUSTUP_HOME"),
             env::var_path("RUSTUP_HOME"),
         ))
     }
@@ -779,25 +777,20 @@ impl RustHomes {
     fn from_sources(
         config_env: &IndexMap<String, String>,
         configured_cargo: Option<PathBuf>,
-        ambient_cargo: Option<PathBuf>,
+        ambient_mise_cargo: Option<PathBuf>,
+        ambient_direct_cargo: Option<PathBuf>,
         configured_rustup: Option<PathBuf>,
-        ambient_rustup: Option<PathBuf>,
+        ambient_mise_rustup: Option<PathBuf>,
+        ambient_direct_rustup: Option<PathBuf>,
     ) -> Self {
-        let cargo_explicit = config_env.contains_key("CARGO_HOME")
-            || config_env.contains_key("MISE_CARGO_HOME")
-            || configured_cargo.is_some()
-            || ambient_cargo.is_some();
-        let rustup_explicit = config_env.contains_key("RUSTUP_HOME")
-            || config_env.contains_key("MISE_RUSTUP_HOME")
-            || configured_rustup.is_some()
-            || ambient_rustup.is_some();
         Self {
             cargo: select_rust_home(
                 config_env,
                 "CARGO_HOME",
                 "MISE_CARGO_HOME",
                 configured_cargo,
-                ambient_cargo,
+                ambient_mise_cargo,
+                ambient_direct_cargo,
                 dirs::HOME.join(".cargo"),
             ),
             rustup: select_rust_home(
@@ -805,33 +798,22 @@ impl RustHomes {
                 "RUSTUP_HOME",
                 "MISE_RUSTUP_HOME",
                 configured_rustup,
-                ambient_rustup,
+                ambient_mise_rustup,
+                ambient_direct_rustup,
                 dirs::HOME.join(".rustup"),
             ),
-            explicit: cargo_explicit || rustup_explicit,
         }
     }
 
     fn cargo_bindir(&self) -> PathBuf {
         self.cargo.join("bin")
     }
-
-    fn cargo_bin(&self) -> PathBuf {
-        self.cargo_bindir().join(CARGO_BIN)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RustProvider {
-    Managed,
-    External,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RustRuntime {
     homes: RustHomes,
     bin_dir: PathBuf,
-    provider: RustProvider,
 }
 
 impl RustRuntime {
@@ -858,63 +840,47 @@ impl RustRuntime {
         ))
     }
 
-    fn from_paths_with(
-        homes: RustHomes,
-        paths: &[PathBuf],
-        provider_is_usable: impl Fn(&Path) -> bool,
-    ) -> Self {
-        if !rustup_is_initialized(&homes)
-            && !homes.explicit
-            && let Some(bin_dir) = external_rustup_bin_dir(paths, provider_is_usable)
-        {
-            debug!(
-                "using external rustup proxies from {}",
-                file::display_path(&bin_dir)
-            );
-            return Self {
-                homes,
-                bin_dir,
-                provider: RustProvider::External,
-            };
-        }
-        let bin_dir = homes.cargo_bindir();
-        Self {
-            homes,
-            bin_dir,
-            provider: RustProvider::Managed,
-        }
-    }
-
     fn from_paths_with_install(
         homes: RustHomes,
         paths: &[PathBuf],
         install_path: &Path,
         provider_is_usable: impl Fn(&Path) -> bool,
     ) -> Self {
-        if !homes.explicit
-            && let Some(bin_dir) =
-                recorded_external_rustup_bin_dir(&homes, install_path, &provider_is_usable)
-        {
+        if let Some(bin_dir) = recorded_external_rustup_bin_dir(install_path, &provider_is_usable) {
             debug!(
                 "using recorded external rustup proxies from {}",
-                file::display_path(&bin_dir)
+                file::display_path(&bin_dir),
             );
-            return Self {
-                homes,
-                bin_dir,
-                provider: RustProvider::External,
-            };
+            Self { homes, bin_dir }
+        } else if provider_is_usable(&homes.cargo_bindir()) {
+            debug!(
+                "using rustup proxies from {}",
+                file::display_path(homes.cargo_bindir()),
+            );
+            let bin_dir = homes.cargo_bindir();
+            Self { homes, bin_dir }
+        } else if let Some(bin_dir) = external_rustup_bin_dir(paths, provider_is_usable) {
+            debug!(
+                "using external rustup proxies from {}",
+                file::display_path(&bin_dir),
+            );
+            Self { homes, bin_dir }
+        } else {
+            debug!(
+                "using rustup proxies from {}",
+                file::display_path(homes.cargo_bindir()),
+            );
+            let bin_dir = homes.cargo_bindir();
+            Self { homes, bin_dir }
         }
-        Self::from_paths_with(homes, paths, provider_is_usable)
     }
 
-    fn is_external(&self) -> bool {
-        self.provider == RustProvider::External
+    fn rustup_is_initialized(&self) -> bool {
+        rustup_proxy_dir_is_usable(&self.bin_dir)
     }
 }
 
 fn recorded_external_rustup_bin_dir(
-    homes: &RustHomes,
     install_path: &Path,
     provider_is_usable: impl Fn(&Path) -> bool,
 ) -> Option<PathBuf> {
@@ -928,7 +894,6 @@ fn recorded_external_rustup_bin_dir(
                 install_path.parent().unwrap_or(Path::new(".")).join(target)
             }
         })
-        .filter(|target| target != &homes.cargo_bindir())
         .filter(|target| provider_is_usable(target))
 }
 
@@ -972,16 +937,13 @@ fn rustup_proxy_dir_is_usable(bin_dir: &Path) -> bool {
     })
 }
 
-fn rustup_is_initialized(homes: &RustHomes) -> bool {
-    homes.rustup.join("settings.toml").exists() && homes.cargo_bin().exists()
-}
-
 fn select_rust_home(
     config_env: &IndexMap<String, String>,
     direct_key: &str,
     mise_key: &str,
     configured: Option<PathBuf>,
-    ambient: Option<PathBuf>,
+    ambient_mise: Option<PathBuf>,
+    ambient_direct: Option<PathBuf>,
     default: PathBuf,
 ) -> PathBuf {
     let path = config_env
@@ -989,7 +951,8 @@ fn select_rust_home(
         .or_else(|| config_env.get(mise_key))
         .map(PathBuf::from)
         .or(configured)
-        .or(ambient)
+        .or(ambient_mise)
+        .or(ambient_direct)
         .unwrap_or(default);
     resolve_rust_home(path)
 }
@@ -1095,11 +1058,10 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
 
-    fn rust_homes_at(root: &Path, explicit: bool) -> RustHomes {
+    fn rust_homes_at(root: &Path) -> RustHomes {
         RustHomes {
             cargo: root.join("cargo"),
             rustup: root.join("rustup"),
-            explicit,
         }
     }
 
@@ -1380,11 +1342,18 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
     #[test]
     fn rust_homes_use_defaults_without_overrides() {
-        let homes = RustHomes::from_sources(&indexmap::IndexMap::new(), None, None, None, None);
+        let homes = RustHomes::from_sources(
+            &indexmap::IndexMap::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert_eq!(homes.cargo, dirs::HOME.join(".cargo"));
         assert_eq!(homes.rustup, dirs::HOME.join(".rustup"));
-        assert!(!homes.explicit);
     }
 
     #[test]
@@ -1399,113 +1368,180 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
                 "MISE_RUSTUP_HOME".to_string(),
                 "/config/mise-rustup".to_string(),
             ),
-            ("RUSTUP_HOME".to_string(), "/config/rustup".to_string()),
         ]);
 
         let homes = RustHomes::from_sources(
             &config_env,
             Some("/settings/cargo".into()),
+            Some("/ambient/mise-cargo".into()),
             Some("/ambient/cargo".into()),
             Some("/settings/rustup".into()),
+            Some("/ambient/mise-rustup".into()),
             Some("/ambient/rustup".into()),
         );
 
         assert_eq!(
             homes.cargo,
-            resolve_rust_home(PathBuf::from("/config/cargo"))
+            resolve_rust_home(PathBuf::from("/config/cargo")),
         );
         assert_eq!(
             homes.rustup,
-            resolve_rust_home(PathBuf::from("/config/rustup"))
+            resolve_rust_home(PathBuf::from("/config/mise-rustup")),
         );
-        assert!(homes.explicit);
     }
 
     #[test]
     fn rust_homes_use_config_mise_environment_before_existing_sources() {
         let config_env = indexmap::IndexMap::from([(
             "MISE_CARGO_HOME".to_string(),
-            "/config/cargo".to_string(),
+            "/config/mise-cargo".to_string(),
         )]);
 
         let homes = RustHomes::from_sources(
             &config_env,
             Some("/settings/cargo".into()),
+            Some("/ambient/mise-cargo".into()),
             Some("/ambient/cargo".into()),
             Some("/settings/rustup".into()),
+            Some("/ambient/mise-rustup".into()),
             Some("/ambient/rustup".into()),
         );
 
         assert_eq!(
             homes.cargo,
-            resolve_rust_home(PathBuf::from("/config/cargo"))
+            resolve_rust_home(PathBuf::from("/config/mise-cargo")),
         );
         assert_eq!(
             homes.rustup,
-            resolve_rust_home(PathBuf::from("/settings/rustup"))
+            resolve_rust_home(PathBuf::from("/settings/rustup")),
         );
-        assert!(homes.explicit);
     }
 
     #[test]
-    fn rust_runtime_prefers_initialized_homes() {
+    fn rust_homes_use_mise_settings_before_existing_sources() {
+        let homes = RustHomes::from_sources(
+            &indexmap::IndexMap::new(),
+            Some("/settings/cargo".into()),
+            Some("/ambient/mise-cargo".into()),
+            Some("/ambient/cargo".into()),
+            None,
+            Some("/ambient/mise-rustup".into()),
+            Some("/ambient/rustup".into()),
+        );
+
+        assert_eq!(
+            homes.cargo,
+            resolve_rust_home(PathBuf::from("/settings/cargo")),
+        );
+        assert_eq!(
+            homes.rustup,
+            resolve_rust_home(PathBuf::from("/ambient/mise-rustup")),
+        );
+    }
+
+    #[test]
+    fn rust_homes_use_ambient_mise_environment_before_existing_sources() {
+        let homes = RustHomes::from_sources(
+            &indexmap::IndexMap::new(),
+            None,
+            Some("/ambient/mise-cargo".into()),
+            Some("/ambient/cargo".into()),
+            None,
+            None,
+            Some("/ambient/rustup".into()),
+        );
+
+        assert_eq!(
+            homes.cargo,
+            resolve_rust_home(PathBuf::from("/ambient/mise-cargo")),
+        );
+        assert_eq!(
+            homes.rustup,
+            resolve_rust_home(PathBuf::from("/ambient/rustup")),
+        );
+    }
+
+    #[test]
+    fn rust_homes_use_ambient_direct_environment_before_defaults() {
+        let homes = RustHomes::from_sources(
+            &indexmap::IndexMap::new(),
+            None,
+            None,
+            Some("/ambient/cargo".into()),
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(
+            homes.cargo,
+            resolve_rust_home(PathBuf::from("/ambient/cargo")),
+        );
+        assert_eq!(homes.rustup, dirs::HOME.join(".rustup"));
+    }
+
+    #[test]
+    fn rust_runtime_prefers_existing_cargo_bindir_provider() {
         let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), false);
-        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
-        std::fs::create_dir_all(&homes.rustup).unwrap();
-        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let homes = rust_homes_at(root.path());
         let external = root.path().join("external/bin");
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
         create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
 
-        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+        let runtime = RustRuntime::from_paths_with_install(
+            homes.clone(),
+            std::slice::from_ref(&external),
+            &install_path,
+            |_| true,
+        );
 
-        assert_eq!(runtime.provider, RustProvider::Managed);
         assert_eq!(runtime.bin_dir, homes.cargo_bindir());
     }
 
     #[test]
-    fn rust_runtime_uses_complete_external_provider() {
+    fn rust_runtime_accepts_usable_external_provider() {
         let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), false);
+        let homes = rust_homes_at(root.path());
         let external = root.path().join("external/bin");
         create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
 
-        let runtime =
-            RustRuntime::from_paths_with(homes, std::slice::from_ref(&external), |_| true);
+        let runtime = RustRuntime::from_paths_with_install(
+            homes.clone(),
+            std::slice::from_ref(&external),
+            &install_path,
+            |path| path != homes.cargo_bindir(),
+        );
 
-        assert_eq!(runtime.provider, RustProvider::External);
         assert_eq!(runtime.bin_dir, external);
+    }
+
+    #[test]
+    fn rust_runtime_rejects_unusable_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path());
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+
+        let runtime = RustRuntime::from_paths_with_install(
+            homes.clone(),
+            std::slice::from_ref(&external),
+            &install_path,
+            |_| false,
+        );
+
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
     }
 
     #[test]
     fn rust_runtime_prefers_recorded_external_provider() {
         let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), false);
+        let homes = rust_homes_at(root.path());
+        let external = root.path().join("external/bin");
         let recorded = root.path().join("recorded/bin");
-        let earlier_on_path = root.path().join("earlier/bin");
-        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
-        create_proxy_dir(&earlier_on_path, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
-        let install_path = root.path().join("installs/rust/1.80.0");
-        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
-        file::make_symlink(&recorded, &install_path).unwrap();
-
-        let runtime =
-            RustRuntime::from_paths_with_install(homes, &[earlier_on_path], &install_path, |_| {
-                true
-            });
-
-        assert_eq!(runtime.provider, RustProvider::External);
-        assert_eq!(runtime.bin_dir, recorded);
-    }
-
-    #[test]
-    fn rust_runtime_keeps_recorded_external_provider_after_default_home_initialization() {
-        let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), false);
-        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
-        std::fs::create_dir_all(&homes.rustup).unwrap();
-        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
-        let recorded = root.path().join("recorded/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
         create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
         let install_path = root.path().join("installs/rust/1.80.0");
         std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
@@ -1513,62 +1549,52 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         let runtime = RustRuntime::from_paths_with_install(
             homes,
-            std::slice::from_ref(&recorded),
+            std::slice::from_ref(&external),
             &install_path,
             |_| true,
         );
 
-        assert_eq!(runtime.provider, RustProvider::External);
         assert_eq!(runtime.bin_dir, recorded);
     }
 
     #[test]
-    fn rust_runtime_explicit_homes_override_recorded_external_provider() {
+    fn rust_runtime_keeps_recorded_external_provider_after_default_home_initialization() {
         let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), true);
-        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
-        std::fs::create_dir_all(&homes.rustup).unwrap();
-        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let homes = rust_homes_at(root.path());
+        let external = root.path().join("external/bin");
         let recorded = root.path().join("recorded/bin");
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
         create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
         let install_path = root.path().join("installs/rust/1.80.0");
         std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
         file::make_symlink(&recorded, &install_path).unwrap();
 
         let runtime = RustRuntime::from_paths_with_install(
-            homes.clone(),
-            std::slice::from_ref(&recorded),
+            homes,
+            std::slice::from_ref(&external),
             &install_path,
             |_| true,
         );
 
-        assert_eq!(runtime.provider, RustProvider::Managed);
-        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+        assert_eq!(runtime.bin_dir, recorded);
     }
 
     #[test]
     fn rust_runtime_rejects_incomplete_external_provider() {
         let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), false);
+        let homes = rust_homes_at(root.path());
         let external = root.path().join("external/bin");
         create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
 
-        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+        let runtime = RustRuntime::from_paths_with_install(
+            homes.clone(),
+            std::slice::from_ref(&external),
+            &install_path,
+            |path| path != homes.cargo_bindir(),
+        );
 
-        assert_eq!(runtime.provider, RustProvider::Managed);
-        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
-    }
-
-    #[test]
-    fn rust_runtime_does_not_replace_explicit_homes() {
-        let root = tempfile::tempdir().unwrap();
-        let homes = rust_homes_at(root.path(), true);
-        let external = root.path().join("external/bin");
-        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
-
-        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
-
-        assert_eq!(runtime.provider, RustProvider::Managed);
         assert_eq!(runtime.bin_dir, homes.cargo_bindir());
     }
 }

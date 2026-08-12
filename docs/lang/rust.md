@@ -1,12 +1,14 @@
 # Rust
 
-Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already
-installed and install the requested toolchain, components, and targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
-variables for the home directories and falls back to their standard location (`~/.rustup` and `~/.cargo`) if they are
-not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like
-to isolate mise's rustup/cargo from your other rustup/cargo installations.
+`mise` can be used to manage Rust/Cargo. Under the hood, it uses `rustup` to install the requested toolchains,
+components, and targets. `mise` will install `rustup` if it is not on your system, reuse an existing installation from
+[rustup.rs](https://rustup.rs), or reuse a system package manager installation (as provided by package managers such as Homebrew,
+APT, and pacman) if the original `PATH` contains a directory with the `rustup`, `cargo`, and `rustc` proxies. By
+default, `mise` respects the `RUSTUP_HOME` and `CARGO_HOME` environment variables for the home directories, and falls back
+to their standard location (`~/.rustup` and `~/.cargo`) if they are not set. You can change this by setting the
+`MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like to isolate `mise`'s Rust/Cargo from your other Rust/Cargo installations.
 
-These variables can also be set in mise configuration. They are applied to Rust operations in the same mise invocation:
+These variables can also be set in `mise` configuration. They are applied to Rust operations in the same `mise` invocation:
 
 ```toml
 [env]
@@ -14,16 +16,11 @@ MISE_RUSTUP_HOME = "{{env.HOME}}/.local/share/rustup"
 MISE_CARGO_HOME = "{{env.HOME}}/.local/share/cargo"
 ```
 
-Explicit `RUSTUP_HOME` and `CARGO_HOME` values in `[env]` take precedence over their corresponding `MISE_` variables.
+Explicit `RUSTUP_HOME` and `CARGO_HOME` values in `[env]` take precedence over their corresponding `MISE_*` variables.
 
-When the standard Rust homes have not been initialized and no home override is configured, mise can also reuse a
-package-manager installation of rustup. The original `PATH` must contain a directory with the `rustup`, `cargo`, and
-`rustc` proxies, as provided by package managers such as Homebrew, APT, and pacman. An explicit Rust or Cargo home
-continues to use mise's managed rustup initialization instead of an external proxy directory.
-
-Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
-mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
-version, and asks rustup to install any configured components or targets when you run `mise install`.
+Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by `rustup`.
+`mise` keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
+version, and asks `rustup` to install any configured components or targets when you run `mise install`.
 
 ## Usage
 
