@@ -163,12 +163,13 @@ pub(super) fn install(formula: &Formula, keg: &Path) -> Result<()> {
     let mut absent_patterns = vec![];
     let result = (|| {
         for root in ["etc", "var"] {
-            install_shared_tree(
+            required_paths.extend(install_shared_tree(
                 formula,
                 keg,
+                root,
                 &keg.join(".bottle").join(root),
                 &prefix::prefix().join(root),
-            )?;
+            )?);
         }
         for step in &formula.post_install_steps {
             let effects = execute_step(formula, keg, step)?;
@@ -230,12 +231,14 @@ fn write_state(path: &Path, state: &LifecycleState) -> Result<()> {
 fn install_shared_tree(
     formula: &Formula,
     keg: &Path,
+    root: &str,
     source_root: &Path,
     destination_root: &Path,
-) -> Result<()> {
+) -> Result<Vec<PathBuf>> {
     if !source_root.is_dir() {
-        return Ok(());
+        return Ok(vec![]);
     }
+    let mut installed_paths = vec![];
     for entry in walkdir::WalkDir::new(source_root).follow_links(false) {
         let entry = entry?;
         let relative = entry.path().strip_prefix(source_root)?;
@@ -247,15 +250,18 @@ fn install_shared_tree(
             crate::file::create_dir_all(&destination)?;
             continue;
         }
-        let destination = install_destination(formula, keg, entry.path(), relative, &destination)?;
+        let destination =
+            install_destination(formula, keg, root, entry.path(), relative, &destination)?;
         atomic_copy(entry.path(), &destination)?;
+        installed_paths.push(destination);
     }
-    Ok(())
+    Ok(installed_paths)
 }
 
 fn install_destination(
     formula: &Formula,
     keg: &Path,
+    root: &str,
     source: &Path,
     relative: &Path,
     destination: &Path,
@@ -270,11 +276,9 @@ fn install_destination(
         if old_keg == keg || !old_keg.is_dir() {
             continue;
         }
-        for root in ["etc", "var"] {
-            let old_default = old_keg.join(".bottle").join(root).join(relative);
-            if old_default.symlink_metadata().is_ok() && files_equal(&old_default, destination) {
-                return Ok(destination.to_path_buf());
-            }
+        let old_default = old_keg.join(".bottle").join(root).join(relative);
+        if old_default.symlink_metadata().is_ok() && files_equal(&old_default, destination) {
+            return Ok(destination.to_path_buf());
         }
     }
     let default = PathBuf::from(format!("{}.default", destination.display()));
@@ -694,20 +698,17 @@ mod tests {
         crate::file::create_dir_all(destination.parent().unwrap())?;
         crate::file::write(&source, "new")?;
         crate::file::write(&destination, "user")?;
-        install_shared_tree(
+        let installed = install_shared_tree(
             &formula(vec![]),
             &keg,
+            "etc",
             &keg.join(".bottle/etc"),
             &tmp.path().join("etc"),
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "user");
-        assert_eq!(
-            crate::file::read_to_string(PathBuf::from(format!(
-                "{}.default",
-                destination.display()
-            )))?,
-            "new"
-        );
+        let default = PathBuf::from(format!("{}.default", destination.display()));
+        assert_eq!(crate::file::read_to_string(&default)?, "new");
+        assert_eq!(installed, vec![default]);
         Ok(())
     }
 
@@ -725,14 +726,45 @@ mod tests {
         crate::file::write(&old, "old")?;
         crate::file::write(&destination, "old")?;
         crate::file::write(&source, "new")?;
-        install_shared_tree(
+        let installed = install_shared_tree(
             &formula(vec![]),
             &keg,
+            "etc",
             &keg.join(".bottle/etc"),
             &tmp.path().join("etc"),
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "new");
+        assert_eq!(installed, vec![destination.clone()]);
         assert!(!PathBuf::from(format!("{}.default", destination.display())).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn old_default_comparison_stays_within_shared_root() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let rack = tmp.path().join("Cellar/foo");
+        let old_var = rack.join("1/.bottle/var/foo/config");
+        let keg = rack.join("2");
+        let source = keg.join(".bottle/etc/foo/config");
+        let destination = tmp.path().join("etc/foo/config");
+        for path in [&old_var, &source, &destination] {
+            crate::file::create_dir_all(path.parent().unwrap())?;
+        }
+        crate::file::write(&old_var, "user")?;
+        crate::file::write(&destination, "user")?;
+        crate::file::write(&source, "new")?;
+        let installed = install_shared_tree(
+            &formula(vec![]),
+            &keg,
+            "etc",
+            &keg.join(".bottle/etc"),
+            &tmp.path().join("etc"),
+        )?;
+        assert_eq!(crate::file::read_to_string(&destination)?, "user");
+        assert_eq!(
+            installed,
+            vec![PathBuf::from(format!("{}.default", destination.display()))]
+        );
         Ok(())
     }
 
