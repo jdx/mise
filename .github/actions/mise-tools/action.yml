@@ -11,7 +11,28 @@ runs:
         path: |
           ~/.local/share/mise
           ~/.cache/mise
-    - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+    # The helper is itself installed from GitHub. Check the API directly first
+    # so a cold cache can wait instead of failing while bootstrapping the waiter.
+    - name: Wait before installing rate-limit helper
+      shell: bash
+      run: |
+        token=${MISE_GITHUB_TOKEN:-${GITHUB_API_TOKEN:-${GITHUB_TOKEN:-}}}
+        curl_args=(-sf -H "User-Agent: mise-ci")
+        if [ -n "$token" ]; then
+          curl_args+=(-H "Authorization: Bearer ${token}")
+        fi
+        rate_limit=$(curl "${curl_args[@]}" "https://api.github.com/rate_limit")
+        remaining=$(echo "$rate_limit" | jq -r '.resources.core.remaining // 0')
+        reset=$(echo "$rate_limit" | jq -r '.resources.core.reset // 0')
+        if [ "$remaining" -le 1 ]; then
+          now=$(date +%s)
+          wait_seconds=$((reset - now + 1))
+          if [ "$wait_seconds" -gt 0 ]; then
+            echo "GitHub core rate limit exhausted; waiting ${wait_seconds}s"
+            sleep "$wait_seconds"
+          fi
+        fi
+    - run: GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-${GITHUB_API_TOKEN:-${GITHUB_TOKEN:-}}}" mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       shell: bash
     - run: mise install
       shell: bash
