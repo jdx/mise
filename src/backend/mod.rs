@@ -2400,8 +2400,7 @@ pub trait Backend: Debug + Send + Sync {
                     .await?
                 }
             };
-            let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-            matches = self.version_order(&opts)?.order(matches);
+            matches = self.version_order(selection_opts)?.order(matches);
         }
         Ok(find_match_in_list(&matches, query))
     }
