@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/8028.
+# A path prepended after activation can duplicate an entry captured in
+# __MISE_ORIG_PATH. That duplicate must not move the neighboring prepends, and
+# repeated hook-env runs must leave the reconstructed PATH unchanged.
+
+MISE_BIN=$(command -v mise)
+
+mkdir -p homebrew/bin homebrew/sbin custom-a custom-b managed
+cat >mise.toml <<EOF
+[env]
+_.path = ["$PWD/managed"]
+EOF
+
+MANAGED_PATH="$PWD/managed"
+BREW_BIN="$PWD/homebrew/bin"
+BREW_SBIN="$PWD/homebrew/sbin"
+CUSTOM_A="$PWD/custom-a"
+CUSTOM_B="$PWD/custom-b"
+
+export __MISE_ORIG_PATH="$BREW_BIN:$BREW_SBIN:/usr/bin:/bin"
+export PATH="$CUSTOM_B:$BREW_SBIN:$CUSTOM_A:$BREW_BIN:$BREW_SBIN:/usr/bin:/bin"
+
+eval "$("$MISE_BIN" hook-env -s bash)"
+
+EXPECTED="$CUSTOM_B:$BREW_SBIN:$CUSTOM_A:$MANAGED_PATH:$BREW_BIN:$BREW_SBIN:/usr/bin:/bin"
+assert "printf '%s\n' \"\$PATH\"" "$EXPECTED"
+
+FIRST_PATH=$PATH
+eval "$("$MISE_BIN" hook-env -s bash)"
+assert "printf '%s\n' \"\$PATH\"" "$FIRST_PATH"
