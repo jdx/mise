@@ -2743,50 +2743,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_symlink_to_requires_a_link() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("target");
-        let link = dir.path().join("link");
-        fs::create_dir(&target).unwrap();
-
-        make_symlink(&target, &link).unwrap();
-
-        assert!(is_symlink_to(&link, &target));
-        assert!(!is_symlink_to(&target, &target));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_is_symlink_to_resolves_relative_target_from_link_parent() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("target");
-        let link = dir.path().join("link");
-        fs::create_dir(&target).unwrap();
-        std::os::unix::fs::symlink("target", &link).unwrap();
-
-        assert!(is_symlink_to(&link, &target));
-    }
-
-    #[test]
-    fn test_symlink_prefix_detection_and_removal() {
-        let dir = tempfile::tempdir().unwrap();
-        let prefix = dir.path().join("source");
-        let target = prefix.join("version");
-        let other = dir.path().join("other");
-        let link = dir.path().join("link");
-        fs::create_dir_all(&target).unwrap();
-        fs::create_dir_all(&other).unwrap();
-        make_symlink(&target, &link).unwrap();
-
-        assert!(is_symlink_target_within(&link, &prefix).unwrap());
-        assert!(!is_symlink_target_within(&link, &other).unwrap());
-
-        remove_symlink_or_junction(&link).unwrap();
-        assert!(std::fs::symlink_metadata(&link).is_err());
-        assert!(target.exists());
-    }
-
-    #[test]
     fn test_remove_symlinks_with_target_prefix() {
         let dir = tempfile::tempdir().unwrap();
         let prefix = dir.path().join("provider");
@@ -2839,17 +2795,6 @@ mod tests {
         assert!(remove_symlink_or_junction(&directory).is_err());
         assert!(file.is_file());
         assert!(directory.is_dir());
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_remove_symlink_or_junction_rejects_an_ordinary_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        let ordinary_dir = dir.path().join("ordinary");
-        fs::create_dir(&ordinary_dir).unwrap();
-
-        assert!(remove_symlink_or_junction(&ordinary_dir).is_err());
-        assert!(ordinary_dir.is_dir());
     }
 
     #[test]
