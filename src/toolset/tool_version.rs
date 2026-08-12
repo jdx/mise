@@ -366,14 +366,20 @@ impl ToolVersion {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
         let settings = Settings::get();
-        if settings.locked
+        let tool_config_locked = config.tool_config_locked(request.source());
+        if (settings.locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
             && !has_linked_version(request.ba())
             && request.source().path().is_some()
         {
+            let hint = if tool_config_locked && !settings.locked {
+                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
+            } else {
+                "Run `mise install` without --locked to update the lockfile"
+            };
             bail!(
-                "{}@{} is not in the lockfile\nhint: Run `mise install` without --locked to update the lockfile",
+                "{}@{} is not in the lockfile\nhint: {hint}",
                 request.ba().short,
                 request.version()
             );

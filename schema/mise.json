@@ -2479,6 +2479,18 @@
         }
       }
     },
+    "tool_config": {
+      "description": "policy for tools declared by the containing config file",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "locked": {
+          "default": false,
+          "description": "require tools declared by this config to resolve and install from its lockfile",
+          "type": "boolean"
+        }
+      }
+    },
     "monorepo_root": {
       "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. When enabled, tasks can be referenced with paths like //projects/frontend:build",
       "type": "boolean"
@@ -4653,6 +4665,10 @@
     "task_config": {
       "description": "configuration for task execution and management",
       "$ref": "#/$defs/task_config"
+    },
+    "tool_config": {
+      "description": "policy for tools declared by this config file",
+      "$ref": "#/$defs/tool_config"
     },
     "tasks": {
       "additionalProperties": {

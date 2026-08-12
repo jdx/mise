@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Config-scoped locked policy applies only to tools declared by that config.
+export MISE_LOCKFILE=1
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+dummy = "latest"
+EOF
+
+cat <<'EOF' >mise.toml
+[tool_config]
+locked = true
+
+[tools]
+tiny = "1"
+EOF
+
+# The project tool must be locked, but the unrelated global tool must not be
+# required in the global lockfile.
+cat <<EOF >mise.lock
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:tiny"
+"platforms.$PLATFORM" = { url = "https://example.com/tiny-1.0.0.tar.gz" }
+EOF
+
+assert_contains "mise install --dry-run 2>&1" "tiny@1.0.0"
+assert_contains "mise install --dry-run 2>&1" "dummy@2.0.0"
+
+rm mise.lock
+assert_fail_contains "mise install --dry-run 2>&1" "No lockfile URL found for tiny@1"
+assert_fail_contains "mise install --dry-run 2>&1" "disable locked mode"
+
+# Invocation-wide locked mode retains its existing behavior for global tools.
+rm mise.toml
+assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "dummy@latest is not in the lockfile"
