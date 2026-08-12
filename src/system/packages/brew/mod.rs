@@ -29,6 +29,7 @@ mod api;
 mod cask;
 mod elf;
 mod fetch;
+mod lifecycle;
 mod macho;
 mod maintenance;
 mod pour;
@@ -85,6 +86,9 @@ impl BrewManager {
         }
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
         let closure = resolve::resolve_closure_with_taps(pkgs).await?;
+        for rf in &closure {
+            lifecycle::validate(&rf.formula)?;
+        }
         for rf in &closure {
             if rf.on_request
                 && !roots.contains(&rf.formula.name)

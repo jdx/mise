@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use eyre::{WrapErr, bail, eyre};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::http::HTTP_FETCH;
 use crate::result::Result;
@@ -44,6 +45,10 @@ pub struct Formula {
     /// homebrew/core commit this API snapshot was generated from
     #[serde(default)]
     pub tap_git_head: Option<String>,
+    #[serde(default)]
+    pub post_install_steps: Vec<Value>,
+    #[serde(default)]
+    pub post_install_defined: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

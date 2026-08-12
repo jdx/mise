@@ -7,7 +7,7 @@ use eyre::{WrapErr, bail};
 use serde::Deserialize;
 use walkdir::WalkDir;
 
-use super::{api, pour, prefix, resolve};
+use super::{api, lifecycle, pour, prefix, resolve};
 use crate::file;
 use crate::result::Result;
 use crate::system::packages::PackageRequest;
@@ -240,6 +240,7 @@ fn unlink_and_remove_keg(candidate: &PruneCandidate) -> Result<()> {
         };
         remove_empty_parents(&link, stop)?;
     }
+    lifecycle::remove_state(&candidate.keg)?;
     file::remove_all(&candidate.keg)?;
     let rack = prefix::cellar().join(&candidate.name);
     file::remove_dir(&rack)?;

@@ -6,6 +6,7 @@ use eyre::{WrapErr, bail};
 use serde_json::json;
 
 use super::api::BottleFile;
+use super::lifecycle;
 use super::prefix;
 use super::relocate;
 use super::resolve::ResolvedFormula;
@@ -32,7 +33,10 @@ pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
 /// `opt/<name>` symlink (even for keg-only formulae), so a Cellar directory
 /// without it is a remnant of a failed install and must not block a retry.
 pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
-    keg_path(name, pkg_version).exists() && linked_version(name).as_deref() == Some(pkg_version)
+    let keg = keg_path(name, pkg_version);
+    keg.exists()
+        && linked_version(name).as_deref() == Some(pkg_version)
+        && !lifecycle::needs_repair(&keg)
 }
 
 /// the version `opt/<name>` points at, if the symlink resolves to an
@@ -49,7 +53,8 @@ pub(super) fn linked_state(name: &str) -> Option<(String, bool)> {
         record_needs_replacement(name, &opt)
             .then(|| record_keg(name, &prefix::linked_keg_record(name)))?
     })?;
-    Some((active.0, pending_record_repair(name).is_some()))
+    let needs_repair = pending_record_repair(name).is_some() || lifecycle::needs_repair(&active.1);
+    Some((active.0, needs_repair))
 }
 
 /// Restore one missing or dangling mise-owned active-keg record without relinking the keg.
@@ -267,6 +272,13 @@ pub async fn pour(
         }
         return Err(err);
     }
+    pr.set_message("shared state".to_string());
+    lifecycle::install(&rf.formula, &keg).wrap_err_with(|| {
+        format!(
+            "failed to complete Homebrew shared-state lifecycle for {name}; \
+             the linked keg is retained as needs-repair so apply can retry safely"
+        )
+    })?;
     Ok(())
 }
 
@@ -376,7 +388,7 @@ pub fn write_receipt(
 }
 
 /// relative symlink target from `link` to `dest`
-fn relative_target(dest: &Path, link: &Path) -> PathBuf {
+pub(super) fn relative_target(dest: &Path, link: &Path) -> PathBuf {
     let link_dir = link.parent().unwrap();
     let mut common = 0;
     let dest_parts: Vec<_> = dest.components().collect();

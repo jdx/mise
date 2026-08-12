@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]] || [[ "$(uname -m)" != "arm64" ]]; then
+  exit 0
+fi
+
+# This test never touches the runner's real Homebrew prefix. Keep the synthetic
+# prefix no longer than /opt/homebrew: Mach-O bottles only reserve enough load
+# command padding for canonical-path relocation.
+export MISE_SYSTEM_BREW_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-/tmp/misebrew}"
+if [[ "$MISE_SYSTEM_BREW_PREFIX" == "/opt/homebrew" && "${CI:-}" != "true" ]]; then
+  echo "refusing canonical-prefix lifecycle test outside disposable CI" >&2
+  exit 1
+fi
+if [[ -e "$MISE_SYSTEM_BREW_PREFIX" ]]; then
+  exit 0
+fi
+trap 'rm -rf "$MISE_SYSTEM_BREW_PREFIX"' EXIT
+
+cat <<'EOF' >mise.toml
+[bootstrap.packages]
+"brew:ca-certificates" = "latest"
+"brew:openssl@3" = "latest"
+"brew:node" = "latest"
+"brew:kimi-code" = "latest"
+EOF
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem'"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/openssl.cnf'"
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "readlink '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'" "ca-certificates/cert.pem"
+assert_succeed "test -x '$MISE_SYSTEM_BREW_PREFIX/opt/node/bin/node'"
+assert_succeed "test -x '$MISE_SYSTEM_BREW_PREFIX/bin/kimi'"
+assert_fail "test -n \"${SSL_CERT_FILE:-}${NODE_EXTRA_CA_CERTS:-}${NODE_OPTIONS:-}\""
+assert_succeed "'$MISE_SYSTEM_BREW_PREFIX/opt/openssl@3/bin/openssl' s_client -CAfile '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem' -connect auth.kimi.com:443 -servername auth.kimi.com </dev/null"
+if [[ "$MISE_SYSTEM_BREW_PREFIX" == "/opt/homebrew" ]]; then
+  # Bottled Node embeds Homebrew's canonical OpenSSL directory. Exercise its
+  # unmodified default CA mode only on a disposable canonical-prefix runner.
+  assert_succeed "'$MISE_SYSTEM_BREW_PREFIX/opt/node/bin/node' -e 'fetch(\"https://auth.kimi.com/api/oauth/device_authorization\").then(r => { if (r.status !== 405) process.exit(1) })'"
+fi
+
+# Legacy mise state had a valid keg and opt record but omitted shared config.
+rm "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem"
+assert_contains "mise bootstrap packages status" "needs repair"
+mise bootstrap packages apply --yes
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "mise bootstrap packages status" "installed"
