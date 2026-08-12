@@ -35,7 +35,10 @@ preexisting_record="$MISE_BREW_ORACLE_RESULT_DIR/macos-formula-lifecycle.preexis
 cleanup_formula_fixtures() {
   local formula path
   for formula in "${formula_fixtures[@]}"; do
-    brew uninstall --formula --force "$formula" >/dev/null 2>&1 || true
+    # These exact formulae are the recorded fixtures on a disposable runner.
+    # Ignore reverse dependencies so Homebrew cannot leave a fixture installed
+    # merely because another preloaded runner formula refers to it.
+    brew uninstall --formula --force --ignore-dependencies "$formula" >/dev/null 2>&1 || true
   done
   for path in "${shared_fixture_paths[@]}"; do
     rm -rf "$path"

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Linuxbrew pour test: the dedicated disposable job runs this as root with an
-# intentionally absent /home/linuxbrew tree and user.
+# absent Linuxbrew prefix and user. Namespace runners may provide an empty,
+# root-owned /home/linuxbrew scaffold; validate and restore it exactly.
 if [[ $(uname) != Linux ]]; then
   echo "SKIP: brew formula oracle requires Linux" >&2
   exit 0
@@ -22,7 +23,20 @@ esac
 source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
 brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew
 
-brew_oracle_require_absent_path /home/linuxbrew "ambiguous Linuxbrew home"
+linuxbrew_home_existed=0
+linuxbrew_home_mode=
+if [[ -L /home/linuxbrew ]]; then
+  brew_oracle_fail "Linuxbrew home is a symlink"
+elif [[ -e /home/linuxbrew ]]; then
+  [[ -d /home/linuxbrew ]] || brew_oracle_fail "Linuxbrew home is not a directory"
+  [[ $(stat -c %u:%g /home/linuxbrew) == 0:0 ]] ||
+    brew_oracle_fail "Linuxbrew home is not root-owned"
+  ! mountpoint -q /home/linuxbrew || brew_oracle_fail "Linuxbrew home is a mount point"
+  [[ -z $(find /home/linuxbrew -mindepth 1 -maxdepth 1 -print -quit) ]] ||
+    brew_oracle_fail "ambiguous non-empty Linuxbrew home"
+  linuxbrew_home_existed=1
+  linuxbrew_home_mode=$(stat -c %a /home/linuxbrew)
+fi
 if getent passwd linuxbrew >/dev/null 2>&1; then
   brew_oracle_fail "pre-existing linuxbrew user is ambiguous"
 fi
@@ -30,7 +44,19 @@ if ps -eo user=,args= | awk '$1 == "linuxbrew" || index($0, "/home/linuxbrew/.li
   brew_oracle_fail "pre-existing linuxbrew process is ambiguous"
 fi
 
-trap 'rm -rf /home/linuxbrew' EXIT
+{
+  printf 'existed=%s\n' "$linuxbrew_home_existed"
+  printf 'mode=%s\n' "${linuxbrew_home_mode:-absent}"
+  printf 'owner=%s\n' "$(stat -c %u:%g /home/linuxbrew 2>/dev/null || printf absent)"
+} >"$MISE_BREW_ORACLE_RESULT_DIR/linux-home.preexisting"
+
+cleanup_linuxbrew_home() {
+  rm -rf /home/linuxbrew
+  if [[ $linuxbrew_home_existed == 1 ]]; then
+    install -d -m "$linuxbrew_home_mode" -o root -g root /home/linuxbrew
+  fi
+}
+trap cleanup_linuxbrew_home EXIT
 
 cat <<EOF >mise.toml
 [bootstrap.packages]
