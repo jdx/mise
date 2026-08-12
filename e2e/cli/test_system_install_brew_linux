@@ -41,9 +41,22 @@ fi
 if getent passwd linuxbrew >/dev/null 2>&1; then
   brew_oracle_fail "pre-existing linuxbrew user is ambiguous"
 fi
-if ps -eo user=,args= | awk '$1 == "linuxbrew" || index($0, "/home/linuxbrew/.linuxbrew") { found = 1 } END { exit found ? 0 : 1 }'; then
-  brew_oracle_fail "pre-existing linuxbrew process is ambiguous"
-fi
+# Do not inspect process command lines: this oracle's own shell and awk source
+# contain the literal canonical prefix and therefore self-match. Inspect live
+# kernel path references instead, excluding this shell and its parent.
+for proc in /proc/[0-9]*; do
+  pid=${proc##*/}
+  [[ $pid != $$ && $pid != $PPID ]] || continue
+  for proc_link in "$proc/cwd" "$proc/exe" "$proc/root" "$proc"/fd/*; do
+    [[ -L $proc_link ]] || continue
+    proc_target=$(readlink -f "$proc_link" 2>/dev/null || true)
+    case "$proc_target" in
+      /home/linuxbrew/.linuxbrew | /home/linuxbrew/.linuxbrew/*)
+        brew_oracle_fail "process $pid references the Linuxbrew prefix through $proc_link"
+        ;;
+    esac
+  done
+done
 
 {
   printf 'existed=%s\n' "$linuxbrew_home_existed"

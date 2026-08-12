@@ -754,9 +754,12 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
         )?;
         for step in &prepared.steps {
             let effects = execute_step(prepared, step).await?;
-            symlinks.extend(effects.symlinks);
-            required_paths.extend(effects.required_paths);
-            absent_patterns.extend(effects.absent_patterns);
+            merge_step_effects(
+                &mut symlinks,
+                &mut required_paths,
+                &mut absent_patterns,
+                effects,
+            )?;
         }
         Ok(())
     }
@@ -1172,6 +1175,46 @@ struct StepEffects {
     symlinks: Vec<LifecycleSymlink>,
     required_paths: Vec<PathBuf>,
     absent_patterns: Vec<String>,
+    removed_paths: Vec<(PathBuf, bool)>,
+}
+
+/// Fold ordered lifecycle effects into final-state invariants. Homebrew
+/// formulae commonly remove an old tree and recreate it later in the same
+/// post-install block (Node's npm tree is one example). Recording every
+/// intermediate removal as a permanent invariant makes healthy final state
+/// look broken. Conversely, a later removal must retire earlier output
+/// invariants.
+fn merge_step_effects(
+    symlinks: &mut Vec<LifecycleSymlink>,
+    required_paths: &mut Vec<PathBuf>,
+    absent_patterns: &mut Vec<String>,
+    effects: StepEffects,
+) -> Result<()> {
+    for (removed, recursive) in &effects.removed_paths {
+        let removes = |path: &Path| path == removed || (*recursive && path.starts_with(removed));
+        symlinks.retain(|link| !removes(&link.target));
+        required_paths.retain(|path| !removes(path));
+    }
+    absent_patterns.extend(effects.absent_patterns);
+
+    for created in effects
+        .required_paths
+        .iter()
+        .chain(effects.symlinks.iter().map(|link| &link.target))
+    {
+        absent_patterns.retain(|pattern| !created_path_supersedes_absence(pattern, created));
+    }
+    symlinks.extend(effects.symlinks);
+    required_paths.extend(effects.required_paths);
+    Ok(())
+}
+
+fn created_path_supersedes_absence(pattern: &str, created: &Path) -> bool {
+    if !has_glob_magic(pattern) {
+        let removed = Path::new(pattern);
+        return created == removed || created.starts_with(removed);
+    }
+    glob::Pattern::new(pattern).is_ok_and(|pattern| pattern.matches_path(created))
 }
 
 async fn execute_step(
@@ -1204,15 +1247,18 @@ async fn execute_step(
             ..
         } => {
             let mut absent_patterns = vec![];
+            let mut removed_paths = vec![];
             for pattern in paths {
                 absent_patterns.extend(pattern.patterns.clone());
                 for path in expand_pattern(pattern)? {
                     ensure_runtime_write_path(&path, false)?;
                     remove_prepared_node(&path, *recursive, symlink_target_contains.as_deref())?;
+                    removed_paths.push((path, *recursive));
                 }
             }
             Ok(StepEffects {
                 absent_patterns,
+                removed_paths,
                 ..Default::default()
             })
         }
@@ -1851,6 +1897,45 @@ mod tests {
             expand_braces("/x/{a,b}/{c,d}"),
             ["/x/a/c", "/x/a/d", "/x/b/c", "/x/b/d"]
         );
+    }
+
+    #[test]
+    fn ordered_effects_describe_final_state_not_intermediate_removals() -> Result<()> {
+        let root = PathBuf::from("/opt/homebrew/lib/node_modules/npm");
+        let mut symlinks = vec![LifecycleSymlink {
+            source: PathBuf::from("/old/source"),
+            target: root.join("old-link"),
+        }];
+        let mut required_paths = vec![root.join("old-file")];
+        let mut absent_patterns = vec![];
+
+        merge_step_effects(
+            &mut symlinks,
+            &mut required_paths,
+            &mut absent_patterns,
+            StepEffects {
+                absent_patterns: vec![root.to_string_lossy().into_owned()],
+                removed_paths: vec![(root.clone(), true)],
+                ..Default::default()
+            },
+        )?;
+        assert!(symlinks.is_empty());
+        assert!(required_paths.is_empty());
+        assert_eq!(absent_patterns, [root.to_string_lossy()]);
+
+        let recreated = root.join("bin/npm-cli.js");
+        merge_step_effects(
+            &mut symlinks,
+            &mut required_paths,
+            &mut absent_patterns,
+            StepEffects {
+                required_paths: vec![recreated.clone()],
+                ..Default::default()
+            },
+        )?;
+        assert!(absent_patterns.is_empty());
+        assert_eq!(required_paths, [recreated]);
+        Ok(())
     }
 
     #[test]

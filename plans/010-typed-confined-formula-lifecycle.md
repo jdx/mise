@@ -1,10 +1,18 @@
 # Plan 010: Compile formula lifecycle once, preflight it, and confine it
 
-Status: TODO
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11915 `b94b6b1c1`
 Depends on: 009
+Implementation start: #11915 `4989ac953`
+
+Drift check (2026-08-13): the typed preparation and confined executor are now
+present. Exact-head macOS proof exposed one ordered-effect defect: Node removes
+the old npm tree and recreates it later, while lifecycle health retained the
+intermediate removal as a permanent absence invariant. Final-state effects must
+be folded in execution order. The Linux oracle also self-matched because its
+process command-line scan contained the canonical prefix literal.
 
 ## Objective
 
