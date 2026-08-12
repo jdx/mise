@@ -84,6 +84,24 @@ Do not change package installation behavior here.
 
 ## Verification
 
+### Exact-head execution evidence
+
+- Formula head `57319487b35414076982cd1828c1114b3dddeea5`, workflow run
+  `31644065133`: the Linux body executed one fixture and all topology, runtime,
+  repair, import, and prune assertions passed. Marker verification then failed
+  because the root container created the bind-mounted marker as mode `0600`;
+  artifact upload independently failed with `EACCES`. The harness now passes
+  only the host numeric result owner to the named Linux oracle, atomically
+  transfers the completed marker to that owner, and makes it read-only to
+  ordinary workflow consumers (`0644`). Invalid owner data fails without a
+  marker.
+- The same run's macOS body entered the cask fixture and failed nonzero on an
+  upstream GitHub HTTP/2 refused stream before any completion marker. The
+  always-run verifier correctly rejected the missing marker. This is retained
+  as a real failed execution, not counted as proof.
+- Local guard proof after the ownership correction:
+  `rtk mise run test:e2e e2e/cli/test_brew_oracle_guard` — PASS.
+
 ```bash
 rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
 rtk mise run test:e2e e2e/cli/test_system_install_brew_linux

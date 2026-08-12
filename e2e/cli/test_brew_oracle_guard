@@ -69,6 +69,17 @@ if brew_oracle_complete test_brew_oracle_guard 0 /opt/homebrew; then
   fail "zero fixtures were accepted"
 fi
 
+brew_oracle_require_disposable invalid-result-owner /opt/homebrew
+MISE_BREW_ORACLE_RESULT_UID=not-a-uid
+MISE_BREW_ORACLE_RESULT_GID=$(id -g)
+if brew_oracle_complete test_brew_oracle_guard 1 /opt/homebrew; then
+  fail "invalid result ownership was accepted"
+fi
+unset MISE_BREW_ORACLE_RESULT_UID MISE_BREW_ORACLE_RESULT_GID
+if [[ -e $result_dir/invalid-result-owner.completed ]]; then
+  fail "invalid result ownership left a completion marker"
+fi
+
 brew_oracle_require_disposable early-producer /opt/homebrew
 (exit 0)
 if brew_oracle_verify_marker \

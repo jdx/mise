@@ -125,6 +125,8 @@ brew_oracle_require_disposable() {
 
 brew_oracle_complete() {
   local test_name=$1 fixture_count=$2 actual_prefix=$3 tmp
+  local result_uid=${MISE_BREW_ORACLE_RESULT_UID:-}
+  local result_gid=${MISE_BREW_ORACLE_RESULT_GID:-}
 
   if [[ -z ${BREW_ORACLE_MARKER:-} ]]; then
     brew_oracle_fail "oracle was not preflighted"
@@ -153,6 +155,23 @@ brew_oracle_complete() {
     printf 'homebrew_runtime_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION"
     printf 'homebrew_runtime_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
   } >"$tmp"
+  if [[ -n $result_uid || -n $result_gid ]]; then
+    if [[ ! $result_uid =~ ^[0-9]+$ || ! $result_gid =~ ^[0-9]+$ ]]; then
+      rm -f "$tmp"
+      brew_oracle_fail "oracle result owner must be numeric"
+      return 1
+    fi
+    chown "$result_uid:$result_gid" "$tmp" || {
+      rm -f "$tmp"
+      brew_oracle_fail "cannot transfer completion record ownership"
+      return 1
+    }
+  fi
+  chmod 0644 "$tmp" || {
+    rm -f "$tmp"
+    brew_oracle_fail "cannot make completion record readable"
+    return 1
+  }
   mv "$tmp" "$BREW_ORACLE_MARKER"
 }
 
