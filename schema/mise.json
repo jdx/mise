@@ -1249,6 +1249,10 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "apply_patches": {
+              "description": "A list of patch files or URLs to apply to node source.",
+              "type": "string"
+            },
             "cflags": {
               "description": "Additional CFLAGS options (e.g., to override -O3).",
               "type": "string"
