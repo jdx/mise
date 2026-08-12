@@ -10,12 +10,6 @@
   },
   "packageRules": [
     {
-      "description": "AWS SDK requires Rust 1.94.1; keep updates disabled while the project MSRV is 1.93.",
-      "matchPackageNames": ["aws-config", "aws-sdk-*"],
-      "matchManagers": ["cargo"],
-      "enabled": false
-    },
-    {
       "description": "copr image is rebuilt from source on Dockerfile changes; pinning a digest would cause stale image regressions.",
       "matchPackageNames": ["ghcr.io/jdx/mise"],
       "matchCurrentValue": "copr",
