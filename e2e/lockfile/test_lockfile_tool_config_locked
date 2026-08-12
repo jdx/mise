@@ -4,6 +4,7 @@
 export MISE_LOCKFILE=1
 detect_platform
 PLATFORM="$MISE_PLATFORM"
+mise plugin install tiny
 
 cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
 [tools]
@@ -34,8 +35,8 @@ assert_contains "mise install --dry-run 2>&1" "tiny@1.0.0"
 assert_contains "mise install --dry-run 2>&1" "dummy@2.0.0"
 
 rm mise.lock
-assert_fail_contains "mise install --dry-run 2>&1" "No lockfile URL found for tiny@1"
-assert_fail_contains "mise install --dry-run 2>&1" "disable locked mode"
+assert_fail_contains "mise install --dry-run 2>&1" "tiny@1 is not in the lockfile"
+assert_fail_contains "mise install --dry-run 2>&1" "tool_config.locked"
 
 # Invocation-wide locked mode retains its existing behavior for global tools.
 rm mise.toml
