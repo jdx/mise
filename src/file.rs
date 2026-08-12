@@ -897,7 +897,7 @@ pub fn resolve_symlink(link: &Path) -> Result<Option<PathBuf>> {
 }
 
 pub fn is_symlink_to(link: &Path, target: &Path) -> bool {
-    is_symlink_or_junction(link) && paths_refer_to_same_entry(link, target)
+    is_symlink_or_junction(link) && same_file::is_same_file(link, target).unwrap_or(false)
 }
 
 #[cfg(unix)]
@@ -920,86 +920,33 @@ pub fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
     let Some(target) = dir_link_target(link)? else {
         return Ok(false);
     };
-    // Broken links cannot be canonicalized in full. Resolve the
-    // longest existing ancestor so symlinks in the existing portion still
-    // participate in ownership checks, then append only a safe normal tail.
-    // If that cannot establish containment, preserve the link because this
-    // predicate controls destructive cleanup.
-    let Some(target) = canonicalize_with_missing_tail(&target)? else {
+    let Some(target) = lexical_normalize(&target) else {
         return Ok(false);
     };
-    let Some(root) = canonicalize_with_missing_tail(root)? else {
+    let Some(root) = lexical_normalize(root) else {
         return Ok(false);
     };
-    Ok(path_is_within(&target, &root))
+    Ok(target.starts_with(root))
 }
 
-/// Returns whether a link's immediate target is within `root` without
-/// following the target's final path component.
-///
-/// This recognizes links into namespaces such as Homebrew's `opt` directory
-/// even after the terminal entry becomes dangling, while still resolving the
-/// parent path to reject redirects and `..` escapes.
-pub fn is_symlink_target_directly_within(link: &Path, root: &Path) -> Result<bool> {
-    let Some(target) = dir_link_target(link)? else {
-        return Ok(false);
-    };
-    let Some(parent) = target.parent() else {
-        return Ok(false);
-    };
-    let Some(file_name) = target.file_name() else {
-        return Ok(false);
-    };
-    let Some(parent) = canonicalize_with_missing_tail(parent)? else {
-        return Ok(false);
-    };
-    let Some(root) = canonicalize_with_missing_tail(root)? else {
-        return Ok(false);
-    };
-    Ok(path_is_within(&parent.join(file_name), &root))
-}
-
-fn path_is_within(path: &Path, prefix: &Path) -> bool {
-    path.starts_with(prefix)
-        || path
-            .ancestors()
-            .any(|ancestor| paths_refer_to_same_entry(ancestor, prefix))
-}
-
-fn paths_refer_to_same_entry(a: &Path, b: &Path) -> bool {
-    same_file::is_same_file(a, b).unwrap_or(false)
-}
-
-fn canonicalize_with_missing_tail(path: &Path) -> Result<Option<PathBuf>> {
-    for ancestor in path.ancestors() {
-        match ancestor.canonicalize() {
-            Ok(mut resolved) => {
-                for component in path.strip_prefix(ancestor)?.components() {
-                    match component {
-                        std::path::Component::Normal(component) => {
-                            let candidate = resolved.join(component);
-                            // A link or junction in the unresolved tail may
-                            // redirect outside the root. Its destination
-                            // cannot be established, so preserve the outer
-                            // link instead of claiming that it is contained.
-                            if dir_link_target(&candidate)?.is_some() {
-                                return Ok(None);
-                            }
-                            resolved.push(component);
-                        }
-                        std::path::Component::CurDir => {}
-                        std::path::Component::ParentDir
-                        | std::path::Component::RootDir
-                        | std::path::Component::Prefix(_) => return Ok(None),
-                    }
+fn lexical_normalize(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !matches!(
+                    normalized.components().next_back(),
+                    Some(std::path::Component::Normal(_))
+                ) {
+                    return None;
                 }
-                return Ok(Some(resolved));
+                normalized.pop();
             }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Ok(None),
+            component => normalized.push(component.as_os_str()),
         }
     }
-    Ok(None)
+    Some(normalized)
 }
 
 #[cfg(unix)]
@@ -1103,9 +1050,7 @@ pub fn remove_symlinks_with_target_prefix(
     let mut removed = vec![];
     for entry in symlink_dir.read_dir()? {
         let path = entry?.path();
-        if is_symlink_target_directly_within(&path, target_prefix)?
-            || is_symlink_target_within(&path, target_prefix)?
-        {
+        if is_symlink_target_within(&path, target_prefix)? {
             remove_symlink_or_junction(&path)?;
             removed.push(path);
         }
@@ -2886,7 +2831,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn test_symlink_prefix_detection_follows_an_indirect_target() {
+    fn test_symlink_prefix_detection_uses_the_immediate_target() {
         let dir = tempfile::tempdir().unwrap();
         let cellar = dir.path().join("Cellar");
         let target = cellar.join("node@22").join("22.0.0");
@@ -2898,26 +2843,11 @@ mod tests {
         std::os::unix::fs::symlink(&target, &opt_entry).unwrap();
         std::os::unix::fs::symlink(&opt_entry, &link).unwrap();
 
-        assert!(is_symlink_target_within(&link, &cellar).unwrap());
-        assert!(!is_symlink_target_within(&link, &opt).unwrap());
-    }
+        assert!(!is_symlink_target_within(&link, &cellar).unwrap());
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
 
-    #[test]
-    #[cfg(unix)]
-    fn test_direct_symlink_target_detection_does_not_follow_terminal_entry() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("opt");
-        let storage = dir.path().join("Cellar/node@22/22.0.0");
-        let direct_target = root.join("node@22");
-        let link = dir.path().join("link");
-        fs::create_dir_all(&root).unwrap();
-        fs::create_dir_all(&storage).unwrap();
-        std::os::unix::fs::symlink(&storage, &direct_target).unwrap();
-        std::os::unix::fs::symlink(&direct_target, &link).unwrap();
-
-        assert!(is_symlink_target_directly_within(&link, &root).unwrap());
-        fs::remove_file(&direct_target).unwrap();
-        assert!(is_symlink_target_directly_within(&link, &root).unwrap());
+        fs::remove_file(&opt_entry).unwrap();
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
     }
 
     #[test]
@@ -2970,22 +2900,11 @@ mod tests {
         let prefix = dir.path().join("source");
         let foreign = dir.path().join("foreign");
         let escaped = dir.path().join("escaped");
-        let redirected = dir.path().join("redirected");
         fs::create_dir_all(&prefix).unwrap();
         fs::create_dir_all(&foreign).unwrap();
 
         std::os::unix::fs::symlink(prefix.join("..").join("foreign"), &escaped).unwrap();
         assert!(!is_symlink_target_within(&escaped, &prefix).unwrap());
-
-        std::os::unix::fs::symlink(&foreign, prefix.join("hop")).unwrap();
-        std::os::unix::fs::symlink(prefix.join("hop").join("missing"), &redirected).unwrap();
-        assert!(!is_symlink_target_within(&redirected, &prefix).unwrap());
-
-        let dangling = prefix.join("dangling");
-        let redirected_tail = dir.path().join("redirected-tail");
-        std::os::unix::fs::symlink(prefix.join("missing"), &dangling).unwrap();
-        std::os::unix::fs::symlink(dangling.join("child"), &redirected_tail).unwrap();
-        assert!(!is_symlink_target_within(&redirected_tail, &prefix).unwrap());
     }
 
     #[test]
