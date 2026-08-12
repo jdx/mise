@@ -1,6 +1,6 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: DONE
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
@@ -101,7 +101,7 @@ not permission to mutate.
 The test configuration contains only:
 
 ```toml
-[tools]
+[bootstrap.packages]
 "brew:kimi-code" = "latest"
 ```
 
@@ -145,6 +145,13 @@ Completed proof:
   passed direct OpenSSL verification and default Node fetch with no CA/TLS
   override, then detected and repaired a removed OpenSSL CA link through root
   status.
+- That earlier execution used the narrower `mise bootstrap packages apply`
+  entry point and damaged only the generated CA link. The exact production
+  entry point is being re-proved on head
+  `667866575b92c19f5f8ba07646f52cfbbcf330fb` through `mise bootstrap --yes`
+  with only the Kimi root. Plan 018 adds full legacy-state mutation and exact
+  combined-head evidence; this plan remains IN PROGRESS until those checks
+  pass.
 - The same job ended with status `installed`; marker fixture count is 4 and
   exact mise head is `84d74314f904c0accad1c4cdc563ea662360316b`.
 - Local all-brew tests (204 passed) cover offline installed-receipt closure
