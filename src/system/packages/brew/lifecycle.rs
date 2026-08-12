@@ -19,6 +19,8 @@ struct LifecycleState {
     symlinks: Vec<LifecycleSymlink>,
     #[serde(default)]
     required_paths: Vec<PathBuf>,
+    #[serde(default)]
+    absent_patterns: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,6 +129,13 @@ pub(super) fn needs_repair(keg: &Path) -> bool {
                 .iter()
                 .any(|link| resolved_symlink_target(&link.target).as_ref() != Some(&link.source))
             || state.required_paths.iter().any(|path| !path.exists())
+            || state.absent_patterns.iter().any(|pattern| {
+                glob::glob(pattern)
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .any(|path| path.is_ok())
+            })
         {
             return true;
         }
@@ -146,10 +155,12 @@ pub(super) fn install(formula: &Formula, keg: &Path) -> Result<()> {
             complete: false,
             symlinks: vec![],
             required_paths: vec![],
+            absent_patterns: vec![],
         },
     )?;
     let mut symlinks = vec![];
     let mut required_paths = vec![];
+    let mut absent_patterns = vec![];
     let result = (|| {
         for root in ["etc", "var"] {
             install_shared_tree(
@@ -163,6 +174,7 @@ pub(super) fn install(formula: &Formula, keg: &Path) -> Result<()> {
             let effects = execute_step(formula, keg, step)?;
             symlinks.extend(effects.symlinks);
             required_paths.extend(effects.required_paths);
+            absent_patterns.extend(effects.absent_patterns);
         }
         Ok(())
     })();
@@ -173,6 +185,7 @@ pub(super) fn install(formula: &Formula, keg: &Path) -> Result<()> {
                 complete: true,
                 symlinks,
                 required_paths,
+                absent_patterns,
             },
         )?;
     }
@@ -317,6 +330,7 @@ fn shared_tree_missing(source_root: &Path, destination_root: &Path) -> bool {
 struct StepEffects {
     symlinks: Vec<LifecycleSymlink>,
     required_paths: Vec<PathBuf>,
+    absent_patterns: Vec<String>,
 }
 
 fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffects> {
@@ -325,11 +339,18 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
     }
     match step.get("type").and_then(Value::as_str) {
         Some("mkdir_p") => {
-            crate::file::create_dir_all(&resolve_path(formula, keg, path_spec(step, "path")?)?)?;
-            Ok(StepEffects::default())
+            let path = resolve_path(formula, keg, path_spec(step, "path")?)?;
+            crate::file::create_dir_all(&path)?;
+            Ok(StepEffects {
+                required_paths: vec![path],
+                ..Default::default()
+            })
         }
         Some("remove") => {
+            let mut absent_patterns = vec![];
             for spec in path_specs(step, "paths")? {
+                let pattern = resolve_path(formula, keg, spec)?;
+                absent_patterns.extend(expand_braces(&pattern.to_string_lossy()));
                 for path in expand_path_spec(formula, keg, spec)? {
                     if step.get("recursive").and_then(Value::as_bool) == Some(true) {
                         if path.exists() {
@@ -340,13 +361,16 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                     }
                 }
             }
-            Ok(StepEffects::default())
+            Ok(StepEffects {
+                absent_patterns,
+                ..Default::default()
+            })
         }
         Some("copy") => {
             let source = resolve_path(formula, keg, path_spec(step, "source")?)?;
             let target = resolve_path(formula, keg, path_spec(step, "target")?)?;
-            if step.get("recursive").and_then(Value::as_bool) == Some(true) {
-                copy_recursive(&source, &target)?;
+            let required_paths = if step.get("recursive").and_then(Value::as_bool) == Some(true) {
+                copy_recursive(&source, &target)?
             } else {
                 let destination = if target.is_dir() {
                     target.join(source.file_name().unwrap())
@@ -354,8 +378,12 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                     target
                 };
                 atomic_copy(&source, &destination)?;
-            }
-            Ok(StepEffects::default())
+                vec![destination]
+            };
+            Ok(StepEffects {
+                required_paths,
+                ..Default::default()
+            })
         }
         Some("symlink") => {
             let target = resolve_path(formula, keg, path_spec(step, "target")?)?;
@@ -451,7 +479,7 @@ fn guards_match(formula: &Formula, keg: &Path, step: &Value) -> Result<bool> {
     Ok(true)
 }
 
-fn copy_recursive(source: &Path, target: &Path) -> Result<()> {
+fn copy_recursive(source: &Path, target: &Path) -> Result<Vec<PathBuf>> {
     let destination = if target.is_dir() {
         target.join(source.file_name().unwrap())
     } else {
@@ -460,6 +488,7 @@ fn copy_recursive(source: &Path, target: &Path) -> Result<()> {
     if destination.exists() {
         crate::file::remove_all(&destination)?;
     }
+    let mut outputs = vec![destination.clone()];
     for entry in walkdir::WalkDir::new(source).follow_links(false) {
         let entry = entry?;
         let relative = entry.path().strip_prefix(source)?;
@@ -468,9 +497,10 @@ fn copy_recursive(source: &Path, target: &Path) -> Result<()> {
             crate::file::create_dir_all(&output)?;
         } else {
             atomic_copy(entry.path(), &output)?;
+            outputs.push(output);
         }
     }
-    Ok(())
+    Ok(outputs)
 }
 
 fn resolved_symlink_target(path: &Path) -> Option<PathBuf> {
@@ -691,6 +721,53 @@ mod tests {
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "new");
         assert!(!PathBuf::from(format!("{}.default", destination.display())).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn records_typed_step_health_effects() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let keg = tmp.path().join("Cellar/foo/1");
+        crate::file::create_dir_all(keg.join("share/source"))?;
+        crate::file::write(keg.join("share/source/file"), "value")?;
+        crate::file::write(keg.join("obsolete"), "old")?;
+        let formula = formula(vec![]);
+
+        let mkdir = execute_step(
+            &formula,
+            &keg,
+            &serde_json::json!({
+                "type": "mkdir_p",
+                "path": {"base": "prefix", "path": "generated"}
+            }),
+        )?;
+        assert_eq!(mkdir.required_paths, vec![keg.join("generated")]);
+
+        let copy = execute_step(
+            &formula,
+            &keg,
+            &serde_json::json!({
+                "type": "copy",
+                "source": {"base": "prefix", "path": "share/source"},
+                "target": {"base": "prefix", "path": "copied"},
+                "recursive": true
+            }),
+        )?;
+        assert!(copy.required_paths.contains(&keg.join("copied/file")));
+
+        let remove = execute_step(
+            &formula,
+            &keg,
+            &serde_json::json!({
+                "type": "remove",
+                "paths": [{"base": "prefix", "path": "obsolete"}]
+            }),
+        )?;
+        assert_eq!(
+            remove.absent_patterns,
+            vec![keg.join("obsolete").to_string_lossy()]
+        );
+        assert!(!keg.join("obsolete").exists());
         Ok(())
     }
 }
