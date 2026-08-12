@@ -51,6 +51,7 @@ impl MiseTable {
         let mut table = comfy_table::Table::new();
         table
             .load_style(comfy_table::presets::NOTHING)
+            .set_truncation_indicator("...")
             .set_content_arrangement(ContentArrangement::Dynamic);
         // Pin the width when the user overrides it (e.g. MISE_TERM_WIDTH in CI).
         // comfy_table does its own terminal detection, which fails in non-ttys,
