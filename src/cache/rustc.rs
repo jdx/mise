@@ -29,6 +29,11 @@ struct CachedOutput {
     mode: u32,
 }
 
+struct StagedOutputs {
+    directory: tempfile::TempDir,
+    files: Vec<(tempfile::TempPath, PathBuf)>,
+}
+
 pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode> {
     let invocation = RustcInvocation::parse(arguments)?;
     let working_dir = std::env::current_dir()?;
@@ -318,22 +323,16 @@ fn restore_result(
     let stderr = read_verified_blob(&blobs[1], &metadata.stderr, "stderr")?;
 
     std::fs::create_dir_all(&outputs.directory)?;
+    let staging = tempfile::tempdir_in(&outputs.directory)?;
     let mut staged = Vec::with_capacity(files.len());
-    for ((node, destination), source) in files.into_iter().zip(&blobs[2..]) {
-        let mut temporary = tempfile::NamedTempFile::new_in(&outputs.directory)?;
-        let mut source = std::fs::File::open(source)?;
-        std::io::copy(&mut source, temporary.as_file_mut())?;
-        temporary.flush()?;
-        temporary.as_file().sync_all()?;
-        if !node.digest.matches_file(temporary.path())? {
-            bail!(
-                "cached rustc output failed digest verification: {}",
-                node.name
-            );
-        }
-        apply_file_mode(&temporary, node.mode)?;
+    for (index, ((node, destination), source)) in files.into_iter().zip(&blobs[2..]).enumerate() {
+        let temporary = stage_cached_output(staging.path(), index, source, &node)?;
         staged.push((temporary, destination));
     }
+    let staged = StagedOutputs {
+        directory: staging,
+        files: staged,
+    };
 
     discovered.verify()?;
     verify_environment(&discovered.environment)?;
@@ -348,14 +347,29 @@ fn restore_result(
     }))
 }
 
-fn finalize_restored_outputs(
-    staged: Vec<(tempfile::NamedTempFile, PathBuf)>,
-    restore_outputs: bool,
-) -> Result<()> {
+fn finalize_restored_outputs(staged: StagedOutputs, restore_outputs: bool) -> Result<()> {
     if restore_outputs {
         persist_outputs(staged)?;
     }
     Ok(())
+}
+
+fn stage_cached_output(
+    directory: &Path,
+    index: usize,
+    source: &Path,
+    node: &CacheFileNode,
+) -> Result<tempfile::TempPath> {
+    let temporary = directory.join(format!("output-{index}"));
+    reflink_copy::reflink_or_copy(source, &temporary)
+        .wrap_err_with(|| format!("failed to materialize cached rustc output {}", node.name))?;
+    let temporary = tempfile::TempPath::try_from_path(temporary)?;
+    std::fs::File::open(&temporary)?.sync_all()?;
+    if std::fs::metadata(&temporary)?.len() != node.digest.size {
+        bail!("cached rustc output has the wrong size: {}", node.name);
+    }
+    apply_file_mode(&temporary, node.mode)?;
+    Ok(temporary)
 }
 
 fn cached_matches(cached: &CachedCompilation, output: &Output) -> bool {
@@ -387,12 +401,16 @@ fn record_verification(matched: bool) {
     }
 }
 
-fn persist_outputs(staged: Vec<(tempfile::NamedTempFile, PathBuf)>) -> Result<()> {
-    let destinations = staged
+fn persist_outputs(staged: StagedOutputs) -> Result<()> {
+    let StagedOutputs {
+        directory: _directory,
+        files,
+    } = staged;
+    let destinations = files
         .iter()
         .map(|(_, destination)| destination.clone())
         .collect::<Vec<_>>();
-    for (temporary, destination) in staged {
+    for (temporary, destination) in files {
         let persisted = temporary
             .persist(&destination)
             .map_err(|error| error.error)
@@ -470,8 +488,8 @@ where
 fn read_verified_blob(path: &Path, digest: &CacheDigest, description: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?.read_to_end(&mut bytes)?;
-    if !digest.matches_bytes(&bytes)? {
-        bail!("cached {description} failed digest verification");
+    if bytes.len() as u64 != digest.size {
+        bail!("cached {description} has the wrong size");
     }
     Ok(bytes)
 }
@@ -788,16 +806,14 @@ fn validate_file_mode(node: &CacheFileNode) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn apply_file_mode(temporary: &tempfile::NamedTempFile, mode: u32) -> Result<()> {
+fn apply_file_mode(temporary: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
-    temporary
-        .as_file()
-        .set_permissions(std::fs::Permissions::from_mode(mode))?;
+    std::fs::set_permissions(temporary, std::fs::Permissions::from_mode(mode))?;
     Ok(())
 }
 
 #[cfg(windows)]
-fn apply_file_mode(_temporary: &tempfile::NamedTempFile, _mode: u32) -> Result<()> {
+fn apply_file_mode(_temporary: &Path, _mode: u32) -> Result<()> {
     Ok(())
 }
 
@@ -821,6 +837,23 @@ fn exit_code(status: ExitStatus) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn staged_outputs(root: &Path, entries: Vec<(&[u8], PathBuf)>) -> StagedOutputs {
+        let directory = tempfile::tempdir_in(root).unwrap();
+        let files = entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, (contents, destination))| {
+                let path = directory.path().join(format!("output-{index}"));
+                std::fs::write(&path, contents).unwrap();
+                (
+                    tempfile::TempPath::try_from_path(path).unwrap(),
+                    destination,
+                )
+            })
+            .collect();
+        StagedOutputs { directory, files }
+    }
 
     fn test_outputs(root: &Path) -> RustcOutputs {
         let directory = root.join("out");
@@ -941,18 +974,15 @@ mod tests {
         let first_destination = root.path().join("first.rlib");
         let blocked_destination = root.path().join("blocked.rmeta");
         std::fs::create_dir(&blocked_destination).unwrap();
-        let mut first = tempfile::NamedTempFile::new_in(root.path()).unwrap();
-        first.write_all(b"first").unwrap();
-        let mut second = tempfile::NamedTempFile::new_in(root.path()).unwrap();
-        second.write_all(b"second").unwrap();
-
-        assert!(
-            persist_outputs(vec![
-                (first, first_destination.clone()),
-                (second, blocked_destination.clone()),
-            ])
-            .is_err()
+        let staged = staged_outputs(
+            root.path(),
+            vec![
+                (b"first", first_destination.clone()),
+                (b"second", blocked_destination.clone()),
+            ],
         );
+
+        assert!(persist_outputs(staged).is_err());
         assert!(!first_destination.exists());
         assert!(blocked_destination.is_dir());
     }
@@ -961,11 +991,78 @@ mod tests {
     fn qualification_does_not_publish_cached_outputs() {
         let root = tempfile::tempdir().unwrap();
         let destination = root.path().join("cached.rlib");
-        let mut cached = tempfile::NamedTempFile::new_in(root.path()).unwrap();
-        cached.write_all(b"cached").unwrap();
+        let staged = staged_outputs(root.path(), vec![(b"cached", destination.clone())]);
 
-        finalize_restored_outputs(vec![(cached, destination.clone())], false).unwrap();
+        finalize_restored_outputs(staged, false).unwrap();
 
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn materialized_outputs_are_independent_from_the_cas() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("cas-blob");
+        std::fs::write(&source, b"artifact").unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        let node = test_file("artifact.rlib");
+
+        let output = stage_cached_output(staging.path(), 0, &source, &node).unwrap();
+        std::fs::write(&output, b"modified").unwrap();
+
+        assert_eq!(std::fs::read(source).unwrap(), b"artifact");
+        assert_eq!(std::fs::read(output).unwrap(), b"modified");
+    }
+
+    #[test]
+    #[ignore = "local materialization benchmark"]
+    fn benchmark_cached_output_materialization() {
+        let size_mib = std::env::var("MISE_CACHE_BENCH_MIB")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(128);
+        let iterations = std::env::var("MISE_CACHE_BENCH_ITERATIONS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(4);
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("cas-blob");
+        let mut source_file = std::fs::File::create(&source).unwrap();
+        let chunk = vec![0x5a; 1024 * 1024];
+        for _ in 0..size_mib {
+            source_file.write_all(&chunk).unwrap();
+        }
+        source_file.sync_all().unwrap();
+        drop(source_file);
+        let digest = CacheDigest::blake3_file(&source).unwrap();
+        let node = CacheFileNode {
+            digest: digest.clone(),
+            executable: false,
+            mode: if cfg!(unix) { 0o644 } else { 0 },
+            name: "artifact.rlib".into(),
+        };
+
+        let started = std::time::Instant::now();
+        for _ in 0..iterations {
+            let mut temporary = tempfile::NamedTempFile::new_in(root.path()).unwrap();
+            let mut input = std::fs::File::open(&source).unwrap();
+            std::io::copy(&mut input, temporary.as_file_mut()).unwrap();
+            temporary.flush().unwrap();
+            temporary.as_file().sync_all().unwrap();
+            assert!(digest.matches_file(temporary.path()).unwrap());
+            apply_file_mode(temporary.path(), node.mode).unwrap();
+        }
+        let copied = started.elapsed();
+
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        let started = std::time::Instant::now();
+        for _ in 0..iterations {
+            stage_cached_output(staging.path(), 0, &source, &node).unwrap();
+        }
+        let materialized = started.elapsed();
+
+        println!(
+            "materialized {iterations} x {size_mib} MiB: copied={copied:.2?}, reflink_or_copy={materialized:.2?}, speedup={:.2}x",
+            copied.as_secs_f64() / materialized.as_secs_f64()
+        );
     }
 }

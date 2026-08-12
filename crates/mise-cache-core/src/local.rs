@@ -67,16 +67,48 @@ impl LocalCas {
 
     /// Atomically store a file after verifying its declared digest.
     pub fn store_file(&self, digest: &CacheDigest, source: &Path) -> Result<PathBuf> {
-        if !digest.matches_file(source)? {
-            bail!(
-                "file does not match the declared CAS digest: {}",
-                source.display()
-            );
+        self.store_file_inner(digest, source, true)
+    }
+
+    /// Store a file whose digest was already verified by this crate.
+    pub(crate) fn store_verified_file(
+        &self,
+        digest: &CacheDigest,
+        source: &Path,
+    ) -> Result<PathBuf> {
+        self.store_file_inner(digest, source, false)
+    }
+
+    fn store_file_inner(
+        &self,
+        digest: &CacheDigest,
+        source: &Path,
+        verify: bool,
+    ) -> Result<PathBuf> {
+        let destination = self.path_for(digest)?;
+        if let Some(existing) = self.find(digest)? {
+            return Ok(existing);
         }
-        self.store_with(digest, |temporary| {
-            fs::copy(source, temporary.path())?;
-            Ok(())
-        })
+        let parent = destination.parent().expect("CAS path has a parent");
+        fs::create_dir_all(parent)?;
+        let staging = tempfile::tempdir_in(parent)?;
+        let temporary = staging.path().join("blob");
+        reflink_copy::reflink_or_copy(source, &temporary)?;
+        let temporary = tempfile::TempPath::try_from_path(temporary)?;
+        fs::File::open(&temporary)?.sync_all()?;
+        if verify && !digest.matches_file(&temporary)? {
+            bail!("staged blob does not match the declared CAS digest");
+        }
+        if fs::metadata(&temporary)?.len() != digest.size {
+            bail!("staged blob size does not match the declared CAS digest");
+        }
+        match temporary.persist_noclobber(&destination) {
+            Ok(()) => Ok(destination),
+            Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => self
+                .find(digest)?
+                .ok_or_else(|| eyre::eyre!("concurrent CAS write did not publish a valid blob")),
+            Err(error) => Err(error.error.into()),
+        }
     }
 
     fn store_with(
@@ -214,6 +246,33 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"cached object");
         assert_eq!(cas.store_bytes(&digest, b"cached object").unwrap(), path);
         assert!(cas.store_bytes(&digest, b"other object").is_err());
+    }
+
+    #[test]
+    fn stored_files_are_independent_from_the_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let cas = LocalCas::new(directory.path().join("cache"));
+        let source = directory.path().join("source");
+        fs::write(&source, b"cached object").unwrap();
+        let digest = CacheDigest::blake3(b"cached object");
+
+        let stored = cas.store_file(&digest, &source).unwrap();
+        fs::write(source, b"other object!").unwrap();
+
+        assert_eq!(fs::read(stored).unwrap(), b"cached object");
+        assert!(cas.find(&digest).unwrap().is_some());
+    }
+
+    #[test]
+    fn rejects_files_with_the_wrong_digest() {
+        let directory = tempfile::tempdir().unwrap();
+        let cas = LocalCas::new(directory.path().join("cache"));
+        let source = directory.path().join("source");
+        fs::write(&source, b"other object").unwrap();
+        let digest = CacheDigest::blake3(b"cached object");
+
+        assert!(cas.store_file(&digest, &source).is_err());
+        assert!(!cas.path_for(&digest).unwrap().exists());
     }
 
     #[test]
