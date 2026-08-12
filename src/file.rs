@@ -1066,6 +1066,9 @@ fn resolve_relative_link_target(link: &Path, target: PathBuf) -> PathBuf {
 
 #[cfg(unix)]
 pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    if dir_link_target(link)?.is_none() {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
     fs::remove_file(link)
         .wrap_err_with(|| format!("failed to remove symlink: {}", display_path(link)))
 }
@@ -2915,6 +2918,20 @@ mod tests {
         assert!(is_symlink_target_directly_within(&link, &root).unwrap());
         fs::remove_file(&direct_target).unwrap();
         assert!(is_symlink_target_directly_within(&link, &root).unwrap());
+    }
+
+    #[test]
+    fn test_remove_symlink_or_junction_rejects_non_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        let directory = dir.path().join("directory");
+        fs::write(&file, "contents").unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        assert!(remove_symlink_or_junction(&file).is_err());
+        assert!(remove_symlink_or_junction(&directory).is_err());
+        assert!(file.is_file());
+        assert!(directory.is_dir());
     }
 
     #[test]
