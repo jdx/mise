@@ -53,7 +53,30 @@ jobs:
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
         with:
           install_args: bun
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      # Check the API directly instead of bootstrapping the rate-limit helper,
+      # since installing the helper itself requires GitHub API access.
+      - name: Wait for GitHub rate limit
+        run: |
+          token=${MISE_GITHUB_TOKEN:-${GITHUB_API_TOKEN:-${GITHUB_TOKEN:-}}}
+          curl_args=(-sf -H "User-Agent: mise-ci")
+          if [ -n "$token" ]; then
+            curl_args+=(-H "Authorization: Bearer ${token}")
+          fi
+          rate_limit=$(curl --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            "${curl_args[@]}" "https://api.github.com/rate_limit" || true)
+          remaining=$(echo "$rate_limit" | jq -er '.resources.core.remaining' 2>/dev/null || true)
+          reset=$(echo "$rate_limit" | jq -er '.resources.core.reset' 2>/dev/null || true)
+          if ! [[ "$remaining" =~ ^[0-9]+$ && "$reset" =~ ^[0-9]+$ ]]; then
+            echo "::warning::Unable to check GitHub core rate limit; continuing without waiting"
+          elif [ "$remaining" -le 1 ]; then
+            now=$(date +%s)
+            wait_seconds=$((reset - now + 1))
+            if [ "$wait_seconds" -gt 0 ]; then
+              echo "GitHub core rate limit exhausted; waiting ${wait_seconds}s"
+              sleep "$wait_seconds"
+            fi
+          fi
       - run: bun i
       - run: mise run docs:release
         env:
