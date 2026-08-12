@@ -167,13 +167,16 @@ run = "npx prisma generate"
 
 ## Freshness Checking
 
-mise uses blake3 content hashing to determine if sources have changed since the last
-successful run. Hashes are stored in `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by
-project root (so nothing is written inside the project directory).
+mise uses blake3 hashing to determine if sources or the effective provider command have
+changed since the last successful run. Hashes are stored in
+`$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root (so nothing is written inside
+the project directory). Command hashes include the run command, shell, provider `env`,
+and working directory; raw command and environment values are not stored in state.
 
 1. Compute blake3 hashes of all source files
-2. Compare against stored hashes from the last successful run
-3. If any file was added, removed, or changed, the provider is stale
+2. Compute a blake3 hash of the effective provider command
+3. Compare against stored hashes from the last successful run
+4. If a source or the effective command was added, removed, or changed, the provider is stale
 
 This means:
 
@@ -181,6 +184,7 @@ This means:
 - If `node_modules/` doesn't exist, the provider is always stale
 - If sources don't exist, the provider is considered fresh (nothing to do)
 - On first run (no stored state), the provider is always considered stale
+- State created before command hashing is migrated by running each provider once
 
 ## Auto-Install
 
