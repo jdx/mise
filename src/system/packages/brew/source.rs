@@ -195,14 +195,27 @@ fn source_compiler() -> Result<String> {
     if !output.status.success() {
         bail!("cannot determine source-build compiler")
     }
-    let text = String::from_utf8_lossy(&output.stdout).to_lowercase();
+    let text = String::from_utf8_lossy(&output.stdout);
+    let version = command_output("cc", &["-dumpfullversion", "-dumpversion"]);
+    parse_source_compiler(&text, version.as_deref())
+}
+
+fn parse_source_compiler(version_output: &str, dumped_version: Option<&str>) -> Result<String> {
+    let text = version_output.to_lowercase();
     if text.contains("clang") {
-        Ok("clang".to_string())
-    } else if text.contains("gcc") {
-        Ok("gcc".to_string())
-    } else {
-        bail!("unrecognized source-build compiler")
+        return Ok("clang".to_string());
     }
+    if text.contains("gcc")
+        || text.contains("free software foundation")
+        || text.contains("gnu compiler collection")
+    {
+        let major = dumped_version
+            .and_then(|version| version.split('.').next())
+            .filter(|major| !major.is_empty() && major.chars().all(|c| c.is_ascii_digit()))
+            .ok_or_else(|| eyre::eyre!("cannot determine source-build GCC major version"))?;
+        return Ok(format!("gcc-{major}"));
+    }
+    bail!("unrecognized source-build compiler")
 }
 
 fn native_build_system_info() -> Result<serde_json::Value> {
@@ -597,5 +610,23 @@ mod tests {
         assert!(SHIM_RB.contains("def etc = prefix + \".bottle/etc\""));
         assert!(SHIM_RB.contains("def var = prefix + \".bottle/var\""));
         assert!(!SHIM_RB.contains("formula.post_install"));
+    }
+
+    #[test]
+    fn source_compiler_matches_homebrew_receipt_names() {
+        assert_eq!(
+            parse_source_compiler(
+                "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\nCopyright (C) Free Software Foundation, Inc.",
+                Some("13.3.0")
+            )
+            .unwrap(),
+            "gcc-13"
+        );
+        assert_eq!(
+            parse_source_compiler("Apple clang version 21.0.0", Some("21.0.0")).unwrap(),
+            "clang"
+        );
+        assert!(parse_source_compiler("Tiny C Compiler", Some("0.9.27")).is_err());
+        assert!(parse_source_compiler("gcc", Some("unknown")).is_err());
     }
 }
