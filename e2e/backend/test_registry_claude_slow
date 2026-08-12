@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+# Regression test for https://github.com/jdx/mise/discussions/11909.
+assert_contains \
+  "mise x claude@2.1.226 -- claude --version" \
+  "2.1.226 (Claude Code)"
