@@ -175,6 +175,10 @@ Block all filesystem writes
 
 Bypass the environment cache and recompute the environment
 
+### `--if-present`
+
+Ignore task names and patterns that do not match any tasks
+
 ### `--no-cache`
 
 Do not use cache on remote tasks

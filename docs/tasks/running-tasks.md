@@ -70,6 +70,18 @@ mise will run the task named "default" if no task is specified—and you've crea
 mise run
 ```
 
+Use `--if-present` for optional lifecycle tasks. Task names or patterns that do
+not match are ignored, while the matching tasks still run. If none match, mise
+exits successfully without running task dependencies or installing task tools.
+
+```bash
+mise run --if-present devcontainer_init ::: 'devcontainer_init:*'
+```
+
+This only makes the tasks named on the command line optional. Dependencies in a
+task definition remain required unless they use
+[`optional = true`](/tasks/task-configuration.html#optional-dependencies).
+
 ## Task Grouping
 
 Tasks can be grouped semantically by using name prefixes separated with `:`s.

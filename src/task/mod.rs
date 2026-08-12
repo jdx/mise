@@ -3341,9 +3341,8 @@ where
             // Regular task patterns use `:` as their group separator. Match the
             // entire task identity here rather than treating the first group as
             // a monorepo path.
-            let Some(matcher) = task_name_glob(pat).ok() else {
-                return Ok(vec![]);
-            };
+            let matcher =
+                task_name_glob(pat).map_err(|err| eyre!("invalid task pattern {pat:?}: {err}"))?;
             let exact: Vec<&T> = self
                 .iter()
                 .filter(|(name, _)| task_name_matches(&matcher, name, false))
@@ -3413,13 +3412,20 @@ where
         let path_matcher = GlobBuilder::new(&path_glob)
             .literal_separator(true)
             .build()
-            .ok()
-            .map(|b| b.compile_matcher());
+            .map_err(|err| eyre!("invalid monorepo task pattern {pat:?}: {err}"))?
+            .compile_matcher();
         let trailing_ellipsis_base_matcher = trailing_ellipsis_base
-            .and_then(|base| GlobBuilder::new(base).literal_separator(true).build().ok())
-            .map(|glob| glob.compile_matcher());
+            .map(|base| {
+                GlobBuilder::new(base)
+                    .literal_separator(true)
+                    .build()
+                    .map(|glob| glob.compile_matcher())
+                    .map_err(|err| eyre!("invalid monorepo task pattern {pat:?}: {err}"))
+            })
+            .transpose()?;
 
-        let task_matcher = task_name_glob(task_glob).ok();
+        let task_matcher = task_name_glob(task_glob)
+            .map_err(|err| eyre!("invalid monorepo task pattern {pat:?}: {err}"))?;
 
         // === Match tasks ===
         // Whether a key matches the pattern. `allow_ext_strip` enables the
@@ -3438,18 +3444,12 @@ where
             };
 
             // Match path part with ellipsis support
-            let path_matches = if let Some(ref matcher) = path_matcher {
-                matcher.is_match(key_path)
-                    || trailing_ellipsis_base_matcher
-                        .as_ref()
-                        .is_some_and(|base_matcher| base_matcher.is_match(key_path))
-            } else {
-                false
-            };
+            let path_matches = path_matcher.is_match(key_path)
+                || trailing_ellipsis_base_matcher
+                    .as_ref()
+                    .is_some_and(|base_matcher| base_matcher.is_match(key_path));
 
-            let task_matches = task_matcher
-                .as_ref()
-                .is_some_and(|matcher| task_name_matches(matcher, key_task, allow_ext_strip));
+            let task_matches = task_name_matches(&task_matcher, key_task, allow_ext_strip);
 
             path_matches && task_matches
         };
@@ -5848,6 +5848,37 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_rejects_invalid_patterns() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([("test".to_string(), "test".to_string())]);
+
+        assert!(
+            tasks
+                .get_matching("[invalid")
+                .unwrap_err()
+                .to_string()
+                .contains("invalid task pattern")
+        );
+        assert!(
+            tasks
+                .get_matching("//:[")
+                .unwrap_err()
+                .to_string()
+                .contains("invalid monorepo task pattern")
+        );
+        assert!(
+            tasks
+                .get_matching("//[invalid:task")
+                .unwrap_err()
+                .to_string()
+                .contains("invalid monorepo task pattern")
+        );
     }
 
     #[test]

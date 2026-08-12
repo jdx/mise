@@ -410,6 +410,7 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
     only: bool,
+    if_present: bool,
 ) -> Result<Vec<Task>> {
     let args = args
         .iter()
@@ -534,6 +535,9 @@ pub async fn get_task_lists(
                 .collect_vec();
         }
         if cur_tasks.is_empty() {
+            if if_present {
+                continue;
+            }
             // Check if this is a "default" task (either plain "default" or monorepo syntax like "//:default")
             // For monorepo tasks, ensure it starts with "//" and has exactly one ":" before "default"
             // This matches "//:default" and "//subfolder:default" but not "//subfolder:task-group:default"

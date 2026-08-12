@@ -1631,6 +1631,7 @@ impl Bootstrap {
             continue_on_error: false,
             dry_run: self.dry_run,
             force: false,
+            if_present: false,
             is_linear: false,
             jobs: None,
             no_timings: false,

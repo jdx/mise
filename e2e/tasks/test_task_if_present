@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+printf 'deps input\n' >deps-input.txt
+
+cat >mise.toml <<'EOF'
+[deps.side_effect]
+auto = true
+sources = ["deps-input.txt"]
+outputs = ["deps-output.txt"]
+run = "touch deps-ran.txt deps-output.txt"
+
+[tasks.present]
+usage = 'arg "<value>"'
+run = 'echo "present:{{usage.value}}"'
+
+[tasks."lifecycle:one"]
+run = "echo lifecycle-one"
+
+[tasks."lifecycle:two"]
+run = "echo lifecycle-two"
+
+[tasks.strict]
+depends = ["missing-dependency"]
+run = "echo strict"
+EOF
+
+assert "mise run --if-present missing 2>&1" ""
+assert "mise run --if-present 'missing:*' 2>&1" ""
+assert "mise run --if-present 2>&1" ""
+assert "mise tasks run --if-present missing 2>&1" ""
+assert "test ! -e deps-ran.txt && echo untouched" "untouched"
+
+cat >mise.toml <<'EOF'
+[tasks.present]
+usage = 'arg "<value>"'
+run = 'echo "present:{{usage.value}}"'
+
+[tasks."lifecycle:one"]
+run = "echo lifecycle-one"
+
+[tasks."lifecycle:two"]
+run = "echo lifecycle-two"
+
+[tasks.strict]
+depends = ["missing-dependency"]
+run = "echo strict"
+EOF
+
+output="$(mise run --if-present missing ::: present value ::: 'lifecycle:*')"
+assert_contains_text "$output" "present:value"
+assert_contains_text "$output" "lifecycle-one"
+assert_contains_text "$output" "lifecycle-two"
+
+assert_fail_contains "mise run missing" "no task missing found"
+assert_fail_contains "mise run --if-present strict" "task not found: missing-dependency"
+assert_fail_contains "mise run --if-present '[invalid'" "invalid task pattern"
+
+cat >mise.toml <<'EOF'
+[deps.side_effect]
+auto = true
+sources = ["deps-input.txt"]
+outputs = ["deps-output.txt"]
+run = "touch deps-ran.txt deps-output.txt"
+EOF
+
+assert "mise run --if-present missing 2>&1" ""
+assert "test ! -e deps-ran.txt && echo untouched" "untouched"

@@ -793,6 +793,7 @@ impl Cli {
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
                         force: self.force,
+                        if_present: false,
                         is_linear: false,
                         jobs: self.jobs,
                         no_timings: self.no_timings,

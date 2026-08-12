@@ -214,6 +214,10 @@ pub struct Run {
     #[clap(long)]
     pub fresh_env: bool,
 
+    /// Ignore task names and patterns that do not match any tasks
+    #[clap(long, verbatim_doc_comment)]
+    pub if_present: bool,
+
     /// Do not use cache on remote tasks
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
@@ -323,15 +327,28 @@ fn affected_task_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
+struct AffectedTaskListOptions<'a> {
+    only: bool,
+    if_present: bool,
+    base: Option<&'a str>,
+    head: Option<&'a str>,
+    explain: bool,
+    json: bool,
+}
+
 async fn get_affected_task_list(
     config: &Arc<Config>,
     args: &[String],
-    only: bool,
-    base: Option<&str>,
-    head: Option<&str>,
-    explain: bool,
-    json: bool,
+    options: AffectedTaskListOptions<'_>,
 ) -> Result<Vec<Task>> {
+    let AffectedTaskListOptions {
+        only,
+        if_present,
+        base,
+        head,
+        explain,
+        json,
+    } = options;
     Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
         .monorepo_root()
@@ -395,7 +412,7 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only).await?;
+    let mut tasks = get_task_lists(config, &args, true, only, if_present).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -598,7 +615,7 @@ impl Run {
                 )
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false).await?;
+            let task_list = get_task_lists(&config, &args, false, false, false).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -641,17 +658,23 @@ impl Run {
             get_affected_task_list(
                 &config,
                 &args,
-                self.skip_deps,
-                self.affected_base.as_deref(),
-                self.affected_head.as_deref(),
-                self.affected_explain,
-                self.affected_json,
+                AffectedTaskListOptions {
+                    only: self.skip_deps,
+                    if_present: self.if_present,
+                    base: self.affected_base.as_deref(),
+                    head: self.affected_head.as_deref(),
+                    explain: self.affected_explain,
+                    json: self.affected_json,
+                },
             )
             .await?
         } else {
-            get_task_lists(&config, &args, true, self.skip_deps).await?
+            get_task_lists(&config, &args, true, self.skip_deps, self.if_present).await?
         };
         if self.affected_json {
+            return Ok(());
+        }
+        if self.if_present && task_list.is_empty() {
             return Ok(());
         }
 
