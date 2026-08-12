@@ -2743,15 +2743,17 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
         ) {
             return Err(eyre!("{err}"));
         }
-        applied |= !info.is_empty();
-        lockfile.set_platform_info(
-            &short,
-            &version,
-            Some(&backend),
-            &options,
-            &platform_key,
-            info.clone(),
-        );
+        if !info.is_empty() {
+            applied = true;
+            lockfile.set_platform_info(
+                &short,
+                &version,
+                Some(&backend),
+                &options,
+                &platform_key,
+                info.clone(),
+            );
+        }
     }
     for (basename, pkg_info) in conda_packages {
         applied = true;
@@ -3612,6 +3614,48 @@ mod tests {
                 url: format!("https://example.com/{basename}.conda"),
                 checksum: Some(format!("sha256:{basename}")),
             },
+        );
+    }
+
+    #[test]
+    fn empty_resolution_preserves_existing_conda_dependencies() {
+        let platform_key = "linux-x64";
+        let dependency = "libfoo-1.0-h123_0";
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "ffmpeg".to_string(),
+            vec![tool_with_conda_dep(
+                "7.1.1",
+                "conda:ffmpeg",
+                platform_key,
+                dependency,
+            )],
+        );
+        add_test_conda_package(&mut lockfile, platform_key, dependency);
+
+        let result = (
+            "ffmpeg".to_string(),
+            "7.1.1".to_string(),
+            "conda:ffmpeg".to_string(),
+            Platform::parse(platform_key).unwrap(),
+            Ok(PlatformInfo::default()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        );
+
+        assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+        lockfile.cleanup_unreferenced_conda_packages();
+
+        let platform = &lockfile.tools["ffmpeg"][0].platforms[platform_key];
+        assert_eq!(
+            platform.conda_deps.as_deref(),
+            Some(&[dependency.to_string()][..])
+        );
+        assert!(
+            lockfile
+                .get_conda_package(platform_key, dependency)
+                .is_some()
         );
     }
 
