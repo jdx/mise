@@ -1429,7 +1429,14 @@ fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
         // Text aube would have written to stderr itself. Warnings are the
         // user's business; a fatal error also comes back as the returned
         // `Err`, so this is never the only place one surfaces.
-        InstallEvent::Output { level, message, .. } => match level {
+        InstallEvent::Output {
+            level,
+            code,
+            message,
+        } => match level {
+            InstallOutputLevel::Info if code.as_deref() == Some("AUBE_LIFECYCLE_SCRIPT_OUTPUT") => {
+                pr.println(message)
+            }
             InstallOutputLevel::Info => debug!("aube: {message}"),
             InstallOutputLevel::Warning | InstallOutputLevel::Error => warn!("{message}"),
         },
@@ -1564,6 +1571,15 @@ pub fn install_time_option_keys() -> Vec<String> {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+
+    #[derive(Debug, Default)]
+    struct RecordingReport(std::sync::Mutex<Vec<String>>);
+
+    impl SingleReport for RecordingReport {
+        fn println(&self, message: String) {
+            self.0.lock().unwrap().push(message);
+        }
+    }
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_eq;
 
@@ -2618,5 +2634,21 @@ mod tests {
         // Hyphen only inside build metadata (not legal semver, but be defensive)
         // — we treat it as stable since the version core has no pre-release.
         assert!(!is_semver_prerelease("1.0.0+build-5"));
+    }
+
+    #[test]
+    fn test_aube_lifecycle_output_prints_through_progress_report() {
+        let report = RecordingReport::default();
+
+        apply_aube_event(
+            aube::embed::InstallEvent::Output {
+                level: aube::embed::InstallOutputLevel::Info,
+                code: Some("AUBE_LIFECYCLE_SCRIPT_OUTPUT".to_string()),
+                message: "gyp info ok".to_string(),
+            },
+            &report,
+        );
+
+        assert_eq!(*report.0.lock().unwrap(), ["gyp info ok"]);
     }
 }
