@@ -2650,5 +2650,18 @@ mod tests {
         );
 
         assert_eq!(*report.0.lock().unwrap(), ["gyp info ok"]);
+
+        let report = RecordingReport::default();
+        for code in [None, Some("OTHER_AUBE_INFO".to_string())] {
+            apply_aube_event(
+                aube::embed::InstallEvent::Output {
+                    level: aube::embed::InstallOutputLevel::Info,
+                    code,
+                    message: "internal status".to_string(),
+                },
+                &report,
+            );
+            assert!(report.0.lock().unwrap().is_empty());
+        }
     }
 }
