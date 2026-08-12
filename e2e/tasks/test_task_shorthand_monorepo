@@ -62,3 +62,19 @@ EOF
 assert_contains "mise '//deep/nested/dir:test'" "nested task"
 
 (cd deep/nested/dir && assert_contains "mise ':test'" "nested task")
+
+# Test 8: Bare and colon task names walk up to the nearest config root from deep directories
+mkdir -p project/deep/deeper
+(
+  cd project/deep/deeper
+  assert_contains "mise run build" "project build task"
+  assert_contains "mise run ':build'" "project build task"
+)
+
+# Test 9: A directory outside the configured projects resolves against the monorepo root
+mkdir -p unconfigured/deep
+(
+  cd unconfigured/deep
+  assert_contains "mise run build" "root build task"
+  assert_contains "mise run ':build'" "root build task"
+)
