@@ -11,9 +11,9 @@ runs:
         path: |
           ~/.local/share/mise
           ~/.cache/mise
-    # The helper is itself installed from GitHub. Check the API directly first
-    # so a cold cache can wait instead of failing while bootstrapping the waiter.
-    - name: Wait before installing rate-limit helper
+    # Check the API directly instead of bootstrapping the rate-limit helper,
+    # since installing the helper itself requires GitHub API access.
+    - name: Wait for GitHub rate limit
       shell: bash
       run: |
         token=${MISE_GITHUB_TOKEN:-${GITHUB_API_TOKEN:-${GITHUB_TOKEN:-}}}
@@ -21,10 +21,14 @@ runs:
         if [ -n "$token" ]; then
           curl_args+=(-H "Authorization: Bearer ${token}")
         fi
-        rate_limit=$(curl "${curl_args[@]}" "https://api.github.com/rate_limit")
-        remaining=$(echo "$rate_limit" | jq -r '.resources.core.remaining // 0')
-        reset=$(echo "$rate_limit" | jq -r '.resources.core.reset // 0')
-        if [ "$remaining" -le 1 ]; then
+        rate_limit=$(curl --connect-timeout 10 --max-time 30 \
+          --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+          "${curl_args[@]}" "https://api.github.com/rate_limit" || true)
+        remaining=$(echo "$rate_limit" | jq -er '.resources.core.remaining' 2>/dev/null || true)
+        reset=$(echo "$rate_limit" | jq -er '.resources.core.reset' 2>/dev/null || true)
+        if ! [[ "$remaining" =~ ^[0-9]+$ && "$reset" =~ ^[0-9]+$ ]]; then
+          echo "::warning::Unable to check GitHub core rate limit; continuing without waiting"
+        elif [ "$remaining" -le 1 ]; then
           now=$(date +%s)
           wait_seconds=$((reset - now + 1))
           if [ "$wait_seconds" -gt 0 ]; then
@@ -32,7 +36,5 @@ runs:
             sleep "$wait_seconds"
           fi
         fi
-    - run: GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-${GITHUB_API_TOKEN:-${GITHUB_TOKEN:-}}}" mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      shell: bash
     - run: mise install
       shell: bash
