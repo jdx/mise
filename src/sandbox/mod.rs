@@ -28,6 +28,9 @@ pub struct SandboxConfig {
     pub pass_through_env: Vec<String>,
     /// Exact hashed environment names that survive an active env sandbox.
     pub cache_env: Vec<String>,
+    /// Do not grant the sandbox's usual broad write access to system temp.
+    /// Callers using this must add an explicit private temp path to `allow_write`.
+    pub deny_system_temp_write: bool,
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -78,6 +81,7 @@ impl SandboxConfig {
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
             || !self.allow_env.is_empty()
+            || self.deny_system_temp_write
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.

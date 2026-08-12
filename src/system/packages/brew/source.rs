@@ -97,6 +97,7 @@ pub fn check_buildable(formula: &Formula) -> Result<()> {
 pub async fn build(
     rf: &ResolvedFormula,
     closure: &[ResolvedFormula],
+    _lifecycle: &super::lifecycle::PreparedFormulaLifecycle,
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let formula = &rf.formula;

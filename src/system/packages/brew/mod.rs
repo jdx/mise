@@ -18,7 +18,7 @@
 //! metadata when the tap publishes it. mise never shells out to `brew`.
 
 use async_trait::async_trait;
-use eyre::bail;
+use eyre::{WrapErr, bail};
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::result::Result;
@@ -87,9 +87,6 @@ impl BrewManager {
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
         let closure = resolve::resolve_closure_with_taps(pkgs).await?;
         for rf in &closure {
-            lifecycle::validate(&rf.formula)?;
-        }
-        for rf in &closure {
             if rf.on_request
                 && !roots.contains(&rf.formula.name)
                 && let Some(alias) = roots.iter().find(|r| rf.formula.aliases.contains(r))
@@ -123,6 +120,10 @@ impl BrewManager {
         for rf in &source_builds {
             source::check_buildable(&rf.formula)?;
         }
+        // Compile every lifecycle that can mutate before the first extraction
+        // or source build. Current formulae outside this mutation set are not
+        // rejected for lifecycle types mise does not need to execute.
+        let prepared_lifecycles = prepare_lifecycles(&to_pour)?;
         if opts.dry_run {
             prefix::bootstrap(true)?;
             for rf in &to_pour {
@@ -171,7 +172,7 @@ impl BrewManager {
         // overall [cur/total] header above the per-formula clx jobs, same as
         // tool installs (no-op when only one formula is being installed)
         mpr.init_footer(false, "install", to_pour.len());
-        for rf in &to_pour {
+        for (rf, lifecycle) in to_pour.iter().zip(&prepared_lifecycles) {
             let name = &rf.formula.name;
             let pkg_version = rf.formula.pkg_version()?;
             let pr: Box<dyn SingleReport> = mpr.add(&format!("brew:{name}"));
@@ -186,12 +187,12 @@ impl BrewManager {
                     async {
                         let tarball =
                             fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
-                        pour::pour(rf, &tag, bottle, &tarball, &closure, &*pr).await?;
+                        pour::pour(rf, &tag, bottle, &tarball, &closure, lifecycle, &*pr).await?;
                         Ok(pkg_version.clone())
                     }
                     .await
                 }
-                None => source::build(rf, &closure, &*pr)
+                None => source::build(rf, &closure, lifecycle, &*pr)
                     .await
                     .map(|()| pkg_version.clone()),
             };
@@ -213,6 +214,24 @@ impl BrewManager {
         prefix::setup_linux_runtime()?;
         Ok(())
     }
+}
+
+fn prepare_lifecycles(
+    to_pour: &[&resolve::ResolvedFormula],
+) -> Result<Vec<lifecycle::PreparedFormulaLifecycle>> {
+    to_pour
+        .iter()
+        .map(|rf| {
+            let version = rf.formula.pkg_version()?;
+            lifecycle::prepare(&rf.formula, &pour::keg_path(&rf.formula.name, &version))
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to prepare brew:{} lifecycle; no package state was changed",
+                        rf.formula.name
+                    )
+                })
+        })
+        .collect()
 }
 
 #[async_trait(?Send)]
@@ -367,6 +386,20 @@ fn split_formula_name(name: &str) -> Option<(&str, &str, &str)> {
 mod tests {
     use super::*;
 
+    fn resolved_formula(name: &str, steps: Vec<serde_json::Value>) -> resolve::ResolvedFormula {
+        resolve::ResolvedFormula {
+            formula: serde_json::from_value(serde_json::json!({
+                "name": name,
+                "versions": {"stable": "1"},
+                "bottle": {},
+                "post_install_steps": steps
+            }))
+            .unwrap(),
+            tap_raw_base: None,
+            on_request: false,
+        }
+    }
+
     #[test]
     fn test_tapped_formula_detection() {
         assert!(!is_tapped_formula("jq"));
@@ -395,5 +428,22 @@ mod tests {
                 installed: "1.0_1".to_string()
             }
         );
+    }
+
+    #[test]
+    fn prepares_only_formulae_in_mutation_set() {
+        let current_postgres = resolved_formula(
+            "postgresql@17",
+            vec![serde_json::json!({
+                "type": "init_data_dir",
+                "path": {"base": "var", "path": "postgresql@17"},
+                "using": "postgresql_initdb"
+            })],
+        );
+        let mutating = resolved_formula("hello", vec![]);
+        prepare_lifecycles(&[&mutating]).unwrap();
+
+        let error = prepare_lifecycles(&[&current_postgres]).unwrap_err();
+        assert!(error.to_string().contains("no package state was changed"));
     }
 }

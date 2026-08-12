@@ -199,6 +199,7 @@ pub async fn pour(
     bottle: &BottleFile,
     tarball: &Path,
     closure: &[ResolvedFormula],
+    lifecycle: &super::lifecycle::PreparedFormulaLifecycle,
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let name = &rf.formula.name;
@@ -273,7 +274,7 @@ pub async fn pour(
         return Err(err);
     }
     pr.set_message("shared state".to_string());
-    lifecycle::install(&rf.formula, &keg).wrap_err_with(|| {
+    lifecycle::install(lifecycle).await.wrap_err_with(|| {
         format!(
             "failed to complete Homebrew shared-state lifecycle for {name}; \
              the linked keg is retained as needs-repair so apply can retry safely"

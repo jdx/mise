@@ -1244,6 +1244,7 @@ impl Run {
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],
                     cache_env: vec![],
+                    deny_system_temp_write: false,
                 },
             ),
         };

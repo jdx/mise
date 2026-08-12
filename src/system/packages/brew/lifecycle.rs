@@ -1,8 +1,9 @@
 //! Persistent formula state and typed post-install operations.
 
-use std::fs;
+use std::collections::BTreeMap;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use eyre::{WrapErr, bail, eyre};
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,173 @@ use serde_json::Value;
 
 use super::api::Formula;
 use super::prefix;
+use crate::cmd::CmdLineRunner;
 use crate::result::Result;
+use crate::sandbox::SandboxConfig;
+
+const MAX_FAILURE_LOG_BYTES: usize = 32 * 1024;
+
+#[derive(Debug)]
+pub(super) struct PreparedFormulaLifecycle {
+    formula: String,
+    keg: PathBuf,
+    steps: Vec<PreparedStep>,
+}
+
+#[derive(Debug)]
+enum PreparedStep {
+    Mkdir {
+        path: PathBuf,
+        guards: Vec<PreparedGuard>,
+    },
+    Remove {
+        paths: Vec<PreparedPattern>,
+        recursive: bool,
+        symlink_target_contains: Option<String>,
+        guards: Vec<PreparedGuard>,
+    },
+    Copy {
+        sources: PreparedSources,
+        target: PathBuf,
+        recursive: bool,
+        guards: Vec<PreparedGuard>,
+    },
+    Symlink {
+        sources: PreparedSources,
+        target: PathBuf,
+        force: bool,
+        guards: Vec<PreparedGuard>,
+    },
+    Run(PreparedRun),
+}
+
+#[derive(Debug)]
+struct PreparedRun {
+    step_index: usize,
+    executable: PathBuf,
+    args: Vec<String>,
+    cwd: Option<PathBuf>,
+    env: BTreeMap<String, String>,
+    stdin_path: Option<PathBuf>,
+    stdout_path: Option<PathBuf>,
+    guards: Vec<PreparedGuard>,
+    log_dir: PathBuf,
+}
+
+#[derive(Debug)]
+enum PreparedSources {
+    One(PathBuf),
+    Glob(PreparedPattern),
+}
+
+#[derive(Debug)]
+struct PreparedPattern {
+    patterns: Vec<String>,
+}
+
+#[derive(Debug)]
+enum PreparedGuard {
+    IfExists(PreparedPattern),
+    UnlessExists(PreparedPattern),
+    Platform(bool),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPathSpec {
+    path: String,
+    #[serde(default)]
+    base: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawGuard {
+    condition: String,
+    #[serde(default)]
+    #[serde(rename = "id")]
+    _id: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    base: Option<String>,
+    #[serde(default)]
+    value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawMkdir {
+    #[serde(rename = "type")]
+    kind: String,
+    path: RawPathSpec,
+    #[serde(default)]
+    guards: Vec<RawGuard>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRemove {
+    #[serde(rename = "type")]
+    kind: String,
+    paths: Vec<RawPathSpec>,
+    #[serde(default)]
+    recursive: bool,
+    #[serde(default)]
+    symlink_target_contains: Option<String>,
+    #[serde(default)]
+    guards: Vec<RawGuard>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCopy {
+    #[serde(rename = "type")]
+    kind: String,
+    source: RawPathSpec,
+    target: RawPathSpec,
+    #[serde(default)]
+    recursive: bool,
+    #[serde(default)]
+    source_glob: bool,
+    #[serde(default)]
+    guards: Vec<RawGuard>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSymlink {
+    #[serde(rename = "type")]
+    kind: String,
+    source: RawPathSpec,
+    target: RawPathSpec,
+    #[serde(default)]
+    force: bool,
+    #[serde(default)]
+    source_glob: bool,
+    #[serde(default)]
+    guards: Vec<RawGuard>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRun {
+    #[serde(rename = "type")]
+    kind: String,
+    command: RawPathSpec,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    chdir: Option<RawPathSpec>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    stdin_path: Option<RawPathSpec>,
+    #[serde(default)]
+    stdout_path: Option<RawPathSpec>,
+    #[serde(default)]
+    guards: Vec<RawGuard>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LifecycleState {
@@ -29,89 +196,310 @@ struct LifecycleSymlink {
     target: PathBuf,
 }
 
-/// Reject lifecycle metadata the native engine cannot execute before any pour mutates state.
-pub(super) fn validate(formula: &Formula) -> Result<()> {
+/// Compile lifecycle metadata into the only representation execution accepts.
+/// This performs no filesystem mutation and must run for the complete mutation
+/// set before the first keg is extracted or built.
+pub(super) fn prepare(formula: &Formula, keg: &Path) -> Result<PreparedFormulaLifecycle> {
     if formula.post_install_defined {
         bail!(
-            "brew:{} uses legacy Ruby post_install, which the native backend cannot execute truthfully",
+            "brew:{} uses opaque Ruby post_install without a complete typed representation; no package state was changed",
             formula.name
         );
     }
-    for step in &formula.post_install_steps {
+    let mut steps = Vec::with_capacity(formula.post_install_steps.len());
+    for (index, step) in formula.post_install_steps.iter().enumerate() {
         let kind = step.get("type").and_then(Value::as_str).unwrap_or("");
-        match kind {
-            "mkdir_p" => {
-                reject_unknown_keys(step, &["type", "path"])?;
-                path_spec(step, "path")?;
-            }
-            "remove" => {
-                reject_unknown_keys(step, &["type", "paths", "recursive", "guards"])?;
-                path_specs(step, "paths")?;
-                validate_guards(step)?;
-            }
-            "copy" => {
-                reject_unknown_keys(
-                    step,
-                    &["type", "source", "target", "recursive", "overwrite"],
-                )?;
-                path_spec(step, "source")?;
-                path_spec(step, "target")?;
-            }
-            "run" => {
-                reject_unknown_keys(step, &["type", "command", "args"])?;
-                path_spec(step, "command")?;
-                string_array(step, "args")?;
-            }
-            "symlink" => {
-                reject_unknown_keys(
-                    step,
-                    &[
-                        "type",
-                        "source",
-                        "target",
-                        "force",
-                        "overwrite",
-                        "source_glob",
-                        "recursive",
-                    ],
-                )?;
-                path_spec(step, "source")?;
-                path_spec(step, "target")?;
-            }
-            _ => bail!(
-                "brew:{} requires unsupported post_install_steps type {:?}; no package state was changed",
-                formula.name,
-                kind
-            ),
+        let prepared = (|| match kind {
+            "mkdir_p" => prepare_mkdir(formula, keg, parse_step(step)?),
+            "remove" => prepare_remove(formula, keg, parse_step(step)?),
+            "copy" => prepare_copy(formula, keg, parse_step(step)?),
+            "run" => prepare_run(formula, keg, index, parse_step(step)?),
+            "symlink" => prepare_symlink(formula, keg, parse_step(step)?),
+            _ => bail!("unsupported type {kind:?}"),
+        })()
+        .wrap_err_with(|| {
+            format!(
+                "brew:{} post-install step {index} type {kind:?} is invalid; no package state was changed",
+                formula.name
+            )
+        })?;
+        steps.push(prepared);
+    }
+    Ok(PreparedFormulaLifecycle {
+        formula: formula.name.clone(),
+        keg: keg.to_path_buf(),
+        steps,
+    })
+}
+
+fn parse_step<T: for<'de> Deserialize<'de>>(step: &Value) -> Result<T> {
+    serde_json::from_value(step.clone()).map_err(Into::into)
+}
+
+fn prepare_mkdir(formula: &Formula, keg: &Path, raw: RawMkdir) -> Result<PreparedStep> {
+    ensure_step_kind(&raw.kind, "mkdir_p")?;
+    Ok(PreparedStep::Mkdir {
+        path: resolve_write_path(formula, keg, &raw.path)?,
+        guards: prepare_guards(formula, keg, raw.guards)?,
+    })
+}
+
+fn prepare_remove(formula: &Formula, keg: &Path, raw: RawRemove) -> Result<PreparedStep> {
+    ensure_step_kind(&raw.kind, "remove")?;
+    let paths = raw
+        .paths
+        .iter()
+        .map(|path| prepare_pattern(formula, keg, path, PathAccess::Write))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(PreparedStep::Remove {
+        paths,
+        recursive: raw.recursive,
+        symlink_target_contains: raw.symlink_target_contains,
+        guards: prepare_guards(formula, keg, raw.guards)?,
+    })
+}
+
+fn prepare_copy(formula: &Formula, keg: &Path, raw: RawCopy) -> Result<PreparedStep> {
+    ensure_step_kind(&raw.kind, "copy")?;
+    Ok(PreparedStep::Copy {
+        sources: prepare_sources(formula, keg, &raw.source, raw.source_glob)?,
+        target: resolve_write_path(formula, keg, &raw.target)?,
+        recursive: raw.recursive,
+        guards: prepare_guards(formula, keg, raw.guards)?,
+    })
+}
+
+fn prepare_symlink(formula: &Formula, keg: &Path, raw: RawSymlink) -> Result<PreparedStep> {
+    ensure_step_kind(&raw.kind, "symlink")?;
+    Ok(PreparedStep::Symlink {
+        sources: prepare_sources(formula, keg, &raw.source, raw.source_glob)?,
+        target: resolve_write_path(formula, keg, &raw.target)?,
+        force: raw.force,
+        guards: prepare_guards(formula, keg, raw.guards)?,
+    })
+}
+
+fn prepare_run(formula: &Formula, keg: &Path, index: usize, raw: RawRun) -> Result<PreparedStep> {
+    ensure_step_kind(&raw.kind, "run")?;
+    if !cfg!(any(target_os = "macos", target_os = "linux")) {
+        bail!(
+            "brew:{} post-install step {index} requires run confinement unavailable on this platform; no package state was changed",
+            formula.name
+        );
+    }
+    let executable = resolve_read_path(formula, keg, &raw.command)?;
+    let args = raw
+        .args
+        .iter()
+        .map(|arg| expand_templates(formula, keg, arg))
+        .collect::<Result<Vec<_>>>()?;
+    let cwd = raw
+        .chdir
+        .as_ref()
+        .map(|path| resolve_read_path(formula, keg, path))
+        .transpose()?;
+    let mut env = BTreeMap::new();
+    for (key, value) in raw.env {
+        if key.is_empty()
+            || !key
+                .chars()
+                .all(|character| character == '_' || character.is_ascii_alphanumeric())
+        {
+            bail!(
+                "brew:{} post-install step {index} has invalid environment key {key:?}",
+                formula.name
+            );
         }
+        env.insert(key, expand_templates(formula, keg, &value)?);
+    }
+    let stdin_path = raw
+        .stdin_path
+        .as_ref()
+        .map(|path| resolve_read_path(formula, keg, path))
+        .transpose()?;
+    let stdout_path = raw
+        .stdout_path
+        .as_ref()
+        .map(|path| resolve_write_path(formula, keg, path))
+        .transpose()?;
+    let identity = crate::hash::hash_to_str(&(prefix::prefix(), &formula.name, keg));
+    Ok(PreparedStep::Run(PreparedRun {
+        step_index: index,
+        executable,
+        args,
+        cwd,
+        env,
+        stdin_path,
+        stdout_path,
+        guards: prepare_guards(formula, keg, raw.guards)?,
+        log_dir: crate::dirs::STATE
+            .join("brew-formula-lifecycle")
+            .join("logs")
+            .join(identity),
+    }))
+}
+
+fn ensure_step_kind(actual: &str, expected: &str) -> Result<()> {
+    if actual != expected {
+        bail!("post-install step type changed while preparing metadata")
     }
     Ok(())
 }
 
-fn validate_guards(step: &Value) -> Result<()> {
-    for guard in step
-        .get("guards")
-        .and_then(Value::as_array)
+fn prepare_sources(
+    formula: &Formula,
+    keg: &Path,
+    source: &RawPathSpec,
+    glob: bool,
+) -> Result<PreparedSources> {
+    if glob {
+        Ok(PreparedSources::Glob(prepare_pattern(
+            formula,
+            keg,
+            source,
+            PathAccess::Read,
+        )?))
+    } else {
+        Ok(PreparedSources::One(resolve_read_path(
+            formula, keg, source,
+        )?))
+    }
+}
+
+fn prepare_guards(
+    formula: &Formula,
+    keg: &Path,
+    guards: Vec<RawGuard>,
+) -> Result<Vec<PreparedGuard>> {
+    guards
         .into_iter()
-        .flatten()
-    {
-        reject_unknown_keys(guard, &["path", "condition", "id"])?;
-        path_spec_value(guard)?;
-        if guard.get("condition").and_then(Value::as_str) != Some("if_exists") {
-            bail!("unsupported post-install guard condition");
+        .map(|guard| match guard.condition.as_str() {
+            "if_exists" | "unless_exists" => {
+                if guard.value.is_some() {
+                    bail!("path guard must not contain value")
+                }
+                let path = guard
+                    .path
+                    .ok_or_else(|| eyre!("path guard is missing path"))?;
+                let pattern = prepare_pattern(
+                    formula,
+                    keg,
+                    &RawPathSpec {
+                        path,
+                        base: guard.base,
+                    },
+                    PathAccess::Read,
+                )?;
+                if guard.condition == "if_exists" {
+                    Ok(PreparedGuard::IfExists(pattern))
+                } else {
+                    Ok(PreparedGuard::UnlessExists(pattern))
+                }
+            }
+            "on" => {
+                if guard.path.is_some() || guard.base.is_some() {
+                    bail!("platform guard must not contain a path")
+                }
+                let matches = match guard.value.as_deref() {
+                    Some("macos") => cfg!(target_os = "macos"),
+                    Some("linux") => cfg!(target_os = "linux"),
+                    value => bail!("unsupported post-install platform guard {value:?}"),
+                };
+                Ok(PreparedGuard::Platform(matches))
+            }
+            condition => bail!("unsupported post-install guard condition {condition:?}"),
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+enum PathAccess {
+    Read,
+    Write,
+}
+
+fn resolve_read_path(formula: &Formula, keg: &Path, spec: &RawPathSpec) -> Result<PathBuf> {
+    let pattern = prepare_pattern(formula, keg, spec, PathAccess::Read)?;
+    single_path(pattern, "read path")
+}
+
+fn resolve_write_path(formula: &Formula, keg: &Path, spec: &RawPathSpec) -> Result<PathBuf> {
+    let pattern = prepare_pattern(formula, keg, spec, PathAccess::Write)?;
+    single_path(pattern, "write path")
+}
+
+fn single_path(pattern: PreparedPattern, label: &str) -> Result<PathBuf> {
+    if pattern.patterns.len() != 1 || has_glob_magic(&pattern.patterns[0]) {
+        bail!("post-install {label} must resolve to one non-glob path")
+    }
+    Ok(PathBuf::from(&pattern.patterns[0]))
+}
+
+fn prepare_pattern(
+    formula: &Formula,
+    keg: &Path,
+    spec: &RawPathSpec,
+    access: PathAccess,
+) -> Result<PreparedPattern> {
+    let expanded = expand_templates(formula, keg, &spec.path)?;
+    let base = match spec.base.as_deref() {
+        Some(base) => Some(template_base(formula, keg, base)?),
+        None => None,
+    };
+    let path = PathBuf::from(expanded);
+    let path = if path.is_absolute() {
+        if base.is_some() {
+            bail!("absolute post-install path must not declare a base")
         }
+        path
+    } else {
+        base.unwrap_or_else(|| keg.to_path_buf()).join(path)
+    };
+    let normalized = super::pour::lexical_normalize(&path);
+    let patterns = expand_braces(&normalized.to_string_lossy());
+    for pattern in &patterns {
+        ensure_contained(Path::new(pattern), keg, access)?;
+    }
+    Ok(PreparedPattern { patterns })
+}
+
+fn ensure_contained(path: &Path, keg: &Path, access: PathAccess) -> Result<()> {
+    let path = super::pour::lexical_normalize(path);
+    let shared = super::pour::lexical_normalize(&prefix::prefix());
+    let keg = super::pour::lexical_normalize(keg);
+    let allowed = match access {
+        PathAccess::Write => path.starts_with(&shared),
+        PathAccess::Read => {
+            path.starts_with(&shared)
+                || path.starts_with(&keg)
+                || [
+                    "/System",
+                    "/Library",
+                    "/usr",
+                    "/bin",
+                    "/sbin",
+                    "/etc",
+                    "/private/etc",
+                ]
+                .iter()
+                .any(|root| path.starts_with(root))
+        }
+    };
+    if !allowed {
+        bail!(
+            "post-install path {} escapes the allowed {} roots",
+            path.display(),
+            match access {
+                PathAccess::Read => "read",
+                PathAccess::Write => "write",
+            }
+        );
     }
     Ok(())
 }
 
-fn reject_unknown_keys(step: &Value, allowed: &[&str]) -> Result<()> {
-    let object = step
-        .as_object()
-        .ok_or_else(|| eyre!("post-install step must be an object"))?;
-    if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
-        bail!("unsupported post-install step field {key:?}");
-    }
-    Ok(())
+fn has_glob_magic(value: &str) -> bool {
+    value.contains(['*', '?', '['])
 }
 
 pub(super) fn needs_repair(keg: &Path) -> bool {
@@ -146,8 +534,8 @@ pub(super) fn needs_repair(keg: &Path) -> bool {
     })
 }
 
-pub(super) fn install(formula: &Formula, keg: &Path) -> Result<()> {
-    validate(formula)?;
+pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
+    let keg = &prepared.keg;
     let state_path = state_path(keg);
     write_state(
         &state_path,
@@ -161,24 +549,25 @@ pub(super) fn install(formula: &Formula, keg: &Path) -> Result<()> {
     let mut symlinks = vec![];
     let mut required_paths = vec![];
     let mut absent_patterns = vec![];
-    let result = (|| {
+    let result: Result<()> = async {
         for root in ["etc", "var"] {
             required_paths.extend(install_shared_tree(
-                formula,
+                &prepared.formula,
                 keg,
                 root,
                 &keg.join(".bottle").join(root),
                 &prefix::prefix().join(root),
             )?);
         }
-        for step in &formula.post_install_steps {
-            let effects = execute_step(formula, keg, step)?;
+        for step in &prepared.steps {
+            let effects = execute_step(prepared, step).await?;
             symlinks.extend(effects.symlinks);
             required_paths.extend(effects.required_paths);
             absent_patterns.extend(effects.absent_patterns);
         }
         Ok(())
-    })();
+    }
+    .await;
     if result.is_ok() {
         write_state(
             &state_path,
@@ -229,7 +618,7 @@ fn write_state(path: &Path, state: &LifecycleState) -> Result<()> {
 }
 
 fn install_shared_tree(
-    formula: &Formula,
+    formula: &str,
     keg: &Path,
     root: &str,
     source_root: &Path,
@@ -259,7 +648,7 @@ fn install_shared_tree(
 }
 
 fn install_destination(
-    formula: &Formula,
+    formula: &str,
     keg: &Path,
     root: &str,
     source: &Path,
@@ -284,7 +673,7 @@ fn install_destination(
     let default = PathBuf::from(format!("{}.default", destination.display()));
     debug!(
         "brew:{} preserving modified {}; writing new default to {}",
-        formula.name,
+        formula,
         destination.display(),
         default.display()
     );
@@ -348,32 +737,41 @@ struct StepEffects {
     absent_patterns: Vec<String>,
 }
 
-fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffects> {
-    if !guards_match(formula, keg, step)? {
+async fn execute_step(
+    prepared: &PreparedFormulaLifecycle,
+    step: &PreparedStep,
+) -> Result<StepEffects> {
+    let guards = match step {
+        PreparedStep::Mkdir { guards, .. }
+        | PreparedStep::Remove { guards, .. }
+        | PreparedStep::Copy { guards, .. }
+        | PreparedStep::Symlink { guards, .. } => guards,
+        PreparedStep::Run(run) => &run.guards,
+    };
+    if !guards_match(guards)? {
         return Ok(StepEffects::default());
     }
-    match step.get("type").and_then(Value::as_str) {
-        Some("mkdir_p") => {
-            let path = resolve_path(formula, keg, path_spec(step, "path")?)?;
-            crate::file::create_dir_all(&path)?;
+    match step {
+        PreparedStep::Mkdir { path, .. } => {
+            ensure_runtime_write_path(path, true)?;
+            crate::file::create_dir_all(path)?;
             Ok(StepEffects {
-                required_paths: vec![path],
+                required_paths: vec![path.clone()],
                 ..Default::default()
             })
         }
-        Some("remove") => {
+        PreparedStep::Remove {
+            paths,
+            recursive,
+            symlink_target_contains,
+            ..
+        } => {
             let mut absent_patterns = vec![];
-            for spec in path_specs(step, "paths")? {
-                let pattern = resolve_path(formula, keg, spec)?;
-                absent_patterns.extend(expand_braces(&pattern.to_string_lossy()));
-                for path in expand_path_spec(formula, keg, spec)? {
-                    if step.get("recursive").and_then(Value::as_bool) == Some(true) {
-                        if path.exists() {
-                            crate::file::remove_all(&path)?;
-                        }
-                    } else if path.symlink_metadata().is_ok() {
-                        crate::file::remove_file(&path)?;
-                    }
+            for pattern in paths {
+                absent_patterns.extend(pattern.patterns.clone());
+                for path in expand_pattern(pattern)? {
+                    ensure_runtime_write_path(&path, false)?;
+                    remove_prepared_node(&path, *recursive, symlink_target_contains.as_deref())?;
                 }
             }
             Ok(StepEffects {
@@ -381,54 +779,64 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                 ..Default::default()
             })
         }
-        Some("copy") => {
-            let source = resolve_path(formula, keg, path_spec(step, "source")?)?;
-            let target = resolve_path(formula, keg, path_spec(step, "target")?)?;
-            let required_paths = if step.get("recursive").and_then(Value::as_bool) == Some(true) {
-                copy_recursive(&source, &target)?
-            } else {
-                let destination = if target.is_dir() {
-                    target.join(source.file_name().unwrap())
+        PreparedStep::Copy {
+            sources,
+            target,
+            recursive,
+            ..
+        } => {
+            let sources = resolve_sources(sources)?;
+            ensure_runtime_write_path(target, target.is_dir())?;
+            let directory_target = sources.len() > 1 || target.is_dir();
+            if directory_target {
+                crate::file::create_dir_all(target)?;
+            }
+            let mut required_paths = vec![];
+            for source in sources {
+                let destination = if directory_target {
+                    target.join(required_file_name(&source)?)
                 } else {
-                    target
+                    target.clone()
                 };
-                atomic_copy(&source, &destination)?;
-                vec![destination]
-            };
+                ensure_runtime_write_path(&destination, false)?;
+                if *recursive {
+                    required_paths.extend(copy_recursive(&source, &destination)?);
+                } else {
+                    atomic_copy(&source, &destination)?;
+                    required_paths.push(destination);
+                }
+            }
             Ok(StepEffects {
                 required_paths,
                 ..Default::default()
             })
         }
-        Some("symlink") => {
-            let target = resolve_path(formula, keg, path_spec(step, "target")?)?;
-            let sources = if step.get("source_glob").and_then(Value::as_bool) == Some(true) {
-                expand_path_spec(formula, keg, path_spec(step, "source")?)?
-            } else {
-                vec![resolve_path(formula, keg, path_spec(step, "source")?)?]
-            };
+        PreparedStep::Symlink {
+            sources,
+            target,
+            force,
+            ..
+        } => {
+            let sources = resolve_sources(sources)?;
             if sources.is_empty() {
                 return Ok(StepEffects::default());
             }
-            let force = step.get("force").and_then(Value::as_bool).unwrap_or(false)
-                || step
-                    .get("overwrite")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
             let directory_target = sources.len() > 1 || target.is_dir();
+            ensure_runtime_write_path(target, directory_target)?;
             if directory_target {
-                crate::file::create_dir_all(&target)?;
+                crate::file::create_dir_all(target)?;
             }
             let mut links = vec![];
             for source in sources {
                 let destination = if directory_target {
-                    target.join(source.file_name().unwrap())
+                    target.join(required_file_name(&source)?)
                 } else {
                     target.clone()
                 };
+                ensure_runtime_write_path(&destination, false)?;
                 crate::file::create_dir_all(destination.parent().unwrap())?;
                 if destination.symlink_metadata().is_ok() {
-                    if !force && !files_equal(&source, &destination) {
+                    if !force && resolved_symlink_target(&destination).as_ref() != Some(&source) {
                         bail!(
                             "post-install target already exists: {}",
                             destination.display()
@@ -436,10 +844,11 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                     }
                     crate::file::remove_file(&destination)?;
                 }
+                let source = super::pour::lexical_normalize(&source);
                 let relative = super::pour::relative_target(&source, &destination);
                 crate::file::make_symlink(&relative, &destination)?;
                 links.push(LifecycleSymlink {
-                    source: super::pour::lexical_normalize(&source),
+                    source,
                     target: destination,
                 });
             }
@@ -448,61 +857,255 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                 ..Default::default()
             })
         }
-        Some("run") => {
-            let executable = resolve_path(formula, keg, path_spec(step, "command")?)?;
-            let args = string_array(step, "args")?
-                .iter()
-                .map(|arg| expand_templates(formula, keg, arg))
-                .collect::<Result<Vec<_>>>()?;
-            let status = Command::new(&executable)
-                .args(&args)
-                .stdin(Stdio::null())
-                .env("HOMEBREW_PREFIX", prefix::prefix())
-                .env("HOMEBREW_CELLAR", prefix::cellar())
-                .status()
-                .wrap_err_with(|| format!("failed to run {}", executable.display()))?;
-            if !status.success() {
-                bail!(
-                    "post-install command {} exited {status}",
-                    executable.display()
-                );
-            }
-            let required_paths = args
-                .iter()
-                .map(PathBuf::from)
-                .filter(|path| path.starts_with(prefix::prefix()) && path.exists())
-                .collect();
-            Ok(StepEffects {
-                required_paths,
-                ..Default::default()
-            })
-        }
-        _ => unreachable!("validated before mutation"),
+        PreparedStep::Run(run) => execute_run(prepared, run).await,
     }
 }
 
-fn guards_match(formula: &Formula, keg: &Path, step: &Value) -> Result<bool> {
-    for guard in step
-        .get("guards")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        if !resolve_path(formula, keg, guard)?.exists() {
+fn remove_prepared_node(
+    path: &Path,
+    recursive: bool,
+    symlink_target_contains: Option<&str>,
+) -> Result<()> {
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(());
+    };
+    if let Some(required) = symlink_target_contains {
+        if !metadata.file_type().is_symlink()
+            || !fs::read_link(path)?.to_string_lossy().contains(required)
+        {
+            return Ok(());
+        }
+    }
+    if metadata.file_type().is_symlink() || !recursive {
+        crate::file::remove_file(path)?;
+    } else {
+        crate::file::remove_all(path)?;
+    }
+    Ok(())
+}
+
+fn guards_match(guards: &[PreparedGuard]) -> Result<bool> {
+    for guard in guards {
+        let matches = match guard {
+            PreparedGuard::IfExists(pattern) => expand_pattern(pattern)?
+                .iter()
+                .any(|path| path.symlink_metadata().is_ok()),
+            PreparedGuard::UnlessExists(pattern) => expand_pattern(pattern)?
+                .iter()
+                .all(|path| path.symlink_metadata().is_err()),
+            PreparedGuard::Platform(matches) => *matches,
+        };
+        if !matches {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
-fn copy_recursive(source: &Path, target: &Path) -> Result<Vec<PathBuf>> {
-    let destination = if target.is_dir() {
-        target.join(source.file_name().unwrap())
-    } else {
-        target.to_path_buf()
+async fn execute_run(
+    prepared: &PreparedFormulaLifecycle,
+    run: &PreparedRun,
+) -> Result<StepEffects> {
+    let temp = crate::dirs::CACHE
+        .join("system-brew")
+        .join("post-install")
+        .join(crate::hash::hash_to_str(&(
+            &prepared.formula,
+            &prepared.keg,
+            run.step_index,
+        )));
+    crate::file::create_dir_all(&temp)?;
+    crate::file::create_dir_all(&run.log_dir)?;
+    let stdout_log = run.log_dir.join(format!("{}.stdout.log", run.step_index));
+    let stderr_log = run.log_dir.join(format!("{}.stderr.log", run.step_index));
+
+    let stdout = match &run.stdout_path {
+        Some(path) => {
+            ensure_runtime_write_path(path, false)?;
+            crate::file::create_dir_all(path.parent().unwrap())?;
+            open_truncated(path)?
+        }
+        None => open_truncated(&stdout_log)?,
     };
-    if destination.exists() {
-        crate::file::remove_all(&destination)?;
+    let stderr = open_truncated(&stderr_log)?;
+    let stdin = match &run.stdin_path {
+        Some(path) => Stdio::from(File::open(path)?),
+        None => Stdio::null(),
+    };
+
+    let shared = prefix::prefix();
+    let env = run_environment(prepared, run, &temp)?;
+    let mut allow_write = vec![
+        prepared.keg.clone(),
+        shared.join("etc"),
+        shared.join("var"),
+        run.log_dir.clone(),
+        temp.clone(),
+    ];
+    if let Some(path) = &run.stdout_path {
+        allow_write.push(path.clone());
+    }
+    let mut sandbox = SandboxConfig {
+        deny_write: true,
+        deny_net: true,
+        deny_env: true,
+        allow_write,
+        deny_system_temp_write: true,
+        ..Default::default()
+    };
+    sandbox.resolve_paths();
+    let mut command = CmdLineRunner::new(&run.executable)
+        .args(&run.args)
+        .with_sandbox(sandbox);
+    command.apply_sandbox().await?;
+    command = command
+        .env_clear()
+        .envs(&env)
+        .stdin(stdin)
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    if let Some(cwd) = &run.cwd {
+        command = command.current_dir(cwd);
+    }
+    if let Err(error) = command.execute_async().await {
+        let stdout = log_tail(run.stdout_path.as_deref().unwrap_or(&stdout_log))?;
+        let stderr = log_tail(&stderr_log)?;
+        return Err(error).wrap_err_with(|| {
+            format!(
+                "brew:{} post-install run step {} failed\nstdout tail:\n{}\nstderr tail:\n{}",
+                prepared.formula, run.step_index, stdout, stderr
+            )
+        });
+    }
+
+    let mut required_paths = run
+        .args
+        .iter()
+        .map(PathBuf::from)
+        .filter(|path| path.starts_with(&shared) && path.symlink_metadata().is_ok())
+        .collect::<Vec<_>>();
+    if let Some(path) = &run.stdout_path {
+        required_paths.push(path.clone());
+    }
+    Ok(StepEffects {
+        required_paths,
+        ..Default::default()
+    })
+}
+
+fn run_environment(
+    prepared: &PreparedFormulaLifecycle,
+    run: &PreparedRun,
+    temp: &Path,
+) -> Result<BTreeMap<String, String>> {
+    let shared = prefix::prefix();
+    let path = std::env::join_paths([
+        prepared.keg.join("bin"),
+        prepared.keg.join("sbin"),
+        shared.join("bin"),
+        shared.join("sbin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+        PathBuf::from("/usr/sbin"),
+        PathBuf::from("/sbin"),
+    ])?;
+    let mut env = BTreeMap::from([
+        ("HOME".to_string(), temp.to_string_lossy().into_owned()),
+        ("LANG".to_string(), "C".to_string()),
+        ("LC_ALL".to_string(), "C".to_string()),
+        ("PATH".to_string(), path.to_string_lossy().into_owned()),
+        (
+            "HOMEBREW_PREFIX".to_string(),
+            shared.to_string_lossy().into_owned(),
+        ),
+        (
+            "HOMEBREW_CELLAR".to_string(),
+            prefix::cellar().to_string_lossy().into_owned(),
+        ),
+        ("TMPDIR".to_string(), temp.to_string_lossy().into_owned()),
+    ]);
+    env.extend(run.env.clone());
+    Ok(env)
+}
+
+fn open_truncated(path: &Path) -> Result<File> {
+    Ok(OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)?)
+}
+
+fn log_tail(path: &Path) -> Result<String> {
+    if !path.is_file() {
+        return Ok(String::new());
+    }
+    let bytes = fs::read(path)?;
+    let start = bytes.len().saturating_sub(MAX_FAILURE_LOG_BYTES);
+    Ok(String::from_utf8_lossy(&bytes[start..]).into_owned())
+}
+
+fn resolve_sources(sources: &PreparedSources) -> Result<Vec<PathBuf>> {
+    match sources {
+        PreparedSources::One(path) => Ok(vec![path.clone()]),
+        PreparedSources::Glob(pattern) => expand_pattern(pattern),
+    }
+}
+
+fn expand_pattern(pattern: &PreparedPattern) -> Result<Vec<PathBuf>> {
+    let mut paths = vec![];
+    for pattern in &pattern.patterns {
+        if has_glob_magic(pattern) {
+            for path in glob::glob(pattern)? {
+                paths.push(path?);
+            }
+        } else {
+            paths.push(PathBuf::from(pattern));
+        }
+    }
+    Ok(paths)
+}
+
+fn required_file_name(path: &Path) -> Result<&std::ffi::OsStr> {
+    path.file_name()
+        .ok_or_else(|| eyre!("post-install source has no file name: {}", path.display()))
+}
+
+fn ensure_runtime_write_path(path: &Path, include_final: bool) -> Result<()> {
+    ensure_contained(path, &prefix::cellar(), PathAccess::Write)?;
+    let shared = super::pour::lexical_normalize(&prefix::prefix());
+    let normalized = super::pour::lexical_normalize(path);
+    let relative = normalized.strip_prefix(&shared)?;
+    let components = relative.components().collect::<Vec<_>>();
+    let count = if include_final {
+        components.len()
+    } else {
+        components.len().saturating_sub(1)
+    };
+    let mut current = shared;
+    for component in components.into_iter().take(count) {
+        current.push(component);
+        match current.symlink_metadata() {
+            Ok(metadata) if metadata.file_type().is_symlink() => bail!(
+                "post-install write path traverses symlink {}",
+                current.display()
+            ),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
+            Ok(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn copy_recursive(source: &Path, target: &Path) -> Result<Vec<PathBuf>> {
+    let destination = target.to_path_buf();
+    if let Ok(metadata) = destination.symlink_metadata() {
+        if metadata.file_type().is_symlink() {
+            crate::file::remove_file(&destination)?;
+        } else {
+            crate::file::remove_all(&destination)?;
+        }
     }
     let mut outputs = vec![destination.clone()];
     for entry in walkdir::WalkDir::new(source).follow_links(false) {
@@ -529,44 +1132,6 @@ fn resolved_symlink_target(path: &Path) -> Option<PathBuf> {
     Some(super::pour::lexical_normalize(&target))
 }
 
-fn path_spec<'a>(step: &'a Value, key: &str) -> Result<&'a Value> {
-    let spec = step
-        .get(key)
-        .ok_or_else(|| eyre!("post-install step missing {key}"))?;
-    if spec.get("path").and_then(Value::as_str).is_none() {
-        bail!("post-install {key} must contain a string path");
-    }
-    Ok(spec)
-}
-
-fn path_spec_value(spec: &Value) -> Result<&Value> {
-    if spec.get("path").and_then(Value::as_str).is_none() {
-        bail!("post-install path spec must contain a string path");
-    }
-    Ok(spec)
-}
-
-fn path_specs<'a>(step: &'a Value, key: &str) -> Result<Vec<&'a Value>> {
-    step.get(key)
-        .and_then(Value::as_array)
-        .ok_or_else(|| eyre!("post-install step missing path list {key}"))?
-        .iter()
-        .map(path_spec_value)
-        .collect()
-}
-
-fn expand_path_spec(formula: &Formula, keg: &Path, spec: &Value) -> Result<Vec<PathBuf>> {
-    let pattern = resolve_path(formula, keg, spec)?;
-    let patterns = expand_braces(&pattern.to_string_lossy());
-    let mut paths = vec![];
-    for pattern in patterns {
-        for path in glob::glob(&pattern)? {
-            paths.push(path?);
-        }
-    }
-    Ok(paths)
-}
-
 fn expand_braces(pattern: &str) -> Vec<String> {
     let Some(open) = pattern.find('{') else {
         return vec![pattern.to_string()];
@@ -575,35 +1140,12 @@ fn expand_braces(pattern: &str) -> Vec<String> {
         return vec![pattern.to_string()];
     };
     let close = open + 1 + close_offset;
-    pattern[open + 1..close]
-        .split(',')
-        .map(|choice| format!("{}{}{}", &pattern[..open], choice, &pattern[close + 1..]))
-        .collect()
-}
-
-fn string_array<'a>(step: &'a Value, key: &str) -> Result<Vec<&'a str>> {
-    step.get(key)
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .map(|value| {
-                    value
-                        .as_str()
-                        .ok_or_else(|| eyre!("{key} must contain strings"))
-                })
-                .collect()
-        })
-        .unwrap_or_else(|| Ok(vec![]))
-}
-
-fn resolve_path(formula: &Formula, keg: &Path, spec: &Value) -> Result<PathBuf> {
-    let path = spec.get("path").and_then(Value::as_str).unwrap();
-    if path.starts_with("{{") {
-        return Ok(PathBuf::from(expand_templates(formula, keg, path)?));
+    let mut expanded = vec![];
+    for choice in pattern[open + 1..close].split(',') {
+        let value = format!("{}{}{}", &pattern[..open], choice, &pattern[close + 1..]);
+        expanded.extend(expand_braces(&value));
     }
-    let base = spec.get("base").and_then(Value::as_str).unwrap_or("prefix");
-    Ok(template_base(formula, keg, base)?.join(path))
+    expanded
 }
 
 fn expand_templates(formula: &Formula, keg: &Path, value: &str) -> Result<String> {
@@ -622,10 +1164,22 @@ fn expand_templates(formula: &Formula, keg: &Path, value: &str) -> Result<String
         "var",
         "etc",
         "pkgetc",
+        "bash_completion",
+        "zsh_completion",
+        "fish_completion",
+        "pwsh_completion",
     ] {
         let replacement = template_base(formula, keg, token)?;
         output = output.replace(&format!("{{{{{token}}}}}"), &replacement.to_string_lossy());
     }
+    let version = formula.versions.stable.as_deref().unwrap_or_default();
+    let mut version_parts = version.split('.');
+    let major = version_parts.next().unwrap_or_default();
+    let minor = version_parts.next();
+    let major_minor = minor.map_or_else(|| major.to_string(), |minor| format!("{major}.{minor}"));
+    output = output.replace("{{version.major_minor}}", &major_minor);
+    output = output.replace("{{version.major}}", major);
+    output = output.replace("{{formula_name}}", &formula.name);
     if output.contains("{{") {
         bail!("unsupported post-install template in {value:?}");
     }
@@ -635,7 +1189,7 @@ fn expand_templates(formula: &Formula, keg: &Path, value: &str) -> Result<String
 fn template_base(formula: &Formula, keg: &Path, base: &str) -> Result<PathBuf> {
     let shared = prefix::prefix();
     match base {
-        "HOMEBREW_PREFIX" => Ok(shared),
+        "HOMEBREW_PREFIX" | "homebrew_prefix" => Ok(shared),
         "HOMEBREW_CELLAR" => Ok(prefix::cellar()),
         "prefix" => Ok(keg.to_path_buf()),
         "opt_prefix" => Ok(shared.join("opt").join(&formula.name)),
@@ -643,6 +1197,10 @@ fn template_base(formula: &Formula, keg: &Path, base: &str) -> Result<PathBuf> {
         "pkgshare" => Ok(keg.join("share").join(&formula.name)),
         "var" | "etc" => Ok(shared.join(base)),
         "pkgetc" => Ok(shared.join("etc").join(&formula.name)),
+        "bash_completion" => Ok(keg.join("etc/bash_completion.d")),
+        "zsh_completion" => Ok(keg.join("share/zsh/site-functions")),
+        "fish_completion" => Ok(keg.join("share/fish/vendor_completions.d")),
+        "pwsh_completion" => Ok(keg.join("share/pwsh/completions")),
         _ => bail!("unsupported post-install path base {base:?}"),
     }
 }
@@ -663,12 +1221,14 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_steps_before_install() {
-        let error = validate(&formula(vec![serde_json::json!({"type": "touch"})])).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("unsupported post_install_steps type")
-        );
+        let error = prepare(
+            &formula(vec![serde_json::json!({"type": "touch"})]),
+            &prefix::cellar().join("openssl@3/1"),
+        )
+        .unwrap_err();
+        let error = format!("{error:?}");
+        assert!(error.contains("unsupported type"));
+        assert!(error.contains("no package state was changed"));
     }
 
     #[test]
@@ -684,8 +1244,9 @@ mod tests {
             "force": true,
             "type": "symlink"
         })]);
-        validate(&ca).unwrap();
-        validate(&openssl).unwrap();
+        let keg = prefix::cellar().join("openssl@3/1");
+        prepare(&ca, &keg).unwrap();
+        prepare(&openssl, &keg).unwrap();
     }
 
     #[test]
@@ -699,7 +1260,7 @@ mod tests {
         crate::file::write(&source, "new")?;
         crate::file::write(&destination, "user")?;
         let installed = install_shared_tree(
-            &formula(vec![]),
+            "openssl@3",
             &keg,
             "etc",
             &keg.join(".bottle/etc"),
@@ -727,7 +1288,7 @@ mod tests {
         crate::file::write(&destination, "old")?;
         crate::file::write(&source, "new")?;
         let installed = install_shared_tree(
-            &formula(vec![]),
+            "openssl@3",
             &keg,
             "etc",
             &keg.join(".bottle/etc"),
@@ -754,7 +1315,7 @@ mod tests {
         crate::file::write(&destination, "user")?;
         crate::file::write(&source, "new")?;
         let installed = install_shared_tree(
-            &formula(vec![]),
+            "openssl@3",
             &keg,
             "etc",
             &keg.join(".bottle/etc"),
@@ -769,50 +1330,137 @@ mod tests {
     }
 
     #[test]
-    fn records_typed_step_health_effects() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
-        let keg = tmp.path().join("Cellar/foo/1");
-        crate::file::create_dir_all(keg.join("share/source"))?;
-        crate::file::write(keg.join("share/source/file"), "value")?;
-        crate::file::write(keg.join("obsolete"), "old")?;
-        let formula = formula(vec![]);
-
-        let mkdir = execute_step(
-            &formula,
-            &keg,
-            &serde_json::json!({
+    fn preparation_rejects_unknown_fields_and_path_escape() {
+        let keg = prefix::cellar().join("openssl@3/1");
+        for step in [
+            serde_json::json!({
                 "type": "mkdir_p",
-                "path": {"base": "prefix", "path": "generated"}
+                "path": {"base": "prefix", "path": "generated"},
+                "surprise": true
             }),
-        )?;
-        assert_eq!(mkdir.required_paths, vec![keg.join("generated")]);
+            serde_json::json!({
+                "type": "mkdir_p",
+                "path": {"base": "prefix", "path": "../../../../outside"}
+            }),
+            serde_json::json!({
+                "type": "mkdir_p",
+                "path": {"base": "unknown", "path": "outside"}
+            }),
+            serde_json::json!({
+                "type": "mkdir_p",
+                "path": {"base": "prefix", "path": "{{unknown}}"}
+            }),
+        ] {
+            let error = prepare(&formula(vec![step]), &keg).unwrap_err();
+            let error = format!("{error:?}");
+            assert!(
+                error.contains("unknown field")
+                    || error.contains("escapes")
+                    || error.contains("unsupported post-install path base")
+                    || error.contains("unsupported post-install template")
+            );
+        }
+    }
 
-        let copy = execute_step(
-            &formula,
-            &keg,
-            &serde_json::json!({
-                "type": "copy",
-                "source": {"base": "prefix", "path": "share/source"},
-                "target": {"base": "prefix", "path": "copied"},
-                "recursive": true
-            }),
-        )?;
-        assert!(copy.required_paths.contains(&keg.join("copied/file")));
-
-        let remove = execute_step(
-            &formula,
-            &keg,
-            &serde_json::json!({
-                "type": "remove",
-                "paths": [{"base": "prefix", "path": "obsolete"}]
-            }),
-        )?;
+    #[test]
+    fn preparation_expands_multiple_brace_groups() {
         assert_eq!(
-            remove.absent_patterns,
-            vec![keg.join("obsolete").to_string_lossy()]
+            expand_braces("/x/{a,b}/{c,d}"),
+            ["/x/a/c", "/x/a/d", "/x/b/c", "/x/b/d"]
         );
-        assert!(!keg.join("obsolete").exists());
+    }
+
+    #[test]
+    fn guards_cover_platform_if_exists_and_unless_exists() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let present = tmp.path().join("present");
+        let absent = tmp.path().join("absent");
+        crate::file::write(&present, "present")?;
+        assert!(guards_match(&[
+            PreparedGuard::Platform(true),
+            PreparedGuard::IfExists(PreparedPattern {
+                patterns: vec![present.to_string_lossy().into_owned()],
+            }),
+            PreparedGuard::UnlessExists(PreparedPattern {
+                patterns: vec![absent.to_string_lossy().into_owned()],
+            }),
+        ])?);
+        assert!(!guards_match(&[PreparedGuard::Platform(false)])?);
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recursive_remove_unlinks_dangling_symlink_without_following_it() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("outside-target");
+        let dangling = tmp.path().join("dangling");
+        crate::file::make_symlink(&target, &dangling)?;
+        remove_prepared_node(&dangling, true, None)?;
+        assert!(dangling.symlink_metadata().is_err());
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn run_preflight_rejects_invalid_cwd_redirection_and_environment() {
+        let keg = prefix::cellar().join("openssl@3/1");
+        for step in [
+            serde_json::json!({
+                "type": "run",
+                "command": {"base": "bin", "path": "tool"},
+                "chdir": {"path": "/outside"}
+            }),
+            serde_json::json!({
+                "type": "run",
+                "command": {"base": "bin", "path": "tool"},
+                "stdout_path": {"path": "/outside"}
+            }),
+            serde_json::json!({
+                "type": "run",
+                "command": {"base": "bin", "path": "tool"},
+                "env": {"BAD-KEY": "value"}
+            }),
+        ] {
+            let error = prepare(&formula(vec![step]), &keg).unwrap_err();
+            assert!(format!("{error:?}").contains("no package state was changed"));
+        }
+    }
+
+    #[test]
+    fn run_environment_contains_only_fixed_and_typed_keys() -> Result<()> {
+        let formula = formula(vec![serde_json::json!({
+            "type": "run",
+            "command": {"base": "bin", "path": "tool"},
+            "env": {"FORMULA_KEY": "formula-value"}
+        })]);
+        let prepared = prepare(&formula, &prefix::cellar().join("openssl@3/1"))?;
+        let PreparedStep::Run(run) = &prepared.steps[0] else {
+            panic!("expected prepared run")
+        };
+        let env = run_environment(&prepared, run, Path::new("/private/tmp/mise-private"))?;
+        assert_eq!(
+            env.keys().map(String::as_str).collect::<Vec<_>>(),
+            [
+                "FORMULA_KEY",
+                "HOME",
+                "HOMEBREW_CELLAR",
+                "HOMEBREW_PREFIX",
+                "LANG",
+                "LC_ALL",
+                "PATH",
+                "TMPDIR",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn opaque_post_install_fails_closed() {
+        let mut formula = formula(vec![]);
+        formula.post_install_defined = true;
+        let error = prepare(&formula, &prefix::cellar().join("openssl@3/1")).unwrap_err();
+        assert!(error.to_string().contains("opaque Ruby post_install"));
     }
 
     #[test]

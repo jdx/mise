@@ -403,6 +403,7 @@ impl TaskExecutor {
                 .chain(self.sandbox.cache_env.iter())
                 .cloned()
                 .collect(),
+            deny_system_temp_write: self.sandbox.deny_system_temp_write,
         };
         if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
             && let Some(session) = &self.cache_session

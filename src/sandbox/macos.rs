@@ -33,8 +33,10 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
     // Filesystem write restrictions
     if config.effective_deny_write() {
         rules.push("(deny file-write*)".to_string());
-        rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
-        rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
+        if !config.deny_system_temp_write {
+            rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
+            rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
+        }
         rules.push("(allow file-write* (subpath \"/dev\"))".to_string());
         for path in &config.allow_write {
             let path_str = sbpl_escape(&path.to_string_lossy());
@@ -147,6 +149,20 @@ mod tests {
         let profile = generate_seatbelt_profile(&config).await;
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp/mydir\"))"));
+    }
+
+    #[tokio::test]
+    async fn test_private_temp_does_not_allow_system_temp_writes() {
+        let config = SandboxConfig {
+            deny_write: true,
+            deny_system_temp_write: true,
+            allow_write: vec![PathBuf::from("/private/tmp/mise-private")],
+            ..Default::default()
+        };
+        let profile = generate_seatbelt_profile(&config).await;
+        assert!(!profile.contains("(allow file-write* (subpath \"/tmp\"))"));
+        assert!(!profile.contains("(allow file-write* (subpath \"/private/tmp\"))"));
+        assert!(profile.contains("(allow file-write* (subpath \"/private/tmp/mise-private\"))"));
     }
 
     #[tokio::test]

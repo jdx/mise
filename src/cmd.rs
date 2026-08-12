@@ -2026,6 +2026,45 @@ mod tests {
         );
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn test_sandbox_private_temp_blocks_external_write_and_env_leak() {
+        let root = tempfile::tempdir().unwrap();
+        let allowed = root.path().join("allowed");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let script = format!(
+            "env > {}/env; echo inside > {}/inside; echo outside > {}/escaped",
+            shell_escape::escape(allowed.to_string_lossy()),
+            shell_escape::escape(allowed.to_string_lossy()),
+            shell_escape::escape(outside.to_string_lossy()),
+        );
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_write: true,
+            deny_net: true,
+            deny_env: true,
+            allow_write: vec![allowed.clone()],
+            deny_system_temp_write: true,
+            ..Default::default()
+        };
+        sandbox.resolve_paths();
+        let mut runner = super::CmdLineRunner::new("/bin/sh")
+            .args(["-c", &script])
+            .env("SECRET_THAT_MUST_NOT_LEAK", "secret")
+            .env_clear()
+            .env("DOCUMENTED", "yes")
+            .with_sandbox(sandbox);
+        runner.apply_sandbox().await.unwrap();
+        runner.execute_async().await.unwrap_err();
+
+        assert!(allowed.join("inside").is_file());
+        assert!(!outside.join("escaped").exists());
+        let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
+        assert!(child_env.contains("DOCUMENTED=yes"));
+        assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
+    }
+
     #[test]
     fn test_running_pid_guard_removes_pid() {
         let pid = 424_242;
