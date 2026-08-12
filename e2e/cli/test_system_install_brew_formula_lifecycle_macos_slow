@@ -64,7 +64,7 @@ cat <<'EOF' >mise.toml
 "brew:kimi-code" = "latest"
 EOF
 
-mise bootstrap packages apply --yes
+mise bootstrap --yes
 assert_contains "mise bootstrap packages status" "installed"
 assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem'"
 assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/openssl.cnf'"
@@ -83,7 +83,7 @@ fi
 # Legacy mise state had a valid keg and opt record but omitted shared config.
 rm "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem"
 assert_contains "mise bootstrap packages status" "needs repair"
-mise bootstrap packages apply --yes
+mise bootstrap --yes
 assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
 assert_contains "mise bootstrap packages status" "installed"
 
