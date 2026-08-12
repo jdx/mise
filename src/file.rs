@@ -20,6 +20,7 @@ use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
 use jdx_tar::{Archive, EntryType, UnpackOptions};
+use path_absolutize::Absolutize;
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock as Lazy;
 use walkdir::WalkDir;
@@ -920,33 +921,9 @@ pub fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
     let Some(target) = dir_link_target(link)? else {
         return Ok(false);
     };
-    let Some(target) = lexical_normalize(&target) else {
-        return Ok(false);
-    };
-    let Some(root) = lexical_normalize(root) else {
-        return Ok(false);
-    };
-    Ok(target.starts_with(root))
-}
-
-fn lexical_normalize(path: &Path) -> Option<PathBuf> {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if !matches!(
-                    normalized.components().next_back(),
-                    Some(std::path::Component::Normal(_))
-                ) {
-                    return None;
-                }
-                normalized.pop();
-            }
-            component => normalized.push(component.as_os_str()),
-        }
-    }
-    Some(normalized)
+    let target = target.absolutize()?;
+    let root = root.absolutize()?;
+    Ok(target.starts_with(root.as_ref()))
 }
 
 #[cfg(unix)]
