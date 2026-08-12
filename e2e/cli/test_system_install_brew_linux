@@ -46,7 +46,7 @@ fi
 # kernel path references instead, excluding this shell and its parent.
 for proc in /proc/[0-9]*; do
   pid=${proc##*/}
-  [[ $pid != $$ && $pid != $PPID ]] || continue
+  [[ $pid != "$$" && $pid != "$PPID" ]] || continue
   for proc_link in "$proc/cwd" "$proc/exe" "$proc/root" "$proc"/fd/*; do
     [[ -L $proc_link ]] || continue
     proc_target=$(readlink -f "$proc_link" 2>/dev/null || true)
