@@ -842,25 +842,29 @@ impl TaskScriptParser {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         // These values are not escaped or shell-quoted.
-        let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
-            use tera::Value;
-            use usage::parse::ParseValue::*;
-            match val {
-                MultiBool(v) => Value::from(v.len()),
-                MultiString(v) => Value::from(v.to_vec()),
-                Bool(v) => Value::from(*v),
-                String(v) => Value::from(v.clone()),
-            }
-        };
+        let to_tera_value =
+            |val: &usage::parse::ParseValue, variadic_string: bool| -> tera::Value {
+                use tera::Value;
+                use usage::parse::ParseValue::*;
+                match val {
+                    MultiBool(v) => Value::from(v.len()),
+                    MultiString(v) => Value::from(v.to_vec()),
+                    Bool(v) => Value::from(*v),
+                    // usage-lib returns env-backed variadic values as String. Keep the
+                    // structured usage map consistent with CLI and default values.
+                    String(v) if variadic_string => Value::from(vec![v.clone()]),
+                    String(v) => Value::from(v.clone()),
+                }
+            };
 
         // The names are converted to snake_case (hyphens become underscores).
         // For example, a flag like "--dry-run" becomes accessible as {{ usage.dry_run }}.
         for (arg, val) in &usage.args {
-            let tera_val = to_tera_value(val);
+            let tera_val = to_tera_value(val, arg.var);
             usage_ctx.insert(arg.name.to_snake_case(), tera_val);
         }
         for (flag, val) in &usage.flags {
-            let tera_val = to_tera_value(val);
+            let tera_val = to_tera_value(val, flag.var && flag.arg.is_some());
             usage_ctx.insert(flag.name.to_snake_case(), tera_val);
         }
 
@@ -1723,6 +1727,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_usage_variadic_arg_env() {
+        let env = EnvMap::from_iter(vec![("NODENAMES".to_string(), "foo bar baz".to_string())]);
+        let usage = r#"arg "<nodenames>" var=#true env="NODENAMES""#;
+        let template = "echo {{ usage.nodenames | length }}:{{ usage.nodenames | join(sep='::') }}";
+
+        assert_eq!(
+            render_usage_with_env(usage, template, &[], &env).await,
+            "echo 1:foo bar baz"
+        );
+        assert_eq!(
+            render_usage_with_env(usage, template, &["one", "two"], &env).await,
+            "echo 2:one::two"
+        );
+
+        let spec: usage::Spec = usage.parse().unwrap();
+        let env_map = HashMap::from_iter(env);
+        let parsed = usage::Parser::new(&spec)
+            .with_env(env_map)
+            .parse(&[String::new()])
+            .unwrap();
+        let usage_ctx = TaskScriptParser::make_usage_ctx(&parsed);
+        assert_eq!(
+            usage_ctx["nodenames"].as_array().unwrap()[0],
+            tera::Value::from("foo bar baz")
+        );
+    }
+
+    #[tokio::test]
     async fn test_usage_flag_renders() {
         // Short + long with value
         assert_eq!(
@@ -1811,6 +1843,21 @@ mod tests {
             )
             .await,
             "echo true"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_variadic_flag_env() {
+        let env = EnvMap::from_iter(vec![("TAGS".to_string(), "foo bar".to_string())]);
+        assert_eq!(
+            render_usage_with_env(
+                r#"flag "--tag <tag>" var=#true env="TAGS""#,
+                "echo {{ usage.tag | length }}:{{ usage.tag | join(sep='::') }}",
+                &[],
+                &env,
+            )
+            .await,
+            "echo 1:foo bar"
         );
     }
 
