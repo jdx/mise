@@ -121,9 +121,15 @@ impl Config {
         let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
             return false;
         };
-        self.config_files
-            .values()
-            .any(|cf| cf.config_root() == root && cf.tool_config().locked)
+        // The global config root defaults to $HOME, which can also be the
+        // config_root of a local config stored directly in $HOME. Keep those
+        // conceptual roots separate even when their path values coincide.
+        let is_global = is_global_config(path);
+        self.config_files.values().any(|cf| {
+            is_global_config(cf.get_path()) == is_global
+                && cf.config_root() == root
+                && cf.tool_config().locked
+        })
     }
 
     pub async fn get() -> Result<Arc<Self>> {
