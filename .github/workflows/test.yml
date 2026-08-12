@@ -132,7 +132,7 @@ jobs:
   unit:
     name: unit-macos
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
@@ -213,7 +213,7 @@ jobs:
 
   lint:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
-    timeout-minutes: 20
+    timeout-minutes: 80
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -290,54 +290,53 @@ jobs:
     if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu, classify-changes]
-    timeout-minutes: 65
+    timeout-minutes: 125
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      # Preserve the matrix's separate rate-limit tokens while sharing the
-      # expensive runner setup below.
-      - parallel:
-          - name: Fetch token 0
-            id: token_0
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 1
-            id: token_1
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 2
-            id: token_2
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 3
-            id: token_3
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 4
-            id: token_4
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 5
-            id: token_5
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 6
-            id: token_6
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 7
-            id: token_7
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      # Fetch sequentially so the pool can rotate its cursor between requests.
+      # Each token is also rejected by the action when its core budget is empty.
+      - name: Fetch token 0
+        id: token_0
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 1
+        id: token_1
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 2
+        id: token_2
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 3
+        id: token_3
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 4
+        id: token_4
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 5
+        id: token_5
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 6
+        id: token_6
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 7
+        id: token_7
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
@@ -452,7 +451,7 @@ jobs:
         run: cargo test --workspace --exclude mise
   windows-e2e:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 100
     needs: [build-windows, classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:

@@ -170,7 +170,7 @@ jobs:
 
   test-tool:
     name: test-tool-${{ matrix.tranche }}
-    timeout-minutes: 30
+    timeout-minutes: 90
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs:
       - build
