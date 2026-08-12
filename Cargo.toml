@@ -159,6 +159,7 @@ rattler_solve = { version = "9", default-features = false, features = [
 ] }
 rattler_package_streaming = { version = "0.26", default-features = false }
 rattler_virtual_packages = { version = "4", default-features = false }
+reflink-copy = "0.1"
 regex = "1"
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = [
