@@ -152,6 +152,7 @@ impl ToolsetBuilder {
                     let current_active = ts
                         .list_current_requests()
                         .into_iter()
+                        .filter(|tvr| tvr.is_os_supported())
                         .find(|tvr| tvr.ba() == &arg.ba);
 
                     if let Some(current_active) = current_active {
@@ -174,5 +175,48 @@ impl ToolsetBuilder {
             ts.merge(arg_ts);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        let mut inactive_options = parse_tool_options(r#"selected="inactive""#);
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let inactive =
+            ToolRequest::new_opts(ba.clone(), "1.0.0", inactive_options, ToolSource::Unknown)
+                .unwrap();
+        let active = ToolRequest::new_opts(
+            ba.clone(),
+            "2.0.0",
+            parse_tool_options(r#"selected="active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(inactive);
+        toolset.add_version(active);
+
+        let arg = "dummy".parse::<ToolArg>().unwrap();
+        ToolsetBuilder::new()
+            .with_args(&[arg])
+            .with_default_to_latest(true)
+            .load_runtime_args(&mut toolset)
+            .unwrap();
+
+        let requests = &toolset.versions.get(&ba).unwrap().requests;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].version(), "2.0.0");
+        assert_eq!(requests[0].options().get("selected"), Some("active"));
     }
 }
