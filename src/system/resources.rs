@@ -586,8 +586,8 @@ fn package_resource_state(
             ResourceAction::Unknown,
         ),
         PackageState::Missing => ("missing".to_string(), ResourceAction::Create),
-        PackageState::NeedsRepair { installed } => (
-            format!("{installed} (needs repair)"),
+        PackageState::NeedsRepair { installed, reason } => (
+            format!("{installed} (needs repair: {reason})"),
             ResourceAction::Update,
         ),
         PackageState::VersionMismatch { installed } if unsupported_pin => (
@@ -729,6 +729,7 @@ mod tests {
         let (_, action) = package_resource_state(
             PackageState::NeedsRepair {
                 installed: "1.2.3".to_string(),
+                reason: "missing test record".to_string(),
             },
             &request,
             false,

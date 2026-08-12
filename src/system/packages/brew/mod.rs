@@ -55,25 +55,6 @@ impl BrewManager {
         pkgs.iter().partition(|p| is_tapped_formula(&p.name))
     }
 
-    /// Repair requested roots before resolving formula metadata or pouring kegs.
-    fn repair_records(
-        &self,
-        pkgs: &[PackageRequest],
-        opts: &InstallOpts,
-    ) -> Result<Vec<PackageRequest>> {
-        let mut repaired = vec![];
-        for request in pkgs {
-            let name = request_formula_name(&request.name);
-            let state = linked_package_state(&request.version, pour::linked_state(name));
-            if matches!(state, PackageState::NeedsRepair { .. })
-                && pour::repair_link_record(name, opts.dry_run)?
-            {
-                repaired.push(request.clone());
-            }
-        }
-        Ok(repaired)
-    }
-
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // bottles only exist for a formula's current version — versioning is
         // expressed in the formula name itself (postgresql@17); the CLI
@@ -99,14 +80,23 @@ impl BrewManager {
             }
         }
         let mut to_pour: Vec<_> = vec![];
+        let mut to_repair = vec![];
         for rf in &closure {
             // a malformed version is an error, not "already poured"
             let pkg_version = rf.formula.pkg_version()?;
-            if !pour::keg_installed(&rf.formula.name, &pkg_version) {
+            let keg = pour::keg_path(&rf.formula.name, &pkg_version);
+            if keg.is_dir() {
+                let health = pour::installed_formula_health(&rf.formula.name, &pkg_version);
+                match health.kind {
+                    pour::FormulaHealthKind::Healthy => {}
+                    pour::FormulaHealthKind::Repairable => to_repair.push((rf, health)),
+                    pour::FormulaHealthKind::ReinstallRequired => to_pour.push(rf),
+                }
+            } else {
                 to_pour.push(rf);
             }
         }
-        if to_pour.is_empty() {
+        if to_pour.is_empty() && to_repair.is_empty() {
             info!("brew: all formulae already poured");
             return Ok(());
         }
@@ -124,8 +114,16 @@ impl BrewManager {
         // or source build. Current formulae outside this mutation set are not
         // rejected for lifecycle types mise does not need to execute.
         let prepared_lifecycles = prepare_lifecycles(&to_pour)?;
+        let repair_formulae = to_repair.iter().map(|(rf, _)| *rf).collect::<Vec<_>>();
+        let prepared_repairs = prepare_lifecycles(&repair_formulae)?;
+        for ((_, health), lifecycle) in to_repair.iter().zip(&prepared_repairs) {
+            pour::preflight_formula_repair(health, lifecycle)?;
+        }
         if opts.dry_run {
             prefix::bootstrap(true)?;
+            for ((_, health), lifecycle) in to_repair.iter().zip(&prepared_repairs) {
+                pour::repair_formula(health, lifecycle, true).await?;
+            }
             for rf in &to_pour {
                 let origin = if rf.on_request {
                     "requested"
@@ -171,7 +169,19 @@ impl BrewManager {
         let mpr = MultiProgressReport::get();
         // overall [cur/total] header above the per-formula clx jobs, same as
         // tool installs (no-op when only one formula is being installed)
-        mpr.init_footer(false, "install", to_pour.len());
+        mpr.init_footer(false, "install", to_pour.len() + to_repair.len());
+        for ((rf, health), lifecycle) in to_repair.iter().zip(&prepared_repairs) {
+            let name = &rf.formula.name;
+            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew:{name}"));
+            pr.set_message("repair lifecycle".to_string());
+            if let Err(error) = pour::repair_formula(health, lifecycle, false).await {
+                pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                mpr.footer_finish();
+                return Err(error);
+            }
+            pr.finish_with_message(health.version.clone());
+            mpr.footer_inc(1);
+        }
         for (rf, lifecycle) in to_pour.iter().zip(&prepared_lifecycles) {
             let name = &rf.formula.name;
             let pkg_version = rf.formula.pkg_version()?;
@@ -277,7 +287,11 @@ impl SystemPackageManager for BrewManager {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
             let linked_name = request_formula_name(&req.name);
-            let linked = pour::linked_state(linked_name);
+            let linked = pour::installed_closure_health(linked_name).map(|health| {
+                let reason = (health.kind != pour::FormulaHealthKind::Healthy)
+                    .then(|| health.reasons.join("; "));
+                (health.version, reason)
+            });
             let state = linked_package_state(&req.version, linked);
             statuses.push(PackageStatus {
                 request: req.clone(),
@@ -288,13 +302,7 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let repaired = self.repair_records(pkgs, opts)?;
-        let remaining = pkgs
-            .iter()
-            .filter(|request| !repaired.contains(request))
-            .cloned()
-            .collect::<Vec<_>>();
-        let (tapped, core) = self.split_tapped(&remaining);
+        let (tapped, core) = self.split_tapped(pkgs);
         if !core.is_empty() {
             let core = core
                 .into_iter()
@@ -310,13 +318,7 @@ impl SystemPackageManager for BrewManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let repaired = self.repair_records(pkgs, opts)?;
-        let remaining = pkgs
-            .iter()
-            .filter(|request| request.version.is_none() || !repaired.contains(request))
-            .cloned()
-            .collect::<Vec<_>>();
-        let (tapped, core) = self.split_tapped(&remaining);
+        let (tapped, core) = self.split_tapped(pkgs);
         if !core.is_empty() {
             let core = core
                 .into_iter()
@@ -359,7 +361,7 @@ fn request_formula_name(name: &str) -> &str {
 /// Classify the active keg while preserving version mismatch precedence over repair.
 fn linked_package_state(
     requested: &Option<String>,
-    linked: Option<(String, bool)>,
+    linked: Option<(String, Option<String>)>,
 ) -> PackageState {
     match linked {
         // a pin matches the keg version exactly or up to its revision suffix
@@ -371,8 +373,11 @@ fn linked_package_state(
         {
             PackageState::VersionMismatch { installed: version }
         }
-        Some((version, true)) => PackageState::NeedsRepair { installed: version },
-        Some((version, false)) => PackageState::Installed { version },
+        Some((version, Some(reason))) => PackageState::NeedsRepair {
+            installed: version,
+            reason,
+        },
+        Some((version, None)) => PackageState::Installed { version },
         None => PackageState::Missing,
     }
 }
@@ -430,15 +435,22 @@ mod tests {
     #[test]
     fn version_mismatch_takes_precedence_over_record_repair() {
         assert_eq!(
-            linked_package_state(&Some("2.0".to_string()), Some(("1.0".to_string(), true))),
+            linked_package_state(
+                &Some("2.0".to_string()),
+                Some(("1.0".to_string(), Some("missing record".to_string())))
+            ),
             PackageState::VersionMismatch {
                 installed: "1.0".to_string()
             }
         );
         assert_eq!(
-            linked_package_state(&Some("1.0".to_string()), Some(("1.0_1".to_string(), true))),
+            linked_package_state(
+                &Some("1.0".to_string()),
+                Some(("1.0_1".to_string(), Some("missing record".to_string())))
+            ),
             PackageState::NeedsRepair {
-                installed: "1.0_1".to_string()
+                installed: "1.0_1".to_string(),
+                reason: "missing record".to_string()
             }
         );
     }

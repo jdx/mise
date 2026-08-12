@@ -55,6 +55,7 @@ pub enum PackageState {
     #[cfg_attr(windows, allow(dead_code))]
     NeedsRepair {
         installed: String,
+        reason: String,
     },
     /// installed, but the version pinned in config doesn't match
     VersionMismatch {

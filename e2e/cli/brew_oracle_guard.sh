@@ -89,7 +89,9 @@ brew_oracle_require_disposable() {
     brew_oracle_fail "exact mise SHA is required"
     return 1
   fi
-  checkout_sha=$(git -C "$ROOT" rev-parse HEAD) || {
+  # Docker bind mounts preserve host ownership. Trust only this exact checkout
+  # for this one read-only identity command; never alter global Git config.
+  checkout_sha=$(git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD) || {
     brew_oracle_fail "cannot resolve checkout SHA"
     return 1
   }

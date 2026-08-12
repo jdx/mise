@@ -1,10 +1,26 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: TODO
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010, 011
+Implementation start: #11915 `94c66938ca1163d26de49902575f0b779367ee41`
+
+Drift check (2026-08-13): installed status still inspected only the configured
+formula's active records. Existing lifecycle state could classify local damage,
+but did not traverse installed `runtime_dependencies`, distinguish safe repair
+from mandatory reinstall, or journal repair effects. The macOS lifecycle oracle
+also declared the dependency formulae directly, so it could not prove the
+production `brew:kimi-code` root-only configuration.
+
+The proposed `[tools]` fixture does not invoke this subsystem in the audited
+tree: native brew is a `SystemPackageManager` exposed through
+`[bootstrap.packages]`, while `[tools]` accepts tool backends and has no `brew`
+backend. Adding that public config surface is explicitly out of scope. The
+executable regression therefore declares only `"brew:kimi-code"` under
+`[bootstrap.packages]` and invokes the same `mise bootstrap --yes` entry point;
+the closure and failure mode are otherwise identical.
 
 ## Objective
 

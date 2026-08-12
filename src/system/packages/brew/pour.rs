@@ -1,5 +1,6 @@
 //! Pour a bottle: extract -> relocate -> codesign -> receipt -> link.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eyre::{WrapErr, bail};
@@ -22,6 +23,7 @@ pub(super) const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share"
 const KEG_ONLY_MARKER: &str = ".mise-keg-only";
 const EMULATED_BREW_VERSION: &str = "6.0.17";
 
+#[cfg(test)]
 struct RecordRepair {
     version: String,
     keg: PathBuf,
@@ -54,7 +56,8 @@ struct BottleFacts {
     compiler: String,
     #[serde(default)]
     runtime_dependencies: Vec<Value>,
-    built_on: Value,
+    #[serde(default)]
+    built_on: Option<Value>,
     #[serde(default)]
     poured_from_bottle: Option<bool>,
     #[serde(default)]
@@ -78,6 +81,37 @@ struct FinalizationState {
     phase: FinalizationPhase,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FormulaHealthKind {
+    Healthy,
+    Repairable,
+    ReinstallRequired,
+}
+
+#[derive(Debug)]
+pub(super) struct FormulaHealth {
+    pub name: String,
+    pub version: String,
+    pub keg: PathBuf,
+    pub kind: FormulaHealthKind,
+    pub reasons: Vec<String>,
+    mise_owned: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstalledReceipt {
+    #[serde(default)]
+    homebrew_version: String,
+    #[serde(default)]
+    runtime_dependencies: Vec<InstalledRuntimeDependency>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstalledRuntimeDependency {
+    full_name: String,
+    pkg_version: String,
+}
+
 pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
     prefix::cellar().join(name).join(pkg_version)
 }
@@ -85,6 +119,7 @@ pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
 /// is this keg fully poured and linked? Every pour ends by creating the
 /// `opt/<name>` symlink (even for keg-only formulae), so a Cellar directory
 /// without it is a remnant of a failed install and must not block a retry.
+#[cfg(test)]
 pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
     let keg = keg_path(name, pkg_version);
     keg.exists()
@@ -95,6 +130,7 @@ pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
 
 /// the version `opt/<name>` points at, if the symlink resolves to an
 /// existing keg
+#[cfg(test)]
 pub fn linked_version(name: &str) -> Option<String> {
     let opt = prefix::prefix().join("opt").join(name);
     record_keg(name, &opt).map(|(version, _)| version)
@@ -107,13 +143,373 @@ pub(super) fn linked_state(name: &str) -> Option<(String, bool)> {
         record_needs_replacement(name, &opt)
             .then(|| record_keg(name, &prefix::linked_keg_record(name)))?
     })?;
-    let needs_repair = pending_record_repair(name).is_some()
+    let needs_repair = record_repair_needed(name)
         || lifecycle::needs_repair(&active.1)
         || finalization_needs_repair(&active.1);
     Some((active.0, needs_repair))
 }
 
+fn record_repair_needed(name: &str) -> bool {
+    let opt = prefix::prefix().join("opt").join(name);
+    let linked = prefix::linked_keg_record(name);
+    if let Some((_, keg)) = record_keg(name, &opt) {
+        return !keg.join(KEG_ONLY_MARKER).is_file()
+            && record_needs_replacement(name, &linked)
+            && has_public_link_into(&keg);
+    }
+    record_needs_replacement(name, &opt) && record_keg(name, &linked).is_some()
+}
+
+/// Read the active root and its installed receipt dependency closure without
+/// consulting remote metadata. Every reason is prefixed with the exact closure
+/// node so a configured root cannot hide a broken transitive dependency.
+pub(super) fn installed_closure_health(name: &str) -> Option<FormulaHealth> {
+    let active = linked_state(name)?;
+    let active = (active.0.clone(), keg_path(name, &active.0));
+    let mut visited = BTreeSet::new();
+    let mut nodes = vec![];
+    collect_closure_health(name, &active.0, &active.1, &mut visited, &mut nodes);
+    let mut root = nodes.remove(0);
+    for node in nodes {
+        if node.kind != FormulaHealthKind::Healthy {
+            root.kind = max_health(root.kind, node.kind);
+            root.reasons.extend(
+                node.reasons
+                    .into_iter()
+                    .map(|reason| format!("dependency {}/{}: {reason}", node.name, node.version)),
+            );
+        }
+    }
+    Some(root)
+}
+
+fn collect_closure_health(
+    name: &str,
+    version: &str,
+    keg: &Path,
+    visited: &mut BTreeSet<(String, String)>,
+    nodes: &mut Vec<FormulaHealth>,
+) {
+    if !visited.insert((name.to_string(), version.to_string())) {
+        return;
+    }
+    let (health, dependencies) = formula_health(name, version, keg);
+    nodes.push(health);
+    for dependency in dependencies {
+        let dependency_name = dependency
+            .full_name
+            .rsplit('/')
+            .next()
+            .unwrap_or(&dependency.full_name)
+            .to_string();
+        let opt = prefix::prefix().join("opt").join(&dependency_name);
+        if let Some((active_version, active_keg)) =
+            record_keg(&dependency_name, &opt).or_else(|| {
+                record_needs_replacement(&dependency_name, &opt).then(|| {
+                    record_keg(
+                        &dependency_name,
+                        &prefix::linked_keg_record(&dependency_name),
+                    )
+                })?
+            })
+        {
+            collect_closure_health(
+                &dependency_name,
+                &active_version,
+                &active_keg,
+                visited,
+                nodes,
+            );
+        } else {
+            let dependency_keg = keg_path(&dependency_name, &dependency.pkg_version);
+            nodes.push(FormulaHealth {
+                name: dependency.full_name,
+                version: dependency.pkg_version,
+                keg: dependency_keg,
+                kind: FormulaHealthKind::ReinstallRequired,
+                reasons: vec!["runtime dependency is missing or has no active opt record".into()],
+                mise_owned: false,
+            });
+        }
+    }
+}
+
+fn formula_health(
+    name: &str,
+    version: &str,
+    keg: &Path,
+) -> (FormulaHealth, Vec<InstalledRuntimeDependency>) {
+    let mut kind = FormulaHealthKind::Healthy;
+    let mut reasons = vec![];
+    let receipt_path = keg.join("INSTALL_RECEIPT.json");
+    let receipt = std::fs::read(&receipt_path)
+        .ok()
+        .and_then(|contents| serde_json::from_slice::<InstalledReceipt>(&contents).ok());
+    let mise_owned = receipt
+        .as_ref()
+        .is_some_and(|receipt| receipt.homebrew_version.ends_with(" (mise)"));
+    if receipt.is_none() {
+        kind = FormulaHealthKind::ReinstallRequired;
+        reasons.push(format!(
+            "receipt/provenance is missing or malformed: {}",
+            receipt_path.display()
+        ));
+    }
+    let snapshot = keg.join(".brew").join(format!("{name}.rb"));
+    if !snapshot.is_file() {
+        kind = FormulaHealthKind::ReinstallRequired;
+        reasons.push(format!(
+            "formula snapshot is missing: {}",
+            snapshot.display()
+        ));
+    }
+    let sbom = keg.join("sbom.spdx.json");
+    if std::fs::read(&sbom)
+        .ok()
+        .and_then(|contents| serde_json::from_slice::<Value>(&contents).ok())
+        .is_none()
+    {
+        kind = FormulaHealthKind::ReinstallRequired;
+        reasons.push(format!("SBOM is missing or malformed: {}", sbom.display()));
+    }
+
+    let opt_matches = record_keg(name, &prefix::prefix().join("opt").join(name))
+        .is_some_and(|active| active.0 == version);
+    if !opt_matches {
+        if record_needs_replacement(name, &prefix::prefix().join("opt").join(name))
+            && record_keg(name, &prefix::linked_keg_record(name))
+                .is_some_and(|active| active.0 == version)
+        {
+            kind = max_health(kind, FormulaHealthKind::Repairable);
+            reasons.push("opt record is missing or dangling".into());
+        } else {
+            kind = FormulaHealthKind::ReinstallRequired;
+            reasons.push("opt record is missing, foreign, or points at another keg".into());
+        }
+    }
+    let keg_only = keg.join(KEG_ONLY_MARKER).is_file();
+    if !keg_only {
+        let linked_matches = record_keg(name, &prefix::linked_keg_record(name))
+            .is_some_and(|active| active.0 == version);
+        if !linked_matches {
+            if record_needs_replacement(name, &prefix::linked_keg_record(name)) {
+                kind = max_health(kind, FormulaHealthKind::Repairable);
+                reasons.push("linked-keg record is missing or dangling".into());
+            } else {
+                kind = FormulaHealthKind::ReinstallRequired;
+                reasons.push("linked-keg record is missing or ambiguously owned".into());
+            }
+        }
+        if keg_has_linkable_entries(keg) && !has_public_link_into(keg) {
+            kind = max_health(kind, FormulaHealthKind::Repairable);
+            reasons.push("public keg links are missing".into());
+        }
+    }
+
+    if mise_owned && finalization_needs_repair(keg) {
+        kind = FormulaHealthKind::ReinstallRequired;
+        reasons.push("formula finalization stopped before completion".into());
+    }
+    match lifecycle::health(keg, mise_owned) {
+        lifecycle::LifecycleHealth::Healthy => {}
+        lifecycle::LifecycleHealth::Repairable(lifecycle_reasons) => {
+            kind = max_health(kind, FormulaHealthKind::Repairable);
+            reasons.extend(lifecycle_reasons);
+        }
+        lifecycle::LifecycleHealth::ReinstallRequired(lifecycle_reasons) => {
+            kind = FormulaHealthKind::ReinstallRequired;
+            reasons.extend(lifecycle_reasons);
+        }
+    }
+    (
+        FormulaHealth {
+            name: name.to_string(),
+            version: version.to_string(),
+            keg: keg.to_path_buf(),
+            kind,
+            reasons,
+            mise_owned,
+        },
+        receipt
+            .map(|receipt| receipt.runtime_dependencies)
+            .unwrap_or_default(),
+    )
+}
+
+fn max_health(left: FormulaHealthKind, right: FormulaHealthKind) -> FormulaHealthKind {
+    match (left, right) {
+        (FormulaHealthKind::ReinstallRequired, _) | (_, FormulaHealthKind::ReinstallRequired) => {
+            FormulaHealthKind::ReinstallRequired
+        }
+        (FormulaHealthKind::Repairable, _) | (_, FormulaHealthKind::Repairable) => {
+            FormulaHealthKind::Repairable
+        }
+        _ => FormulaHealthKind::Healthy,
+    }
+}
+
+fn keg_has_linkable_entries(keg: &Path) -> bool {
+    LINK_DIRS.iter().any(|directory| {
+        let root = keg.join(directory);
+        root.is_dir()
+            && walkdir::WalkDir::new(root)
+                .min_depth(1)
+                .follow_links(false)
+                .into_iter()
+                .filter_map(|entry| entry.ok())
+                .any(|entry| !entry.file_type().is_dir())
+    })
+}
+
+pub(super) fn installed_formula_health(name: &str, version: &str) -> FormulaHealth {
+    formula_health(name, version, &keg_path(name, version)).0
+}
+
+pub(super) async fn repair_formula(
+    health: &FormulaHealth,
+    lifecycle: &super::lifecycle::PreparedFormulaLifecycle,
+    dry_run: bool,
+) -> Result<bool> {
+    if health.kind == FormulaHealthKind::Healthy {
+        return Ok(false);
+    }
+    if health.kind == FormulaHealthKind::ReinstallRequired {
+        bail!(
+            "brew:{} requires reinstall: {}",
+            health.name,
+            health.reasons.join("; ")
+        )
+    }
+    let topology = preflight_formula_repair(health, lifecycle)?;
+    if dry_run {
+        miseprintln!(
+            "repair {}/{}: {}",
+            health.name,
+            health.version,
+            health.reasons.join("; ")
+        );
+        return Ok(true);
+    }
+    apply_topology_repair(&topology)?;
+    super::lifecycle::repair(lifecycle, health.mise_owned, false).await?;
+    Ok(true)
+}
+
+pub(super) fn preflight_formula_repair(
+    health: &FormulaHealth,
+    lifecycle: &super::lifecycle::PreparedFormulaLifecycle,
+) -> Result<Vec<TopologyRepairLink>> {
+    if health.kind != FormulaHealthKind::Repairable {
+        bail!("brew:{} is not lifecycle-repairable", health.name)
+    }
+    let topology = preflight_topology_repair(&health.name, &health.version, &health.keg)?;
+    super::lifecycle::preflight_repair(lifecycle, health.mise_owned)?;
+    Ok(topology)
+}
+
+#[derive(Debug)]
+pub(super) struct TopologyRepairLink {
+    target: PathBuf,
+    destination: PathBuf,
+    previous: Option<PathBuf>,
+}
+
+fn preflight_topology_repair(
+    name: &str,
+    version: &str,
+    keg: &Path,
+) -> Result<Vec<TopologyRepairLink>> {
+    let keg_only = keg.join(KEG_ONLY_MARKER).is_file();
+    let mut expected = vec![(prefix::prefix().join("opt").join(name), keg.to_path_buf())];
+    if !keg_only {
+        for directory in LINK_DIRS {
+            let root = keg.join(directory);
+            if !root.exists() {
+                continue;
+            }
+            for entry in walkdir::WalkDir::new(root).follow_links(false) {
+                let entry = entry?;
+                if !entry.file_type().is_dir() {
+                    expected.push((
+                        prefix::prefix().join(entry.path().strip_prefix(keg)?),
+                        entry.path().to_path_buf(),
+                    ));
+                }
+            }
+        }
+        expected.push((prefix::linked_keg_record(name), keg.to_path_buf()));
+    }
+    let rack = prefix::cellar().join(name);
+    let mut repairs = vec![];
+    for (destination, target) in expected {
+        if symlink_points_to(&destination, &target) {
+            continue;
+        }
+        if brew_owned_ancestor(&destination).is_some() {
+            bail!(
+                "brew:{name}/{version}: topology repair would traverse a directory symlink: {}",
+                destination.display()
+            )
+        }
+        let previous = match destination.symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                let previous = std::fs::read_link(&destination)?;
+                let resolved = resolved_symlink_target(&destination)
+                    .ok_or_else(|| eyre::eyre!("could not resolve repair target"))?;
+                if !resolved.starts_with(&rack) {
+                    bail!(
+                        "brew:{name}/{version}: topology target has ambiguous ownership: {}",
+                        destination.display()
+                    )
+                }
+                Some(previous)
+            }
+            Err(error) => return Err(error.into()),
+            Ok(_) => bail!(
+                "brew:{name}/{version}: topology target has ambiguous ownership: {}",
+                destination.display()
+            ),
+        };
+        repairs.push(TopologyRepairLink {
+            target,
+            destination,
+            previous,
+        });
+    }
+    Ok(repairs)
+}
+
+fn apply_topology_repair(repairs: &[TopologyRepairLink]) -> Result<()> {
+    let mut completed: Vec<&TopologyRepairLink> = vec![];
+    for repair in repairs {
+        let result = (|| -> Result<()> {
+            crate::file::create_dir_all(repair.destination.parent().unwrap())?;
+            if repair.destination.symlink_metadata().is_ok() {
+                crate::file::remove_file(&repair.destination)?;
+            }
+            crate::file::make_symlink(
+                &relative_target(&repair.target, &repair.destination),
+                &repair.destination,
+            )?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            for completed_repair in completed.into_iter().rev() {
+                let _ = crate::file::remove_file(&completed_repair.destination);
+                if let Some(previous) = &completed_repair.previous {
+                    let _ = crate::file::make_symlink(previous, &completed_repair.destination);
+                }
+            }
+            return Err(error);
+        }
+        completed.push(repair);
+    }
+    Ok(())
+}
+
 /// Restore one missing or dangling mise-owned active-keg record without relinking the keg.
+#[cfg(test)]
 pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
     let Some(repair) = pending_record_repair(name) else {
         return Ok(false);
@@ -142,6 +538,7 @@ pub(super) fn repair_link_record(name: &str, dry_run: bool) -> Result<bool> {
 }
 
 /// Find a single active record that can be reconstructed from its valid counterpart.
+#[cfg(test)]
 fn pending_record_repair(name: &str) -> Option<RecordRepair> {
     let opt = prefix::prefix().join("opt").join(name);
     let linked = prefix::linked_keg_record(name);
@@ -433,8 +830,8 @@ fn validate_bottle_provenance(
                 });
         if !identity_matches {
             bail!(
-                "brew:{}: archive-bottle SBOM identity does not match formula/version",
-                rf.formula.name
+                "brew:{}: {kind} SBOM identity does not match formula/version",
+                rf.formula.name,
             );
         }
     }
@@ -748,7 +1145,7 @@ pub fn write_receipt(
                     source_modified_time,
                     compiler: compiler.clone(),
                     runtime_dependencies: derived_runtime_dependencies,
-                    built_on: built_on.clone(),
+                    built_on: Some(built_on.clone()),
                     poured_from_bottle: Some(false),
                     source: None,
                 },
@@ -758,7 +1155,7 @@ pub fn write_receipt(
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-    let receipt = json!({
+    let mut receipt = json!({
         "homebrew_version": format!("{EMULATED_BREW_VERSION} (mise)"),
         "used_options": [],
         "unused_options": [],
@@ -785,8 +1182,13 @@ pub fn write_receipt(
             "tap_git_head": rf.formula.tap_git_head,
         },
         "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },
-        "built_on": facts.built_on,
     });
+    if let Some(built_on) = facts.built_on {
+        receipt
+            .as_object_mut()
+            .unwrap()
+            .insert("built_on".to_string(), built_on);
+    }
     crate::file::write(
         keg.join("INSTALL_RECEIPT.json"),
         serde_json::to_string(&receipt)?,
@@ -1329,6 +1731,37 @@ mod tests {
         }
     }
 
+    fn write_installed_formula(
+        prefix: &Path,
+        name: &str,
+        version: &str,
+        mise_owned: bool,
+        dependencies: &[(&str, &str)],
+    ) -> Result<PathBuf> {
+        let keg = write_lib_keg(prefix, name, version)?;
+        crate::file::create_dir_all(keg.join(".brew"))?;
+        crate::file::write(
+            keg.join(".brew").join(format!("{name}.rb")),
+            format!("class {} < Formula; end\n", name.replace(['-', '@'], "_")),
+        )?;
+        crate::file::write(keg.join("sbom.spdx.json"), "{}")?;
+        let runtime_dependencies = dependencies
+            .iter()
+            .map(|(full_name, pkg_version)| {
+                json!({"full_name": full_name, "pkg_version": pkg_version})
+            })
+            .collect::<Vec<_>>();
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            serde_json::to_vec(&json!({
+                "homebrew_version": if mise_owned { "5.1.15 (mise)" } else { "6.0.17" },
+                "runtime_dependencies": runtime_dependencies,
+            }))?,
+        )?;
+        link_keg(name, version, false)?;
+        Ok(keg)
+    }
+
     #[test]
     fn archive_bottle_requires_valid_receipt_before_public_mutation() -> Result<()> {
         let tmp = tempfile::tempdir()?;
@@ -1455,6 +1888,32 @@ mod tests {
         oci_sbom.as_object_mut().unwrap().remove("creationInfo");
         archive_sbom.as_object_mut().unwrap().remove("creationInfo");
         assert_eq!(oci_sbom, archive_sbom);
+        Ok(())
+    }
+
+    #[test]
+    fn bottle_receipt_preserves_authoritative_absence_of_built_on() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let rf = resolved_formula("foo", "1.0");
+        let keg = tmp.path().join("foo/1.0");
+        crate::file::create_dir_all(&keg)?;
+        let sbom = bottle_sbom("foo", "1.0");
+        crate::file::write(keg.join("sbom.spdx.json"), serde_json::to_vec(&sbom)?)?;
+        let mut tab = bottle_tab("1.0");
+        tab.as_object_mut().unwrap().remove("built_on");
+        let provenance = FormulaInstallProvenance::OciBottle {
+            tab,
+            sbom,
+            sbom_supplement: None,
+        };
+
+        validate_bottle_provenance(&rf, &provenance)?;
+        write_receipt(&rf, "test", &keg, &Default::default(), &[], &provenance)?;
+
+        let receipt: Value =
+            serde_json::from_slice(&std::fs::read(keg.join("INSTALL_RECEIPT.json"))?)?;
+        assert_eq!(receipt["compiler"], "bottle-clang");
+        assert!(receipt.get("built_on").is_none());
         Ok(())
     }
 
@@ -1864,19 +2323,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_manager_repairs_linked_record_without_repouring() -> Result<()> {
+    async fn test_formula_repair_restores_linked_record_without_repouring() -> Result<()> {
         use std::os::unix::fs::MetadataExt;
 
-        use crate::system::packages::{
-            InstallOpts, PackageRequest, PackageState, SystemPackageManager,
-        };
+        use crate::system::packages::{PackageRequest, PackageState, SystemPackageManager};
 
         let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
-        let keg = write_lib_keg(&prefix, "foo", "1.0")?;
-        crate::file::write(keg.join("INSTALL_RECEIPT.json"), "{}")?;
-        brew_style_link(&prefix, "foo", "1.0")?;
+        let keg = write_installed_formula(&prefix, "foo", "1.0", false, &[])?;
+        let _state = FormulaStateGuard::new(&keg);
+        crate::file::remove_file(prefix::linked_keg_record("foo"))?;
         let public = prefix.join("lib/libfoo.dylib");
         let request = PackageRequest {
             name: "foo".to_string(),
@@ -1888,28 +2345,16 @@ mod tests {
         let public_inode = public.symlink_metadata()?.ino();
 
         let manager = super::super::BrewManager::new();
-        let mismatched = PackageRequest {
-            version: Some("2.0".to_string()),
-            ..request.clone()
-        };
-        let err = manager
-            .install(std::slice::from_ref(&mismatched), &InstallOpts::default())
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("pin via the formula name"));
-        assert!(prefix::linked_keg_record("foo").symlink_metadata().is_err());
-
         let status = manager.installed(std::slice::from_ref(&request)).await?;
-        assert_eq!(
-            status[0].state,
-            PackageState::NeedsRepair {
-                installed: "1.0".to_string()
-            }
-        );
+        assert!(matches!(
+            &status[0].state,
+            PackageState::NeedsRepair { installed, .. } if installed == "1.0"
+        ));
 
-        manager
-            .install(std::slice::from_ref(&request), &InstallOpts::default())
-            .await?;
+        let rf = resolved_formula("foo", "1.0");
+        let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        let health = installed_formula_health("foo", "1.0");
+        assert!(repair_formula(&health, &lifecycle, false).await?);
 
         assert_eq!(keg.metadata()?.ino(), keg_inode);
         assert_eq!(
@@ -1926,6 +2371,251 @@ mod tests {
             PackageState::Installed {
                 version: "1.0".to_string()
             }
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn root_status_traverses_and_repairs_legacy_dependency_lifecycle() -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        use crate::system::packages::{PackageRequest, PackageState, SystemPackageManager};
+
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let ca = write_installed_formula(&prefix, "ca-certificates", "1", false, &[])?;
+        let openssl =
+            write_installed_formula(&prefix, "openssl@3", "1", true, &[("ca-certificates", "1")])?;
+        let node = write_installed_formula(&prefix, "node", "1", false, &[("openssl@3", "1")])?;
+        let kimi = write_installed_formula(&prefix, "kimi-code", "1", false, &[("node", "1")])?;
+        let _state = FormulaStateGuard::new(&openssl);
+        crate::file::create_dir_all(openssl.join(".bottle/etc/openssl@3"))?;
+        crate::file::write(
+            openssl.join(".bottle/etc/openssl@3/openssl.cnf"),
+            "openssl-default",
+        )?;
+        crate::file::create_dir_all(prefix.join("etc/ca-certificates"))?;
+        crate::file::write(prefix.join("etc/ca-certificates/cert.pem"), "trusted-ca")?;
+        crate::file::remove_file(prefix::linked_keg_record("openssl@3"))?;
+
+        let keg_inode = openssl.metadata()?.ino();
+        let receipt_inode = openssl.join("INSTALL_RECEIPT.json").metadata()?.ino();
+        let opt_inode = prefix.join("opt/openssl@3").symlink_metadata()?.ino();
+        let public_inode = prefix
+            .join("lib/libopenssl@3.dylib")
+            .symlink_metadata()?
+            .ino();
+        let manager = super::super::BrewManager::new();
+        let request = PackageRequest {
+            name: "kimi-code".to_string(),
+            version: None,
+            tap_url: None,
+        };
+        let status = manager.installed(std::slice::from_ref(&request)).await?;
+        let PackageState::NeedsRepair { reason, .. } = &status[0].state else {
+            panic!("root with unhealthy dependency must need repair")
+        };
+        assert!(reason.contains("dependency openssl@3/1"));
+        assert!(reason.contains("linked-keg record"));
+        assert!(reason.contains("lifecycle state absent"));
+        assert!(reason.contains("shared lifecycle path missing"));
+        assert!(
+            prefix
+                .join("etc/openssl@3/openssl.cnf")
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(
+            prefix::linked_keg_record("openssl@3")
+                .symlink_metadata()
+                .is_err()
+        );
+
+        let snapshot = openssl.join(".brew/openssl@3.rb");
+        let checksum = crate::hash::file_hash_sha256(&snapshot, None)?;
+        let mut rf = resolved_formula("openssl@3", "1");
+        rf.formula.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
+            sha256: Some(checksum),
+        });
+        rf.formula.post_install_steps = vec![json!({
+            "type": "symlink",
+            "source": {"path": "{{etc}}/ca-certificates/cert.pem"},
+            "target": {"path": "{{pkgetc}}/cert.pem"},
+            "force": true
+        })];
+        let lifecycle = lifecycle::prepare(&rf.formula, &openssl)?;
+        let health = installed_formula_health("openssl@3", "1");
+        preflight_formula_repair(&health, &lifecycle)?;
+        assert!(repair_formula(&health, &lifecycle, false).await?);
+
+        assert_eq!(openssl.metadata()?.ino(), keg_inode);
+        assert_eq!(
+            openssl.join("INSTALL_RECEIPT.json").metadata()?.ino(),
+            receipt_inode
+        );
+        assert_eq!(
+            prefix.join("opt/openssl@3").symlink_metadata()?.ino(),
+            opt_inode
+        );
+        assert_eq!(
+            prefix
+                .join("lib/libopenssl@3.dylib")
+                .symlink_metadata()?
+                .ino(),
+            public_inode
+        );
+        assert_eq!(
+            crate::file::read_to_string(prefix.join("etc/openssl@3/openssl.cnf"))?,
+            "openssl-default"
+        );
+        assert_eq!(
+            std::fs::read_link(prefix.join("etc/openssl@3/cert.pem"))?,
+            PathBuf::from("../ca-certificates/cert.pem")
+        );
+        assert_eq!(
+            manager.installed(std::slice::from_ref(&request)).await?[0].state,
+            PackageState::Installed {
+                version: "1".to_string()
+            }
+        );
+        for keg in [ca, node, kimi] {
+            assert!(keg.is_dir());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_repair_preserves_user_configuration() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_installed_formula(&prefix, "foo", "1", true, &[])?;
+        let _state = FormulaStateGuard::new(&keg);
+        let snapshot = keg.join(".brew/foo.rb");
+        crate::file::create_dir_all(keg.join(".bottle/etc/foo"))?;
+        crate::file::write(keg.join(".bottle/etc/foo/config"), "new-default")?;
+        crate::file::create_dir_all(prefix.join("etc/foo"))?;
+        crate::file::write(prefix.join("etc/foo/config"), "user-modified")?;
+
+        let mut rf = resolved_formula("foo", "1");
+        rf.formula.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
+            sha256: Some(crate::hash::file_hash_sha256(&snapshot, None)?),
+        });
+        let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        let health = installed_formula_health("foo", "1");
+        assert_eq!(health.kind, FormulaHealthKind::Repairable);
+        assert!(repair_formula(&health, &lifecycle, false).await?);
+
+        assert_eq!(
+            crate::file::read_to_string(prefix.join("etc/foo/config"))?,
+            "user-modified"
+        );
+        assert_eq!(
+            crate::file::read_to_string(prefix.join("etc/foo/config.default"))?,
+            "new-default"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_native_repair_provenance_fails_without_mutation() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_installed_formula(&prefix, "foo", "1", false, &[])?;
+        let _state = FormulaStateGuard::new(&keg);
+        crate::file::create_dir_all(keg.join(".bottle/etc/foo"))?;
+        crate::file::write(keg.join(".bottle/etc/foo/config"), "default")?;
+        let rf = resolved_formula("foo", "1");
+        let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        let health = installed_formula_health("foo", "1");
+        assert_eq!(health.kind, FormulaHealthKind::ReinstallRequired);
+
+        let error = repair_formula(&health, &lifecycle, false)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("requires reinstall"));
+        assert!(prefix.join("etc/foo/config").symlink_metadata().is_err());
+        assert!(lifecycle::test_state_path(&keg).symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unknown_interrupted_lifecycle_is_never_replayed() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_installed_formula(&prefix, "foo", "1", true, &[])?;
+        let _state = FormulaStateGuard::new(&keg);
+        let state = lifecycle::test_state_path(&keg);
+        crate::file::create_dir_all(state.parent().unwrap())?;
+        crate::file::write(
+            &state,
+            serde_json::to_vec(&json!({
+                "complete": false,
+                "phase": "shared_state",
+                "symlinks": [],
+                "required_paths": [],
+                "absent_patterns": [],
+                "repair": null
+            }))?,
+        )?;
+        let rf = resolved_formula("foo", "1");
+        let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        let health = installed_formula_health("foo", "1");
+        assert_eq!(health.kind, FormulaHealthKind::ReinstallRequired);
+
+        let error = repair_formula(&health, &lifecycle, false)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("unknown outcome"));
+        let persisted: Value = serde_json::from_slice(&std::fs::read(&state)?)?;
+        assert_eq!(persisted["complete"], false);
+        assert_eq!(persisted["phase"], "shared_state");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn idempotent_repair_journal_resumes_after_effect_before_checkpoint() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_installed_formula(&prefix, "foo", "1", true, &[])?;
+        let _state = FormulaStateGuard::new(&keg);
+        let source = keg.join(".bottle/etc/foo/config");
+        let target = prefix.join("etc/foo/config");
+        crate::file::create_dir_all(source.parent().unwrap())?;
+        crate::file::write(&source, "default")?;
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(&target, "default")?;
+        let state = lifecycle::test_state_path(&keg);
+        crate::file::create_dir_all(state.parent().unwrap())?;
+        crate::file::write(
+            &state,
+            serde_json::to_vec(&json!({
+                "complete": true,
+                "phase": "complete",
+                "symlinks": [],
+                "required_paths": [target],
+                "absent_patterns": [],
+                "repair": {
+                    "effects": [{"type": "copy", "source": source, "target": target}],
+                    "next": 0
+                }
+            }))?,
+        )?;
+        let rf = resolved_formula("foo", "1");
+        let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        let health = installed_formula_health("foo", "1");
+        assert_eq!(health.kind, FormulaHealthKind::Repairable);
+        assert!(repair_formula(&health, &lifecycle, false).await?);
+
+        let persisted: Value = serde_json::from_slice(&std::fs::read(&state)?)?;
+        assert!(persisted["repair"].is_null());
+        assert_eq!(
+            crate::file::read_to_string(prefix.join("etc/foo/config"))?,
+            "default"
         );
         Ok(())
     }

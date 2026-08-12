@@ -1,6 +1,6 @@
 //! Persistent formula state and typed post-install operations.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -21,6 +21,7 @@ const MAX_FAILURE_LOG_BYTES: usize = 32 * 1024;
 pub(super) struct PreparedFormulaLifecycle {
     formula: String,
     keg: PathBuf,
+    formula_snapshot_sha256: Option<String>,
     steps: Vec<PreparedStep>,
 }
 
@@ -190,9 +191,31 @@ struct LifecycleState {
     required_paths: Vec<PathBuf>,
     #[serde(default)]
     absent_patterns: Vec<String>,
+    #[serde(default)]
+    repair: Option<LifecycleRepairJournal>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct LifecycleRepairJournal {
+    effects: Vec<LifecycleRepairEffect>,
+    next: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum LifecycleRepairEffect {
+    Copy { source: PathBuf, target: PathBuf },
+    Symlink { source: PathBuf, target: PathBuf },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum LifecycleHealth {
+    Healthy,
+    Repairable(Vec<String>),
+    ReinstallRequired(Vec<String>),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum LifecyclePhase {
     #[default]
@@ -239,6 +262,10 @@ pub(super) fn prepare(formula: &Formula, keg: &Path) -> Result<PreparedFormulaLi
     Ok(PreparedFormulaLifecycle {
         formula: formula.name.clone(),
         keg: keg.to_path_buf(),
+        formula_snapshot_sha256: formula
+            .ruby_source_checksum
+            .as_ref()
+            .and_then(|checksum| checksum.sha256.clone()),
         steps,
     })
 }
@@ -514,35 +541,177 @@ fn has_glob_magic(value: &str) -> bool {
 }
 
 pub(super) fn needs_repair(keg: &Path) -> bool {
-    let state_path = state_path(keg);
-    if state_path.exists() {
-        let Ok(contents) = crate::file::read_to_string(&state_path) else {
-            return true;
-        };
-        let Ok(state) = serde_json::from_str::<LifecycleState>(&contents) else {
-            return true;
-        };
-        if !state.complete
-            || state
-                .symlinks
-                .iter()
-                .any(|link| resolved_symlink_target(&link.target).as_ref() != Some(&link.source))
-            || state.required_paths.iter().any(|path| !path.exists())
-            || state.absent_patterns.iter().any(|pattern| {
-                glob::glob(pattern)
-                    .ok()
+    !matches!(health(keg, false), LifecycleHealth::Healthy)
+}
+
+/// Classify formula lifecycle health without fetching metadata or mutating state.
+/// A missing private state file is accepted for native Homebrew state only when
+/// the observable shared defaults are present. Mise-owned legacy state remains
+/// actionable because old mise versions never ran this lifecycle at all.
+pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
+    let shared_missing = shared_missing_paths(keg);
+    let path = state_path(keg);
+    if path.symlink_metadata().is_err() {
+        if mise_owned {
+            let mut reasons = vec![
+                "lifecycle state absent; install_etc_var and post-install were not recorded"
+                    .to_string(),
+            ];
+            reasons.extend(
+                shared_missing.into_iter().map(|(_, target)| {
+                    format!("shared lifecycle path missing: {}", target.display())
+                }),
+            );
+            return LifecycleHealth::Repairable(reasons);
+        }
+        return if shared_missing.is_empty() {
+            LifecycleHealth::Healthy
+        } else {
+            LifecycleHealth::ReinstallRequired(
+                shared_missing
                     .into_iter()
-                    .flatten()
-                    .any(|path| path.is_ok())
-            })
-        {
-            return true;
+                    .map(|(_, target)| {
+                        format!(
+                            "native Homebrew shared path missing without mise repair provenance: {}",
+                            target.display()
+                        )
+                    })
+                    .collect(),
+            )
+        };
+    }
+    let state = match crate::file::read_to_string(&path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<LifecycleState>(&contents).ok())
+    {
+        Some(state) => state,
+        None => {
+            return LifecycleHealth::ReinstallRequired(vec![format!(
+                "lifecycle state is unreadable: {}",
+                path.display()
+            )]);
+        }
+    };
+    if !state.complete || state.phase != LifecyclePhase::Complete {
+        return LifecycleHealth::ReinstallRequired(vec![
+            "lifecycle stopped before completion; a post-install action may have an unknown outcome"
+                .to_string(),
+        ]);
+    }
+
+    let mut repairable = BTreeSet::new();
+    let mut reinstall = BTreeSet::new();
+    if state.repair.is_some() {
+        repairable.insert("an idempotent lifecycle repair journal is incomplete".to_string());
+    }
+    for (source, target) in shared_missing {
+        if source.symlink_metadata().is_ok() {
+            repairable.insert(format!(
+                "shared lifecycle path missing: {}",
+                target.display()
+            ));
         }
     }
-    ["etc", "var"].into_iter().any(|root| {
-        let source = keg.join(".bottle").join(root);
-        source.exists() && shared_tree_missing(&source, &prefix::prefix().join(root))
-    })
+    for link in &state.symlinks {
+        if !node_exists(&link.source) {
+            reinstall.insert(format!(
+                "post-install symlink source is missing: {}",
+                link.source.display()
+            ));
+        } else if resolved_symlink_target(&link.target).as_ref() != Some(&link.source) {
+            if link.target.symlink_metadata().is_err() {
+                repairable.insert(format!(
+                    "post-install symlink is missing: {}",
+                    link.target.display()
+                ));
+            } else {
+                reinstall.insert(format!(
+                    "post-install target has ambiguous ownership: {}",
+                    link.target.display()
+                ));
+            }
+        }
+    }
+    for required in &state.required_paths {
+        if !node_exists(required) {
+            let is_shared_default = ["etc", "var"].into_iter().any(|root| {
+                required
+                    .strip_prefix(prefix::prefix().join(root))
+                    .ok()
+                    .is_some_and(|relative| {
+                        keg.join(".bottle")
+                            .join(root)
+                            .join(relative)
+                            .symlink_metadata()
+                            .is_ok()
+                    })
+            });
+            if is_shared_default {
+                repairable.insert(format!(
+                    "shared lifecycle path missing: {}",
+                    required.display()
+                ));
+            } else {
+                reinstall.insert(format!(
+                    "post-install output is missing and cannot be replayed safely: {}",
+                    required.display()
+                ));
+            }
+        }
+    }
+    for pattern in &state.absent_patterns {
+        if glob::glob(pattern)
+            .ok()
+            .into_iter()
+            .flatten()
+            .any(|path| path.is_ok())
+        {
+            reinstall.insert(format!(
+                "post-install removal invariant no longer holds: {pattern}"
+            ));
+        }
+    }
+    if !reinstall.is_empty() {
+        LifecycleHealth::ReinstallRequired(reinstall.into_iter().collect())
+    } else if !repairable.is_empty() {
+        LifecycleHealth::Repairable(repairable.into_iter().collect())
+    } else {
+        LifecycleHealth::Healthy
+    }
+}
+
+fn node_exists(path: &Path) -> bool {
+    match path.symlink_metadata() {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            resolved_symlink_target(path).is_some_and(|target| target.exists())
+        }
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+fn shared_missing_paths(keg: &Path) -> Vec<(PathBuf, PathBuf)> {
+    let mut paths = vec![];
+    for root in ["etc", "var"] {
+        let source_root = keg.join(".bottle").join(root);
+        if !source_root.is_dir() {
+            continue;
+        }
+        for entry in walkdir::WalkDir::new(&source_root)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| !entry.file_type().is_dir())
+        {
+            if let Ok(relative) = entry.path().strip_prefix(&source_root) {
+                let target = prefix::prefix().join(root).join(relative);
+                if !node_exists(&target) {
+                    paths.push((entry.path().to_path_buf(), target));
+                }
+            }
+        }
+    }
+    paths
 }
 
 pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
@@ -556,6 +725,7 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
             symlinks: vec![],
             required_paths: vec![],
             absent_patterns: vec![],
+            repair: None,
         },
     )?;
     let mut symlinks = vec![];
@@ -579,6 +749,7 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
                 symlinks: vec![],
                 required_paths: required_paths.clone(),
                 absent_patterns: vec![],
+                repair: None,
             },
         )?;
         for step in &prepared.steps {
@@ -599,10 +770,263 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
                 symlinks,
                 required_paths,
                 absent_patterns,
+                repair: None,
             },
         )?;
     }
     result
+}
+
+/// Repair only effects whose ownership and retry behavior are proven. Legacy
+/// mise receipts without lifecycle state may run the complete typed plan once,
+/// after its embedded formula snapshot is matched to the authoritative API
+/// checksum. An interrupted lifecycle is never replayed because a `run` or
+/// removal step may already have taken effect.
+pub(super) async fn repair(
+    prepared: &PreparedFormulaLifecycle,
+    mise_owned: bool,
+    dry_run: bool,
+) -> Result<bool> {
+    if !preflight_repair(prepared, mise_owned)? {
+        return Ok(false);
+    }
+    let keg = &prepared.keg;
+    let initial_health = health(keg, mise_owned);
+    match &initial_health {
+        LifecycleHealth::Healthy | LifecycleHealth::ReinstallRequired(_) => unreachable!(),
+        LifecycleHealth::Repairable(reasons) if dry_run => {
+            miseprintln!(
+                "repair {}/{}: {}",
+                prepared.formula,
+                keg.file_name().unwrap_or_default().to_string_lossy(),
+                reasons.join("; ")
+            );
+            return Ok(true);
+        }
+        LifecycleHealth::Repairable(_) => {}
+    }
+
+    let path = state_path(keg);
+    if path.symlink_metadata().is_err() {
+        validate_legacy_formula_snapshot(prepared)?;
+        install(prepared).await?;
+        return Ok(true);
+    }
+    let mut state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+    if !state.complete || state.phase != LifecyclePhase::Complete {
+        bail!(
+            "brew:{} requires reinstall: lifecycle completion is unknown",
+            prepared.formula
+        );
+    }
+    let mut journal = state
+        .repair
+        .take()
+        .unwrap_or_else(|| LifecycleRepairJournal {
+            effects: repair_effects(keg, &state),
+            next: 0,
+        });
+    validate_repair_journal(keg, &state, &journal)?;
+    preflight_repair_effects(&journal.effects)?;
+    state.repair = Some(journal.clone());
+    write_state(&path, &state)?;
+    while journal.next < journal.effects.len() {
+        apply_repair_effect(&journal.effects[journal.next])?;
+        journal.next += 1;
+        state.repair = Some(journal.clone());
+        write_state(&path, &state)?;
+    }
+    state.repair = None;
+    write_state(&path, &state)?;
+    match health(keg, true) {
+        LifecycleHealth::Healthy => Ok(true),
+        LifecycleHealth::Repairable(reasons) | LifecycleHealth::ReinstallRequired(reasons) => {
+            bail!(
+                "brew:{} lifecycle remains unhealthy after repair: {}",
+                prepared.formula,
+                reasons.join("; ")
+            )
+        }
+    }
+}
+
+pub(super) fn preflight_repair(
+    prepared: &PreparedFormulaLifecycle,
+    mise_owned: bool,
+) -> Result<bool> {
+    let keg = &prepared.keg;
+    match health(keg, mise_owned) {
+        LifecycleHealth::Healthy => return Ok(false),
+        LifecycleHealth::ReinstallRequired(reasons) => bail!(
+            "brew:{} requires reinstall: {}",
+            prepared.formula,
+            reasons.join("; ")
+        ),
+        LifecycleHealth::Repairable(_) => {}
+    }
+    let path = state_path(keg);
+    if path.symlink_metadata().is_err() {
+        validate_legacy_formula_snapshot(prepared)?;
+        return Ok(true);
+    }
+    let state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+    if !state.complete || state.phase != LifecyclePhase::Complete {
+        bail!(
+            "brew:{} requires reinstall: lifecycle completion is unknown",
+            prepared.formula
+        );
+    }
+    let journal = state
+        .repair
+        .clone()
+        .unwrap_or_else(|| LifecycleRepairJournal {
+            effects: repair_effects(keg, &state),
+            next: 0,
+        });
+    validate_repair_journal(keg, &state, &journal)?;
+    preflight_repair_effects(&journal.effects)?;
+    Ok(true)
+}
+
+fn validate_legacy_formula_snapshot(prepared: &PreparedFormulaLifecycle) -> Result<()> {
+    let expected = prepared
+        .formula_snapshot_sha256
+        .as_deref()
+        .ok_or_else(|| eyre!("authoritative formula snapshot checksum is unavailable"))?;
+    let snapshot = prepared
+        .keg
+        .join(".brew")
+        .join(format!("{}.rb", prepared.formula));
+    if !snapshot.is_file() {
+        bail!(
+            "brew:{} requires reinstall: formula snapshot is missing at {}",
+            prepared.formula,
+            snapshot.display()
+        )
+    }
+    let actual = crate::hash::file_hash_sha256(&snapshot, None)?;
+    if actual != expected {
+        bail!(
+            "brew:{} requires reinstall: formula snapshot checksum does not match lifecycle metadata",
+            prepared.formula
+        )
+    }
+    Ok(())
+}
+
+fn repair_effects(keg: &Path, state: &LifecycleState) -> Vec<LifecycleRepairEffect> {
+    let mut effects = shared_missing_paths(keg)
+        .into_iter()
+        .map(|(source, target)| LifecycleRepairEffect::Copy { source, target })
+        .collect::<Vec<_>>();
+    effects.extend(
+        state
+            .symlinks
+            .iter()
+            .filter(|link| resolved_symlink_target(&link.target).as_ref() != Some(&link.source))
+            .map(|link| LifecycleRepairEffect::Symlink {
+                source: link.source.clone(),
+                target: link.target.clone(),
+            }),
+    );
+    effects
+}
+
+fn validate_repair_journal(
+    keg: &Path,
+    state: &LifecycleState,
+    journal: &LifecycleRepairJournal,
+) -> Result<()> {
+    if journal.next > journal.effects.len() {
+        bail!("lifecycle repair journal has an invalid checkpoint")
+    }
+    for effect in &journal.effects {
+        match effect {
+            LifecycleRepairEffect::Copy { source, target } => {
+                let mapping_matches = ["etc", "var"].into_iter().any(|root| {
+                    source
+                        .strip_prefix(keg.join(".bottle").join(root))
+                        .ok()
+                        .is_some_and(|relative| {
+                            target == &prefix::prefix().join(root).join(relative)
+                        })
+                });
+                if !mapping_matches || !state.required_paths.contains(target) {
+                    bail!(
+                        "lifecycle repair journal contains an unowned shared-state effect: {}",
+                        target.display()
+                    )
+                }
+            }
+            LifecycleRepairEffect::Symlink { source, target } => {
+                if !state
+                    .symlinks
+                    .iter()
+                    .any(|link| link.source == *source && link.target == *target)
+                {
+                    bail!(
+                        "lifecycle repair journal contains an unowned symlink effect: {}",
+                        target.display()
+                    )
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn preflight_repair_effects(effects: &[LifecycleRepairEffect]) -> Result<()> {
+    for effect in effects {
+        match effect {
+            LifecycleRepairEffect::Copy { source, target } => {
+                if source.symlink_metadata().is_err() {
+                    bail!("lifecycle repair source is missing: {}", source.display())
+                }
+                ensure_runtime_write_path(target, false)?;
+                if target.symlink_metadata().is_ok() && !files_equal(source, target) {
+                    bail!(
+                        "lifecycle repair target has ambiguous ownership: {}",
+                        target.display()
+                    )
+                }
+            }
+            LifecycleRepairEffect::Symlink { source, target } => {
+                if !node_exists(source) {
+                    bail!(
+                        "lifecycle repair symlink source is missing: {}",
+                        source.display()
+                    )
+                }
+                ensure_runtime_write_path(target, false)?;
+                if target.symlink_metadata().is_ok()
+                    && resolved_symlink_target(target).as_ref() != Some(source)
+                {
+                    bail!(
+                        "lifecycle repair target has ambiguous ownership: {}",
+                        target.display()
+                    )
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn apply_repair_effect(effect: &LifecycleRepairEffect) -> Result<()> {
+    match effect {
+        LifecycleRepairEffect::Copy { source, target } => {
+            if target.symlink_metadata().is_err() {
+                atomic_copy(source, target)?;
+            }
+        }
+        LifecycleRepairEffect::Symlink { source, target } => {
+            if target.symlink_metadata().is_err() {
+                crate::file::create_dir_all(target.parent().unwrap())?;
+                crate::file::make_symlink(&super::pour::relative_target(source, target), target)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn state_path(keg: &Path) -> PathBuf {
@@ -614,6 +1038,11 @@ fn state_path(keg: &Path) -> PathBuf {
     crate::dirs::STATE
         .join("brew-formula-lifecycle")
         .join(format!("{identity}.json"))
+}
+
+#[cfg(test)]
+pub(super) fn test_state_path(keg: &Path) -> PathBuf {
+    state_path(keg)
 }
 
 pub(super) fn remove_owned_state(keg: &Path) -> Result<()> {
@@ -736,21 +1165,6 @@ fn files_equal(left: &Path, right: &Path) -> bool {
         }
         _ => false,
     }
-}
-
-fn shared_tree_missing(source_root: &Path, destination_root: &Path) -> bool {
-    walkdir::WalkDir::new(source_root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| !entry.file_type().is_dir())
-        .any(|entry| {
-            entry
-                .path()
-                .strip_prefix(source_root)
-                .ok()
-                .is_some_and(|relative| destination_root.join(relative).symlink_metadata().is_err())
-        })
 }
 
 #[derive(Default)]
@@ -1550,6 +1964,7 @@ mod tests {
             }],
             required_paths: vec![],
             absent_patterns: vec![],
+            repair: None,
         };
         remove_lifecycle_symlinks(&state)?;
         assert!(!target.exists());

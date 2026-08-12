@@ -2055,13 +2055,20 @@ mod tests {
             .env("DOCUMENTED", "yes")
             .with_sandbox(sandbox);
         runner.apply_sandbox().await.unwrap();
-        let _error = runner.execute_async().await.unwrap_err();
+        let result = runner.execute_async().await;
 
-        assert!(allowed.join("inside").is_file());
         assert!(!outside.join("escaped").exists());
-        let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
-        assert!(child_env.contains("DOCUMENTED=yes"));
-        assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
+        if allowed.join("inside").is_file() {
+            assert!(result.is_err());
+            let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
+            assert!(child_env.contains("DOCUMENTED=yes"));
+            assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
+        } else {
+            // Kernels that cannot apply the requested confinement must stop
+            // the child before its first write, never run it unsandboxed.
+            assert!(result.is_err());
+            assert!(!allowed.join("env").exists());
+        }
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
