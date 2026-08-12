@@ -1,17 +1,35 @@
 #!/usr/bin/env bash
 
-# Linuxbrew pour test: requires Linux x86_64/arm64 running as root (the CI
-# container case — root can create /home/linuxbrew without sudo) and network
-if [[ "$(uname)" != "Linux" ]] || [[ "$(id -u)" != 0 ]] || [[ -d /home/linuxbrew ]]; then
+# Linuxbrew pour test: the dedicated disposable job runs this as root with an
+# intentionally absent /home/linuxbrew tree and user.
+if [[ $(uname) != Linux ]]; then
+  echo "SKIP: brew formula oracle requires Linux" >&2
   exit 0
 fi
+[[ $(id -u) == 0 ]] || {
+  echo "brew oracle safety check failed: Linux oracle must run as root" >&2
+  exit 1
+}
 case "$(uname -m)" in
   x86_64 | aarch64) ;;
-  *) exit 0 ;;
+  *)
+    echo "SKIP: unsupported Linux architecture for brew oracle" >&2
+    exit 0
+    ;;
 esac
 
-# the guard above skips when /home/linuxbrew exists, so clean up even when
-# an assertion fails mid-test — otherwise a failed run masks later ones
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew
+
+brew_oracle_require_absent_path /home/linuxbrew "ambiguous Linuxbrew home"
+if getent passwd linuxbrew >/dev/null 2>&1; then
+  brew_oracle_fail "pre-existing linuxbrew user is ambiguous"
+fi
+if ps -eo user=,args= | awk '$1 == "linuxbrew" || index($0, "/home/linuxbrew/.linuxbrew") { found = 1 } END { exit found ? 0 : 1 }'; then
+  brew_oracle_fail "pre-existing linuxbrew process is ambiguous"
+fi
+
 trap 'rm -rf /home/linuxbrew' EXIT
 
 cat <<EOF >mise.toml
@@ -68,3 +86,5 @@ assert_contains "mise bootstrap packages prune --manager brew --dry-run" "remove
 mise bootstrap packages prune --manager brew --yes
 assert_fail "test -e /home/linuxbrew/.linuxbrew/opt/xz"
 assert_fail "test -L /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz"
+
+brew_oracle_complete test_system_install_brew_linux 1 /home/linuxbrew/.linuxbrew

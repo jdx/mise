@@ -64,6 +64,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -138,8 +141,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.head_ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -165,6 +168,14 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - name: Prepare macOS mise artifact
+        run: |
+          install -m755 target/debug/mise target/mise-macos-arm64
+          strip -S target/mise-macos-arm64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mise-macos-arm64
+          path: target/mise-macos-arm64
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
       # `cargo test` above resolves to the root package, so the workspace members are built as
@@ -172,9 +183,134 @@ jobs:
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
         run: cargo test --workspace --exclude mise
-      - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: sccache --show-stats
         if: always()
+
+  brew-oracle-macos:
+    runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
+    timeout-minutes: 45
+    needs: [unit, classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-macos-arm64
+          path: target/debug
+      - name: Prepare exact-head oracle environment
+        run: |
+          mv target/debug/mise-macos-arm64 target/debug/mise
+          chmod +x target/debug/mise
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/mise-brew-oracle-results"
+          test ! -L "$RUNNER_TEMP/mise-brew-oracle-results"
+          {
+            echo "mise_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "platform=$(uname -s)-$(uname -m)"
+            echo "homebrew_version=$(brew --version | head -1)"
+            echo "tests=test_system_install_brew_macos_slow,test_system_install_brew_formula_lifecycle_macos_slow"
+          } > "$RUNNER_TEMP/mise-brew-oracle-results/job-context.txt"
+      - name: Run cask oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+        run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+      - name: Run canonical formula lifecycle oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_BREW_LIFECYCLE_TEST_PREFIX: /opt/homebrew
+        run: mise run test:e2e e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow
+      - name: Verify oracle completion records
+        if: always()
+        env:
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          source e2e/cli/brew_oracle_guard.sh
+          result_dir="$RUNNER_TEMP/mise-brew-oracle-results"
+          brew_oracle_verify_marker \
+            "$result_dir/macos-cask.completed" \
+            test_system_install_brew_macos_slow 1 /opt/homebrew \
+            "$MISE_BREW_ORACLE_MISE_SHA"
+          brew_oracle_verify_marker \
+            "$result_dir/macos-formula-lifecycle.completed" \
+            test_system_install_brew_formula_lifecycle_macos_slow 4 /opt/homebrew \
+            "$MISE_BREW_ORACLE_MISE_SHA"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: brew-oracle-macos-results
+          path: ${{ runner.temp }}/mise-brew-oracle-results
+          if-no-files-found: error
+
+  brew-oracle-linux:
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 30
+    needs: [build-ubuntu, classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - name: Prepare exact-head oracle environment
+        run: |
+          chmod +x target/debug/mise
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+          mkdir -p "$RUNNER_TEMP/mise-brew-oracle-results"
+          test ! -L "$RUNNER_TEMP/mise-brew-oracle-results"
+          {
+            echo "mise_sha=${{ github.event.pull_request.head.sha || github.sha }}"
+            echo "platform=$(uname -s)-$(uname -m)"
+            echo "test=test_system_install_brew_linux"
+          } > "$RUNNER_TEMP/mise-brew-oracle-results/job-context.txt"
+      - name: Run Linux formula oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+        run: |
+          sudo env \
+            PATH="$PATH" \
+            CI=true \
+            MISE_BREW_ORACLE_DISPOSABLE="$MISE_BREW_ORACLE_DISPOSABLE" \
+            MISE_BREW_ORACLE_RESULT_DIR="$MISE_BREW_ORACLE_RESULT_DIR" \
+            MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
+            MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
+            MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
+            MISE_E2E_DOCKER=0 \
+            mise run test:e2e e2e/cli/test_system_install_brew_linux
+      - name: Verify oracle completion record
+        if: always()
+        env:
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          source e2e/cli/brew_oracle_guard.sh
+          brew_oracle_verify_marker \
+            "$RUNNER_TEMP/mise-brew-oracle-results/linux-formula.completed" \
+            test_system_install_brew_linux 1 /home/linuxbrew/.linuxbrew \
+            "$MISE_BREW_ORACLE_MISE_SHA"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: brew-oracle-linux-results
+          path: ${{ runner.temp }}/mise-brew-oracle-results
+          if-no-files-found: error
 
   nightly:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly

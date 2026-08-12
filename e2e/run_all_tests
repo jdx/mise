@@ -62,6 +62,19 @@ summary "---" "---" "---"
 for index in "${!FILES[@]}"; do
   TEST_NAME="${FILES[$index]}"
 
+  case "$TEST_NAME" in
+    cli/test_system_install_brew_linux | \
+      cli/test_system_install_brew_macos_slow | \
+      cli/test_system_install_brew_formula_lifecycle_macos_slow)
+      if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} != 1 ]]; then
+        skipped_count=$((skipped_count + 1))
+        SUMMARY_ENTRY_TYPES+=("skip")
+        SUMMARY_ENTRY_VALUES+=("$TEST_NAME")
+        continue
+      fi
+      ;;
+  esac
+
   # split tests into tranches to reduce test time
   if [[ -n ${TEST_TRANCHE_COUNT:-} ]]; then
     if [[ $((index % TEST_TRANCHE_COUNT)) -ne $TEST_TRANCHE ]]; then

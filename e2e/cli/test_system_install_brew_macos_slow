@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 
-# Direct Homebrew metadata tests need a macOS CI runner with network. Keep this
-# out of local runs so it never removes a developer's installed applications.
-if [[ "$(uname)" != "Darwin" ]] || [[ ${CI:-} != "true" ]]; then
+# This oracle is intentionally tied to the disposable arm64 macOS job. An
+# irrelevant platform skips explicitly; an eligible platform without the
+# private capability fails before touching /Applications or Caskroom.
+if [[ $(uname) != Darwin ]] || [[ $(uname -m) != arm64 ]]; then
+  echo "SKIP: brew cask oracle requires macOS arm64" >&2
   exit 0
 fi
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+brew_oracle_require_disposable macos-cask /opt/homebrew
 
 cask_app="/Applications/Hidden Bar.app"
 caskroom="/opt/homebrew/Caskroom/hiddenbar"
 
-if [[ -e $cask_app ]] || [[ -e $caskroom ]]; then
-  exit 0
-fi
+brew_oracle_require_absent_path "$cask_app" "foreign or stale fixture app"
+brew_oracle_require_absent_path "$caskroom" "foreign or stale fixture Caskroom"
 
 cleanup() {
   shopt -s nullglob
@@ -66,3 +71,5 @@ EOF
   mise bootstrap packages apply --yes
   assert_contains "/opt/homebrew/bin/aube --version" "aube"
 fi
+
+brew_oracle_complete test_system_install_brew_macos_slow 1 /opt/homebrew

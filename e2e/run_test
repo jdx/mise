@@ -64,12 +64,27 @@ remove_isolated_env() {
 
 within_isolated_env() {
   local proxy_vars=()
+  local brew_oracle_vars=()
   [[ -n ${http_proxy:-} ]] && proxy_vars+=(http_proxy="$http_proxy")
   [[ -n ${https_proxy:-} ]] && proxy_vars+=(https_proxy="$https_proxy")
   [[ -n ${HTTP_PROXY:-} ]] && proxy_vars+=(HTTP_PROXY="$HTTP_PROXY")
   [[ -n ${HTTPS_PROXY:-} ]] && proxy_vars+=(HTTPS_PROXY="$HTTPS_PROXY")
   [[ -n ${no_proxy:-} ]] && proxy_vars+=(no_proxy="$no_proxy")
   [[ -n ${NO_PROXY:-} ]] && proxy_vars+=(NO_PROXY="$NO_PROXY")
+
+  case "$(realpath "$TEST_SCRIPT")" in
+    "$ROOT/e2e/cli/test_system_install_brew_linux" | \
+      "$ROOT/e2e/cli/test_system_install_brew_macos_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow")
+      brew_oracle_vars+=(
+        MISE_BREW_ORACLE_DISPOSABLE="${MISE_BREW_ORACLE_DISPOSABLE:-}"
+        MISE_BREW_ORACLE_RESULT_DIR="${MISE_BREW_ORACLE_RESULT_DIR:-}"
+        MISE_BREW_ORACLE_RUNNER_TEMP="${MISE_BREW_ORACLE_RUNNER_TEMP:-}"
+        MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
+        MISE_BREW_LIFECYCLE_TEST_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
+      )
+      ;;
+  esac
 
   env \
     -i \
@@ -93,6 +108,7 @@ within_isolated_env() {
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
     LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
     ${proxy_vars[@]+"${proxy_vars[@]}"} \
+    ${brew_oracle_vars[@]+"${brew_oracle_vars[@]}"} \
     MISE_CACHE_DIR="$MISE_CACHE_DIR" \
     MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
     MISE_CACHE_PRUNE_AGE="0" \

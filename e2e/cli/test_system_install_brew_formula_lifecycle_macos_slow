@@ -1,21 +1,60 @@
 #!/usr/bin/env bash
 
 if [[ "$(uname)" != "Darwin" ]] || [[ "$(uname -m)" != "arm64" ]]; then
+  echo "SKIP: formula lifecycle oracle requires macOS arm64" >&2
   exit 0
 fi
 
-# This test never touches the runner's real Homebrew prefix. Keep the synthetic
-# prefix no longer than /opt/homebrew: Mach-O bottles only reserve enough load
-# command padding for canonical-path relocation.
-export MISE_SYSTEM_BREW_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-/tmp/misebrew}"
-if [[ $MISE_SYSTEM_BREW_PREFIX == "/opt/homebrew" && ${CI:-} != "true" ]]; then
-  echo "refusing canonical-prefix lifecycle test outside disposable CI" >&2
-  exit 1
-fi
-if [[ -e $MISE_SYSTEM_BREW_PREFIX ]]; then
-  exit 0
-fi
-trap 'rm -rf "$MISE_SYSTEM_BREW_PREFIX"' EXIT
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+export MISE_SYSTEM_BREW_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
+brew_oracle_require_disposable macos-formula-lifecycle /opt/homebrew
+[[ $MISE_SYSTEM_BREW_PREFIX == "$BREW_ORACLE_EXPECTED_PREFIX" ]] ||
+  brew_oracle_fail "formula lifecycle oracle requires explicit canonical /opt/homebrew prefix"
+
+export HOMEBREW_NO_AUTO_UPDATE=1
+formula_fixtures=(ca-certificates openssl@3 node kimi-code)
+shared_fixture_paths=(
+  "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates"
+  "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3"
+)
+preexisting_record="$MISE_BREW_ORACLE_RESULT_DIR/macos-formula-lifecycle.preexisting"
+
+{
+  printf 'prefix=%s\n' "$(brew --prefix)"
+  for formula in "${formula_fixtures[@]}"; do
+    brew list --versions "$formula" 2>/dev/null || true
+  done
+  for path in "${shared_fixture_paths[@]}"; do
+    if [[ -e $path || -L $path ]]; then
+      ls -ld "$path"
+    fi
+  done
+} >"$preexisting_record"
+
+cleanup_formula_fixtures() {
+  local formula path
+  for formula in "${formula_fixtures[@]}"; do
+    brew uninstall --formula --force "$formula" >/dev/null 2>&1 || true
+  done
+  for path in "${shared_fixture_paths[@]}"; do
+    rm -rf "$path"
+  done
+}
+
+# The explicit capability authorizes displacement of these exact fixtures on
+# this ephemeral runner. The record above makes that displacement auditable.
+cleanup_formula_fixtures
+trap cleanup_formula_fixtures EXIT
+
+for formula in "${formula_fixtures[@]}"; do
+  [[ ! -e $MISE_SYSTEM_BREW_PREFIX/Cellar/$formula ]] ||
+    brew_oracle_fail "failed to prepare fresh formula fixture: $formula"
+  [[ ! -e $MISE_SYSTEM_BREW_PREFIX/opt/$formula && ! -L $MISE_SYSTEM_BREW_PREFIX/opt/$formula ]] ||
+    brew_oracle_fail "stale opt record remains for $formula"
+  [[ ! -e $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula && ! -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula ]] ||
+    brew_oracle_fail "stale linked-keg record remains for $formula"
+done
 
 cat <<'EOF' >mise.toml
 [bootstrap.packages]
@@ -47,3 +86,5 @@ assert_contains "mise bootstrap packages status" "needs repair"
 mise bootstrap packages apply --yes
 assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
 assert_contains "mise bootstrap packages status" "installed"
+
+brew_oracle_complete test_system_install_brew_formula_lifecycle_macos_slow 4 "$MISE_SYSTEM_BREW_PREFIX"

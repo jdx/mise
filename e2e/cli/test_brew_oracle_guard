@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+
+result_dir="$TMPDIR/oracle-results"
+mkdir "$result_dir"
+MISE_BREW_ORACLE_RESULT_DIR=$result_dir
+MISE_BREW_ORACLE_RUNNER_TEMP=$TMPDIR
+MISE_BREW_ORACLE_MISE_SHA=$(git -C "$ROOT" rev-parse HEAD)
+unset CI MISE_BREW_ORACLE_UNFORWARDED
+
+unset MISE_BREW_ORACLE_DISPOSABLE
+if brew_oracle_require_disposable missing-capability /opt/homebrew; then
+  fail "missing disposable capability was accepted"
+fi
+
+MISE_BREW_ORACLE_DISPOSABLE=1
+brew_oracle_require_disposable valid-marker /opt/homebrew
+brew_oracle_complete test_brew_oracle_guard 2 /opt/homebrew
+brew_oracle_verify_marker \
+  "$result_dir/valid-marker.completed" \
+  test_brew_oracle_guard 2 /opt/homebrew "$MISE_BREW_ORACLE_MISE_SHA"
+
+if brew_oracle_require_disposable valid-marker /opt/homebrew; then
+  fail "stale completion marker was accepted"
+fi
+if brew_oracle_verify_marker "$result_dir/missing.completed" missing 1 /opt/homebrew "$MISE_BREW_ORACLE_MISE_SHA"; then
+  fail "missing completion marker was accepted"
+fi
+
+brew_oracle_require_disposable wrong-prefix /opt/homebrew
+if brew_oracle_complete test_brew_oracle_guard 1 /private/tmp/not-homebrew; then
+  fail "wrong actual prefix was accepted"
+fi
+
+foreign_path="$TMPDIR/foreign-target"
+mkdir "$foreign_path"
+if brew_oracle_require_absent_path "$foreign_path" "foreign fixture"; then
+  fail "foreign target was accepted"
+fi
+
+MISE_BREW_ORACLE_RESULT_DIR=$HOME
+if brew_oracle_require_disposable escaped-result /opt/homebrew; then
+  fail "result directory outside runner temp was accepted"
+fi
