@@ -13,13 +13,25 @@ assert_matches "mise x -- swift --version" 'Swift version 6\.'
 
 assert "mise x spm:nicklockwood/SwiftFormat@0.61.1 -- swiftformat --version" "0.61.1"
 
-# Source installs require a working SwiftPM. Swift's Ubuntu 24.04 binaries
-# cannot load SwiftPM on Ubuntu 26.04 because they require libxml2.so.2.
-if mise x -- swift package --version >/dev/null 2>&1; then
-  # A commit selector must be checked out as a Git revision rather than being
-  # converted into a release tag named `rev:<sha>`.
-  mkdir -p spm-revision/Sources/revision-tool
-  cat >spm-revision/Package.swift <<'EOF'
+# Swift's Ubuntu 24.04 binaries require libxml2.so.2, while Ubuntu 26.04 ships
+# the compatible library as libxml2.so.16. Keep SwiftPM mandatory by providing
+# the expected SONAME in the isolated test environment.
+if [[ $(uname -s) == Linux ]]; then
+  libxml2_path="$(find /usr/lib /lib -name 'libxml2.so.2' -print -quit 2>/dev/null)"
+  if [[ -z $libxml2_path ]]; then
+    libxml2_path="$(find /usr/lib /lib -name 'libxml2.so.16' -print -quit 2>/dev/null)"
+    [[ -n $libxml2_path ]]
+    mkdir -p swift-compat
+    ln -s "$libxml2_path" swift-compat/libxml2.so.2
+    export LD_LIBRARY_PATH="$PWD/swift-compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+fi
+assert_matches "mise x -- swift package --version" 'Swift Package Manager - Swift 6\.'
+
+# A commit selector must be checked out as a Git revision rather than being
+# converted into a release tag named `rev:<sha>`.
+mkdir -p spm-revision/Sources/revision-tool
+cat >spm-revision/Package.swift <<'EOF'
 // swift-tools-version: 5.9
 import PackageDescription
 
@@ -29,32 +41,29 @@ let package = Package(
     targets: [.executableTarget(name: "revision-tool")]
 )
 EOF
-  echo 'print("first commit")' >spm-revision/Sources/revision-tool/main.swift
-  git -C spm-revision init -q
-  git -C spm-revision add .
-  git -C spm-revision commit -qm "first"
-  first_revision="$(git -C spm-revision rev-parse HEAD)"
-  short_revision="${first_revision:0:12}"
-  echo 'print("second commit")' >spm-revision/Sources/revision-tool/main.swift
-  git -C spm-revision add .
-  git -C spm-revision commit -qm "second"
-  git_config="$PWD/spm-gitconfig"
-  git config --file "$git_config" \
-    url."file://$PWD/spm-revision".insteadOf \
-    "https://github.com/mise-test/spm-revision.git"
+echo 'print("first commit")' >spm-revision/Sources/revision-tool/main.swift
+git -C spm-revision init -q
+git -C spm-revision add .
+git -C spm-revision commit -qm "first"
+first_revision="$(git -C spm-revision rev-parse HEAD)"
+short_revision="${first_revision:0:12}"
+echo 'print("second commit")' >spm-revision/Sources/revision-tool/main.swift
+git -C spm-revision add .
+git -C spm-revision commit -qm "second"
+git_config="$PWD/spm-gitconfig"
+git config --file "$git_config" \
+  url."file://$PWD/spm-revision".insteadOf \
+  "https://github.com/mise-test/spm-revision.git"
 
-  assert \
-    "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@rev:$first_revision -- revision-tool" \
-    "first commit"
-  assert \
-    "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@ref:$short_revision -- revision-tool" \
-    "first commit"
-  assert_fail \
-    "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise install spm:mise-test/spm-revision@rev:deadbeef"
-  assert_fail "mise where spm:mise-test/spm-revision@rev:deadbeef"
-else
-  echo "SKIP: SwiftPM source tests require a compatible libxml2"
-fi
+assert \
+  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@rev:$first_revision -- revision-tool" \
+  "first commit"
+assert \
+  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@ref:$short_revision -- revision-tool" \
+  "first commit"
+assert_fail \
+  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise install spm:mise-test/spm-revision@rev:deadbeef"
+assert_fail "mise where spm:mise-test/spm-revision@rev:deadbeef"
 
 # test package with resources (`templates list` command depends on resources being installed)
 #assert "mise x spm:SwiftGen/SwiftGen@6.6.2 --verbose -- swiftgen templates list --only colors" "colors:
