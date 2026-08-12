@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use eyre::{WrapErr, bail, eyre};
 use serde::{Deserialize, Serialize};
@@ -203,10 +203,21 @@ fn state_path(keg: &Path) -> PathBuf {
         .join(format!("{identity}.json"))
 }
 
-pub(super) fn remove_state(keg: &Path) -> Result<()> {
+pub(super) fn remove_owned_state(keg: &Path) -> Result<()> {
     let path = state_path(keg);
     if path.exists() {
+        let state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+        remove_lifecycle_symlinks(&state)?;
         crate::file::remove_file(path)?;
+    }
+    Ok(())
+}
+
+fn remove_lifecycle_symlinks(state: &LifecycleState) -> Result<()> {
+    for link in &state.symlinks {
+        if resolved_symlink_target(&link.target).as_ref() == Some(&link.source) {
+            crate::file::remove_file(&link.target)?;
+        }
     }
     Ok(())
 }
@@ -424,7 +435,7 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                 let relative = super::pour::relative_target(&source, &destination);
                 crate::file::make_symlink(&relative, &destination)?;
                 links.push(LifecycleSymlink {
-                    source,
+                    source: super::pour::lexical_normalize(&source),
                     target: destination,
                 });
             }
@@ -441,6 +452,7 @@ fn execute_step(formula: &Formula, keg: &Path, step: &Value) -> Result<StepEffec
                 .collect::<Result<Vec<_>>>()?;
             let status = Command::new(&executable)
                 .args(&args)
+                .stdin(Stdio::null())
                 .env("HOMEBREW_PREFIX", prefix::prefix())
                 .env("HOMEBREW_CELLAR", prefix::cellar())
                 .status()
@@ -768,6 +780,33 @@ mod tests {
             vec![keg.join("obsolete").to_string_lossy()]
         );
         assert!(!keg.join("obsolete").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn prune_removes_only_unchanged_lifecycle_symlinks() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let replacement = tmp.path().join("replacement");
+        let target = tmp.path().join("target");
+        crate::file::write(&source, "source")?;
+        crate::file::write(&replacement, "replacement")?;
+        crate::file::make_symlink(&source, &target)?;
+        let state = LifecycleState {
+            complete: true,
+            symlinks: vec![LifecycleSymlink {
+                source: source.clone(),
+                target: target.clone(),
+            }],
+            required_paths: vec![],
+            absent_patterns: vec![],
+        };
+        remove_lifecycle_symlinks(&state)?;
+        assert!(!target.exists());
+
+        crate::file::make_symlink(&replacement, &target)?;
+        remove_lifecycle_symlinks(&state)?;
+        assert_eq!(fs::read_link(target)?, replacement);
         Ok(())
     }
 }

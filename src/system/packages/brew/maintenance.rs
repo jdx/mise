@@ -240,7 +240,7 @@ fn unlink_and_remove_keg(candidate: &PruneCandidate) -> Result<()> {
         };
         remove_empty_parents(&link, stop)?;
     }
-    lifecycle::remove_state(&candidate.keg)?;
+    lifecycle::remove_owned_state(&candidate.keg)?;
     file::remove_all(&candidate.keg)?;
     let rack = prefix::cellar().join(&candidate.name);
     file::remove_dir(&rack)?;
