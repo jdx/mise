@@ -1213,7 +1213,9 @@ all retry attempts and backoff delays. This is separate from `http_timeout`,
 which detects stalled connections by timing out individual reads.
 
 When this budget is exhausted, mise reports the URL, active attempt, bytes
-received during that attempt, and this setting name.
+received during that attempt, and this setting name. If the server supplies a
+strong ETag or Last-Modified validator, the validated partial download is kept
+for the next attempt or mise invocation.
 """
 env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
 type = "Duration"
@@ -1236,6 +1238,11 @@ cached data is insufficient, then fail or fall back immediately.
 
 When a retry rescues a request, a warning is logged with the original error so
 flaky infrastructure doesn't silently mask itself.
+
+Artifact downloads resume from validated partial files when the server supports
+byte ranges and supplies a strong ETag or Last-Modified value. Servers without
+a safe validator restart downloads from the beginning. Changing the request URL
+or request headers also discards the previous partial download.
 """
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
