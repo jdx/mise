@@ -781,9 +781,10 @@ impl Cli {
                 };
                 if tasks.iter().any(|(_, t)| t.is_match(&task)) {
                     return Ok(Commands::Run(Box::new(run::Run {
-                        task,
+                        task: Some(task),
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
+                        all: false,
                         affected: false,
                         affected_base: None,
                         affected_head: None,
