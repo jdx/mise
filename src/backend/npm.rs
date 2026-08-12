@@ -2664,4 +2664,61 @@ mod tests {
             assert!(report.0.lock().unwrap().is_empty());
         }
     }
+
+    #[tokio::test]
+    async fn test_embedded_aube_emits_lifecycle_output_for_progress_report() {
+        crate::backend::aube_host::init();
+
+        let workspace = tempfile::tempdir().unwrap();
+        let app = workspace.path().join("packages/app");
+        let library = workspace.path().join("packages/library");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&library).unwrap();
+        std::fs::write(
+            workspace.path().join("package.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "private": true,
+                "scripts": {
+                    "pnpm:devPreinstall": "echo lifecycle-from-aube"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - packages/*\n",
+        )
+        .unwrap();
+        std::fs::write(app.join("package.json"), "{\"name\":\"app\"}\n").unwrap();
+        std::fs::write(
+            library.join("package.json"),
+            "{\"name\":\"library\",\"version\":\"1.0.0\"}\n",
+        )
+        .unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        aube::embed::add_with_overrides(
+            &app,
+            &["library@workspace:*".to_string()],
+            aube::embed::AddToProjectOptions {
+                offline: true,
+                control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx })),
+                ..Default::default()
+            },
+            aube::embed::EmbedderInstallOverrides {
+                use_global_virtual_store: Some(false),
+                cache_dir: Some(workspace.path().join("cache")),
+                store_dir: Some(workspace.path().join("store")),
+            },
+        )
+        .await
+        .unwrap();
+
+        let report = RecordingReport::default();
+        while let Ok(event) = rx.try_recv() {
+            apply_aube_event(event, &report);
+        }
+        assert_eq!(*report.0.lock().unwrap(), ["lifecycle-from-aube"]);
+    }
 }
