@@ -190,7 +190,10 @@ jobs:
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 45
     needs: [unit, classify-changes]
-    if: needs.classify-changes.outputs.full-ci == 'true'
+    # Always start the proof job once classification says this is full CI. If the
+    # producer failed before publishing its binary, artifact download fails red;
+    # a dependency failure must never turn the oracle into a skipped check.
+    if: always() && needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -256,7 +259,7 @@ jobs:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 30
     needs: [build-ubuntu, classify-changes]
-    if: needs.classify-changes.outputs.full-ci == 'true'
+    if: always() && needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
