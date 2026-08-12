@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+unset CARGO_HOME RUSTUP_HOME MISE_CARGO_HOME MISE_RUSTUP_HOME
+
+ROOT=$PWD
+ORIGINAL_PATH=$PATH
+
+write_proxy() {
+  local path=$1
+  cat >"$path" <<'PROXY'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BIN_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+PREFIX=${TEST_RUST_PROVIDER_PREFIX:-$(cd "$BIN_DIR/.." && pwd -P)}
+STATE="$PREFIX/state"
+mkdir -p "$STATE"
+
+	case "$(basename "$0")" in
+	rustup)
+		echo "$*" >>"$STATE/rustup.log"
+		case "${1:-} ${2:-}" in
+			"--version ")
+				echo "rustup 1.0.0 (external provider)"
+				;;
+			"toolchain install")
+				version=$3
+				mkdir -p "$STATE/toolchains/$version"
+				shift 3
+				while [[ $# -gt 0 ]]; do
+					case "$1" in
+						--component)
+							echo "$2-x86_64-unknown-linux-gnu" >>"$STATE/components"
+							shift 2
+							;;
+						--target)
+							echo "$2" >>"$STATE/targets"
+							shift 2
+							;;
+						--profile)
+							shift 2
+							;;
+						*)
+							shift
+							;;
+					esac
+				done
+				;;
+			"toolchain uninstall")
+				rm -rf "$STATE/toolchains/$3"
+				;;
+			"component list")
+				cat "$STATE/components" 2>/dev/null || true
+				;;
+			"target list")
+				cat "$STATE/targets" 2>/dev/null || true
+				;;
+			"check ")
+				;;
+			*)
+				echo "unexpected rustup args: $*" >&2
+				exit 1
+				;;
+		esac
+		;;
+	rustc)
+		if [[ ! -d "$STATE/toolchains/$RUSTUP_TOOLCHAIN" ]]; then
+			echo "error: toolchain '$RUSTUP_TOOLCHAIN' is not installed" >&2
+			exit 1
+		fi
+		echo "rustc $RUSTUP_TOOLCHAIN (external provider)"
+		;;
+	cargo)
+		if [[ ! -d "$STATE/toolchains/$RUSTUP_TOOLCHAIN" ]]; then
+			echo "error: toolchain '$RUSTUP_TOOLCHAIN' is not installed" >&2
+			exit 1
+		fi
+		echo "cargo $RUSTUP_TOOLCHAIN (external provider)"
+		;;
+	rustup-init)
+		echo invoked >>"$STATE/rustup-init.log"
+		exit 99
+		;;
+esac
+PROXY
+  chmod +x "$path"
+}
+
+run_case() {
+  local mode=$1
+  local version=$2
+  local case_root="$ROOT/$mode"
+  local prefix="$case_root/prefix"
+  local bin="$prefix/bin"
+  local home="$case_root/home"
+  local project="$case_root/project"
+  local shims="$case_root/data/shims"
+  local direct="$case_root/direct/bin"
+  local alternate="$case_root/alternate"
+  local alternate_bin="$alternate/bin"
+  local explicit="$case_root/explicit"
+  local explicit_cargo="$explicit/cargo"
+  local explicit_rustup="$explicit/rustup"
+  local explicit_bin="$explicit_cargo/bin"
+
+  mkdir -p "$bin" "$home" "$project" "$shims" "$direct" "$alternate_bin" "$explicit_bin" "$explicit_rustup"
+  for command in rustup cargo rustc; do
+    cat >"$shims/$command" <<'SHIM'
+#!/usr/bin/env bash
+echo "mise shim must not be selected as an external Rust provider" >&2
+exit 77
+SHIM
+    chmod +x "$shims/$command"
+  done
+  for command in rustup cargo rustc; do
+    cat >"$direct/$command" <<DIRECT
+#!/usr/bin/env bash
+echo "$command 1.0.0 (direct package binary)"
+DIRECT
+    chmod +x "$direct/$command"
+  done
+  if [[ $mode == current ]]; then
+    mkdir -p "$prefix/libexec/bin" "$prefix/etc/rustup"
+    echo 'default_toolchain = "stable"' >"$prefix/etc/rustup/settings.toml"
+    for command in rustup cargo rustc; do
+      write_proxy "$prefix/libexec/bin/$command"
+      cat >"$bin/$command" <<WRAPPER
+#!/usr/bin/env bash
+export RUSTUP_OVERRIDE_UNIX_FALLBACK_SETTINGS="$prefix/etc/rustup/settings.toml"
+export TEST_RUST_PROVIDER_PREFIX="$prefix"
+exec "$prefix/libexec/bin/$command" "\$@"
+WRAPPER
+      chmod +x "$bin/$command"
+    done
+  else
+    write_proxy "$bin/rustup-init"
+    ln -s rustup-init "$bin/rustup"
+    ln -s rustup-init "$bin/cargo"
+    ln -s rustup-init "$bin/rustc"
+  fi
+
+  cat >"$project/mise.toml" <<EOF
+[tools]
+rust = { version = "$version", components = ["rustfmt"], targets = ["wasm32-unknown-unknown"] }
+EOF
+
+  (
+    cd "$project"
+    export HOME="$home"
+    export PATH="$shims:$direct:$bin:$ORIGINAL_PATH"
+    export MISE_DATA_DIR="$case_root/data"
+    export MISE_CACHE_DIR="$case_root/cache"
+    export MISE_STATE_DIR="$case_root/state"
+    export MISE_OFFLINE=1
+
+    mise install
+    assert_contains "mise exec -- rustc -V" "rustc $version (external provider)"
+    assert_contains "mise exec -- cargo -V" "cargo $version (external provider)"
+    assert_contains "readlink '$case_root/data/installs/rust/$version'" "$bin"
+    assert_contains "grep -c '^toolchain install' '$prefix/state/rustup.log'" "1"
+
+    # Initializing the default Rust homes later must not take ownership away
+    # from the external provider recorded by the mise install symlink.
+    mkdir -p "$home/.cargo/bin" "$home/.rustup"
+    touch "$home/.cargo/bin/cargo" "$home/.rustup/settings.toml"
+    mise install
+    assert_contains "grep -c '^toolchain install' '$prefix/state/rustup.log'" "1"
+    assert_contains "mise exec -- sh -c 'command -v rustc'" "$bin/rustc"
+    assert_contains "mise exec -- rustc -V" "rustc $version (external provider)"
+
+    for command in rustup cargo rustc; do
+      write_proxy "$alternate_bin/$command"
+    done
+    export PATH="$alternate_bin:$PATH"
+
+    mise install
+    assert_contains "grep -c '^toolchain install' '$prefix/state/rustup.log'" "1"
+    assert "test ! -e '$alternate/state/toolchains/$version'"
+
+    # Explicit Rust homes take ownership consistently, including execution
+    # and uninstall after an earlier external-provider installation.
+    export PATH="$shims:$direct:$bin:$ORIGINAL_PATH"
+    for command in rustup cargo rustc; do
+      write_proxy "$explicit_bin/$command"
+    done
+    touch "$explicit_rustup/settings.toml"
+    cat >mise.toml <<EOF
+[env]
+CARGO_HOME = "$explicit_cargo"
+RUSTUP_HOME = "$explicit_rustup"
+
+[tools]
+rust = { version = "$version", components = ["rustfmt"], targets = ["wasm32-unknown-unknown"] }
+EOF
+
+    mise install
+    assert_contains "readlink '$case_root/data/installs/rust/$version'" "$explicit_bin"
+    assert_contains "grep -c '^toolchain install' '$explicit_cargo/state/rustup.log'" "1"
+    assert_contains "mise exec -- sh -c 'command -v rustc'" "$explicit_bin/rustc"
+    assert_contains "mise exec -- rustc -V" "rustc $version (external provider)"
+
+    mise uninstall --yes "rust@$version"
+    assert_contains "tail -1 '$explicit_cargo/state/rustup.log'" "toolchain uninstall $version"
+    assert "! grep -q '^toolchain uninstall' '$prefix/state/rustup.log'"
+    assert "test ! -f '$alternate/state/rustup.log' || ! grep -q '^toolchain uninstall' '$alternate/state/rustup.log'"
+  )
+
+  assert "test ! -e '$prefix/state/rustup-init.log'"
+}
+
+run_case current 1.80.0
+run_case legacy 1.81.0

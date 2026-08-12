@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
 use crate::backend::VersionInfo;
@@ -109,8 +110,12 @@ impl RustPlugin {
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
-        homes: &RustHomes,
+        runtime: &RustRuntime,
     ) -> Result<()> {
+        if runtime.is_external() {
+            return Ok(());
+        }
+        let homes = &runtime.homes;
         let settings = Settings::get();
         if rustup_is_initialized(homes) {
             return Ok(());
@@ -153,15 +158,15 @@ impl RustPlugin {
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
-        homes: &RustHomes,
+        runtime: &RustRuntime,
     ) -> Result<()> {
         ctx.pr.set_message(format!("{RUSTC_BIN} -V"));
-        CmdLineRunner::new(RUSTC_BIN)
+        CmdLineRunner::new(runtime.bin_dir.join(RUSTC_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("-V")
             .env_values(tv.install_env())
-            .envs(rustup_env(homes, &tv.version))
-            .prepend_path(vec![homes.cargo_bindir()])?
+            .envs(rustup_env(&runtime.homes, &tv.version))
+            .prepend_path(vec![runtime.bin_dir.clone()])?
             .execute()
     }
 
@@ -173,7 +178,7 @@ impl RustPlugin {
         &self,
         tv: &ToolVersion,
         subcommand: &str,
-        homes: &RustHomes,
+        runtime: &RustRuntime,
     ) -> Result<Option<BTreeSet<String>>> {
         let args = vec![
             subcommand.to_string(),
@@ -182,12 +187,12 @@ impl RustPlugin {
             "--toolchain".to_string(),
             tv.version.clone(),
         ];
-        let mut cmd = cmd(RUSTUP_BIN, args)
-            .env("PATH", rustup_path_env(homes)?)
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), args)
+            .env("PATH", rustup_path_env(runtime)?)
             .stdout_capture()
             .stderr_capture()
             .unchecked();
-        for (key, value) in rustup_env(homes, &tv.version) {
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
             cmd = cmd.env(key, value);
         }
         let output = match cmd.run() {
@@ -264,10 +269,10 @@ impl Backend for RustPlugin {
             return Ok(false);
         }
 
-        let homes = RustHomes::resolve(config).await?;
-        if !file::is_symlink_to(&tv.install_path(), &homes.cargo_bindir()) {
+        let runtime = RustRuntime::resolve_for_tool_version(config, tv).await?;
+        if !file::is_symlink_to(&tv.install_path(), &runtime.bin_dir) {
             debug!(
-                "{} points outside the configured Cargo home",
+                "{} points outside the selected Rust proxy directory",
                 tv.install_path().display()
             );
             return Ok(false);
@@ -279,7 +284,7 @@ impl Backend for RustPlugin {
         if let Some(components) = components
             && !components.is_empty()
         {
-            let Some(installed) = self.rustup_installed_items(tv, "component", &homes)? else {
+            let Some(installed) = self.rustup_installed_items(tv, "component", &runtime)? else {
                 return Ok(false);
             };
             let missing = self.missing_components(&components, &installed);
@@ -296,7 +301,7 @@ impl Backend for RustPlugin {
         if let Some(targets) = targets
             && !targets.is_empty()
         {
-            let Some(installed) = self.rustup_installed_items(tv, "target", &homes)? else {
+            let Some(installed) = self.rustup_installed_items(tv, "target", &runtime)? else {
                 return Ok(false);
             };
             let missing = self.missing_targets(&targets, &installed);
@@ -383,32 +388,32 @@ impl Backend for RustPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let homes = RustHomes::resolve(&ctx.config).await?;
-        let _state_locks = lock_rust_state(&homes).await?;
-        self.setup_rustup(ctx, &tv, &homes).await?;
+        let runtime = RustRuntime::resolve_for_tool_version(&ctx.config, &tv).await?;
+        let _state_locks = lock_rust_state(&runtime.homes).await?;
+        self.setup_rustup(ctx, &tv, &runtime).await?;
 
         let raw_opts = tv.request.options();
         let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
 
-        let mut cmd = CmdLineRunner::new(RUSTUP_BIN)
+        let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
             .opt_args("--component", components)
             .opt_args("--target", targets)
-            .prepend_path(vec![homes.cargo_bindir()])?
+            .prepend_path(vec![runtime.bin_dir.clone()])?
             .env_values(tv.install_env())
-            .envs(rustup_env(&homes, &tv.version));
+            .envs(rustup_env(&runtime.homes, &tv.version));
         if let Some(profile) = profile.as_ref() {
             cmd = cmd.arg("--profile").arg(profile);
         }
         cmd.execute()?;
 
         file::remove_all(tv.install_path())?;
-        file::make_symlink(&homes.cargo_bindir(), &tv.install_path())?;
+        file::make_symlink(&runtime.bin_dir, &tv.install_path())?;
 
-        self.test_rust(ctx, &tv, &homes).await?;
+        self.test_rust(ctx, &tv, &runtime).await?;
 
         Ok(tv)
     }
@@ -419,25 +424,25 @@ impl Backend for RustPlugin {
         pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
-        let homes = RustHomes::resolve(config).await?;
-        let mut env = rustup_env(&homes, &tv.version);
+        let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+        let mut env = rustup_env(&runtime.homes, &tv.version);
         env.remove("RUSTUP_TOOLCHAIN");
-        CmdLineRunner::new(RUSTUP_BIN)
+        CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(pr)
             .arg("toolchain")
             .arg("uninstall")
             .arg(&tv.version)
-            .prepend_path(vec![homes.cargo_bindir()])?
+            .prepend_path(vec![runtime.bin_dir])?
             .envs(env)
             .execute()
     }
 
-    async fn list_bin_paths(
-        &self,
-        config: &Arc<Config>,
-        _tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
-        Ok(vec![RustHomes::resolve(config).await?.cargo_bindir()])
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        Ok(vec![
+            RustRuntime::resolve_recorded_for_tool_version(config, tv)
+                .await?
+                .bin_dir,
+        ])
     }
 
     async fn exec_env(
@@ -462,8 +467,9 @@ impl Backend for RustPlugin {
             Ok(oi)
         } else {
             let ts = config.get_toolset().await?;
-            let mut cmd =
-                cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(config, tv).await?);
+            let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+            let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), ["check"])
+                .env("PATH", self.path_env_for_cmd(config, tv).await?);
             for (k, v) in self.exec_env(config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }
@@ -645,6 +651,7 @@ async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {
 struct RustHomes {
     cargo: PathBuf,
     rustup: PathBuf,
+    explicit: bool,
 }
 
 impl RustHomes {
@@ -667,6 +674,14 @@ impl RustHomes {
         configured_rustup: Option<PathBuf>,
         ambient_rustup: Option<PathBuf>,
     ) -> Self {
+        let cargo_explicit = config_env.contains_key("CARGO_HOME")
+            || config_env.contains_key("MISE_CARGO_HOME")
+            || configured_cargo.is_some()
+            || ambient_cargo.is_some();
+        let rustup_explicit = config_env.contains_key("RUSTUP_HOME")
+            || config_env.contains_key("MISE_RUSTUP_HOME")
+            || configured_rustup.is_some()
+            || ambient_rustup.is_some();
         Self {
             cargo: select_rust_home(
                 config_env,
@@ -684,6 +699,7 @@ impl RustHomes {
                 ambient_rustup,
                 dirs::HOME.join(".rustup"),
             ),
+            explicit: cargo_explicit || rustup_explicit,
         }
     }
 
@@ -694,6 +710,157 @@ impl RustHomes {
     fn cargo_bin(&self) -> PathBuf {
         self.cargo_bindir().join(CARGO_BIN)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RustProvider {
+    Managed,
+    External,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RustRuntime {
+    homes: RustHomes,
+    bin_dir: PathBuf,
+    provider: RustProvider,
+}
+
+impl RustRuntime {
+    async fn resolve_for_tool_version(config: &Arc<Config>, tv: &ToolVersion) -> Result<Self> {
+        let homes = RustHomes::resolve(config).await?;
+        Ok(Self::from_paths_with_install(
+            homes,
+            &env::PATH,
+            &tv.install_path(),
+            rustup_proxy_dir_is_usable,
+        ))
+    }
+
+    async fn resolve_recorded_for_tool_version(
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Self> {
+        let homes = RustHomes::resolve(config).await?;
+        Ok(Self::from_paths_with_install(
+            homes,
+            &env::PATH,
+            &tv.install_path(),
+            rustup_proxy_dir_is_usable,
+        ))
+    }
+
+    fn from_paths_with(
+        homes: RustHomes,
+        paths: &[PathBuf],
+        provider_is_usable: impl Fn(&Path) -> bool,
+    ) -> Self {
+        if !rustup_is_initialized(&homes)
+            && !homes.explicit
+            && let Some(bin_dir) = external_rustup_bin_dir(paths, provider_is_usable)
+        {
+            debug!(
+                "using external rustup proxies from {}",
+                file::display_path(&bin_dir)
+            );
+            return Self {
+                homes,
+                bin_dir,
+                provider: RustProvider::External,
+            };
+        }
+        let bin_dir = homes.cargo_bindir();
+        Self {
+            homes,
+            bin_dir,
+            provider: RustProvider::Managed,
+        }
+    }
+
+    fn from_paths_with_install(
+        homes: RustHomes,
+        paths: &[PathBuf],
+        install_path: &Path,
+        provider_is_usable: impl Fn(&Path) -> bool,
+    ) -> Self {
+        if !homes.explicit
+            && let Some(bin_dir) =
+                recorded_external_rustup_bin_dir(&homes, install_path, &provider_is_usable)
+        {
+            debug!(
+                "using recorded external rustup proxies from {}",
+                file::display_path(&bin_dir)
+            );
+            return Self {
+                homes,
+                bin_dir,
+                provider: RustProvider::External,
+            };
+        }
+        Self::from_paths_with(homes, paths, provider_is_usable)
+    }
+
+    fn is_external(&self) -> bool {
+        self.provider == RustProvider::External
+    }
+}
+
+fn recorded_external_rustup_bin_dir(
+    homes: &RustHomes,
+    install_path: &Path,
+    provider_is_usable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    file::resolve_symlink(install_path)
+        .ok()
+        .flatten()
+        .map(|target| {
+            if target.is_absolute() {
+                target
+            } else {
+                install_path.parent().unwrap_or(Path::new(".")).join(target)
+            }
+        })
+        .filter(|target| target != &homes.cargo_bindir())
+        .filter(|target| provider_is_usable(target))
+}
+
+fn external_rustup_bin_dir(
+    paths: &[PathBuf],
+    provider_is_usable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| !file::is_mise_shims_dir(path))
+        .find(|path| {
+            [RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]
+                .iter()
+                .all(|bin| file::is_executable(&path.join(bin)))
+                && provider_is_usable(path)
+        })
+        .cloned()
+}
+
+fn rustup_proxy_dir_is_usable(bin_dir: &Path) -> bool {
+    if !Command::new(bin_dir.join(RUSTUP_BIN))
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+    {
+        return false;
+    }
+
+    const PROBE_TOOLCHAIN: &str = "mise-proxy-probe:invalid";
+    [CARGO_BIN, RUSTC_BIN].iter().all(|bin| {
+        Command::new(bin_dir.join(bin))
+            .arg("--version")
+            .env("RUSTUP_TOOLCHAIN", PROBE_TOOLCHAIN)
+            .env("RUSTUP_AUTO_INSTALL", "0")
+            .output()
+            .is_ok_and(|output| {
+                !output.status.success()
+                    && (String::from_utf8_lossy(&output.stdout).contains(PROBE_TOOLCHAIN)
+                        || String::from_utf8_lossy(&output.stderr).contains(PROBE_TOOLCHAIN))
+            })
+    })
 }
 
 fn rustup_is_initialized(homes: &RustHomes) -> bool {
@@ -744,9 +911,9 @@ fn rustup_env(homes: &RustHomes, toolchain: &str) -> BTreeMap<String, String> {
     .into()
 }
 
-fn rustup_path_env(homes: &RustHomes) -> Result<OsString> {
+fn rustup_path_env(runtime: &RustRuntime) -> Result<OsString> {
     Ok(env::join_paths(
-        std::iter::once(homes.cargo_bindir()).chain(env::PATH.clone()),
+        std::iter::once(runtime.bin_dir.clone()).chain(env::PATH.clone()),
     )?)
 }
 
@@ -818,6 +985,23 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rust_homes_at(root: &Path, explicit: bool) -> RustHomes {
+        RustHomes {
+            cargo: root.join("cargo"),
+            rustup: root.join("rustup"),
+            explicit,
+        }
+    }
+
+    fn create_proxy_dir(path: &Path, bins: &[&str]) {
+        std::fs::create_dir_all(path).unwrap();
+        for bin in bins {
+            let path = path.join(bin);
+            std::fs::write(&path, b"proxy").unwrap();
+            file::make_executable(path).unwrap();
+        }
+    }
 
     fn opts_with(key: &str, value: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
@@ -1050,6 +1234,7 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         assert_eq!(homes.cargo, dirs::HOME.join(".cargo"));
         assert_eq!(homes.rustup, dirs::HOME.join(".rustup"));
+        assert!(!homes.explicit);
     }
 
     #[test]
@@ -1083,6 +1268,7 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             homes.rustup,
             resolve_rust_home(PathBuf::from("/config/rustup"))
         );
+        assert!(homes.explicit);
     }
 
     #[test]
@@ -1108,5 +1294,131 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             homes.rustup,
             resolve_rust_home(PathBuf::from("/settings/rustup"))
         );
+        assert!(homes.explicit);
+    }
+
+    #[test]
+    fn rust_runtime_prefers_initialized_homes() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        std::fs::create_dir_all(&homes.rustup).unwrap();
+        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+
+        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    #[test]
+    fn rust_runtime_uses_complete_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+
+        let runtime =
+            RustRuntime::from_paths_with(homes, std::slice::from_ref(&external), |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::External);
+        assert_eq!(runtime.bin_dir, external);
+    }
+
+    #[test]
+    fn rust_runtime_prefers_recorded_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let recorded = root.path().join("recorded/bin");
+        let earlier_on_path = root.path().join("earlier/bin");
+        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        create_proxy_dir(&earlier_on_path, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
+        file::make_symlink(&recorded, &install_path).unwrap();
+
+        let runtime =
+            RustRuntime::from_paths_with_install(homes, &[earlier_on_path], &install_path, |_| {
+                true
+            });
+
+        assert_eq!(runtime.provider, RustProvider::External);
+        assert_eq!(runtime.bin_dir, recorded);
+    }
+
+    #[test]
+    fn rust_runtime_keeps_recorded_external_provider_after_default_home_initialization() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        std::fs::create_dir_all(&homes.rustup).unwrap();
+        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let recorded = root.path().join("recorded/bin");
+        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
+        file::make_symlink(&recorded, &install_path).unwrap();
+
+        let runtime = RustRuntime::from_paths_with_install(
+            homes,
+            std::slice::from_ref(&recorded),
+            &install_path,
+            |_| true,
+        );
+
+        assert_eq!(runtime.provider, RustProvider::External);
+        assert_eq!(runtime.bin_dir, recorded);
+    }
+
+    #[test]
+    fn rust_runtime_explicit_homes_override_recorded_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), true);
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        std::fs::create_dir_all(&homes.rustup).unwrap();
+        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let recorded = root.path().join("recorded/bin");
+        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
+        file::make_symlink(&recorded, &install_path).unwrap();
+
+        let runtime = RustRuntime::from_paths_with_install(
+            homes.clone(),
+            std::slice::from_ref(&recorded),
+            &install_path,
+            |_| true,
+        );
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    #[test]
+    fn rust_runtime_rejects_incomplete_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN]);
+
+        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    #[test]
+    fn rust_runtime_does_not_replace_explicit_homes() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), true);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+
+        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
     }
 }
