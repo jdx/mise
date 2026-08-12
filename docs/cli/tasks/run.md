@@ -50,10 +50,6 @@ Arguments to pass to the tasks. Use ":::" to separate tasks
 
 ## Flags
 
-### `--all`
-
-Open the interactive selector with all tasks from the entire monorepo
-
 ### `--affected`
 
 Run matching tasks only for projects affected by Git changes
@@ -75,6 +71,10 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 ### `--affected-json`
 
 Output affected projects and tasks as JSON without running tasks
+
+### `--all`
+
+Open the interactive selector with all tasks from the entire monorepo
 
 ### `-c --continue-on-error`
 

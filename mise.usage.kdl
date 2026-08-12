@@ -3215,7 +3215,6 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
-    flag --all help="Open the interactive selector with all tasks from the entire monorepo"
     flag --affected help="Run matching tasks only for projects affected by Git changes"
     flag --affected-base help=#"""
 Git base revision for --affected
@@ -3231,6 +3230,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
         arg <REV>
     }
     flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
+    flag --all help="Open the interactive selector with all tasks from the entire monorepo"
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
@@ -4071,7 +4071,6 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
-        flag --all help="Open the interactive selector with all tasks from the entire monorepo"
         flag --affected help="Run matching tasks only for projects affected by Git changes"
         flag --affected-base help=#"""
 Git base revision for --affected
@@ -4087,6 +4086,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
             arg <REV>
         }
         flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
+        flag --all help="Open the interactive selector with all tasks from the entire monorepo"
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>

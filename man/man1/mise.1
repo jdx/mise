@@ -3399,6 +3399,9 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 \fB\-\-affected\-json\fR
 Output affected projects and tasks as JSON without running tasks
 .TP
+\fB\-\-all\fR
+Open the interactive selector with all tasks from the entire monorepo
+.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
@@ -4222,6 +4225,9 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 \fB\-\-affected\-json\fR
 Output affected projects and tasks as JSON without running tasks
 .TP
+\fB\-\-all\fR
+Open the interactive selector with all tasks from the entire monorepo
+.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
@@ -4359,9 +4365,7 @@ Default to always show with `MISE_TASK_TIMINGS=1`
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-.RS
-\fIDefault: \fRdefault
-.RE
+Defaults to `default` when omitted
 .TP
 \fB<ARGS>\fR
 Arguments to pass to the tasks. Use ":::" to separate tasks

@@ -73,10 +73,6 @@ pub struct Run {
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
 
-    /// Open the interactive selector with all tasks from the entire monorepo
-    #[clap(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
-    pub all: bool,
-
     /// Run matching tasks only for projects affected by Git changes
     #[clap(long, verbatim_doc_comment)]
     pub affected: bool,
@@ -108,6 +104,10 @@ pub struct Run {
         verbatim_doc_comment
     )]
     pub affected_json: bool,
+
+    /// Open the interactive selector with all tasks from the entire monorepo
+    #[clap(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
+    pub all: bool,
 
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', verbatim_doc_comment)]
