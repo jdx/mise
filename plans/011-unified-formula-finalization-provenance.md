@@ -1,10 +1,11 @@
 # Plan 011: Unify formula finalization and preserve truthful provenance
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010
+Implementation commits: `a7f2352e1`, `43cc1d8c1`
 
 ## Objective
 
@@ -96,6 +97,20 @@ reported `Installed`; it must retain enough phase data for plan 012 repair.
   name special cases.
 
 ## Verification
+
+Completed proof:
+
+- `rtk cargo test --bin mise system::packages::brew` — 204 passed at the
+  formula head.
+- `rtk cargo test --bin mise archive_bottle` — 2 passed; malformed/missing
+  embedded receipt fails and archive provenance never queries local compiler.
+- `rtk cargo test --bin mise source_receipt_requires_snapshot` — 1 passed;
+  source receipt requires the atomic verified formula snapshot and writes its
+  source SBOM.
+- The exact-head macOS canonical lifecycle job above exercised OCI bottle
+  finalization through receipt/link/shared-state/post-install/health. The full
+  Linux e2e job owns the forced-source script; pre-integration branch CI is not
+  final combined proof.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew

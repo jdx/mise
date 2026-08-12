@@ -1,11 +1,12 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010, 011
 Implementation start: #11915 `94c66938ca1163d26de49902575f0b779367ee41`
+Implementation commits: `94c66938c`, `06a9bf68c`, `57319487b`
 
 Drift check (2026-08-13): installed status still inspected only the configured
 formula's active records. Existing lifecycle state could classify local damage,
@@ -135,6 +136,21 @@ asserted; only verified TLS and the expected method response are relevant.
 - Root-only Kimi canonical-prefix test and a hermetic local metadata fixture.
 
 ## Verification
+
+Completed proof:
+
+- Root-only canonical fixture declares only `"brew:kimi-code"`. Exact-head
+  [macOS job 94278577725](https://github.com/jdx/mise/actions/runs/31645663032/job/94278577725)
+  installed the dependency closure, produced readable CA/OpenSSL shared state,
+  passed direct OpenSSL verification and default Node fetch with no CA/TLS
+  override, then detected and repaired a removed OpenSSL CA link through root
+  status.
+- The same job ended with status `installed`; marker fixture count is 4 and
+  exact mise head is `84d74314f904c0accad1c4cdc563ea662360316b`.
+- Local all-brew tests (204 passed) cover offline installed-receipt closure
+  traversal, exact dependency/phase diagnostics, legacy lifecycle repair,
+  unprovable-state reinstall classification, preserved valid topology/inodes,
+  and ordered effect health.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew

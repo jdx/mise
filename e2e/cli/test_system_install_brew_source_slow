@@ -11,7 +11,21 @@ case "$(uname -m)" in
   *) exit 0 ;;
 esac
 
-export MISE_SYSTEM_BREW_PREFIX="$HOME/brew-source-prefix"
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
+  source_prefix=${MISE_BREW_ORACLE_SOURCE_PREFIX:-}
+  brew_oracle_require_disposable linux-source "$source_prefix"
+  brew_oracle_require_absent_path "$source_prefix" "foreign or stale source-build prefix"
+  cleanup_source_prefix() {
+    rm -rf "$source_prefix"
+  }
+  trap cleanup_source_prefix EXIT
+else
+  source_prefix="$HOME/brew-source-prefix"
+fi
+
+export MISE_SYSTEM_BREW_PREFIX="$source_prefix"
 # hello has bottles everywhere; force it down the source-build path
 export MISE_SYSTEM_BREW_FORCE_SOURCE=hello
 # GNU's load-balancing mirror intermittently returns 502s. Use the canonical
@@ -41,3 +55,7 @@ assert_succeed "test -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello && te
 
 # idempotent
 assert_contains "mise bootstrap packages apply --yes 2>&1" "already"
+
+if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
+  brew_oracle_complete test_system_install_brew_source_slow 1 "$MISE_SYSTEM_BREW_PREFIX"
+fi

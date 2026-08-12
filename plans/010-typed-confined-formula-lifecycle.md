@@ -1,11 +1,12 @@
 # Plan 010: Compile formula lifecycle once, preflight it, and confine it
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11915 `b94b6b1c1`
 Depends on: 009
 Implementation start: #11915 `4989ac953`
+Implementation commits: `4989ac953`, `43cc1d8c1`, `57319487b`
 
 Drift check (2026-08-13): the typed preparation and confined executor are now
 present. Exact-head macOS proof exposed one ordered-effect defect: Node removes
@@ -109,6 +110,20 @@ No `unreachable!` may stand in for upstream validation.
 - Sanitized child environment contains only the documented keys.
 
 ## Verification
+
+Completed proof:
+
+- `rtk cargo test --bin mise system::packages::brew::lifecycle` — 15 passed.
+- `rtk cargo test --bin mise system::packages::brew` — 204 passed at the
+  formula head.
+- Exact-head macOS lifecycle oracle at `84d74314f904c0accad1c4cdc563ea662360316b`
+  passed in [job 94278577725](https://github.com/jdx/mise/actions/runs/31645663032/job/94278577725).
+- The ordered-effect regression proves a removed path recreated by a later
+  typed step is healthy. Linux process-reference safety no longer self-matches.
+- Confinement tests cover deterministic environment, allowed roots, traversal,
+  symlink escape, network denial, and outside-root write denial. Unsupported
+  lifecycle on a non-mutating current dependency is not validated; the complete
+  mutation set is validated before its first side effect.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew::lifecycle

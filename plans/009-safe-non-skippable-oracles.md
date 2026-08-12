@@ -1,6 +1,6 @@
 # Plan 009: Make destructive Homebrew oracles safe and non-skippable
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: M
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
@@ -101,6 +101,16 @@ Do not change package installation behavior here.
   as a real failed execution, not counted as proof.
 - Local guard proof after the ownership correction:
   `rtk mise run test:e2e e2e/cli/test_brew_oracle_guard` — PASS.
+- Final #11915 proof head `84d74314f904c0accad1c4cdc563ea662360316b`:
+  [macOS job](https://github.com/jdx/mise/actions/runs/31645663032/job/94278577725)
+  and [Linux job](https://github.com/jdx/mise/actions/runs/31645663032/job/94278577719)
+  both PASS. Separate verifier steps accepted all three exact markers and
+  failure artifacts uploaded successfully.
+- Marker identities: macOS cask `fixture_count=1`, macOS lifecycle
+  `fixture_count=4`, Linux formula `fixture_count=1`; all record exact mise
+  head, reference Homebrew `6.0.17` / `4dacfe77a24dead72de749c0876028b77b99cd04`,
+  runtime identity (`5.1.4` / `968378a218ba485371a8a849185f05a8b534bda7`
+  on macOS, explicit `not-installed` on Linux), and canonical tested prefix.
 
 ```bash
 rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow

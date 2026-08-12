@@ -323,7 +323,7 @@ jobs:
             echo "homebrew_reference_sha=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
             echo "homebrew_runtime_version=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION"
             echo "homebrew_runtime_sha=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
-            echo "test=test_system_install_brew_linux"
+            echo "tests=test_system_install_brew_linux,test_system_install_brew_source_slow"
           } > "$RUNNER_TEMP/mise-brew-oracle-results/job-context.txt"
       - name: Run Linux formula oracle
         env:
@@ -349,6 +349,32 @@ jobs:
             MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
             MISE_E2E_DOCKER=1 \
             mise run test:e2e e2e/cli/test_system_install_brew_linux
+      - name: Run source-build formula oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_SOURCE_PREFIX: /tmp/mise-brew-source-prefix
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
+          MISE_AUTO_INSTALL: "false"
+        run: |
+          env \
+            MISE_BREW_ORACLE_DISPOSABLE="$MISE_BREW_ORACLE_DISPOSABLE" \
+            MISE_BREW_ORACLE_RESULT_DIR="$MISE_BREW_ORACLE_RESULT_DIR" \
+            MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
+            MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
+            MISE_BREW_ORACLE_SOURCE_PREFIX="$MISE_BREW_ORACLE_SOURCE_PREFIX" \
+            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
+            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
+            MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
+            MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
+            MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
+            MISE_E2E_DOCKER=1 \
+            mise run test:e2e e2e/cli/test_system_install_brew_source_slow
       - name: Verify oracle completion record
         if: always()
         env:
@@ -358,6 +384,14 @@ jobs:
           brew_oracle_verify_marker \
             "$RUNNER_TEMP/mise-brew-oracle-results/linux-formula.completed" \
             test_system_install_brew_linux 1 /home/linuxbrew/.linuxbrew \
+            "$MISE_BREW_ORACLE_MISE_SHA" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
+            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
+          brew_oracle_verify_marker \
+            "$RUNNER_TEMP/mise-brew-oracle-results/linux-source.completed" \
+            test_system_install_brew_source_slow 1 /tmp/mise-brew-source-prefix \
             "$MISE_BREW_ORACLE_MISE_SHA" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
