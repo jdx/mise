@@ -2597,9 +2597,11 @@ fn deferred_provenance_resolution_error(
 
 /// Result type for lock resolution tasks (shared by `mise lock` and auto-lock).
 ///
-/// Fields: (short_name, version, backend_full, platform, info_or_error, options, conda_packages).
+/// Fields: (short_name, version, backend_full, platform, info_or_error, options,
+/// conda_packages, pkgx_packages, error_is_fatal).
 /// The `info_or_error` field is `Ok(info)` on success or `Err(message)` on failure,
-/// allowing callers to log at the appropriate level.
+/// allowing callers to log at the appropriate level. `error_is_fatal` distinguishes
+/// genuine conda solve failures from backends that use errors to skip unsupported targets.
 pub type LockResolutionResult = (
     String,
     String,
@@ -2609,11 +2611,13 @@ pub type LockResolutionResult = (
     BTreeMap<String, String>,
     BTreeMap<String, CondaPackageInfo>,
     BTreeMap<String, PkgxPackageInfo>,
+    bool,
 );
 
 /// Resolve lock info for a single tool/platform combination.
 ///
-/// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options, conda_packages).
+/// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options,
+/// conda_packages, pkgx_packages, error_is_fatal).
 /// Does not log errors — callers decide the appropriate log level.
 pub async fn resolve_tool_lock_info(
     ba: crate::cli::args::BackendArg,
@@ -2622,6 +2626,9 @@ pub async fn resolve_tool_lock_info(
     backend: Option<crate::backend::ABackend>,
 ) -> LockResolutionResult {
     let target = PlatformTarget::new(platform.clone());
+    let error_is_fatal = backend
+        .as_ref()
+        .is_some_and(|backend| backend.get_type() == BackendType::Conda);
 
     let (info, options, conda_packages, pkgx_packages) = if let Some(backend) = backend {
         let options = match backend.resolve_lockfile_options(&tv.request, &target) {
@@ -2636,6 +2643,7 @@ pub async fn resolve_tool_lock_info(
                     BTreeMap::new(),
                     BTreeMap::new(),
                     BTreeMap::new(),
+                    error_is_fatal,
                 );
             }
         };
@@ -2677,6 +2685,7 @@ pub async fn resolve_tool_lock_info(
                                 options,
                                 BTreeMap::new(),
                                 BTreeMap::new(),
+                                error_is_fatal,
                             );
                         }
                     }
@@ -2715,6 +2724,7 @@ pub async fn resolve_tool_lock_info(
         options,
         conda_packages,
         pkgx_packages,
+        error_is_fatal,
     )
 }
 
@@ -2729,7 +2739,17 @@ pub async fn resolve_tool_lock_info(
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
 pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
-    let (short, version, backend, platform, info, options, conda_packages, pkgx_packages) = result;
+    let (
+        short,
+        version,
+        backend,
+        platform,
+        info,
+        options,
+        conda_packages,
+        pkgx_packages,
+        _error_is_fatal,
+    ) = result;
     let platform_key = platform.to_key();
     let mut applied = false;
     if let Ok(ref info) = info {
@@ -3642,6 +3662,7 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
+            false,
         );
 
         assert!(!apply_lock_result(&mut lockfile, result).unwrap());

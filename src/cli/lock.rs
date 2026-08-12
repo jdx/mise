@@ -130,9 +130,10 @@ enum LockTaskStatus {
 
 fn classify_lock_result(
     resolution_error: Option<String>,
+    error_is_fatal: bool,
     applied: bool,
 ) -> (LockTaskStatus, Option<String>) {
-    if let Some(error) = resolution_error {
+    if let Some(error) = resolution_error.filter(|_| error_is_fatal) {
         (LockTaskStatus::Failed, Some(error))
     } else if applied {
         (LockTaskStatus::Updated, None)
@@ -1149,6 +1150,7 @@ impl Lock {
                     if let Some(msg) = &resolution_error {
                         debug!("{msg}");
                     }
+                    let error_is_fatal = resolution.8;
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
@@ -1166,7 +1168,7 @@ impl Lock {
                         // installing return empty info rather than an error.
                         Ok(applied) => {
                             let (status, resolution_error) =
-                                classify_lock_result(resolution_error, applied);
+                                classify_lock_result(resolution_error, error_is_fatal, applied);
                             if let Some(error) = resolution_error {
                                 resolution_errors.push(error);
                             }
@@ -1257,7 +1259,7 @@ mod tests {
     #[test]
     fn test_resolution_error_is_fatal_instead_of_skipped() {
         let error = "conda solve failed".to_string();
-        let (status, returned_error) = classify_lock_result(Some(error.clone()), false);
+        let (status, returned_error) = classify_lock_result(Some(error.clone()), true, false);
 
         assert_eq!(status, LockTaskStatus::Failed);
         assert_eq!(returned_error, Some(error));
@@ -1265,7 +1267,16 @@ mod tests {
 
     #[test]
     fn test_empty_success_remains_an_unsupported_platform_skip() {
-        let (status, returned_error) = classify_lock_result(None, false);
+        let (status, returned_error) = classify_lock_result(None, false, false);
+
+        assert_eq!(status, LockTaskStatus::Unresolved);
+        assert_eq!(returned_error, None);
+    }
+
+    #[test]
+    fn test_nonfatal_resolution_error_remains_an_unsupported_platform_skip() {
+        let (status, returned_error) =
+            classify_lock_result(Some("no URL for target".to_string()), false, false);
 
         assert_eq!(status, LockTaskStatus::Unresolved);
         assert_eq!(returned_error, None);
