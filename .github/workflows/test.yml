@@ -64,9 +64,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -141,8 +138,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -168,14 +165,6 @@ jobs:
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - name: Prepare macOS mise artifact
-        run: |
-          install -m755 target/debug/mise target/mise-macos-arm64
-          strip -S target/mise-macos-arm64
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: mise-macos-arm64
-          path: target/mise-macos-arm64
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
       # `cargo test` above resolves to the root package, so the workspace members are built as
@@ -189,24 +178,32 @@ jobs:
   brew-oracle-macos:
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 45
-    needs: [unit, classify-changes]
-    # Always start the proof job once classification says this is full CI. If the
-    # producer failed before publishing its binary, artifact download fails red;
-    # a dependency failure must never turn the oracle into a skipped check.
+    needs: [classify-changes]
+    # Always start the proof job once classification says this is full CI. It
+    # builds the immutable PR head itself, so another job cannot skip its proof.
     if: always() && needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
-          name: mise-macos-arm64
-          path: target/debug
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Build exact-head oracle binary
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          cargo build --all-features
+          strip -S target/debug/mise
       - name: Prepare exact-head oracle environment
         run: |
-          mv target/debug/mise-macos-arm64 target/debug/mise
-          chmod +x target/debug/mise
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
           mkdir -p "$RUNNER_TEMP/mise-brew-oracle-results"
           test ! -L "$RUNNER_TEMP/mise-brew-oracle-results"
@@ -223,6 +220,7 @@ jobs:
           MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
           MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
         run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - name: Run canonical formula lifecycle oracle
         env:
@@ -232,6 +230,7 @@ jobs:
           MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
           MISE_BREW_LIFECYCLE_TEST_PREFIX: /opt/homebrew
+          MISE_DISABLE_TOOLS: "1"
         run: mise run test:e2e e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow
       - name: Verify oracle completion records
         if: always()
@@ -258,20 +257,30 @@ jobs:
   brew-oracle-linux:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 30
-    needs: [build-ubuntu, classify-changes]
+    needs: [classify-changes]
     if: always() && needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
-          name: mise-ubuntu-latest
-          path: target/debug
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+            ~/.cache/sccache
+      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with: { tool: sccache }
+      - name: Build exact-head oracle binary
+        run: |
+          export RUSTC_WRAPPER=sccache
+          export SCCACHE_DIR="$HOME/.cache/sccache"
+          cargo build --all-features
+          strip --strip-debug target/debug/mise
       - name: Prepare exact-head oracle environment
         run: |
-          chmod +x target/debug/mise
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
           mkdir -p "$RUNNER_TEMP/mise-brew-oracle-results"
           test ! -L "$RUNNER_TEMP/mise-brew-oracle-results"
@@ -287,6 +296,7 @@ jobs:
           MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
           MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
         run: |
           sudo env \
             PATH="$PATH" \
@@ -296,6 +306,7 @@ jobs:
             MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
             MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
             MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
+            MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
             MISE_E2E_DOCKER=0 \
             mise run test:e2e e2e/cli/test_system_install_brew_linux
       - name: Verify oracle completion record
