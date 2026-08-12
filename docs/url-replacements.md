@@ -7,6 +7,10 @@ In some environments — such as enterprises or DMZs — these URLs may not be d
 
 URL replacements allow you to modify or redirect any URL that mise attempts to access, making it possible to use internal proxies, mirrors, or alternative sources as needed.
 
+This includes conda channel metadata fetched while resolving packages as well as the package
+artifacts downloaded after resolution. The conda lockfile continues to record the logical
+upstream URLs, and replacements are applied when each request is sent.
+
 ## Configuration Examples
 
 In mise.toml (single line):
