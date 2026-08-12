@@ -8,11 +8,11 @@ fi
 # prefix no longer than /opt/homebrew: Mach-O bottles only reserve enough load
 # command padding for canonical-path relocation.
 export MISE_SYSTEM_BREW_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-/tmp/misebrew}"
-if [[ "$MISE_SYSTEM_BREW_PREFIX" == "/opt/homebrew" && "${CI:-}" != "true" ]]; then
+if [[ $MISE_SYSTEM_BREW_PREFIX == "/opt/homebrew" && ${CI:-} != "true" ]]; then
   echo "refusing canonical-prefix lifecycle test outside disposable CI" >&2
   exit 1
 fi
-if [[ -e "$MISE_SYSTEM_BREW_PREFIX" ]]; then
+if [[ -e $MISE_SYSTEM_BREW_PREFIX ]]; then
   exit 0
 fi
 trap 'rm -rf "$MISE_SYSTEM_BREW_PREFIX"' EXIT
@@ -35,7 +35,7 @@ assert_succeed "test -x '$MISE_SYSTEM_BREW_PREFIX/opt/node/bin/node'"
 assert_succeed "test -x '$MISE_SYSTEM_BREW_PREFIX/bin/kimi'"
 assert_fail "test -n \"${SSL_CERT_FILE:-}${NODE_EXTRA_CA_CERTS:-}${NODE_OPTIONS:-}\""
 assert_succeed "'$MISE_SYSTEM_BREW_PREFIX/opt/openssl@3/bin/openssl' s_client -CAfile '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem' -connect auth.kimi.com:443 -servername auth.kimi.com </dev/null"
-if [[ "$MISE_SYSTEM_BREW_PREFIX" == "/opt/homebrew" ]]; then
+if [[ $MISE_SYSTEM_BREW_PREFIX == "/opt/homebrew" ]]; then
   # Bottled Node embeds Homebrew's canonical OpenSSL directory. Exercise its
   # unmodified default CA mode only on a disposable canonical-prefix runner.
   assert_succeed "'$MISE_SYSTEM_BREW_PREFIX/opt/node/bin/node' -e 'fetch(\"https://auth.kimi.com/api/oauth/device_authorization\").then(r => { if (r.status !== 405) process.exit(1) })'"
