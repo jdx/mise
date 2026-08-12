@@ -364,9 +364,15 @@ fn stage_cached_output(
     reflink_copy::reflink_or_copy(source, &temporary)
         .wrap_err_with(|| format!("failed to materialize cached rustc output {}", node.name))?;
     let temporary = tempfile::TempPath::try_from_path(temporary)?;
-    std::fs::File::open(&temporary)?.sync_all()?;
-    if std::fs::metadata(&temporary)?.len() != node.digest.size {
-        bail!("cached rustc output has the wrong size: {}", node.name);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&temporary)?
+        .sync_all()?;
+    if !node.digest.matches_file(&temporary)? {
+        bail!(
+            "cached rustc output failed digest verification: {}",
+            node.name
+        );
     }
     apply_file_mode(&temporary, node.mode)?;
     Ok(temporary)
@@ -488,8 +494,8 @@ where
 fn read_verified_blob(path: &Path, digest: &CacheDigest, description: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?.read_to_end(&mut bytes)?;
-    if bytes.len() as u64 != digest.size {
-        bail!("cached {description} has the wrong size");
+    if !digest.matches_bytes(&bytes)? {
+        bail!("cached {description} failed digest verification");
     }
     Ok(bytes)
 }
@@ -1011,6 +1017,27 @@ mod tests {
 
         assert_eq!(std::fs::read(source).unwrap(), b"artifact");
         assert_eq!(std::fs::read(output).unwrap(), b"modified");
+    }
+
+    #[test]
+    fn rejects_same_size_corrupt_cached_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("cas-blob");
+        std::fs::write(&source, b"corrupt!").unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        let node = test_file("artifact.rlib");
+
+        assert!(stage_cached_output(staging.path(), 0, &source, &node).is_err());
+    }
+
+    #[test]
+    fn rejects_same_size_corrupt_cached_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("cas-blob");
+        std::fs::write(&source, b"corrupt!").unwrap();
+        let digest = CacheDigest::blake3(b"artifact");
+
+        assert!(read_verified_blob(&source, &digest, "test blob").is_err());
     }
 
     #[test]

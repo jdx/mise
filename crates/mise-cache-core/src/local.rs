@@ -95,7 +95,10 @@ impl LocalCas {
         let temporary = staging.path().join("blob");
         reflink_copy::reflink_or_copy(source, &temporary)?;
         let temporary = tempfile::TempPath::try_from_path(temporary)?;
-        fs::File::open(&temporary)?.sync_all()?;
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)?
+            .sync_all()?;
         if verify && !digest.matches_file(&temporary)? {
             bail!("staged blob does not match the declared CAS digest");
         }

@@ -878,7 +878,7 @@ impl CacheAgent {
     fn find_verified_blob(&self, digest: &CacheDigest) -> Result<Option<PathBuf>> {
         let remembered = self.verified_blobs.lock().unwrap().get(digest).cloned();
         if let Some(path) = remembered {
-            if fs::metadata(&path).is_ok_and(|metadata| metadata.len() == digest.size) {
+            if digest.matches_file(&path).unwrap_or(false) {
                 return Ok(Some(path));
             }
             self.verified_blobs.lock().unwrap().remove(digest);
@@ -1304,6 +1304,23 @@ mod tests {
                 ..AgentStats::default()
             }
         );
+    }
+
+    #[test]
+    fn remembered_blobs_reject_same_size_corruption() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path().join("cache"), "test-version");
+        let digest = CacheDigest::blake3(b"cached object");
+        let path = agent.cas.store_bytes(&digest, b"cached object").unwrap();
+        assert_eq!(
+            agent.find_verified_blob(&digest).unwrap(),
+            Some(path.clone())
+        );
+
+        std::fs::write(&path, b"broken object").unwrap();
+
+        assert!(agent.find_verified_blob(&digest).is_err());
+        assert!(!agent.verified_blobs.lock().unwrap().contains_key(&digest));
     }
 
     #[tokio::test]
