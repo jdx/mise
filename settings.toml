@@ -2344,8 +2344,14 @@ precompiled_url = "https://my-mirror.example.com/ruby-{version}.{platform}.tar.g
 env = "MISE_RUBY_PRECOMPILED_URL"
 type = "String"
 
+[ruby.ruby_build_cli_opts]
+description = "CLI options passed directly to ruby-build before the version and install prefix."
+env = "MISE_RUBY_BUILD_CLI_OPTS"
+optional = true
+type = "String"
+
 [ruby.ruby_build_opts]
-description = "Options to pass to ruby-build."
+description = "Configure arguments passed through ruby-build after `--`."
 env = "MISE_RUBY_BUILD_OPTS"
 optional = true
 type = "String"

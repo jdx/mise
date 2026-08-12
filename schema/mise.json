@@ -1580,8 +1580,12 @@
               "description": "URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },
+            "ruby_build_cli_opts": {
+              "description": "CLI options passed directly to ruby-build before the version and install prefix.",
+              "type": "string"
+            },
             "ruby_build_opts": {
-              "description": "Options to pass to ruby-build.",
+              "description": "Configure arguments passed through ruby-build after `--`.",
               "type": "string"
             },
             "ruby_build_repo": {
