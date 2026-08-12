@@ -37,6 +37,10 @@ $ mise run build
 
 ## Flags
 
+### `--all`
+
+Load all tasks from the entire monorepo in the interactive selector
+
 ### `--affected`
 
 Run matching tasks only for projects affected by Git changes

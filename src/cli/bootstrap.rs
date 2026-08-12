@@ -1622,6 +1622,7 @@ impl Bootstrap {
             task: task.into(),
             args: vec![],
             args_last: vec![],
+            all: false,
             affected: false,
             affected_base: None,
             affected_head: None,

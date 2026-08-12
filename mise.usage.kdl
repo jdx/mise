@@ -3215,6 +3215,7 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
+    flag --all help="Load all tasks from the entire monorepo in the interactive selector"
     flag --affected help="Run matching tasks only for projects affected by Git changes"
     flag --affected-base help=#"""
 Git base revision for --affected
@@ -4070,6 +4071,7 @@ Examples:
     $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 
 """#
+        flag --all help="Load all tasks from the entire monorepo in the interactive selector"
         flag --affected help="Run matching tasks only for projects affected by Git changes"
         flag --affected-base help=#"""
 Git base revision for --affected

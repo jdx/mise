@@ -76,6 +76,10 @@ pub struct Run {
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
 
+    /// Load all tasks from the entire monorepo in the interactive selector
+    #[clap(long, verbatim_doc_comment)]
+    pub all: bool,
+
     /// Run matching tasks only for projects affected by Git changes
     #[clap(long, verbatim_doc_comment)]
     pub affected: bool,
@@ -331,6 +335,7 @@ async fn get_affected_task_list(
     head: Option<&str>,
     explain: bool,
     json: bool,
+    all: bool,
 ) -> Result<Vec<Task>> {
     Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
@@ -395,7 +400,7 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only).await?;
+    let mut tasks = get_task_lists(config, &args, true, only, all).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -598,7 +603,7 @@ impl Run {
                 )
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false).await?;
+            let task_list = get_task_lists(&config, &args, false, false, false).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -646,10 +651,11 @@ impl Run {
                 self.affected_head.as_deref(),
                 self.affected_explain,
                 self.affected_json,
+                self.all,
             )
             .await?
         } else {
-            get_task_lists(&config, &args, true, self.skip_deps).await?
+            get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
         };
         if self.affected_json {
             return Ok(());
