@@ -682,10 +682,11 @@ impl Settings {
         }
 
         // Reload settings after current directory option processed
-        let cli_settings = normalize_hidden_config_aliases(
-            CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
-        );
-        sb = Self::builder().preloaded(cli_settings).env();
+        sb = Self::builder()
+            .preloaded(normalize_hidden_config_aliases(
+                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+            ))
+            .env();
         time!("try_get builder2+env");
         for file in Self::all_settings_files() {
             sb = sb.preloaded(file);
