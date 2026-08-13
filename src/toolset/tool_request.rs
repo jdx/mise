@@ -523,7 +523,9 @@ fn validate_ref_string(s: &str) -> Result<()> {
 ///
 /// The list is written for a POSIX shell, which is why `\` is on it. On Windows `\` is a path
 /// separator instead, so it is rewritten by [`windows_path_separators`] before it gets here rather
-/// than being allowed through — see that function.
+/// than being allowed through — see that function. The shell those hooks run through there is
+/// `cmd.exe`, whose metacharacters are a different set, so a few more are rejected on Windows —
+/// see [`is_forbidden_path_char`].
 fn validate_path_string(s: &str) -> Result<()> {
     if s.is_empty() {
         return Ok(());
@@ -531,7 +533,7 @@ fn validate_path_string(s: &str) -> Result<()> {
     if let Some(c) = s.chars().find(|c| {
         // Allow newlines/tabs/etc. in paths is still bad — keep control-char
         // and quote/expansion rejection, but allow `/` since paths need it.
-        is_forbidden_version_char(*c)
+        is_forbidden_path_char(*c)
     }) {
         // The only `\` that survives the rewrite is an extended-length or device prefix, so say
         // what is actually wrong instead of naming a character the user cannot avoid.
@@ -581,6 +583,30 @@ fn is_forbidden_version_char(c: char) -> bool {
         return true;
     }
     matches!(c, '"' | '\'' | '`' | '\\' | '$')
+}
+
+/// The `path:` denylist: the shared version list, plus `cmd.exe`'s metacharacters on Windows.
+///
+/// The version list covers a POSIX shell. On Windows the resolved path reaches vfox hooks that
+/// build `cmd.exe` command lines with it, so cmd's metacharacters are as dangerous here as the
+/// POSIX ones already are — this mirrors that rejection on the platform where cmd is the shell.
+/// `%` is the sharpest: cmd expands `%NAME%` even inside double quotes, so a hook that quotes its
+/// interpolation correctly still cannot contain it.
+///
+/// Only the `path:` arm uses this. Version strings keep the POSIX-only list, because `^` is a real
+/// npm-style range prefix (`^1.2.3`) that must not become a hard error.
+fn is_forbidden_path_char(c: char) -> bool {
+    is_forbidden_version_char(c) || is_forbidden_cmd_char(c)
+}
+
+#[cfg(windows)]
+fn is_forbidden_cmd_char(c: char) -> bool {
+    matches!(c, '&' | '|' | '<' | '>' | '^' | '%')
+}
+
+#[cfg(not(windows))]
+fn is_forbidden_cmd_char(_c: char) -> bool {
+    false
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.
@@ -929,6 +955,40 @@ mod tests {
         // shell escape there, so none of the rewriting reaches this platform.
         assert_eq!(super::windows_path_separators(r"/tmp/\rm"), r"/tmp/\rm");
         assert!(accept_tool_path(r"/tmp/\rm").is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_validate_path_string_rejects_cmd_metacharacters() {
+        use super::validate_path_string;
+        // These pass a POSIX shell but are cmd.exe metacharacters, and the resolved path reaches
+        // vfox hooks that build cmd command lines with it. `%` is the one that survives quoting.
+        for p in [
+            "C:/a&b/tool",
+            "C:/%USERPROFILE%/tool",
+            "C:/a^b/tool",
+            "C:/a|b/tool",
+            "C:/a<b/tool",
+            "C:/a>b/tool",
+        ] {
+            assert!(
+                validate_path_string(p).is_err(),
+                "expected Windows path {p:?} to be rejected"
+            );
+        }
+        // An ordinary Windows path is still fine.
+        assert!(validate_path_string("C:/Program Files/tool").is_ok());
+    }
+
+    #[test]
+    fn test_version_string_keeps_the_posix_only_list() {
+        // The cmd-metacharacter rejection is `path:`-only. Versions keep the POSIX list, or `^1.2.3`
+        // — a real npm-style range — would become a hard error. `&` is not a version metacharacter
+        // there, so this stays accepted on every platform.
+        assert!(validate_version_string("^1.2.3").is_ok());
+        assert!(validate_version_string("1.0&x").is_ok());
+        // The POSIX shell characters are still rejected, unchanged.
+        assert!(validate_version_string("1.0$(id)").is_err());
     }
 
     #[test]
