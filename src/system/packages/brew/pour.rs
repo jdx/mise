@@ -2647,7 +2647,7 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_link(prefix.join("etc/openssl@3/cert.pem"))?,
-            PathBuf::from("../ca-certificates/cert.pem")
+            prefix.join("etc/ca-certificates/cert.pem")
         );
         assert_eq!(
             manager.installed(std::slice::from_ref(&request)).await?[0].state,

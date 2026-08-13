@@ -1040,7 +1040,7 @@ fn apply_repair_effect(effect: &LifecycleRepairEffect) -> Result<()> {
         LifecycleRepairEffect::Symlink { source, target } => {
             if target.symlink_metadata().is_err() {
                 crate::file::create_dir_all(target.parent().unwrap())?;
-                crate::file::make_symlink(&super::pour::relative_target(source, target), target)?;
+                crate::file::make_symlink(source, target)?;
             }
         }
     }
@@ -1343,8 +1343,10 @@ async fn execute_step(
                     crate::file::remove_file(&destination)?;
                 }
                 let source = super::pour::lexical_normalize(&source);
-                let relative = super::pour::relative_target(&source, &destination);
-                crate::file::make_symlink(&relative, &destination)?;
+                // Formula DSL `ln_s`/`ln_sf` receives the resolved source
+                // path. These lifecycle links are absolute; only keg/public
+                // topology uses Homebrew's relative-link convention.
+                crate::file::make_symlink(&source, &destination)?;
                 links.push(LifecycleSymlink {
                     source,
                     target: destination,
