@@ -639,6 +639,7 @@ impl Upgrade {
         let theme = crate::ui::theme::get_theme();
         let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
+            .filtering(true)
             .filterable(true)
             .theme(&theme);
         for out in outdated {
