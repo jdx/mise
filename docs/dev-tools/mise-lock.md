@@ -30,6 +30,12 @@ lockfile = true
 2. **Version Resolution**: If a `mise.lock` exists, mise will prefer locked versions over version ranges in `mise.toml`
 3. **Checksum Verification**: For supported backends, mise stores and verifies checksums of downloaded tools
 
+`mise lock` resolves both config-level tools and tools declared in individual tasks. It reads task
+definitions—including inherited templates and included task files—but does not run tasks, their
+dependencies, hooks, or tool installers. This lets task-specific tools be locked before the first
+task execution. Their entries use the same `[[tools.*]]` format and are written to the lockfile for
+the config that owns the task.
+
 ## File Format
 
 `mise.lock` is a TOML file with a platform-based format that organizes asset information by platform:
