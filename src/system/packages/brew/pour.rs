@@ -153,7 +153,7 @@ fn record_repair_needed(name: &str) -> bool {
     let opt = prefix::prefix().join("opt").join(name);
     let linked = prefix::linked_keg_record(name);
     if let Some((_, keg)) = record_keg(name, &opt) {
-        return !keg.join(KEG_ONLY_MARKER).is_file()
+        return !keg_is_keg_only(name, &keg)
             && record_needs_replacement(name, &linked)
             && has_public_link_into(&keg);
     }
@@ -287,7 +287,7 @@ fn formula_health(
             reasons.push("opt record is missing, foreign, or points at another keg".into());
         }
     }
-    let keg_only = keg.join(KEG_ONLY_MARKER).is_file();
+    let keg_only = keg_is_keg_only(name, keg);
     if !keg_only {
         let linked_matches = record_keg(name, &prefix::linked_keg_record(name))
             .is_some_and(|active| active.0 == version);
@@ -361,6 +361,31 @@ fn keg_has_linkable_entries(keg: &Path) -> bool {
     })
 }
 
+/// mise records keg-only installs explicitly. Native Homebrew installs do not,
+/// so recover the same fact offline from Homebrew's installed formula snapshot.
+/// Only the top-level Formula DSL declaration is accepted; comments, nested
+/// statements, and similarly named methods fail closed.
+fn keg_is_keg_only(name: &str, keg: &Path) -> bool {
+    keg.join(KEG_ONLY_MARKER).is_file()
+        || formula_snapshot_declares_keg_only(&keg.join(".brew").join(format!("{name}.rb")))
+}
+
+fn formula_snapshot_declares_keg_only(snapshot: &Path) -> bool {
+    let Ok(source) = std::fs::read_to_string(snapshot) else {
+        return false;
+    };
+    source.lines().any(|line| {
+        let Some(arguments) = line.strip_prefix("  keg_only") else {
+            return false;
+        };
+        !line.starts_with("   ")
+            && arguments
+                .chars()
+                .next()
+                .is_none_or(|character| character.is_ascii_whitespace() || character == '(')
+    })
+}
+
 pub(super) fn installed_formula_health(name: &str, version: &str) -> FormulaHealth {
     formula_health(name, version, &keg_path(name, version)).0
 }
@@ -419,7 +444,7 @@ fn preflight_topology_repair(
     version: &str,
     keg: &Path,
 ) -> Result<Vec<TopologyRepairLink>> {
-    let keg_only = keg.join(KEG_ONLY_MARKER).is_file();
+    let keg_only = keg_is_keg_only(name, keg);
     let mut expected = vec![(prefix::prefix().join("opt").join(name), keg.to_path_buf())];
     if !keg_only {
         for directory in LINK_DIRS {
@@ -543,7 +568,7 @@ fn pending_record_repair(name: &str) -> Option<RecordRepair> {
     let opt = prefix::prefix().join("opt").join(name);
     let linked = prefix::linked_keg_record(name);
     if let Some((version, keg)) = record_keg(name, &opt) {
-        if keg.join(KEG_ONLY_MARKER).is_file() {
+        if keg_is_keg_only(name, &keg) {
             return None;
         }
         if record_needs_replacement(name, &linked) && has_public_link_into(&keg) {
@@ -1760,6 +1785,84 @@ mod tests {
         )?;
         link_keg(name, version, false)?;
         Ok(keg)
+    }
+
+    #[test]
+    fn recognizes_only_top_level_keg_only_snapshot_declarations() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let snapshot = tmp.path().join("formula.rb");
+        for declaration in [
+            "class Foo < Formula\n  keg_only :versioned_formula\nend\n",
+            "class Foo < Formula\n  keg_only(:shadowed_by_macos)\nend\n",
+        ] {
+            crate::file::write(&snapshot, declaration)?;
+            assert!(formula_snapshot_declares_keg_only(&snapshot));
+        }
+        for non_declaration in [
+            "class Foo < Formula\n  # keg_only :versioned_formula\nend\n",
+            "class Foo < Formula\n    keg_only :versioned_formula\nend\n",
+            "class Foo < Formula\n  keg_only?\nend\n",
+            "class Foo < Formula\n  value = 'keg_only :versioned_formula'\nend\n",
+        ] {
+            crate::file::write(&snapshot, non_declaration)?;
+            assert!(!formula_snapshot_declares_keg_only(&snapshot));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_keg_only_formula_is_healthy_without_mise_marker_or_public_links() -> Result<()>
+    {
+        use crate::system::packages::{PackageRequest, PackageState, SystemPackageManager};
+
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let name = "postgresql@17";
+        let version = "17.6";
+        let keg = write_lib_keg(&prefix, name, version)?;
+        crate::file::create_dir_all(keg.join(".brew"))?;
+        crate::file::write(
+            keg.join(".brew/postgresql@17.rb"),
+            "class PostgresqlAT17 < Formula\n  keg_only :versioned_formula\nend\n",
+        )?;
+        crate::file::write(keg.join("sbom.spdx.json"), "{}")?;
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            serde_json::to_vec(&json!({
+                "homebrew_version": "6.0.17",
+                "runtime_dependencies": [],
+            }))?,
+        )?;
+        crate::file::create_dir_all(prefix.join("opt"))?;
+        crate::file::make_symlink(
+            &Path::new("../Cellar").join(name).join(version),
+            &prefix.join("opt").join(name),
+        )?;
+
+        assert!(!keg.join(KEG_ONLY_MARKER).exists());
+        assert!(prefix::linked_keg_record(name).symlink_metadata().is_err());
+        assert_eq!(linked_state(name), Some((version.to_string(), false)));
+        assert_eq!(
+            installed_formula_health(name, version).kind,
+            FormulaHealthKind::Healthy
+        );
+
+        let manager = super::super::BrewManager::new();
+        let status = manager
+            .installed(&[PackageRequest {
+                name: name.to_string(),
+                version: Some(version.to_string()),
+                tap_url: None,
+            }])
+            .await?;
+        assert_eq!(
+            status[0].state,
+            PackageState::Installed {
+                version: version.to_string()
+            }
+        );
+        Ok(())
     }
 
     #[test]
