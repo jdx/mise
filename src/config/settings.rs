@@ -1108,7 +1108,11 @@ impl Settings {
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
         let s = toml::to_string(self)?;
-        let mut table = toml::from_str(&s)?;
+        let mut table: toml::Table = toml::from_str(&s)?;
+        table.insert(
+            "all_compile".to_string(),
+            toml::Value::Boolean(self.all_compile()),
+        );
         redact_settings_table(&mut table);
         Ok(table)
     }
@@ -1620,12 +1624,24 @@ mod tests {
         let mut settings = Settings::default();
         assert_eq!(settings.all_compile, None);
         assert!(!settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(false))
+        );
 
         settings.all_compile = Some(true);
         assert!(settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(true))
+        );
 
         settings.all_compile = Some(false);
         assert!(!settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(false))
+        );
     }
 
     #[test]
