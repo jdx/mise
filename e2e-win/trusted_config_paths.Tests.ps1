@@ -1,6 +1,10 @@
 Describe 'MISE_TRUSTED_CONFIG_PATHS' {
     BeforeAll {
         $script:OriginalDir = Get-Location
+        # Saved here, restored in AfterAll: Pester runs every suite in one process, so removing an
+        # inherited value would leave the next suite without it. The tests below set this var and
+        # AfterEach clears it between them.
+        $script:OriginalTrusted = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
         $script:TestRoot = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $script:TestRoot | Out-Null
 
@@ -24,7 +28,11 @@ PROJECT = "b"
     AfterAll {
         Set-Location $script:OriginalDir
         Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction Ignore
-        Remove-Item Env:MISE_TRUSTED_CONFIG_PATHS -ErrorAction Ignore
+        if ($null -eq $script:OriginalTrusted) {
+            Remove-Item Env:MISE_TRUSTED_CONFIG_PATHS -ErrorAction Ignore
+        } else {
+            [Environment]::SetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted, 'Process')
+        }
     }
 
     AfterEach {
