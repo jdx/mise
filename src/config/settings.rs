@@ -248,6 +248,7 @@ static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_NODE_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_PYTHON_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_ERLANG_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
+#[cfg(not(windows))]
 static WARN_NIXOS_RUBY_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 fn default_all_compile(linux_distro: Option<&str>) -> bool {
@@ -268,12 +269,12 @@ fn compile_inherits_nixos_all_compile_default(
     nixos_all_compile_is_implicit && compile.is_none()
 }
 
-fn warn_nixos_all_compile_default_deprecated(tool: &str, inherited: &AtomicBool) {
+fn warn_nixos_all_compile_default_deprecated(tool: &str, id: &'static str, inherited: &AtomicBool) {
     if inherited.load(Ordering::Relaxed) {
         deprecated_at!(
             "2026.8.0",
             "2027.8.0",
-            "nixos.all_compile_default",
+            id,
             "The automatic all_compile=true default on NixOS caused {tool} to compile from source. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
         );
     }
@@ -615,19 +616,36 @@ impl Settings {
     }
 
     pub fn warn_nixos_node_compile_default(&self) {
-        warn_nixos_all_compile_default_deprecated("node", &WARN_NIXOS_NODE_COMPILE_DEFAULT);
+        warn_nixos_all_compile_default_deprecated(
+            "node",
+            "nixos.node_all_compile_default",
+            &WARN_NIXOS_NODE_COMPILE_DEFAULT,
+        );
     }
 
     pub fn warn_nixos_python_compile_default(&self) {
-        warn_nixos_all_compile_default_deprecated("python", &WARN_NIXOS_PYTHON_COMPILE_DEFAULT);
+        warn_nixos_all_compile_default_deprecated(
+            "python",
+            "nixos.python_all_compile_default",
+            &WARN_NIXOS_PYTHON_COMPILE_DEFAULT,
+        );
     }
 
     pub fn warn_nixos_erlang_compile_default(&self) {
-        warn_nixos_all_compile_default_deprecated("erlang", &WARN_NIXOS_ERLANG_COMPILE_DEFAULT);
+        warn_nixos_all_compile_default_deprecated(
+            "erlang",
+            "nixos.erlang_all_compile_default",
+            &WARN_NIXOS_ERLANG_COMPILE_DEFAULT,
+        );
     }
 
+    #[cfg(not(windows))]
     pub fn warn_nixos_ruby_compile_default(&self) {
-        warn_nixos_all_compile_default_deprecated("ruby", &WARN_NIXOS_RUBY_COMPILE_DEFAULT);
+        warn_nixos_all_compile_default_deprecated(
+            "ruby",
+            "nixos.ruby_all_compile_default",
+            &WARN_NIXOS_RUBY_COMPILE_DEFAULT,
+        );
     }
 
     pub fn try_get() -> Result<Arc<Self>> {
@@ -754,6 +772,7 @@ impl Settings {
             ),
             Ordering::Relaxed,
         );
+        #[cfg(not(windows))]
         WARN_NIXOS_RUBY_COMPILE_DEFAULT.store(
             compile_inherits_nixos_all_compile_default(
                 nixos_all_compile_is_implicit,
