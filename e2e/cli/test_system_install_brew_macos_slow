@@ -11,6 +11,7 @@ fi
 # shellcheck source=e2e/cli/brew_oracle_guard.sh
 source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
 brew_oracle_require_disposable macos-cask /opt/homebrew
+brew_oracle_configure_runtime /opt/homebrew
 
 cask_app="/Applications/Hidden Bar.app"
 caskroom="/opt/homebrew/Caskroom/hiddenbar"
@@ -26,6 +27,7 @@ cleanup() {
   )
   chmod -RN "$cask_app" "${app_work_paths[@]}" 2>/dev/null || true
   rm -rf "$cask_app" "$caskroom" "${app_work_paths[@]}"
+  brew_oracle_remove_runtime_bridge
 }
 trap cleanup EXIT
 

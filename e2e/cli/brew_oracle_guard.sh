@@ -30,7 +30,129 @@ brew_oracle_validate_homebrew_identity() {
   elif [[ ! $runtime_sha =~ ^[0-9a-f]{40}$ ]]; then
     brew_oracle_fail "exact Homebrew runtime SHA is required"
     return 1
+  elif [[ $runtime_version != "$reference_version" || $runtime_sha != "$reference_sha" ]]; then
+    brew_oracle_fail "Homebrew runtime must exactly match the pinned reference"
+    return 1
   fi
+}
+
+brew_oracle_configure_runtime() {
+  local expected_prefix=$1 brew_source repository bridge
+  local brew_real repository_real runner_real prefix_real prefix_owner repository_owner
+  local actual_prefix actual_repository actual_version actual_sha
+
+  brew_source=${MISE_BREW_ORACLE_BREW_SOURCE:-}
+  repository=${MISE_BREW_ORACLE_HOMEBREW_REPOSITORY:-}
+  if [[ $brew_source != /* || $repository != /* ]]; then
+    brew_oracle_fail "absolute pinned Homebrew source and repository are required"
+    return 1
+  fi
+  if [[ ! -f $brew_source || ! -x $brew_source || -L $brew_source ]]; then
+    brew_oracle_fail "pinned Homebrew source must be an executable non-symlink file"
+    return 1
+  fi
+  if [[ ! -d $repository || -L $repository ]]; then
+    brew_oracle_fail "pinned Homebrew repository must be a non-symlink directory"
+    return 1
+  fi
+
+  brew_real=$(realpath "$brew_source") || return 1
+  repository_real=$(realpath "$repository") || return 1
+  runner_real=$(realpath "$MISE_BREW_ORACLE_RUNNER_TEMP") || return 1
+  prefix_real=$(realpath "$expected_prefix") || return 1
+  [[ $brew_real == "$repository_real/bin/brew" ]] || {
+    brew_oracle_fail "Homebrew source is not owned by the pinned repository"
+    return 1
+  }
+  case "$repository_real/" in
+    "$runner_real"/* | "$prefix_real/Homebrew/") ;;
+    *)
+      brew_oracle_fail "Homebrew repository is outside the disposable runner or canonical prefix"
+      return 1
+      ;;
+  esac
+
+  if [[ -L $expected_prefix || -L $expected_prefix/bin ]]; then
+    brew_oracle_fail "canonical Homebrew prefix and bin directory must not be symlinks"
+    return 1
+  fi
+  if [[ $(uname) == Darwin ]]; then
+    prefix_owner=$(stat -f '%u' "$prefix_real")
+    repository_owner=$(stat -f '%u' "$repository_real")
+  else
+    prefix_owner=$(stat -c '%u' "$prefix_real")
+    repository_owner=$(stat -c '%u' "$repository_real")
+  fi
+  [[ $prefix_owner == "$repository_owner" ]] || {
+    brew_oracle_fail "pinned repository and canonical prefix have different owners"
+    return 1
+  }
+
+  actual_sha=$(git -C "$repository_real" rev-parse HEAD) || return 1
+  [[ $actual_sha == "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" ]] || {
+    brew_oracle_fail "pinned repository SHA $actual_sha does not match the marker identity"
+    return 1
+  }
+  bridge="$expected_prefix/bin/mise-brew-oracle-$actual_sha"
+  if [[ -e $bridge || -L $bridge ]]; then
+    brew_oracle_fail "stale pinned Homebrew bridge exists: $bridge"
+    return 1
+  fi
+  ln -s "$brew_real" "$bridge" || return 1
+  BREW_ORACLE_RUNTIME_BRIDGE=$bridge
+
+  export HOMEBREW_NO_ANALYTICS=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
+  export HOMEBREW_NO_ENV_HINTS=1
+  export HOMEBREW_PREFIX=$prefix_real
+  export HOMEBREW_REPOSITORY=$repository_real
+  export HOMEBREW_LIBRARY=$repository_real/Library
+
+  actual_prefix=$("$bridge" --prefix) || {
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+  actual_repository=$("$bridge" --repository) || {
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+  actual_version=$("$bridge" --version | awk 'NR == 1 { print $2 }') || {
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+  [[ $(realpath "$actual_prefix") == "$prefix_real" ]] || {
+    brew_oracle_fail "runtime Homebrew prefix $actual_prefix does not match $prefix_real"
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+  [[ $(realpath "$actual_repository") == "$repository_real" ]] || {
+    brew_oracle_fail "runtime Homebrew repository does not match the pinned checkout"
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+  [[ $actual_version == "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" ]] || {
+    brew_oracle_fail "runtime Homebrew version $actual_version does not match the marker identity"
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+  [[ $actual_sha == "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" ]] || {
+    brew_oracle_fail "runtime Homebrew SHA $actual_sha does not match the marker identity"
+    brew_oracle_remove_runtime_bridge
+    return 1
+  }
+
+  export BREW_ORACLE_BREW=$bridge
+}
+
+brew_oracle_remove_runtime_bridge() {
+  local bridge=${BREW_ORACLE_RUNTIME_BRIDGE:-} expected_source=${MISE_BREW_ORACLE_BREW_SOURCE:-}
+  [[ -n $bridge ]] || return 0
+  if [[ ! -L $bridge || $(readlink "$bridge") != "$expected_source" ]]; then
+    brew_oracle_fail "refusing to remove ambiguous Homebrew runtime bridge: $bridge"
+    return 1
+  fi
+  rm "$bridge"
+  unset BREW_ORACLE_RUNTIME_BRIDGE BREW_ORACLE_BREW
 }
 
 brew_oracle_require_disposable() {

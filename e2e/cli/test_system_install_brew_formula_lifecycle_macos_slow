@@ -11,8 +11,9 @@ export MISE_SYSTEM_BREW_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
 brew_oracle_require_disposable macos-formula-lifecycle /opt/homebrew
 [[ $MISE_SYSTEM_BREW_PREFIX == "$BREW_ORACLE_EXPECTED_PREFIX" ]] ||
   brew_oracle_fail "formula lifecycle oracle requires explicit canonical /opt/homebrew prefix"
+brew_oracle_configure_runtime "$MISE_SYSTEM_BREW_PREFIX"
+brew=$BREW_ORACLE_BREW
 
-export HOMEBREW_NO_AUTO_UPDATE=1
 formula_fixtures=(ca-certificates openssl@3 node kimi-code)
 shared_fixture_paths=(
   "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates"
@@ -21,9 +22,9 @@ shared_fixture_paths=(
 preexisting_record="$MISE_BREW_ORACLE_RESULT_DIR/macos-formula-lifecycle.preexisting"
 
 {
-  printf 'prefix=%s\n' "$(brew --prefix)"
+  printf 'prefix=%s\n' "$("$brew" --prefix)"
   for formula in "${formula_fixtures[@]}"; do
-    brew list --versions "$formula" 2>/dev/null || true
+    "$brew" list --versions "$formula" 2>/dev/null || true
   done
   for path in "${shared_fixture_paths[@]}"; do
     if [[ -e $path || -L $path ]]; then
@@ -38,17 +39,22 @@ cleanup_formula_fixtures() {
     # These exact formulae are the recorded fixtures on a disposable runner.
     # Ignore reverse dependencies so Homebrew cannot leave a fixture installed
     # merely because another preloaded runner formula refers to it.
-    brew uninstall --formula --force --ignore-dependencies "$formula" >/dev/null 2>&1 || true
+    "$brew" uninstall --formula --force --ignore-dependencies "$formula" >/dev/null 2>&1 || true
   done
   for path in "${shared_fixture_paths[@]}"; do
     rm -rf "$path"
   done
 }
 
+cleanup_formula_oracle() {
+  cleanup_formula_fixtures
+  brew_oracle_remove_runtime_bridge
+}
+
 # The explicit capability authorizes displacement of these exact fixtures on
 # this ephemeral runner. The record above makes that displacement auditable.
 cleanup_formula_fixtures
-trap cleanup_formula_fixtures EXIT
+trap cleanup_formula_oracle EXIT
 
 for formula in "${formula_fixtures[@]}"; do
   [[ ! -e $MISE_SYSTEM_BREW_PREFIX/Cellar/$formula ]] ||

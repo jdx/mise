@@ -207,12 +207,26 @@ jobs:
           strip -S target/debug/mise
       - name: Prepare exact-head oracle environment
         run: |
-          homebrew_runtime_version=$(brew --version | awk 'NR == 1 { print $2 }')
-          homebrew_repository=$(brew --repository)
+          homebrew_repository="$RUNNER_TEMP/homebrew-6.0.17"
+          test ! -e "$homebrew_repository"
+          git init "$homebrew_repository"
+          git -C "$homebrew_repository" remote add origin https://github.com/Homebrew/brew.git
+          git -C "$homebrew_repository" fetch --depth=1 origin \
+            "refs/tags/$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:refs/tags/$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          git -C "$homebrew_repository" checkout --detach \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          homebrew_brew="$homebrew_repository/bin/brew"
+          homebrew_runtime_version=$(env \
+            HOMEBREW_PREFIX=/opt/homebrew \
+            HOMEBREW_REPOSITORY="$homebrew_repository" \
+            HOMEBREW_LIBRARY="$homebrew_repository/Library" \
+            "$homebrew_brew" --version | awk 'NR == 1 { print $2 }')
           homebrew_runtime_sha=$(git -C "$homebrew_repository" rev-parse HEAD)
-          test -n "$homebrew_runtime_version"
-          [[ $homebrew_runtime_sha =~ ^[0-9a-f]{40}$ ]]
+          test "$homebrew_runtime_version" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          test "$homebrew_runtime_sha" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
           {
+            echo "MISE_BREW_ORACLE_BREW_SOURCE=$homebrew_brew"
+            echo "MISE_BREW_ORACLE_HOMEBREW_REPOSITORY=$homebrew_repository"
             echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$homebrew_runtime_version"
             echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$homebrew_runtime_sha"
           } >> "$GITHUB_ENV"
