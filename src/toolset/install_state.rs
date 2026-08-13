@@ -102,7 +102,7 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 
 fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
     let body = toml::to_string_pretty(manifest)?;
-    file::write(path, body.trim())?;
+    file::write_atomic(path, body.trim())?;
     Ok(())
 }
 
@@ -111,6 +111,7 @@ fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
         return None;
     }
     match file::read_to_string(path) {
+        std::result::Result::Ok(body) if body.trim().is_empty() => None,
         std::result::Result::Ok(body) => match toml::from_str(&body) {
             std::result::Result::Ok(m) => Some(m),
             Err(err) => {
@@ -127,7 +128,7 @@ fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
 
 fn write_tool_manifest_to(path: &Path, tool: &ManifestTool) -> Result<()> {
     let body = toml::to_string_pretty(tool)?;
-    file::write(path, body.trim())?;
+    file::write_atomic(path, body.trim())?;
     Ok(())
 }
 
@@ -693,12 +694,23 @@ pub fn reset() {
 
 #[cfg(test)]
 mod tests {
-    use super::{lock_tool_version, normalize_version_for_sort, tool_version_lock};
+    use super::{
+        lock_tool_version, normalize_version_for_sort, read_tool_manifest_from, tool_version_lock,
+    };
     use itertools::Itertools;
     use std::collections::BTreeMap;
     use std::sync::mpsc;
     use std::time::Duration;
     use versions::Versioning;
+
+    #[test]
+    fn empty_tool_manifest_is_ignored() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join(".mise.backend.toml");
+        std::fs::write(&path, "").unwrap();
+
+        assert!(read_tool_manifest_from(&path).is_none());
+    }
 
     #[test]
     fn tool_version_locks_serialize_logical_versions() {
