@@ -116,10 +116,14 @@ impl CondaBackend {
         }
     }
 
-    fn detect_virtual_packages(platform: CondaPlatform) -> Vec<GenericVirtualPackage> {
-        VirtualPackages::detect_for_platform(platform, &VirtualPackageOverrides::default())
-            .map(|vp| vp.into_generic_virtual_packages().collect())
-            .unwrap_or_default()
+    fn detect_virtual_packages(platform: CondaPlatform) -> Result<Vec<GenericVirtualPackage>> {
+        VirtualPackages::detect_for_platform(
+            platform,
+            &VirtualPackageOverrides::from_env(),
+            Some(&dirs::CACHE.join("conda")),
+        )
+        .map(|vp| vp.into_generic_virtual_packages().collect())
+        .map_err(|e| eyre::eyre!("failed to detect conda virtual packages: {e}"))
     }
 
     /// Deduplicate records that share the same archive identifier
@@ -162,7 +166,7 @@ impl CondaBackend {
             .to_vec();
 
         let flat_records = Self::flatten_repodata(&repodata);
-        let virtual_packages = Self::detect_virtual_packages(platform);
+        let virtual_packages = Self::detect_virtual_packages(platform)?;
 
         let task = SolverTask {
             available_packages: [flat_records.as_slice()],
@@ -917,28 +921,15 @@ impl Backend for CondaBackend {
         let tool_name = self.tool_name();
         let spec_str = format!("{}=={}", tool_name, tv.version);
 
-        let match_spec = match MatchSpec::from_str(&spec_str, ParseStrictness::Lenient) {
-            Ok(s) => s,
-            Err(e) => {
-                debug!("invalid conda spec '{}': {}", spec_str, e);
-                return Ok(PlatformInfo::default());
-            }
-        };
+        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
+            .map_err(|e| eyre::eyre!("invalid conda spec '{spec_str}': {e}"))?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = match self.solve_packages(vec![match_spec], platform, opts).await {
-            Ok(r) => r,
-            Err(e) => {
-                debug!(
-                    "failed to resolve {} for {}: {}",
-                    tool_name,
-                    target.to_key(),
-                    e
-                );
-                return Ok(PlatformInfo::default());
-            }
-        };
+        let records = self
+            .solve_packages(vec![match_spec], platform, opts)
+            .await
+            .wrap_err_with(|| format!("failed to solve {tool_name} for {}", target.to_key()))?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut main_record = None;
@@ -952,17 +943,20 @@ impl Backend for CondaBackend {
             }
         }
 
-        match main_record {
-            Some(main) => Ok(PlatformInfo {
-                url: Some(main.url.to_string()),
-                checksum: Self::format_sha256(&main),
-                size: None,
-                url_api: None,
-                conda_deps: Some(dep_basenames),
-                ..Default::default()
-            }),
-            None => Ok(PlatformInfo::default()),
-        }
+        let main = main_record.ok_or_else(|| {
+            eyre::eyre!(
+                "conda solve for {tool_name} on {} did not return the requested package",
+                target.to_key()
+            )
+        })?;
+        Ok(PlatformInfo {
+            url: Some(main.url.to_string()),
+            checksum: Self::format_sha256(&main),
+            size: None,
+            url_api: None,
+            conda_deps: Some(dep_basenames),
+            ..Default::default()
+        })
     }
 
     async fn list_bin_paths(
