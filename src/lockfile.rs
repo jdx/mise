@@ -2743,7 +2743,8 @@ pub async fn resolve_tool_lock_info(
 /// Returns whether the resolution contributed any data. A backend that can't
 /// resolve metadata without installing falls back to an empty `PlatformInfo`.
 /// This still creates a tool/version entry when one does not exist, but it does
-/// not overwrite an existing entry's platform metadata.
+/// not overwrite an existing entry's platform metadata or count as a resolved
+/// platform.
 ///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
@@ -2779,7 +2780,6 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
                     .any(|tool| tool.version == version && tool.options == options)
             });
             if !tool_exists {
-                applied = true;
                 lockfile.set_platform_info(
                     &short,
                     &version,
@@ -3721,7 +3721,7 @@ mod tests {
             false,
         );
 
-        assert!(apply_lock_result(&mut lockfile, result).unwrap());
+        assert!(!apply_lock_result(&mut lockfile, result).unwrap());
         let tool = &lockfile.tools["dummy"][0];
         assert_eq!(tool.version, "1.0.0");
         assert!(tool.platforms.is_empty());

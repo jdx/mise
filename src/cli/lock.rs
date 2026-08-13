@@ -1522,6 +1522,43 @@ mod tests {
     }
 
     #[test]
+    fn test_platform_regression_rejects_empty_stub_version_bump() {
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy();
+        let resolution = (
+            "dummy".to_string(),
+            "2.0.0".to_string(),
+            "asdf:dummy".to_string(),
+            Platform::parse("linux-x64").unwrap(),
+            Ok(PlatformInfo::default()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            false,
+        );
+
+        let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
+        let (status, error) = classify_lock_result(None, false, applied);
+        assert!(!applied);
+        assert_eq!(status, LockTaskStatus::Unresolved);
+        assert!(error.is_none());
+
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
+            status,
+        }];
+
+        assert_eq!(
+            cmd.platform_regression_errors(&lockfile, &stale_versions, &results)
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn test_platform_regression_allows_new_unsupported_platform() {
         let cmd = lock_cmd(&[]);
         let lockfile = lockfile_with_dummy();
