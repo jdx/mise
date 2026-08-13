@@ -224,11 +224,25 @@ fn has_local_version_listing_option_override(
 ///
 /// For fuzzy requests like `latest` or `1.46`, backends may discover bins under
 /// the resolved version dir, but PATH-facing callers should use `runtime_path()`
-/// for the same version. Paths outside the install dir are returned unchanged.
+/// for the same version. Remapping is limited to aliases in the same tool root;
+/// paths outside the install dir or aliases in another install root are returned
+/// unchanged.
 pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> PathBuf {
+    // install-into, system, and shared installs give the backend an explicit
+    // destination. Remapping a path below it through a fuzzy runtime alias can
+    // select an unrelated normal installation of the same requested version.
+    if tv.install_path_is_exact || tv.install_path_is_explicit {
+        return path;
+    }
     let install_path = tv.install_path();
+    let runtime_path = tv.runtime_path();
+    // A re-resolved ToolVersion does not retain the transient destination flags
+    // used by install-into/system/shared installs. Never cross from a discovered
+    // shared/system install into a fuzzy alias in the primary user install root.
+    if install_path.parent() != runtime_path.parent() {
+        return path;
+    }
     if let Ok(relative_path) = path.strip_prefix(&install_path) {
-        let runtime_path = tv.runtime_path();
         if relative_path.as_os_str().is_empty() {
             runtime_path
         } else {
@@ -1264,6 +1278,145 @@ mod tests {
         assert_eq!(
             runtime_path_for_install_path(&tv, install_path.join("bin")),
             install_path.join("bin")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_runtime_path_for_exact_install_path_skips_runtime_alias() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "runtime-remap-exact-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(&short);
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let normal_install = backend.installs_path.join("1.0.1");
+        fs::create_dir_all(normal_install.join("bin"))?;
+        file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let exact_install = temp_dir.path().join("install-into");
+        let mut tv = ToolVersion::new(request, "1.0.1".into());
+        tv.install_path = Some(exact_install.clone());
+        tv.install_path_is_exact = true;
+
+        assert_eq!(
+            runtime_path_for_install_path(&tv, exact_install.join("bin")),
+            exact_install.join("bin")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_runtime_path_for_explicit_install_path_skips_primary_runtime_alias() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "runtime-remap-explicit-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("user/installs").join(&short);
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let normal_install = backend.installs_path.join("1.0.1");
+        fs::create_dir_all(normal_install.join("bin"))?;
+        file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let explicit_install = temp_dir
+            .path()
+            .join("system/installs")
+            .join(&short)
+            .join("content-version");
+        let mut tv = ToolVersion::new(request, "1.0.1".into());
+        tv.install_path = Some(explicit_install.clone());
+        tv.install_path_is_explicit = true;
+
+        assert_eq!(
+            runtime_path_for_install_path(&tv, explicit_install.join("bin")),
+            explicit_install.join("bin")
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_runtime_path_for_reresolved_shared_install_skips_primary_runtime_alias() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "runtime-remap-reresolved-shared-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("user/installs").join(&short);
+        fs::create_dir_all(&backend.installs_path)?;
+
+        let normal_install = backend.installs_path.join("1.0.0");
+        fs::create_dir_all(normal_install.join("bin"))?;
+        file::make_symlink_or_file(Path::new("./1.0.0"), &backend.installs_path.join("latest"))?;
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "latest".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let shared_install = temp_dir
+            .path()
+            .join("shared/installs")
+            .join(&short)
+            .join("1.0.1");
+        fs::create_dir_all(shared_install.join("bin"))?;
+        let mut tv = ToolVersion::new(request, "1.0.1".into());
+        // Re-resolution preserves the discovered path, but not the transient
+        // install_path_is_explicit flag from the original install command.
+        tv.install_path = Some(shared_install.clone());
+
+        assert_eq!(
+            runtime_path_for_install_path(&tv, shared_install.join("bin")),
+            shared_install.join("bin")
         );
 
         Ok(())
