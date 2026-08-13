@@ -19,6 +19,7 @@ assert_not_contains "mise ls --installed dummy" "1.1.0"
 assert "mise outdated dummy" "dummy  1  1.0.0  1.1.0 ~/workdir/.tool-versions"
 assert "mise outdated dummy --bump" "dummy  1  1.0.0  2  2.0.0 ~/workdir/.tool-versions"
 assert_contains "mise outdated dummy -l 2>&1" "deprecated [cli.outdated.bump-l]"
+assert_contains "mise outdated dummy -l 2>&1" "2.0.0"
 mise install dummy@1.1.0
 assert_contains "mise outdated dummy 2>&1" "Newer versions are available outside the configured version ranges"
 

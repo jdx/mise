@@ -15,6 +15,7 @@ assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
 assert_contains "mise upgrade dummy 2>&1" "Newer versions are available outside the configured version ranges"
 assert_contains "mise upgrade dummy -l --dry-run 2>&1" "deprecated [cli.upgrade.bump-l]"
+assert_contains "mise upgrade dummy -l --dry-run 2>&1" "Would install dummy@2.0.0"
 
 mise upgrade dummy -b
 assert_contains "mise ls --installed dummy" "2.0.0"
