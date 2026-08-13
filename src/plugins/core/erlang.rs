@@ -616,15 +616,17 @@ impl Backend for ErlangPlugin {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let platform_key = self.get_platform_key();
         let settings = Settings::get();
+        let erlang_compile = if ctx.locked {
+            settings.erlang.compile
+        } else {
+            settings.erlang_compile()
+        };
         if should_install_from_source(
             ctx.locked,
             &tv.lock_platforms,
             &platform_key,
-            settings.erlang.compile,
+            erlang_compile,
         ) {
-            if !ctx.locked {
-                settings.warn_nixos_erlang_compile_default();
-            }
             return self.install_via_kerl(ctx, tv).await;
         }
         if let Some(tv) = self.install_precompiled(ctx, tv.clone()).await? {

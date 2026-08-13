@@ -285,10 +285,6 @@ fn warn_nixos_all_compile_default_deprecated(tool: &str, id: &'static str, inher
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    if !cfg!(test) && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
-    {
-        s.all_compile = Some(true);
-    }
     s
 });
 
@@ -617,37 +613,48 @@ impl Settings {
         Self::try_get().unwrap()
     }
 
-    pub fn warn_nixos_node_compile_default(&self) {
+    pub fn all_compile(&self) -> bool {
+        self.all_compile.unwrap_or_else(|| {
+            !cfg!(test)
+                && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
+        })
+    }
+
+    pub fn node_compile(&self) -> Option<bool> {
         warn_nixos_all_compile_default_deprecated(
             "node",
             "nixos.node_all_compile_default",
             &WARN_NIXOS_NODE_COMPILE_DEFAULT,
         );
+        self.node.compile
     }
 
-    pub fn warn_nixos_python_compile_default(&self) {
+    pub fn python_compile(&self) -> Option<bool> {
         warn_nixos_all_compile_default_deprecated(
             "python",
             "nixos.python_all_compile_default",
             &WARN_NIXOS_PYTHON_COMPILE_DEFAULT,
         );
+        self.python.compile
     }
 
-    pub fn warn_nixos_erlang_compile_default(&self) {
+    pub fn erlang_compile(&self) -> Option<bool> {
         warn_nixos_all_compile_default_deprecated(
             "erlang",
             "nixos.erlang_all_compile_default",
             &WARN_NIXOS_ERLANG_COMPILE_DEFAULT,
         );
+        self.erlang.compile
     }
 
     #[cfg(not(windows))]
-    pub fn warn_nixos_ruby_compile_default(&self) {
+    pub fn ruby_compile(&self) -> Option<bool> {
         warn_nixos_all_compile_default_deprecated(
             "ruby",
             "nixos.ruby_all_compile_default",
             &WARN_NIXOS_RUBY_COMPILE_DEFAULT,
         );
+        self.ruby.compile
     }
 
     pub fn try_get() -> Result<Arc<Self>> {
@@ -678,14 +685,9 @@ impl Settings {
         let cli_settings = normalize_hidden_config_aliases(
             CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
         );
-        let env_settings = SettingsPartial::from_env()?;
-        let mut explicit_all_compile = cli_settings.all_compile.or(env_settings.all_compile);
-        sb = Self::builder()
-            .preloaded(cli_settings)
-            .preloaded(env_settings);
+        sb = Self::builder().preloaded(cli_settings).env();
         time!("try_get builder2+env");
         for file in Self::all_settings_files() {
-            explicit_all_compile = explicit_all_compile.or(file.all_compile);
             sb = sb.preloaded(file);
         }
         time!("try_get all_settings_files");
@@ -695,7 +697,7 @@ impl Settings {
         settings = sb.load()?;
         let nixos_all_compile_is_implicit = should_warn_nixos_all_compile_default(
             env::LINUX_DISTRO.as_deref(),
-            explicit_all_compile,
+            settings.all_compile,
         );
         time!("try_get load2");
         if !settings.legacy_version_file {
@@ -784,7 +786,7 @@ impl Settings {
             ),
             Ordering::Relaxed,
         );
-        if settings.all_compile {
+        if settings.all_compile() {
             if settings.node.compile.is_none() {
                 settings.node.compile = Some(true);
             }
@@ -1634,6 +1636,19 @@ mod tests {
         assert!(default_all_compile(Some("nixos")));
         assert!(!default_all_compile(Some("ubuntu")));
         assert!(!default_all_compile(None));
+    }
+
+    #[test]
+    fn all_compile_preserves_unset_and_explicit_values() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.all_compile, None);
+        assert!(!settings.all_compile());
+
+        settings.all_compile = Some(true);
+        assert!(settings.all_compile());
+
+        settings.all_compile = Some(false);
+        assert!(!settings.all_compile());
     }
 
     #[test]

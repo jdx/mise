@@ -716,19 +716,17 @@ impl Backend for NodePlugin {
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
         let platform_key = self.get_platform_key();
-        let compile_from_source = should_compile_from_source(
-            ctx.locked,
-            &tv.lock_platforms,
-            &platform_key,
-            settings.node.compile,
-        );
+        let node_compile = if ctx.locked {
+            settings.node.compile
+        } else {
+            settings.node_compile()
+        };
+        let compile_from_source =
+            should_compile_from_source(ctx.locked, &tv.lock_platforms, &platform_key, node_compile);
 
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if compile_from_source {
-            if !ctx.locked {
-                settings.warn_nixos_node_compile_default();
-            }
             self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;

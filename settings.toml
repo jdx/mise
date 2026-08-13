@@ -74,6 +74,7 @@ not
 working with this config.
 """
 env = "MISE_ALL_COMPILE"
+optional = true
 type = "Bool"
 
 [always_keep_download]
