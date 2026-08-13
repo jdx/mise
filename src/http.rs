@@ -1819,6 +1819,17 @@ pub(crate) fn is_transient(err: &Report) -> bool {
         if reqwest_err.is_timeout() || reqwest_err.is_connect() || reqwest_err.is_body() {
             return true;
         }
+        // Send failures that never produced a response: the connection was
+        // established but the request did not complete, so no application logic
+        // ran and a retry is safe. This covers HTTP/2 stream errors such as
+        // REFUSED_STREAM (which RFC 9113 §8.7 defines as "the request was not
+        // processed", i.e. safely retryable) and connections closed before the
+        // response started. These are not is_connect(), because connecting
+        // succeeded, and they carry no status, so without this they fall through
+        // and fail on the first attempt regardless of `http_retries`.
+        if reqwest_err.is_request() && reqwest_err.status().is_none() {
+            return true;
+        }
         // Status errors: 5xx server errors plus 408 (Request Timeout) and
         // 429 (Too Many Requests). Other 4xx are deterministic — don't retry.
         if let Some(status) = reqwest_err.status() {
@@ -2765,6 +2776,26 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let formatted = format_response_body(&body);
         assert_eq!(formatted.strip_suffix("\n<truncated>").unwrap().len(), 4096);
         assert!(formatted.ends_with("\n<truncated>"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_retry_rescues_send_failure_with_no_response() {
+        // A connection that is accepted and then closed without a response fails
+        // with a reqwest "request" error: connecting succeeded, so it is not
+        // is_connect(), and no response arrived, so there is no status. HTTP/2
+        // REFUSED_STREAM lands in the same class. Before these were classified as
+        // transient, such failures exited on the first attempt even with retries
+        // enabled.
+        let _guard = set_test_http_retries(1);
+        let (port, count) = spawn_canned_server(vec!["", ok_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let resp = client.get_async(url).await.unwrap();
+
+        assert!(resp.status().is_success());
+        // Two connections: the aborted one, then the retry that succeeded.
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[tokio::test(flavor = "current_thread")]
