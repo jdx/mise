@@ -1749,9 +1749,11 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// List remote versions using the fully layered candidate-selection options
-    /// from the request currently being resolved. Backend listing/source options
-    /// still use the config-based path below because those affect fetching and
-    /// cache provenance rather than selection from the fetched candidates.
+    /// from the request currently being resolved. By default, backend listing/source
+    /// options still use the config-based path below because those affect fetching
+    /// and cache provenance rather than selection from the fetched candidates.
+    /// Cache-bypassing backends may instead use the active request's options when
+    /// those options select the source itself.
     async fn list_remote_versions_with_selection_options(
         &self,
         config: &Arc<Config>,
@@ -1809,6 +1811,8 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// List remote versions while selecting candidates with the active request's options.
+    /// The default implementation keeps listing/cache provenance config-based;
+    /// cache-bypassing overrides may use request options to choose their source.
     async fn list_remote_versions_with_info_with_selection_options(
         &self,
         config: &Arc<Config>,
@@ -4060,15 +4064,15 @@ mod latest_version_tests {
     #[tokio::test]
     async fn test_semver_order_applies_to_latest_fallback() {
         let config = Config::get().await.unwrap();
-        let backend = LatestBackend::new("test-semver-fallback[version_order=semver]")
+        let backend = LatestBackend::new("test-semver-fallback")
             .with_stable_result(None)
             .with_remote_versions(vec![
                 VersionInfo {
-                    version: "11.11.0".to_string(),
+                    version: "V11.11.0".to_string(),
                     ..Default::default()
                 },
                 VersionInfo {
-                    version: "10.34.5".to_string(),
+                    version: "V10.34.5".to_string(),
                     ..Default::default()
                 },
             ]);
@@ -4078,14 +4082,25 @@ mod latest_version_tests {
             .await
             .clear()
             .unwrap();
+        let mut selection_opts = ToolVersionOptions::default();
+        selection_opts.opts.insert(
+            "version_order".to_string(),
+            toml::Value::String("semver".to_string()),
+        );
 
         assert_eq!(
             backend
-                .latest_version(&config, Some("latest".to_string()), None)
+                .latest_version_with_selection_options(
+                    &config,
+                    Some("latest".to_string()),
+                    &selection_opts,
+                    None,
+                    false,
+                )
                 .await
                 .unwrap()
                 .as_deref(),
-            Some("11.11.0")
+            Some("V11.11.0")
         );
         assert_eq!(backend.stable_info_calls(), 1);
         assert_eq!(backend.stable_calls(), 1);
