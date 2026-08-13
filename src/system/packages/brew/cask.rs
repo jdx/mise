@@ -1,4 +1,6 @@
 use std::io::{Read, Seek, SeekFrom};
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::{
@@ -93,6 +95,12 @@ struct CommandWrapperArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgArtifact {
     source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GenericArtifact {
+    source: String,
+    target: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,6 +212,7 @@ struct CaskArtifacts {
     binaries: Vec<BinaryArtifact>,
     command_wrappers: Vec<CommandWrapperArtifact>,
     pkgs: Vec<PkgArtifact>,
+    generic: Vec<GenericArtifact>,
     fonts: Vec<FontArtifact>,
     completions: Vec<CompletionArtifact>,
     generated_completions: Vec<GeneratedCompletionArtifact>,
@@ -227,6 +236,8 @@ struct CaskReceipt {
     completions: Vec<PathBuf>,
     #[serde(default)]
     flight_directories: Vec<PathBuf>,
+    #[serde(default)]
+    generic: Vec<PathBuf>,
     #[serde(default)]
     pkg_ids: Vec<String>,
     #[serde(default)]
@@ -331,6 +342,9 @@ impl BrewCaskManager {
             for pkg in &artifacts.pkgs {
                 miseprintln!("install pkg {}", pkg.source);
             }
+            for artifact in &artifacts.generic {
+                miseprintln!("install artifact {}", artifact.target);
+            }
             for font in &artifacts.fonts {
                 miseprintln!("install font {}", font.source);
             }
@@ -366,6 +380,7 @@ impl BrewCaskManager {
         let previous_completions = previous_completion_targets(&cask)?;
         let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
         let previous_flight_directories = previous_flight_directory_targets(&cask)?;
+        let previous_generic = previous_generic_targets(&cask)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
@@ -425,6 +440,10 @@ impl BrewCaskManager {
         for (index, wrapper) in artifacts.command_wrappers.iter().enumerate() {
             stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
             record_cask_action(&mut journal, &format!("command_wrapper[{index}]"))?;
+        }
+        for (index, artifact) in artifacts.generic.iter().enumerate() {
+            install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
+            record_cask_action(&mut journal, &format!("artifact[{index}]"))?;
         }
         execute_flight_steps_recording(
             &cask,
@@ -499,6 +518,10 @@ impl BrewCaskManager {
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
+        remove_obsolete_generic_artifacts(
+            &previous_generic,
+            &generic_artifact_targets(&artifacts)?,
+        )?;
         remove_obsolete_flight_directories(
             &flight_targets.previous_directories,
             flight_targets.installed_directories(),
@@ -1170,8 +1193,16 @@ fn repair_app_permissions(path: &Path) {
 
 /// Return whether an eyre chain originated from an I/O permission error.
 fn is_permission_denied(err: &eyre::Report) -> bool {
-    err.downcast_ref::<std::io::Error>()
-        .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+            || cause
+                .downcast_ref::<nix::errno::Errno>()
+                .is_some_and(|err| {
+                    matches!(err, nix::errno::Errno::EACCES | nix::errno::Errno::EPERM)
+                })
+    })
 }
 
 /// Retry a failed artifact-target mutation with sudo on permission errors.
@@ -1442,6 +1473,691 @@ fn retarget_transient_symlinks(
     Ok(())
 }
 
+fn install_generic_artifact(
+    stage: &Path,
+    temporary_caskroom: &Path,
+    artifact: &GenericArtifact,
+    targets: &mut FlightTargetTransaction,
+) -> Result<()> {
+    let source = find_artifact_matching(stage, &artifact.source, |_| true)
+        .ok_or_else(|| eyre!("brew-cask: artifact '{}' was not found", artifact.source))?;
+    if !path_starts_with_resolved_root(&source, stage) {
+        bail!(
+            "brew-cask: refusing generic artifact source outside the extraction root: {}",
+            source.display()
+        );
+    }
+    let target = generic_artifact_target_path(&artifact.target)?;
+    let relative_source = source.strip_prefix(stage)?;
+    let caskroom_source = temporary_caskroom.join(relative_source);
+    if !path_starts_with_resolved_root(&caskroom_source, temporary_caskroom) {
+        bail!(
+            "brew-cask: refusing to stage generic artifact through a path outside the caskroom: {}",
+            caskroom_source.display()
+        );
+    }
+    #[cfg(not(unix))]
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let elevated_target = targets.protect_generic(&target)?;
+    copy_generic_artifact(&source, &target, elevated_target.as_deref())?;
+    if let Some(parent) = caskroom_source.parent() {
+        file::create_dir_all(parent)?;
+    }
+    file::make_symlink(&target, &caskroom_source)?;
+    targets.record_installed(target);
+    Ok(())
+}
+
+fn copy_generic_artifact(from: &Path, to: &Path, elevated_target: Option<&Path>) -> Result<()> {
+    validate_generic_copy_target(to)?;
+    #[cfg(unix)]
+    {
+        if let Some(target) = elevated_target {
+            copy_generic_artifact_elevated(from, target)
+        } else {
+            copy_generic_artifact_unprivileged(from, to)
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = elevated_target;
+        copy_cask_artifact(from, to)
+    }
+}
+
+#[cfg(unix)]
+fn copy_generic_artifact_unprivileged(from: &Path, to: &Path) -> Result<()> {
+    let parent = open_trusted_operation_parent(to, true, true)?;
+    let name = to
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
+    let staging_name = format!(".mise-copy-{}", crate::rand::random_string(16));
+    nix::sys::stat::mkdirat(
+        &parent.fd,
+        staging_name.as_str(),
+        nix::sys::stat::Mode::S_IRWXU,
+    )?;
+    let flags = nix::fcntl::OFlag::O_RDONLY
+        | nix::fcntl::OFlag::O_DIRECTORY
+        | nix::fcntl::OFlag::O_NOFOLLOW;
+    let staging_fd = nix::fcntl::openat(
+        &parent.fd,
+        staging_name.as_str(),
+        flags,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let staging_stat = nix::sys::stat::fstat(&staging_fd)?;
+    if staging_stat.st_uid != nix::unistd::geteuid().as_raw() || staging_stat.st_mode & 0o077 != 0 {
+        bail!("brew-cask: temporary artifact directory is not private");
+    }
+    let staging = TrustedOperationParent { fd: staging_fd };
+    let temporary_name = std::ffi::OsStr::new("payload");
+    match copy_cask_artifact_at(from, &staging.fd, temporary_name) {
+        Ok(()) => {
+            match nix::fcntl::renameat(&staging.fd, temporary_name, &parent.fd, name)
+                .wrap_err_with(|| format!("failed to install {}", to.display()))
+            {
+                Ok(()) => {
+                    remove_private_staging_dir(&parent, &staging, staging_name.as_ref())?;
+                    Ok(())
+                }
+                Err(err) => {
+                    remove_all_at(&staging.fd, temporary_name).wrap_err_with(|| {
+                            format!(
+                                "failed to clean up temporary generic artifact after rename failed: {err:#}"
+                            )
+                        })?;
+                    remove_private_staging_dir(&parent, &staging, staging_name.as_ref())?;
+                    Err(err)
+                }
+            }
+        }
+        Err(err) => {
+            let _ = remove_all_at(&staging.fd, temporary_name);
+            let _ = remove_private_staging_dir(&parent, &staging, staging_name.as_ref());
+            Err(err)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn copy_generic_artifact_elevated(from: &Path, to: &Path) -> Result<()> {
+    ensure_target_absent(to)?;
+    let staging = tempfile::Builder::new()
+        .prefix("mise-cask-copy-")
+        .tempdir()?;
+    let payload = staging.path().join("payload");
+    copy_cask_artifact(from, &payload)?;
+    sudo::run(
+        "mv",
+        &[
+            "--".into(),
+            payload.display().to_string(),
+            to.display().to_string(),
+        ],
+        &[],
+    )
+}
+
+#[cfg(unix)]
+fn ensure_strict_elevated_target(target: &Path) -> Result<PathBuf> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: generic artifact target has no parent"))?;
+    let mut existing = parent;
+    loop {
+        match existing.symlink_metadata() {
+            Ok(_) => break,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                existing = existing.parent().ok_or_else(|| {
+                    eyre!("brew-cask: generic artifact parent has no existing ancestor")
+                })?;
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+    let trusted = open_trusted_operation_parent(&existing.join(".mise-validation"), false, false)?;
+    let stable_existing = trusted.stable_path()?;
+    validate_strict_elevated_ancestors(&stable_existing)?;
+    let missing = parent.strip_prefix(existing)?;
+    let stable_parent = stable_existing.join(missing);
+    if existing != parent {
+        sudo::run(
+            "mkdir",
+            &[
+                "-p".into(),
+                "--".into(),
+                stable_parent.display().to_string(),
+            ],
+            &[],
+        )?;
+    }
+    let stable_parent = std::fs::canonicalize(&stable_parent)?;
+    validate_strict_elevated_ancestors(&stable_parent)?;
+    Ok(stable_parent.join(
+        target
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?,
+    ))
+}
+
+#[cfg(unix)]
+fn validate_strict_elevated_ancestors(path: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let stable_prefix = file::desymlink_path(&prefix::prefix());
+    for directory in path.ancestors() {
+        let metadata = directory.symlink_metadata()?;
+        if !strict_elevated_directory_is_trusted(
+            directory,
+            &stable_prefix,
+            metadata.uid(),
+            metadata.mode(),
+        ) {
+            bail!(
+                "brew-cask: refusing elevated operation through mutable directory {}",
+                directory.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn strict_elevated_directory_is_trusted(
+    directory: &Path,
+    stable_prefix: &Path,
+    uid: u32,
+    mode: u32,
+) -> bool {
+    uid == 0
+        && mode & 0o002 == 0
+        // Intel Homebrew conventionally uses root:admin 0775 for /usr/local.
+        // Permit that exact prefix, but require every descendant and every
+        // other ancestor used by the elevated operation to be non-writable.
+        && (mode & 0o020 == 0 || directory == stable_prefix)
+}
+
+#[cfg(unix)]
+fn ensure_target_absent(target: &Path) -> Result<()> {
+    match target.symlink_metadata() {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => bail!(
+            "brew-cask: refusing elevated operation because target appeared: {}",
+            target.display()
+        ),
+        Err(err) => Err(err.into()),
+    }
+}
+
+#[cfg(unix)]
+fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
+    from: &Path,
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = from.symlink_metadata()?;
+    let mode = nix::sys::stat::Mode::from_bits_truncate(
+        metadata.permissions().mode() as nix::libc::mode_t
+    );
+    if metadata.file_type().is_symlink() {
+        nix::unistd::symlinkat(&std::fs::read_link(from)?, parent, name)?;
+    } else if metadata.is_dir() {
+        nix::sys::stat::mkdirat(&parent, name, nix::sys::stat::Mode::S_IRWXU)?;
+        let fd = nix::fcntl::openat(
+            &parent,
+            name,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_cask_artifact_at(&entry.path(), &fd, &entry.file_name())?;
+        }
+        nix::sys::stat::fchmod(&fd, mode)?;
+    } else if metadata.is_file() {
+        let destination = nix::fcntl::openat(
+            parent,
+            name,
+            nix::fcntl::OFlag::O_WRONLY
+                | nix::fcntl::OFlag::O_CREAT
+                | nix::fcntl::OFlag::O_EXCL
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )?;
+        let mut source = std::fs::File::open(from)?;
+        let mut destination = std::fs::File::from(destination);
+        copy_file_contents(&mut source, &mut destination)?;
+        nix::sys::stat::fchmod(&destination, mode)?;
+    } else {
+        bail!(
+            "brew-cask: unsupported generic artifact type: {}",
+            from.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(all(unix, target_os = "macos"))]
+fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+
+    // SAFETY: both descriptors remain open for the call and fcopyfile does not
+    // retain them. A null state requests the default copyfile state.
+    let result = unsafe {
+        nix::libc::fcopyfile(
+            from.as_raw_fd(),
+            to.as_raw_fd(),
+            std::ptr::null_mut(),
+            nix::libc::COPYFILE_DATA | nix::libc::COPYFILE_METADATA,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error().into())
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Result<()> {
+    std::io::copy(from, to)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> Result<()> {
+    let stat =
+        match nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(nix::errno::Errno::ENOENT) => return Ok(()),
+            Err(err) => return Err(err.into()),
+        };
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+        let fd = nix::fcntl::openat(
+            &parent,
+            name,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let mut directory = nix::dir::Dir::from_fd(fd)?;
+        let entries = directory
+            .iter()
+            .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for entry in entries {
+            if entry.as_bytes() != b"." && entry.as_bytes() != b".." {
+                remove_all_at(&directory, std::ffi::OsStr::from_bytes(entry.to_bytes()))?;
+            }
+        }
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
+    } else {
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_private_staging_dir(
+    parent: &TrustedOperationParent,
+    staging: &TrustedOperationParent,
+    staging_name: &std::ffi::OsStr,
+) -> Result<()> {
+    let bound = nix::sys::stat::fstat(&staging.fd)?;
+    let linked = nix::sys::stat::fstatat(
+        &parent.fd,
+        staging_name,
+        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+    )?;
+    if bound.st_dev != linked.st_dev || bound.st_ino != linked.st_ino {
+        bail!("brew-cask: temporary artifact directory was replaced");
+    }
+    nix::unistd::unlinkat(
+        &parent.fd,
+        staging_name,
+        nix::unistd::UnlinkatFlags::RemoveDir,
+    )?;
+    Ok(())
+}
+
+fn validate_generic_copy_target(target: &Path) -> Result<()> {
+    let prefix = prefix::prefix();
+    if !target.starts_with(&prefix)
+        || target.strip_prefix(&prefix)?.components().next().is_none()
+        || !path_starts_with_resolved_root(target, &prefix)
+    {
+        bail!(
+            "brew-cask: refusing generic artifact copy outside Homebrew prefix: {}",
+            target.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+struct TrustedOperationParent {
+    fd: std::os::fd::OwnedFd,
+}
+
+#[cfg(unix)]
+impl TrustedOperationParent {
+    fn path(&self) -> Result<PathBuf> {
+        #[cfg(target_os = "linux")]
+        return Ok(
+            Path::new("/proc/self/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string())
+        );
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            let mut path = PathBuf::new();
+            nix::fcntl::fcntl(&self.fd, nix::fcntl::FcntlArg::F_GETPATH(&mut path))?;
+            return Ok(path);
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+        Ok(Path::new("/dev/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string()))
+    }
+
+    fn stable_path(&self) -> Result<PathBuf> {
+        Ok(std::fs::canonicalize(self.path()?)?)
+    }
+}
+
+#[cfg(unix)]
+fn trusted_parent_is_writable(parent: &TrustedOperationParent) -> Result<bool> {
+    let stat = nix::sys::stat::fstat(&parent.fd)?;
+    let uid = nix::unistd::geteuid().as_raw();
+    if uid == 0 {
+        return Ok(true);
+    }
+    if stat.st_uid == uid {
+        return Ok(stat.st_mode & 0o200 != 0);
+    }
+    let gid = nix::unistd::getegid().as_raw();
+    if stat.st_gid == gid || current_process_groups()?.contains(&stat.st_gid) {
+        return Ok(stat.st_mode & 0o020 != 0);
+    }
+    Ok(stat.st_mode & 0o002 != 0)
+}
+
+#[cfg(unix)]
+fn current_process_groups() -> Result<Vec<nix::libc::gid_t>> {
+    // SAFETY: A null buffer with size zero is the documented way to query the
+    // number of supplementary groups and does not dereference the pointer.
+    let count = unsafe { nix::libc::getgroups(0, std::ptr::null_mut()) };
+    if count < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut groups = vec![0; count as usize];
+    // SAFETY: `groups` has capacity for exactly `count` gid_t values;
+    // getgroups returns an error instead of writing when that is insufficient.
+    let count = unsafe { nix::libc::getgroups(count, groups.as_mut_ptr()) };
+    if count < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    groups.truncate(count as usize);
+    Ok(groups)
+}
+
+#[cfg(unix)]
+fn sudo_invoking_id(effective_uid: u32, variable: &str) -> Option<u32> {
+    sudo_invoking_id_from(effective_uid, crate::env::var(variable).ok().as_deref())
+}
+
+#[cfg(unix)]
+fn sudo_invoking_id_from(effective_uid: u32, value: Option<&str>) -> Option<u32> {
+    if effective_uid != 0 {
+        return None;
+    }
+    value
+        .and_then(|value| value.parse().ok())
+        .filter(|id| *id != 0)
+}
+
+#[cfg(unix)]
+fn open_trusted_operation_parent(
+    target: &Path,
+    allow_current_user: bool,
+    create_missing: bool,
+) -> Result<TrustedOperationParent> {
+    use nix::fcntl::{OFlag, open, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat};
+
+    let prefix = prefix::prefix();
+    let parent = target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: generic artifact target has no parent"))?;
+    let relative_parent = parent.strip_prefix(&prefix)?;
+    let resolved_prefix = file::desymlink_path(&prefix);
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
+    let mut fd = open(&resolved_prefix, flags, Mode::empty()).wrap_err_with(|| {
+        format!(
+            "brew-cask: cannot open operation directory {}",
+            resolved_prefix.display()
+        )
+    })?;
+    let current_uid = nix::unistd::geteuid().as_raw();
+    let current_gid = nix::unistd::getegid().as_raw();
+    let current_groups = current_process_groups()?;
+    let sudo_uid = sudo_invoking_id(current_uid, "SUDO_UID");
+    let sudo_gid = sudo_invoking_id(current_uid, "SUDO_GID");
+    let verify = |fd: &std::os::fd::OwnedFd, directory: &Path| -> Result<()> {
+        let stat = fstat(fd)?;
+        let owner_is_user = stat.st_uid == current_uid || Some(stat.st_uid) == sudo_uid;
+        let trusted_owner = stat.st_uid == 0 || (allow_current_user && owner_is_user);
+        let trusted_group = stat.st_gid == current_gid
+            || Some(stat.st_gid) == sudo_gid
+            || current_groups.contains(&stat.st_gid);
+        let writable_by_untrusted = stat.st_mode & 0o002 != 0
+            || (stat.st_mode & 0o020 != 0 && (!allow_current_user || !trusted_group));
+        if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR)
+            || !trusted_owner
+            || writable_by_untrusted
+        {
+            bail!(
+                "brew-cask: refusing operation through untrusted directory {}",
+                directory.display()
+            );
+        }
+        Ok(())
+    };
+    let mut directory = resolved_prefix;
+    verify(&fd, &directory)?;
+    for component in relative_parent.components() {
+        let Component::Normal(name) = component else {
+            bail!("brew-cask: invalid generic artifact parent");
+        };
+        directory.push(name);
+        fd = match openat(&fd, name, flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(nix::errno::Errno::ENOENT) if create_missing => {
+                match nix::sys::stat::mkdirat(
+                    &fd,
+                    name,
+                    Mode::S_IRWXU | Mode::S_IRGRP | Mode::S_IXGRP | Mode::S_IROTH | Mode::S_IXOTH,
+                ) {
+                    Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
+                    Err(err) => {
+                        return Err(err).wrap_err_with(|| {
+                            format!(
+                                "brew-cask: cannot create operation directory {}",
+                                directory.display()
+                            )
+                        });
+                    }
+                }
+                openat(&fd, name, flags, Mode::empty()).wrap_err_with(|| {
+                    format!(
+                        "brew-cask: cannot open operation directory {}",
+                        directory.display()
+                    )
+                })?
+            }
+            Err(err) => {
+                return Err(err).wrap_err_with(|| {
+                    format!(
+                        "brew-cask: cannot open operation directory {}",
+                        directory.display()
+                    )
+                });
+            }
+        };
+        verify(&fd, &directory)?;
+    }
+    Ok(TrustedOperationParent { fd })
+}
+
+fn generic_artifact_target_path(target: &str) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let expanded = target.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
+    let target = PathBuf::from(expanded);
+    if !target.is_absolute()
+        || !target.starts_with(&prefix)
+        || target.strip_prefix(&prefix)?.components().next().is_none()
+        || target
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || !path_starts_with_resolved_root(&target, &prefix)
+    {
+        bail!(
+            "brew-cask: generic artifact target '{}' must stay below {}",
+            target.display(),
+            prefix.display()
+        );
+    }
+    Ok(target)
+}
+
+fn generic_artifact_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .generic
+        .iter()
+        .map(|artifact| generic_artifact_target_path(&artifact.target))
+        .collect()
+}
+
+fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(Vec::new());
+    };
+    Ok(receipt
+        .targets
+        .into_iter()
+        .filter(|record| receipt.generic.contains(&record.path))
+        .collect())
+}
+
+fn remove_obsolete_generic_artifacts(
+    previous_targets: &[CaskTargetRecord],
+    current_targets: &[PathBuf],
+) -> Result<()> {
+    let prefix = prefix::prefix();
+    for record in previous_targets {
+        if current_targets.contains(&record.path) || !cask_target_record_matches(record)? {
+            continue;
+        }
+        if !path_starts_with_resolved_root(&record.path, &prefix) {
+            bail!(
+                "brew-cask: refusing to remove generic artifact outside {}: {}",
+                prefix.display(),
+                record.path.display()
+            );
+        }
+        if let Err(err) = remove_trusted_generic_target(&record.path) {
+            warn!(
+                "brew-cask: leaving obsolete generic artifact {} because its parent directories are mutable: {err:#}",
+                record.path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn remove_trusted_generic_target(target: &Path) -> Result<()> {
+    let expected_parent = resolved_parent(target)?;
+    match remove_trusted_generic_target_from(target, &expected_parent) {
+        Ok(()) => Ok(()),
+        Err(err) if is_permission_denied(&err) => {
+            #[cfg(unix)]
+            let operation_target = ensure_strict_elevated_target(target)?;
+            #[cfg(not(unix))]
+            let operation_target = target.to_path_buf();
+            remove_artifact_target_elevating(&operation_target).wrap_err_with(|| {
+                format!(
+                    "failed to remove generic artifact after unprivileged removal failed: {err:#}"
+                )
+            })
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn remove_trusted_generic_target_from(target: &Path, expected_parent: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let parent = open_trusted_operation_parent(target, true, false)?;
+        validate_trusted_operation_parent(&parent, expected_parent)?;
+        let name = target
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
+        remove_all_at(&parent.fd, name)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = expected_parent;
+        file::remove_all(target)
+    }
+}
+
+#[cfg(unix)]
+fn validate_trusted_operation_parent(
+    parent: &TrustedOperationParent,
+    expected_parent: &Path,
+) -> Result<()> {
+    let actual_parent = std::fs::canonicalize(parent.path()?)?;
+    if actual_parent != expected_parent {
+        bail!(
+            "brew-cask: refusing operation through a changed generic artifact parent: {}",
+            expected_parent.display()
+        );
+    }
+    Ok(())
+}
+
+fn rename_trusted_generic_target(from: &Path, to: &Path, expected_parent: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        if from.parent() != to.parent() {
+            bail!("brew-cask: generic artifact backup changed directories");
+        }
+        let parent = open_trusted_operation_parent(from, true, false)?;
+        validate_trusted_operation_parent(&parent, expected_parent)?;
+        let from_name = from
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact source has no filename"))?;
+        let to_name = to
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
+        nix::fcntl::renameat(&parent.fd, from_name, &parent.fd, to_name)?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = expected_parent;
+        file::rename(from, to)
+    }
+}
+
 fn ditto(from: &Path, to: &Path) -> Result<()> {
     let status = std::process::Command::new("ditto")
         .arg(from)
@@ -1708,10 +2424,52 @@ struct FlightRecoveryRecord {
     backup_parent: Option<PathBuf>,
     #[serde(default)]
     receipt_caskroom: Option<PathBuf>,
+    #[serde(default = "default_elevate_recovery")]
+    elevate: bool,
+}
+
+fn default_elevate_recovery() -> bool {
+    true
 }
 
 impl FlightTargetTransaction {
     fn protect(&mut self, target: &Path) -> Result<()> {
+        self.protect_with_elevation(target, true)
+    }
+
+    fn protect_unprivileged(&mut self, target: &Path) -> Result<()> {
+        self.protect_with_elevation(target, false)
+    }
+
+    fn protect_generic(&mut self, target: &Path) -> Result<Option<PathBuf>> {
+        #[cfg(unix)]
+        {
+            match open_trusted_operation_parent(target, true, true) {
+                Ok(parent) if trusted_parent_is_writable(&parent)? => {
+                    self.protect_unprivileged(target)?;
+                    Ok(None)
+                }
+                Ok(_) => {
+                    let target = ensure_strict_elevated_target(target)?;
+                    self.protect(&target)?;
+                    Ok(Some(target))
+                }
+                Err(err) if is_permission_denied(&err) => {
+                    let target = ensure_strict_elevated_target(target)?;
+                    self.protect(&target)?;
+                    Ok(Some(target))
+                }
+                Err(err) => Err(err),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            self.protect(target)?;
+            Ok(None)
+        }
+    }
+
+    fn protect_with_elevation(&mut self, target: &Path, elevate: bool) -> Result<()> {
         if self.backups.iter().any(|entry| entry.target == target) {
             return Ok(());
         }
@@ -1727,9 +2485,15 @@ impl FlightTargetTransaction {
                 target_parent: target_parent.clone(),
                 backup_parent: Some(resolved_parent(&backup)?),
                 receipt_caskroom: self.receipt_caskroom.clone(),
+                elevate,
             };
             write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
-            if let Err(err) = rename_elevating(target, &backup) {
+            let rename = if elevate {
+                rename_elevating(target, &backup)
+            } else {
+                rename_trusted_generic_target(target, &backup, &target_parent)
+            };
+            if let Err(err) = rename {
                 let _ = file::remove_all(&recovery);
                 return Err(err);
             }
@@ -1742,6 +2506,7 @@ impl FlightTargetTransaction {
                 target_parent: target_parent.clone(),
                 backup_parent: None,
                 receipt_caskroom: self.receipt_caskroom.clone(),
+                elevate,
             };
             write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
             None
@@ -1752,6 +2517,7 @@ impl FlightTargetTransaction {
             backup,
             target_parent,
             backup_parent,
+            elevate,
         });
         Ok(())
     }
@@ -1794,17 +2560,27 @@ impl FlightTargetTransaction {
                 failed.push(entry);
                 continue;
             }
-            if let Err(err) = remove_artifact_target_elevating(&entry.target) {
+            let remove = if entry.elevate {
+                remove_artifact_target_elevating(&entry.target)
+            } else {
+                remove_trusted_generic_target_from(&entry.target, &entry.target_parent)
+            };
+            if let Err(err) = remove {
                 first_error.get_or_insert(err);
                 failed.push(entry);
                 continue;
             }
-            if let Some(backup) = &entry.backup
-                && let Err(err) = rename_elevating(backup, &entry.target)
-            {
-                first_error.get_or_insert(err);
-                failed.push(entry);
-                continue;
+            if let Some(backup) = &entry.backup {
+                let rename = if entry.elevate {
+                    rename_elevating(backup, &entry.target)
+                } else {
+                    rename_trusted_generic_target(backup, &entry.target, &entry.target_parent)
+                };
+                if let Err(err) = rename {
+                    first_error.get_or_insert(err);
+                    failed.push(entry);
+                    continue;
+                }
             }
             if let Err(err) = file::remove_all(flight_target_recovery_path(&entry)) {
                 warn!("brew-cask: failed to remove flight recovery record: {err:#}");
@@ -1834,7 +2610,15 @@ impl FlightTargetTransaction {
                 // Attempt both removals independently. Either a missing record
                 // or a missing backup is enough to prevent stale recovery from
                 // restoring pre-install data over a later target.
-                if let Err(err) = remove_artifact_target_elevating(backup) {
+                let remove = if entry.elevate {
+                    remove_artifact_target_elevating(backup)
+                } else {
+                    remove_trusted_generic_target_from(
+                        backup,
+                        entry.backup_parent.as_ref().unwrap(),
+                    )
+                };
+                if let Err(err) = remove {
                     first_error.get_or_insert(err);
                 }
             }
@@ -1991,6 +2775,7 @@ fn recover_flight_backup(path: &Path) -> Result<()> {
         backup: record.backup,
         target_parent: record.target_parent,
         backup_parent: record.backup_parent,
+        elevate: record.elevate,
     };
     validate_backup_parents(&backup)?;
     if let Some(backup_path) = &backup.backup {
@@ -2007,14 +2792,20 @@ fn recover_flight_backup(path: &Path) -> Result<()> {
                     backup_path.display()
                 );
                 return Ok(());
-            } else {
+            } else if backup.elevate {
                 rename_elevating(backup_path, &backup.target)?;
+            } else {
+                rename_trusted_generic_target(backup_path, &backup.target, &backup.target_parent)?;
             }
         }
     } else if backup.target.symlink_metadata().is_ok()
         && !flight_target_claimed_by_receipt(&backup.target, record.receipt_caskroom.as_deref())?
     {
-        remove_artifact_target_elevating(&backup.target)?;
+        if backup.elevate {
+            remove_artifact_target_elevating(&backup.target)?;
+        } else {
+            remove_trusted_generic_target_from(&backup.target, &backup.target_parent)?;
+        }
     }
     file::remove_all(path)?;
     Ok(())
@@ -3493,6 +4284,10 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.pkgs.push(pkg);
             continue;
         }
+        if let Some(artifact) = parse_generic_artifact(artifact)? {
+            artifacts.generic.push(artifact);
+            continue;
+        }
         if let Some(font) = parse_font_artifact(artifact) {
             artifacts.fonts.push(font);
             continue;
@@ -3515,12 +4310,13 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         && artifacts.binaries.is_empty()
         && artifacts.command_wrappers.is_empty()
         && artifacts.pkgs.is_empty()
+        && artifacts.generic.is_empty()
         && artifacts.fonts.is_empty()
         && artifacts.completions.is_empty()
         && artifacts.generated_completions.is_empty()
     {
         bail!(
-            "brew-cask:{}: no app, binary, command wrapper, pkg, font, or completion artifact found; only app-bundle, binary, command-wrapper, pkg, font, and completion casks are supported",
+            "brew-cask:{}: no supported install artifact found",
             cask.token
         );
     }
@@ -3545,6 +4341,7 @@ fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<(
             && artifacts.binaries.is_empty()
             && artifacts.command_wrappers.is_empty()
             && artifacts.pkgs.is_empty()
+            && artifacts.generic.is_empty()
             && artifacts.completions.is_empty()
             && artifacts.generated_completions.is_empty()
             && artifacts.preflight_steps.is_empty()
@@ -3735,6 +4532,25 @@ fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
         }
         _ => Ok(None),
     }
+}
+
+fn parse_generic_artifact(value: &Value) -> Result<Option<GenericArtifact>> {
+    let Some(artifact) = value.as_object().and_then(|object| object.get("artifact")) else {
+        return Ok(None);
+    };
+    let values = artifact
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: artifact metadata must be an array"))?;
+    let source = values
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask: artifact requires a source"))?;
+    let target = artifact_target(value, values)
+        .ok_or_else(|| eyre!("brew-cask: artifact requires a target"))?;
+    Ok(Some(GenericArtifact {
+        source: source.to_string(),
+        target,
+    }))
 }
 
 fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
@@ -4872,6 +5688,9 @@ fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> 
     if !artifacts.command_wrappers.is_empty() {
         return Some("command wrapper artifacts are not supported for pruning".to_string());
     }
+    if !artifacts.generic.is_empty() {
+        return Some("generic artifacts may install external trees".to_string());
+    }
     if !artifacts.preflight_steps.is_empty()
         || !artifacts.postflight_steps.is_empty()
         || has_lifecycle_hook(cask, "preflight")
@@ -4946,6 +5765,7 @@ fn write_receipt_with_flight_targets(
             .collect::<Result<Vec<_>>>()?,
         completions: completion_target_paths(cask, artifacts)?,
         flight_directories: flight_directories.to_vec(),
+        generic: generic_artifact_targets(artifacts)?,
         pkg_ids: artifacts.pkg_ids.clone(),
         targets,
         prune_safe: prune_blocker.is_none(),
@@ -5611,6 +6431,7 @@ struct ArtifactLinkBackup {
     backup: Option<PathBuf>,
     target_parent: PathBuf,
     backup_parent: Option<PathBuf>,
+    elevate: bool,
 }
 
 #[derive(Debug)]
@@ -5648,6 +6469,7 @@ impl ArtifactLinkTransaction {
                     backup,
                     target_parent,
                     backup_parent,
+                    elevate: true,
                 })
             })();
             match entry {
@@ -6845,6 +7667,7 @@ mod tests {
             target_parent: target_parent.clone(),
             backup_parent: backup_parent.clone(),
             receipt_caskroom: None,
+            elevate: true,
         };
         write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
         let mut transaction = FlightTargetTransaction {
@@ -6853,6 +7676,7 @@ mod tests {
                 backup: Some(backup.clone()),
                 target_parent,
                 backup_parent,
+                elevate: true,
             }],
             receipt_caskroom: None,
             installed: Vec::new(),
@@ -6931,6 +7755,7 @@ mod tests {
             fonts: Vec::new(),
             completions: Vec::new(),
             flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: vec![CaskTargetRecord {
                 path: target.clone(),
@@ -6997,6 +7822,7 @@ mod tests {
             target_parent: tmp.path().join("unexpected-target-parent"),
             backup_parent: Some(resolved_parent(&backup)?),
             receipt_caskroom: None,
+            elevate: true,
         };
         write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
 
@@ -7030,6 +7856,7 @@ mod tests {
             target_parent: resolved_parent(&target)?,
             backup_parent: Some(resolved_parent(&backup)?),
             receipt_caskroom: None,
+            elevate: true,
         };
         write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
 
@@ -7134,6 +7961,7 @@ mod tests {
             fonts: Vec::new(),
             completions: Vec::new(),
             flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: records,
             prune_safe: false,
@@ -8989,6 +9817,449 @@ end
     }
 
     #[test]
+    fn parses_and_installs_generic_artifact() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let source = stage.join("libcblite-4.1.0/include/cbl");
+        file::create_dir_all(&source)?;
+        file::write(source.join("CouchbaseLite.h"), "header")?;
+        let value = serde_json::json!({
+            "artifact": [
+                "libcblite-4.1.0/include/cbl",
+                {"target": "$HOMEBREW_PREFIX/include/cbl"}
+            ],
+            "target": "$HOMEBREW_PREFIX/include/cbl"
+        });
+        let artifact = parse_generic_artifact(&value)?.ok_or_else(|| eyre!("missing artifact"))?;
+        assert_eq!(
+            artifact,
+            GenericArtifact {
+                source: "libcblite-4.1.0/include/cbl".to_string(),
+                target: "$HOMEBREW_PREFIX/include/cbl".to_string(),
+            }
+        );
+
+        let mut targets = FlightTargetTransaction::default();
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        install_generic_artifact(&stage, &temporary_caskroom, &artifact, &mut targets)?;
+        assert_eq!(
+            file::read_to_string(tmp.path().join("include/cbl/CouchbaseLite.h"))?,
+            "header"
+        );
+        assert_eq!(
+            file::read_to_string(
+                temporary_caskroom.join("libcblite-4.1.0/include/cbl/CouchbaseLite.h")
+            )?,
+            "header"
+        );
+        assert_eq!(
+            std::fs::read_link(temporary_caskroom.join("libcblite-4.1.0/include/cbl"))?,
+            tmp.path().join("include/cbl")
+        );
+        assert_eq!(
+            targets.installed_targets(),
+            [tmp.path().join("include/cbl")]
+        );
+        assert_eq!(targets.backups.len(), 1);
+        assert!(!targets.backups[0].elevate);
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn generic_artifact_rejects_extraction_source_symlink_escape() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let outside = tmp.path().join("outside");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&outside)?;
+        file::write(outside.join("secret"), "external")?;
+        file::make_symlink(&outside, &stage.join("payload"))?;
+        let artifact = GenericArtifact {
+            source: "payload".to_string(),
+            target: "$HOMEBREW_PREFIX/share/example".to_string(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        let err = install_generic_artifact(
+            &stage,
+            &tmp.path().join("Caskroom/example/.mise-tmp"),
+            &artifact,
+            &mut targets,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("outside the extraction root"));
+        assert!(tmp.path().join("share/example").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn generic_artifact_rejects_caskroom_source_symlink_escape() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let source = stage.join("payload/include/example");
+        file::create_dir_all(&source)?;
+        file::write(source.join("example.h"), "header")?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let outside = tmp.path().join("outside");
+        file::create_dir_all(&temporary_caskroom)?;
+        file::create_dir_all(&outside)?;
+        file::make_symlink(&outside, &temporary_caskroom.join("payload"))?;
+        let artifact = GenericArtifact {
+            source: "payload/include/example".to_string(),
+            target: "$HOMEBREW_PREFIX/include/example".to_string(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        let err = install_generic_artifact(&stage, &temporary_caskroom, &artifact, &mut targets)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("outside the caskroom"));
+        assert!(
+            tmp.path()
+                .join("include/example")
+                .symlink_metadata()
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_generic_artifact_target_through_external_symlink() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let external = tmp.path().join("external");
+        file::create_dir_all(&prefix)?;
+        file::create_dir_all(&external)?;
+        std::os::unix::fs::symlink(&external, prefix.join("lib"))?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+
+        let err = generic_artifact_target_path("$HOMEBREW_PREFIX/lib/example")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must stay below"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn generic_copy_revalidates_target_after_symlink_swap() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let external = tmp.path().join("external");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        file::create_dir_all(&external)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = generic_artifact_target_path("$HOMEBREW_PREFIX/lib/example")?;
+
+        std::fs::remove_dir(&library)?;
+        std::os::unix::fs::symlink(&external, &library)?;
+
+        let err = validate_generic_copy_target(&target)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refusing generic artifact copy outside Homebrew prefix"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_operation_parent_stays_bound_after_ancestor_swap() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        let external = tmp.path().join("external");
+        file::create_dir_all(external.join("lib"))?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = library.join("example");
+        let parent = open_trusted_operation_parent(&target, true, false)?;
+        let source = tmp.path().join("source");
+        file::create_dir_all(&source)?;
+        file::write(source.join("payload"), "installed")?;
+
+        let saved_prefix = tmp.path().join("saved-homebrew");
+        file::rename(&prefix, &saved_prefix)?;
+        file::make_symlink(&external, &prefix)?;
+        copy_cask_artifact_at(&source, &parent.fd, std::ffi::OsStr::new("example"))?;
+
+        assert_eq!(
+            file::read_to_string(saved_prefix.join("lib/example/payload"))?,
+            "installed"
+        );
+        assert!(external.join("lib/example").symlink_metadata().is_err());
+        remove_all_at(&parent.fd, std::ffi::OsStr::new("example"))?;
+        assert!(saved_prefix.join("lib/example").symlink_metadata().is_err());
+
+        file::remove_file(&prefix)?;
+        file::rename(&saved_prefix, &prefix)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_operation_parent_accepts_symlinked_prefix() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let real_prefix = tmp.path().join("real-homebrew");
+        file::create_dir_all(real_prefix.join("lib"))?;
+        let configured_prefix = tmp.path().join("homebrew");
+        file::make_symlink(&real_prefix, &configured_prefix)?;
+        let _guard = BrewPrefixGuard::set(&configured_prefix);
+        let target = configured_prefix.join("lib/example");
+
+        let parent = open_trusted_operation_parent(&target, true, false)?;
+        assert_eq!(
+            parent.stable_path()?,
+            std::fs::canonicalize(real_prefix.join("lib"))?
+        );
+        file::write(parent.path()?.join("example"), "installed")?;
+
+        assert_eq!(
+            file::read_to_string(real_prefix.join("lib/example"))?,
+            "installed"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_operation_parent_creates_missing_directories() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        file::create_dir_all(&prefix)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = prefix.join("share/example/include/example.h");
+
+        let parent = open_trusted_operation_parent(&target, true, true)?;
+
+        file::write(parent.path()?.join("example.h"), "header")?;
+        assert_eq!(file::read_to_string(&target)?, "header");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sudo_invoking_ids_are_trusted_only_for_effective_root() {
+        assert_eq!(sudo_invoking_id_from(0, Some("501")), Some(501));
+        assert_eq!(sudo_invoking_id_from(1000, Some("501")), None);
+        assert_eq!(sudo_invoking_id_from(0, Some("0")), None);
+        assert_eq!(sudo_invoking_id_from(0, Some("invalid")), None);
+    }
+
+    #[test]
+    fn permission_detection_follows_wrapped_error_sources() {
+        let err = eyre::Report::from(nix::errno::Errno::EACCES)
+            .wrap_err("cannot create operation directory");
+
+        assert!(is_permission_denied(&err));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn elevated_generic_target_allows_only_group_writable_prefix() {
+        let prefix = Path::new("/usr/local");
+
+        assert!(strict_elevated_directory_is_trusted(
+            prefix, prefix, 0, 0o775
+        ));
+        assert!(!strict_elevated_directory_is_trusted(
+            Path::new("/usr/local/include"),
+            prefix,
+            0,
+            0o775,
+        ));
+        assert!(!strict_elevated_directory_is_trusted(
+            prefix, prefix, 0, 0o777
+        ));
+        assert!(!strict_elevated_directory_is_trusted(
+            prefix, prefix, 501, 0o755
+        ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unprivileged_generic_rollback_restores_backup_when_target_is_absent() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let target = prefix.join("include/example.h");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::write(&target, "original")?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let mut transaction = FlightTargetTransaction::default();
+
+        transaction.protect_generic(&target)?;
+        assert!(target.symlink_metadata().is_err());
+        transaction.rollback()?;
+
+        assert_eq!(file::read_to_string(&target)?, "original");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_generic_rename_rejects_swapped_prefix() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = library.join("example");
+        let backup = library.join("example.backup");
+        let expected_parent = resolved_parent(&target)?;
+        file::write(&backup, "original")?;
+
+        let saved_prefix = tmp.path().join("saved-homebrew");
+        file::rename(&prefix, &saved_prefix)?;
+        let external = tmp.path().join("external");
+        file::create_dir_all(external.join("lib"))?;
+        file::write(external.join("lib/example"), "external")?;
+        file::write(external.join("lib/example.backup"), "attacker")?;
+        file::make_symlink(&external, &prefix)?;
+
+        let err = rename_trusted_generic_target(&backup, &target, &expected_parent)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("changed generic artifact parent"));
+        assert_eq!(
+            file::read_to_string(external.join("lib/example"))?,
+            "external"
+        );
+        assert_eq!(
+            file::read_to_string(external.join("lib/example.backup"))?,
+            "attacker"
+        );
+        file::remove_file(&prefix)?;
+        file::rename(&saved_prefix, &prefix)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn private_staging_cleanup_rejects_replaced_directory() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let parent = open_trusted_operation_parent(&library.join("target"), true, false)?;
+        let staging_name = std::ffi::OsStr::new(".mise-copy-test");
+        let staging_path = library.join(staging_name);
+        file::create_dir_all(&staging_path)?;
+        std::fs::set_permissions(&staging_path, std::fs::Permissions::from_mode(0o700))?;
+        let staging = TrustedOperationParent {
+            fd: nix::fcntl::openat(
+                &parent.fd,
+                staging_name,
+                nix::fcntl::OFlag::O_RDONLY
+                    | nix::fcntl::OFlag::O_DIRECTORY
+                    | nix::fcntl::OFlag::O_NOFOLLOW,
+                nix::sys::stat::Mode::empty(),
+            )?,
+        };
+        let saved = library.join("saved-staging");
+        file::rename(&staging_path, &saved)?;
+        file::create_dir_all(&staging_path)?;
+
+        let err = remove_private_staging_dir(&parent, &staging, staging_name)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("was replaced"));
+        assert!(staging_path.is_dir());
+        assert!(saved.is_dir());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn obsolete_generic_cleanup_skips_mutable_parent_directories() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let obsolete = tmp.path().join("lib/obsolete");
+        let modified = tmp.path().join("lib/modified");
+        file::create_dir_all(obsolete.parent().unwrap())?;
+        std::fs::set_permissions(
+            obsolete.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o777),
+        )?;
+        file::write(&obsolete, "owned")?;
+        file::write(&modified, "owned")?;
+        let records = vec![
+            CaskTargetRecord {
+                path: obsolete.clone(),
+                fingerprint: cask_target_fingerprint(&obsolete)?,
+                uninstall: None,
+            },
+            CaskTargetRecord {
+                path: modified.clone(),
+                fingerprint: cask_target_fingerprint(&modified)?,
+                uninstall: None,
+            },
+        ];
+        file::write(&modified, "user change")?;
+
+        remove_obsolete_generic_artifacts(&records, &[])?;
+
+        assert_eq!(file::read_to_string(obsolete)?, "owned");
+        assert_eq!(file::read_to_string(modified)?, "user change");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn obsolete_generic_cleanup_allows_owner_group_writable_prefix() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        std::fs::set_permissions(&prefix, std::fs::Permissions::from_mode(0o775))?;
+        std::fs::set_permissions(&library, std::fs::Permissions::from_mode(0o775))?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let obsolete = library.join("obsolete");
+        file::write(&obsolete, "owned")?;
+        let records = vec![CaskTargetRecord {
+            path: obsolete.clone(),
+            fingerprint: cask_target_fingerprint(&obsolete)?,
+            uninstall: None,
+        }];
+
+        remove_obsolete_generic_artifacts(&records, &[])?;
+
+        assert!(obsolete.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
     fn rejects_pkg_installer_choices() {
         let value: Value = serde_json::json!({
             "pkg": [
@@ -9484,6 +10755,7 @@ end
             fonts: vec![],
             completions: vec![],
             flight_directories: vec![],
+            generic: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
             prune_safe: false,
@@ -9523,6 +10795,7 @@ end
             fonts: Vec::new(),
             completions: Vec::new(),
             flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -9643,6 +10916,7 @@ end
                 fonts: Vec::new(),
                 completions: Vec::new(),
                 flight_directories: Vec::new(),
+                generic: Vec::new(),
                 pkg_ids: Vec::new(),
                 targets: Vec::new(),
                 prune_safe: false,
@@ -9920,6 +11194,7 @@ end
             fonts: Vec::new(),
             completions: Vec::new(),
             flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -10210,6 +11485,7 @@ end
             fonts: vec![],
             completions: vec![],
             flight_directories: vec![],
+            generic: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
             prune_safe: false,
@@ -10335,6 +11611,7 @@ end
             fonts: Vec::new(),
             completions: Vec::new(),
             flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
