@@ -2719,6 +2719,8 @@ mod tests {
         while let Ok(event) = rx.try_recv() {
             apply_aube_event(event, &report);
         }
-        assert_eq!(*report.0.lock().unwrap(), ["lifecycle-from-aube"]);
+        let messages = report.0.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].trim_end(), "lifecycle-from-aube");
     }
 }
