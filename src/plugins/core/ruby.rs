@@ -438,7 +438,7 @@ impl RubyPlugin {
     /// Check if precompiled binaries should be tried.
     /// Precompiled binaries are the default unless source compilation is explicitly requested.
     fn should_try_precompiled(&self) -> bool {
-        Settings::get().ruby.compile != Some(true)
+        Settings::get().effective_ruby_compile() != Some(true)
     }
 
     /// Check if precompiled binaries are required, with no fallback to compiling.
@@ -446,7 +446,7 @@ impl RubyPlugin {
     /// to ruby-build, and remote version listings only offer versions that have a
     /// precompiled binary for this platform.
     fn precompiled_only(&self) -> bool {
-        Settings::get().ruby.compile == Some(false)
+        Settings::get().effective_ruby_compile() == Some(false)
     }
 
     /// Get platform identifier for precompiled binaries

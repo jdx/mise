@@ -484,7 +484,7 @@ impl PythonPlugin {
         // unix this function is still entered, but a `pypy*` version falls through to python-build
         // below and installs fine today — no reason to change that here.
         if tv.version.starts_with("pypy") {
-            if cfg!(windows) || Settings::get().python.compile == Some(false) {
+            if cfg!(windows) || Settings::get().effective_python_compile() == Some(false) {
                 return self.install_pypy(ctx, tv).await;
             }
             // With `compile` unset on unix this function is still entered, but python-build owns
@@ -511,7 +511,7 @@ impl PythonPlugin {
             let (tag, filename) = match precompile_info {
                 Some((_, tag, filename)) => (tag, filename),
                 None => {
-                    if cfg!(windows) || Settings::get().python.compile == Some(false) {
+                    if cfg!(windows) || Settings::get().effective_python_compile() == Some(false) {
                         if !cfg!(windows) {
                             hint!(
                                 "python_compile",
@@ -841,7 +841,8 @@ impl PythonPlugin {
     fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
         // Provenance only applies to precompiled binaries, not compiled-from-source.
         // On Windows, precompiled is always used regardless of compile setting.
-        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
+        let uses_precompiled =
+            cfg!(windows) || Settings::get().effective_python_compile() != Some(true);
         if !uses_precompiled || !Self::github_attestations_enabled() {
             return None;
         }
@@ -971,7 +972,7 @@ impl Backend for PythonPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        if cfg!(windows) || Settings::get().python.compile == Some(false) {
+        if cfg!(windows) || Settings::get().effective_python_compile() == Some(false) {
             // python-build-standalone is CPython only, so pypy comes from its own index — and only
             // the releases that publish an archive for this platform, the way the CPython list is
             // already filtered. Offering the rest would list versions that cannot install: macOS
@@ -1138,7 +1139,9 @@ impl Backend for PythonPlugin {
                         self.ba().cache_path.join("remote_versions.msgpack.z"),
                     )
                     .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .with_cache_key((Settings::get().python.compile == Some(false)).to_string())
+                    .with_cache_key(
+                        (Settings::get().effective_python_compile() == Some(false)).to_string(),
+                    )
                     .build(),
                 ))
             })
@@ -1156,7 +1159,7 @@ impl Backend for PythonPlugin {
 
         // Only include compile option if true (non-default)
         let compile = if is_current_platform {
-            settings.python.compile.unwrap_or(false)
+            settings.effective_python_compile().unwrap_or(false)
         } else {
             false
         };
