@@ -2654,13 +2654,22 @@ pub async fn resolve_tool_lock_info(
                     match conda_backend.resolve_conda_packages(&tv, &target).await {
                         Ok(packages) => packages,
                         Err(e) => {
-                            debug!(
-                                "failed to resolve conda packages for {} on {}: {}",
-                                ba.short,
-                                platform.to_key(),
-                                e
+                            return (
+                                ba.short.clone(),
+                                tv.version.clone(),
+                                ba.stored_full(),
+                                platform,
+                                Err(format!(
+                                    "failed to resolve conda packages for {} on {}: {}",
+                                    ba.short,
+                                    target.to_key(),
+                                    e
+                                )),
+                                options,
+                                BTreeMap::new(),
+                                BTreeMap::new(),
+                                error_is_fatal,
                             );
-                            BTreeMap::new()
                         }
                     }
                 } else {
@@ -2732,9 +2741,9 @@ pub async fn resolve_tool_lock_info(
 /// Only applies data when the resolution succeeded (info is `Ok`).
 ///
 /// Returns whether the resolution contributed any data. A backend that can't
-/// resolve metadata without installing falls back to an empty `PlatformInfo`,
-/// which is `Ok` but writes no entry — callers report those as skipped rather
-/// than claiming an update they didn't make.
+/// resolve metadata without installing falls back to an empty `PlatformInfo`.
+/// This still creates a tool/version entry when one does not exist, but it does
+/// not overwrite an existing entry's platform metadata.
 ///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
@@ -2763,7 +2772,24 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
         ) {
             return Err(eyre!("{err}"));
         }
-        if !info.is_empty() {
+        if info.is_empty() {
+            let tool_exists = lockfile.tools.get(&short).is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool.version == version && tool.options == options)
+            });
+            if !tool_exists {
+                applied = true;
+                lockfile.set_platform_info(
+                    &short,
+                    &version,
+                    Some(&backend),
+                    &options,
+                    &platform_key,
+                    info.clone(),
+                );
+            }
+        } else {
             applied = true;
             lockfile.set_platform_info(
                 &short,
@@ -3678,6 +3704,27 @@ mod tests {
                 .get_conda_package(platform_key, dependency)
                 .is_some()
         );
+    }
+
+    #[test]
+    fn empty_resolution_creates_new_tool_entry_without_platform_metadata() {
+        let mut lockfile = Lockfile::default();
+        let result = (
+            "dummy".to_string(),
+            "1.0.0".to_string(),
+            "asdf:dummy".to_string(),
+            Platform::parse("linux-x64").unwrap(),
+            Ok(PlatformInfo::default()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            false,
+        );
+
+        assert!(apply_lock_result(&mut lockfile, result).unwrap());
+        let tool = &lockfile.tools["dummy"][0];
+        assert_eq!(tool.version, "1.0.0");
+        assert!(tool.platforms.is_empty());
     }
 
     #[test]

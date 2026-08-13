@@ -1217,7 +1217,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use super::{Lock, LockTaskResult, LockTaskStatus, classify_lock_result};
     use crate::cli::args::ToolArg;
-    use crate::lockfile::{Lockfile, PlatformInfo};
+    use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
+    use crate::platform::Platform;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
     use std::collections::BTreeMap;
     use std::str::FromStr;
@@ -1263,6 +1264,38 @@ mod tests {
 
         assert_eq!(status, LockTaskStatus::Failed);
         assert_eq!(returned_error, Some(error));
+    }
+
+    #[test]
+    fn test_conda_package_resolution_error_is_fatal_and_not_applied() {
+        let error = "failed to resolve conda packages".to_string();
+        let resolution = (
+            "ffmpeg".to_string(),
+            "7.1.1".to_string(),
+            "conda:ffmpeg".to_string(),
+            Platform::parse("linux-x64").unwrap(),
+            Err(error.clone()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            true,
+        );
+        let mut lockfile = Lockfile::default();
+        let resolution_error = resolution.4.as_ref().err().cloned();
+        let error_is_fatal = resolution.8;
+
+        let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
+        let (status, returned_error) =
+            classify_lock_result(resolution_error, error_is_fatal, applied);
+
+        assert_eq!(status, LockTaskStatus::Failed);
+        assert_eq!(returned_error, Some(error));
+        assert!(!lockfile.tools().contains_key("ffmpeg"));
+        assert!(
+            lockfile
+                .get_conda_package("linux-x64", "incomplete-package")
+                .is_none()
+        );
     }
 
     #[test]
