@@ -1252,13 +1252,11 @@ pub fn write_receipt(
             "tap_git_head": rf.formula.tap_git_head,
         },
         "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },
+        // Homebrew's Tab#to_json always emits this key. Authoritative bottle
+        // metadata may omit the build host, in which case the installed tab
+        // contains JSON null rather than dropping the field.
+        "built_on": facts.built_on,
     });
-    if let Some(built_on) = facts.built_on {
-        receipt
-            .as_object_mut()
-            .unwrap()
-            .insert("built_on".to_string(), built_on);
-    }
     crate::file::write(
         keg.join("INSTALL_RECEIPT.json"),
         serde_json::to_string(&receipt)?,
@@ -2069,7 +2067,7 @@ mod tests {
     }
 
     #[test]
-    fn bottle_receipt_preserves_authoritative_absence_of_built_on() -> Result<()> {
+    fn bottle_receipt_serializes_absent_build_host_as_null() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let rf = resolved_formula("foo", "1.0");
         let keg = tmp.path().join("foo/1.0");
@@ -2090,7 +2088,7 @@ mod tests {
         let receipt: Value =
             serde_json::from_slice(&std::fs::read(keg.join("INSTALL_RECEIPT.json"))?)?;
         assert_eq!(receipt["compiler"], "bottle-clang");
-        assert!(receipt.get("built_on").is_none());
+        assert!(receipt["built_on"].is_null());
         Ok(())
     }
 
