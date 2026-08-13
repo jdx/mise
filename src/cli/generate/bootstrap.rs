@@ -66,12 +66,17 @@ impl Bootstrap {
         // script was generated with: `test -f "$MISE_INSTALL_PATH"` skips install.sh entirely, so
         // a fixed path would make a changed MISE_VERSION silently reuse the cached binary.
         let vars = if self.localize {
-            // TODO: this will only work right if it is in the base directory, not an absolute path or has a subdirectory
             let localized_dir = self.localized_dir.to_string_lossy();
+            let localized_dir = shell_words::quote(&localized_dir);
+            let localized_dir = if self.localized_dir.is_absolute() {
+                localized_dir.into_owned()
+            } else {
+                format!(r#""$project_dir"/{localized_dir}"#)
+            };
             format!(
                 r#"
 local project_dir=$( cd -- "$( dirname -- "${{BASH_SOURCE[0]}}" )" &> /dev/null && cd .. && pwd )
-local localized_dir="$project_dir/{localized_dir}"
+local localized_dir={localized_dir}
 export MISE_DATA_DIR="$localized_dir"
 export MISE_CONFIG_DIR="$localized_dir"
 export MISE_CACHE_DIR="$localized_dir/cache"
