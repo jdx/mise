@@ -61,7 +61,9 @@ type = "Bool"
 [all_compile]
 description = "do not use precompiled binaries for any tool"
 docs = """
-Default: false unless running NixOS or Alpine (let me know if others should be added)
+Default: false unless running Alpine. NixOS also defaults to true temporarily, but that automatic
+default is deprecated: warnings begin in mise 2026.8.0 and it will be removed in mise 2027.8.0.
+Afterward, NixOS users who require source builds must set `all_compile = true` explicitly.
 
 Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
 like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.

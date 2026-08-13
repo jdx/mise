@@ -245,11 +245,26 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+
+fn default_all_compile(linux_distro: Option<&str>) -> bool {
+    matches!(linux_distro, Some("alpine" | "nixos"))
+}
+
+fn warn_nixos_all_compile_default_deprecated() {
+    if env::LINUX_DISTRO.as_deref() == Some("nixos") {
+        deprecated_at!(
+            "2026.8.0",
+            "2027.8.0",
+            "nixos.all_compile_default",
+            "The automatic all_compile=true default on NixOS is deprecated. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
+        );
+    }
+}
+
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str())
-        && !cfg!(test)
+    if !cfg!(test) && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
     {
         s.all_compile = Some(true);
     }
@@ -720,6 +735,7 @@ impl Settings {
 
     fn flush_deprecated_warnings_now() {
         DEPRECATED_WARNINGS_READY.store(true, Ordering::SeqCst);
+        warn_nixos_all_compile_default_deprecated();
         warn_deprecated_env_settings();
         let pending = {
             let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
@@ -1520,6 +1536,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_all_compile_is_limited_to_alpine_and_deprecated_nixos_behavior() {
+        assert!(default_all_compile(Some("alpine")));
+        assert!(default_all_compile(Some("nixos")));
+        assert!(!default_all_compile(Some("ubuntu")));
+        assert!(!default_all_compile(None));
+    }
 
     #[test]
     fn debug_settings_redact_remote_cache_token() {
