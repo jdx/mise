@@ -46,6 +46,12 @@ pub enum SettingsType {
     BoolOrString,
 }
 
+#[derive(Clone, Copy)]
+pub enum CompilePurpose {
+    Install,
+    Inspect,
+}
+
 pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
@@ -624,62 +630,54 @@ impl Settings {
         })
     }
 
-    pub fn effective_node_compile(&self) -> Option<bool> {
-        effective_compile_setting(self.all_compile(), self.node.compile)
+    fn compile_setting(
+        &self,
+        purpose: CompilePurpose,
+        tool: &str,
+        id: &'static str,
+        compile: Option<bool>,
+    ) -> Option<bool> {
+        if matches!(purpose, CompilePurpose::Install) {
+            warn_nixos_all_compile_default_deprecated(tool, id, self.all_compile, compile);
+        }
+        effective_compile_setting(self.all_compile(), compile)
     }
 
-    pub fn node_compile(&self) -> Option<bool> {
-        warn_nixos_all_compile_default_deprecated(
+    pub fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
             "node",
             "nixos.node_all_compile_default",
-            self.all_compile,
             self.node.compile,
-        );
-        self.effective_node_compile()
+        )
     }
 
-    pub fn effective_python_compile(&self) -> Option<bool> {
-        effective_compile_setting(self.all_compile(), self.python.compile)
-    }
-
-    pub fn python_compile(&self) -> Option<bool> {
-        warn_nixos_all_compile_default_deprecated(
+    pub fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
             "python",
             "nixos.python_all_compile_default",
-            self.all_compile,
             self.python.compile,
-        );
-        self.effective_python_compile()
+        )
     }
 
-    pub fn effective_erlang_compile(&self) -> Option<bool> {
-        effective_compile_setting(self.all_compile(), self.erlang.compile)
-    }
-
-    pub fn erlang_compile(&self) -> Option<bool> {
-        warn_nixos_all_compile_default_deprecated(
+    pub fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
             "erlang",
             "nixos.erlang_all_compile_default",
-            self.all_compile,
             self.erlang.compile,
-        );
-        self.effective_erlang_compile()
+        )
     }
 
     #[cfg(not(windows))]
-    pub fn effective_ruby_compile(&self) -> Option<bool> {
-        effective_compile_setting(self.all_compile(), self.ruby.compile)
-    }
-
-    #[cfg(not(windows))]
-    pub fn ruby_compile(&self) -> Option<bool> {
-        warn_nixos_all_compile_default_deprecated(
+    pub fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
             "ruby",
             "nixos.ruby_all_compile_default",
-            self.all_compile,
             self.ruby.compile,
-        );
-        self.effective_ruby_compile()
+        )
     }
 
     pub fn try_get() -> Result<Arc<Self>> {

@@ -6,7 +6,7 @@ use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -484,7 +484,9 @@ impl PythonPlugin {
         // unix this function is still entered, but a `pypy*` version falls through to python-build
         // below and installs fine today — no reason to change that here.
         if tv.version.starts_with("pypy") {
-            if cfg!(windows) || Settings::get().effective_python_compile() == Some(false) {
+            if cfg!(windows)
+                || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false)
+            {
                 return self.install_pypy(ctx, tv).await;
             }
             // With `compile` unset on unix this function is still entered, but python-build owns
@@ -511,7 +513,9 @@ impl PythonPlugin {
             let (tag, filename) = match precompile_info {
                 Some((_, tag, filename)) => (tag, filename),
                 None => {
-                    if cfg!(windows) || Settings::get().effective_python_compile() == Some(false) {
+                    if cfg!(windows)
+                        || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false)
+                    {
                         if !cfg!(windows) {
                             hint!(
                                 "python_compile",
@@ -842,7 +846,7 @@ impl PythonPlugin {
         // Provenance only applies to precompiled binaries, not compiled-from-source.
         // On Windows, precompiled is always used regardless of compile setting.
         let uses_precompiled =
-            cfg!(windows) || Settings::get().effective_python_compile() != Some(true);
+            cfg!(windows) || Settings::get().python_compile(CompilePurpose::Inspect) != Some(true);
         if !uses_precompiled || !Self::github_attestations_enabled() {
             return None;
         }
@@ -972,7 +976,7 @@ impl Backend for PythonPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        if cfg!(windows) || Settings::get().effective_python_compile() == Some(false) {
+        if cfg!(windows) || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false) {
             // python-build-standalone is CPython only, so pypy comes from its own index — and only
             // the releases that publish an archive for this platform, the way the CPython list is
             // already filtered. Offering the rest would list versions that cannot install: macOS
@@ -1071,7 +1075,7 @@ impl Backend for PythonPlugin {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let settings = Settings::get();
-        if cfg!(windows) || settings.python_compile() != Some(true) {
+        if cfg!(windows) || settings.python_compile(CompilePurpose::Install) != Some(true) {
             validate_python_precompiled_settings(&settings)?;
             self.install_precompiled(ctx, &mut tv).await?;
         } else {
@@ -1140,7 +1144,8 @@ impl Backend for PythonPlugin {
                     )
                     .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .with_cache_key(
-                        (Settings::get().effective_python_compile() == Some(false)).to_string(),
+                        (Settings::get().python_compile(CompilePurpose::Inspect) == Some(false))
+                            .to_string(),
                     )
                     .build(),
                 ))
@@ -1159,7 +1164,9 @@ impl Backend for PythonPlugin {
 
         // Only include compile option if true (non-default)
         let compile = if is_current_platform {
-            settings.effective_python_compile().unwrap_or(false)
+            settings
+                .python_compile(CompilePurpose::Inspect)
+                .unwrap_or(false)
         } else {
             false
         };

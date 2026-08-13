@@ -7,7 +7,7 @@ use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -138,7 +138,7 @@ impl NodePlugin {
                     bail!(
                         "precompiled node archive not found and locked mode requires the locked precompiled artifact"
                     )
-                } else if Settings::get().effective_node_compile() != Some(false) {
+                } else if Settings::get().node_compile(CompilePurpose::Inspect) != Some(false) {
                     if let Some(message) = node_flavor_not_found_message(opts) {
                         warn!("{message}");
                     }
@@ -717,9 +717,9 @@ impl Backend for NodePlugin {
         trace!("node build opts: {:#?}", opts);
         let platform_key = self.get_platform_key();
         let node_compile = if ctx.locked {
-            settings.effective_node_compile()
+            settings.node_compile(CompilePurpose::Inspect)
         } else {
-            settings.node_compile()
+            settings.node_compile(CompilePurpose::Install)
         };
         let compile_from_source =
             should_compile_from_source(ctx.locked, &tv.lock_platforms, &platform_key, node_compile);
@@ -891,7 +891,7 @@ impl Backend for NodePlugin {
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
-        let node_compile = settings.effective_node_compile();
+        let node_compile = settings.node_compile(CompilePurpose::Inspect);
         if node_compile == Some(true) && target.os_name() != "windows" {
             return self.resolve_source_lock_info(version).await;
         }
