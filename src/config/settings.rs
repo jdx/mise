@@ -245,8 +245,8 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
-// TODO(2027.8.0): Remove these per-tool flags and simplify the NixOS
-// `all_compile` provenance tracking once the deprecation process is complete.
+// TODO(2027.8.0): Remove these per-tool flags and warning hooks once the NixOS
+// `all_compile` deprecation process is complete.
 static WARN_NIXOS_NODE_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_PYTHON_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_ERLANG_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
@@ -259,9 +259,9 @@ fn default_all_compile(linux_distro: Option<&str>) -> bool {
 
 fn should_warn_nixos_all_compile_default(
     linux_distro: Option<&str>,
-    all_compile_is_explicit: bool,
+    explicit_all_compile: Option<bool>,
 ) -> bool {
-    linux_distro == Some("nixos") && !all_compile_is_explicit
+    linux_distro == Some("nixos") && explicit_all_compile.is_none()
 }
 
 fn compile_inherits_nixos_all_compile_default(
@@ -678,12 +678,14 @@ impl Settings {
         let cli_settings = normalize_hidden_config_aliases(
             CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
         );
-        let mut all_compile_is_explicit =
-            cli_settings.all_compile.is_some() || env::var_os("MISE_ALL_COMPILE").is_some();
-        sb = Self::builder().preloaded(cli_settings).env();
+        let env_settings = SettingsPartial::from_env()?;
+        let mut explicit_all_compile = cli_settings.all_compile.or(env_settings.all_compile);
+        sb = Self::builder()
+            .preloaded(cli_settings)
+            .preloaded(env_settings);
         time!("try_get builder2+env");
         for file in Self::all_settings_files() {
-            all_compile_is_explicit |= file.all_compile.is_some();
+            explicit_all_compile = explicit_all_compile.or(file.all_compile);
             sb = sb.preloaded(file);
         }
         time!("try_get all_settings_files");
@@ -693,7 +695,7 @@ impl Settings {
         settings = sb.load()?;
         let nixos_all_compile_is_implicit = should_warn_nixos_all_compile_default(
             env::LINUX_DISTRO.as_deref(),
-            all_compile_is_explicit,
+            explicit_all_compile,
         );
         time!("try_get load2");
         if !settings.legacy_version_file {
@@ -1636,13 +1638,17 @@ mod tests {
 
     #[test]
     fn nixos_all_compile_default_warning_only_applies_to_implicit_value() {
-        assert!(should_warn_nixos_all_compile_default(Some("nixos"), false));
-        assert!(!should_warn_nixos_all_compile_default(Some("nixos"), true));
+        assert!(should_warn_nixos_all_compile_default(Some("nixos"), None));
         assert!(!should_warn_nixos_all_compile_default(
-            Some("alpine"),
-            false
+            Some("nixos"),
+            Some(true)
         ));
-        assert!(!should_warn_nixos_all_compile_default(None, false));
+        assert!(!should_warn_nixos_all_compile_default(
+            Some("nixos"),
+            Some(false)
+        ));
+        assert!(!should_warn_nixos_all_compile_default(Some("alpine"), None));
+        assert!(!should_warn_nixos_all_compile_default(None, None));
     }
 
     #[test]
