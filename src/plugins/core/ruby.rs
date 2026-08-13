@@ -12,7 +12,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents, strict_metadata};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
@@ -438,7 +438,7 @@ impl RubyPlugin {
     /// Check if precompiled binaries should be tried.
     /// Precompiled binaries are the default unless source compilation is explicitly requested.
     fn should_try_precompiled(&self) -> bool {
-        Settings::get().ruby.compile != Some(true)
+        Settings::get().ruby_compile(CompilePurpose::Inspect) != Some(true)
     }
 
     /// Check if precompiled binaries are required, with no fallback to compiling.
@@ -446,7 +446,7 @@ impl RubyPlugin {
     /// to ruby-build, and remote version listings only offer versions that have a
     /// precompiled binary for this platform.
     fn precompiled_only(&self) -> bool {
-        Settings::get().ruby.compile == Some(false)
+        Settings::get().ruby_compile(CompilePurpose::Inspect) == Some(false)
     }
 
     /// Get platform identifier for precompiled binaries
@@ -1102,6 +1102,7 @@ impl Backend for RubyPlugin {
         // No precompiled available, fall through to compile from source
 
         // Compile from source
+        let _ = Settings::get().ruby_compile(CompilePurpose::Install);
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }

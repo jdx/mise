@@ -5,6 +5,12 @@ assert "mise settings get python.compile" "true"
 mise settings unset python.compile
 assert_fail "mise settings get python.compile" "mise ERROR Setting [python.compile] is not set"
 
+# Optional settings with an effective default should report that default after unset.
+mise settings set all_compile true
+assert "mise settings get all_compile" "true"
+mise settings unset all_compile
+assert "mise settings get all_compile" "false"
+
 # regression: a parent key stored as an inline table must not panic on unset
 settings_config="$MISE_CONFIG_DIR/config.toml"
 printf '[settings]\npython = { compile = true }\n' >"$settings_config"

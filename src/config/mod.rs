@@ -3,7 +3,7 @@ use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
-pub use settings::Settings;
+pub use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};

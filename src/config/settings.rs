@@ -46,6 +46,12 @@ pub enum SettingsType {
     BoolOrString,
 }
 
+#[derive(Clone, Copy)]
+pub enum CompilePurpose {
+    Install,
+    Inspect,
+}
+
 pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
@@ -245,14 +251,50 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+// TODO(2027.8.0): Remove the per-tool warning accessors once the NixOS
+// `all_compile` deprecation process is complete.
+
+fn default_all_compile(linux_distro: Option<&str>) -> bool {
+    matches!(linux_distro, Some("alpine" | "nixos"))
+}
+
+fn compile_inherits_nixos_all_compile_default(
+    linux_distro: Option<&str>,
+    explicit_all_compile: Option<bool>,
+    compile: Option<bool>,
+) -> bool {
+    linux_distro == Some("nixos") && explicit_all_compile.is_none() && compile.is_none()
+}
+
+fn effective_compile_setting(all_compile: bool, compile: Option<bool>) -> Option<bool> {
+    compile.or_else(|| all_compile.then_some(true))
+}
+
+fn warn_nixos_all_compile_default_deprecated(
+    tool: &str,
+    id: &'static str,
+    all_compile: Option<bool>,
+    compile: Option<bool>,
+) {
+    if !cfg!(test)
+        && compile_inherits_nixos_all_compile_default(
+            env::LINUX_DISTRO.as_deref(),
+            all_compile,
+            compile,
+        )
+    {
+        deprecated_at!(
+            "2026.8.0",
+            "2027.8.0",
+            id,
+            "The automatic all_compile=true default on NixOS caused {tool} to compile from source. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
+        );
+    }
+}
+
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str())
-        && !cfg!(test)
-    {
-        s.all_compile = Some(true);
-    }
     s
 });
 
@@ -580,6 +622,64 @@ impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
+
+    pub fn all_compile(&self) -> bool {
+        self.all_compile.unwrap_or_else(|| {
+            !cfg!(test)
+                && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
+        })
+    }
+
+    fn compile_setting(
+        &self,
+        purpose: CompilePurpose,
+        tool: &str,
+        id: &'static str,
+        compile: Option<bool>,
+    ) -> Option<bool> {
+        if matches!(purpose, CompilePurpose::Install) {
+            warn_nixos_all_compile_default_deprecated(tool, id, self.all_compile, compile);
+        }
+        effective_compile_setting(self.all_compile(), compile)
+    }
+
+    pub fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "node",
+            "nixos.node_all_compile_default",
+            self.node.compile,
+        )
+    }
+
+    pub fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "python",
+            "nixos.python_all_compile_default",
+            self.python.compile,
+        )
+    }
+
+    pub fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "erlang",
+            "nixos.erlang_all_compile_default",
+            self.erlang.compile,
+        )
+    }
+
+    #[cfg(not(windows))]
+    pub fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "ruby",
+            "nixos.ruby_all_compile_default",
+            self.ruby.compile,
+        )
+    }
+
     pub fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
@@ -676,20 +776,6 @@ impl Settings {
         }
         if settings.ci {
             settings.yes = true;
-        }
-        if settings.all_compile {
-            if settings.node.compile.is_none() {
-                settings.node.compile = Some(true);
-            }
-            if settings.python.compile.is_none() {
-                settings.python.compile = Some(true);
-            }
-            if settings.erlang.compile.is_none() {
-                settings.erlang.compile = Some(true);
-            }
-            if settings.ruby.compile.is_none() {
-                settings.ruby.compile = Some(true);
-            }
         }
         if settings.gpg_verify.is_some() {
             settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);
@@ -1022,7 +1108,11 @@ impl Settings {
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
         let s = toml::to_string(self)?;
-        let mut table = toml::from_str(&s)?;
+        let mut table: toml::Table = toml::from_str(&s)?;
+        table.insert(
+            "all_compile".to_string(),
+            toml::Value::Boolean(self.all_compile()),
+        );
         redact_settings_table(&mut table);
         Ok(table)
     }
@@ -1520,6 +1610,84 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_all_compile_is_limited_to_alpine_and_deprecated_nixos_behavior() {
+        assert!(default_all_compile(Some("alpine")));
+        assert!(default_all_compile(Some("nixos")));
+        assert!(!default_all_compile(Some("ubuntu")));
+        assert!(!default_all_compile(None));
+    }
+
+    #[test]
+    fn all_compile_preserves_unset_and_explicit_values() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.all_compile, None);
+        assert!(!settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(false))
+        );
+
+        settings.all_compile = Some(true);
+        assert!(settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(true))
+        );
+
+        settings.all_compile = Some(false);
+        assert!(!settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(false))
+        );
+    }
+
+    #[test]
+    fn compile_warning_only_applies_to_implicit_nixos_values() {
+        assert!(compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            None,
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            Some(true),
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            Some(false),
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            None,
+            Some(true)
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            None,
+            Some(false)
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("alpine"),
+            None,
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            None, None, None
+        ));
+    }
+
+    #[test]
+    fn effective_compile_prefers_tool_setting_then_global_source_setting() {
+        assert_eq!(effective_compile_setting(true, None), Some(true));
+        assert_eq!(effective_compile_setting(false, None), None);
+        assert_eq!(effective_compile_setting(true, Some(true)), Some(true));
+        assert_eq!(effective_compile_setting(true, Some(false)), Some(false));
+    }
 
     #[test]
     fn debug_settings_redact_remote_cache_token() {
