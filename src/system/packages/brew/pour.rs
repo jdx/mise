@@ -95,13 +95,16 @@ pub(super) struct FormulaHealth {
     pub keg: PathBuf,
     pub kind: FormulaHealthKind,
     pub reasons: Vec<String>,
-    mise_owned: bool,
+    pub(super) mise_owned: bool,
+    pub(super) poured_from_bottle: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 struct InstalledReceipt {
     #[serde(default)]
     homebrew_version: String,
+    #[serde(default)]
+    poured_from_bottle: Option<bool>,
     #[serde(default)]
     runtime_dependencies: Vec<InstalledRuntimeDependency>,
 }
@@ -229,6 +232,7 @@ fn collect_closure_health(
                 kind: FormulaHealthKind::ReinstallRequired,
                 reasons: vec!["runtime dependency is missing or has no active opt record".into()],
                 mise_owned: false,
+                poured_from_bottle: None,
             });
         }
     }
@@ -329,11 +333,52 @@ fn formula_health(
             kind,
             reasons,
             mise_owned,
+            poured_from_bottle: receipt
+                .as_ref()
+                .and_then(|receipt| receipt.poured_from_bottle),
         },
         receipt
             .map(|receipt| receipt.runtime_dependencies)
             .unwrap_or_default(),
     )
+}
+
+/// Read the formula snapshot from a checksum-verified bottle without trusting
+/// the current tap source checksum. Homebrew bottles embed the exact formula
+/// snapshot used to build them, which may legitimately differ from the current
+/// source while package version and bottle rebuild remain unchanged.
+pub(super) fn bottle_formula_snapshot_sha256(
+    name: &str,
+    pkg_version: &str,
+    tarball: &Path,
+) -> Result<String> {
+    let scratch = tempfile::tempdir()?;
+    crate::file::untar(
+        tarball,
+        scratch.path(),
+        ExtractionFormat::TarGz,
+        &ExtractOptions {
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true,
+        },
+    )
+    .wrap_err_with(|| format!("brew:{name}: failed to inspect verified bottle"))?;
+    let snapshot = scratch
+        .path()
+        .join(name)
+        .join(pkg_version)
+        .join(".brew")
+        .join(format!("{name}.rb"));
+    let metadata = snapshot.symlink_metadata().wrap_err_with(|| {
+        format!(
+            "brew:{name}: verified bottle has no formula snapshot at {name}/{pkg_version}/.brew/{name}.rb"
+        )
+    })?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        bail!("brew:{name}: verified bottle formula snapshot is not a regular file")
+    }
+    crate::hash::file_hash_sha256(&snapshot, None)
 }
 
 fn max_health(left: FormulaHealthKind, right: FormulaHealthKind) -> FormulaHealthKind {
@@ -1609,6 +1654,9 @@ pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use jdx_tar::{Builder, EntryType, Header};
     use tokio::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::const_new(());
@@ -1701,6 +1749,32 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let path = tmp.path().canonicalize()?;
         Ok((tmp, path))
+    }
+
+    #[test]
+    fn legacy_bottle_snapshot_evidence_comes_from_verified_archive() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let staging = tmp.path().join("staging/foo/1/.brew");
+        crate::file::create_dir_all(&staging)?;
+        let snapshot = staging.join("foo.rb");
+        crate::file::write(&snapshot, "class Foo < Formula\nend\n")?;
+        let expected = crate::hash::file_hash_sha256(&snapshot, None)?;
+
+        let tarball = tmp.path().join("foo.tar.gz");
+        let encoder = GzEncoder::new(std::fs::File::create(&tarball)?, Compression::default());
+        let mut archive = Builder::new(encoder);
+        let contents = std::fs::read(&snapshot)?;
+        let mut header = Header::new_gnu(EntryType::File);
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o644);
+        archive.append_data(&mut header, "foo/1/.brew/foo.rb", contents.as_slice())?;
+        archive.into_inner()?.finish()?;
+
+        assert_eq!(
+            bottle_formula_snapshot_sha256("foo", "1", &tarball)?,
+            expected
+        );
+        Ok(())
     }
 
     fn resolved_formula(name: &str, version: &str) -> ResolvedFormula {

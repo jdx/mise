@@ -115,7 +115,52 @@ impl BrewManager {
         // rejected for lifecycle types mise does not need to execute.
         let prepared_lifecycles = prepare_lifecycles(&to_pour)?;
         let repair_formulae = to_repair.iter().map(|(rf, _)| *rf).collect::<Vec<_>>();
-        let prepared_repairs = prepare_lifecycles(&repair_formulae)?;
+        let mut prepared_repairs = prepare_lifecycles(&repair_formulae)?;
+        // A bottle embeds its build-time formula snapshot. That snapshot may
+        // differ from the current tap source without a version change, so
+        // legacy repair validates against the checksum-pinned bottle rather
+        // than incorrectly treating the tap source checksum as bottle
+        // provenance. All lifecycle plans are compiled before these downloads.
+        for ((rf, health), lifecycle) in to_repair.iter().zip(&mut prepared_repairs) {
+            if !health.mise_owned || !lifecycle::requires_legacy_snapshot_evidence(lifecycle) {
+                continue;
+            }
+            match health.poured_from_bottle {
+                Some(true) => {
+                    let pkg_version = rf.formula.pkg_version()?;
+                    let Some((_tag, bottle)) = rf.formula.bottle_files().and_then(tag::select)
+                    else {
+                        bail!(
+                            "brew:{} requires reinstall: installed receipt says bottle, but no compatible checksum-pinned bottle is available for legacy repair",
+                            rf.formula.name
+                        )
+                    };
+                    let tarball = fetch::fetch_bottle(
+                        &rf.formula.name,
+                        &pkg_version,
+                        bottle,
+                        None,
+                    )
+                    .await
+                    .wrap_err_with(|| {
+                        format!(
+                            "brew:{} cannot verify legacy bottle provenance; retry online or reinstall",
+                            rf.formula.name
+                        )
+                    })?;
+                    lifecycle.set_formula_snapshot_sha256(pour::bottle_formula_snapshot_sha256(
+                        &rf.formula.name,
+                        &pkg_version,
+                        &tarball,
+                    )?);
+                }
+                Some(false) => {}
+                None => bail!(
+                    "brew:{} requires reinstall: legacy receipt does not record bottle/source provenance",
+                    rf.formula.name
+                ),
+            }
+        }
         for ((_, health), lifecycle) in to_repair.iter().zip(&prepared_repairs) {
             pour::preflight_formula_repair(health, lifecycle)?;
         }

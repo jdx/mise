@@ -25,6 +25,17 @@ pub(super) struct PreparedFormulaLifecycle {
     steps: Vec<PreparedStep>,
 }
 
+impl PreparedFormulaLifecycle {
+    /// Legacy repair must validate the installed formula snapshot against the
+    /// artifact that produced it. Bottle snapshots are not guaranteed to have
+    /// the same checksum as the current tap source for the same package
+    /// version, so the repair preflight replaces the source checksum with the
+    /// checksum from the currently pinned, verified bottle when applicable.
+    pub(super) fn set_formula_snapshot_sha256(&mut self, sha256: String) {
+        self.formula_snapshot_sha256 = Some(sha256);
+    }
+}
+
 #[derive(Debug)]
 enum PreparedStep {
     Mkdir {
@@ -891,6 +902,10 @@ pub(super) fn preflight_repair(
     Ok(true)
 }
 
+pub(super) fn requires_legacy_snapshot_evidence(prepared: &PreparedFormulaLifecycle) -> bool {
+    state_path(&prepared.keg).symlink_metadata().is_err()
+}
+
 fn validate_legacy_formula_snapshot(prepared: &PreparedFormulaLifecycle) -> Result<()> {
     let expected = prepared
         .formula_snapshot_sha256
@@ -1729,6 +1744,26 @@ mod tests {
         let keg = prefix::cellar().join("openssl@3/1");
         prepare(&ca, &keg).unwrap();
         prepare(&openssl, &keg).unwrap();
+    }
+
+    #[test]
+    fn legacy_bottle_snapshot_can_differ_from_current_tap_source() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let keg = tmp.path().join("Cellar/openssl@3/1");
+        let snapshot = keg.join(".brew/openssl@3.rb");
+        crate::file::create_dir_all(snapshot.parent().unwrap())?;
+        crate::file::write(&snapshot, "bottle build-time formula\n")?;
+        let bottle_sha256 = crate::hash::file_hash_sha256(&snapshot, None)?;
+
+        let mut formula = formula(vec![]);
+        formula.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
+            sha256: Some("current-tap-source-checksum".to_string()),
+        });
+        let mut prepared = prepare(&formula, &keg)?;
+        assert!(validate_legacy_formula_snapshot(&prepared).is_err());
+        prepared.set_formula_snapshot_sha256(bottle_sha256);
+        validate_legacy_formula_snapshot(&prepared)?;
+        Ok(())
     }
 
     #[test]
