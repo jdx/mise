@@ -18,7 +18,8 @@ use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
 /// directories linked from a keg into the prefix (brew's Keg::KEG_LINK_DIRECTORIES,
-/// minus etc/var which brew handles specially and we defer)
+/// minus etc/var, which the lifecycle finalizer installs with persistent-file
+/// semantics instead of public keg links)
 pub(super) const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share", "Frameworks"];
 const KEG_ONLY_MARKER: &str = ".mise-keg-only";
 const EMULATED_BREW_VERSION: &str = "6.0.17";
@@ -1142,10 +1143,10 @@ fn finalization_needs_repair(keg: &Path) -> bool {
         .is_none_or(|state| state.phase != FinalizationPhase::Complete)
 }
 
-/// brew-compatible INSTALL_RECEIPT.json so a later-installed real Homebrew
-/// adopts these kegs (brew list/upgrade/uninstall all work). Written for
-/// both poured bottles and source-built kegs; `poured_from_bottle`
-/// distinguishes them the same way brew's own tab does.
+/// Homebrew-compatible INSTALL_RECEIPT.json for a formula whose supported
+/// lifecycle has been fully finalized. Written for both poured bottles and
+/// source-built kegs; `poured_from_bottle` distinguishes them the same way
+/// Homebrew's tab does.
 pub fn write_receipt(
     rf: &ResolvedFormula,
     tag: &str,

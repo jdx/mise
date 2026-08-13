@@ -4,9 +4,10 @@
 //! (/opt/homebrew on arm64 macOS, /home/linuxbrew/.linuxbrew on Linux) —
 //! fetching metadata from formulae.brew.sh, downloading bottles from
 //! ghcr.io, and doing the same relocation/codesigning work `brew` does at
-//! pour time. mise never shells out to brew to pour a bottle; the receipts
-//! it writes are brew-compatible, so a real Homebrew sees mise-poured kegs
-//! as its own.
+//! pour time. mise never shells out to brew to pour a bottle. For supported,
+//! fully finalized lifecycle plans, it writes Homebrew-compatible receipts so
+//! real Homebrew can adopt mise-poured kegs. Unsupported lifecycle vocabulary
+//! fails before mutation.
 //!
 //! Formulae without a usable bottle are built from source, still without
 //! Homebrew: mise provisions a mise-managed ruby and evaluates the formula
