@@ -1,1 +1,7 @@
-target/
+# Exclude build artifacts, but allow the prebuilt mise binary through so the
+# oats acceptance-test image (oats/otel-basic/Dockerfile) can COPY it in.
+# This is a no-op for the release image build, which runs on a clean checkout.
+target/*
+!target/debug
+target/debug/*
+!target/debug/mise
