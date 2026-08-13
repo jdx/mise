@@ -2678,6 +2678,11 @@ Shows outdated tool versions
 See `mise upgrade` to upgrade these versions.
 """#
     after_long_help #"""
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
 Examples:
 
     $ mise outdated
@@ -2697,8 +2702,7 @@ Examples:
     node    20         20.0.0   20.1.0
 
 """#
-    flag "-J --json" help="Output in JSON format"
-    flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
+    flag "-b --bump" help="Compares against the latest versions available, not what matches the current config" {
         long_help #"""
 Compares against the latest versions available, not what matches the current config
 
@@ -2708,6 +2712,8 @@ show other 20.x versions, not 21.x or 22.x versions.
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 """#
     }
+    flag "-J --json" help="Output in JSON format"
+    flag -l help="Deprecated shorthand for --bump" hide=#true
     flag --inactive help="Show outdated tools including installed-but-inactive tools not present in the current config" {
         long_help #"""
 Show outdated tools including installed-but-inactive tools not present in the current config
@@ -3230,6 +3236,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
         arg <REV>
     }
     flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
+    flag --all help="Open the interactive selector with all tasks from the entire monorepo"
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
@@ -4085,6 +4092,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
             arg <REV>
         }
         flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
+        flag --all help="Open the interactive selector with all tasks from the entire monorepo"
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
@@ -4206,7 +4214,8 @@ Default to always show with `MISE_TASK_TIMINGS=1`
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-"""# required=#false default=default
+Defaults to `default` when omitted
+"""# required=#false
         arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true
         arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true
         mount run="mise tasks --usage"
@@ -4558,6 +4567,11 @@ and bump the version in mise.toml.
 This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 """#
     after_long_help #"""
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
 Examples:
 
     # Upgrades node to the latest version matching the range in mise.toml
@@ -4588,15 +4602,7 @@ Examples:
     $ mise upgrade --local
 
 """#
-    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
-    flag "-j --jobs" help=#"""
-Number of jobs to run in parallel
-Values below 1 are treated as 1
-[default: 4]
-"""# {
-        arg <JOBS>
-    }
-    flag "-l --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
+    flag "-b --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
         long_help #"""
 Upgrades to the latest version available, bumping the version in mise.toml
 
@@ -4607,6 +4613,15 @@ It keeps the same precision as what was there before, so if you instead had `nod
 would change your config to `node = "22"`.
 """#
     }
+    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
+    flag "-j --jobs" help=#"""
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+[default: 4]
+"""# {
+        arg <JOBS>
+    }
+    flag -l help="Deprecated shorthand for --bump" hide=#true
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
     flag "-x --exclude" help=#"""
 Tool(s) to exclude from upgrading

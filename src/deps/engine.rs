@@ -10,7 +10,6 @@ use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
 use crate::task::monorepo_scope;
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::style;
@@ -23,6 +22,10 @@ struct ScopedDepsProvider {
     inner: Box<dyn DepsProvider>,
     id: String,
     depends: Vec<String>,
+    scope: String,
+    scoped_ids: HashSet<String>,
+    fallback_ids: HashSet<String>,
+    qualified_fallback_ids: HashMap<String, String>,
 }
 
 impl ScopedDepsProvider {
@@ -56,13 +59,32 @@ impl ScopedDepsProvider {
                 }
             })
             .collect();
-        Self { inner, id, depends }
+        Self {
+            inner,
+            id,
+            depends,
+            scope: scope.to_string(),
+            scoped_ids: scoped_ids.clone(),
+            fallback_ids: fallback_ids.clone(),
+            qualified_fallback_ids: qualified_fallback_ids.clone(),
+        }
     }
 }
 
 impl DepsProvider for ScopedDepsProvider {
     fn base(&self) -> &super::providers::ProviderBase {
         self.inner.base()
+    }
+
+    fn rendered(&self, effective_env: &BTreeMap<String, String>) -> Result<Box<dyn DepsProvider>> {
+        Ok(Box::new(Self::new(
+            self.inner.rendered(effective_env)?,
+            self.id.clone(),
+            &self.scope,
+            &self.scoped_ids,
+            &self.fallback_ids,
+            &self.qualified_fallback_ids,
+        )))
     }
 
     fn id(&self) -> &str {
@@ -160,6 +182,7 @@ pub struct DepsResult {
 struct DepsJob {
     id: String,
     cmd: super::DepsCommand,
+    command_hash: String,
     outputs: Vec<PathBuf>,
     depends: Vec<String>,
     timeout: Option<std::time::Duration>,
@@ -215,19 +238,25 @@ impl DepsEngine {
             .ok_or_else(|| eyre::eyre!("no config file in scope sets monorepo_root = true"))?;
         let mut scoped_providers: Vec<(Box<dyn DepsProvider>, String, String)> = vec![];
         let mut provider_indices: HashMap<String, usize> = HashMap::new();
-        let config_files: Vec<_> = config_files.into_iter().collect();
+        let config_files: Vec<_> = config_files
+            .into_iter()
+            .map(|cf| {
+                let deps_config = cf.deps_config()?;
+                Ok((cf, deps_config))
+            })
+            .collect::<Result<_>>()?;
         let mut disabled_by_root: HashMap<PathBuf, HashSet<String>> = HashMap::new();
 
         // Layered config files share one provider namespace at each config root.
         // Collect disables first so their behavior does not depend on file order.
-        for cf in &config_files {
+        for (cf, deps_config) in &config_files {
             let Some(config_project_root) = cf.project_root() else {
                 continue;
             };
             if !config_project_root.starts_with(&monorepo_root) {
                 continue;
             }
-            if let Some(deps_config) = cf.deps_config() {
+            if let Some(deps_config) = deps_config {
                 disabled_by_root
                     .entry(cf.config_root())
                     .or_default()
@@ -235,14 +264,14 @@ impl DepsEngine {
             }
         }
 
-        for cf in config_files {
+        for (cf, deps_config) in config_files {
             let Some(config_project_root) = cf.project_root() else {
                 continue;
             };
             if !config_project_root.starts_with(&monorepo_root) {
                 continue;
             }
-            let Some(deps_config) = cf.deps_config() else {
+            let Some(deps_config) = deps_config else {
                 continue;
             };
 
@@ -379,7 +408,7 @@ impl DepsEngine {
         // Only include config files that belong to the current project root
         // (skip config files outside the current project root, e.g. from parent directories).
         for cf in config.config_files.values() {
-            let Some(deps_config) = cf.deps_config() else {
+            let Some(deps_config) = cf.deps_config()? else {
                 continue;
             };
 
@@ -497,19 +526,28 @@ impl DepsEngine {
     }
 
     /// Check freshness for a specific provider (public API for --explain)
-    pub fn check_provider_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
-        self.check_freshness(provider)
+    pub fn check_provider_freshness(
+        &self,
+        provider: &dyn DepsProvider,
+        effective_env: &BTreeMap<String, String>,
+    ) -> Result<FreshnessResult> {
+        let provider = provider.rendered(effective_env)?;
+        let command_hash = provider.install_command()?.freshness_hash();
+        self.check_freshness(provider.as_ref(), &command_hash)
     }
 
     /// Check if any auto-enabled provider has stale outputs (without running)
     /// Returns the IDs and reasons of stale providers
-    pub fn check_staleness(&self) -> Vec<(&str, String)> {
+    pub fn check_staleness(&self, effective_env: &BTreeMap<String, String>) -> Vec<(&str, String)> {
         self.providers
             .iter()
             .filter(|p| p.is_auto())
             .filter(|p| matches!(p.applicability(), Applicable))
             .filter_map(|p| {
-                let result = self.check_freshness(p.as_ref());
+                let result = p.rendered(effective_env).and_then(|rendered| {
+                    let command_hash = rendered.install_command()?.freshness_hash();
+                    self.check_freshness(rendered.as_ref(), &command_hash)
+                });
                 match result {
                     Ok(r) if !r.is_fresh() => Some((p.id(), r.reason().to_string())),
                     _ => None,
@@ -520,6 +558,14 @@ impl DepsEngine {
 
     /// Reject explicitly selected providers that cannot run.
     pub fn validate_selection(&self, only: Option<&[String]>, skip: &[String]) -> Result<()> {
+        Self::validate_provider_selection(&self.providers, only, skip)
+    }
+
+    fn validate_provider_selection(
+        providers: &[Box<dyn DepsProvider>],
+        only: Option<&[String]>,
+        skip: &[String],
+    ) -> Result<()> {
         let Some(only) = only else {
             return Ok(());
         };
@@ -527,7 +573,7 @@ impl DepsEngine {
             if skip.contains(id) {
                 continue;
             }
-            let Some(provider) = self.providers.iter().find(|provider| provider.id() == id) else {
+            let Some(provider) = providers.iter().find(|provider| provider.id() == id) else {
                 continue;
             };
             if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
@@ -541,7 +587,7 @@ impl DepsEngine {
     pub async fn run(&self, opts: DepsOptions) -> Result<DepsResult> {
         let mut results = vec![];
 
-        self.validate_selection(opts.only.as_deref(), &opts.skip)?;
+        Self::validate_provider_selection(&self.providers, opts.only.as_deref(), &opts.skip)?;
 
         let is_selected = |provider: &dyn DepsProvider| {
             (!opts.auto_only || provider.is_auto())
@@ -568,6 +614,7 @@ impl DepsEngine {
         let mut candidates: Vec<(DepsJob, String)> = vec![];
         // Track IDs of providers that are fresh/skipped (treated as already satisfied for deps)
         let mut satisfied_ids: HashSet<String> = HashSet::new();
+        let mut providers: Vec<Box<dyn DepsProvider>> = vec![];
 
         for provider in &self.providers {
             let id = provider.id().to_string();
@@ -602,14 +649,16 @@ impl DepsEngine {
                 continue;
             }
 
+            let provider = provider.rendered(&opts.env)?;
+            let cmd = provider.install_command()?;
+            let command_hash = cmd.freshness_hash();
             let freshness = if opts.force {
                 FreshnessResult::Forced
             } else {
-                self.check_freshness(provider.as_ref())?
+                self.check_freshness(provider.as_ref(), &command_hash)?
             };
 
             if !freshness.is_fresh() {
-                let cmd = provider.install_command()?;
                 // Carry both required and optional outputs so session-staleness
                 // can be cleared on whichever paths actually exist after the run.
                 let outputs: Vec<PathBuf> = provider
@@ -625,6 +674,7 @@ impl DepsEngine {
                     DepsJob {
                         id,
                         cmd,
+                        command_hash,
                         outputs,
                         depends,
                         timeout,
@@ -636,6 +686,7 @@ impl DepsEngine {
                 results.push(DepsStepResult::Fresh(id.clone()));
                 satisfied_ids.insert(id);
             }
+            providers.push(provider);
         }
 
         let mut inactive_blocked_ids: HashSet<String> = inactive_ids.keys().cloned().collect();
@@ -683,6 +734,12 @@ impl DepsEngine {
 
         // Run stale providers with dependency ordering
         if !to_run.is_empty() {
+            // Retain the fingerprint of the exact command that will run. Rebuilding
+            // commands after execution could observe a concurrently changed config.
+            let command_hashes: HashMap<String, String> = to_run
+                .iter()
+                .map(|job| (job.id.clone(), job.command_hash.clone()))
+                .collect();
             let has_deps = to_run.iter().any(|j| !j.depends.is_empty());
 
             if has_deps {
@@ -710,7 +767,7 @@ impl DepsEngine {
             // successfully ran provider.
             for step in &results {
                 if let DepsStepResult::Ran(id) = step
-                    && let Some(provider) = self.providers.iter().find(|p| p.id() == id)
+                    && let Some(provider) = providers.iter().find(|p| p.id() == id)
                 {
                     let project_root = &provider.base().project_root;
                     let sources = provider.sources();
@@ -725,6 +782,9 @@ impl DepsEngine {
                         let provider_id = provider.base().id.as_str();
                         st.set_hashes(provider_id, hashes);
                         st.set_seen_outputs(provider_id, seen);
+                        if let Some(command_hash) = command_hashes.get(id) {
+                            st.set_command_hash(provider_id, command_hash.clone());
+                        }
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -986,7 +1046,11 @@ impl DepsEngine {
     ///
     /// Uses blake3 content hashing with persistent state. On first run (no
     /// stored hashes), the provider is always considered stale.
-    pub fn check_freshness(&self, provider: &dyn DepsProvider) -> Result<FreshnessResult> {
+    pub fn check_freshness(
+        &self,
+        provider: &dyn DepsProvider,
+        command_hash: &str,
+    ) -> Result<FreshnessResult> {
         if let DepsProviderApplicability::Inactive(reason) = provider.applicability() {
             return Err(eyre::eyre!(
                 "deps provider '{}' is inactive: {reason}",
@@ -1040,8 +1104,31 @@ impl DepsEngine {
             ));
         }
 
+        // Existing outputs without sources are fresh by definition. Command fingerprints only
+        // invalidate providers whose source state can otherwise be compared across runs.
         if sources.is_empty() {
             return Ok(FreshnessResult::NoSources);
+        }
+
+        match st.get_command_hash(provider_id) {
+            Some(stored_hash) if stored_hash != command_hash => {
+                return Ok(FreshnessResult::Stale(
+                    "provider command changed".to_string(),
+                ));
+            }
+            Some(_) => {}
+            None if st.get_hashes(provider_id).is_some()
+                || st.get_seen_outputs(provider_id).is_some() =>
+            {
+                // State written by mise versions before command hashing cannot prove
+                // that the provider definition is unchanged. Re-run it once to migrate.
+                return Ok(FreshnessResult::Stale(
+                    "provider command changed".to_string(),
+                ));
+            }
+            None => {
+                return Ok(FreshnessResult::Stale("no previous state".to_string()));
+            }
         }
 
         let current_hashes = state::hash_sources(&sources, project_root)?;
@@ -1108,33 +1195,11 @@ impl DepsEngine {
             runner = runner.env(k, v);
         }
 
-        // Apply command-specific environment (can override toolset env)
-        // Render tera templates in env values (e.g., "{{env.baz}}")
-        let has_template_env = cmd.env.values().any(|v| contains_template_syntax(v));
-        let mut tera_state = if has_template_env {
-            let mut tera_ctx = BASE_CONTEXT.clone();
-            // Merge toolset env (which includes [env] directives) into tera context
-            // so templates like "{{env.MY_VAR}}" can resolve config-defined vars
-            let mut env_map = crate::env::PRISTINE_ENV.clone();
-            env_map.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
-            tera_ctx.insert("env", &env_map);
-            Some((get_tera(cmd.cwd.as_deref()), tera_ctx))
-        } else {
-            None
-        };
+        // Apply command-specific environment (can override toolset env).
+        // Config-file templates have already been rendered with that file's
+        // config_root and environment context during provider discovery.
         for (k, v) in &cmd.env {
-            let rendered = if contains_template_syntax(v) {
-                let (tera, tera_ctx) = tera_state
-                    .as_mut()
-                    .expect("tera state should exist for template env values");
-                render_str(tera, v, tera_ctx).unwrap_or_else(|e| {
-                    warn!("failed to render template for deps env {k}: {e}");
-                    v.clone()
-                })
-            } else {
-                v.clone()
-            };
-            runner = runner.env(k, &rendered);
+            runner = runner.env(k, v);
         }
 
         // Use raw output for better UX during dependency installation

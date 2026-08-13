@@ -272,7 +272,7 @@ impl HookEnv {
             }
         }
         ts.notify_if_versions_missing(config).await;
-        crate::deps::notify_if_stale(config);
+        crate::deps::notify_if_stale(config, cur_env);
         Ok(())
     }
 

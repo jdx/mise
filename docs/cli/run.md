@@ -59,6 +59,10 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 
 Output affected projects and tasks as JSON without running tasks
 
+### `--all`
+
+Open the interactive selector with all tasks from the entire monorepo
+
 ### `-c --continue-on-error`
 
 Continue running tasks even if one fails

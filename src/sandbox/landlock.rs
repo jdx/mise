@@ -22,6 +22,13 @@ const SYSTEM_READ_PATHS: &[&str] = &[
     "/home/linuxbrew",
 ];
 
+/// System files that may resolve outside [`SYSTEM_READ_PATHS`].
+///
+/// Landlock rules apply to the resolved file hierarchy. On many Linux systems,
+/// /etc/resolv.conf points into /run, which must not be made broadly readable
+/// because it can contain runtime secrets.
+const SYSTEM_READ_FILES: &[&str] = &["/etc/resolv.conf"];
+
 fn add_read_rule(
     ruleset: landlock::RulesetCreated,
     path: &str,
@@ -90,6 +97,9 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         for path in SYSTEM_READ_PATHS {
             ruleset = add_read_rule(ruleset, path, read_access)?;
         }
+        for path in SYSTEM_READ_FILES {
+            ruleset = add_read_rule(ruleset, path, read_access)?;
+        }
         ruleset = add_read_rule(
             ruleset,
             "/tmp",
@@ -114,6 +124,9 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
     } else if deny_read {
         // Only reads restricted — only handle read access so writes are unaffected
         for path in SYSTEM_READ_PATHS {
+            ruleset = add_read_rule(ruleset, path, read_access)?;
+        }
+        for path in SYSTEM_READ_FILES {
             ruleset = add_read_rule(ruleset, path, read_access)?;
         }
         // /tmp and /dev need read access (not in SYSTEM_READ_PATHS, handled separately)

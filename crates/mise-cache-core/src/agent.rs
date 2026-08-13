@@ -42,6 +42,7 @@ pub enum AgentRequest {
         protocol: u8,
         client_version: String,
     },
+    /// Resolve a blob to a session-verified local CAS path.
     FindBlob {
         digest: CacheDigest,
     },
@@ -88,6 +89,7 @@ pub enum AgentResponse {
         protocol: u8,
         agent_version: String,
     },
+    /// A local CAS path already verified against the requested digest.
     Blob {
         path: Option<PathBuf>,
     },
@@ -169,6 +171,7 @@ struct AtomicAgentStats {
 pub struct CacheAgent {
     cas: LocalCas,
     actions: LocalActionCache,
+    verified_blobs: Arc<Mutex<BTreeMap<CacheDigest, PathBuf>>>,
     version: Arc<str>,
     write_locks: Arc<Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>>,
     action_locks: Arc<Mutex<BTreeMap<CacheDigest, Weak<tokio::sync::Mutex<()>>>>>,
@@ -243,6 +246,7 @@ impl CacheAgent {
         Self {
             cas: LocalCas::new(cache_dir.clone()),
             actions: LocalActionCache::new(cache_dir.clone()),
+            verified_blobs: Arc::new(Mutex::new(BTreeMap::new())),
             version,
             write_locks: Arc::new(Mutex::new(BTreeMap::new())),
             action_locks: Arc::new(Mutex::new(BTreeMap::new())),
@@ -742,7 +746,7 @@ impl CacheAgent {
     ) -> Result<PathBuf> {
         let lock = self.write_lock(digest);
         let _guard = lock.lock().await;
-        if let Some(path) = self.cas.find(digest)? {
+        if let Some(path) = self.find_verified_blob(digest)? {
             return Ok(path);
         }
         let _prefetch_permit = match prefetch_limit {
@@ -753,7 +757,8 @@ impl CacheAgent {
         let temporary = remote
             .get_blob_file(digest, self.remote_staging_dir.as_path())
             .await?;
-        let path = self.cas.store_file(digest, temporary.path())?;
+        let path = self.cas.store_verified_file(digest, temporary.path())?;
+        self.remember_verified_blob(digest, &path);
         self.stats.stores.fetch_add(1, Ordering::Relaxed);
         self.stats
             .stored_bytes
@@ -806,7 +811,7 @@ impl CacheAgent {
     }
 
     async fn find_blob(&self, digest: &CacheDigest) -> Result<AgentResponse> {
-        if let Some(path) = self.cas.find(digest)? {
+        if let Some(path) = self.find_verified_blob(digest)? {
             return Ok(AgentResponse::Blob { path: Some(path) });
         }
         if !self.remote_mode.reads() {
@@ -836,10 +841,11 @@ impl CacheAgent {
         let path = {
             let lock = self.write_lock(digest);
             let _guard = lock.lock().await;
-            if let Some(path) = self.cas.find(digest)? {
+            if let Some(path) = self.find_verified_blob(digest)? {
                 path
             } else {
                 let path = self.cas.store_file(digest, source)?;
+                self.remember_verified_blob(digest, &path);
                 self.stats.stores.fetch_add(1, Ordering::Relaxed);
                 self.stats
                     .stored_bytes
@@ -867,6 +873,28 @@ impl CacheAgent {
             }
         }
         Ok(AgentResponse::Stored { path })
+    }
+
+    fn find_verified_blob(&self, digest: &CacheDigest) -> Result<Option<PathBuf>> {
+        let remembered = self.verified_blobs.lock().unwrap().get(digest).cloned();
+        if let Some(path) = remembered {
+            if digest.matches_file(&path).unwrap_or(false) {
+                return Ok(Some(path));
+            }
+            self.verified_blobs.lock().unwrap().remove(digest);
+        }
+        let path = self.cas.find(digest)?;
+        if let Some(path) = &path {
+            self.remember_verified_blob(digest, path);
+        }
+        Ok(path)
+    }
+
+    fn remember_verified_blob(&self, digest: &CacheDigest, path: &Path) {
+        self.verified_blobs
+            .lock()
+            .unwrap()
+            .insert(digest.clone(), path.to_path_buf());
     }
 
     async fn find_action_result(&self, action: &CacheDigest) -> Result<AgentResponse> {
@@ -1276,6 +1304,23 @@ mod tests {
                 ..AgentStats::default()
             }
         );
+    }
+
+    #[test]
+    fn remembered_blobs_reject_same_size_corruption() {
+        let directory = tempfile::tempdir().unwrap();
+        let agent = CacheAgent::new(directory.path().join("cache"), "test-version");
+        let digest = CacheDigest::blake3(b"cached object");
+        let path = agent.cas.store_bytes(&digest, b"cached object").unwrap();
+        assert_eq!(
+            agent.find_verified_blob(&digest).unwrap(),
+            Some(path.clone())
+        );
+
+        std::fs::write(&path, b"broken object").unwrap();
+
+        assert!(agent.find_verified_blob(&digest).is_err());
+        assert!(!agent.verified_blobs.lock().unwrap().contains_key(&digest));
     }
 
     #[tokio::test]

@@ -569,7 +569,7 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<B
         let mut entry = entry?;
         let entry_path = entry.path()?.into_owned();
         validate_cache_path(&entry_path)?;
-        let mode = entry.header().mode();
+        let mode = entry.header().mode() & 0o7777;
         let entry_type = entry.entry_type();
         let node = if entry_type == EntryType::Directory {
             ArchiveNode::Directory { mode }
@@ -1138,13 +1138,13 @@ mod tests {
         let encoder = zstd::Encoder::new(File::create(&archive_path).unwrap(), 0).unwrap();
         let mut archive = Builder::new(encoder);
         let mut directory_header = Header::new_gnu(EntryType::Directory);
-        directory_header.set_mode(0o755);
+        directory_header.set_mode(0o040755);
         directory_header.set_size(0);
         archive
             .append_data(&mut directory_header, "dist", std::io::empty())
             .unwrap();
         let mut file_header = Header::new_gnu(EntryType::File);
-        file_header.set_mode(0o755);
+        file_header.set_mode(0o100755);
         file_header.set_size(5);
         archive
             .append_data(&mut file_header, "dist/app", b"hello".as_slice())
@@ -1166,6 +1166,7 @@ mod tests {
         let root_directory: RemoteDirectory = serde_json::from_slice(root_bytes).unwrap();
         assert_eq!(root_directory.directories.len(), 1);
         assert_eq!(root_directory.directories[0].name, "dist");
+        assert_eq!(root_directory.directories[0].mode, 0o755);
         let dist_digest = &root_directory.directories[0].digest;
         let dist_bytes = uploads
             .iter()
@@ -1182,6 +1183,7 @@ mod tests {
         assert_eq!(dist.files.len(), 1);
         assert_eq!(dist.files[0].name, "app");
         assert_eq!(dist.files[0].digest, CacheDigest::blake3(b"hello"));
+        assert_eq!(dist.files[0].mode, 0o755);
         assert!(dist.files[0].executable);
     }
 

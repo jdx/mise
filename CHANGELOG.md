@@ -1,5 +1,67 @@
 # Changelog
 
+## [2026.8.5](https://github.com/jdx/mise/compare/v2026.8.4..v2026.8.5) - 2026-08-12
+
+### 🚀 Features
+
+- **(node)** apply patches to the source build by @JamBalaya56562 in [#11850](https://github.com/jdx/mise/pull/11850)
+- **(python)** install pypy on the precompiled path by @JamBalaya56562 in [#11846](https://github.com/jdx/mise/pull/11846)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** apply explicit package type overrides by @Marukome0743 in [#11901](https://github.com/jdx/mise/pull/11901)
+- **(conda)** activate package commands by @Marukome0743 in [#11855](https://github.com/jdx/mise/pull/11855)
+- **(config)** apply ~/.config/mise/config.local.toml over config.toml by @halms in [#11906](https://github.com/jdx/mise/pull/11906)
+- **(config)** preserve tool table formatting by @Marukome0743 in [#11848](https://github.com/jdx/mise/pull/11848)
+- **(e2e)** drop the write sandbox the CI runners cannot provide by @JamBalaya56562 in [#11861](https://github.com/jdx/mise/pull/11861)
+- **(install)** run install hooks from project root by @jdx in [#11857](https://github.com/jdx/mise/pull/11857)
+- **(python)** honor disable_tools for the venv directive by @JamBalaya56562 in [#11885](https://github.com/jdx/mise/pull/11885)
+- **(rust)** reuse external rustup installations by @Marukome0743 in [#11840](https://github.com/jdx/mise/pull/11840)
+- **(task)** invalidate tasks when templates change by @jdx in [#11858](https://github.com/jdx/mise/pull/11858)
+- **(tests)** repair the workspace member tests and run them in CI by @JamBalaya56562 in [#11839](https://github.com/jdx/mise/pull/11839)
+- **(use)** prefer exact releases when pinning by @Marukome0743 in [#11838](https://github.com/jdx/mise/pull/11838)
+- **(vfox)** expose tool options to hooks by @Marukome0743 in [#11884](https://github.com/jdx/mise/pull/11884)
+
+### 📚 Documentation
+
+- **(env)** clarify _.source PATH handling by @jdx in [#11889](https://github.com/jdx/mise/pull/11889)
+- **(task)** fix boolean flag usage examples by @Marukome0743 in [#11887](https://github.com/jdx/mise/pull/11887)
+
+### ⚡ Performance
+
+- **(cache)** parallelize remote artifact prefetch by @jdx in [#11905](https://github.com/jdx/mise/pull/11905)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to ac993ba by @renovate[bot] in [#11869](https://github.com/jdx/mise/pull/11869)
+- update docker/login-action digest to dbcb813 by @renovate[bot] in [#11867](https://github.com/jdx/mise/pull/11867)
+- update ghcr.io/jdx/mise:alpine docker digest to 619103b by @renovate[bot] in [#11868](https://github.com/jdx/mise/pull/11868)
+- update ghcr.io/jdx/mise:rpm docker digest to 343bdfd by @renovate[bot] in [#11870](https://github.com/jdx/mise/pull/11870)
+- update rust crate ignore to v0.4.32 by @renovate[bot] in [#11875](https://github.com/jdx/mise/pull/11875)
+- update ubuntu docker tag to resolute-20260724.1 by @renovate[bot] in [#11876](https://github.com/jdx/mise/pull/11876)
+- update node.js to v24.19.0 by @renovate[bot] in [#11893](https://github.com/jdx/mise/pull/11893)
+- update rust crate base64 to v0.23.1 by @renovate[bot] in [#11890](https://github.com/jdx/mise/pull/11890)
+- update ubuntu:26.04 docker digest to 678c655 by @renovate[bot] in [#11872](https://github.com/jdx/mise/pull/11872)
+- update rust crate ignore to v0.4.33 by @renovate[bot] in [#11894](https://github.com/jdx/mise/pull/11894)
+- update zizmorcore/zizmor-action action to v0.6.2 by @renovate[bot] in [#11892](https://github.com/jdx/mise/pull/11892)
+- update rust crate aho-corasick to v1.1.5 by @renovate[bot] in [#11874](https://github.com/jdx/mise/pull/11874)
+- update rust crate globset to v0.4.20 by @renovate[bot] in [#11891](https://github.com/jdx/mise/pull/11891)
+- update jdx/mise-action digest to 7e36c90 by @renovate[bot] in [#11871](https://github.com/jdx/mise/pull/11871)
+- update rust crate rmcp to v3.1.0 by @renovate[bot] in [#11895](https://github.com/jdx/mise/pull/11895)
+- update jdx/mise-action action to v4.2.4 by @renovate[bot] in [#11873](https://github.com/jdx/mise/pull/11873)
+- update dependency markdown-it to v15 by @renovate[bot] in [#11900](https://github.com/jdx/mise/pull/11900)
+- update dependency js-toml to v2 by @renovate[bot] in [#11899](https://github.com/jdx/mise/pull/11899)
+- update rust crate comfy-table to v8 by @renovate[bot] in [#11913](https://github.com/jdx/mise/pull/11913)
+
+### 📦 Registry
+
+- use aqua for helmsman by @scop in [#11908](https://github.com/jdx/mise/pull/11908)
+
+### Chore
+
+- **(ci)** handle exhausted GitHub tokens by @Marukome0743 in [#11898](https://github.com/jdx/mise/pull/11898)
+- **(ci)** keep SwiftPM source coverage mandatory by @jdx in [#11911](https://github.com/jdx/mise/pull/11911)
+
 ## [2026.8.4](https://github.com/jdx/mise/compare/v2026.8.3..v2026.8.4) - 2026-08-10
 
 ### 🚀 Features

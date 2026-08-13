@@ -384,22 +384,12 @@ impl JavaPlugin {
             .collect();
         Ok(metadata)
     }
-}
 
-#[async_trait]
-impl Backend for JavaPlugin {
-    fn ba(&self) -> &Arc<BackendArg> {
-        &self.ba
-    }
-
-    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &["release_type"]
-    }
-
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let release_type = JavaOptions::new(&raw_opts).release_type().to_string();
-
+    async fn list_remote_versions_for_options(
+        &self,
+        opts: &ToolVersionOptions,
+    ) -> Result<Vec<VersionInfo>> {
+        let release_type = JavaOptions::new(opts).release_type().to_string();
         let versions = self
             .fetch_java_metadata(&release_type)
             .await?
@@ -457,18 +447,42 @@ impl Backend for JavaPlugin {
 
         Ok(versions)
     }
+}
+
+#[async_trait]
+impl Backend for JavaPlugin {
+    fn ba(&self) -> &Arc<BackendArg> {
+        &self.ba
+    }
+
+    fn include_prereleases(&self, _opts: &ToolVersionOptions) -> bool {
+        // Java selects early-access metadata with `release_type = "ea"`; the
+        // unrelated generic `prerelease` option has never applied here.
+        false
+    }
+
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["release_type"]
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        self.list_remote_versions_for_options(&raw_opts).await
+    }
 
     /// Override to bypass the shared remote_versions cache since Java has
     /// separate caches for GA and EA release types in `fetch_java_metadata`.
-    /// The override is on `_with_refresh` so install-time refresh paths also
-    /// reach the GA/EA-aware logic; the underlying fetch already handles
-    /// freshness, so the `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_with_refresh(
+    /// The underlying fetch already handles freshness, so the `_refresh` flag
+    /// is irrelevant.
+    async fn list_remote_versions_with_info_and_options(
         &self,
-        config: &Arc<Config>,
+        _config: &Arc<Config>,
+        _listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
         _refresh: bool,
+        _has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
-        self._list_remote_versions(config).await
+        self.list_remote_versions_for_options(selection_opts).await
     }
 
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {

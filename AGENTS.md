@@ -199,6 +199,13 @@ All commit messages and PR titles MUST follow conventional commit format:
 3. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
 4. Never run e2e tests by executing them directly - always use the mise task
 
+### hk Agent Workflow
+
+- Prefer the hk MCP server for effect-aware plans, checks, fixes, logs, and captured diffs.
+- When invoking hk directly, use `hk run check --safe --format json` for a complete machine-readable result or `--format jsonl` for streaming lifecycle events.
+- Scope checks to changed files. For an exact file list, pass NUL-delimited paths with `--files0-from`; use `--cd` to target another project directory.
+- Never run a command classified as unknown or destructive without explicit user approval. Review the resulting diff after fixes.
+
 ### Dependency Updates
 
 - Use the lowest-specificity dependency requirement that expresses compatibility in `Cargo.toml` (for example, prefer `"1"` over `"1.2.3"`, and `"0.12"` over `"0.12.1"` for a pre-1.0 crate).

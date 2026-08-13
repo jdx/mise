@@ -7,10 +7,11 @@ use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_no_shims};
 use crate::lock_file::LockFile;
+use crate::registry::tool_enabled;
 use crate::toolset::Toolset;
 use crate::{backend, plugins};
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -34,6 +35,22 @@ pub(crate) struct PythonVenvOptions {
     pub(crate) uv_create_args: Option<Vec<String>>,
     pub(crate) python_create_args: Option<Vec<String>>,
     pub(crate) require_uv: bool,
+}
+
+/// Whether `_.python.venv` should do anything, given the tool allow/deny settings.
+///
+/// The directive exists to put a python on PATH, so turning python off has to turn it off too —
+/// otherwise `mise which python` reports the tool as absent while `VIRTUAL_ENV` and the venv's
+/// bin directory are still exported, which is the state #4690 reported.
+///
+/// Goes through the same [`tool_enabled`] every other consumer of these settings uses, so the
+/// allowlist form is covered as well: `enable_tools = ["node"]` leaves python out, and the venv
+/// stops with it.
+fn python_venv_enabled(
+    enable_tools: Option<&BTreeSet<String>>,
+    disable_tools: &BTreeSet<String>,
+) -> bool {
+    tool_enabled(enable_tools, disable_tools, &"python".to_string())
 }
 
 pub(crate) fn load_venv(
@@ -219,6 +236,14 @@ impl EnvResults {
         mut options: PythonVenvOptions,
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
+        let settings = Settings::get();
+        if !python_venv_enabled(settings.enable_tools().as_ref(), &settings.disable_tools()) {
+            // Before the creation branch as well as the activation one: with python turned off the
+            // venv would fail to build anyway, and "declined to run" is a different thing from
+            // "tried and could not".
+            debug!("python venv skipped: the python tool is disabled");
+            return Ok(());
+        }
         trust_check(ctx.source)?;
         let venv = ctx.parse_template(&path)?;
         let venv = ctx.normalize_path(venv.into());
@@ -342,5 +367,34 @@ mod tests {
         ]
         "#
         );
+    }
+}
+
+// Separate from `tests` above because that module is unix-only and these are not: the gate is
+// plain set arithmetic, and it is worth running everywhere the gate runs.
+#[cfg(test)]
+mod venv_enabled_tests {
+    use super::*;
+
+    fn set(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn disable_tools_turns_the_venv_off() {
+        assert!(!python_venv_enabled(None, &set(&["python"])));
+        // an unrelated tool being disabled changes nothing
+        assert!(python_venv_enabled(None, &set(&["node"])));
+        assert!(python_venv_enabled(None, &set(&[])));
+    }
+
+    #[test]
+    fn enable_tools_is_an_allowlist_and_covers_the_venv_too() {
+        // the non-obvious half: an allowlist that omits python disables the venv, even though
+        // nothing named python appears in `disable_tools`
+        assert!(!python_venv_enabled(Some(&set(&["node"])), &set(&[])));
+        assert!(python_venv_enabled(Some(&set(&["python"])), &set(&[])));
+        // an empty allowlist is "no tools at all", not "no opinion"
+        assert!(!python_venv_enabled(Some(&set(&[])), &set(&[])));
     }
 }

@@ -120,10 +120,26 @@ struct LockTaskResult {
     status: LockTaskStatus,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 enum LockTaskStatus {
     Updated,
     Unresolved,
+    Failed,
     ProvenanceFailed,
+}
+
+fn classify_lock_result(
+    resolution_error: Option<String>,
+    error_is_fatal: bool,
+    applied: bool,
+) -> (LockTaskStatus, Option<String>) {
+    if let Some(error) = resolution_error.filter(|_| error_is_fatal) {
+        (LockTaskStatus::Failed, Some(error))
+    } else if applied {
+        (LockTaskStatus::Updated, None)
+    } else {
+        (LockTaskStatus::Unresolved, None)
+    }
 }
 
 impl Lock {
@@ -179,7 +195,7 @@ impl Lock {
         let lockfile_targets =
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
         let mut has_lock_targets = false;
-        let mut all_provenance_errors: Vec<String> = Vec::new();
+        let mut all_resolution_errors: Vec<String> = Vec::new();
         let mut all_platform_regressions: Vec<String> = Vec::new();
         let mut all_changes: Vec<LockChange> = Vec::new();
 
@@ -315,10 +331,10 @@ impl Lock {
             // compare against old version entries. Actual pruning happens after.
             let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
 
-            let (results, provenance_errors) = self
+            let (results, resolution_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
-            all_provenance_errors.extend(provenance_errors);
+            all_resolution_errors.extend(resolution_errors);
 
             let platform_regressions =
                 self.platform_regression_errors(&lockfile, &stale_versions, &results);
@@ -331,7 +347,7 @@ impl Lock {
             self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
 
-            // Save lockfile before raising provenance errors so non-regressing
+            // Save lockfile before raising resolution errors so non-regressing
             // tools' entries are preserved
             lockfile.write(lockfile_path)?;
 
@@ -402,7 +418,7 @@ impl Lock {
             miseprintln!("{}", serde_json::to_string_pretty(&all_changes)?);
         }
 
-        all_platform_regressions.extend(all_provenance_errors);
+        all_platform_regressions.extend(all_resolution_errors);
         if !all_platform_regressions.is_empty() {
             return Err(eyre::eyre!(all_platform_regressions.join("\n")));
         }
@@ -1119,10 +1135,10 @@ impl Lock {
         }
 
         // Collect all results
-        // Defer provenance errors until after all results are applied so unaffected
+        // Defer resolution errors until after all results are applied so unaffected
         // tools' entries aren't lost.
         let mut completed = 0;
-        let mut provenance_errors: Vec<String> = Vec::new();
+        let mut resolution_errors: Vec<String> = Vec::new();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -1130,15 +1146,16 @@ impl Lock {
                     let short = resolution.0.clone();
                     let version = resolution.1.clone();
                     let platform_key = resolution.3.to_key();
-                    let ok = resolution.4.is_ok();
-                    if let Err(msg) = &resolution.4 {
+                    let resolution_error = resolution.4.as_ref().err().cloned();
+                    if let Some(msg) = &resolution_error {
                         debug!("{msg}");
                     }
+                    let error_is_fatal = resolution.8;
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
                         Err(e) => {
-                            provenance_errors.push(e.to_string());
+                            resolution_errors.push(e.to_string());
                             results.push(LockTaskResult {
                                 short,
                                 version,
@@ -1149,16 +1166,19 @@ impl Lock {
                         // A resolution that wrote nothing is a skip, not an
                         // update — backends that can't resolve metadata without
                         // installing return empty info rather than an error.
-                        Ok(applied) => results.push(LockTaskResult {
-                            short,
-                            version,
-                            platform: platform_key,
-                            status: if ok && applied {
-                                LockTaskStatus::Updated
-                            } else {
-                                LockTaskStatus::Unresolved
-                            },
-                        }),
+                        Ok(applied) => {
+                            let (status, resolution_error) =
+                                classify_lock_result(resolution_error, error_is_fatal, applied);
+                            if let Some(error) = resolution_error {
+                                resolution_errors.push(error);
+                            }
+                            results.push(LockTaskResult {
+                                short,
+                                version,
+                                platform: platform_key,
+                                status,
+                            });
+                        }
                     }
                 }
                 Err(e) => {
@@ -1174,7 +1194,7 @@ impl Lock {
             .count();
         pr.finish_with_message(format!("{} platform entries", updated));
 
-        Ok((results, provenance_errors))
+        Ok((results, resolution_errors))
     }
 }
 
@@ -1195,9 +1215,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{Lock, LockTaskResult, LockTaskStatus};
+    use super::{Lock, LockTaskResult, LockTaskStatus, classify_lock_result};
     use crate::cli::args::ToolArg;
-    use crate::lockfile::{Lockfile, PlatformInfo};
+    use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
+    use crate::platform::Platform;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
     use std::collections::BTreeMap;
     use std::str::FromStr;
@@ -1234,6 +1255,64 @@ mod tests {
             },
         );
         lockfile
+    }
+
+    #[test]
+    fn test_resolution_error_is_fatal_instead_of_skipped() {
+        let error = "conda solve failed".to_string();
+        let (status, returned_error) = classify_lock_result(Some(error.clone()), true, false);
+
+        assert_eq!(status, LockTaskStatus::Failed);
+        assert_eq!(returned_error, Some(error));
+    }
+
+    #[test]
+    fn test_conda_package_resolution_error_is_fatal_and_not_applied() {
+        let error = "failed to resolve conda packages".to_string();
+        let resolution = (
+            "ffmpeg".to_string(),
+            "7.1.1".to_string(),
+            "conda:ffmpeg".to_string(),
+            Platform::parse("linux-x64").unwrap(),
+            Err(error.clone()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            true,
+        );
+        let mut lockfile = Lockfile::default();
+        let resolution_error = resolution.4.as_ref().err().cloned();
+        let error_is_fatal = resolution.8;
+
+        let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
+        let (status, returned_error) =
+            classify_lock_result(resolution_error, error_is_fatal, applied);
+
+        assert_eq!(status, LockTaskStatus::Failed);
+        assert_eq!(returned_error, Some(error));
+        assert!(!lockfile.tools().contains_key("ffmpeg"));
+        assert!(
+            lockfile
+                .get_conda_package("linux-x64", "incomplete-package")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_empty_success_remains_an_unsupported_platform_skip() {
+        let (status, returned_error) = classify_lock_result(None, false, false);
+
+        assert_eq!(status, LockTaskStatus::Unresolved);
+        assert_eq!(returned_error, None);
+    }
+
+    #[test]
+    fn test_nonfatal_resolution_error_remains_an_unsupported_platform_skip() {
+        let (status, returned_error) =
+            classify_lock_result(Some("no URL for target".to_string()), false, false);
+
+        assert_eq!(status, LockTaskStatus::Unresolved);
+        assert_eq!(returned_error, None);
     }
 
     fn lockfile_with_legacy_aqua_jq() -> Lockfile {
@@ -1440,6 +1519,43 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("failed to resolve dummy@2.0.0 for linux-x64"));
         assert!(errors[0].contains("locked version(s) 1.0.0"));
+    }
+
+    #[test]
+    fn test_platform_regression_rejects_empty_stub_version_bump() {
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy();
+        let resolution = (
+            "dummy".to_string(),
+            "2.0.0".to_string(),
+            "asdf:dummy".to_string(),
+            Platform::parse("linux-x64").unwrap(),
+            Ok(PlatformInfo::default()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            false,
+        );
+
+        let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
+        let (status, error) = classify_lock_result(None, false, applied);
+        assert!(!applied);
+        assert_eq!(status, LockTaskStatus::Unresolved);
+        assert!(error.is_none());
+
+        let stale_versions = BTreeMap::from([("dummy".to_string(), vec!["1.0.0".to_string()])]);
+        let results = vec![LockTaskResult {
+            short: "dummy".to_string(),
+            version: "2.0.0".to_string(),
+            platform: "linux-x64".to_string(),
+            status,
+        }];
+
+        assert_eq!(
+            cmd.platform_regression_errors(&lockfile, &stale_versions, &results)
+                .len(),
+            1
+        );
     }
 
     #[test]

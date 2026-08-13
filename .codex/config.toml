@@ -1,3 +1,7 @@
 
 [features]
 hooks = true
+
+[mcp_servers.hk]
+command = "hk"
+args = ["mcp", "--root", "."]
