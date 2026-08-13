@@ -422,7 +422,9 @@ Both `mise.toml` and `.tool-versions` support "scopes" which modify the behavior
   mise stores the forward-slash form either way, but mind the TOML quoting: a backslash is an
   escape inside a _basic_ (double-quoted) string, so write `{ path = 'C:\tools\node' }` as a
   literal string, or double them as `"C:\\tools\\node"`. `"C:\tools\node"` is not rejected — TOML
-  reads `\t` as a tab — so the path silently becomes something else.
+  reads `\t` as a tab — so the path silently becomes something else. A path containing a `cmd.exe`
+  metacharacter (`& | < > ^ %`) is rejected there, since the path is passed to tool plugins that
+  build shell commands with it; `%` in particular is not a literal.
 - `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - resolves `ORIG_VERSION`, subtracts the numeric components
   in `PARTIAL_VERSION` from the corresponding resolved version components, then resolves the result
   as a version prefix. For example, `sub-2:lts` resolves `lts` and subtracts 2 from its major
