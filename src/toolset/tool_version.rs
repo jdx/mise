@@ -282,6 +282,7 @@ impl ToolVersion {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
+            prefer_exact_version: false,
             before_date: base_opts.before_date,
             before_date_from_default: base_opts.before_date_from_default,
             filter_installed_versions_by_release_date: base_opts
@@ -365,14 +366,20 @@ impl ToolVersion {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
         let settings = Settings::get();
-        if settings.locked
+        let tool_config_locked = config.tool_config_locked(request.source());
+        if (settings.locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
             && !has_linked_version(request.ba())
             && request.source().path().is_some()
         {
+            let hint = if tool_config_locked && !settings.locked {
+                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
+            } else {
+                "Run `mise install` without --locked to update the lockfile"
+            };
             bail!(
-                "{}@{} is not in the lockfile\nhint: Run `mise install` without --locked to update the lockfile",
+                "{}@{} is not in the lockfile\nhint: {hint}",
                 request.ba().short,
                 request.version()
             );
@@ -492,14 +499,37 @@ impl ToolVersion {
             // through to normal resolution, which still matches the literal
             // channel name in the backend's version list as before.
         }
-        if !opts.latest_versions {
-            let matches = backend.list_installed_versions_matching(&v);
+        let installed_matches =
+            (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
+        if installed_matches
+            .as_ref()
+            .is_some_and(|matches| matches.contains(&v))
+        {
+            return build(v);
+        }
+
+        let mut pin_remote_matches = None;
+        if opts.prefer_exact_version && !is_offline && !crate::semver::is_npm_semver_range_query(&v)
+        {
+            // Pinning must prove that the exact release exists before it
+            // bypasses an installed fuzzy match. Some backend exact resolvers
+            // only validate syntax and defer existence checks to installation.
+            let matches = backend
+                .list_versions_matching_with_opts(config, &v, None, opts.refresh_remote_versions)
+                .await?;
             if matches.contains(&v) {
                 return build(v);
             }
-            if !should_filter_installed_versions && let Some(v) = matches.last() {
-                return build(v.clone());
+            if opts.before_date.is_none() {
+                pin_remote_matches = Some(matches);
             }
+        }
+        if !should_filter_installed_versions
+            && let Some(v) = installed_matches
+                .as_ref()
+                .and_then(|matches| matches.last())
+        {
+            return build(v.clone());
         }
         if matches!(
             request.source(),
@@ -566,14 +596,19 @@ impl ToolVersion {
             return build(v);
         }
         // First try with date filter (common case)
-        let matches = backend
-            .list_versions_matching_with_opts(
-                config,
-                &v,
-                opts.before_date,
-                opts.refresh_remote_versions,
-            )
-            .await?;
+        let matches = match pin_remote_matches {
+            Some(matches) => matches,
+            None => {
+                backend
+                    .list_versions_matching_with_opts(
+                        config,
+                        &v,
+                        opts.before_date,
+                        opts.refresh_remote_versions,
+                    )
+                    .await?
+            }
+        };
         if matches.contains(&v) {
             return build(v);
         }
@@ -773,6 +808,8 @@ impl Hash for ToolVersion {
 pub struct ResolveOptions {
     pub latest_versions: bool,
     pub use_locked_version: bool,
+    /// Prefer an exact remote release over a fuzzy installed match.
+    pub prefer_exact_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
     /// `before_date` came from the built-in default release age rather than
@@ -799,6 +836,7 @@ impl Default for ResolveOptions {
         Self {
             latest_versions: false,
             use_locked_version: true,
+            prefer_exact_version: false,
             before_date: None,
             before_date_from_default: false,
             filter_installed_versions_by_release_date: false,
@@ -898,6 +936,9 @@ impl Display for ResolveOptions {
         }
         if self.use_locked_version {
             opts.push("use_locked_version".to_string());
+        }
+        if self.prefer_exact_version {
+            opts.push("prefer_exact_version".to_string());
         }
         if let Some(ts) = &self.before_date {
             if self.before_date_from_default {

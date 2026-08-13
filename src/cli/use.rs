@@ -105,8 +105,11 @@ pub struct Use {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
-    /// Save exact version to config file
-    /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
+    /// Save the resolved concrete version to the config file
+    ///
+    /// If the request exactly matches an available release, that release is preferred over
+    /// installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
+    /// e.g.: `mise use --pin node@20` will save the resolved `20.x.y` version
     /// Set `MISE_PIN=1` to make this the default behavior
     ///
     /// Consider using mise.lock as a better alternative to pinning in mise.toml:
@@ -145,9 +148,11 @@ impl Use {
             .build(&config)
             .await?;
         let cf = self.get_config_file().await?;
+        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
+            prefer_exact_version: pin,
             before_date: self.get_before_date()?,
             before_date_from_default: false,
             filter_installed_versions_by_release_date: false,
@@ -191,8 +196,6 @@ impl Use {
                 },
             )
             .await?;
-
-        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
         for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl

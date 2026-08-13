@@ -1619,9 +1619,10 @@ impl Bootstrap {
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
         run::Run {
-            task: task.into(),
+            task: Some(task.into()),
             args: vec![],
             args_last: vec![],
+            all: false,
             affected: false,
             affected_base: None,
             affected_head: None,

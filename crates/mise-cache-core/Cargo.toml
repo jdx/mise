@@ -12,9 +12,11 @@ base64 = "0.23"
 blake3 = "1"
 eyre = "0.6"
 fslock = "0.2"
+futures-util = "0.3"
 hex = "0.4"
 log = "0.4"
 rand = "0.10"
+reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "stream",
@@ -31,7 +33,7 @@ url = "2"
 
 [dev-dependencies]
 mockito = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 
 [features]
 default = ["rustls"]

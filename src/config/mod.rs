@@ -39,7 +39,7 @@ use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_ter
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
-    ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -111,6 +111,27 @@ pub fn is_loaded() -> bool {
 }
 
 impl Config {
+    /// Whether the config root that owns this tool request opted it into strict
+    /// lockfile enforcement. Non-config sources remain governed only by the
+    /// invocation-wide `locked` setting/flag.
+    pub fn tool_config_locked(&self, source: &ToolSource) -> bool {
+        let ToolSource::MiseToml(path) = source else {
+            return false;
+        };
+        let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
+            return false;
+        };
+        // The global config root defaults to $HOME, which can also be the
+        // config_root of a local config stored directly in $HOME. Keep those
+        // conceptual roots separate even when their path values coincide.
+        let is_global = is_global_config(path);
+        self.config_files.values().any(|cf| {
+            is_global_config(cf.get_path()) == is_global
+                && cf.config_root() == root
+                && cf.tool_config().locked
+        })
+    }
+
     pub async fn get() -> Result<Arc<Self>> {
         if let Some(config) = &*_CONFIG.read().unwrap() {
             return Ok(config.clone());
@@ -625,7 +646,10 @@ impl Config {
     /// `None` matches any existing directory and is used for lockfile migration
     /// and routing. `Some(filenames)` requires a recognized config or idiomatic
     /// version file and is used for full monorepo union/task loading.
-    fn monorepo_config_root_dirs(&self, filenames: Option<&[String]>) -> Result<Vec<PathBuf>> {
+    pub(crate) fn monorepo_config_root_dirs(
+        &self,
+        filenames: Option<&[String]>,
+    ) -> Result<Vec<PathBuf>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
         let monorepo_root = monorepo_config
@@ -1701,6 +1725,7 @@ fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
     files
         .iter()
         .find(|p| !is_tool_versions_file(p) && !is_conf_d_file(p))
+        .or_else(|| files.iter().find(|p| is_tool_versions_file(p)))
         .or_else(|| files.first())
 }
 
@@ -1823,8 +1848,9 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         })
         .collect::<Vec<_>>();
 
-    config_files.extend(global_config_files());
-    config_files.extend(system_config_files());
+    // rev: these groups are lowest-first, this list is highest-first
+    config_files.extend(global_config_files().into_iter().rev());
+    config_files.extend(system_config_files().into_iter().rev());
 
     config_files
         .into_iter()
@@ -2067,9 +2093,9 @@ pub async fn load_config_hierarchy_from_dir(
         })
         .collect::<Vec<_>>();
 
-    // Add global and system configs
-    config_files.extend(global_config_files());
-    config_files.extend(system_config_files());
+    // rev: these groups are lowest-first, this list is highest-first
+    config_files.extend(global_config_files().into_iter().rev());
+    config_files.extend(system_config_files().into_iter().rev());
 
     let paths = config_files
         .into_iter()
@@ -2209,13 +2235,12 @@ pub fn global_config_files() -> IndexSet<PathBuf> {
     if let Some(global_config_file) = &*env::MISE_GLOBAL_CONFIG_FILE {
         return vec![global_config_file.clone()].into_iter().collect();
     }
-    let mut config_files = IndexSet::new();
+    let mut config_files: IndexSet<PathBuf> = config_files_from_dir(&dirs::CONFIG);
     if !*env::MISE_USE_TOML {
         // only add ~/.tool-versions if MISE_CONFIG_FILE is not set
         // because that's how the user overrides the default
         config_files.insert(dirs::HOME.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str()));
     };
-    config_files.extend(config_files_from_dir(&dirs::CONFIG));
     *g = Some(config_files.clone());
     config_files
 }
@@ -2248,6 +2273,8 @@ static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     filenames
 });
 
+/// Config files in a global/system config dir, lowest precedence first: `conf.d`,
+/// then `config.toml`/`mise.toml`, then the `.local` variants.
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
     for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {

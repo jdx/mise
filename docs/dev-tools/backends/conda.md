@@ -6,6 +6,11 @@ Anaconda channels without needing conda or mamba installed.
 This backend fetches pre-built packages from the anaconda.org API and extracts them directly,
 making it a lightweight way to install conda packages as standalone CLI tools.
 
+Commands from the selected package run inside that package's isolated conda prefix. mise sets
+`CONDA_PREFIX`, adds the prefix's executable directories for the command process, and applies
+`etc/conda/activate.d` scripts before starting it. This lets a command use its packaged runtime
+dependencies without adding dependency commands to your interactive shell's `PATH`.
+
 The code for this is inside the mise repository at [`./src/backend/conda.rs`](https://github.com/jdx/mise/blob/main/src/backend/conda.rs).
 
 ## Dependencies

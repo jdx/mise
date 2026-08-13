@@ -9,8 +9,9 @@ use crate::hash::{file_hash_blake3, hash_to_str};
 
 /// Persistent state for deps freshness checking.
 ///
-/// Stores blake3 content hashes of source files keyed by provider ID, plus the
-/// set of optional output paths that existed at the last successful run.
+/// Stores blake3 content hashes of source files and effective commands keyed by
+/// provider ID, plus the set of optional output paths that existed at the last
+/// successful run.
 /// Persisted to `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DepsState {
@@ -22,6 +23,9 @@ pub struct DepsState {
     /// output that was previously present has been deleted.
     #[serde(default)]
     pub seen_outputs: BTreeMap<String, Vec<String>>,
+    /// provider_id → blake3 hash of the effective command
+    #[serde(default)]
+    pub command_hashes: BTreeMap<String, String>,
 }
 
 impl DepsState {
@@ -74,6 +78,16 @@ impl DepsState {
     /// Record optional outputs that exist after a successful run.
     pub fn set_seen_outputs(&mut self, provider_id: &str, outputs: Vec<String>) {
         self.seen_outputs.insert(provider_id.to_string(), outputs);
+    }
+
+    /// Get the effective command hash recorded after the last successful run.
+    pub fn get_command_hash(&self, provider_id: &str) -> Option<&str> {
+        self.command_hashes.get(provider_id).map(String::as_str)
+    }
+
+    /// Record the effective command hash after a successful run.
+    pub fn set_command_hash(&mut self, provider_id: &str, hash: String) {
+        self.command_hashes.insert(provider_id.to_string(), hash);
     }
 }
 
@@ -143,4 +157,38 @@ fn state_path(project_root: &Path) -> PathBuf {
     dirs::STATE
         .join("deps")
         .join(format!("{}.toml", hash_to_str(&project_root)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_state_without_command_hashes_is_supported() {
+        let state: DepsState = toml::from_str(
+            r#"
+                [providers.example]
+                input = "hash"
+
+                [seen_outputs]
+                example = ["output"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(state.get_hashes("example").unwrap()["input"], "hash");
+        assert_eq!(state.get_seen_outputs("example").unwrap(), &["output"]);
+        assert_eq!(state.get_command_hash("example"), None);
+    }
+
+    #[test]
+    fn command_hashes_round_trip() {
+        let mut state = DepsState::default();
+        state.set_command_hash("example", "digest".to_string());
+
+        let serialized = toml::to_string(&state).unwrap();
+        assert!(!serialized.contains("run command"));
+        let restored: DepsState = toml::from_str(&serialized).unwrap();
+        assert_eq!(restored.get_command_hash("example"), Some("digest"));
+    }
 }

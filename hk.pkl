@@ -1,5 +1,5 @@
-amends "package://github.com/jdx/hk/releases/download/v1.44.3/hk@1.44.3#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.44.3/hk@1.44.3#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Builtins.pkl"
 
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
 local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script", "**/*.py", "**/*.xsh")
@@ -7,7 +7,10 @@ local linters = new Mapping<String, Step> {
     ["schema"] {
         glob = List("schema/**/*.json")
         stdin = "{{ files_list | join(sep='\u{0}') }}"
-        check = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
+        check = new CommandSpec {
+          command = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
+          effect = "read"
+        }
         check_first = false
     }
     // uses builtin prettier linter config; run via `mise x` so hk picks up
@@ -16,9 +19,18 @@ local linters = new Mapping<String, Step> {
     ["prettier"] = (Builtins.prettier) {
       batch = false
       exclude = "vendor/aqua-registry/**"
-      check = "mise x prettier -- prettier --check {{ files }}"
-      check_list_files = "mise x prettier -- prettier --list-different {{ files }}"
-      fix = "mise x prettier -- prettier --write {{ files }}"
+      check = new CommandSpec {
+        command = "mise x prettier -- prettier --check {{ files }}"
+        effect = "read"
+      }
+      check_list_files = new CommandSpec {
+        command = "mise x prettier -- prettier --list-different {{ files }}"
+        effect = "read"
+      }
+      fix = new CommandSpec {
+        command = "mise x prettier -- prettier --write {{ files }}"
+        effect = "write"
+      }
       depends = List("schema")
     }
     //["clippy"] = (Builtins.cargo_clippy) {
@@ -27,27 +39,47 @@ local linters = new Mapping<String, Step> {
     //}
     ["cargo-fmt"] {
       glob = List("**/*.rs")
-      check = "cargo fmt --all -- --check"
-      fix = "cargo fmt --all"
+      check = new CommandSpec {
+        command = "cargo fmt --all -- --check"
+        effect = "read"
+      }
+      fix = new CommandSpec {
+        command = "cargo fmt --all"
+        effect = "write"
+      }
     }
     ["cargo-check"] = (Builtins.cargo_check) {
-      check = "cargo check --all-features"
+      check = new CommandSpec {
+        command = "cargo check --all-features"
+        effect = "write"
+      }
     }
     ["shellcheck"] = (Builtins.shellcheck) {
+      match_any = null
       glob = bash_glob
       exclude = bash_exclude
       batch = true
-      check = "shellcheck -x {{ files }}"
+      check = new CommandSpec {
+        command = "shellcheck -x {{ files }}"
+        effect = "read"
+      }
     }
     ["shfmt"] = (Builtins.shfmt) {
-      check_list_files = """
+      match_any = null
+      check_list_files = new CommandSpec {
+        command = """
 files=$(shfmt -l -s {{ files }})
 if [ -n "$files" ]; then
   echo "$files"
   exit 1
 fi
 """
-      fix = "shfmt -w -s {{ files }}"
+        effect = "read"
+      }
+      fix = new CommandSpec {
+        command = "shfmt -w -s {{ files }}"
+        effect = "write"
+      }
       glob = bash_glob
       exclude = bash_exclude
     }
@@ -55,35 +87,62 @@ fi
     // uses custom pkl linter config
     ["pkl"] {
         glob = "**/*.pkl"
-        check = "pkl eval {{files}} >/dev/null"
+        check = new CommandSpec {
+          command = "pkl eval {{files}} >/dev/null"
+          effect = "write"
+        }
     }
 
     // uses taplo for TOML formatting and validation
     ["taplo"] {
         glob = List("**/*.toml")
-        check = "taplo fmt --check {{files}} && taplo check {{files}}"
-        fix = "taplo fmt {{files}} && taplo check {{files}}"
+        check = new CommandSpec {
+          command = "taplo fmt --check {{files}} && taplo check {{files}}"
+          effect = "read"
+        }
+        fix = new CommandSpec {
+          command = "taplo fmt {{files}} && taplo check {{files}}"
+          effect = "write"
+        }
     }
 
     // uses lua-language-server to check vfox test plugin Lua files
     // excludes embedded-plugins/ which are vendored from external repos
     ["lua-check"] {
         glob = List("crates/vfox/plugins/**/*.lua")
-        check = "lua-language-server --check crates/vfox/plugins/"
+        check = new CommandSpec {
+          command = "lua-language-server --check crates/vfox/plugins/"
+          effect = "write"
+        }
     }
     ["stylua"] {
         glob = List("crates/vfox/plugins/**/*.lua")
-        check = "stylua --check crates/vfox/plugins/"
-        fix = "stylua crates/vfox/plugins/"
+        check = new CommandSpec {
+          command = "stylua --check crates/vfox/plugins/"
+          effect = "read"
+        }
+        fix = new CommandSpec {
+          command = "stylua crates/vfox/plugins/"
+          effect = "write"
+        }
     }
     ["actionlint"] {
         glob = List(".github/workflows/*.yml")
-        check = "SHELLCHECK_OPTS='--exclude=SC1090 --exclude=SC2046 --exclude=SC2086 --exclude=SC2129' actionlint"
+        check = new CommandSpec {
+          command = "SHELLCHECK_OPTS='--exclude=SC1090 --exclude=SC2046 --exclude=SC2086 --exclude=SC2129' actionlint"
+          effect = "read"
+        }
     }
     ["markdownlint"] {
         glob = List("**/*.md")
-        check = "markdownlint {{ files }}"
-        fix = "markdownlint --fix {{ files }}"
+        check = new CommandSpec {
+          command = "markdownlint {{ files }}"
+          effect = "read"
+        }
+        fix = new CommandSpec {
+          command = "markdownlint --fix {{ files }}"
+          effect = "write"
+        }
     }
 }
 

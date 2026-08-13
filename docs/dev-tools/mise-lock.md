@@ -186,6 +186,23 @@ MISE_LOCKED=1 mise install
 All mise settings are global in scope. Setting `locked = true` in a project's `mise.toml` applies to **all** tool resolution, including tools from your global `~/.config/mise/config.toml`. If you see warnings about global tools missing from the lockfile, run `mise lock -g` to generate a global lockfile.
 :::
 
+To enforce strict mode only for tools declared by one config root, use
+`tool_config.locked` instead of the invocation-wide setting:
+
+```toml
+[tool_config]
+locked = true
+
+[tools]
+node = "24"
+```
+
+This policy belongs to the containing config root: tools declared by `mise.toml`,
+`mise.local.toml`, and other configs sharing that root must be present in their
+respective lockfiles. Tools inherited from global or parent config roots keep
+their own policy. `--locked`, `MISE_LOCKED=1`, and `[settings] locked = true`
+continue to apply to the entire active toolset.
+
 When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
 
 ```sh

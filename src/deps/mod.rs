@@ -158,6 +158,37 @@ impl DepsCommand {
                 .unwrap_or_else(|| run.to_string()),
         })
     }
+
+    /// Hash the parts of this command that can affect its outputs.
+    ///
+    /// Length-prefixing every field keeps the encoding unambiguous, while the
+    /// persisted state contains only the digest and never the command or env values.
+    pub(crate) fn freshness_hash(&self) -> String {
+        fn update(hasher: &mut blake3::Hasher, bytes: &[u8]) {
+            hasher.update(&(bytes.len() as u64).to_le_bytes());
+            hasher.update(bytes);
+        }
+
+        let mut hasher = blake3::Hasher::new();
+        update(&mut hasher, self.program.as_bytes());
+        update(&mut hasher, &(self.args.len() as u64).to_le_bytes());
+        for arg in &self.args {
+            update(&mut hasher, arg.as_bytes());
+        }
+        update(&mut hasher, &(self.env.len() as u64).to_le_bytes());
+        for (key, value) in &self.env {
+            update(&mut hasher, key.as_bytes());
+            update(&mut hasher, value.as_bytes());
+        }
+        match &self.cwd {
+            Some(cwd) => {
+                update(&mut hasher, &[1]);
+                update(&mut hasher, cwd.as_os_str().as_encoded_bytes());
+            }
+            None => update(&mut hasher, &[0]),
+        }
+        hasher.finalize().to_hex().to_string()
+    }
 }
 
 /// Trait for deps providers that can check and install dependencies
@@ -408,4 +439,47 @@ pub fn create_provider(
 
     DepsEngine::build_provider(ecosystem, &provider_root, provider_config)
         .ok_or_else(|| eyre::eyre!("unknown deps provider '{ecosystem}'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn command() -> DepsCommand {
+        DepsCommand {
+            program: "sh".to_string(),
+            args: vec!["-c".to_string(), "echo first".to_string()],
+            env: BTreeMap::from([("MODE".to_string(), "debug".to_string())]),
+            cwd: Some(PathBuf::from("project")),
+            description: "first description".to_string(),
+        }
+    }
+
+    #[test]
+    fn deps_command_freshness_hash_tracks_execution_inputs() {
+        let original = command();
+        assert_eq!(original.freshness_hash(), command().freshness_hash());
+
+        let mut changed = command();
+        changed.program = "bash".to_string();
+        assert_ne!(original.freshness_hash(), changed.freshness_hash());
+
+        let mut changed = command();
+        changed.args.push("extra".to_string());
+        assert_ne!(original.freshness_hash(), changed.freshness_hash());
+
+        let mut changed = command();
+        changed
+            .env
+            .insert("MODE".to_string(), "release".to_string());
+        assert_ne!(original.freshness_hash(), changed.freshness_hash());
+
+        let mut changed = command();
+        changed.cwd = Some(PathBuf::from("other-project"));
+        assert_ne!(original.freshness_hash(), changed.freshness_hash());
+
+        let mut changed = command();
+        changed.description = "cosmetic change".to_string();
+        assert_eq!(original.freshness_hash(), changed.freshness_hash());
+    }
 }

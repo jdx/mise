@@ -197,7 +197,7 @@ URL:            https://mise.jdx.dev
 Source0:        https://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
 Source1:        mise-vendor-%{version}.tar.gz
 
-BuildRequires:  rust >= 1.91
+BuildRequires:  rust >= 1.93
 BuildRequires:  cargo
 BuildRequires:  gcc
 BuildRequires:  git
@@ -255,8 +255,8 @@ export AWS_LC_SYS_PREBUILT_NASM=1
 %endif
 %endif
 
-# Build with specified profile
-cargo build --profile __BUILD_PROFILE__ --frozen --bin mise
+# CI verifies that the locked dependencies actually compile with mise's MSRV.
+cargo build --profile __BUILD_PROFILE__ --frozen --bin mise --ignore-rust-version
 
 %install
 mkdir -p %{buildroot}%{_bindir}

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# Pinning prefers an exact remote release over a more-specific installed match.
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-pin"
+mkdir -p "$MISE_DATA_DIR/installs/tiny-pin/1.0.0.1"
+assert_contains \
+  "mise use --pin --dry-run --path pin.toml tiny-pin@1.0.0 2>&1" \
+  "tiny-pin@1.0.0 ⇢ would install"
+
+# An absent exact release, normal fuzzy requests, and explicit prefixes retain
+# the existing installed-version fast path.
+assert_contains \
+  "mise use --pin --dry-run --path pin.toml tiny-pin@1.0 2>&1" \
+  "tiny-pin@1.0.0.1 ⇢ already installed"
+assert_contains \
+  "mise use --dry-run --path pin.toml tiny-pin@1.0.0 2>&1" \
+  "tiny-pin@1.0.0.1 ⇢ already installed"
+assert_contains \
+  "mise use --pin --dry-run --path pin.toml tiny-pin@prefix:1.0.0 2>&1" \
+  "tiny-pin@1.0.0.1 ⇢ already installed"
+
+# Settings-based pinning uses the same behavior, while --fuzzy overrides it.
+assert_contains \
+  "MISE_PIN=1 mise use --dry-run --path pin.toml tiny-pin@1.0.0 2>&1" \
+  "tiny-pin@1.0.0 ⇢ would install"
+assert_contains \
+  "MISE_ASDF_COMPAT=1 mise use --dry-run --path pin.toml tiny-pin@1.0.0 2>&1" \
+  "tiny-pin@1.0.0 ⇢ would install"
+assert_contains \
+  "MISE_PIN=1 mise use --fuzzy --dry-run --path pin.toml tiny-pin@1.0.0 2>&1" \
+  "tiny-pin@1.0.0.1 ⇢ already installed"
+
+# Explicit offline mode cannot verify remote releases and keeps local resolution.
+assert_contains \
+  "MISE_OFFLINE=1 mise use --pin --dry-run --path pin.toml tiny-pin@1.0.0 2>&1" \
+  "tiny-pin@1.0.0.1 ⇢ already installed"
+
+mise use --pin --path pin.toml tiny-pin@1.0.0
+assert "cat pin.toml" '[tools]
+tiny-pin = "1.0.0"'
+
+# An exact installed version does not need a remote lookup.
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-pin-installed"
+mkdir -p "$MISE_DATA_DIR/installs/tiny-pin-installed/1.0.0"
+assert_contains \
+  "RTX_TINY_LIST_ALL_FAIL=1 mise use --pin --dry-run --path installed.toml tiny-pin-installed@1.0.0 2>&1" \
+  "tiny-pin-installed@1.0.0 ⇢ already installed"
+
+# Online exact-match lookup failures must not silently pin a fuzzy installed version.
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-pin-fail"
+mkdir -p "$MISE_DATA_DIR/installs/tiny-pin-fail/1.0.0.1"
+assert_fail \
+  "RTX_TINY_LIST_ALL_FAIL=1 mise use --pin --path pin-fail.toml tiny-pin-fail@1.0.0" \
+  "error running list-all"
+assert_fail "test -f pin-fail.toml"
+
+# Backends whose exact resolver only validates syntax must not treat a
+# syntactically valid but unavailable release as proof that it exists.
+NPM_BIN="$TMPDIR/npm-bin"
+mkdir -p "$NPM_BIN" "$MISE_DATA_DIR/installs/npm-syntax-only/1.0.0+local.1"
+cat >"$MISE_DATA_DIR/installs/npm-syntax-only/.mise.backend.toml" <<'EOF'
+short = "npm:syntax-only"
+full = "npm:syntax-only"
+explicit_backend = true
+EOF
+cat >"$NPM_BIN/npm" <<'EOF'
+#!/usr/bin/env bash
+if [[ $1 == view && $3 == versions ]]; then
+  echo '{"versions":["1.0.1"],"time":{}}'
+  exit 0
+fi
+echo "unexpected npm invocation: $*" >&2
+exit 1
+EOF
+chmod +x "$NPM_BIN/npm"
+
+assert_contains \
+  "PATH='$NPM_BIN:$PATH' MISE_NPM_SHELL_OUT=1 mise use --pin --dry-run --path npm.toml npm:syntax-only@1.0.0 2>&1" \
+  "npm:syntax-only@1.0.0+local.1 ⇢ already installed"

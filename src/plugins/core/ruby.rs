@@ -356,26 +356,16 @@ impl RubyPlugin {
     }
 
     fn fetch_patch_sources(&self) -> Vec<String> {
-        let settings = Settings::get();
-        let patch_sources = settings.ruby.apply_patches.clone().unwrap_or_default();
-        patch_sources
-            .split('\n')
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
+        plugins::core::patch_sources(Settings::get().ruby.apply_patches.as_deref())
     }
 
+    /// ruby-build takes every patch as one blob on stdin, so they are concatenated here.
     async fn fetch_patches(&self) -> Result<String> {
-        let mut patches = vec![];
-        let re = regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#);
-        for f in &self.fetch_patch_sources() {
-            if re.is_match(f) {
-                patches.push(HTTP.get_text(f).await?);
-            } else {
-                patches.push(file::read_to_string(f)?);
-            }
-        }
-        Ok(patches.join("\n"))
+        Ok(
+            plugins::core::fetch_patch_contents(&self.fetch_patch_sources())
+                .await?
+                .join("\n"),
+        )
     }
 
     /// Fetch Ruby source tarball info from cache.ruby-lang.org index

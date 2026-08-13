@@ -13,6 +13,21 @@ assert_matches "mise x -- swift --version" 'Swift version 6\.'
 
 assert "mise x spm:nicklockwood/SwiftFormat@0.61.1 -- swiftformat --version" "0.61.1"
 
+# Swift's Ubuntu 24.04 binaries require libxml2.so.2, while Ubuntu 26.04 ships
+# the compatible library as libxml2.so.16. Keep SwiftPM mandatory by providing
+# the expected SONAME in the isolated test environment.
+if [[ $(uname -s) == Linux ]]; then
+  libxml2_path="$(find /usr/lib /lib -name 'libxml2.so.2' -print -quit 2>/dev/null)"
+  if [[ -z $libxml2_path ]]; then
+    libxml2_path="$(find /usr/lib /lib -name 'libxml2.so.16' -print -quit 2>/dev/null)"
+    [[ -n $libxml2_path ]]
+    mkdir -p swift-compat
+    ln -s "$libxml2_path" swift-compat/libxml2.so.2
+    export LD_LIBRARY_PATH="$PWD/swift-compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+fi
+assert_matches "mise x -- swift package --version" 'Swift Package Manager - Swift 6\.'
+
 # A commit selector must be checked out as a Git revision rather than being
 # converted into a release tag named `rev:<sha>`.
 mkdir -p spm-revision/Sources/revision-tool
