@@ -2226,17 +2226,13 @@ impl AquaBackend {
             let pattern = checksum_config.pattern();
             if let Some(file_pattern) = &pattern.file {
                 let re = regex::Regex::new(file_pattern.as_str())?;
-                if let Some(line) = checksum_file
+                let Some(line) = checksum_file
                     .lines()
                     .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
-                {
-                    checksum_file = line.to_string();
-                } else {
-                    debug!(
-                        "no line found matching {} in checksum file for {}",
-                        file_pattern, filename
-                    );
-                }
+                else {
+                    bail!("no checksum entry found for {filename} in checksum file");
+                };
+                checksum_file = line.to_string();
             }
             let re = regex::Regex::new(pattern.checksum.as_str())?;
             if let Some(caps) = re.captures(checksum_file.as_str()) {
@@ -4847,6 +4843,31 @@ mod lock_candidate_tests {
             .parse_checksum_from_content(&format!("{DIGEST}\n"), &checksum, "tool-1.0.0.tar.gz")
             .unwrap();
         assert_eq!(result, DIGEST);
+    }
+
+    /// The `file_format: "regexp"` path has its own line-selection step ahead of the raw-entries
+    /// fallback above. If it can't find a line for the requested filename, it must not fall
+    /// through to running the checksum pattern against the whole (still multi-entry) file — that
+    /// would extract some other line's digest instead of erroring, bypassing the mismatch check.
+    #[test]
+    fn test_parse_checksum_from_content_errors_on_regexp_filename_mismatch() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(
+            r#"{"algorithm":"sha256","file_format":"regexp","pattern":{"checksum":"^(\\S+)","file":"\\S+\\s+(\\S+)$"}}"#,
+        )
+        .unwrap();
+        let content = "\
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tool-1.0.0-linux-amd64.tar.gz\n\
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  tool-1.0.0-darwin-amd64.tar.gz\n";
+
+        let err = backend
+            .parse_checksum_from_content(content, &checksum, "tool-1.0.0-windows-amd64.zip")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tool-1.0.0-windows-amd64.zip"), "{err}");
     }
 
     /// The counterpart over HTTP, which needs no decoding of its own: reqwest's `text()` goes
