@@ -114,12 +114,25 @@ fn oci_metadata_from_index(
             serde_json::from_str(sbom)
                 .wrap_err_with(|| format!("brew:{name}: invalid SBOM supplement annotation"))
         })
-        .transpose()?;
+        .transpose()?
+        .and_then(|supplement| select_sbom_supplement(supplement, &super::tag::host_tag()));
     Ok(OciBottleMetadata {
         tab: serde_json::from_str(tab)
             .wrap_err_with(|| format!("brew:{name}: invalid sh.brew.tab annotation"))?,
         sbom_supplement,
     })
+}
+
+/// Homebrew's BottleManifest resource resolves a tagged supplement against
+/// the host tag, not the selected bottle tag. This matters for `all` bottles:
+/// their single OCI descriptor contains a supplement for every supported host.
+fn select_sbom_supplement(supplement: Value, host_tag: &str) -> Option<Value> {
+    let Some(tags) = supplement.get("tags").and_then(Value::as_object) else {
+        return Some(supplement);
+    };
+    tags.get(host_tag)
+        .filter(|value| value.is_object())
+        .cloned()
 }
 
 #[cfg(test)]
@@ -156,5 +169,53 @@ mod tests {
             oci_metadata_from_index("foo", "1.0", "arm64_tahoe", "abc123", &index).unwrap();
         assert_eq!(metadata.tab["compiler"], "clang");
         assert!(metadata.sbom_supplement.is_none());
+    }
+
+    #[test]
+    fn all_bottle_sbom_supplement_selects_the_host_tag() {
+        let current = serde_json::json!({
+            "packages": [{"SPDXID": "SPDXRef-current"}]
+        });
+        let supplement = serde_json::json!({
+            "tags": {
+                "arm64_tahoe": current,
+                "x86_64_linux": {
+                    "packages": [{"SPDXID": "SPDXRef-other"}]
+                }
+            }
+        });
+
+        assert_eq!(
+            select_sbom_supplement(supplement.clone(), "arm64_tahoe"),
+            Some(current)
+        );
+        assert_eq!(select_sbom_supplement(supplement, "arm64_sequoia"), None);
+    }
+
+    #[test]
+    fn oci_all_bottle_metadata_exposes_only_the_current_host_supplement() {
+        let host_tag = super::super::tag::host_tag();
+        let expected = serde_json::json!({
+            "packages": [{"SPDXID": "SPDXRef-current"}]
+        });
+        let supplement = serde_json::json!({
+            "tags": {
+                host_tag: expected,
+                "foreign": {"packages": [{"SPDXID": "SPDXRef-foreign"}]}
+            }
+        });
+        let index = serde_json::json!({
+            "manifests": [{
+                "annotations": {
+                    "org.opencontainers.image.ref.name": "1.0.all",
+                    "sh.brew.bottle.digest": "abc123",
+                    "sh.brew.tab": "{\"compiler\":\"clang\"}",
+                    "sh.brew.sbom.supplement": supplement.to_string()
+                }
+            }]
+        });
+
+        let metadata = oci_metadata_from_index("foo", "1.0", "all", "abc123", &index).unwrap();
+        assert_eq!(metadata.sbom_supplement, Some(expected));
     }
 }
