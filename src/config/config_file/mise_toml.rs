@@ -28,7 +28,7 @@ use crate::config::env_directive::{
 };
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config, Settings};
-use crate::deps::DepsConfig;
+use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, HookDef, Hooks};
@@ -1665,8 +1665,20 @@ impl ConfigFile for MiseToml {
             .collect())
     }
 
-    fn deps_config(&self) -> Option<DepsConfig> {
-        self.deps.clone()
+    fn deps_config(&self) -> eyre::Result<Option<DepsConfig>> {
+        let Some(mut deps) = self.deps.clone() else {
+            return Ok(None);
+        };
+        let context = self.template_context();
+        for (provider_id, provider) in &mut deps.providers {
+            provider.template_context = Some(DepsTemplateContext {
+                config_path: self.path.clone(),
+                provider_id: provider_id.clone(),
+                context: context.clone(),
+            });
+            provider.validate_template_syntax()?;
+        }
+        Ok(Some(deps))
     }
 
     fn oci_config(&self) -> Option<OciConfig> {
@@ -4454,6 +4466,63 @@ run = 'echo "template"'
         foo5=5
         foo6=6
         "#);
+    }
+
+    #[test]
+    fn test_deps_config_renders_templates_and_shell_env() {
+        let config = parse(
+            indoc! {r#"
+            [env]
+            DEPS_SUFFIX = "expanded"
+
+            [deps.setup]
+            run = "echo {{ config_root }} $DEPS_SUFFIX"
+            sources = ["{{ config_root }}/input-$DEPS_SUFFIX"]
+            outputs = ["$DEPS_SUFFIX/output"]
+            env = { ROOT = "{{ config_root }}", SUFFIX = "$DEPS_SUFFIX" }
+            dir = "{{ config_root }}/$DEPS_SUFFIX"
+            description = "setup-$DEPS_SUFFIX"
+            depends = ["dependency-$DEPS_SUFFIX"]
+            timeout = "{{ 2 + 3 }}s"
+        "#}
+            .to_string(),
+        );
+
+        let deps = config.deps_config().unwrap().unwrap();
+        let provider = deps.providers["setup"].rendered(&BTreeMap::new()).unwrap();
+        let config_root = CWD.as_ref().unwrap().to_string_lossy();
+        assert_eq!(
+            provider.run.as_deref(),
+            Some(format!("echo {config_root} $DEPS_SUFFIX").as_str())
+        );
+        assert_eq!(provider.sources, [format!("{config_root}/input-expanded")]);
+        assert_eq!(provider.outputs, ["expanded/output"]);
+        assert_eq!(provider.env["ROOT"], config_root);
+        assert_eq!(provider.env["SUFFIX"], "expanded");
+        assert_eq!(
+            provider.dir.as_deref(),
+            Some(format!("{config_root}/expanded").as_str())
+        );
+        assert_eq!(provider.description.as_deref(), Some("setup-expanded"));
+        assert_eq!(provider.depends, ["dependency-expanded"]);
+        assert_eq!(provider.timeout.as_deref(), Some("5s"));
+    }
+
+    #[test]
+    fn test_deps_config_reports_template_errors_with_field_context() {
+        let config = parse(
+            indoc! {r#"
+            [deps.setup]
+            run = "echo ok"
+            sources = ["{{ invalid("]
+        "#}
+            .to_string(),
+        );
+
+        let err = config.deps_config().unwrap_err().to_string();
+        assert!(err.contains("deps provider \"setup\""), "{err}");
+        assert!(err.contains("field \"sources[0]\""), "{err}");
+        assert!(err.contains(".test.mise.toml"), "{err}");
     }
 
     fn parse(s: String) -> MiseToml {

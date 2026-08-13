@@ -11,6 +11,7 @@ use crate::file::display_filename;
 
 pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
 pub use rule::DepsConfig;
+pub(crate) use rule::DepsTemplateContext;
 
 pub(crate) mod deps_ordering;
 mod engine;
@@ -196,6 +197,15 @@ pub trait DepsProvider: Debug + Send + Sync {
     /// Access the shared base (project root + config)
     fn base(&self) -> &providers::ProviderBase;
 
+    /// Rebuild this provider after rendering all config fields against the
+    /// effective environment available at execution time.
+    fn rendered(&self, effective_env: &BTreeMap<String, String>) -> Result<Box<dyn DepsProvider>> {
+        let base = self.base();
+        let config = base.config.rendered(effective_env)?;
+        crate::deps::DepsEngine::build_provider(&base.id, &base.project_root, config)
+            .ok_or_else(|| eyre::eyre!("unknown deps provider '{}'", base.id))
+    }
+
     /// Unique identifier for this provider (e.g., "npm", "cargo", "codegen")
     fn id(&self) -> &str {
         &self.base().id
@@ -229,6 +239,13 @@ pub trait DepsProvider: Debug + Send + Sync {
 
     /// The command to run when outputs are stale relative to sources
     fn install_command(&self) -> Result<DepsCommand>;
+
+    fn install_command_with_env(
+        &self,
+        effective_env: &BTreeMap<String, String>,
+    ) -> Result<DepsCommand> {
+        self.rendered(effective_env)?.install_command()
+    }
 
     /// Whether this provider is applicable, with an actionable reason if not.
     fn applicability(&self) -> DepsProviderApplicability;
@@ -271,7 +288,7 @@ pub trait DepsProvider: Debug + Send + Sync {
 }
 
 /// Warn if any auto-enabled deps providers are stale
-pub fn notify_if_stale(config: &Arc<Config>) {
+pub fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, String>) {
     // Skip in shims or quiet mode
     if *env::__MISE_SHIM || Settings::get().quiet {
         return;
@@ -286,7 +303,7 @@ pub fn notify_if_stale(config: &Arc<Config>) {
         return;
     };
 
-    let stale = engine.check_staleness();
+    let stale = engine.check_staleness(effective_env);
     if !stale.is_empty() {
         let providers: Vec<String> = stale
             .iter()
@@ -422,20 +439,23 @@ pub fn create_provider(
     project_root: &Path,
     config: Option<&crate::config::Config>,
 ) -> Result<Box<dyn DepsProvider>> {
-    let (provider_root, provider_config) = config
-        .and_then(|c| {
-            c.config_files.values().find_map(|cf| {
-                cf.deps_config()
-                    .and_then(|dc| dc.providers.get(ecosystem).cloned())
-                    .map(|provider_config| (cf.config_root(), provider_config))
-            })
-        })
-        .unwrap_or_else(|| {
-            (
-                project_root.to_path_buf(),
-                rule::DepsProviderConfig::default(),
-            )
-        });
+    let mut configured = None;
+    if let Some(config) = config {
+        for cf in config.config_files.values() {
+            if let Some(deps_config) = cf.deps_config()?
+                && let Some(provider_config) = deps_config.providers.get(ecosystem)
+            {
+                configured = Some((cf.config_root(), provider_config.clone()));
+                break;
+            }
+        }
+    }
+    let (provider_root, provider_config) = configured.unwrap_or_else(|| {
+        (
+            project_root.to_path_buf(),
+            rule::DepsProviderConfig::default(),
+        )
+    });
 
     DepsEngine::build_provider(ecosystem, &provider_root, provider_config)
         .ok_or_else(|| eyre::eyre!("unknown deps provider '{ecosystem}'"))

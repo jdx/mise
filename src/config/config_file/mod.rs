@@ -150,8 +150,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(Default::default())
     }
 
-    fn deps_config(&self) -> Option<DepsConfig> {
-        None
+    fn deps_config(&self) -> Result<Option<DepsConfig>> {
+        Ok(None)
     }
 
     fn oci_config(&self) -> Option<crate::oci::OciConfig> {
