@@ -1,0 +1,10 @@
+bins = ["restatectl"]
+description = "A command-line tool for managing Restate clusters."
+test = { cmd = "restatectl --version", expected = "restatectl {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "github:restatedev/restate"
+
+[backends.options]
+matching = "restatectl"
