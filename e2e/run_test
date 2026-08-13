@@ -284,6 +284,7 @@ run_in_docker() {
         }
         docker_args+=(
           -v "$MISE_BREW_ORACLE_RESULT_DIR:/oracle/results"
+          -e RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
           -e MISE_BREW_ORACLE_DISPOSABLE=1
           -e MISE_BREW_ORACLE_RESULT_DIR=/oracle/results
           -e MISE_BREW_ORACLE_RUNNER_TEMP=/oracle
