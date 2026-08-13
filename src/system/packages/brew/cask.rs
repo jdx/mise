@@ -136,6 +136,15 @@ enum FlightStep {
         paths: Vec<FlightPath>,
         recursive: bool,
     },
+    Symlink {
+        source: FlightPath,
+        target: FlightPath,
+        force: bool,
+        uninstall: bool,
+        source_glob: bool,
+        sudo: FlightSudo,
+        guards: Vec<FlightGuard>,
+    },
     Run {
         command: FlightPath,
         args: Vec<String>,
@@ -165,7 +174,14 @@ enum FlightPathBase {
     StagedPath,
     AppDir,
     HomebrewPrefix,
-    Absolute,
+    Literal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlightSudo {
+    Never,
+    Always,
+    IfNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -210,6 +226,8 @@ struct CaskReceipt {
     #[serde(default)]
     completions: Vec<PathBuf>,
     #[serde(default)]
+    flight_directories: Vec<PathBuf>,
+    #[serde(default)]
     pkg_ids: Vec<String>,
     #[serde(default)]
     targets: Vec<CaskTargetRecord>,
@@ -223,6 +241,8 @@ struct CaskReceipt {
 struct CaskTargetRecord {
     path: PathBuf,
     fingerprint: CaskTargetFingerprint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uninstall: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -329,6 +349,7 @@ impl BrewCaskManager {
         prefix::bootstrap(false)?;
         let stage = fetch_and_stage(&cask, pr).await?;
         let _caskroom_lock = lock_caskroom()?;
+        recover_flight_backups()?;
         if homebrew_metadata_present(&cask.token) {
             file::remove_all(&stage)?;
             bail!(
@@ -343,6 +364,8 @@ impl BrewCaskManager {
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
         let previous_completions = previous_completion_targets(&cask)?;
+        let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
+        let previous_flight_directories = previous_flight_directory_targets(&cask)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
@@ -355,6 +378,10 @@ impl BrewCaskManager {
             version: &cask.version,
             completed: Vec::new(),
         };
+        let mut flight_targets = FlightTargetTransaction::default();
+        flight_targets.receipt_caskroom = Some(caskroom.clone());
+        flight_targets.previous_symlinks = previous_flight_symlinks.iter().cloned().collect();
+        flight_targets.previous_directories = previous_flight_directories.into_iter().collect();
         write_cask_journal(&journal)?;
         let current_completions = completion_target_paths(&cask, &artifacts)?;
         for target in &current_completions {
@@ -369,11 +396,20 @@ impl BrewCaskManager {
             &appdir,
             "preflight_steps",
             &mut journal,
+            &mut flight_targets,
         )?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         if has_lifecycle_hook(&cask, "preflight") {
             record_cask_action(&mut journal, "preflight_hook")?;
         }
+        // Homebrew leaves artifacts from the installed version available to
+        // preflight. Back them up only after preflight so guards and commands
+        // can observe those links during an upgrade. A structured preflight
+        // step that replaces one has already protected it transactionally.
+        for target in &previous_flight_symlinks {
+            flight_targets.protect(target)?;
+        }
+        durabilize_staged_symlink_targets(&stage, &tmp_caskroom, &mut flight_targets)?;
         for (index, app) in artifacts.apps.iter().enumerate() {
             install_app(&stage, &tmp_caskroom, app)?;
             record_cask_action(&mut journal, &format!("app[{index}]"))?;
@@ -397,6 +433,7 @@ impl BrewCaskManager {
             &appdir,
             "postflight_steps",
             &mut journal,
+            &mut flight_targets,
         )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         if has_lifecycle_hook(&cask, "postflight") {
@@ -421,6 +458,7 @@ impl BrewCaskManager {
         current_targets.extend(current_fonts.iter().cloned());
         let mut link_transaction = ArtifactLinkTransaction::begin(current_targets)?;
         let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
+            retarget_transient_symlinks(&tmp_caskroom, &caskroom, &caskroom, &flight_targets)?;
             for binary in &artifacts.binaries {
                 link_binary(&caskroom, &appdir, binary)?;
             }
@@ -433,7 +471,14 @@ impl BrewCaskManager {
             for font in &artifacts.fonts {
                 link_font(&caskroom, font)?;
             }
-            write_receipt(&caskroom, &cask, &artifacts)?;
+            write_receipt_with_flight_targets(
+                &caskroom,
+                &cask,
+                &artifacts,
+                flight_targets.installed_targets(),
+                flight_targets.uninstall_targets(),
+                flight_targets.installed_directories(),
+            )?;
             Ok(())
         });
         if let Err(err) = activation {
@@ -444,11 +489,20 @@ impl BrewCaskManager {
             }
             return Err(err);
         }
-        link_transaction.commit()?;
+        if let Err(err) = flight_targets.commit() {
+            warn!("brew-cask: failed to remove flight target backups: {err:#}");
+        }
+        if let Err(err) = link_transaction.commit() {
+            warn!("brew-cask: failed to remove artifact link backups: {err:#}");
+        }
         record_cask_action(&mut journal, "activated")?;
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
+        remove_obsolete_flight_directories(
+            &flight_targets.previous_directories,
+            flight_targets.installed_directories(),
+        )?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         remove_cask_journals(&cask.token)?;
         file::remove_all(stage)?;
@@ -1147,15 +1201,23 @@ fn make_symlink_elevating(source: &Path, link: &Path) -> Result<()> {
     with_sudo_fallback(
         file::make_symlink(source, link).map(|_| ()),
         "ln",
-        &[
-            "-s".into(),
-            "-f".into(),
-            "-h".into(),
-            "--".into(),
-            source.display().to_string(),
-            link.display().to_string(),
-        ],
+        &symlink_command_args(source, link),
     )
+}
+
+fn symlink_command_args(source: &Path, link: &Path) -> Vec<String> {
+    let mut args = vec!["-s".into(), "-f".into()];
+    if cfg!(target_os = "macos") {
+        args.push("-h".into());
+    } else {
+        args.push("-n".into());
+    }
+    args.extend([
+        "--".into(),
+        source.display().to_string(),
+        link.display().to_string(),
+    ]);
+    args
 }
 
 fn rename_elevating(from: &Path, to: &Path) -> Result<()> {
@@ -1194,6 +1256,26 @@ fn remove_artifact_target_elevating(path: &Path) -> Result<()> {
     with_sudo_fallback(result, "rm", &args)
 }
 
+fn remove_empty_directory_elevating(path: &Path) -> Result<()> {
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(());
+    };
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+    if path
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_some())
+    {
+        return Ok(());
+    }
+    with_sudo_fallback(
+        file::remove_dir(path),
+        "rmdir",
+        &["--".into(), path.display().to_string()],
+    )
+}
+
 /// Copy a cask artifact while preserving macOS metadata where it matters.
 ///
 /// Linux cask support currently covers font files, which do not need the
@@ -1205,8 +1287,159 @@ fn copy_cask_artifact(from: &Path, to: &Path) -> Result<()> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        file::copy(from, to)
+        if from.is_dir() {
+            file::create_dir_all(to)?;
+            file::copy_dir_all_preserve_symlinks(from, to)
+        } else {
+            file::copy(from, to)
+        }
     }
+}
+
+fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path) -> Result<()> {
+    let stage = lexically_normalized_path(stage);
+    let mut pending = vec![lexically_normalized_path(source)];
+    let mut visited = BTreeSet::new();
+    while let Some(source) = pending.pop() {
+        let relative = staged_relative_path(&stage, &source).ok_or_else(|| {
+            eyre!(
+                "brew-cask: staged symlink target escaped extraction root: {}",
+                source.display()
+            )
+        })?;
+        if relative.components().next().is_some()
+            && !source
+                .parent()
+                .is_some_and(|parent| path_starts_with_resolved_root(parent, &stage))
+        {
+            bail!(
+                "brew-cask: staged symlink path escaped extraction root: {}",
+                source.display()
+            );
+        }
+        if !visited.insert(relative.to_path_buf()) {
+            continue;
+        }
+        let destination = owned_stage.join(&relative);
+        let metadata = source.symlink_metadata()?;
+        if destination.symlink_metadata().is_err() {
+            if let Some(parent) = destination.parent() {
+                file::create_dir_all(parent)?;
+            }
+            if metadata.file_type().is_symlink() {
+                file::make_symlink(&std::fs::read_link(&source)?, &destination)?;
+            } else {
+                copy_cask_artifact(&source, &destination)?;
+            }
+        } else if metadata.is_dir() && destination.is_dir() {
+            copy_cask_artifact(&source, &destination)?;
+        }
+
+        let symlinks = WalkDir::new(&destination)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
+                Ok(_) => None,
+                Err(err) => Some(Err(err)),
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for link in symlinks {
+            let link_relative = link.strip_prefix(owned_stage)?;
+            let original_link = stage.join(link_relative);
+            let link_source = std::fs::read_link(&link)?;
+            let original_target = lexically_normalized_path(&resolve_symlink_target(
+                &original_link,
+                link_source.clone(),
+            ));
+            let Some(target_relative) = staged_relative_path(&stage, &original_target) else {
+                continue;
+            };
+            let owned_target = owned_stage.join(&target_relative);
+            pending.push(original_target);
+            if link_source.is_absolute() {
+                file::remove_file(&link)?;
+                file::make_symlink(&owned_target, &link)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn durabilize_staged_symlink_targets(
+    stage: &Path,
+    temporary_caskroom: &Path,
+    targets: &mut FlightTargetTransaction,
+) -> Result<()> {
+    let owned_stage = temporary_caskroom.join(".homebrew-staged");
+    for target in targets.installed.clone() {
+        if staged_relative_path(stage, &target).is_some() {
+            continue;
+        }
+        let Ok(metadata) = target.symlink_metadata() else {
+            continue;
+        };
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let source = std::fs::read_link(&target)?;
+        let staged_source = lexically_normalized_path(&resolve_symlink_target(&target, source));
+        let Some(relative) = staged_relative_path(stage, &staged_source) else {
+            continue;
+        };
+        let temporary_source = owned_stage.join(relative);
+        copy_staged_artifact_closure(stage, &owned_stage, &staged_source)?;
+        remove_artifact_target_elevating(&target)?;
+        create_flight_symlink(&temporary_source, &target, FlightSudo::IfNeeded)?;
+    }
+    Ok(())
+}
+
+fn retarget_transient_symlinks(
+    temporary_caskroom: &Path,
+    installed_caskroom: &Path,
+    final_caskroom: &Path,
+    targets: &FlightTargetTransaction,
+) -> Result<()> {
+    for target in &targets.installed {
+        let Ok(metadata) = target.symlink_metadata() else {
+            continue;
+        };
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let source = std::fs::read_link(target)?;
+        let resolved = resolve_symlink_target(target, source);
+        let Ok(relative) = resolved.strip_prefix(temporary_caskroom) else {
+            continue;
+        };
+        remove_artifact_target_elevating(target)?;
+        create_flight_symlink(&final_caskroom.join(relative), target, FlightSudo::IfNeeded)?;
+    }
+    let internal_symlinks = WalkDir::new(installed_caskroom)
+        .follow_links(false)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
+            Ok(_) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for target in internal_symlinks {
+        let source = std::fs::read_link(&target)?;
+        // Relative links retain the same relationship when the whole caskroom is
+        // renamed. Only absolute links embed the temporary caskroom path.
+        if !source.is_absolute() {
+            continue;
+        }
+        let Ok(relative) = source.strip_prefix(temporary_caskroom) else {
+            continue;
+        };
+        file::remove_file(&target)?;
+        create_flight_symlink(&final_caskroom.join(relative), &target, FlightSudo::Never)?;
+    }
+    Ok(())
 }
 
 fn ditto(from: &Path, to: &Path) -> Result<()> {
@@ -1402,7 +1635,17 @@ fn execute_flight_steps(
     appdir: &Path,
     kind: &str,
 ) -> Result<()> {
-    execute_flight_steps_with_completion(cask, steps, staged_path, appdir, kind, |_, _| Ok(()))
+    let mut targets = FlightTargetTransaction::default();
+    execute_flight_steps_with_completion(
+        cask,
+        steps,
+        staged_path,
+        appdir,
+        kind,
+        &mut targets,
+        |_, _| Ok(()),
+    )?;
+    targets.commit()
 }
 
 fn execute_flight_steps_recording(
@@ -1412,10 +1655,17 @@ fn execute_flight_steps_recording(
     appdir: &Path,
     kind: &str,
     journal: &mut CaskTransactionJournal<'_>,
+    targets: &mut FlightTargetTransaction,
 ) -> Result<()> {
-    execute_flight_steps_with_completion(cask, steps, staged_path, appdir, kind, |index, step| {
-        record_cask_action(journal, &format!("{kind}[{index}]:{}", step.kind()))
-    })
+    execute_flight_steps_with_completion(
+        cask,
+        steps,
+        staged_path,
+        appdir,
+        kind,
+        targets,
+        |index, step| record_cask_action(journal, &format!("{kind}[{index}]:{}", step.kind())),
+    )
 }
 
 fn execute_flight_steps_with_completion(
@@ -1424,10 +1674,11 @@ fn execute_flight_steps_with_completion(
     staged_path: &Path,
     appdir: &Path,
     kind: &str,
+    targets: &mut FlightTargetTransaction,
     mut completed: impl FnMut(usize, &FlightStep) -> Result<()>,
 ) -> Result<()> {
     for (index, step) in steps.iter().enumerate() {
-        execute_flight_step(cask, step, staged_path, appdir).wrap_err_with(|| {
+        execute_flight_step(cask, step, staged_path, appdir, targets).wrap_err_with(|| {
             format!("brew-cask:{}: failed to run structured {kind}", cask.token)
         })?;
         completed(index, step)?;
@@ -1435,11 +1686,418 @@ fn execute_flight_steps_with_completion(
     Ok(())
 }
 
+#[derive(Debug, Default)]
+struct FlightTargetTransaction {
+    backups: Vec<ArtifactLinkBackup>,
+    receipt_caskroom: Option<PathBuf>,
+    installed: Vec<PathBuf>,
+    uninstall: BTreeMap<PathBuf, bool>,
+    previous_symlinks: BTreeSet<PathBuf>,
+    previous_directories: BTreeSet<PathBuf>,
+    installed_directories: Vec<PathBuf>,
+    committed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FlightRecoveryRecord {
+    target: PathBuf,
+    #[serde(default)]
+    backup: Option<PathBuf>,
+    target_parent: PathBuf,
+    #[serde(default)]
+    backup_parent: Option<PathBuf>,
+    #[serde(default)]
+    receipt_caskroom: Option<PathBuf>,
+}
+
+impl FlightTargetTransaction {
+    fn protect(&mut self, target: &Path) -> Result<()> {
+        if self.backups.iter().any(|entry| entry.target == target) {
+            return Ok(());
+        }
+        ensure_no_unresolved_flight_recovery(target)?;
+        let target_parent = resolved_parent(target)?;
+        let backup = if target.symlink_metadata().is_ok() {
+            let parent = flight_backup_parent(target)?;
+            let backup = unused_flight_backup_path(parent, target)?;
+            let recovery = flight_backup_recovery_path(&backup);
+            let record = FlightRecoveryRecord {
+                target: target.to_path_buf(),
+                backup: Some(backup.clone()),
+                target_parent: target_parent.clone(),
+                backup_parent: Some(resolved_parent(&backup)?),
+                receipt_caskroom: self.receipt_caskroom.clone(),
+            };
+            write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+            if let Err(err) = rename_elevating(target, &backup) {
+                let _ = file::remove_all(&recovery);
+                return Err(err);
+            }
+            Some(backup)
+        } else {
+            let recovery = flight_absent_recovery_path(target);
+            let record = FlightRecoveryRecord {
+                target: target.to_path_buf(),
+                backup: None,
+                target_parent: target_parent.clone(),
+                backup_parent: None,
+                receipt_caskroom: self.receipt_caskroom.clone(),
+            };
+            write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+            None
+        };
+        let backup_parent = backup.as_deref().map(resolved_parent).transpose()?;
+        self.backups.push(ArtifactLinkBackup {
+            target: target.to_path_buf(),
+            backup,
+            target_parent,
+            backup_parent,
+        });
+        Ok(())
+    }
+
+    fn record_installed(&mut self, target: PathBuf) {
+        if !self.installed.contains(&target) {
+            self.installed.push(target);
+        }
+    }
+
+    fn record_installed_flight(&mut self, target: PathBuf, uninstall: bool) {
+        self.record_installed(target.clone());
+        self.uninstall.insert(target, uninstall);
+    }
+
+    fn installed_targets(&self) -> &[PathBuf] {
+        &self.installed
+    }
+
+    fn uninstall_targets(&self) -> &BTreeMap<PathBuf, bool> {
+        &self.uninstall
+    }
+
+    fn record_installed_directory(&mut self, target: PathBuf) {
+        if !self.installed_directories.contains(&target) {
+            self.installed_directories.push(target);
+        }
+    }
+
+    fn installed_directories(&self) -> &[PathBuf] {
+        &self.installed_directories
+    }
+
+    fn rollback(&mut self) -> Result<()> {
+        let mut first_error = None;
+        let mut failed = Vec::new();
+        for entry in std::mem::take(&mut self.backups).into_iter().rev() {
+            if let Err(err) = validate_backup_parents(&entry) {
+                first_error.get_or_insert(err);
+                failed.push(entry);
+                continue;
+            }
+            if let Err(err) = remove_artifact_target_elevating(&entry.target) {
+                first_error.get_or_insert(err);
+                failed.push(entry);
+                continue;
+            }
+            if let Some(backup) = &entry.backup
+                && let Err(err) = rename_elevating(backup, &entry.target)
+            {
+                first_error.get_or_insert(err);
+                failed.push(entry);
+                continue;
+            }
+            if let Err(err) = file::remove_all(flight_target_recovery_path(&entry)) {
+                warn!("brew-cask: failed to remove flight recovery record: {err:#}");
+            }
+        }
+        failed.reverse();
+        self.backups = failed;
+        self.installed.clear();
+        self.uninstall.clear();
+        self.installed_directories.clear();
+        if let Some(err) = first_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn commit(&mut self) -> Result<()> {
+        self.committed = true;
+        let backups = std::mem::take(&mut self.backups);
+        let mut first_error = None;
+        for entry in backups {
+            if let Err(err) = file::remove_all(flight_target_recovery_path(&entry)) {
+                first_error.get_or_insert(err);
+            }
+            if let Some(backup) = &entry.backup {
+                // Attempt both removals independently. Either a missing record
+                // or a missing backup is enough to prevent stale recovery from
+                // restoring pre-install data over a later target.
+                if let Err(err) = remove_artifact_target_elevating(backup) {
+                    first_error.get_or_insert(err);
+                }
+            }
+        }
+        if let Some(err) = first_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn unused_flight_backup_path(parent: &Path, target: &Path) -> Result<PathBuf> {
+    let stem = format!(
+        ".mise-flight-backup-{}-{}",
+        hash::hash_to_str(&target.display().to_string()),
+        std::process::id()
+    );
+    for attempt in 0_u64.. {
+        let backup = parent.join(format!("{stem}-{attempt}"));
+        let recovery = flight_backup_recovery_path(&backup);
+        let backup_missing = match backup.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Ok(_) => false,
+            Err(err) => return Err(err.into()),
+        };
+        let recovery_missing = match recovery.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Ok(_) => false,
+            Err(err) => return Err(err.into()),
+        };
+        if backup_missing && recovery_missing {
+            return Ok(backup);
+        }
+    }
+    unreachable!("the flight backup suffix space is exhausted")
+}
+
+fn flight_backup_recovery_path(backup: &Path) -> PathBuf {
+    flight_recovery_root().join(format!(
+        "{}.recovery",
+        hash::hash_to_str(&backup.display().to_string())
+    ))
+}
+
+fn flight_absent_recovery_path(target: &Path) -> PathBuf {
+    flight_recovery_root().join(format!(
+        "absent-{}.recovery",
+        hash::hash_to_str(&target.display().to_string())
+    ))
+}
+
+fn flight_target_recovery_path(entry: &ArtifactLinkBackup) -> PathBuf {
+    entry
+        .backup
+        .as_deref()
+        .map(flight_backup_recovery_path)
+        .unwrap_or_else(|| flight_absent_recovery_path(&entry.target))
+}
+
+fn flight_recovery_root() -> PathBuf {
+    crate::dirs::STATE.join("brew-cask").join("flight-recovery")
+}
+
+fn ensure_no_unresolved_flight_recovery(target: &Path) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(flight_recovery_root()) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path
+            .extension()
+            .is_none_or(|extension| extension != "recovery")
+        {
+            continue;
+        }
+        let Ok(body) = file::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(record) = serde_json::from_str::<FlightRecoveryRecord>(&body) else {
+            continue;
+        };
+        if record.target == target {
+            if let Some(backup) = record.backup {
+                bail!(
+                    "brew-cask: unresolved recovery for {} still preserves its original at {}",
+                    target.display(),
+                    backup.display()
+                );
+            }
+            bail!(
+                "brew-cask: unresolved recovery for newly created target {}",
+                target.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn recover_flight_backups() -> Result<()> {
+    let root = flight_recovery_root();
+    recover_flight_backups_in(&root)
+}
+
+fn recover_flight_backups_in(root: &Path) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Ok(());
+    };
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) => {
+                warn!(
+                    "brew-cask: failed to inspect a flight recovery entry in {}: {err:#}",
+                    root.display()
+                );
+                continue;
+            }
+        };
+        match path.extension().and_then(|extension| extension.to_str()) {
+            Some("recovery") => recover_flight_backup_or_warn(&path),
+            // Atomic record writes may leave their temporary file behind if
+            // the process dies before rename. It is not a recovery record.
+            Some("tmp") => {
+                if let Err(err) = file::remove_all(&path) {
+                    warn!(
+                        "brew-cask: failed to remove stale flight recovery file {}: {err:#}",
+                        path.display()
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn recover_flight_backup_or_warn(path: &Path) {
+    if let Err(err) = recover_flight_backup(path) {
+        warn!(
+            "brew-cask: leaving flight recovery record {} for a later retry: {err:#}",
+            path.display()
+        );
+    }
+}
+
+fn recover_flight_backup(path: &Path) -> Result<()> {
+    let body = file::read_to_string(path)
+        .wrap_err_with(|| format!("failed to read flight recovery record {}", path.display()))?;
+    let record: FlightRecoveryRecord = serde_json::from_str(&body)
+        .wrap_err_with(|| format!("invalid flight recovery record {}", path.display()))?;
+    let backup = ArtifactLinkBackup {
+        target: record.target,
+        backup: record.backup,
+        target_parent: record.target_parent,
+        backup_parent: record.backup_parent,
+    };
+    validate_backup_parents(&backup)?;
+    if let Some(backup_path) = &backup.backup {
+        if backup_path.symlink_metadata().is_ok() {
+            if backup.target.symlink_metadata().is_ok() {
+                // A target created after the interrupted transaction may be user
+                // data, a successfully activated replacement, or a replacement
+                // that rollback failed to remove. Without enough information to
+                // distinguish those cases, preserve both entries and leave the
+                // original backup available for manual recovery.
+                warn!(
+                    "brew-cask: preserving interrupted flight target {} and its original backup {}",
+                    backup.target.display(),
+                    backup_path.display()
+                );
+                return Ok(());
+            } else {
+                rename_elevating(backup_path, &backup.target)?;
+            }
+        }
+    } else if backup.target.symlink_metadata().is_ok()
+        && !flight_target_claimed_by_receipt(&backup.target, record.receipt_caskroom.as_deref())?
+    {
+        remove_artifact_target_elevating(&backup.target)?;
+    }
+    file::remove_all(path)?;
+    Ok(())
+}
+
+fn flight_target_claimed_by_receipt(target: &Path, caskroom: Option<&Path>) -> Result<bool> {
+    let Some(caskroom) = caskroom else {
+        return Ok(false);
+    };
+    let Some(receipt) = read_receipt(caskroom)? else {
+        return Ok(false);
+    };
+    if receipt.flight_directories.iter().any(|path| path == target) && target.is_dir() {
+        return Ok(true);
+    }
+    for record in receipt
+        .targets
+        .iter()
+        .filter(|record| record.path == target)
+    {
+        if cask_target_record_matches(record)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn resolved_parent(path: &Path) -> Result<PathBuf> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: flight target has no parent"))?;
+    Ok(path_with_resolved_existing_ancestor(parent))
+}
+
+fn validate_backup_parents(entry: &ArtifactLinkBackup) -> Result<()> {
+    if resolved_parent(&entry.target)? != entry.target_parent
+        || entry
+            .backup
+            .as_deref()
+            .zip(entry.backup_parent.as_ref())
+            .is_some_and(|(backup, expected)| {
+                !resolved_parent(backup).is_ok_and(|current| current == *expected)
+            })
+    {
+        bail!(
+            "brew-cask: refusing to restore flight target through a changed parent: {}",
+            entry.target.display()
+        );
+    }
+    Ok(())
+}
+
+fn flight_backup_parent(target: &Path) -> Result<&Path> {
+    if let Some(app) = target.ancestors().find(|ancestor| {
+        ancestor
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
+    }) {
+        return app
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: app flight target has no parent"));
+    }
+    target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: flight target has no parent"))
+}
+
+impl Drop for FlightTargetTransaction {
+    fn drop(&mut self) {
+        if !self.committed
+            && let Err(err) = self.rollback()
+        {
+            warn!("brew-cask: failed to roll back flight targets: {err:#}");
+        }
+    }
+}
+
 impl FlightStep {
     fn kind(&self) -> &'static str {
         match self {
             Self::Move { .. } => "move",
             Self::Remove { .. } => "remove",
+            Self::Symlink { .. } => "symlink",
             Self::Run { .. } => "run",
             Self::TerminateProcess { .. } => "terminate_process",
         }
@@ -1451,6 +2109,7 @@ fn execute_flight_step(
     step: &FlightStep,
     staged_path: &Path,
     appdir: &Path,
+    targets: &mut FlightTargetTransaction,
 ) -> Result<()> {
     match step {
         FlightStep::Move {
@@ -1496,6 +2155,110 @@ fn execute_flight_step(
                 }
             }
         }
+        FlightStep::Symlink {
+            source,
+            target,
+            force,
+            uninstall,
+            source_glob,
+            sudo,
+            guards,
+        } => {
+            if !guards
+                .iter()
+                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .all(|matches| matches)
+            {
+                return Ok(());
+            }
+            let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
+            let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
+            if sources.is_empty() {
+                bail!(
+                    "brew-cask: structured symlink source '{}' did not match any paths",
+                    source.path
+                );
+            }
+            let target_metadata = target.symlink_metadata().ok();
+            let target_is_real_dir = target_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.is_dir());
+            let target_is_dir = target_is_real_dir || sources.len() > 1;
+            if sources.len() > 1 {
+                let created_external_directory =
+                    target_metadata.is_none() && !target.starts_with(staged_path);
+                if target_metadata.is_some() && !target_is_real_dir {
+                    if target.exists() && !force && !targets.previous_symlinks.contains(&target) {
+                        bail!(
+                            "brew-cask: structured symlink target '{}' already exists",
+                            target.display()
+                        );
+                    }
+                    targets.protect(&target)?;
+                } else if created_external_directory {
+                    // Record the absent directory itself so rollback removes
+                    // the container after removing the links created below.
+                    if let Some(parent) = target.parent() {
+                        create_flight_dir_all(parent, *sudo)?;
+                    }
+                    targets.protect(&target)?;
+                }
+                create_flight_dir_all(&target, *sudo)?;
+                if created_external_directory || targets.previous_directories.contains(&target) {
+                    targets.record_installed_directory(target.clone());
+                }
+            }
+            for source in sources {
+                let link = if target_is_dir {
+                    let source_name = Path::new(&source).file_name().ok_or_else(|| {
+                        eyre!("brew-cask: structured symlink source has no file name")
+                    })?;
+                    target.join(source_name)
+                } else {
+                    target.clone()
+                };
+                let external = !link.starts_with(staged_path);
+                let link_metadata = link.symlink_metadata().ok();
+                if let Some(metadata) = &link_metadata {
+                    if metadata.is_dir() {
+                        bail!(
+                            "brew-cask: refusing to replace structured symlink directory '{}'",
+                            link.display()
+                        );
+                    }
+                    if link.exists() && !force && !targets.previous_symlinks.contains(&link) {
+                        bail!(
+                            "brew-cask: structured symlink target '{}' already exists",
+                            link.display()
+                        );
+                    }
+                    if external {
+                        targets.protect(&link)?;
+                    } else if metadata.file_type().is_symlink() {
+                        file::remove_file(&link)?;
+                    } else {
+                        file::remove_all(&link)?;
+                    }
+                }
+                if let Some(parent) = link.parent() {
+                    create_flight_dir_all(parent, *sudo)?;
+                }
+                if external && link_metadata.is_none() {
+                    // Bind an absent target to its resolved parent only after
+                    // creating that parent; otherwise rollback observes a
+                    // different path identity and leaves the new link behind.
+                    targets.protect(&link)?;
+                }
+                let source =
+                    durable_internal_symlink_source(staged_path, &source, &link).unwrap_or(source);
+                create_flight_symlink(&source, &link, *sudo)?;
+                if external {
+                    targets.record_installed_flight(link, *uninstall);
+                }
+            }
+        }
         FlightStep::Run {
             command,
             args,
@@ -1505,30 +2268,26 @@ fn execute_flight_step(
         } => {
             if !guards
                 .iter()
-                .map(|guard| flight_guard_matches(guard, staged_path, appdir))
+                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .all(|matches| matches)
             {
                 return Ok(());
             }
-            let command = resolve_flight_path_with_context(command, staged_path, appdir)?;
-            let command = expand_cask_template(
-                &command.to_string_lossy(),
-                staged_path,
-                appdir,
-                Some(&cask.version),
-            );
+            let command = resolve_flight_path_with_context(cask, command, staged_path, appdir)?;
+            let command =
+                expand_flight_template(cask, &command.to_string_lossy(), staged_path, appdir);
             let args = args
                 .iter()
-                .map(|arg| expand_cask_template(arg, staged_path, appdir, Some(&cask.version)))
+                .map(|arg| expand_flight_template(cask, arg, staged_path, appdir))
                 .collect::<Vec<_>>();
             let env = env
                 .iter()
                 .map(|(key, value)| {
                     (
                         key.clone(),
-                        expand_cask_template(value, staged_path, appdir, Some(&cask.version)),
+                        expand_flight_template(cask, value, staged_path, appdir),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -1617,16 +2376,63 @@ fn execute_terminate_process(
     Ok(())
 }
 
-fn flight_guard_matches(guard: &FlightGuard, staged_path: &Path, appdir: &Path) -> Result<bool> {
+fn flight_guard_matches(
+    cask: &Cask,
+    guard: &FlightGuard,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<bool> {
     match guard {
         FlightGuard::OnMacos => Ok(cfg!(target_os = "macos")),
         FlightGuard::OnLinux => Ok(cfg!(target_os = "linux")),
         FlightGuard::IfExists(path) => {
-            Ok(resolve_flight_path_with_context(path, staged_path, appdir)?.exists())
+            Ok(resolve_flight_path_with_context(cask, path, staged_path, appdir)?.exists())
         }
         FlightGuard::UnlessExists(path) => {
-            Ok(!resolve_flight_path_with_context(path, staged_path, appdir)?.exists())
+            Ok(!resolve_flight_path_with_context(cask, path, staged_path, appdir)?.exists())
         }
+    }
+}
+
+fn flight_symlink_sources(
+    cask: &Cask,
+    source: &FlightPath,
+    source_glob: bool,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<Vec<PathBuf>> {
+    if source_glob {
+        if source.base != FlightPathBase::StagedPath {
+            bail!("brew-cask: structured symlink globs must use staged_path");
+        }
+        let pattern = expand_flight_template(cask, &source.path, staged_path, appdir);
+        return expand_staged_glob(staged_path, &pattern);
+    }
+    Ok(vec![resolve_flight_path_with_context(
+        cask,
+        source,
+        staged_path,
+        appdir,
+    )?])
+}
+
+fn create_flight_symlink(source: &Path, target: &Path, sudo: FlightSudo) -> Result<()> {
+    match sudo {
+        FlightSudo::Never => file::make_symlink(source, target).map(|_| ()),
+        FlightSudo::IfNeeded => make_symlink_elevating(source, target),
+        FlightSudo::Always => sudo::run("/bin/ln", &symlink_command_args(source, target), &[]),
+    }
+}
+
+fn create_flight_dir_all(target: &Path, sudo: FlightSudo) -> Result<()> {
+    match sudo {
+        FlightSudo::Never => file::create_dir_all(target),
+        FlightSudo::IfNeeded => create_dir_all_elevating(target),
+        FlightSudo::Always => sudo::run(
+            "/bin/mkdir",
+            &["-p".into(), "--".into(), target.display().to_string()],
+            &[],
+        ),
     }
 }
 
@@ -1715,17 +2521,40 @@ fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf>
 }
 
 fn resolve_flight_path_with_context(
+    cask: &Cask,
     path: &FlightPath,
     staged_path: &Path,
     appdir: &Path,
 ) -> Result<PathBuf> {
-    let expanded = expand_cask_template(&path.path, staged_path, appdir, None);
+    let expanded = expand_flight_template(cask, &path.path, staged_path, appdir);
     match path.base {
-        FlightPathBase::StagedPath => Ok(staged_path.join(expanded)),
-        FlightPathBase::AppDir => Ok(appdir.join(expanded)),
-        FlightPathBase::HomebrewPrefix => Ok(prefix::prefix().join(expanded)),
-        FlightPathBase::Absolute => Ok(PathBuf::from(expanded)),
+        FlightPathBase::StagedPath => {
+            validate_flight_relative_path(&expanded)?;
+            Ok(staged_path.join(expanded))
+        }
+        FlightPathBase::AppDir => {
+            validate_flight_relative_path(&expanded)?;
+            Ok(appdir.join(expanded))
+        }
+        FlightPathBase::HomebrewPrefix => {
+            validate_flight_relative_path(&expanded)?;
+            Ok(prefix::prefix().join(expanded))
+        }
+        FlightPathBase::Literal => Ok(PathBuf::from(expanded)),
     }
+}
+
+fn expand_flight_template(cask: &Cask, value: &str, staged_path: &Path, appdir: &Path) -> String {
+    let caskroom_path = caskroom_token_dir(&cask.token);
+    let version_major = cask
+        .version
+        .split(['.', ','])
+        .next()
+        .unwrap_or(&cask.version);
+    let value = value
+        .replace("{{version.major}}", version_major)
+        .replace("{{caskroom_path}}", &caskroom_path.to_string_lossy());
+    expand_cask_template(&value, staged_path, appdir, Some(&cask.version))
 }
 
 fn expand_cask_template(
@@ -2459,6 +3288,72 @@ fn resolve_symlink_target(link: &Path, target: PathBuf) -> PathBuf {
     }
 }
 
+fn durable_internal_symlink_source(stage: &Path, source: &Path, link: &Path) -> Option<PathBuf> {
+    if !source.is_absolute()
+        || staged_relative_path(stage, source).is_none()
+        || staged_relative_path(stage, link).is_none()
+    {
+        return None;
+    }
+    relative_path_between(link.parent()?, source)
+}
+
+fn relative_path_between(from: &Path, to: &Path) -> Option<PathBuf> {
+    let from = lexically_normalized_path(from);
+    let to = lexically_normalized_path(to);
+    let from_components = from.components().collect::<Vec<_>>();
+    let to_components = to.components().collect::<Vec<_>>();
+    let common = from_components
+        .iter()
+        .zip(&to_components)
+        .take_while(|(from, to)| from == to)
+        .count();
+    let mut relative = PathBuf::new();
+    for component in &from_components[common..] {
+        match component {
+            Component::Normal(_) => relative.push(".."),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    for component in &to_components[common..] {
+        match component {
+            Component::Normal(_) | Component::CurDir => relative.push(component.as_os_str()),
+            _ => return None,
+        }
+    }
+    Some(if relative.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        relative
+    })
+}
+
+fn lexically_normalized_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(component);
+                }
+            }
+            _ => normalized.push(component),
+        }
+    }
+    normalized
+}
+
+fn staged_relative_path(stage: &Path, path: &Path) -> Option<PathBuf> {
+    let stage = lexically_normalized_path(stage);
+    let path = lexically_normalized_path(path);
+    path.strip_prefix(&stage)
+        .or_else(|_| path.strip_prefix(file::desymlink_path(&stage)))
+        .ok()
+        .map(Path::to_path_buf)
+}
+
 fn path_starts_with_resolved_root(path: &Path, root: &Path) -> bool {
     path_with_resolved_existing_ancestor(path).starts_with(file::desymlink_path(root))
 }
@@ -3084,6 +3979,43 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                     .unwrap_or(false),
             })
         }
+        "symlink" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "symlink step",
+                object,
+                &[
+                    "type",
+                    "source",
+                    "target",
+                    "force",
+                    "uninstall",
+                    "source_glob",
+                    "sudo",
+                    "guards",
+                ],
+            )?;
+            Ok(FlightStep::Symlink {
+                source: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "symlink source",
+                    object.get("source"),
+                )?,
+                target: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "symlink target",
+                    object.get("target"),
+                )?,
+                force: parse_optional_flight_bool(cask, kind, object, "force", false)?,
+                uninstall: parse_optional_flight_bool(cask, kind, object, "uninstall", false)?,
+                source_glob: parse_optional_flight_bool(cask, kind, object, "source_glob", false)?,
+                sudo: parse_flight_sudo(cask, kind, object.get("sudo"))?,
+                guards: parse_flight_guards(cask, kind, object.get("guards"))?,
+            })
+        }
         "run" => {
             reject_unsupported_flight_fields(
                 cask,
@@ -3141,23 +4073,7 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                 })
                 .transpose()?
                 .unwrap_or_default();
-            let guards = object
-                .get("guards")
-                .map(|guards| {
-                    guards
-                        .as_array()
-                        .ok_or_else(|| {
-                            eyre!(
-                                "brew-cask:{}: unsupported {kind} run guards metadata format",
-                                cask.token
-                            )
-                        })?
-                        .iter()
-                        .map(|guard| parse_flight_guard(cask, kind, guard))
-                        .collect::<Result<Vec<_>>>()
-                })
-                .transpose()?
-                .unwrap_or_default();
+            let guards = parse_flight_guards(cask, kind, object.get("guards"))?;
             Ok(FlightStep::Run {
                 command: parse_run_command(cask, kind, object.get("command"))?,
                 args,
@@ -3264,6 +4180,34 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
     }
 }
 
+fn parse_flight_sudo(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<FlightSudo> {
+    match value {
+        None | Some(Value::Bool(false)) => Ok(FlightSudo::Never),
+        Some(Value::Bool(true)) => Ok(FlightSudo::Always),
+        Some(Value::String(value)) if value == "if_needed" => Ok(FlightSudo::IfNeeded),
+        _ => bail!("brew-cask:{}: unsupported {kind} sudo setting", cask.token),
+    }
+}
+
+fn parse_flight_guards(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<Vec<FlightGuard>> {
+    value
+        .map(|guards| {
+            guards
+                .as_array()
+                .ok_or_else(|| {
+                    eyre!(
+                        "brew-cask:{}: unsupported {kind} guards metadata format",
+                        cask.token
+                    )
+                })?
+                .iter()
+                .map(|guard| parse_flight_guard(cask, kind, guard))
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()
+        .map(|guards| guards.unwrap_or_default())
+}
+
 fn parse_optional_flight_bool(
     cask: &Cask,
     kind: &str,
@@ -3304,10 +4248,10 @@ fn parse_run_command(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<F
             cask.token,
             base
         ),
-        None => FlightPathBase::Absolute,
+        None => FlightPathBase::Literal,
     };
     let path_value = Path::new(path);
-    let invalid_absolute_path = base == FlightPathBase::Absolute
+    let invalid_absolute_path = base == FlightPathBase::Literal
         && !path_value.is_absolute()
         && path_value.components().count() > 1;
     let invalid_based_path = matches!(
@@ -3392,17 +4336,34 @@ fn parse_context_flight_path(
         Some("staged_path") => FlightPathBase::StagedPath,
         Some("appdir") => FlightPathBase::AppDir,
         Some("homebrew_prefix") => FlightPathBase::HomebrewPrefix,
+        Some("relative") => FlightPathBase::Literal,
         Some(base) => bail!(
             "brew-cask:{}: unsupported {kind} {field} base {}",
             cask.token,
             base
         ),
-        None => FlightPathBase::Absolute,
+        None => FlightPathBase::Literal,
     };
     Ok(FlightPath {
         base,
         path: path.to_string(),
     })
+}
+
+fn parse_context_flight_path_value(
+    cask: &Cask,
+    kind: &str,
+    field: &str,
+    value: Option<&Value>,
+) -> Result<FlightPath> {
+    let object = value.and_then(Value::as_object).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} {field} metadata format",
+            cask.token
+        )
+    })?;
+    reject_unsupported_flight_fields(cask, kind, field, object, &["base", "path"])?;
+    parse_context_flight_path(cask, kind, field, object)
 }
 
 fn reject_unsupported_flight_fields(
@@ -3760,6 +4721,61 @@ fn previous_binary_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
         .unwrap_or_default())
 }
 
+fn previous_flight_symlink_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(Vec::new());
+    };
+    receipt_flight_symlink_targets(&receipt)
+}
+
+fn previous_flight_directory_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(Vec::new());
+    };
+    Ok(receipt.flight_directories)
+}
+
+fn remove_obsolete_flight_directories(
+    previous: &BTreeSet<PathBuf>,
+    current: &[PathBuf],
+) -> Result<()> {
+    for directory in previous {
+        if !current.contains(directory) {
+            remove_empty_directory_elevating(directory)?;
+        }
+    }
+    Ok(())
+}
+
+fn receipt_flight_symlink_targets(receipt: &CaskReceipt) -> Result<Vec<PathBuf>> {
+    let standard_targets = receipt
+        .apps
+        .iter()
+        .chain(&receipt.binaries)
+        .chain(&receipt.fonts)
+        .chain(&receipt.completions)
+        .collect::<BTreeSet<_>>();
+    let mut targets = Vec::new();
+    for record in &receipt.targets {
+        if record.fingerprint.kind == CaskTargetKind::Symlink
+            && !standard_targets.contains(&record.path)
+            && record.uninstall.unwrap_or(true)
+            && cask_target_record_matches(record)?
+        {
+            targets.push(record.path.clone());
+        }
+    }
+    Ok(targets)
+}
+
 fn remove_obsolete_binary_links(
     cask: &Cask,
     previous_targets: &[PathBuf],
@@ -3878,7 +4894,14 @@ fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> 
     None
 }
 
-fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Result<()> {
+fn write_receipt_with_flight_targets(
+    caskroom: &Path,
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    flight_targets: &[PathBuf],
+    flight_uninstall_targets: &BTreeMap<PathBuf, bool>,
+    flight_directories: &[PathBuf],
+) -> Result<()> {
     let mut target_paths = artifacts
         .apps
         .iter()
@@ -3893,6 +4916,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .collect::<Result<Vec<_>>>()?,
     );
     target_paths.extend(completion_target_paths(cask, artifacts)?);
+    target_paths.extend(flight_targets.iter().cloned());
     target_paths.sort();
     target_paths.dedup();
     let targets = target_paths
@@ -3901,6 +4925,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             Ok(CaskTargetRecord {
                 path: path.clone(),
                 fingerprint: cask_target_fingerprint(path)?,
+                uninstall: flight_uninstall_targets.get(path).copied(),
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -3920,6 +4945,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .map(font_target_path)
             .collect::<Result<Vec<_>>>()?,
         completions: completion_target_paths(cask, artifacts)?,
+        flight_directories: flight_directories.to_vec(),
         pkg_ids: artifacts.pkg_ids.clone(),
         targets,
         prune_safe: prune_blocker.is_none(),
@@ -4583,6 +5609,8 @@ fn caskroom_backup_dir(cask: &Cask) -> PathBuf {
 struct ArtifactLinkBackup {
     target: PathBuf,
     backup: Option<PathBuf>,
+    target_parent: PathBuf,
+    backup_parent: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -4613,7 +5641,14 @@ impl ArtifactLinkTransaction {
                 } else {
                     None
                 };
-                Ok(ArtifactLinkBackup { target, backup })
+                let target_parent = resolved_parent(&target)?;
+                let backup_parent = backup.as_deref().map(resolved_parent).transpose()?;
+                Ok(ArtifactLinkBackup {
+                    target,
+                    backup,
+                    target_parent,
+                    backup_parent,
+                })
             })();
             match entry {
                 Ok(entry) => transaction.backups.push(entry),
@@ -4848,13 +5883,16 @@ mod tests {
         let version_dir = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(version_dir.join(app_name))?;
         file::write(version_dir.join(app_name).join("version"), "1.0.0")?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &version_dir,
             cask,
             &CaskArtifacts {
                 apps: vec![app],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
         )?;
         Ok(target)
     }
@@ -4948,7 +5986,14 @@ mod tests {
         crate::file::write(app_target.join("Contents/app"), "original")?;
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(&caskroom)?;
-        write_receipt(&caskroom, &cask, &artifacts)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+        )?;
         assert_eq!(
             installed_cask_version(&cask, &artifacts)?,
             Some(cask.version.clone())
@@ -5200,6 +6245,1189 @@ mod tests {
     }
 
     #[test]
+    fn parses_structured_symlink_steps() -> Result<()> {
+        let mut cask = test_cask("docker-desktop", "4.86.0,236216");
+        cask.artifacts = vec![
+            serde_json::json!({"app": "Docker.app"}),
+            serde_json::json!({
+                "postflight_steps": [{
+                    "steps": [{
+                        "type": "symlink",
+                        "source": {"path": "{{appdir}}/Docker.app/Contents/Resources/bin/kubectl"},
+                        "target": {"path": "/usr/local/bin/kubectl"},
+                        "force": true,
+                        "uninstall": true,
+                        "sudo": "if_needed",
+                        "guards": [{
+                            "condition": "unless_exists",
+                            "path": "/usr/local/bin/kubectl",
+                            "id": "1"
+                        }]
+                    }]
+                }]
+            }),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert!(matches!(
+            artifacts.postflight_steps.as_slice(),
+            [FlightStep::Symlink {
+                force: true,
+                uninstall: true,
+                sudo: FlightSudo::IfNeeded,
+                guards,
+                ..
+            }] if guards.len() == 1
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn structured_symlink_preserves_relative_source() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let appdir = tmp.path().join("Applications");
+        let target = appdir.join("MeshLab2025.07.app/Contents/MacOS/MeshLab");
+        file::create_dir_all(
+            target
+                .parent()
+                .ok_or_else(|| eyre!("missing target parent"))?,
+        )?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: "meshlab".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::AppDir,
+                path: "MeshLab{{version}}.app/Contents/MacOS/MeshLab".to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: vec![FlightGuard::UnlessExists(FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            })],
+        };
+
+        execute_flight_steps(
+            &test_cask("meshlab", "2025.07"),
+            &[step],
+            tmp.path(),
+            &appdir,
+            "postflight_steps",
+        )?;
+
+        assert_eq!(std::fs::read_link(target)?, PathBuf::from("meshlab"));
+        Ok(())
+    }
+
+    #[test]
+    fn based_flight_paths_reject_root_escapes() {
+        let cask = test_cask("example", "1.0.0");
+        let staged = Path::new("/tmp/staged");
+        let appdir = Path::new("/Applications");
+        for base in [
+            FlightPathBase::StagedPath,
+            FlightPathBase::AppDir,
+            FlightPathBase::HomebrewPrefix,
+        ] {
+            for path in ["../outside", "/absolute/outside"] {
+                let err = resolve_flight_path_with_context(
+                    &cask,
+                    &FlightPath {
+                        base,
+                        path: path.to_string(),
+                    },
+                    staged,
+                    appdir,
+                )
+                .unwrap_err()
+                .to_string();
+                assert!(err.contains("invalid structured flight path"));
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_expands_versioned_glob() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source_dir = tmp.path().join("tool-2/bin");
+        file::create_dir_all(&source_dir)?;
+        file::write(source_dir.join("tool"), "binary")?;
+        let target_dir = tmp.path().join("links");
+        file::create_dir_all(&target_dir)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "tool-{{version.major}}/bin/*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target_dir.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("tool", "2.3.4"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        let link = target_dir.join("tool");
+        assert_eq!(
+            lexically_normalized_path(&resolve_symlink_target(&link, std::fs::read_link(&link)?)),
+            source_dir.join("tool")
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_glob_rollback_removes_created_directory() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let staged = tmp.path().join("stage");
+        file::create_dir_all(&staged)?;
+        file::write(staged.join("one"), "one")?;
+        file::write(staged.join("two"), "two")?;
+        let target = tmp.path().join("links");
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        execute_flight_step(
+            &test_cask("example", "1.0.0"),
+            &step,
+            &staged,
+            Path::new("/Applications"),
+            &mut targets,
+        )?;
+        assert!(target.is_dir());
+        assert_eq!(
+            targets.installed_directories(),
+            std::slice::from_ref(&target)
+        );
+        assert!(!targets.installed_targets().contains(&target));
+        assert_eq!(
+            targets.uninstall_targets(),
+            &BTreeMap::from([(target.join("one"), false), (target.join("two"), false),])
+        );
+
+        targets.rollback()?;
+
+        assert!(target.symlink_metadata().is_err());
+
+        file::create_dir_all(&target)?;
+        let mut upgrade_targets = FlightTargetTransaction::default();
+        upgrade_targets.previous_directories.insert(target.clone());
+        execute_flight_step(
+            &test_cask("example", "2.0.0"),
+            &step,
+            &staged,
+            Path::new("/Applications"),
+            &mut upgrade_targets,
+        )?;
+        assert_eq!(upgrade_targets.installed_directories(), [target]);
+        upgrade_targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn obsolete_flight_directories_remove_only_empty_unclaimed_directories() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let empty = tmp.path().join("empty");
+        let occupied = tmp.path().join("occupied");
+        let current = tmp.path().join("current");
+        for directory in [&empty, &occupied, &current] {
+            file::create_dir_all(directory)?;
+        }
+        file::write(occupied.join("user-file"), "keep")?;
+        let previous = BTreeSet::from([empty.clone(), occupied.clone(), current.clone()]);
+
+        remove_obsolete_flight_directories(&previous, std::slice::from_ref(&current))?;
+
+        assert!(empty.symlink_metadata().is_err());
+        assert!(occupied.join("user-file").is_file());
+        assert!(current.is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn structured_symlink_rejects_empty_glob() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("links");
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "missing/*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        let err = execute_flight_steps(
+            &test_cask("tool", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )
+        .unwrap_err();
+        let err = format!("{err:#}");
+
+        assert!(err.contains("did not match any paths"));
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_glob_replaces_dangling_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source_dir = tmp.path().join("bin");
+        file::create_dir_all(&source_dir)?;
+        file::write(source_dir.join("one"), "one")?;
+        file::write(source_dir.join("two"), "two")?;
+        let target = tmp.path().join("links");
+        file::make_symlink(Path::new("missing"), &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "bin/*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("tool", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        assert!(target.is_dir());
+        for name in ["one", "two"] {
+            let link = target.join(name);
+            assert_eq!(
+                lexically_normalized_path(&resolve_symlink_target(
+                    &link,
+                    std::fs::read_link(&link)?
+                )),
+                source_dir.join(name)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_replaces_directory_symlink_without_following_it() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let unrelated = tmp.path().join("unrelated");
+        let target = tmp.path().join("target");
+        file::write(&source, "source")?;
+        file::create_dir_all(&unrelated)?;
+        file::make_symlink(&unrelated, &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: source.to_string_lossy().to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: true,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("tool", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        assert_eq!(
+            lexically_normalized_path(&resolve_symlink_target(
+                &target,
+                std::fs::read_link(&target)?
+            )),
+            source
+        );
+        assert!(std::fs::read_dir(unrelated)?.next().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn forced_symlink_command_uses_replacement_flags() {
+        let no_dereference = if cfg!(target_os = "macos") {
+            "-h"
+        } else {
+            "-n"
+        };
+        assert_eq!(
+            symlink_command_args(Path::new("source"), Path::new("target")),
+            ["-s", "-f", no_dereference, "--", "source", "target"]
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn flight_guards_match_homebrew_for_dangling_symlinks() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dangling = tmp.path().join("dangling");
+        std::os::unix::fs::symlink("missing", &dangling)?;
+        let cask = test_cask("example", "1.0.0");
+        let path = FlightPath {
+            base: FlightPathBase::Literal,
+            path: dangling.to_string_lossy().to_string(),
+        };
+
+        assert!(!flight_guard_matches(
+            &cask,
+            &FlightGuard::IfExists(path.clone()),
+            tmp.path(),
+            Path::new("/Applications"),
+        )?);
+        assert!(flight_guard_matches(
+            &cask,
+            &FlightGuard::UnlessExists(path),
+            tmp.path(),
+            Path::new("/Applications"),
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_replaces_dangling_target_without_force() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        file::write(&source, "source")?;
+        file::make_symlink(Path::new("missing"), &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: source.to_string_lossy().to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: vec![FlightGuard::UnlessExists(FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            })],
+        };
+
+        execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        assert_eq!(
+            lexically_normalized_path(&resolve_symlink_target(
+                &target,
+                std::fs::read_link(&target)?
+            )),
+            source
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_replaces_previous_owned_target_without_force() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let old_source = tmp.path().join("old");
+        let new_source = stage.join("new");
+        let target = tmp.path().join("target");
+        file::create_dir_all(&stage)?;
+        file::write(&old_source, "old")?;
+        file::write(&new_source, "new")?;
+        file::make_symlink(&old_source, &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "new".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+        targets.previous_symlinks.insert(target.clone());
+
+        execute_flight_step(
+            &test_cask("example", "2.0.0"),
+            &step,
+            &stage,
+            Path::new("/Applications"),
+            &mut targets,
+        )?;
+        assert_eq!(std::fs::read_link(&target)?, new_source);
+
+        targets.rollback()?;
+        assert_eq!(std::fs::read_link(target)?, old_source);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_rollback_removes_link_with_created_parent() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("source");
+        let target = tmp.path().join("external/nested/target");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(tmp.path().join("external"))?;
+        file::write(&source, "source")?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "source".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        execute_flight_step(
+            &test_cask("example", "1.0.0"),
+            &step,
+            &stage,
+            Path::new("/Applications"),
+            &mut targets,
+        )?;
+        assert!(target.symlink_metadata()?.file_type().is_symlink());
+
+        targets.rollback()?;
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_force_refuses_to_replace_directory() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        let link = target.join("source");
+        file::write(&source, "source")?;
+        file::create_dir_all(&link)?;
+        file::write(link.join("keep"), "keep")?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: source.to_string_lossy().to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: true,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        let err = execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("refusing to replace structured symlink directory"));
+        assert_eq!(file::read_to_string(link.join("keep"))?, "keep");
+        Ok(())
+    }
+
+    #[test]
+    fn flight_target_transaction_restores_replaced_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        file::write(&target, "original")?;
+        {
+            let mut transaction = FlightTargetTransaction::default();
+            transaction.protect(&target)?;
+            let backup = transaction.backups[0].backup.as_ref().unwrap();
+            let recovery = flight_backup_recovery_path(backup);
+            assert!(recovery.is_file());
+            assert_ne!(recovery.parent(), backup.parent());
+            file::write(&target, "replacement")?;
+        }
+        assert_eq!(file::read_to_string(target)?, "original");
+        Ok(())
+    }
+
+    #[test]
+    fn flight_target_transaction_retries_failed_restore() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("missing/target");
+        let backup = tmp.path().join("backup");
+        file::write(&backup, "original")?;
+        let recovery = flight_backup_recovery_path(&backup);
+        let target_parent = resolved_parent(&target)?;
+        let backup_parent = Some(resolved_parent(&backup)?);
+        let record = FlightRecoveryRecord {
+            target: target.clone(),
+            backup: Some(backup.clone()),
+            target_parent: target_parent.clone(),
+            backup_parent: backup_parent.clone(),
+            receipt_caskroom: None,
+        };
+        write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+        let mut transaction = FlightTargetTransaction {
+            backups: vec![ArtifactLinkBackup {
+                target: target.clone(),
+                backup: Some(backup.clone()),
+                target_parent,
+                backup_parent,
+            }],
+            receipt_caskroom: None,
+            installed: Vec::new(),
+            uninstall: BTreeMap::new(),
+            previous_symlinks: BTreeSet::new(),
+            previous_directories: BTreeSet::new(),
+            installed_directories: Vec::new(),
+            committed: false,
+        };
+
+        assert!(transaction.rollback().is_err());
+        assert_eq!(transaction.backups.len(), 1);
+        assert!(backup.is_file());
+        assert!(recovery.is_file());
+
+        file::create_dir_all(target.parent().unwrap())?;
+        transaction.rollback()?;
+        assert!(transaction.backups.is_empty());
+        assert_eq!(file::read_to_string(target)?, "original");
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn recovers_interrupted_flight_target_transaction() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        file::write(&target, "original")?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+        let backup = transaction.backups[0].backup.as_ref().unwrap();
+        let recovery = flight_backup_recovery_path(backup);
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert_eq!(file::read_to_string(&target)?, "original");
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn recovers_interrupted_new_flight_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+        let recovery = flight_absent_recovery_path(&target);
+        assert!(recovery.is_file());
+        file::make_symlink(Path::new("source"), &target)?;
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert!(target.symlink_metadata().is_err());
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn interrupted_new_flight_target_preserves_completed_receipt() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        let caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.receipt_caskroom = Some(caskroom.clone());
+        transaction.protect(&target)?;
+        let recovery = flight_absent_recovery_path(&target);
+        file::make_symlink(Path::new("source"), &target)?;
+        let receipt = CaskReceipt {
+            schema_version: 3,
+            version: "1.0.0".to_string(),
+            apps: Vec::new(),
+            binaries: Vec::new(),
+            fonts: Vec::new(),
+            completions: Vec::new(),
+            flight_directories: Vec::new(),
+            pkg_ids: Vec::new(),
+            targets: vec![CaskTargetRecord {
+                path: target.clone(),
+                fingerprint: cask_target_fingerprint(&target)?,
+                uninstall: Some(true),
+            }],
+            prune_safe: false,
+            prune_blocker: None,
+        };
+        file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&receipt)?,
+        )?;
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert!(target.is_symlink());
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn interrupted_flight_recovery_preserves_recreated_target_and_backup() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        file::write(&target, "original")?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+        let backup = transaction.backups[0].backup.as_ref().unwrap().clone();
+        let recovery = flight_backup_recovery_path(&backup);
+        file::write(&target, "recreated")?;
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert_eq!(file::read_to_string(&target)?, "recreated");
+        assert_eq!(file::read_to_string(&backup)?, "original");
+        assert!(recovery.is_file());
+
+        let mut retry = FlightTargetTransaction::default();
+        let err = retry.protect(&target).unwrap_err().to_string();
+        assert!(err.contains("unresolved recovery"));
+        assert_eq!(file::read_to_string(&backup)?, "original");
+
+        file::remove_all(&target)?;
+        recover_flight_backup(&recovery)?;
+        assert_eq!(file::read_to_string(&target)?, "original");
+        assert!(backup.symlink_metadata().is_err());
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_flight_recovery_does_not_block_later_installs() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("missing/target");
+        let backup = tmp.path().join("backup");
+        file::write(&backup, "original")?;
+        let recovery = flight_backup_recovery_path(&backup);
+        let record = FlightRecoveryRecord {
+            target,
+            backup: Some(backup.clone()),
+            target_parent: tmp.path().join("unexpected-target-parent"),
+            backup_parent: Some(resolved_parent(&backup)?),
+            receipt_caskroom: None,
+        };
+        write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+
+        recover_flight_backup_or_warn(&recovery);
+
+        assert!(recovery.is_file());
+        assert_eq!(file::read_to_string(backup)?, "original");
+        file::remove_all(recovery)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stale_flight_recovery_temp_file_does_not_block_recovery() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let recovery_root = tmp.path().join("recovery");
+        let stale = recovery_root.join("stale.tmp");
+        file::create_dir_all(&stale)?;
+        file::write(stale.join("locked"), "content")?;
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o000))?;
+
+        let target = tmp.path().join("target");
+        let backup = tmp.path().join("backup");
+        file::write(&backup, "original")?;
+        let recovery = recovery_root.join("valid.recovery");
+        let record = FlightRecoveryRecord {
+            target: target.clone(),
+            backup: Some(backup.clone()),
+            target_parent: resolved_parent(&target)?,
+            backup_parent: Some(resolved_parent(&backup)?),
+            receipt_caskroom: None,
+        };
+        write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+
+        recover_flight_backups_in(&recovery_root)?;
+
+        assert_eq!(file::read_to_string(target)?, "original");
+        assert!(recovery.symlink_metadata().is_err());
+        assert!(stale.symlink_metadata().is_ok());
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o700))?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn flight_target_rollback_rejects_swapped_parent() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let target = prefix.join("bin/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::write(&target, "original")?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+
+        let saved_prefix = tmp.path().join("saved-prefix");
+        file::rename(&prefix, &saved_prefix)?;
+        let external = tmp.path().join("external");
+        file::create_dir_all(external.join("bin"))?;
+        let external_target = external.join("bin/example");
+        file::write(&external_target, "external")?;
+        file::make_symlink(&external, &prefix)?;
+
+        assert!(transaction.rollback().is_err());
+        assert_eq!(file::read_to_string(&external_target)?, "external");
+        assert_eq!(transaction.backups.len(), 1);
+
+        file::remove_file(&prefix)?;
+        file::rename(&saved_prefix, &prefix)?;
+        transaction.rollback()?;
+        assert_eq!(file::read_to_string(&target)?, "original");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn flight_target_backup_survives_app_replacement() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let app = tmp.path().join("Example.app");
+        let target = app.join("Contents/MacOS/example-link");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(Path::new("original"), &target)?;
+        let mut transaction = FlightTargetTransaction::default();
+
+        transaction.protect(&target)?;
+        let backup = transaction.backups[0].backup.as_ref().unwrap().clone();
+        assert_eq!(backup.parent(), app.parent());
+        file::remove_all(&app)?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(Path::new("replacement"), &target)?;
+
+        transaction.rollback()?;
+        assert_eq!(std::fs::read_link(target)?, PathBuf::from("original"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn receipt_flight_symlinks_exclude_standard_and_drifted_targets() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let binary = tmp.path().join("bin/example");
+        let flight = tmp.path().join("share/example");
+        let retained = tmp.path().join("share/retained");
+        let drifted = tmp.path().join("share/drifted");
+        file::create_dir_all(binary.parent().unwrap())?;
+        file::create_dir_all(flight.parent().unwrap())?;
+        file::make_symlink(Path::new("binary-source"), &binary)?;
+        file::make_symlink(Path::new("flight-source"), &flight)?;
+        file::make_symlink(Path::new("retained-source"), &retained)?;
+        file::make_symlink(Path::new("original-source"), &drifted)?;
+        let records = [&binary, &flight, &retained, &drifted]
+            .into_iter()
+            .map(|path| {
+                Ok(CaskTargetRecord {
+                    path: path.clone(),
+                    fingerprint: cask_target_fingerprint(path)?,
+                    uninstall: if path == &retained {
+                        Some(false)
+                    } else if path == &binary {
+                        None
+                    } else {
+                        Some(true)
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        file::remove_file(&drifted)?;
+        file::make_symlink(Path::new("changed-source"), &drifted)?;
+        let receipt = CaskReceipt {
+            schema_version: 3,
+            version: "1.0.0".to_string(),
+            apps: Vec::new(),
+            binaries: vec![binary],
+            fonts: Vec::new(),
+            completions: Vec::new(),
+            flight_directories: Vec::new(),
+            pkg_ids: Vec::new(),
+            targets: records,
+            prune_safe: false,
+            prune_blocker: None,
+        };
+
+        assert_eq!(receipt_flight_symlink_targets(&receipt)?, vec![flight]);
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_sources_become_caskroom_owned() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("AndroidNDK.app/Contents/NDK");
+        file::create_dir_all(&source)?;
+        file::write(source.join("ndk-build"), "binary")?;
+        let temporary_caskroom = tmp.path().join("Caskroom/android-ndk/.mise-tmp");
+        let target = tmp.path().join("share/android-ndk");
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::create_dir_all(
+            target
+                .parent()
+                .ok_or_else(|| eyre!("missing target parent"))?,
+        )?;
+        file::make_symlink(&source, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        assert_eq!(
+            std::fs::read_link(&target)?,
+            temporary_caskroom.join(".homebrew-staged/AndroidNDK.app/Contents/NDK")
+        );
+        assert!(
+            temporary_caskroom
+                .join(".homebrew-staged/AndroidNDK.app/Contents/NDK/ndk-build")
+                .is_file()
+        );
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_source_copies_reachable_internal_links() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("pkg/bin");
+        let shared = stage.join("shared/data");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&shared)?;
+        file::write(shared.join("value"), "content")?;
+        file::make_symlink(&shared, &source.join("absolute"))?;
+        file::make_symlink(Path::new("../../shared/data"), &source.join("relative"))?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let target = tmp.path().join("share/example");
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&source, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        let owned_stage = temporary_caskroom.join(".homebrew-staged");
+        assert_eq!(
+            std::fs::read_link(owned_stage.join("pkg/bin/absolute"))?,
+            owned_stage.join("shared/data")
+        );
+        assert_eq!(
+            std::fs::read_link(owned_stage.join("pkg/bin/relative"))?,
+            PathBuf::from("../../shared/data")
+        );
+        assert_eq!(
+            file::read_to_string(owned_stage.join("pkg/bin/absolute/value"))?,
+            "content"
+        );
+        assert_eq!(
+            file::read_to_string(owned_stage.join("pkg/bin/relative/value"))?,
+            "content"
+        );
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_source_preserves_link_to_external_referent() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let external = tmp.path().join("external");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&external)?;
+        file::write(external.join("value"), "content")?;
+        let staged_link = stage.join("external-link");
+        file::make_symlink(&external, &staged_link)?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let target = tmp.path().join("share/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&staged_link, &target)?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::make_symlink(&staged_link, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        let durable = temporary_caskroom.join(".homebrew-staged/external-link");
+        assert_eq!(std::fs::read_link(&target)?, durable);
+        assert_eq!(std::fs::read_link(&durable)?, external);
+        file::remove_all(&stage)?;
+        assert_eq!(file::read_to_string(target.join("value"))?, "content");
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_source_accepts_canonical_stage_spelling() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let real_parent = tmp.path().join("real");
+        let real_stage = real_parent.join("stage");
+        file::create_dir_all(&real_stage)?;
+        file::write(real_stage.join("value"), "content")?;
+        let alias_parent = tmp.path().join("alias");
+        file::make_symlink(&real_parent, &alias_parent)?;
+        let stage = alias_parent.join("stage");
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let target = tmp.path().join("share/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::make_symlink(&real_stage, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        assert_eq!(file::read_to_string(target.join("value"))?, "content");
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_artifact_closure_merges_a_parent_after_its_child() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let parent = stage.join("parent");
+        file::create_dir_all(&parent)?;
+        file::write(parent.join("first"), "first")?;
+        file::write(parent.join("second"), "second")?;
+        let owned = tmp.path().join("owned");
+
+        copy_staged_artifact_closure(&stage, &owned, &parent.join("first"))?;
+        copy_staged_artifact_closure(&stage, &owned, &parent)?;
+
+        assert_eq!(file::read_to_string(owned.join("parent/first"))?, "first");
+        assert_eq!(file::read_to_string(owned.join("parent/second"))?, "second");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn staged_artifact_closure_rejects_intermediate_symlink_escape() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let outside = tmp.path().join("outside");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&outside)?;
+        file::write(outside.join("secret"), "secret")?;
+        file::make_symlink(&outside, &stage.join("link"))?;
+        let owned = tmp.path().join("owned");
+
+        let err = copy_staged_artifact_closure(&stage, &owned, &stage.join("link/secret"))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("escaped extraction root"));
+        assert!(owned.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_inside_stage_uses_relative_source() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(stage.join("source"))?;
+        let link = stage.join("nested/link");
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "source".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "nested/link".to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[step],
+            &stage,
+            Path::new("/Applications"),
+            "preflight_steps",
+        )?;
+
+        assert_eq!(std::fs::read_link(link)?, PathBuf::from("../source"));
+        Ok(())
+    }
+
+    #[test]
+    fn internal_staged_symlinks_remain_relative_and_untracked() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("Example.app/Contents/Resources/data");
+        let link = stage.join("Example.app/Contents/data");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(link.parent().unwrap())?;
+        file::make_symlink(Path::new("Resources/data"), &link)?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let mut targets = FlightTargetTransaction::default();
+        targets.record_installed(link.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        assert_eq!(std::fs::read_link(&link)?, PathBuf::from("Resources/data"));
+        assert!(temporary_caskroom.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn temporary_caskroom_symlink_sources_follow_activation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let final_caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let source = temporary_caskroom.join("bin/example");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "binary")?;
+        let target = tmp.path().join("bin/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::make_symlink(&source, &target)?;
+        targets.record_installed(target.clone());
+        file::rename(&temporary_caskroom, &final_caskroom)?;
+
+        retarget_transient_symlinks(
+            &temporary_caskroom,
+            &final_caskroom,
+            &final_caskroom,
+            &targets,
+        )?;
+
+        assert_eq!(
+            std::fs::read_link(target)?,
+            final_caskroom.join("bin/example")
+        );
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn internal_temporary_caskroom_symlinks_follow_activation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let final_caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let source = temporary_caskroom.join("share/example/source");
+        let target = temporary_caskroom.join("share/example/target");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "content")?;
+        file::make_symlink(&source, &target)?;
+        file::rename(&temporary_caskroom, &final_caskroom)?;
+        let installed_target = final_caskroom.join("share/example/target");
+
+        retarget_transient_symlinks(
+            &temporary_caskroom,
+            &final_caskroom,
+            &final_caskroom,
+            &FlightTargetTransaction::default(),
+        )?;
+
+        assert_eq!(
+            std::fs::read_link(installed_target)?,
+            final_caskroom.join("share/example/source")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn parses_zoom_terminate_process_step() -> Result<()> {
         let mut cask = test_cask("zoom", "7.1.5.84650");
         cask.artifacts = vec![
@@ -5255,6 +7483,7 @@ mod tests {
             recursive: false,
         }];
         let mut completed = Vec::new();
+        let mut targets = FlightTargetTransaction::default();
 
         execute_flight_steps_with_completion(
             &cask,
@@ -5262,6 +7491,7 @@ mod tests {
             stage.path(),
             Path::new("/Applications"),
             "postflight_steps",
+            &mut targets,
             |index, step| {
                 completed.push(format!("postflight_steps[{index}]:{}", step.kind()));
                 Ok(())
@@ -5438,7 +7668,7 @@ mod tests {
             &test_cask("example", "1.2.3"),
             &[FlightStep::Run {
                 command: FlightPath {
-                    base: FlightPathBase::Absolute,
+                    base: FlightPathBase::Literal,
                     path: "/bin/sh".to_string(),
                 },
                 args: vec![
@@ -5602,7 +7832,7 @@ mod tests {
             assert_eq!(
                 parse_run_command(&cask, "preflight_steps", Some(&value))?,
                 FlightPath {
-                    base: FlightPathBase::Absolute,
+                    base: FlightPathBase::Literal,
                     path: path.to_string(),
                 }
             );
@@ -7253,6 +9483,7 @@ end
             binaries: vec![],
             fonts: vec![],
             completions: vec![],
+            flight_directories: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
             prune_safe: false,
@@ -7291,6 +9522,7 @@ end
             binaries: Vec::new(),
             fonts: Vec::new(),
             completions: Vec::new(),
+            flight_directories: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -7325,13 +9557,16 @@ end
         let version_dir = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(version_dir.join("Example.app"))?;
         file::write(version_dir.join("Example.app/version"), "1.0.0")?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &version_dir,
             &cask,
             &CaskArtifacts {
                 apps: vec![app],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
         )?;
 
         let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
@@ -7359,7 +9594,7 @@ end
         let configured_target = tmp.path().join("Applications/Configured.app");
         file::create_dir_all(&configured_target)?;
         file::create_dir_all(configured_dir.join("Configured.app"))?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &configured_dir,
             &configured,
             &CaskArtifacts {
@@ -7369,6 +9604,9 @@ end
                 }],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
         )?;
 
         let drifted = test_cask("drifted", "1.0.0");
@@ -7376,7 +9614,7 @@ end
         let drifted_target = tmp.path().join("Applications/Drifted.app");
         file::create_dir_all(&drifted_target)?;
         file::create_dir_all(drifted_dir.join("Drifted.app"))?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &drifted_dir,
             &drifted,
             &CaskArtifacts {
@@ -7386,6 +9624,9 @@ end
                 }],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
         )?;
         file::write(drifted_target.join("changed"), "changed")?;
 
@@ -7401,6 +9642,7 @@ end
                 binaries: Vec::new(),
                 fonts: Vec::new(),
                 completions: Vec::new(),
+                flight_directories: Vec::new(),
                 pkg_ids: Vec::new(),
                 targets: Vec::new(),
                 prune_safe: false,
@@ -7677,6 +9919,7 @@ end
             binaries: Vec::new(),
             fonts: Vec::new(),
             completions: Vec::new(),
+            flight_directories: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -7966,6 +10209,7 @@ end
             binaries: vec![],
             fonts: vec![],
             completions: vec![],
+            flight_directories: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
             prune_safe: false,
@@ -8090,6 +10334,7 @@ end
             binaries: Vec::new(),
             fonts: Vec::new(),
             completions: Vec::new(),
+            flight_directories: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,

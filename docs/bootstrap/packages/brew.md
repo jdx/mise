@@ -104,6 +104,9 @@ delegating to Homebrew. mise also supports structured `preflight_steps` and
 operations using Homebrew's serialized command bases, arguments, environment,
 guards, and sudo setting, and `terminate_process` operations with
 Homebrew-compatible name/full matching, retries, notices, and failure policy.
+Structured `symlink` steps support Homebrew path bases, templates, guards,
+source globs, replacement, and sudo behavior. Links created by lifecycle steps
+are recorded in the mise receipt and restored if the install transaction fails.
 Casks that require custom installer
 choices, services, unsupported hook DSL, unsupported structured lifecycle
 steps, or other cask artifact types fail with a clear unsupported artifact
