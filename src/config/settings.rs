@@ -245,13 +245,21 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+static WARN_NIXOS_ALL_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 fn default_all_compile(linux_distro: Option<&str>) -> bool {
     matches!(linux_distro, Some("alpine" | "nixos"))
 }
 
+fn should_warn_nixos_all_compile_default(
+    linux_distro: Option<&str>,
+    all_compile_is_explicit: bool,
+) -> bool {
+    linux_distro == Some("nixos") && !all_compile_is_explicit
+}
+
 fn warn_nixos_all_compile_default_deprecated() {
-    if env::LINUX_DISTRO.as_deref() == Some("nixos") {
+    if WARN_NIXOS_ALL_COMPILE_DEFAULT.load(Ordering::Relaxed) {
         deprecated_at!(
             "2026.8.0",
             "2027.8.0",
@@ -620,13 +628,15 @@ impl Settings {
         }
 
         // Reload settings after current directory option processed
-        sb = Self::builder()
-            .preloaded(normalize_hidden_config_aliases(
-                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
-            ))
-            .env();
+        let cli_settings = normalize_hidden_config_aliases(
+            CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
+        );
+        let mut all_compile_is_explicit =
+            cli_settings.all_compile.is_some() || env::var_os("MISE_ALL_COMPILE").is_some();
+        sb = Self::builder().preloaded(cli_settings).env();
         time!("try_get builder2+env");
         for file in Self::all_settings_files() {
+            all_compile_is_explicit |= file.all_compile.is_some();
             sb = sb.preloaded(file);
         }
         time!("try_get all_settings_files");
@@ -634,6 +644,13 @@ impl Settings {
         time!("try_get default_settings");
 
         settings = sb.load()?;
+        WARN_NIXOS_ALL_COMPILE_DEFAULT.store(
+            should_warn_nixos_all_compile_default(
+                env::LINUX_DISTRO.as_deref(),
+                all_compile_is_explicit,
+            ),
+            Ordering::Relaxed,
+        );
         time!("try_get load2");
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = Some(false);
@@ -1543,6 +1560,17 @@ mod tests {
         assert!(default_all_compile(Some("nixos")));
         assert!(!default_all_compile(Some("ubuntu")));
         assert!(!default_all_compile(None));
+    }
+
+    #[test]
+    fn nixos_all_compile_default_warning_only_applies_to_implicit_value() {
+        assert!(should_warn_nixos_all_compile_default(Some("nixos"), false));
+        assert!(!should_warn_nixos_all_compile_default(Some("nixos"), true));
+        assert!(!should_warn_nixos_all_compile_default(
+            Some("alpine"),
+            false
+        ));
+        assert!(!should_warn_nixos_all_compile_default(None, false));
     }
 
     #[test]
