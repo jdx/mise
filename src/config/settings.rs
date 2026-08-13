@@ -245,6 +245,8 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+// TODO(2027.8.0): Remove these per-tool flags and simplify the NixOS
+// `all_compile` provenance tracking once the deprecation process is complete.
 static WARN_NIXOS_NODE_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_PYTHON_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 static WARN_NIXOS_ERLANG_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
