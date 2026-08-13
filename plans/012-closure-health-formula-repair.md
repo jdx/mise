@@ -152,18 +152,21 @@ Completed proof:
   lifecycle operations.
 - [Exact-head macOS job 94429640485](https://github.com/jdx/mise/actions/runs/31694663380/job/94429640485)
   passed the production `mise bootstrap --yes` path with only the Kimi root,
-  full legacy OpenSSL damage, inode-preserving repair, direct OpenSSL and
-  default Node TLS, Kimi device-authorization TLS, ambiguous-source refusal,
-  and both Homebrew ownership directions.
+  produced the required CA/OpenSSL shared state, passed direct OpenSSL and
+  default Node TLS, then diagnosed and repaired a removed OpenSSL CA link.
 - Its completion marker records test
   `test_system_install_brew_formula_lifecycle_macos_slow`, fixture count `4`,
   prefix `/opt/homebrew`, mise SHA `b5b4810c3b6420e65a277f1d5fa26adfe1b5069c`,
   and matching Homebrew reference/runtime `6.0.17` at
   `4dacfe77a24dead72de749c0876028b77b99cd04`.
 - [Exact-head Linux/source job 94429640493](https://github.com/jdx/mise/actions/runs/31694663380/job/94429640493)
-  passed the archive/source provenance and completion-marker gates.
-- The same job ended with status `installed`; marker fixture count is 4 and
-  exact mise head is `84d74314f904c0accad1c4cdc563ea662360316b`.
+  passed the Linux formula and source-build gates. Its two markers each record
+  fixture count `1`, mise head `b5b4810c3b6420e65a277f1d5fa26adfe1b5069c`,
+  Homebrew reference `6.0.17` at the pinned SHA, and an intentional runtime
+  value of `not-installed`.
+- Full canonical legacy damage, ambiguous-source refusal, Kimi login TLS, and
+  both ownership directions are descendant combined-stack Plan 018 gates; they
+  are not attributed to the prerequisite-only job above.
 - Local all-brew tests (207 passed) cover offline installed-receipt closure
   traversal, exact dependency/phase diagnostics, legacy lifecycle repair,
   unprovable-state reinstall classification, preserved valid topology/inodes,
