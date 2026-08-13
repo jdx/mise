@@ -726,6 +726,9 @@ impl Backend for NodePlugin {
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if compile_from_source {
+            if !ctx.locked {
+                settings.warn_nixos_node_compile_default();
+            }
             self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;

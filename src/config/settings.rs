@@ -245,7 +245,10 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
-static WARN_NIXOS_ALL_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
+static WARN_NIXOS_NODE_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
+static WARN_NIXOS_PYTHON_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
+static WARN_NIXOS_ERLANG_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
+static WARN_NIXOS_RUBY_COMPILE_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 fn default_all_compile(linux_distro: Option<&str>) -> bool {
     matches!(linux_distro, Some("alpine" | "nixos"))
@@ -258,13 +261,20 @@ fn should_warn_nixos_all_compile_default(
     linux_distro == Some("nixos") && !all_compile_is_explicit
 }
 
-fn warn_nixos_all_compile_default_deprecated() {
-    if WARN_NIXOS_ALL_COMPILE_DEFAULT.load(Ordering::Relaxed) {
+fn compile_inherits_nixos_all_compile_default(
+    nixos_all_compile_is_implicit: bool,
+    compile: Option<bool>,
+) -> bool {
+    nixos_all_compile_is_implicit && compile.is_none()
+}
+
+fn warn_nixos_all_compile_default_deprecated(tool: &str, inherited: &AtomicBool) {
+    if inherited.load(Ordering::Relaxed) {
         deprecated_at!(
             "2026.8.0",
             "2027.8.0",
             "nixos.all_compile_default",
-            "The automatic all_compile=true default on NixOS is deprecated. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
+            "The automatic all_compile=true default on NixOS caused {tool} to compile from source. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
         );
     }
 }
@@ -603,6 +613,23 @@ impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
+
+    pub fn warn_nixos_node_compile_default(&self) {
+        warn_nixos_all_compile_default_deprecated("node", &WARN_NIXOS_NODE_COMPILE_DEFAULT);
+    }
+
+    pub fn warn_nixos_python_compile_default(&self) {
+        warn_nixos_all_compile_default_deprecated("python", &WARN_NIXOS_PYTHON_COMPILE_DEFAULT);
+    }
+
+    pub fn warn_nixos_erlang_compile_default(&self) {
+        warn_nixos_all_compile_default_deprecated("erlang", &WARN_NIXOS_ERLANG_COMPILE_DEFAULT);
+    }
+
+    pub fn warn_nixos_ruby_compile_default(&self) {
+        warn_nixos_all_compile_default_deprecated("ruby", &WARN_NIXOS_RUBY_COMPILE_DEFAULT);
+    }
+
     pub fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
@@ -644,12 +671,9 @@ impl Settings {
         time!("try_get default_settings");
 
         settings = sb.load()?;
-        WARN_NIXOS_ALL_COMPILE_DEFAULT.store(
-            should_warn_nixos_all_compile_default(
-                env::LINUX_DISTRO.as_deref(),
-                all_compile_is_explicit,
-            ),
-            Ordering::Relaxed,
+        let nixos_all_compile_is_implicit = should_warn_nixos_all_compile_default(
+            env::LINUX_DISTRO.as_deref(),
+            all_compile_is_explicit,
         );
         time!("try_get load2");
         if !settings.legacy_version_file {
@@ -709,6 +733,34 @@ impl Settings {
         if settings.ci {
             settings.yes = true;
         }
+        WARN_NIXOS_NODE_COMPILE_DEFAULT.store(
+            compile_inherits_nixos_all_compile_default(
+                nixos_all_compile_is_implicit,
+                settings.node.compile,
+            ),
+            Ordering::Relaxed,
+        );
+        WARN_NIXOS_PYTHON_COMPILE_DEFAULT.store(
+            compile_inherits_nixos_all_compile_default(
+                nixos_all_compile_is_implicit,
+                settings.python.compile,
+            ),
+            Ordering::Relaxed,
+        );
+        WARN_NIXOS_ERLANG_COMPILE_DEFAULT.store(
+            compile_inherits_nixos_all_compile_default(
+                nixos_all_compile_is_implicit,
+                settings.erlang.compile,
+            ),
+            Ordering::Relaxed,
+        );
+        WARN_NIXOS_RUBY_COMPILE_DEFAULT.store(
+            compile_inherits_nixos_all_compile_default(
+                nixos_all_compile_is_implicit,
+                settings.ruby.compile,
+            ),
+            Ordering::Relaxed,
+        );
         if settings.all_compile {
             if settings.node.compile.is_none() {
                 settings.node.compile = Some(true);
@@ -752,7 +804,6 @@ impl Settings {
 
     fn flush_deprecated_warnings_now() {
         DEPRECATED_WARNINGS_READY.store(true, Ordering::SeqCst);
-        warn_nixos_all_compile_default_deprecated();
         warn_deprecated_env_settings();
         let pending = {
             let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
@@ -1571,6 +1622,20 @@ mod tests {
             false
         ));
         assert!(!should_warn_nixos_all_compile_default(None, false));
+    }
+
+    #[test]
+    fn compile_warning_only_applies_to_unset_tool_compile_setting() {
+        assert!(compile_inherits_nixos_all_compile_default(true, None));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            true,
+            Some(true)
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            true,
+            Some(false)
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(false, None));
     }
 
     #[test]

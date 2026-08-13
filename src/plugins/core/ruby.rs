@@ -1102,6 +1102,7 @@ impl Backend for RubyPlugin {
         // No precompiled available, fall through to compile from source
 
         // Compile from source
+        Settings::get().warn_nixos_ruby_compile_default();
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }

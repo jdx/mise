@@ -1074,6 +1074,7 @@ impl Backend for PythonPlugin {
             validate_python_precompiled_settings(&settings)?;
             self.install_precompiled(ctx, &mut tv).await?;
         } else {
+            settings.warn_nixos_python_compile_default();
             self.install_compiled(ctx, &tv).await?;
         }
         self.test_python(&ctx.config, &tv, ctx.pr.as_ref()).await?;
