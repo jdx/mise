@@ -72,6 +72,9 @@ struct TaskExecContext<'a> {
     prefix: &'a str,
     output_capture: Option<&'a TaskOutputCapture>,
     allow_during_interruption: bool,
+    /// Context of this task's live OpenTelemetry span, used to correlate
+    /// exported log records with the task that produced them.
+    otel_span_cx: Option<&'a opentelemetry::trace::SpanContext>,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -252,6 +255,8 @@ pub struct TaskExecutor {
     pub task_cache_explain_json: bool,
     pub cache_session: Option<crate::cache::session::CacheSessionEnvironment>,
     pub sandbox: crate::sandbox::SandboxConfig,
+    /// Forwards task stdout/stderr to the OTEL log pipeline (when enabled).
+    pub output_forwarder: Option<crate::otel::TaskOutputForwarder>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -305,6 +310,7 @@ impl TaskExecutor {
             task_cache_explain_json: config.task_cache_explain_json,
             cache_session: config.cache_session,
             sandbox: config.sandbox,
+            output_forwarder: None,
         }
     }
 
@@ -675,6 +681,7 @@ impl TaskExecutor {
             prefix: &prefix,
             output_capture: output_capture.as_ref(),
             allow_during_interruption,
+            otel_span_cx: otel_span_cx.as_ref(),
         };
 
         let timer = std::time::Instant::now();
@@ -1435,6 +1442,7 @@ impl TaskExecutor {
             prefix,
             output_capture,
             allow_during_interruption,
+            otel_span_cx,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
@@ -1512,6 +1520,32 @@ impl TaskExecutor {
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
+
+        // Only tee output into the OTLP log pipeline when this process will
+        // actually capture it. Under `raw` the child gets the terminal
+        // directly and a fully silenced task discards both streams, so the
+        // observers would never fire — and the claim path would then invite a
+        // nested `mise run` to take over a stream nobody is reading.
+        let forwards_output =
+            self.output_forwarder.is_some() && !raw && !task.silent.suppresses_both();
+        // Holds the claim file for the lifetime of the command; dropping it
+        // cleans up. See `otel::log_claim` for the hand-off protocol.
+        let otel_claim_dir = if forwards_output {
+            Some(tempfile::tempdir()?)
+        } else {
+            None
+        };
+        if let Some(dir) = &otel_claim_dir {
+            cmd = crate::otel::TaskOutputForwarder::attach_hooks(
+                self.output_forwarder.as_ref(),
+                &task.name,
+                &task.args,
+                otel_span_cx,
+                Some(crate::otel::LogClaimWatcher::new(dir.path().join("claim"))),
+                cmd,
+            );
+        }
+
         match output {
             TaskOutput::Prefix => {
                 if !task.silent.suppresses_stdout() {
@@ -1645,15 +1679,19 @@ impl TaskExecutor {
                         cmd = cmd.with_on_stderr(|_| {});
                     }
                 } else if raw || redactions.is_empty() {
-                    if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
-                    } else {
+                    // Inheriting stdio hands the child the terminal directly,
+                    // which would bypass the observer that tees lines to the
+                    // collector — keep the pipe when log export is active.
+                    let tee = cmd.has_stdout_observer();
+                    if task.silent.suppresses_stdout() {
                         cmd = cmd.stdout(Stdio::null());
+                    } else if !tee {
+                        cmd = cmd.stdout(Stdio::inherit());
                     }
-                    if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
-                    } else {
+                    if task.silent.suppresses_stderr() {
                         cmd = cmd.stderr(Stdio::null());
+                    } else if !tee {
+                        cmd = cmd.stderr(Stdio::inherit());
                     }
                 }
             }

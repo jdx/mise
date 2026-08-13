@@ -1,9 +1,14 @@
+mod log_claim;
+mod task_output_forwarder;
 pub(crate) mod task_run_telemetry;
 
+pub use log_claim::{LOG_CLAIM_ENV, LogClaim, LogClaimWatcher};
+pub use task_output_forwarder::TaskOutputForwarder;
 pub use task_run_telemetry::TaskRunTelemetry;
 
 use crate::config::Settings;
 use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::runtime;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
@@ -20,6 +25,21 @@ pub fn traces_enabled() -> bool {
     }
     std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
         || std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").is_ok()
+}
+
+/// Check if OpenTelemetry log export is enabled.
+///
+/// Log export is a separate opt-in from trace export because task
+/// stdout/stderr is shipped to the collector — a different trust boundary
+/// than spans. Requires `otel.logs = true` (or `MISE_OTEL_LOGS=1`) AND a
+/// logs endpoint configured via `OTEL_EXPORTER_OTLP_ENDPOINT` or the
+/// signal-specific `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
+pub fn logs_enabled() -> bool {
+    if !Settings::get().otel.logs {
+        return false;
+    }
+    std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok()
+        || std::env::var("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT").is_ok()
 }
 
 // ── Resource ────────────────────────────────────────────────────────
@@ -61,6 +81,30 @@ pub fn build_tracer_provider(resource: Resource) -> Option<SdkTracerProvider> {
         SdkTracerProvider::builder()
             .with_span_processor(
                 opentelemetry_sdk::trace::span_processor_with_async_runtime::BatchSpanProcessor::builder(exporter, runtime::Tokio)
+                    .build(),
+            )
+            .with_resource(resource)
+            .build(),
+    )
+}
+
+/// Build a `SdkLoggerProvider` with the OTLP/HTTP protobuf exporter.
+pub fn build_logger_provider(resource: Resource) -> Option<SdkLoggerProvider> {
+    let exporter = match opentelemetry_otlp::LogExporter::builder()
+        .with_http()
+        .build()
+    {
+        Ok(e) => e,
+        Err(err) => {
+            debug!("otel: failed to build log exporter: {err}");
+            return None;
+        }
+    };
+
+    Some(
+        SdkLoggerProvider::builder()
+            .with_log_processor(
+                opentelemetry_sdk::logs::log_processor_with_async_runtime::BatchLogProcessor::builder(exporter, runtime::Tokio)
                     .build(),
             )
             .with_resource(resource)

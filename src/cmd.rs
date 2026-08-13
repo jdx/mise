@@ -511,6 +511,12 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    /// Whether a stdout observer is attached. Used to decide whether stdout
+    /// must stay piped in output modes that would otherwise inherit it.
+    pub(crate) fn has_stdout_observer(&self) -> bool {
+        self.observe_stdout.is_some()
+    }
+
     pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
         self.cmd.current_dir(dir);
         self
@@ -575,7 +581,7 @@ impl<'a> CmdLineRunner<'a> {
         Ok(self)
     }
 
-    fn get_env(&self, key: &str) -> Option<&OsStr> {
+    pub(crate) fn get_env(&self, key: &str) -> Option<&OsStr> {
         for (k, v) in self.cmd.as_std().get_envs() {
             if k == key {
                 return v;

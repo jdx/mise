@@ -892,6 +892,9 @@ impl Run {
 
         // Step 5: Create TaskExecutor after tool installation
         self.setup_executor()?;
+        if let (Some(t), Some(executor)) = (&self.telemetry, &mut self.executor) {
+            executor.output_forwarder = t.output_forwarder();
+        }
 
         // Validate every scheduled invocation before starting the scheduler so
         // an invalid parent or dependency cannot run any task commands first.
