@@ -3,7 +3,7 @@
 # shellcheck source=e2e/cli/brew_oracle_guard.sh
 source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
 
-if grep -Eq "if: *always\\(\\).*full-ci" "$ROOT/.github/workflows/test.yml"; then
+if grep -Eq 'if: *always\(\).*full-ci' "$ROOT/.github/workflows/test.yml"; then
   fail "destructive oracle jobs must remain cancellable"
 fi
 
