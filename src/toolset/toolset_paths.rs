@@ -76,7 +76,7 @@ impl Toolset {
         paths.extend(config.path_dirs().await?.clone());
 
         // 3. UV venv path (if any) - ensure project venv takes precedence over tool and tool_add_paths
-        if let Some(venv) = uv::uv_venv(config, self).await {
+        if let Some(venv) = uv::uv_venv(config, self).await? {
             paths.push(venv.venv_path.clone());
         }
 
@@ -111,7 +111,7 @@ impl Toolset {
         let mut tool_paths = Vec::new();
 
         // UV venv path (if any) - these are tool-managed paths
-        if let Some(venv) = uv::uv_venv(config, self).await {
+        if let Some(venv) = uv::uv_venv(config, self).await? {
             tool_paths.push(venv.venv_path.clone());
         }
 
