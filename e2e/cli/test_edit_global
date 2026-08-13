@@ -27,3 +27,25 @@ node 22
 EOF
 assert_contains "mise edit preexisting.toml --tool-versions .tool-versions --dry-run 2>&1" 'go = "1.22"'
 assert_contains "mise edit preexisting.toml --tool-versions .tool-versions --dry-run 2>&1" 'node = "22"'
+
+# Everything above is --dry-run, so nothing here reached the write at all. The global config
+# lives at ~/.config/mise/config.toml and nothing creates that directory ahead of time, so on
+# a fresh install this reported "writing to ..." and then failed with a bare "no such file or
+# directory", leaving nothing behind.
+export MISE_GLOBAL_CONFIG_FILE="$PWD/fresh/mise/config.toml"
+assert_succeed "mise edit --global"
+# Asserting on the content, not just existence: a file that exists but is empty would mean
+# the directory got made and the write still went wrong.
+assert_contains "cat fresh/mise/config.toml" "mise config files are hierarchical"
+
+# Same for --tool-versions, which writes through a different branch.
+export MISE_GLOBAL_CONFIG_FILE="$PWD/fresh-tv/mise/config.toml"
+assert_succeed "mise edit --global --tool-versions .tool-versions"
+assert_contains "cat fresh-tv/mise/config.toml" 'node = "22"'
+
+# Control: with the directory already there both were always fine, so on their own the two
+# assertions above do not show that creating it is what changed.
+export MISE_GLOBAL_CONFIG_FILE="$PWD/existing/config.toml"
+mkdir -p existing
+assert_succeed "mise edit --global"
+assert_contains "cat existing/config.toml" "mise config files are hierarchical"
