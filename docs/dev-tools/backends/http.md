@@ -461,10 +461,17 @@ The HTTP backend implements an intelligent caching system to optimize disk usage
 
 ### Cache Location
 
-Downloaded and extracted files are cached in `$MISE_CACHE_DIR/http-tarballs/` instead of being stored separately for each tool installation. By default:
+For normal user installations, downloaded and extracted files are cached in
+`$MISE_DATA_DIR/http-tarballs/` instead of being stored separately for each tool
+installation. By default:
 
-- **Linux**: `~/.cache/mise/http-tarballs/`
-- **macOS**: `~/Library/Caches/mise/http-tarballs/`
+- **Linux**: `~/.local/share/mise/http-tarballs/`
+- **macOS**: `~/.local/share/mise/http-tarballs/`
+
+Explicit `mise install --system`, `mise install --shared`, and `mise
+install-into` installations are extracted directly into their destination.
+They do not use this persistent extraction cache, so the resulting installation
+is self-contained and does not link to the installing user's home directory.
 
 ### Cache Key Generation
 
@@ -476,30 +483,33 @@ Cache keys are generated based on the file content to ensure identical downloads
 Example cache directory structure:
 
 ```
-~/.cache/mise/http-tarballs/
+~/.local/share/mise/http-tarballs/
 ├── 71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f/
-│   ├── extracted/
-│   │   └── bin/my-tool
+│   ├── bin/my-tool
 │   └── metadata.json
 └── 1c2af379bdf1fed266bc44b49271e2df5b0dafae09f1cc744b3505ec50c84719_strip_1/
-    ├── extracted/
-    │   └── my-tool
+    ├── my-tool
     └── metadata.json
 ```
 
 ### Symlinked Installations
 
-Tool installations are symlinks to the cached extracted content:
+Normal user installations are symlinks to the cached extracted content:
 
 ```bash
-~/.local/share/mise/installs/http-my-tool/1.0.0 → ~/.cache/mise/http-tarballs/71f774.../extracted
+~/.local/share/mise/installs/http-my-tool/1.0.0 → ~/.local/share/mise/http-tarballs/71f774...
 ```
 
 This approach provides several benefits:
 
-- **Space efficiency**: Multiple tools using the same tarball share a single cached copy
+- **Space efficiency**: Normal user installs share identical tarballs across tools
 - **Faster installations**: Cache hits avoid re-downloading and re-extracting files
 - **Consistency**: Identical file content always uses the same cache entry
+
+System, shared, and install-into destinations contain real files rather than
+these symlinks. This avoids leaving hidden cache entries behind after an
+uninstall and keeps shared installations independent of a specific user's data
+directory.
 
 ### Cache Metadata
 
@@ -517,9 +527,10 @@ Each cache entry includes a `metadata.json` file with information about the cach
 
 ### Cache Management
 
-The HTTP backend cache follows mise's standard cache management:
+Normal HTTP installations store their cache in
+`$MISE_DATA_DIR/http-tarballs/`. It is intentionally outside `MISE_CACHE_DIR`,
+so `mise cache clear` does not remove content that installed symlinks still
+reference.
 
-- Cache entries can be cleared with `mise cache clear`
-- The cache directory respects the `MISE_CACHE_DIR` environment variable
-- **Autopruner**: mise automatically cleans up unused cache entries after 30 days of inactivity
-- Manual cleanup is available with `mise cache clear` if needed
+System, shared, and install-into destinations do not create a persistent HTTP
+extraction cache.
