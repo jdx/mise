@@ -78,6 +78,10 @@ within_isolated_env() {
       "$ROOT/e2e/cli/test_system_install_brew_macos_slow" | \
       "$ROOT/e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow")
       brew_oracle_vars+=(
+        # Keep GitHub's process-tree identity so a canceled destructive oracle
+        # cannot outlive its tracked step. This never grants the disposable
+        # capability and is forwarded only to the four oracle entry points.
+        RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
         MISE_BREW_ORACLE_DISPOSABLE="${MISE_BREW_ORACLE_DISPOSABLE:-}"
         MISE_BREW_ORACLE_RESULT_DIR="${MISE_BREW_ORACLE_RESULT_DIR:-}"
         MISE_BREW_ORACLE_RUNNER_TEMP="${MISE_BREW_ORACLE_RUNNER_TEMP:-}"

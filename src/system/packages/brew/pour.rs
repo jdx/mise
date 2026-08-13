@@ -1226,7 +1226,7 @@ pub fn write_receipt(
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-    let mut receipt = json!({
+    let receipt = json!({
         "homebrew_version": format!("{EMULATED_BREW_VERSION} (mise)"),
         "used_options": [],
         "unused_options": [],

@@ -14,10 +14,12 @@ MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_R
 MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA
 unset CI MISE_BREW_ORACLE_UNFORWARDED
 
+export RUNNER_TRACKING_ID=tracking-is-not-authorization
 unset MISE_BREW_ORACLE_DISPOSABLE
 if brew_oracle_require_disposable missing-capability /opt/homebrew; then
   fail "missing disposable capability was accepted"
 fi
+unset RUNNER_TRACKING_ID
 
 MISE_BREW_ORACLE_DISPOSABLE=1
 brew_oracle_require_disposable valid-marker /opt/homebrew

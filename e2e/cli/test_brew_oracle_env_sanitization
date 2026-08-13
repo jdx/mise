@@ -5,3 +5,4 @@
 assert_fail "env | grep -q '^MISE_BREW_ORACLE_'"
 assert_fail "env | grep -q '^MISE_BREW_LIFECYCLE_TEST_PREFIX='"
 assert_fail "env | grep -q '^CI='"
+assert_fail "env | grep -q '^RUNNER_TRACKING_ID='"
