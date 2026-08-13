@@ -896,11 +896,19 @@ impl Backend for AquaBackend {
         // Try to get checksum from checksum file if not available from GitHub API
         let checksum = match checksum {
             Some(c) => Some(c),
-            None => self
+            None => match self
                 .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref())
                 .await
-                .ok()
-                .flatten(),
+            {
+                Ok(checksum) => checksum,
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to get checksum from checksum file: {e}",
+                        self.ba()
+                    );
+                    None
+                }
+            },
         };
 
         // Detect provenance from aqua registry config
