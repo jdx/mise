@@ -10,22 +10,27 @@ use crate::hash::{file_hash_blake3, hash_to_str};
 /// Persistent state for deps freshness checking.
 ///
 /// Stores blake3 content hashes of source files and effective commands keyed by
-/// provider ID, plus the set of optional output paths that existed at the last
-/// successful run.
+/// provider ID, plus the set of output paths that existed at the last successful
+/// run and the output-rule identity used to select them.
 /// Persisted to `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DepsState {
     /// provider_id → (relative_path → blake3_hex)
     #[serde(default)]
     pub providers: BTreeMap<String, BTreeMap<String, String>>,
-    /// provider_id → list of optional output paths (relative to project root)
-    /// that existed after the last successful run. Used to detect when an
-    /// output that was previously present has been deleted.
+    /// provider_id → list of output paths (relative to project root) that
+    /// existed after the last successful run. Used to detect when an output
+    /// that was previously present has been deleted, including one match from
+    /// a required output glob.
     #[serde(default)]
     pub seen_outputs: BTreeMap<String, Vec<String>>,
     /// provider_id → blake3 hash of the effective command
     #[serde(default)]
     pub command_hashes: BTreeMap<String, String>,
+    /// provider_id → hash of the unexpanded configured output rules used
+    /// when `seen_outputs` was recorded.
+    #[serde(default)]
+    pub output_rule_hashes: BTreeMap<String, String>,
 }
 
 impl DepsState {
@@ -69,13 +74,13 @@ impl DepsState {
         self.providers.insert(provider_id.to_string(), hashes);
     }
 
-    /// Get optional outputs that existed at the last successful run, or None
-    /// if not previously recorded.
+    /// Get outputs that existed at the last successful run, or None if not
+    /// previously recorded.
     pub fn get_seen_outputs(&self, provider_id: &str) -> Option<&Vec<String>> {
         self.seen_outputs.get(provider_id)
     }
 
-    /// Record optional outputs that exist after a successful run.
+    /// Record outputs that exist after a successful run.
     pub fn set_seen_outputs(&mut self, provider_id: &str, outputs: Vec<String>) {
         self.seen_outputs.insert(provider_id.to_string(), outputs);
     }
@@ -88,6 +93,17 @@ impl DepsState {
     /// Record the effective command hash after a successful run.
     pub fn set_command_hash(&mut self, provider_id: &str, hash: String) {
         self.command_hashes.insert(provider_id.to_string(), hash);
+    }
+
+    /// Get the output-rule identity used to record a provider's seen outputs.
+    pub fn get_output_rules(&self, provider_id: &str) -> Option<&String> {
+        self.output_rule_hashes.get(provider_id)
+    }
+
+    /// Record the output-rule identity associated with a provider's outputs.
+    pub fn set_output_rules(&mut self, provider_id: &str, rules: String) {
+        self.output_rule_hashes
+            .insert(provider_id.to_string(), rules);
     }
 }
 
@@ -190,5 +206,19 @@ mod tests {
         assert!(!serialized.contains("run command"));
         let restored: DepsState = toml::from_str(&serialized).unwrap();
         assert_eq!(restored.get_command_hash("example"), Some("digest"));
+    }
+
+    #[test]
+    fn old_state_without_output_rule_hashes_remains_compatible() {
+        let state: DepsState = toml::from_str(
+            r#"
+[seen_outputs]
+npm = ["node_modules"]
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(state.get_seen_outputs("npm").unwrap(), &["node_modules"]);
+        assert!(state.get_output_rules("npm").is_none());
     }
 }

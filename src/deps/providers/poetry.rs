@@ -28,18 +28,20 @@ impl DepsProvider for PoetryDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![root.join("poetry.lock"), root.join("pyproject.toml")]
+        self.base
+            .sources(vec![root.join("poetry.lock"), root.join("pyproject.toml")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![]
+        self.base.outputs(vec![])
     }
 
     fn optional_outputs(&self) -> Vec<PathBuf> {
         // Poetry only writes `.venv` in the project when `virtualenvs.in-project`
         // is enabled; otherwise the venv lives elsewhere. Track as optional so
         // in-project setups detect deletion without breaking the default mode.
-        vec![self.base.config_root().join(".venv")]
+        self.base
+            .optional_outputs(vec![self.base.config_root().join(".venv")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

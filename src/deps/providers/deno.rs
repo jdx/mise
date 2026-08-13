@@ -28,21 +28,22 @@ impl DepsProvider for DenoDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![
+        self.base.sources(vec![
             root.join("deno.lock"),
             root.join("deno.json"),
             root.join("deno.jsonc"),
             root.join("package.json"),
-        ]
+        ])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![]
+        self.base.outputs(vec![])
     }
 
     fn optional_outputs(&self) -> Vec<PathBuf> {
         // https://docs.deno.com/runtime/fundamentals/node/#node_modules
-        vec![self.base.config_root().join("node_modules")]
+        self.base
+            .optional_outputs(vec![self.base.config_root().join("node_modules")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
