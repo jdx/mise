@@ -315,14 +315,89 @@ impl Drop for RunningPidGuard {
 }
 
 /// Env var set on every spawned child when this mise process is managing
-/// process groups (calling setpgid + killpg). A nested mise that sees this
+/// process groups (calling setpgid/setsid + killpg). A nested mise that sees this
 /// var skips its own setpgid so descendants stay in the outer pgid — that
 /// way the outer mise's killpg actually reaches the leaves.
 #[cfg(unix)]
 const TASK_PGID_MANAGED_ENV: &str = "MISE_TASK_PGID_MANAGED";
 
-/// True when this mise should `setpgid` spawned children and `killpg` them
-/// for cleanup.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChildProcessIsolation {
+    Inherit,
+    ProcessGroup,
+    Session,
+}
+
+#[cfg(unix)]
+fn child_process_isolation(
+    child_stdin_is_terminal: bool,
+    parent_has_terminal: bool,
+    is_macos: bool,
+) -> ChildProcessIsolation {
+    if child_stdin_is_terminal {
+        ChildProcessIsolation::Inherit
+    } else if is_macos && parent_has_terminal {
+        ChildProcessIsolation::Session
+    } else {
+        ChildProcessIsolation::ProcessGroup
+    }
+}
+
+#[cfg(unix)]
+fn parent_has_terminal() -> bool {
+    use std::io::IsTerminal;
+
+    std::io::stdin().is_terminal()
+        || std::io::stdout().is_terminal()
+        || std::io::stderr().is_terminal()
+}
+
+/// Put an ordinary non-raw command in the process tree managed by mise.
+///
+/// On macOS, a non-interactive zsh child in its own process group can be
+/// stopped by job control when it uses process substitution under a
+/// controlling terminal (for example, inside tmux). A separate session keeps
+/// the child detached from that terminal while preserving the invariant that
+/// its PID is also its process group ID for killpg-based cleanup.
+#[cfg(unix)]
+fn prepare_execute_child(cmd: &mut std::process::Command) {
+    if !should_use_pgroup() {
+        return;
+    }
+
+    cmd.env(TASK_PGID_MANAGED_ENV, "1");
+    let parent_has_terminal = parent_has_terminal();
+    unsafe {
+        cmd.pre_exec(move || {
+            // Use BorrowedFd::borrow_raw rather than std::io::stdin() —
+            // pre_exec runs post-fork where OnceLock/malloc are not
+            // async-signal-safe.
+            let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+            let child_stdin_is_terminal = std::io::IsTerminal::is_terminal(&stdin);
+            match child_process_isolation(
+                child_stdin_is_terminal,
+                parent_has_terminal,
+                cfg!(target_os = "macos"),
+            ) {
+                ChildProcessIsolation::Inherit => Ok(()),
+                ChildProcessIsolation::ProcessGroup => {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                    Ok(())
+                }
+                ChildProcessIsolation::Session => {
+                    nix::unistd::setsid().map(|_| ()).map_err(Into::into)
+                }
+            }
+        });
+    }
+}
+
+/// True when this mise should isolate spawned children into process groups and
+/// `killpg` them for cleanup.
 ///
 /// We skip pgroup management in two cases:
 ///
@@ -340,12 +415,12 @@ const TASK_PGID_MANAGED_ENV: &str = "MISE_TASK_PGID_MANAGED";
 /// In both cases we share whatever pgid we landed in, so the ancestor
 /// that owns it can clean us up.
 ///
-/// Cached on first access: `execute()` decides whether to `setpgid` at
-/// spawn time, and `kill_all()` decides whether to `killpg` at signal
-/// time. They must agree — a child placed in its own pgid by `execute()`
-/// must be killed via `killpg`, or only the direct PID gets the signal
-/// and grandchildren leak. Computing this once removes any chance of the
-/// two callers disagreeing if the env later mutates.
+/// Cached on first access: `execute()` decides whether to create a managed
+/// process group or session at spawn time, and `kill_all()` decides whether to
+/// `killpg` at signal time. They must agree — a child placed in its own pgid by
+/// `execute()` must be killed via `killpg`, or only the direct PID gets the
+/// signal and grandchildren leak. Computing this once removes any chance of
+/// the two callers disagreeing if the env later mutates.
 #[cfg(unix)]
 fn should_use_pgroup() -> bool {
     static CACHED: Lazy<bool> = Lazy::new(|| {
@@ -681,29 +756,7 @@ impl<'a> CmdLineRunner<'a> {
             return self.execute_raw();
         }
         #[cfg(unix)]
-        if should_use_pgroup() {
-            // Mark descendants so a nested mise inherits this var and skips
-            // its own setpgid — keeping the whole tree in our pgid.
-            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
-            unsafe {
-                self.cmd.as_std_mut().pre_exec(|| {
-                    // Skip setpgid when stdin is a TTY: interactive tools
-                    // (e.g. Tilt) need to stay in the terminal's foreground
-                    // pgid or they hang on SIGTTIN when reading stdin.
-                    // Use BorrowedFd::borrow_raw rather than std::io::stdin()
-                    // — pre_exec runs post-fork where OnceLock/malloc are
-                    // not async-signal-safe.
-                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
-                    if !std::io::IsTerminal::is_terminal(&stdin) {
-                        let _ = nix::unistd::setpgid(
-                            nix::unistd::Pid::from_raw(0),
-                            nix::unistd::Pid::from_raw(0),
-                        );
-                    }
-                    Ok(())
-                });
-            }
-        }
+        prepare_execute_child(self.cmd.as_std_mut());
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
@@ -880,21 +933,7 @@ impl<'a> CmdLineRunner<'a> {
             return self.execute_raw_async_with_cancel_check(is_cancelled).await;
         }
         #[cfg(unix)]
-        if should_use_pgroup() {
-            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
-            unsafe {
-                self.cmd.as_std_mut().pre_exec(|| {
-                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
-                    if !std::io::IsTerminal::is_terminal(&stdin) {
-                        let _ = nix::unistd::setpgid(
-                            nix::unistd::Pid::from_raw(0),
-                            nix::unistd::Pid::from_raw(0),
-                        );
-                    }
-                    Ok(())
-                });
-            }
-        }
+        prepare_execute_child(self.cmd.as_std_mut());
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
@@ -1790,6 +1829,22 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::config::Config;
+
+    #[test]
+    fn test_child_process_isolation() {
+        use super::ChildProcessIsolation::{Inherit, ProcessGroup, Session};
+
+        assert_eq!(super::child_process_isolation(true, true, true), Inherit);
+        assert_eq!(super::child_process_isolation(false, true, true), Session);
+        assert_eq!(
+            super::child_process_isolation(false, false, true),
+            ProcessGroup
+        );
+        assert_eq!(
+            super::child_process_isolation(false, true, false),
+            ProcessGroup
+        );
+    }
 
     #[tokio::test]
     async fn test_cmd() {
