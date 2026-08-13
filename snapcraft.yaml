@@ -49,6 +49,7 @@ parts:
     rust-channel: stable
 
     build-packages:
+      - cmake
       - libssl-dev
     build-attributes:
       - enable-patchelf
