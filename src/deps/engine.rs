@@ -763,8 +763,9 @@ impl DepsEngine {
                 }
             }
 
-            // Save content hashes and existing optional outputs for each
-            // successfully ran provider.
+            // Save content hashes and existing outputs for each successfully
+            // ran provider. Recording the expanded required outputs lets us
+            // detect when only some matches from an output glob are deleted.
             for step in &results {
                 if let DepsStepResult::Ran(id) = step
                     && let Some(provider) = providers.iter().find(|p| p.id() == id)
@@ -773,10 +774,11 @@ impl DepsEngine {
                     let sources = provider.sources();
                     if let Ok(hashes) = state::hash_sources(&sources, project_root) {
                         let seen: Vec<String> = provider
-                            .optional_outputs()
-                            .iter()
-                            .filter(|p| p.exists())
-                            .map(|p| state::relative_str(p, project_root))
+                            .outputs()
+                            .into_iter()
+                            .chain(provider.optional_outputs())
+                            .filter(|output| output.exists())
+                            .map(|output| state::relative_str(&output, project_root))
                             .collect();
                         let mut st = DepsState::load(project_root);
                         let provider_id = provider.base().id.as_str();
@@ -785,6 +787,7 @@ impl DepsEngine {
                         if let Some(command_hash) = command_hashes.get(id) {
                             st.set_command_hash(provider_id, command_hash.clone());
                         }
+                        st.set_output_rules(provider_id, provider.base().output_rules_hash());
                         if let Err(e) = st.save(project_root) {
                             warn!("failed to save deps state: {e}");
                         }
@@ -1083,14 +1086,33 @@ impl DepsEngine {
             }
         }
 
-        // Optional outputs are enforced only for paths that existed at the
-        // last successful run (recorded in state). This catches deletion
-        // (e.g. `rm -rf .venv` after `uv sync`) without forcing a re-run for
-        // providers whose canonical output is intentionally absent.
-        if let Some(seen) = st.get_seen_outputs(provider_id) {
-            for output in &optional_outputs {
-                let rel = state::relative_str(output, project_root);
-                if seen.iter().any(|p| p == &rel) && !output.exists() {
+        // Outputs that existed after the last successful run must continue to
+        // exist. This catches deletion of one match from a required output glob
+        // as well as deletion of an observed optional output (e.g. `.venv`).
+        let output_rules_match = st
+            .get_output_rules(provider_id)
+            .is_some_and(|rules| rules == &provider.base().output_rules_hash());
+        // State written before command hashing is migrated by the command-hash
+        // check below, so only report missing output rules once that state has
+        // already been migrated.
+        if st.get_output_rules(provider_id).is_none()
+            && st.get_command_hash(provider_id).is_some()
+            && st.get_seen_outputs(provider_id).is_some()
+            && (!outputs.is_empty() || !optional_outputs.is_empty())
+        {
+            return Ok(FreshnessResult::Stale(
+                "output tracking state changed".to_string(),
+            ));
+        }
+        if output_rules_match && let Some(seen) = st.get_seen_outputs(provider_id) {
+            for output in seen {
+                let output = PathBuf::from(output);
+                let output = if output.is_absolute() {
+                    output
+                } else {
+                    project_root.join(output)
+                };
+                if !output.exists() {
                     return Ok(FreshnessResult::OutputsMissing);
                 }
             }

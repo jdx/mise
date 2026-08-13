@@ -165,6 +165,23 @@ run = "npx prisma generate"
 | `depends`     | string[] | Other provider names that must complete before this one runs              |
 | `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)  |
 
+Built-in providers use their documented sources and outputs when these options are
+omitted. Setting `sources` or `outputs` replaces that provider's defaults rather
+than adding to them. An empty array, such as `outputs = []`, explicitly disables
+that kind of path tracking; it also disables any optional outputs supplied by the
+built-in provider.
+
+Relative paths and glob patterns are resolved from the provider's config root after
+applying `dir`. Absolute paths are used as written. For example, a pnpm workspace
+that keeps installed packages below an application directory can override the
+root-level defaults:
+
+```toml
+[deps.pnpm]
+sources = ["pnpm-lock.yaml", "packages/app/package.json"]
+outputs = ["packages/app/node_modules"]
+```
+
 ### Templates and Environment Variables
 
 String values in provider configuration support Tera templates such as

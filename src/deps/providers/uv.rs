@@ -28,11 +28,12 @@ impl DepsProvider for UvDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![root.join("uv.lock"), root.join("pyproject.toml")]
+        self.base
+            .sources(vec![root.join("uv.lock"), root.join("pyproject.toml")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![]
+        self.base.outputs(vec![])
     }
 
     fn optional_outputs(&self) -> Vec<PathBuf> {
@@ -40,7 +41,8 @@ impl DepsProvider for UvDepsProvider {
         // `UV_PROJECT_ENVIRONMENT` can redirect it elsewhere. Track as optional
         // so the default case detects deletion while custom-env-path setups
         // still rely on source hashes.
-        vec![self.base.config_root().join(".venv")]
+        self.base
+            .optional_outputs(vec![self.base.config_root().join(".venv")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

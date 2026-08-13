@@ -27,11 +27,12 @@ impl DepsProvider for PipDepsProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![self.base.config_root().join("requirements.txt")]
+        self.base
+            .sources(vec![self.base.config_root().join("requirements.txt")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![]
+        self.base.outputs(vec![])
     }
 
     fn optional_outputs(&self) -> Vec<PathBuf> {
@@ -39,7 +40,8 @@ impl DepsProvider for PipDepsProvider {
         // create `.venv` itself. Track it as optional so projects that use a
         // local venv detect deletion, without forcing a re-run for projects
         // that don't.
-        vec![self.base.config_root().join(".venv")]
+        self.base
+            .optional_outputs(vec![self.base.config_root().join(".venv")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

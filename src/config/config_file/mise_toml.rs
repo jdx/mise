@@ -4495,8 +4495,11 @@ run = 'echo "template"'
             provider.run.as_deref(),
             Some(format!("echo {config_root} $DEPS_SUFFIX").as_str())
         );
-        assert_eq!(provider.sources, [format!("{config_root}/input-expanded")]);
-        assert_eq!(provider.outputs, ["expanded/output"]);
+        assert_eq!(
+            provider.sources,
+            Some(vec![format!("{config_root}/input-expanded")])
+        );
+        assert_eq!(provider.outputs, Some(vec!["expanded/output".to_string()]));
         assert_eq!(provider.env["ROOT"], config_root);
         assert_eq!(provider.env["SUFFIX"], "expanded");
         assert_eq!(

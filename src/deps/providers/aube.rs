@@ -28,11 +28,13 @@ impl DepsProvider for AubeDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![root.join("aube-lock.yaml"), root.join("package.json")]
+        self.base
+            .sources(vec![root.join("aube-lock.yaml"), root.join("package.json")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.base.config_root().join("node_modules")]
+        self.base
+            .outputs(vec![self.base.config_root().join("node_modules")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
