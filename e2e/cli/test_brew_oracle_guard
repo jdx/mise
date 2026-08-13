@@ -8,9 +8,9 @@ mkdir "$result_dir"
 MISE_BREW_ORACLE_RESULT_DIR=$result_dir
 MISE_BREW_ORACLE_RUNNER_TEMP=$TMPDIR
 MISE_BREW_ORACLE_MISE_SHA=$(git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD)
-MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION=6.0.17
+MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE=6.0.17
 MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA=1111111111111111111111111111111111111111
-MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION=5.1.4
+MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=5.1.4
 MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=2222222222222222222222222222222222222222
 unset CI MISE_BREW_ORACLE_UNFORWARDED
 
@@ -25,9 +25,9 @@ brew_oracle_complete test_brew_oracle_guard 2 /opt/homebrew
 brew_oracle_verify_marker \
   "$result_dir/valid-marker.completed" \
   test_brew_oracle_guard 2 /opt/homebrew "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
 
 if brew_oracle_require_disposable valid-marker /opt/homebrew; then
@@ -43,25 +43,25 @@ if brew_oracle_verify_marker \
   "$result_dir/valid-marker.completed" test_brew_oracle_guard 2 /opt/homebrew \
   "$MISE_BREW_ORACLE_MISE_SHA" 6.0.18 \
   "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"; then
   fail "wrong Homebrew reference version was accepted"
 fi
 if brew_oracle_verify_marker \
   "$result_dir/valid-marker.completed" wrong-test-name 2 /opt/homebrew \
   "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"; then
   fail "wrong test name was accepted"
 fi
 if brew_oracle_verify_marker \
   "$result_dir/valid-marker.completed" test_brew_oracle_guard 2 /opt/homebrew \
   3333333333333333333333333333333333333333 \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"; then
   fail "wrong mise SHA was accepted"
 fi
@@ -85,9 +85,9 @@ brew_oracle_require_disposable early-producer /opt/homebrew
 if brew_oracle_verify_marker \
   "$result_dir/early-producer.completed" early_producer 1 /opt/homebrew \
   "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
   "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"; then
   fail "early producer left passing proof"
 fi

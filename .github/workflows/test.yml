@@ -179,7 +179,7 @@ jobs:
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 45
     env:
-      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION: "6.0.17"
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
     needs: [classify-changes]
     # Always start the proof job once classification says this is full CI. It
@@ -213,7 +213,7 @@ jobs:
           test -n "$homebrew_runtime_version"
           [[ $homebrew_runtime_sha =~ ^[0-9a-f]{40}$ ]]
           {
-            echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION=$homebrew_runtime_version"
+            echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$homebrew_runtime_version"
             echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$homebrew_runtime_sha"
           } >> "$GITHUB_ENV"
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -222,7 +222,7 @@ jobs:
           {
             echo "mise_sha=${{ github.event.pull_request.head.sha || github.sha }}"
             echo "platform=$(uname -s)-$(uname -m)"
-            echo "homebrew_reference_version=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION"
+            echo "homebrew_reference_version=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
             echo "homebrew_reference_sha=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
             echo "homebrew_runtime_version=$homebrew_runtime_version"
             echo "homebrew_runtime_sha=$homebrew_runtime_sha"
@@ -260,17 +260,17 @@ jobs:
             "$result_dir/macos-cask.completed" \
             test_system_install_brew_macos_slow 1 /opt/homebrew \
             "$MISE_BREW_ORACLE_MISE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
           brew_oracle_verify_marker \
             "$result_dir/macos-formula-lifecycle.completed" \
             test_system_install_brew_formula_lifecycle_macos_slow 4 /opt/homebrew \
             "$MISE_BREW_ORACLE_MISE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
@@ -283,9 +283,9 @@ jobs:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 30
     env:
-      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION: "6.0.17"
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
-      MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION: not-installed
+      MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: not-installed
     needs: [classify-changes]
     if: always() && needs.classify-changes.outputs.full-ci == 'true'
@@ -319,9 +319,9 @@ jobs:
           {
             echo "mise_sha=${{ github.event.pull_request.head.sha || github.sha }}"
             echo "platform=$(uname -s)-$(uname -m)"
-            echo "homebrew_reference_version=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION"
+            echo "homebrew_reference_version=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
             echo "homebrew_reference_sha=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
-            echo "homebrew_runtime_version=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION"
+            echo "homebrew_runtime_version=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE"
             echo "homebrew_runtime_sha=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
             echo "tests=test_system_install_brew_linux,test_system_install_brew_source_slow"
           } > "$RUNNER_TEMP/mise-brew-oracle-results/job-context.txt"
@@ -340,9 +340,9 @@ jobs:
             MISE_BREW_ORACLE_RESULT_DIR="$MISE_BREW_ORACLE_RESULT_DIR" \
             MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
             MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
-            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
             MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
             MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
@@ -366,9 +366,9 @@ jobs:
             MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
             MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
             MISE_BREW_ORACLE_SOURCE_PREFIX="$MISE_BREW_ORACLE_SOURCE_PREFIX" \
-            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
             MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
             MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
@@ -385,17 +385,17 @@ jobs:
             "$RUNNER_TEMP/mise-brew-oracle-results/linux-formula.completed" \
             test_system_install_brew_linux 1 /home/linuxbrew/.linuxbrew \
             "$MISE_BREW_ORACLE_MISE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
           brew_oracle_verify_marker \
             "$RUNNER_TEMP/mise-brew-oracle-results/linux-source.completed" \
             test_system_install_brew_source_slow 1 /tmp/mise-brew-source-prefix \
             "$MISE_BREW_ORACLE_MISE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION" \
+            "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()

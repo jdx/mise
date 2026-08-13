@@ -48,7 +48,7 @@ assert_contains "mise bootstrap packages status" "installed"
 # formula snapshot, source receipt, and source-generated SBOM needed for later
 # real-Homebrew adoption.
 assert_contains "$MISE_SYSTEM_BREW_PREFIX/bin/hello --greeting=mise" "mise"
-assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json" '"poured_from_bottle": false'
+assert_succeed "jq -e '.poured_from_bottle == false' $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json"
 assert_succeed "test -s $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/.brew/hello.rb"
 assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/sbom.spdx.json" '"name": "hello"'
 assert_succeed "test -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello && test -e $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello"

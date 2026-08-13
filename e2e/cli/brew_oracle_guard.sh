@@ -100,9 +100,9 @@ brew_oracle_require_disposable() {
     return 1
   fi
   brew_oracle_validate_homebrew_identity \
-    "${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION:-}" \
+    "${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:-}" \
     "${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}" \
-    "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION:-}" \
+    "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}" \
     "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}" || return 1
 
   # These are deliberately set by the workflow but must not cross env -i.
@@ -150,9 +150,9 @@ brew_oracle_complete() {
     printf 'fixture_count=%s\n' "$fixture_count"
     printf 'prefix=%s\n' "$actual_prefix"
     printf 'mise_sha=%s\n' "$MISE_BREW_ORACLE_MISE_SHA"
-    printf 'homebrew_reference_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_VERSION"
+    printf 'homebrew_reference_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
     printf 'homebrew_reference_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
-    printf 'homebrew_runtime_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_VERSION"
+    printf 'homebrew_runtime_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE"
     printf 'homebrew_runtime_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
   } >"$tmp"
   if [[ -n $result_uid || -n $result_gid ]]; then
