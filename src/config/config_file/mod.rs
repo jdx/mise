@@ -116,6 +116,11 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn tool_config(&self) -> &ToolConfig {
+        static DEFAULT_TOOL_CONFIG: Lazy<ToolConfig> = Lazy::new(ToolConfig::default);
+        &DEFAULT_TOOL_CONFIG
+    }
+
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
         Ok(self.task_config().includes.clone())
     }
@@ -145,8 +150,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(Default::default())
     }
 
-    fn deps_config(&self) -> Option<DepsConfig> {
-        None
+    fn deps_config(&self) -> Result<Option<DepsConfig>> {
+        Ok(None)
     }
 
     fn oci_config(&self) -> Option<crate::oci::OciConfig> {
@@ -808,6 +813,16 @@ pub struct TaskConfig {
     pub global_pass_through_env: Vec<String>,
     pub global_inputs: Vec<String>,
     pub input_groups: IndexMap<String, Vec<String>>,
+}
+
+/// Policy applied to tools declared by configs sharing this config's root.
+///
+/// Unlike `[settings]`, this is intentionally config-root-owned rather than
+/// an invocation-wide merged value.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ToolConfig {
+    pub locked: bool,
 }
 
 /// Deliberately not `#[cfg(unix)]` like the module below: the bug these cover is

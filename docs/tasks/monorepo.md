@@ -88,6 +88,11 @@ cd projects/frontend
 mise :build  # Runs the build task from frontend's config_root
 ```
 
+This works from any directory below a config_root, not just the config_root itself. The
+task name resolves to the nearest enclosing config_root, so `cd projects/frontend/src/components
+&& mise :build` also runs frontend's `build`. If no config_root encloses the current directory,
+the name resolves against the monorepo root.
+
 ::: tip Optional Colon Syntax
 The leading `:` is optional when running tasks from subdirectories or defining task dependencies. While both syntaxes work, **we encourage using the `:` prefix to be explicit** about monorepo task references.
 

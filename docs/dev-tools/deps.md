@@ -165,6 +165,33 @@ run = "npx prisma generate"
 | `depends`     | string[] | Other provider names that must complete before this one runs              |
 | `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)  |
 
+### Templates and Environment Variables
+
+String values in provider configuration support Tera templates such as
+`{{ config_root }}`, `{{ env.NAME }}`, and `{{ vars.name }}`. Shell-style environment variables
+such as `$NAME` and `${NAME:-default}` are expanded after Tera templates, using the same
+`env_shell_expand` setting as `[env]` values.
+
+```toml
+[vars]
+package = "api"
+
+[deps.codegen]
+sources = ["{{ config_root }}/schemas/$SCHEMA_NAME.graphql"]
+outputs = ["{{ config_root }}/generated/${SCHEMA_NAME:-default}/"]
+dir = "{{ config_root }}"
+env = { OUTPUT_PACKAGE = "{{ vars.package }}-$BUILD_MODE" }
+run = "npm run codegen -- $OUTPUT_PACKAGE"
+```
+
+`$VAR` expressions in `run` are left for the provider's shell to expand at execution time. This
+allows `run` to use values from the provider's `env` table. Tera expressions in `run` are rendered
+when the provider configuration is loaded.
+
+Provider IDs and environment-variable names are not templated. Invalid Tera templates are reported
+as configuration errors before a provider command starts. An undefined shell-style variable is left
+unchanged with a warning; use `${NAME:-}` to explicitly default it to an empty string.
+
 ## Freshness Checking
 
 mise uses blake3 hashing to determine if sources or the effective provider command have

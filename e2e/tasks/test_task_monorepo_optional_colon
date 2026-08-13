@@ -149,3 +149,47 @@ assert_contains "mise run //:init" "root init task executed"
 # Running from root directory with bare name should work the same
 assert_contains "mise run init" "root clean task executed"
 assert_contains "mise run init" "root init task executed"
+
+# Test 9: below a config root, names resolve up to the nearest enclosing one
+mkdir -p app/deep/deeper
+(
+  cd app/deep/deeper
+  assert_contains "mise run build" "build task executed"
+  assert_contains "mise run build" "setup task executed"
+  assert_contains "mise run :build" "build task executed"
+  assert_contains "mise run :build" "setup task executed"
+)
+
+# Test 10: absolute // forms are unaffected by a deep cwd
+(
+  cd app/deep/deeper
+  assert_contains "mise run //app:build" "build task executed"
+  assert_contains "mise run '//...:build'" "build task executed"
+)
+
+# Test 11: below no config root, names resolve to the monorepo root
+mkdir -p not-a-project/sub
+(
+  cd not-a-project/sub
+  assert_contains "mise run init" "root init task executed"
+  assert_contains "mise run :init" "root init task executed"
+)
+
+# Test 12: the nearest enclosing config root wins over an ancestor defining the
+# same task, even when absent from config_roots
+mkdir -p services/nested/inner
+cat <<'EOF' >services/mise.toml
+[tasks.nested-only]
+run = 'echo "ancestor nested-only executed"'
+EOF
+cat <<'EOF' >services/nested/mise.toml
+[tasks.nested-only]
+run = 'echo "nested-only task executed"'
+EOF
+(
+  cd services/nested/inner
+  assert_contains "mise run nested-only" "nested-only task executed"
+  assert_not_contains "mise run nested-only" "ancestor nested-only executed"
+  assert_contains "mise run :nested-only" "nested-only task executed"
+  assert_not_contains "mise run :nested-only" "ancestor nested-only executed"
+)

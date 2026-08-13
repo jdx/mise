@@ -3210,7 +3210,13 @@ pub trait Backend: Debug + Send + Sync {
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
         if !Settings::get().always_keep_download {
-            let _ = remove_all_with_warning(tv.download_path());
+            let download_path = tv.download_path();
+            if let Err(err) = crate::http::cleanup_download_dir(&download_path) {
+                debug!(
+                    "failed to clean download directory {}: {err:#}",
+                    display_path(&download_path)
+                );
+            }
         }
         let _ = remove_all_with_warning(tv.cache_path());
         let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
@@ -3247,7 +3253,13 @@ pub trait Backend: Debug + Send + Sync {
     }
     fn cleanup_install_dirs(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_download {
-            let _ = remove_all_with_warning(tv.download_path());
+            let download_path = tv.download_path();
+            if let Err(err) = crate::http::cleanup_download_dir(&download_path) {
+                debug!(
+                    "failed to clean download directory {}: {err:#}",
+                    display_path(&download_path)
+                );
+            }
         }
     }
     fn cleanup_empty_installs_dir(&self) {

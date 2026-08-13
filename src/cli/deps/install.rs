@@ -64,13 +64,8 @@ impl DepsInstall {
             return Ok(());
         }
 
-        if self.explain {
-            let Some(ref provider_id) = self.provider else {
-                bail!(
-                    "--explain requires a provider argument, e.g.: mise deps install npm --explain"
-                );
-            };
-            return self.explain_provider(&engine, provider_id);
+        if self.explain && self.provider.is_none() {
+            bail!("--explain requires a provider argument, e.g.: mise deps install npm --explain");
         }
 
         // If a provider is specified as a positional arg, treat it like --only.
@@ -110,6 +105,15 @@ impl DepsInstall {
                     .await?
             }
         };
+
+        if self.explain {
+            let env = ts.env_with_path(&install_config).await?;
+            return Self::explain_provider(
+                &engine,
+                self.provider.as_deref().expect("provider checked above"),
+                &env,
+            );
+        }
 
         let install_opts = InstallOptions {
             missing_args_only: false,
@@ -161,7 +165,11 @@ impl DepsInstall {
         Ok(())
     }
 
-    fn explain_provider(&self, engine: &DepsEngine, provider_id: &str) -> Result<()> {
+    fn explain_provider(
+        engine: &DepsEngine,
+        provider_id: &str,
+        effective_env: &std::collections::BTreeMap<String, String>,
+    ) -> Result<()> {
         let Some(provider) = engine.find_provider(provider_id) else {
             let available = engine
                 .list_providers()
@@ -208,7 +216,7 @@ impl DepsInstall {
         }
 
         // Command
-        if let Ok(cmd) = provider.install_command() {
+        if let Ok(cmd) = provider.install_command_with_env(effective_env) {
             miseprintln!("Command: {}", cmd.description);
         }
 
@@ -219,7 +227,7 @@ impl DepsInstall {
             bail!("provider '{}' is inactive: {reason}", provider.id());
         }
 
-        let freshness = engine.check_provider_freshness(provider)?;
+        let freshness = engine.check_provider_freshness(provider, effective_env)?;
         if freshness.is_fresh() {
             miseprintln!("Status: fresh ({})", freshness.reason());
         } else {

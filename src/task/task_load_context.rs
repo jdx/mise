@@ -1,5 +1,5 @@
 use eyre::bail;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Return the absolute `//path` scope for a directory within a monorepo.
 pub(crate) fn monorepo_scope(monorepo_root: &Path, dir: &Path) -> Option<String> {
@@ -163,11 +163,11 @@ impl TaskLoadContext {
     }
 }
 
-/// Expands :task syntax to //path:task based on current directory relative to monorepo root
+/// Expands :task syntax to //path:task based on the current config root
 ///
 /// This function handles the special `:task` syntax that refers to tasks in the current
-/// config_root within a monorepo. It converts `:build` to either `//:build` (if at monorepo root)
-/// or `//project:build` (if in a subdirectory).
+/// config_root within a monorepo. It converts `:build` to either `//:build` (if the current
+/// config root is the monorepo root) or `//project:build` (if it is in a subdirectory).
 ///
 /// # Arguments
 /// * `task` - The task pattern to expand (e.g., ":build")
@@ -215,9 +215,25 @@ pub fn expand_colon_task_syntax(
     // We're in a monorepo context
     let monorepo_root = monorepo_root.unwrap();
 
-    // Determine the current directory relative to monorepo root
+    // Task names are keyed to project roots: the directories of configs in
+    // scope plus declared [monorepo].config_roots, which may hold only file
+    // tasks and no config. Scope to the nearest such root above cwd, not cwd
+    // itself; the monorepo root bounds the walk and counts as a root.
     if let Some(cwd) = &*crate::dirs::CWD {
-        if let Some(scope) = monorepo_scope(&monorepo_root, cwd) {
+        let scope_dir: &Path = if cwd.starts_with(&monorepo_root) {
+            let roots: Vec<PathBuf> = config
+                .config_files
+                .values()
+                .filter_map(|cf| cf.project_root())
+                .chain(config.monorepo_config_root_dirs(None).unwrap_or_default())
+                .collect();
+            cwd.ancestors()
+                .find(|a| *a == monorepo_root || roots.iter().any(|r| r == a))
+                .unwrap_or(cwd)
+        } else {
+            cwd
+        };
+        if let Some(scope) = monorepo_scope(&monorepo_root, scope_dir) {
             // For bare task names, only expand if we're actually in the monorepo
             // For colon patterns, always expand (and error if outside monorepo)
 
