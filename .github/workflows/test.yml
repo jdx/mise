@@ -185,9 +185,9 @@ jobs:
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
     needs: [classify-changes]
-    # Always start the proof job once classification says this is full CI. It
-    # builds the immutable PR head itself, so another job cannot skip its proof.
-    if: always() && needs.classify-changes.outputs.full-ci == 'true'
+    # Start the proof job once classification says this is full CI. Do not use
+    # always(): a superseding head must be able to cancel destructive work.
+    if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -305,7 +305,7 @@ jobs:
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: not-installed
     needs: [classify-changes]
-    if: always() && needs.classify-changes.outputs.full-ci == 'true'
+    if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
