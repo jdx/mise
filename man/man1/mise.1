@@ -2905,16 +2905,19 @@ See `mise upgrade` to upgrade these versions.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-l, \-\-bump\fR
+\fB\-b, \-\-bump\fR
 Compares against the latest versions available, not what matches the current config
 
 For example, if you have `node = "20"` in your config by default `mise outdated` will only
 show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-l\fR
+Deprecated shorthand for \-\-bump
 .TP
 \fB\-\-inactive\fR
 Show outdated tools including installed\-but\-inactive tools not present in the current config
@@ -4711,6 +4714,15 @@ This will update mise.lock if it is enabled, see https://mise.jdx.dev/configurat
 \fBOptions:\fR
 .PP
 .TP
+\fB\-b, \-\-bump\fR
+Upgrades to the latest version available, bumping the version in mise.toml
+
+For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
+this will install 22.1.0 and set `node = "22.1.0"` in your config.
+
+It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
+would change your config to `node = "22"`.
+.TP
 \fB\-i, \-\-interactive\fR
 Display multiselect menu to choose which tools to upgrade
 .TP
@@ -4719,14 +4731,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 .TP
-\fB\-l, \-\-bump\fR
-Upgrades to the latest version available, bumping the version in mise.toml
-
-For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
-this will install 22.1.0 and set `node = "22.1.0"` in your config.
-
-It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
-would change your config to `node = "22"`.
+\fB\-l\fR
+Deprecated shorthand for \-\-bump
 .TP
 \fB\-n, \-\-dry\-run\fR
 Just print what would be done, don't actually do it
