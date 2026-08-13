@@ -49,11 +49,9 @@ pub struct DepsProviderConfig {
     /// Command to run when stale (required for custom, optional override for built-in)
     pub run: Option<String>,
     /// Files/patterns to check for changes (required for custom, auto-detected for built-in)
-    #[serde(default)]
-    pub sources: Vec<String>,
+    pub sources: Option<Vec<String>>,
     /// Files/directories that should be newer than sources (required for custom, auto-detected for built-in)
-    #[serde(default)]
-    pub outputs: Vec<String>,
+    pub outputs: Option<Vec<String>>,
     /// Environment variables to set
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -111,10 +109,10 @@ impl DepsProviderConfig {
         if let Some(run) = &self.run {
             validate("run", run)?;
         }
-        for (index, source) in self.sources.iter().enumerate() {
+        for (index, source) in self.sources.iter().flatten().enumerate() {
             validate(&format!("sources[{index}]"), source)?;
         }
-        for (index, output) in self.outputs.iter().enumerate() {
+        for (index, output) in self.outputs.iter().flatten().enumerate() {
             validate(&format!("outputs[{index}]"), output)?;
         }
         for (key, value) in &self.env {
@@ -142,10 +140,10 @@ impl DepsProviderConfig {
         if let Some(run) = &mut self.run {
             *run = render("run", run, false)?;
         }
-        for (index, source) in self.sources.iter_mut().enumerate() {
+        for (index, source) in self.sources.iter_mut().flatten().enumerate() {
             *source = render(&format!("sources[{index}]"), source, true)?;
         }
-        for (index, output) in self.outputs.iter_mut().enumerate() {
+        for (index, output) in self.outputs.iter_mut().flatten().enumerate() {
             *output = render(&format!("outputs[{index}]"), output, true)?;
         }
         if let Some(dir) = &mut self.dir {
@@ -252,8 +250,8 @@ mod tests {
         context.insert("env", &BTreeMap::<String, String>::new());
         let mut config = DepsProviderConfig {
             run: Some("run".into()),
-            sources: vec!["source".into()],
-            outputs: vec!["output".into()],
+            sources: Some(vec!["source".into()]),
+            outputs: Some(vec!["output".into()]),
             env: BTreeMap::from([("KEY".into(), "{{ env.EFFECTIVE }}".into())]),
             dir: Some("dir".into()),
             description: Some("description".into()),
@@ -276,8 +274,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(config.run.as_deref(), Some("rendered-run"));
-        assert_eq!(config.sources, ["rendered-source"]);
-        assert_eq!(config.outputs, ["rendered-output"]);
+        assert_eq!(config.sources, Some(vec!["rendered-source".to_string()]));
+        assert_eq!(config.outputs, Some(vec!["rendered-output".to_string()]));
         assert_eq!(config.env["KEY"], "{{ env.EFFECTIVE }}");
         assert_eq!(
             config
@@ -312,8 +310,8 @@ mod tests {
         context.insert("env", &BTreeMap::<String, String>::new());
         let config = DepsProviderConfig {
             run: Some("echo {{ env.EFFECTIVE }}".into()),
-            sources: vec!["{{ env.EFFECTIVE }}/source".into()],
-            outputs: vec!["{{ env.EFFECTIVE }}/output".into()],
+            sources: Some(vec!["{{ env.EFFECTIVE }}/source".into()]),
+            outputs: Some(vec!["{{ env.EFFECTIVE }}/output".into()]),
             env: BTreeMap::from([("KEY".into(), "{{ env.EFFECTIVE }}".into())]),
             dir: Some("{{ env.EFFECTIVE }}".into()),
             description: Some("{{ env.EFFECTIVE }} description".into()),
@@ -335,8 +333,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(rendered.run.as_deref(), Some("echo effective"));
-        assert_eq!(rendered.sources, ["effective/source"]);
-        assert_eq!(rendered.outputs, ["effective/output"]);
+        assert_eq!(rendered.sources, Some(vec!["effective/source".to_string()]));
+        assert_eq!(rendered.outputs, Some(vec!["effective/output".to_string()]));
         assert_eq!(rendered.env["KEY"], "effective");
         assert_eq!(rendered.dir.as_deref(), Some("effective"));
         assert_eq!(
@@ -345,5 +343,16 @@ mod tests {
         );
         assert_eq!(rendered.depends, ["effective"]);
         assert_eq!(rendered.timeout.as_deref(), Some("5s"));
+    }
+
+    #[test]
+    fn path_options_preserve_omitted_and_explicit_empty() {
+        let omitted: DepsConfig = toml::from_str("[npm]\n").unwrap();
+        assert_eq!(omitted.providers["npm"].sources, None);
+        assert_eq!(omitted.providers["npm"].outputs, None);
+
+        let empty: DepsConfig = toml::from_str("[npm]\nsources = []\noutputs = []\n").unwrap();
+        assert_eq!(empty.providers["npm"].sources, Some(vec![]));
+        assert_eq!(empty.providers["npm"].outputs, Some(vec![]));
     }
 }

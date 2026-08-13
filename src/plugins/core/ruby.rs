@@ -319,6 +319,9 @@ impl RubyPlugin {
         if settings.ruby.apply_patches.is_some() {
             args.push("--patch".into());
         }
+        if let Some(opts) = &settings.ruby.ruby_build_cli_opts {
+            args.extend(shell_words::split(opts)?);
+        }
         args.push(tv.version.clone());
         args.push(tv.install_path().to_string_lossy().to_string());
         if let Some(opts) = &settings.ruby.ruby_build_opts {
@@ -1162,6 +1165,9 @@ impl Backend for RubyPlugin {
                 ruby.ruby_install_repo.clone(),
             );
         } else {
+            if let Some(ruby_build_cli_opts) = ruby.ruby_build_cli_opts.clone() {
+                opts.insert("ruby_build_cli_opts".to_string(), ruby_build_cli_opts);
+            }
             if let Some(ruby_build_opts) = ruby.ruby_build_opts.clone() {
                 opts.insert("ruby_build_opts".to_string(), ruby_build_opts);
             }
@@ -1329,6 +1335,17 @@ mod tests {
             |settings| settings.ruby.compile = compile,
             |backend| backend.precompiled_only(),
         )
+    }
+
+    fn ruby_build_args(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+    ) -> Result<Vec<String>> {
+        with_ruby_settings(configure_settings, |backend| {
+            let request =
+                ToolRequest::new(backend.ba().clone(), "3.3.0", ToolSource::Unknown).unwrap();
+            let tv = ToolVersion::new(request, "3.3.0".to_string());
+            backend.install_args_ruby_build(&tv)
+        })
     }
 
     fn ruby_precompiled_cache_context(
@@ -1658,6 +1675,7 @@ mod tests {
     fn test_ruby_lockfile_options_include_source_build_inputs() {
         let opts = resolve_ruby_lockfile_options(|settings| {
             settings.ruby.compile = Some(true);
+            settings.ruby.ruby_build_cli_opts = Some("--keep".to_string());
             settings.ruby.ruby_build_opts = Some("--enable-yjit".to_string());
             settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
         });
@@ -1674,10 +1692,47 @@ mod tests {
                     "ruby_build_repo".to_string(),
                     DEFAULT_RUBY_BUILD_REPO.to_string(),
                 ),
+                ("ruby_build_cli_opts".to_string(), "--keep".to_string()),
                 ("ruby_build_opts".to_string(), "--enable-yjit".to_string()),
                 ("ruby_install".to_string(), "false".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_ruby_build_cli_and_configure_option_order() {
+        let args = ruby_build_args(|settings| {
+            settings.ruby.apply_patches = Some("https://example.com/ruby.patch".to_string());
+            settings.ruby.ruby_build_cli_opts =
+                Some("--keep --definitions='/path with spaces'".to_string());
+            settings.ruby.ruby_build_opts =
+                Some("--enable-yjit --with-openssl-dir='/opt with spaces'".to_string());
+        })
+        .unwrap();
+
+        assert_eq!(
+            args[0..4],
+            [
+                "--patch",
+                "--keep",
+                "--definitions=/path with spaces",
+                "3.3.0"
+            ]
+        );
+        assert!(Path::new(&args[4]).ends_with("installs/ruby/3.3.0"));
+        assert_eq!(
+            args[5..],
+            ["--", "--enable-yjit", "--with-openssl-dir=/opt with spaces"]
+        );
+    }
+
+    #[test]
+    fn test_ruby_build_cli_opts_reject_invalid_shell_words() {
+        let result = ruby_build_args(|settings| {
+            settings.ruby.ruby_build_cli_opts = Some("--keep '".to_string());
+        });
+
+        assert!(result.is_err());
     }
 
     #[test]

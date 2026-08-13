@@ -57,7 +57,12 @@ impl FromStr for ShellType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.to_lowercase();
-        let s = s.rsplit_once('/').map(|(_, s)| s).unwrap_or(&s);
+        // Take the last path component. Splitting on `/` alone only ever worked on unix: Windows
+        // spells the separator `\`, and `MISE_SHELL` falls back to `SHELL`, which is `COMSPEC`
+        // there -- always a full path. So every native path failed to resolve.
+        let s = s.rsplit_once(['/', '\\']).map(|(_, s)| s).unwrap_or(&s);
+        // `pwsh.exe` / `bash.exe` is how Windows names them.
+        let s = s.strip_suffix(".exe").unwrap_or(s);
         match s {
             "bash" | "sh" => Ok(Self::Bash),
             "elvish" => Ok(Self::Elvish),
@@ -143,4 +148,55 @@ pub fn build_deactivation_script(shell: &dyn Shell) -> String {
 
 pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
     shell.or(*env::MISE_SHELL).map(|st| st.as_shell())
+}
+
+/// Deliberately not `#[cfg(unix)]`: this is string handling, and Windows is the platform whose
+/// paths were not being parsed.
+#[cfg(test)]
+mod tests {
+    use super::ShellType;
+    use std::str::FromStr;
+
+    #[test]
+    fn a_windows_path_resolves_to_its_shell() {
+        // `MISE_SHELL`/`SHELL` hold a full path on Windows, and `\` is the separator there.
+        for (input, expected) in [
+            (r"C:\Program Files\PowerShell\7\pwsh.exe", ShellType::Pwsh),
+            (r"C:\msys64\usr\bin\bash.exe", ShellType::Bash),
+            // The value is lowercased before the split, so casing does not matter.
+            (r"C:\Program Files\Git\bin\PWSH.EXE", ShellType::Pwsh),
+            ("pwsh.exe", ShellType::Pwsh),
+        ] {
+            assert_eq!(ShellType::from_str(input), Ok(expected), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn unix_paths_and_bare_names_are_unchanged() {
+        // The regression guard: `/` splitting already worked, and nothing here may change.
+        for (input, expected) in [
+            ("/usr/bin/bash", ShellType::Bash),
+            ("/bin/zsh", ShellType::Zsh),
+            ("bash", ShellType::Bash),
+            ("sh", ShellType::Bash),
+            ("pwsh", ShellType::Pwsh),
+            ("fish", ShellType::Fish),
+        ] {
+            assert_eq!(ShellType::from_str(input), Ok(expected), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn an_unsupported_shell_still_fails_but_names_itself() {
+        // mise has no `cmd` activate script, so this stays an error -- the control for reading
+        // the change as "more shells are supported" rather than "paths now resolve". What is new
+        // is that the message names `cmd` instead of repeating the whole path back.
+        for input in [r"C:\WINDOWS\system32\cmd.exe", "cmd.exe"] {
+            assert_eq!(
+                ShellType::from_str(input),
+                Err("unsupported shell type: cmd".to_string()),
+                "{input:?}"
+            );
+        }
+    }
 }

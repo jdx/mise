@@ -519,13 +519,9 @@ async fn run_matched_hook(
 
 fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
     let action = match &hook.action {
-        HookAction::Task { task_name } => shell_words::join([
-            "mise".to_string(),
-            "--cd".to_string(),
-            root.to_string_lossy().into_owned(),
-            "run".to_string(),
-            task_name.clone(),
-        ]),
+        HookAction::Task { task_name } => shell_words::join(
+            once("mise".to_string()).chain(task_hook_args(root, hook.hook, task_name)),
+        ),
         HookAction::CurrentShell { script, .. } => script.clone(),
         HookAction::Run { shell, .. } => {
             let Some(run) = hook.action.run_for_current_platform() else {
@@ -762,14 +758,24 @@ async fn execute_task(
     }
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
 
-    cmd(
-        mise_bin,
-        ["--cd", &root.to_string_lossy(), "run", task_name],
-    )
-    .stdout_to_stderr()
-    .full_env(env)
-    .run()?;
+    cmd(mise_bin, task_hook_args(root, hook.hook, task_name))
+        .stdout_to_stderr()
+        .full_env(env)
+        .run()?;
     Ok(())
+}
+
+fn task_hook_args(root: &Path, hook: Hooks, task_name: &str) -> Vec<String> {
+    let mut args = vec![
+        "--cd".to_string(),
+        root.to_string_lossy().into_owned(),
+        "run".to_string(),
+    ];
+    if hook == Hooks::Preinstall {
+        args.push("--skip-tools".to_string());
+    }
+    args.push(task_name.to_string());
+    args
 }
 
 #[cfg(test)]
@@ -780,6 +786,24 @@ mod tests {
     #[derive(Deserialize)]
     struct TestHook {
         hook: HookDef,
+    }
+
+    #[test]
+    fn preinstall_task_skips_tool_installation() {
+        assert_eq!(
+            task_hook_args(Path::new("project"), Hooks::Preinstall, "credentials"),
+            ["--cd", "project", "run", "--skip-tools", "credentials"]
+        );
+    }
+
+    #[test]
+    fn other_task_hooks_keep_normal_tool_handling() {
+        for hook in [Hooks::Enter, Hooks::Leave, Hooks::Cd, Hooks::Postinstall] {
+            assert_eq!(
+                task_hook_args(Path::new("project"), hook, "setup"),
+                ["--cd", "project", "run", "setup"]
+            );
+        }
     }
 
     #[test]

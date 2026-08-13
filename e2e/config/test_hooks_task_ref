@@ -10,17 +10,52 @@ dummy = 'latest'
 [tasks.setup]
 run = 'echo TASK-SETUP-RAN'
 
+[tasks.credentials]
+interactive = true
+run = '''
+echo CREDENTIAL-LINE-1
+if test -d "$MISE_DATA_DIR/installs/dummy"; then
+  echo TOOL-INSTALLED-BEFORE-PREINSTALL
+  exit 1
+fi
+echo PREINSTALL-BEFORE-TOOL
+printf 'Credential: '
+IFS= read -r credential
+echo "CREDENTIAL-INPUT:$credential"
+echo CREDENTIAL-LINE-2
+'''
+
+[tasks.after-install]
+run = 'dummy first second'
+
 [tasks.teardown]
 run = 'echo TASK-TEARDOWN-RAN'
 
 [hooks]
 enter = { task = "setup" }
 leave = { task = "teardown" }
-preinstall = { task = "setup" }
+preinstall = { task = "credentials" }
+postinstall = { task = "after-install" }
 EOF
 
-# Test preinstall hook with task reference
-assert_contains "mise i 2>&1" "TASK-SETUP-RAN"
+# The preinstall task preview shows the same --skip-tools invocation used at
+# runtime, but neither the task nor the tool installation is started.
+dry_run_output=$(mise i --dry-run 2>&1)
+assert_contains_text "$dry_run_output" "run --skip-tools credentials"
+assert_not_contains_text "$dry_run_output" "CREDENTIAL-LINE-1"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy'"
+
+# A task-backed preinstall hook must run before project tools are installed.
+# Interactive task stdio remains inherited by the nested mise process.
+install_output=$(printf 'secret-8800\n' | mise i 2>&1)
+assert_contains_text "$install_output" "CREDENTIAL-LINE-1"
+assert_contains_text "$install_output" "PREINSTALL-BEFORE-TOOL"
+assert_contains_text "$install_output" "CREDENTIAL-INPUT:secret-8800"
+assert_contains_text "$install_output" "CREDENTIAL-LINE-2"
+assert_not_contains_text "$install_output" "TOOL-INSTALLED-BEFORE-PREINSTALL"
+assert_contains_text "$install_output" "This is Dummy"
+assert_contains_text "$install_output" "second first"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy"
 
 eval "$(mise hook-env)"
 

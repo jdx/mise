@@ -68,11 +68,12 @@ impl DepsProvider for GitSubmoduleDepsProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![self.base.config_root().join(".gitmodules")]
+        self.base
+            .sources(vec![self.base.config_root().join(".gitmodules")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        self.submodule_paths()
+        self.base.outputs(self.submodule_paths())
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

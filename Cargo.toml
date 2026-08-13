@@ -125,6 +125,7 @@ globset = "0.4"
 ignore = { version = "0.4", features = [] }
 heck = "0.5"
 hex = "0.4"
+http = "1"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 ipnet = { version = "2", features = ["serde"] }
@@ -173,6 +174,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "stream",
   "system-proxy",
 ] }
+reqwest-middleware = { package = "astral-reqwest-middleware", version = "0.5" }
 rmcp = { version = "3", features = ["server", "transport-io", "schemars"] }
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [

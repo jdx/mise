@@ -8,3 +8,16 @@ EOF
 
 assert_contains "mise ls 2>&1" 'semver range "^20.0.0" is not supported for node (source: ~/workdir/mise.toml); use a concrete version or version prefix'
 assert_contains "mise ls 2>&1" 'semver range "^3.1.0" is not supported for npm:prettier (source: ~/workdir/mise.toml); use a concrete version or version prefix'
+
+# A value mangled before it got here is not a range. TOML reads `\t` as a tab and `\n` as a
+# newline inside a basic string, and `split_whitespace` counts those as separators, so this used
+# to be reported as a semver range -- pointing at versions when the path is what is wrong.
+cat <<'EOF' >mise.toml
+[tools]
+node = { path = "C:\tools\node" }
+EOF
+
+# `mise ls` exits non-zero here, so these use the failure helpers rather than the ones above,
+# which treat a non-zero status as the test failing.
+assert_fail_contains "mise ls" 'invalid tool path'
+assert "mise ls 2>&1 | grep -c 'semver range' || true" "0"

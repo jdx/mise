@@ -1,10 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use eyre::Result;
-use glob::glob;
-
 use crate::deps::rule::DepsProviderConfig;
 use crate::deps::{DepsCommand, DepsProvider, DepsProviderApplicability};
+use eyre::Result;
 
 use super::ProviderBase;
 
@@ -20,36 +18,6 @@ impl CustomDepsProvider {
             base: ProviderBase::new(id, project_root, config),
         }
     }
-
-    /// Expand glob patterns in sources/outputs
-    fn expand_globs(&self, patterns: &[String]) -> Vec<PathBuf> {
-        let mut paths = vec![];
-
-        for pattern in patterns {
-            let base_dir = self.base.config_root();
-            let full_pattern = if PathBuf::from(pattern).is_relative() {
-                base_dir.join(pattern)
-            } else {
-                PathBuf::from(pattern)
-            };
-
-            // Check if it's a glob pattern
-            if pattern.contains('*') || pattern.contains('{') || pattern.contains('?') {
-                if let Ok(entries) = glob(full_pattern.to_string_lossy().as_ref()) {
-                    for entry in entries.flatten() {
-                        paths.push(entry);
-                    }
-                }
-            } else if full_pattern.exists() {
-                paths.push(full_pattern);
-            } else {
-                // Include even if doesn't exist (for outputs that may not exist yet)
-                paths.push(full_pattern);
-            }
-        }
-
-        paths
-    }
 }
 
 impl DepsProvider for CustomDepsProvider {
@@ -58,11 +26,11 @@ impl DepsProvider for CustomDepsProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        self.expand_globs(&self.base.config.sources)
+        self.base.sources(vec![])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        self.expand_globs(&self.base.config.outputs)
+        self.base.outputs(vec![])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
