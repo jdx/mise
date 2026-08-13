@@ -6,7 +6,7 @@ Effort: L
 Planned against: #11915 `b94b6b1c1`
 Depends on: 009
 Implementation start: #11915 `4989ac953`
-Implementation commits: `4989ac953`, `43cc1d8c1`, `57319487b`
+Implementation commits: `4989ac953`, `43cc1d8c1`, `57319487b`, `5bc0ba042`
 
 Drift check (2026-08-13): the typed preparation and confined executor are now
 present. Exact-head macOS proof exposed one ordered-effect defect: Node removes
@@ -124,6 +124,14 @@ Completed proof:
   symlink escape, network denial, and outside-root write denial. Unsupported
   lifecycle on a non-mutating current dependency is not validated; the complete
   mutation set is validated before its first side effect.
+- Commit `5bc0ba042` preserves absolute lifecycle symlink targets while still
+  applying lexical containment to the link path itself, matching Homebrew's
+  typed operation semantics without allowing destination escape.
+- Current-main #11915 head `7009878b784c4ee3436d365efd2693fb4c909e50`
+  passed the full [test workflow](https://github.com/jdx/mise/actions/runs/31735998370),
+  including the canonical [macOS lifecycle oracle](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757793)
+  with four fixtures against exact Homebrew `6.0.17` at
+  `4dacfe77a24dead72de749c0876028b77b99cd04`.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew::lifecycle

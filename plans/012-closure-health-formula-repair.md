@@ -171,6 +171,14 @@ Completed proof:
   traversal, exact dependency/phase diagnostics, legacy lifecycle repair,
   unprovable-state reinstall classification, preserved valid topology/inodes,
   and ordered effect health.
+- Current-main #11915 head `7009878b784c4ee3436d365efd2693fb4c909e50`
+  passed the full [test workflow](https://github.com/jdx/mise/actions/runs/31735998370),
+  including [macOS root-only lifecycle proof](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757793),
+  [Linux/source proof](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757706),
+  macOS/Linux/Windows unit and e2e, lint, build, and the aggregate gate. The
+  canonical marker records fixture count `4`, exact mise head, prefix
+  `/opt/homebrew`, and matching Homebrew reference/runtime `6.0.17` at
+  `4dacfe77a24dead72de749c0876028b77b99cd04`.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew

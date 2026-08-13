@@ -5,6 +5,10 @@ Priority: P0
 Effort: M
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: none
+Implementation commits: `dc37ee04a`, `459bb9d9b`, `3912e6fdc`,
+`48782874f`, `2128bcf2b`, `94c66938c`, `84d74314f`, `df067e021`,
+`a5046918a`, `12477a479`, `300551418`, `667866575`, `ce40d79d0`,
+`671eedd2c`, `f373ab31e`, `8d6139272`, `a122a6601`, `7acd9be56`
 
 ## Objective
 
@@ -111,6 +115,21 @@ Do not change package installation behavior here.
   head, reference Homebrew `6.0.17` / `4dacfe77a24dead72de749c0876028b77b99cd04`,
   runtime identity (`5.1.4` / `968378a218ba485371a8a849185f05a8b534bda7`
   on macOS, explicit `not-installed` on Linux), and canonical tested prefix.
+
+### Current-main exact-head proof
+
+After restacking on `origin/main` `cf40f5c605ef77693f69c766aa3642fd78464cc7`,
+PR #11915 exact head `7009878b784c4ee3436d365efd2693fb4c909e50`
+passed the complete [test workflow](https://github.com/jdx/mise/actions/runs/31735998370).
+The dedicated [macOS oracle job](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757793)
+validated cask fixture count `1` and lifecycle fixture count `4`; the dedicated
+[Linux oracle job](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757706)
+validated formula and source fixture counts `1` each. All four markers record
+the exact mise head, Homebrew reference `6.0.17` at
+`4dacfe77a24dead72de749c0876028b77b99cd04`, and their tested prefix. macOS
+also records the same exact runtime Homebrew version/SHA; Linux records the
+intentional runtime value `not-installed`. The workflow's aggregate `test-ci`
+gate passed in [job 94574628303](https://github.com/jdx/mise/actions/runs/31735998370/job/94574628303).
 
 ```bash
 rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow

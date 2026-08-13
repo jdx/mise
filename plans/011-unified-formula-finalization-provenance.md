@@ -5,7 +5,7 @@ Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010
-Implementation commits: `a7f2352e1`, `43cc1d8c1`
+Implementation commits: `a7f2352e1`, `43cc1d8c1`, `227664100`
 
 ## Objective
 
@@ -119,6 +119,16 @@ Completed proof:
   finalization through receipt/link/shared-state/post-install/health. The full
   Linux e2e job owns the forced-source script; pre-integration branch CI is not
   final combined proof.
+- Commit `227664100` selects an `all` bottle's host-tagged SBOM supplement,
+  matching pinned Homebrew instead of serializing the whole supplement map.
+- Current-main #11915 head `7009878b784c4ee3436d365efd2693fb4c909e50`
+  passed the complete [test workflow](https://github.com/jdx/mise/actions/runs/31735998370).
+  Its [macOS oracle](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757793)
+  proved OCI finalization at `/opt/homebrew`; its
+  [Linux oracle](https://github.com/jdx/mise/actions/runs/31735998370/job/94567757706)
+  proved archive/Linux formula and forced-source paths. Exact markers bind
+  fixture counts `4`, `1`, and `1` to the tested mise head and pinned Homebrew
+  `6.0.17` / `4dacfe77a24dead72de749c0876028b77b99cd04`.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew
