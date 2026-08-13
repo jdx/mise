@@ -1,17 +1,39 @@
 #!/usr/bin/env bash
 
 # `mise edit --global` writes to the global config file path.
+#
+# `mise generate config` shares this argument set -- it parses its own copy and hands it to
+# `Edit` -- so the one assertion about it below lives here, next to the rule it is checking,
+# rather than in e2e/generate.
 
 export MISE_GLOBAL_CONFIG_FILE="$PWD/global-config.toml"
 
 assert_contains "mise edit --global --dry-run 2>&1" "global-config.toml"
 assert_contains "mise edit -g -n 2>&1" "global-config.toml"
 
-# A positional path overrides --global regardless of argument order.
-assert_contains "mise edit --global custom.toml --dry-run 2>&1" "custom.toml"
-assert_not_contains "mise edit --global custom.toml --dry-run 2>&1" "global-config.toml"
-assert_contains "mise edit custom.toml --global --dry-run 2>&1" "custom.toml"
-assert_not_contains "mise edit custom.toml --global --dry-run 2>&1" "global-config.toml"
+# A positional path and --global are contradictory -- "edit the global config file, namely
+# ./custom.toml" has no meaning -- so the combination is rejected rather than resolved in the
+# positional's favour. Matched on a fragment rather than clap's whole message, which spells the
+# positional out in a way that is not worth pinning here.
+assert_fail_contains "mise edit --global custom.toml" "cannot be used with"
+assert_fail_contains "mise edit custom.toml --global" "cannot be used with"
+assert_fail_contains "mise generate config --global custom.toml" "cannot be used with"
+assert_fail_contains "mise generate config custom.toml --global" "cannot be used with"
+
+# The case from discussion #11046, and the reason rejecting beats warning: `mise config` has no
+# `edit` subcommand, so `mise edit config --global` is easy to type, and it used to take `config`
+# as the path, write a file by that name here, and report success while the global config went
+# untouched. Deliberately without --dry-run -- rejecting has to mean nothing is written.
+assert_fail_contains "mise edit config --global" "cannot be used with"
+assert_succeed "test ! -e config"
+assert_succeed "test ! -e custom.toml"
+# The other half of what was reported: the global config was not written either. Everything
+# above this point is a dry run or a rejection, so this file should not exist yet.
+assert_succeed "test ! -e global-config.toml"
+
+# Either on its own is unchanged.
+assert_contains "mise edit custom.toml --dry-run 2>&1" "custom.toml"
+assert_not_contains "mise edit custom.toml --dry-run 2>&1" "global-config.toml"
 
 # Without --global, the default config filename is used (regression guard).
 assert_contains "mise edit --dry-run 2>&1" "mise.toml"
@@ -27,6 +49,12 @@ node 22
 EOF
 assert_contains "mise edit preexisting.toml --tool-versions .tool-versions --dry-run 2>&1" 'go = "1.22"'
 assert_contains "mise edit preexisting.toml --tool-versions .tool-versions --dry-run 2>&1" 'node = "22"'
+
+# --tool-versions is a flag, not the positional, so it still combines with --global. Worth
+# pinning: it is the one way to reach the global config with another file named on the command
+# line, and the rule above is easy to over-apply to it.
+assert_contains "mise edit --global --tool-versions .tool-versions --dry-run 2>&1" "global-config.toml"
+assert_contains "mise edit --global --tool-versions .tool-versions --dry-run 2>&1" 'node = "22"'
 
 # Everything above is --dry-run, so nothing here reached the write at all. The global config
 # lives at ~/.config/mise/config.toml and nothing creates that directory ahead of time, so on
