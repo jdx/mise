@@ -1,12 +1,12 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010, 011
 Implementation start: #11915 `94c66938ca1163d26de49902575f0b779367ee41`
-Implementation commits: `94c66938c`, `06a9bf68c`, `57319487b`
+Implementation commits: `94c66938c`, `06a9bf68c`, `57319487b`, `b5b4810c3`
 
 Drift check (2026-08-13): installed status still inspected only the configured
 formula's active records. Existing lifecycle state could classify local damage,
@@ -145,16 +145,26 @@ Completed proof:
   passed direct OpenSSL verification and default Node fetch with no CA/TLS
   override, then detected and repaired a removed OpenSSL CA link through root
   status.
-- That earlier execution used the narrower `mise bootstrap packages apply`
-  entry point and damaged only the generated CA link. The exact production
-  entry point is being re-proved on head
-  `667866575b92c19f5f8ba07646f52cfbbcf330fb` through `mise bootstrap --yes`
-  with only the Kimi root. Plan 018 adds full legacy-state mutation and exact
-  combined-head evidence; this plan remains IN PROGRESS until those checks
-  pass.
+- Exact #11915 head `b5b4810c3b6420e65a277f1d5fa26adfe1b5069c`
+  closed the remaining native-state gap: real-Homebrew keg-only formulae are
+  classified offline from their installed formula snapshot, so an already
+  current `postgresql@17` stays outside the mutation set despite unsupported
+  lifecycle operations.
+- [Exact-head macOS job 94429640485](https://github.com/jdx/mise/actions/runs/31694663380/job/94429640485)
+  passed the production `mise bootstrap --yes` path with only the Kimi root,
+  full legacy OpenSSL damage, inode-preserving repair, direct OpenSSL and
+  default Node TLS, Kimi device-authorization TLS, ambiguous-source refusal,
+  and both Homebrew ownership directions.
+- Its completion marker records test
+  `test_system_install_brew_formula_lifecycle_macos_slow`, fixture count `4`,
+  prefix `/opt/homebrew`, mise SHA `b5b4810c3b6420e65a277f1d5fa26adfe1b5069c`,
+  and matching Homebrew reference/runtime `6.0.17` at
+  `4dacfe77a24dead72de749c0876028b77b99cd04`.
+- [Exact-head Linux/source job 94429640493](https://github.com/jdx/mise/actions/runs/31694663380/job/94429640493)
+  passed the archive/source provenance and completion-marker gates.
 - The same job ended with status `installed`; marker fixture count is 4 and
   exact mise head is `84d74314f904c0accad1c4cdc563ea662360316b`.
-- Local all-brew tests (204 passed) cover offline installed-receipt closure
+- Local all-brew tests (207 passed) cover offline installed-receipt closure
   traversal, exact dependency/phase diagnostics, legacy lifecycle repair,
   unprovable-state reinstall classification, preserved valid topology/inodes,
   and ordered effect health.
