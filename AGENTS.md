@@ -225,15 +225,16 @@ All commit messages and PR titles MUST follow conventional commit format:
 
 ## Deprecation Policy
 
-When deprecating a feature or backend:
+When deprecating a feature, backend, or implicit behavior:
 
-1. **Immediately**: Mark as deprecated in docs (add warning banner)
-2. **6 months later** (`warn_at`): Display deprecation warning in CLI using `deprecated_at!` macro from `src/output.rs`
-3. **12 months after warn** (`remove_at`): `debug_assert!` in `deprecated_at!` fires, signaling the code should be removed
+1. **Immediately**: Mark it as deprecated in docs (add a warning banner) and display a CLI warning using the `deprecated_at!` macro from `src/output.rs` (`warn_at` is the current version).
+2. **12 months after warn** (`remove_at`): `debug_assert!` in `deprecated_at!` fires, signaling the deprecated code or behavior should be removed.
+
+Delay the CLI warning for up to 6 months only when migration requires a new setting, syntax, or replacement that older supported mise versions would reject or fail to parse. This compatibility window lets users adopt a configuration that works across old and new clients before warnings begin. Do not delay warnings for a behavior change that requires no new configuration, or when the replacement already works in older clients.
 
 Use mise version format for dates (e.g., `deprecated_at!("2026.10.0", "2027.10.0", "id", "message")`).
 
-If the replacement has been available for a long time, the CLI warning can start immediately (set `warn_at` to the current version).
+If a compatibility window is required, removal remains 12 months after `warn_at`, not 12 months after the initial documentation notice.
 
 ## Important Implementation Notes
 
