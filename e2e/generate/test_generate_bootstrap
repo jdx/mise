@@ -61,3 +61,11 @@ assert "MISE_VERSION=9999.1.2 ./bin/mise-plain hello" "version-stub hello"
 
 stub "$PWD/.mise/mise-9999.1.2" localized-version-stub
 assert "MISE_VERSION=v9999.1.2 ./bin/mise hello" "localized-version-stub hello"
+
+# Absolute localized directories must not be nested under the generated script's project root.
+# Shell metacharacters in the path must also stay literal in the generated script.
+absolute_localized_dir="$PWD/localized \$dir's cache"
+printf -v absolute_localized_dir_arg '%q' "$absolute_localized_dir"
+assert "mise generate bootstrap -l --localized-dir $absolute_localized_dir_arg -w ./bin/mise-absolute"
+stub "$absolute_localized_dir/mise-9999.1.2" absolute-localized-stub
+assert "MISE_VERSION=v9999.1.2 ./bin/mise-absolute hello" "absolute-localized-stub hello"
