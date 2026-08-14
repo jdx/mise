@@ -299,5 +299,11 @@ fails with an ordinary permission error.
 
 ## Windows
 
-File symlinks require elevation on Windows, so `symlink` and `symlink-each`
-fall back to copying for files there; directory symlinks use junctions.
+`symlink` creates a real file symlink on Windows when it can. Windows allows that
+without elevation once Developer Mode is on — the same privilege
+[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode) relies on for
+its `symlink` option — and mise falls back to copying the file when the privilege
+is not available, so entries keep applying either way.
+`mise bootstrap dotfiles status` reads whichever form is on disk.
+
+`symlink-each` still copies files on Windows. Directory symlinks use junctions.
