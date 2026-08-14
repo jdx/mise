@@ -2114,7 +2114,7 @@ fn open_trusted_operation_parent(
 fn run_installer_artifact(
     stage: &Path,
     installer: &InstallerArtifact,
-    copied_roots: &[PathBuf],
+    copied_files: &BTreeSet<PathBuf>,
 ) -> Result<()> {
     let executable = stage.join(&installer.executable);
     if staged_relative_path(stage, &executable).is_none() {
@@ -2130,11 +2130,7 @@ fn run_installer_artifact(
         );
     }
     let executable = file::desymlink_path(&executable);
-    if !executable.starts_with(file::desymlink_path(stage))
-        && !copied_roots
-            .iter()
-            .any(|root| executable.starts_with(file::desymlink_path(root)))
-    {
+    if !executable.starts_with(file::desymlink_path(stage)) && !copied_files.contains(&executable) {
         bail!(
             "brew-cask: refusing installer executable outside trusted installer roots: {}",
             executable.display()
@@ -2162,7 +2158,7 @@ fn run_installers_before_durabilizing(
     mut completed: impl FnMut(usize) -> Result<()>,
 ) -> Result<()> {
     for (index, installer) in installers.iter().enumerate() {
-        run_installer_artifact(stage, installer, targets.copied_roots())?;
+        run_installer_artifact(stage, installer, targets.copied_files())?;
         completed(index)?;
     }
     durabilize_staged_symlink_targets(stage, temporary_caskroom, targets)
@@ -2564,7 +2560,7 @@ struct FlightTargetTransaction {
     installed: Vec<PathBuf>,
     uninstall: BTreeMap<PathBuf, bool>,
     previous_symlinks: BTreeSet<PathBuf>,
-    copied_roots: Vec<PathBuf>,
+    copied_files: BTreeSet<PathBuf>,
     previous_directories: BTreeSet<PathBuf>,
     installed_directories: Vec<PathBuf>,
     committed: bool,
@@ -2697,14 +2693,25 @@ impl FlightTargetTransaction {
         &self.uninstall
     }
 
-    fn record_copied_root(&mut self, target: PathBuf) {
-        if !self.copied_roots.contains(&target) {
-            self.copied_roots.push(target);
+    fn record_copied_files(&mut self, source: &Path, target: &Path) -> Result<()> {
+        let metadata = source.symlink_metadata()?;
+        if metadata.is_file() {
+            self.copied_files.insert(file::desymlink_path(target));
+            return Ok(());
         }
+        for entry in WalkDir::new(source).follow_links(false) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let relative = entry.path().strip_prefix(source)?;
+                self.copied_files
+                    .insert(file::desymlink_path(&target.join(relative)));
+            }
+        }
+        Ok(())
     }
 
-    fn copied_roots(&self) -> &[PathBuf] {
-        &self.copied_roots
+    fn copied_files(&self) -> &BTreeSet<PathBuf> {
+        &self.copied_files
     }
 
     fn record_installed_directory(&mut self, target: PathBuf) {
@@ -2756,7 +2763,7 @@ impl FlightTargetTransaction {
         self.backups = failed;
         self.installed.clear();
         self.uninstall.clear();
-        self.copied_roots.clear();
+        self.copied_files.clear();
         self.installed_directories.clear();
         if let Some(err) = first_error {
             Err(err)
@@ -3170,7 +3177,7 @@ fn execute_flight_step(
             }
             copy_cask_artifact(source, &target)?;
             if external {
-                targets.record_copied_root(target);
+                targets.record_copied_files(source, &target)?;
             }
             // External copy trees may be modified during normal use. The
             // transaction backup is sufficient for rollback; recording them
@@ -7530,7 +7537,7 @@ mod tests {
             args: vec![marker.display().to_string()],
         };
 
-        run_installer_artifact(&stage, &installer, &[])?;
+        run_installer_artifact(&stage, &installer, &BTreeSet::new())?;
 
         let installed_path = file::read_to_string(marker)?;
         let installed_paths = std::env::split_paths(std::ffi::OsStr::new(&installed_path))
@@ -7565,7 +7572,7 @@ mod tests {
                     executable,
                     args: Vec::new(),
                 },
-                &[],
+                &BTreeSet::new(),
             )
             .unwrap_err()
             .to_string();
@@ -7596,16 +7603,49 @@ mod tests {
         )?;
         file::make_symlink(&copied, &stage.join("payload"))?;
 
+        let copied_files = BTreeSet::from([file::desymlink_path(&copied.join("install.sh"))]);
         run_installer_artifact(
             &stage,
             &InstallerArtifact {
                 executable: "payload/install.sh".to_string(),
                 args: vec![marker.display().to_string()],
             },
-            std::slice::from_ref(&copied),
+            &copied_files,
         )?;
 
         assert_eq!(file::read_to_string(marker)?, "installed");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_rejects_unrecorded_file_beneath_copied_target() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let broad_target = tmp.path().join("prefix");
+        file::create_dir_all(broad_target.join("bin"))?;
+        let outside = broad_target.join("bin/existing.sh");
+        file::write(&outside, "#!/bin/sh\nexit 0\n")?;
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644))?;
+        file::make_symlink(&broad_target, &stage.join("payload"))?;
+        let copied_files = BTreeSet::from([broad_target.join("copied.txt")]);
+
+        let err = run_installer_artifact(
+            &stage,
+            &InstallerArtifact {
+                executable: "payload/bin/existing.sh".to_string(),
+                args: Vec::new(),
+            },
+            &copied_files,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("outside trusted installer roots"));
+        assert_eq!(outside.metadata()?.permissions().mode() & 0o111, 0);
         Ok(())
     }
 
@@ -7689,7 +7729,10 @@ mod tests {
         assert!(target.join("gcloud").is_file());
         assert!(!target.join("old").exists());
         assert!(targets.installed_targets().is_empty());
-        assert_eq!(targets.copied_roots(), std::slice::from_ref(&target));
+        assert_eq!(
+            targets.copied_files(),
+            &BTreeSet::from([file::desymlink_path(&target.join("gcloud"))])
+        );
         targets.rollback()?;
         assert_eq!(file::read_to_string(target.join("old"))?, "old");
         Ok(())
@@ -8341,7 +8384,7 @@ mod tests {
             installed: Vec::new(),
             uninstall: BTreeMap::new(),
             previous_symlinks: BTreeSet::new(),
-            copied_roots: Vec::new(),
+            copied_files: BTreeSet::new(),
             previous_directories: BTreeSet::new(),
             installed_directories: Vec::new(),
             committed: false,
