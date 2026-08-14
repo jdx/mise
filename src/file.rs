@@ -937,6 +937,28 @@ pub fn is_executable(path: &Path) -> bool {
     has_shebang(path)
 }
 
+/// How to make `path` count as executable, phrased for the platform the user is on.
+///
+/// Lives beside [`is_executable`] because it has to track it: the two platforms answer that
+/// question by different rules, so the remedy differs too. `chmod +x` is not merely unavailable on
+/// Windows — it is the wrong instruction, since the Windows branch never looks at a permission bit.
+#[cfg(unix)]
+pub fn make_executable_hint(path: &Path) -> String {
+    format!("Run: chmod +x {}", display_path(path))
+}
+
+#[cfg(windows)]
+pub fn make_executable_hint(path: &Path) -> String {
+    format!(
+        "Add a shebang line to {}, or give it one of these extensions: {}",
+        display_path(path),
+        // Read from the setting rather than hardcoded: a user who has changed
+        // `windows_executable_extensions` would otherwise be told to use extensions mise will not
+        // accept from them.
+        Settings::get().windows_executable_extensions.join(", ")
+    )
+}
+
 #[cfg(windows)]
 pub fn has_known_executable_extension(path: &Path) -> bool {
     path.extension().map_or(
@@ -3728,5 +3750,26 @@ mod tests {
 
         assert!(!src.exists());
         assert_eq!(fs::read(dst.join("nested/bun")).unwrap(), b"hello");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn make_executable_hint_names_chmod_on_unix() {
+        let hint = make_executable_hint(Path::new("/proj/mise-tasks/build"));
+        assert!(hint.contains("chmod +x"), "{hint}");
+        assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn make_executable_hint_does_not_name_chmod_on_windows() {
+        let hint = make_executable_hint(Path::new(r"C:\proj\mise-tasks\build"));
+        // The point of the change: `chmod` is not just unavailable here, it is the wrong fix --
+        // the Windows `is_executable` never looks at a permission bit.
+        assert!(!hint.contains("chmod"), "{hint}");
+        assert!(hint.contains("shebang"), "{hint}");
+        // and it must offer what that branch actually accepts
+        assert!(hint.contains("exe"), "{hint}");
+        assert!(hint.contains("build"), "{hint}");
     }
 }

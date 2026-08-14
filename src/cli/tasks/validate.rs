@@ -449,7 +449,7 @@ impl TasksValidate {
                     severity: Severity::Warning,
                     category: "not-executable".to_string(),
                     message: format!("Task file is not executable: {}", file::display_path(file)),
-                    details: Some(format!("Run: chmod +x {}", file::display_path(file))),
+                    details: Some(file::make_executable_hint(file)),
                 });
             }
         }

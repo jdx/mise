@@ -273,6 +273,10 @@ touch non-executable.sh
 assert_contains "mise tasks validate --errors-only 2>&1 || true" "error-task"
 assert_not_contains "mise tasks validate --errors-only 2>&1 || true" "warning-task"
 
+# The remedy is platform-specific -- Windows has no chmod and its `is_executable` does not look at
+# a permission bit -- so pin the unix wording here. e2e-win pins the other half.
+assert_contains "mise tasks validate 2>&1 || true" "chmod +x"
+
 # Test specific task validation
 cat <<EOF >mise.toml
 [tasks.good]
