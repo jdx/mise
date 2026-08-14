@@ -5516,6 +5516,7 @@ mod tests {
                 versions: vec!["1.0.0".to_string()],
                 explicit_backend: true,
                 opts: manifest_opts,
+                version_backends: BTreeMap::new(),
                 installs_path: None,
             },
         ));
@@ -5600,6 +5601,7 @@ mod tests {
                 versions: vec!["1.0.0".to_string()],
                 explicit_backend: true,
                 opts: manifest_opts,
+                version_backends: BTreeMap::new(),
                 installs_path: None,
             },
         ));

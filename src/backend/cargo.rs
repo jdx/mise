@@ -183,7 +183,7 @@ impl Backend for CargoBackend {
         true
     }
 
-    async fn is_install_satisfied(
+    async fn is_install_satisfied_(
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,

@@ -564,7 +564,7 @@ impl ToolVersion {
         ) && crate::semver::is_npm_semver_range_query(&v)
         {
             if !opts.latest_versions && !should_filter_installed_versions {
-                let installed_versions = backend.list_installed_versions();
+                let installed_versions = backend.list_installed_versions_for_current_backend();
                 if let Some(matches) =
                     crate::semver::npm_semver_range_filter(&installed_versions, &v)
                     && let Some(v) = matches.last()

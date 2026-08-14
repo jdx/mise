@@ -22,8 +22,8 @@ chmod +x "$shared_dir/tiny/2.0.0/bin/tiny"
 cat >"$shared_dir/.mise-installs.toml" <<'TOML'
 [tiny]
 short = "tiny"
-full = "asdf:tiny"
-explicit_backend = true
+full = "vfox:tiny"
+explicit_backend = false
 TOML
 
 # Set shared install dirs and verify the version from the shared dir is visible

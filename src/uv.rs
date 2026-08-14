@@ -135,8 +135,9 @@ mod tests {
 
     #[test]
     fn test_resolve_uv_venv_path() {
-        let root = std::env::current_dir().unwrap().join("project");
-        let absolute = std::env::current_dir().unwrap().join("absolute-venv");
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path().join("project");
+        let absolute = tempdir.path().join("absolute-venv");
 
         assert_eq!(resolve_uv_venv_path(&root, None), root.join(".venv"));
         assert_eq!(

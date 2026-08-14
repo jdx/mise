@@ -292,7 +292,7 @@ impl Backend for RustPlugin {
     /// Rust toolchains can be installed while requested components/targets are
     /// still absent because rustup owns that mutable state outside mise's
     /// install directory.
-    async fn is_install_satisfied(
+    async fn is_install_satisfied_(
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,

@@ -10,7 +10,7 @@ use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -35,11 +35,13 @@ pub struct InstallStateTool {
     pub versions: Vec<String>,
     pub explicit_backend: bool,
     pub opts: BTreeMap<String, toml::Value>,
+    pub version_backends: BTreeMap<String, String>,
     pub installs_path: Option<PathBuf>,
 }
 
 /// Entry in the consolidated manifest file (.mise-installs.toml).
-/// Versions are NOT stored here — they come from the filesystem.
+/// Version directories remain the inventory source of truth; `version_backends`
+/// only records which backend produced versions that still exist on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ManifestTool {
     /// Original short name (e.g. "github:jdx/mise-test-fixtures").
@@ -51,6 +53,8 @@ struct ManifestTool {
     explicit_backend: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     opts: BTreeMap<String, toml::Value>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    version_backends: BTreeMap<String, String>,
 }
 
 fn default_true() -> bool {
@@ -59,6 +63,17 @@ fn default_true() -> bool {
 
 /// In-memory representation of the manifest keyed by short name.
 type Manifest = BTreeMap<String, ManifestTool>;
+
+enum ManifestMigration {
+    BracketedOptions {
+        expected_full: String,
+        full: String,
+        opts: BTreeMap<String, toml::Value>,
+    },
+    Legacy(ManifestTool),
+}
+
+type ManifestMigrations = BTreeMap<String, ManifestMigration>;
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
@@ -72,6 +87,11 @@ fn tool_manifest_path(installs_dir: &Path, short: &str) -> PathBuf {
     installs_dir
         .join(short.to_kebab_case())
         .join(".mise.backend.toml")
+}
+
+/// Returns the cross-process lock associated with one install manifest.
+fn manifest_file_lock(path: &Path) -> LockFile {
+    LockFile::new(path)
 }
 
 /// Read the consolidated manifest file. Returns empty map if it doesn't exist.
@@ -93,11 +113,6 @@ fn read_manifest_from(path: &Path) -> Manifest {
         },
         Err(_) => Default::default(),
     }
-}
-
-/// Write the consolidated manifest file.
-fn write_manifest(manifest: &Manifest) -> Result<()> {
-    write_manifest_to(&manifest_path(), manifest)
 }
 
 fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
@@ -126,9 +141,80 @@ fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
     }
 }
 
+/// Merge duplicated install metadata after a partial consolidated/sidecar write.
+///
+/// The consolidated manifest is written first, so its fields win when both
+/// copies exist. The sidecar still contributes version identities missing from
+/// the consolidated entry for compatibility with older or copied installs.
+fn merge_manifest_tool(
+    consolidated: Option<&ManifestTool>,
+    sidecar: Option<&ManifestTool>,
+) -> Option<ManifestTool> {
+    match (consolidated, sidecar) {
+        (Some(consolidated), Some(sidecar)) => {
+            let mut merged = sidecar.clone();
+            merged.short.clone_from(&consolidated.short);
+            merged.full.clone_from(&consolidated.full);
+            merged.explicit_backend = consolidated.explicit_backend;
+            merged.opts.clone_from(&consolidated.opts);
+            merged
+                .version_backends
+                .extend(consolidated.version_backends.clone());
+            Some(merged)
+        }
+        (Some(consolidated), None) => Some(consolidated.clone()),
+        (None, Some(sidecar)) => Some(sidecar.clone()),
+        (None, None) => None,
+    }
+}
+
 fn write_tool_manifest_to(path: &Path, tool: &ManifestTool) -> Result<()> {
     let body = toml::to_string_pretty(tool)?;
     file::write_atomic(path, body.trim())?;
+    Ok(())
+}
+
+/// Applies legacy metadata migrations to the latest manifest under the same
+/// process and file locks used by normal install metadata writes.
+fn write_manifest_migrations(path: &Path, migrations: ManifestMigrations) -> Result<()> {
+    let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
+    let _file_lock = manifest_file_lock(path)
+        .with_callback(|lock| {
+            debug!(
+                "waiting for install manifest lock on {}",
+                display_path(lock)
+            );
+        })
+        .lock()?;
+    let mut manifest = read_manifest_from(path);
+    let mut changed = false;
+    for (short, migration) in migrations {
+        match migration {
+            ManifestMigration::BracketedOptions {
+                expected_full,
+                full,
+                opts,
+            } => {
+                let Some(tool) = manifest.get_mut(&short) else {
+                    continue;
+                };
+                if tool.opts.is_empty() && tool.full.as_deref() == Some(expected_full.as_str()) {
+                    tool.full = Some(full);
+                    tool.opts = opts;
+                    changed = true;
+                }
+            }
+            ManifestMigration::Legacy(tool) => {
+                if let std::collections::btree_map::Entry::Vacant(entry) = manifest.entry(short) {
+                    entry.insert(tool);
+                    changed = true;
+                }
+            }
+        }
+    }
+    if changed {
+        write_manifest_to(path, &manifest)?;
+    }
     Ok(())
 }
 
@@ -231,13 +317,14 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
 
     // 3. For each dir, read versions from filesystem and merge with manifest metadata.
-    //    Only clone the manifest for mutation if we actually need to migrate legacy entries.
-    let mut updated_manifest: Option<Manifest> = None;
+    //    Record only the legacy entries that need migration. They are merged
+    //    into the latest manifest under its cross-process lock after scanning.
+    let mut manifest_migrations = ManifestMigrations::new();
     let mut tools = BTreeMap::new();
     for dir_name in subdirs {
         let dir = dirs::INSTALLS.join(&dir_name);
         let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
-        let manifest_tool = tool_manifest.as_ref().or_else(|| manifest.get(&dir_name));
+        let manifest_tool = merge_manifest_tool(manifest.get(&dir_name), tool_manifest.as_ref());
         let legacy_meta = if manifest_tool.is_none() {
             read_legacy_backend_meta(&dir_name)
         } else {
@@ -264,7 +351,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
-        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool.as_ref() {
             let mut full = mt.full.clone();
             let mut opts = mt.opts.clone();
             // Backward compat: if opts is empty but full contains [...], extract opts
@@ -272,6 +359,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 && let Some(ref f) = full
                 && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
             {
+                let expected_full = f.clone();
                 let stripped = stripped_str.to_string();
                 let parsed = parse_tool_options(opts_str);
                 for (k, v) in &parsed.opts {
@@ -280,15 +368,14 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     }
                     opts.insert(k.clone(), v.clone());
                 }
-                full = Some(stripped);
-                // Schedule manifest rewrite to migrate to new format
-                let m = updated_manifest.get_or_insert_with(|| manifest.clone());
-                m.insert(
+                full = Some(stripped.clone());
+                // Schedule a conditional field migration. If another process
+                // updates this entry first, its newer metadata wins.
+                manifest_migrations.insert(
                     dir_name.clone(),
-                    ManifestTool {
-                        short: mt.short.clone(),
-                        full: full.clone(),
-                        explicit_backend: mt.explicit_backend,
+                    ManifestMigration::BracketedOptions {
+                        expected_full,
+                        full: stripped,
                         opts: opts.clone(),
                     },
                 );
@@ -296,27 +383,38 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             (mt.short.clone(), full, mt.explicit_backend, opts)
         } else if let Some((s, full, explicit)) = legacy_meta {
             // Migration: absorb into manifest (clone on first migration)
-            let m = updated_manifest.get_or_insert_with(|| manifest.clone());
-            m.insert(
+            manifest_migrations.insert(
                 dir_name.clone(),
-                ManifestTool {
+                ManifestMigration::Legacy(ManifestTool {
                     short: s.clone(),
                     full: full.clone(),
                     explicit_backend: explicit,
                     opts: BTreeMap::new(),
-                },
+                    version_backends: BTreeMap::new(),
+                }),
             );
             (s, full, explicit, BTreeMap::new())
         } else {
             (dir_name.clone(), None, true, BTreeMap::new())
         };
 
+        let version_backends = versions
+            .iter()
+            .filter_map(|version| {
+                let backend = manifest_tool
+                    .as_ref()
+                    .and_then(|tool| tool.version_backends.get(version).cloned())
+                    .or_else(|| full.clone())?;
+                Some((version.clone(), backend))
+            })
+            .collect();
         let tool = InstallStateTool {
             short: short.clone(),
             full,
             versions,
             explicit_backend,
             opts,
+            version_backends,
             installs_path: Some(dir),
         };
         time!("init_tools {short}");
@@ -324,11 +422,10 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     }
 
     // Write updated manifest if we migrated any legacy entries
-    if let Some(ref m) = updated_manifest {
-        let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
-        if let Err(err) = write_manifest(m) {
-            warn!("failed to write install manifest: {err:#}");
-        }
+    if !manifest_migrations.is_empty()
+        && let Err(err) = write_manifest_migrations(&manifest_path(), manifest_migrations)
+    {
+        warn!("failed to write install manifest: {err:#}");
     }
 
     // Scan shared install directories (read-only fallback directories)
@@ -351,9 +448,8 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         for dir_name in shared_subdirs {
             let dir = shared_dir.join(&dir_name);
             let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
-            let manifest_tool = tool_manifest
-                .as_ref()
-                .or_else(|| shared_manifest.get(&dir_name));
+            let manifest_tool =
+                merge_manifest_tool(shared_manifest.get(&dir_name), tool_manifest.as_ref());
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -373,7 +469,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 continue;
             }
 
-            let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+            let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool.as_ref() {
                 (
                     mt.short.clone(),
                     mt.full.clone(),
@@ -393,11 +489,19 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     versions: Vec::new(),
                     explicit_backend,
                     opts: opts.clone(),
+                    version_backends: BTreeMap::new(),
                     installs_path: Some(dir),
                 });
             // Add versions from shared dir that aren't already present
             for v in versions {
                 if !tool.versions.contains(&v) {
+                    if let Some(backend) = manifest_tool
+                        .as_ref()
+                        .and_then(|mt| mt.version_backends.get(&v).cloned())
+                        .or_else(|| full.clone())
+                    {
+                        tool.version_backends.insert(v.clone(), backend);
+                    }
                     tool.versions.push(v);
                 }
             }
@@ -428,6 +532,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 versions: Default::default(),
                 explicit_backend: true,
                 opts: BTreeMap::new(),
+                version_backends: BTreeMap::new(),
                 installs_path: None,
             });
         tool.full = Some(full);
@@ -463,6 +568,17 @@ fn is_banned_plugin(path: &Path) -> bool {
 
 pub fn get_tool_full(short: &str) -> Option<String> {
     list_tools().get(short).and_then(|t| t.full.clone())
+}
+
+/// Returns the backend that installed a concrete version, falling back to the
+/// tool-level backend recorded by legacy manifests.
+pub fn get_version_backend(short: &str, version: &str) -> Option<String> {
+    try_list_tools()?.get(short).and_then(|tool| {
+        tool.version_backends
+            .get(version)
+            .cloned()
+            .or_else(|| tool.full.clone())
+    })
 }
 
 pub fn get_plugin_type(short: &str) -> Option<PluginType> {
@@ -530,16 +646,13 @@ pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
             versions: Vec::new(),
             explicit_backend,
             opts: opts.clone(),
+            version_backends: BTreeMap::new(),
             installs_path: tool_dir.clone(),
         });
 
-    if tool.full.is_none() {
-        tool.full = Some(full);
-    }
+    tool.full = Some(full.clone());
     tool.explicit_backend = explicit_backend;
-    if tool.opts.is_empty() {
-        tool.opts = opts;
-    }
+    tool.opts = opts;
     if tool.installs_path.is_none() {
         tool.installs_path = tool_dir;
     }
@@ -549,6 +662,7 @@ pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
         // see that concrete result without adding another ordering rule.
         tool.versions.push(version.to_string());
     }
+    tool.version_backends.insert(version.to_string(), full);
 
     *tools = Some(Arc::new(next_tools));
 }
@@ -564,31 +678,69 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 
 /// Writes backend metadata to the consolidated manifest file.
 /// Uses the primary installs dir manifest by default.
-pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
-    write_backend_meta_to(ba, &manifest_path())
+pub fn write_backend_meta(ba: &BackendArg, version: &str) -> Result<()> {
+    write_backend_meta_to(ba, &manifest_path(), version)
 }
 
 /// Writes backend metadata to a manifest at a specific install path.
-pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
+pub fn write_backend_meta_to(ba: &BackendArg, path: &Path, version: &str) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
     let opts_map = persistent_opts(ba);
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
+    let _file_lock = manifest_file_lock(path)
+        .with_callback(|lock| {
+            debug!(
+                "waiting for install manifest lock on {}",
+                display_path(lock)
+            );
+        })
+        .lock()?;
     let mut manifest = read_manifest_from(path);
+    let tool_manifest = path
+        .parent()
+        .map(|installs_dir| tool_manifest_path(installs_dir, &ba.short));
+    let sidecar = tool_manifest.as_deref().and_then(read_tool_manifest_from);
+    let previous = merge_manifest_tool(manifest.get(&ba.short.to_kebab_case()), sidecar.as_ref());
+    let mut version_backends = previous
+        .as_ref()
+        .map(|tool| tool.version_backends.clone())
+        .unwrap_or_default();
+    if let Some(installs_dir) = path.parent() {
+        let tool_dir = installs_dir.join(ba.short.to_kebab_case());
+        let existing_versions: BTreeSet<_> = file::dir_subdirs(&tool_dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|existing_version| !existing_version.starts_with('.'))
+            .filter(|existing_version| {
+                !runtime_symlinks::is_runtime_symlink(&tool_dir.join(existing_version))
+            })
+            .filter(|existing_version| !tool_dir.join(existing_version).join("incomplete").exists())
+            .collect();
+        version_backends.retain(|existing_version, _| existing_versions.contains(existing_version));
+        if let Some(previous_full) = previous.as_ref().and_then(|tool| tool.full.clone()) {
+            for existing_version in existing_versions {
+                version_backends
+                    .entry(existing_version)
+                    .or_insert_with(|| previous_full.clone());
+            }
+        }
+    }
+    version_backends.insert(version.to_string(), full.clone());
     let manifest_tool = ManifestTool {
         short: ba.short.clone(),
         full: Some(full),
         explicit_backend: explicit,
         opts: opts_map,
+        version_backends,
     };
     manifest.insert(ba.short.to_kebab_case(), manifest_tool.clone());
     write_manifest_to(path, &manifest)?;
-    if let Some(installs_dir) = path.parent() {
-        let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
-        if tool_manifest.parent().is_some_and(|p| p.exists()) {
-            write_tool_manifest_to(&tool_manifest, &manifest_tool)?;
-        }
+    if let Some(tool_manifest) = tool_manifest
+        && tool_manifest.parent().is_some_and(|p| p.exists())
+    {
+        write_tool_manifest_to(&tool_manifest, &manifest_tool)?;
     }
     Ok(())
 }
@@ -695,10 +847,16 @@ pub fn reset() {
 #[cfg(test)]
 mod tests {
     use super::{
-        lock_tool_version, normalize_version_for_sort, read_tool_manifest_from, tool_version_lock,
+        Manifest, ManifestMigration, ManifestMigrations, ManifestTool, lock_tool_version,
+        manifest_file_lock, merge_manifest_tool, normalize_version_for_sort, read_manifest_from,
+        read_tool_manifest_from, tool_version_lock, write_backend_meta_to,
+        write_manifest_migrations, write_manifest_to,
     };
+    use crate::cli::args::BackendArg;
     use itertools::Itertools;
     use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::sync::mpsc;
     use std::time::Duration;
     use versions::Versioning;
@@ -743,6 +901,54 @@ mod tests {
 
         acquired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         waiter.join().unwrap();
+    }
+
+    #[test]
+    fn manifest_file_locks_serialize_across_processes() {
+        const CHILD_PATH: &str = "MISE_TEST_MANIFEST_LOCK_PATH";
+        const WAITING_PATH: &str = "MISE_TEST_MANIFEST_LOCK_WAITING_PATH";
+        const ACQUIRED_PATH: &str = "MISE_TEST_MANIFEST_LOCK_ACQUIRED_PATH";
+
+        if let (Some(lock_path), Some(waiting_path), Some(acquired_path)) = (
+            std::env::var_os(CHILD_PATH),
+            std::env::var_os(WAITING_PATH),
+            std::env::var_os(ACQUIRED_PATH),
+        ) {
+            let waiting_path = PathBuf::from(waiting_path);
+            let _lock = manifest_file_lock(Path::new(&lock_path))
+                .with_callback(move |_| std::fs::write(&waiting_path, "waiting").unwrap())
+                .lock()
+                .unwrap();
+            std::fs::write(acquired_path, "acquired").unwrap();
+            return;
+        }
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let manifest_path = tempdir.path().join(".mise-installs.toml");
+        let waiting_path = tempdir.path().join("waiting");
+        let acquired_path = tempdir.path().join("acquired");
+        let lock = manifest_file_lock(&manifest_path).lock().unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("manifest_file_locks_serialize_across_processes")
+            .env("MISE_TEST_SKIP_INIT", "1")
+            .env(CHILD_PATH, &manifest_path)
+            .env(WAITING_PATH, &waiting_path)
+            .env(ACQUIRED_PATH, &acquired_path)
+            .spawn()
+            .unwrap();
+
+        for _ in 0..500 {
+            if waiting_path.exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(waiting_path.exists(), "child did not contend for the lock");
+        assert!(!acquired_path.exists());
+
+        drop(lock);
+        assert!(child.wait().unwrap().success());
+        assert!(acquired_path.exists());
     }
 
     #[test]
@@ -798,6 +1004,7 @@ mod tests {
                 full: Some("core:node".to_string()),
                 explicit_backend: true,
                 opts: BTreeMap::new(),
+                version_backends: BTreeMap::from([("22.0.0".to_string(), "core:node".to_string())]),
             },
         );
         manifest.insert(
@@ -807,6 +1014,7 @@ mod tests {
                 full: Some("aqua:oven-sh/bun".to_string()),
                 explicit_backend: false,
                 opts: BTreeMap::new(),
+                version_backends: BTreeMap::new(),
             },
         );
         manifest.insert(
@@ -816,6 +1024,7 @@ mod tests {
                 full: None,
                 explicit_backend: true,
                 opts: BTreeMap::new(),
+                version_backends: BTreeMap::new(),
             },
         );
 
@@ -825,6 +1034,10 @@ mod tests {
         assert_eq!(deserialized.len(), 3);
         assert_eq!(deserialized["node"].full.as_deref(), Some("core:node"));
         assert!(deserialized["node"].explicit_backend);
+        assert_eq!(
+            deserialized["node"].version_backends.get("22.0.0"),
+            Some(&"core:node".to_string())
+        );
         assert_eq!(
             deserialized["bun"].full.as_deref(),
             Some("aqua:oven-sh/bun")
@@ -866,6 +1079,7 @@ mod tests {
                 full: Some("http:hello".to_string()),
                 explicit_backend: true,
                 opts,
+                version_backends: BTreeMap::new(),
             },
         );
 
@@ -908,6 +1122,201 @@ explicit_backend = true
         let mt = &manifest["hello"];
         // Old format should deserialize with opts empty and brackets in full
         assert!(mt.opts.is_empty());
+        assert!(mt.version_backends.is_empty());
         assert!(mt.full.as_ref().unwrap().contains('['));
+    }
+
+    #[test]
+    fn manifest_migrations_preserve_concurrent_updates() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let manifest_path = tempdir.path().join(".mise-installs.toml");
+        let mut current = Manifest::new();
+        current.insert(
+            "bracketed".into(),
+            ManifestTool {
+                short: "bracketed".into(),
+                full: Some("http:bracketed[url = \"https://example.com\"]".into()),
+                explicit_backend: true,
+                opts: BTreeMap::new(),
+                version_backends: BTreeMap::from([(
+                    "1.0.0".into(),
+                    "http:concurrent-backend".into(),
+                )]),
+            },
+        );
+        current.insert(
+            "legacy".into(),
+            ManifestTool {
+                short: "legacy".into(),
+                full: Some("http:current-backend".into()),
+                explicit_backend: true,
+                opts: BTreeMap::new(),
+                version_backends: BTreeMap::from([("2.0.0".into(), "http:current-backend".into())]),
+            },
+        );
+        write_manifest_to(&manifest_path, &current).unwrap();
+
+        let migrations = ManifestMigrations::from([
+            (
+                "bracketed".into(),
+                ManifestMigration::BracketedOptions {
+                    expected_full: "http:bracketed[url = \"https://example.com\"]".into(),
+                    full: "http:bracketed".into(),
+                    opts: BTreeMap::from([(
+                        "url".into(),
+                        toml::Value::String("https://example.com".into()),
+                    )]),
+                },
+            ),
+            (
+                "legacy".into(),
+                ManifestMigration::Legacy(ManifestTool {
+                    short: "legacy".into(),
+                    full: Some("asdf:stale-backend".into()),
+                    explicit_backend: true,
+                    opts: BTreeMap::new(),
+                    version_backends: BTreeMap::new(),
+                }),
+            ),
+        ]);
+        write_manifest_migrations(&manifest_path, migrations).unwrap();
+
+        let manifest = read_manifest_from(&manifest_path);
+        assert_eq!(
+            manifest["bracketed"].full.as_deref(),
+            Some("http:bracketed")
+        );
+        assert_eq!(
+            manifest["bracketed"]
+                .version_backends
+                .get("1.0.0")
+                .map(String::as_str),
+            Some("http:concurrent-backend")
+        );
+        assert_eq!(
+            manifest["legacy"].full.as_deref(),
+            Some("http:current-backend")
+        );
+        assert_eq!(
+            manifest["legacy"]
+                .version_backends
+                .get("2.0.0")
+                .map(String::as_str),
+            Some("http:current-backend")
+        );
+    }
+
+    #[test]
+    fn backend_change_preserves_other_version_identities() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let installs_dir = tempdir.path().join("installs");
+        let tool_dir = installs_dir.join("bd");
+        std::fs::create_dir_all(tool_dir.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(tool_dir.join("2.0.0")).unwrap();
+        let manifest_path = installs_dir.join(".mise-installs.toml");
+
+        let old_backend = BackendArg::new("bd".into(), Some("asdf:backend-a".into()));
+        write_backend_meta_to(&old_backend, &manifest_path, "1.0.0").unwrap();
+
+        let new_backend = BackendArg::new("bd".into(), Some("asdf:backend-b".into()));
+        write_backend_meta_to(&new_backend, &manifest_path, "1.0.0").unwrap();
+
+        let manifest = read_manifest_from(&manifest_path);
+        let tool = &manifest["bd"];
+        assert_eq!(tool.full.as_deref(), Some("asdf:backend-b"));
+        assert_eq!(
+            tool.version_backends.get("1.0.0").map(String::as_str),
+            Some("asdf:backend-b")
+        );
+        assert_eq!(
+            tool.version_backends.get("2.0.0").map(String::as_str),
+            Some("asdf:backend-a")
+        );
+
+        let sidecar = read_tool_manifest_from(&tool_dir.join(".mise.backend.toml")).unwrap();
+        assert_eq!(sidecar.version_backends, tool.version_backends);
+    }
+
+    #[test]
+    fn backend_meta_recovers_stale_sidecar_after_partial_write() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let installs_dir = tempdir.path().join("installs");
+        let tool_dir = installs_dir.join("bd");
+        std::fs::create_dir_all(tool_dir.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(tool_dir.join("2.0.0")).unwrap();
+        let manifest_path = installs_dir.join(".mise-installs.toml");
+        let old_backend = BackendArg::new("bd".into(), Some("asdf:backend-a".into()));
+        let new_backend = BackendArg::new("bd".into(), Some("asdf:backend-b".into()));
+
+        write_backend_meta_to(&old_backend, &manifest_path, "1.0.0").unwrap();
+        write_backend_meta_to(&old_backend, &manifest_path, "2.0.0").unwrap();
+
+        // Simulate termination after the consolidated manifest was committed
+        // for 2.0.0 but before its stale sidecar could be replaced.
+        let mut interrupted_manifest = read_manifest_from(&manifest_path);
+        let interrupted_tool = interrupted_manifest.get_mut("bd").unwrap();
+        interrupted_tool.full = Some("asdf:backend-b".into());
+        interrupted_tool
+            .version_backends
+            .insert("2.0.0".into(), "asdf:backend-b".into());
+        write_manifest_to(&manifest_path, &interrupted_manifest).unwrap();
+
+        let stale_sidecar = read_tool_manifest_from(&tool_dir.join(".mise.backend.toml")).unwrap();
+        let recovered =
+            merge_manifest_tool(interrupted_manifest.get("bd"), Some(&stale_sidecar)).unwrap();
+        assert_eq!(
+            recovered.version_backends.get("2.0.0").map(String::as_str),
+            Some("asdf:backend-b")
+        );
+
+        write_backend_meta_to(&new_backend, &manifest_path, "2.0.0").unwrap();
+
+        let manifest = read_manifest_from(&manifest_path);
+        assert_eq!(
+            manifest["bd"]
+                .version_backends
+                .get("1.0.0")
+                .map(String::as_str),
+            Some("asdf:backend-a")
+        );
+        assert_eq!(
+            manifest["bd"]
+                .version_backends
+                .get("2.0.0")
+                .map(String::as_str),
+            Some("asdf:backend-b")
+        );
+        let healed_sidecar = read_tool_manifest_from(&tool_dir.join(".mise.backend.toml")).unwrap();
+        assert_eq!(
+            healed_sidecar.version_backends,
+            manifest["bd"].version_backends
+        );
+    }
+
+    #[test]
+    fn backend_meta_prunes_deleted_version_identities() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let installs_dir = tempdir.path().join("installs");
+        let tool_dir = installs_dir.join("bd");
+        std::fs::create_dir_all(tool_dir.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(tool_dir.join("2.0.0")).unwrap();
+        let manifest_path = installs_dir.join(".mise-installs.toml");
+        let backend = BackendArg::new("bd".into(), Some("asdf:backend-a".into()));
+
+        write_backend_meta_to(&backend, &manifest_path, "1.0.0").unwrap();
+        write_backend_meta_to(&backend, &manifest_path, "2.0.0").unwrap();
+        assert!(
+            read_manifest_from(&manifest_path)["bd"]
+                .version_backends
+                .contains_key("2.0.0")
+        );
+
+        std::fs::remove_dir_all(tool_dir.join("2.0.0")).unwrap();
+        write_backend_meta_to(&backend, &manifest_path, "1.0.0").unwrap();
+
+        let manifest = read_manifest_from(&manifest_path);
+        assert!(!manifest["bd"].version_backends.contains_key("2.0.0"));
+        let sidecar = read_tool_manifest_from(&tool_dir.join(".mise.backend.toml")).unwrap();
+        assert!(!sidecar.version_backends.contains_key("2.0.0"));
     }
 }

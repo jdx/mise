@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FIXTURES="$TMPDIR/alias-backend-reinstall-fixtures"
+PORT_FILE="$TMPDIR/alias-backend-reinstall-port"
+mkdir -p "$FIXTURES"
+
+for backend in a b; do
+  for version in 1.0.0 2.0.0 3.0.0; do
+    cat >"$FIXTURES/backend-$backend-$version" <<EOF
+#!/usr/bin/env bash
+echo "backend-$backend $version"
+EOF
+    chmod +x "$FIXTURES/backend-$backend-$version"
+  done
+done
+
+python3 -u - "$FIXTURES" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import functools
+import http.server
+import socketserver
+import sys
+from pathlib import Path
+
+root = sys.argv[1]
+port_file = Path(sys.argv[2])
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
+    port_file.write_text(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$PORT_FILE" "alias backend test server port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+write_config() {
+  local backend="$1"
+  local version="$2"
+  local url_version="${3:-$version}"
+  cat >mise.toml <<EOF
+[tool_alias]
+bd = "http:backend-$backend"
+
+[tools.bd]
+version = "$version"
+url = "http://127.0.0.1:$PORT/backend-$backend-$url_version"
+bin = "bd"
+EOF
+}
+
+cat >mise.toml <<EOF
+[tool_alias]
+bd = "http:backend-a"
+
+[tools]
+bd = [
+  { version = "1.0.0", url = "http://127.0.0.1:$PORT/backend-a-1.0.0", bin = "bd" },
+  { version = "2.0.0", url = "http://127.0.0.1:$PORT/backend-a-2.0.0", bin = "bd" },
+  { version = "3.0.0", url = "http://127.0.0.1:$PORT/backend-a-3.0.0", bin = "bd" },
+]
+EOF
+mise install
+assert "mise x bd@1.0.0 -- bd" "backend-a 1.0.0"
+assert "mise x bd@2.0.0 -- bd" "backend-a 2.0.0"
+
+write_config b 1.0.0
+
+# A backend mismatch is visible to dry-run but must not mutate the install.
+assert_contains "mise install --dry-run 2>&1" "would install"
+assert "$MISE_DATA_DIR/installs/bd/1.0.0/bd" "backend-a 1.0.0"
+
+# A normal install replaces only the requested version.
+mise install
+assert "mise x -- bd" "backend-b 1.0.0"
+assert "$MISE_DATA_DIR/installs/bd/2.0.0/bd" "backend-a 2.0.0"
+
+# Repeating the same request is satisfied by the new backend identity.
+assert_contains "mise install --dry-run 2>&1" "all tools are installed"
+
+# The other version retains its old identity and migrates only when requested.
+write_config b 2.0.0
+mise install
+assert "mise x -- bd" "backend-b 2.0.0"
+
+# Failed installs do not rewrite the recorded identity.
+write_config b 3.0.0 missing
+assert_fail_contains "mise install" "404"
+assert_contains "cat $MISE_DATA_DIR/installs/bd/.mise.backend.toml" '"3.0.0" = "http:backend-a"'
+assert_contains "cat $MISE_DATA_DIR/installs/bd/.mise.backend.toml" '"2.0.0" = "http:backend-b"'

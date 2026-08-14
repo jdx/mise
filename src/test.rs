@@ -9,6 +9,13 @@ use crate::{env, file};
 
 #[ctor::ctor(unsafe)]
 fn init() {
+    // Some tests re-execute the test binary to exercise cross-process behavior.
+    // The child inherits the parent's prepared test environment and must not
+    // remove the shared test cwd while the parent process is still using it.
+    if std::env::var_os("MISE_TEST_SKIP_INIT").is_some() {
+        return;
+    }
+
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "debug")
     }

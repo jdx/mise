@@ -2372,6 +2372,27 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
+        let requested = self.ba().full_without_opts();
+        if let Some(installed) =
+            install_state::get_version_backend(&self.ba().short, &tv.tv_pathname())
+            && installed != requested
+        {
+            debug!(
+                "{} was installed with backend {installed}, current backend is {requested}",
+                tv.style()
+            );
+            return Ok(false);
+        }
+        self.is_install_satisfied_(config, tv, check_symlink).await
+    }
+
+    /// Backend-specific install state beyond the common backend identity check.
+    async fn is_install_satisfied_(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
         Ok(self.is_version_installed(config, tv, check_symlink))
     }
 
@@ -2452,8 +2473,17 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(Some(link))
     }
+    fn list_installed_versions_for_current_backend(&self) -> Vec<String> {
+        self.list_installed_versions()
+            .into_iter()
+            .filter(|version| {
+                install_state::get_version_backend(&self.ba().short, version)
+                    .is_none_or(|installed| installed == self.ba().full_without_opts())
+            })
+            .collect()
+    }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
-        let versions = self.list_installed_versions();
+        let versions = self.list_installed_versions_for_current_backend();
         // No async config lookup available here; fall back to inline/registry
         // opts, which is the best we have for a sync path.
         let filter = !self.include_prereleases(&self.ba().opts());
@@ -2746,7 +2776,11 @@ pub trait Backend: Debug + Send + Sync {
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    return Ok(Some(version));
+                    if install_state::get_version_backend(&self.ba().short, &version)
+                        .is_none_or(|installed| installed == self.ba().full_without_opts())
+                    {
+                        return Ok(Some(version));
+                    }
                 }
                 Ok(file::dir_subdirs(&self.ba().installs_path)
                     .unwrap_or_default()
@@ -2755,6 +2789,10 @@ pub trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
                     .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
+                    .filter(|v| {
+                        install_state::get_version_backend(&self.ba().short, v)
+                            .is_none_or(|installed| installed == self.ba().full_without_opts())
+                    })
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
@@ -3069,13 +3107,13 @@ pub trait Backend: Debug + Send + Sync {
         let install_path = tv.install_path();
         let mut update_install_state = false;
         if install_path.starts_with(*dirs::INSTALLS) {
-            install_state::write_backend_meta(self.ba())?;
+            install_state::write_backend_meta(self.ba(), &tv.tv_pathname())?;
             update_install_state = true;
         } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
             // For --system/--shared installs, write manifest to the target installs dir
             if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
                 let manifest = installs_dir.join(".mise-installs.toml");
-                install_state::write_backend_meta_to(self.ba(), &manifest)?;
+                install_state::write_backend_meta_to(self.ba(), &manifest, &tv.tv_pathname())?;
                 update_install_state = true;
             }
         }
