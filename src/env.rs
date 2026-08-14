@@ -471,8 +471,25 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
 
 /// Returns true if the given binary name refers to mise itself (not a shim).
 /// Handles "mise", "mise.exe", "mise.bat", "mise.cmd", "mise-doctor", etc.
+///
+/// The comparison ignores case on Windows only. Its filesystem does too, so `MISE.EXE` starts the
+/// same file as `mise.exe` and reaches `argv[0]` with whatever casing the caller wrote — and a
+/// case-sensitive test then sent mise through [`crate::shims::handle_shim`] against itself. On unix
+/// they are two different files, so a shim genuinely named `MISE` has to stay a shim.
 pub fn is_mise_binary(bin_name: &str) -> bool {
-    bin_name == "mise" || bin_name.starts_with("mise.") || bin_name.starts_with("mise-")
+    let is_mise = |s: &str| {
+        if cfg!(windows) {
+            s.eq_ignore_ascii_case("mise")
+        } else {
+            s == "mise"
+        }
+    };
+    // Equivalent to matching "mise" plus the "mise." and "mise-" prefixes, with the case rule
+    // applied in one place rather than three.
+    is_mise(bin_name)
+        || bin_name
+            .split_once(['.', '-'])
+            .is_some_and(|(stem, _)| is_mise(stem))
 }
 
 /// Explicit terminal-width override: `MISE_TERM_WIDTH` takes precedence, then the
@@ -1314,5 +1331,44 @@ mod tests {
                 "argv[0] {argv0:?} should still be a shim"
             );
         }
+    }
+
+    #[test]
+    fn test_is_mise_binary() {
+        // The spellings mise is actually invoked under, on every platform.
+        assert!(is_mise_binary("mise"));
+        assert!(is_mise_binary("mise.exe"));
+        assert!(is_mise_binary("mise.cmd"));
+        assert!(is_mise_binary("mise-doctor"));
+        // The controls. Real shim names must stay shims, or this stops being a test of anything:
+        // a version that always returned true would pass every assertion above.
+        assert!(!is_mise_binary("node"));
+        assert!(!is_mise_binary("node.exe"));
+        assert!(!is_mise_binary("misex"));
+        assert!(!is_mise_binary("misex.exe"));
+    }
+
+    /// Windows resolves `MISE.EXE` to the same file as `mise.exe` and hands the process `argv[0]`
+    /// with the casing the caller wrote, so the test has to ignore case there. See the pair below.
+    #[cfg(windows)]
+    #[test]
+    fn test_is_mise_binary_ignores_case_on_windows() {
+        assert!(is_mise_binary("MISE.EXE"));
+        assert!(is_mise_binary("Mise.exe"));
+        assert!(is_mise_binary("MISE"));
+        assert!(is_mise_binary("MISE-DOCTOR"));
+        // Case-insensitivity must not widen what counts as mise.
+        assert!(!is_mise_binary("NODE.EXE"));
+        assert!(!is_mise_binary("MISEX.EXE"));
+    }
+
+    /// The other half. On unix `MISE` is a different file from `mise`, so a shim by that name has
+    /// to keep being treated as a shim; ignoring case here would make mise run itself instead.
+    #[cfg(unix)]
+    #[test]
+    fn test_is_mise_binary_is_case_sensitive_on_unix() {
+        assert!(!is_mise_binary("MISE"));
+        assert!(!is_mise_binary("Mise"));
+        assert!(!is_mise_binary("MISE-DOCTOR"));
     }
 }
