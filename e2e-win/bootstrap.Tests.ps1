@@ -13,7 +13,7 @@ Describe 'bootstrap' {
     BeforeEach {
         @"
 [bootstrap.repos]
-"$script:RepoTarget" = "https://example.invalid/repo.git"
+"$script:RepoTarget" = { url = "https://example.invalid/repo.git" }
 "@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
     }
 
