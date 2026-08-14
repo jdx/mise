@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+# A `required` directive never assigns, so the caller's value is not in the task env map
+# that redaction registration consults. Each case is run twice where it matters: without a
+# config-level [env] table (Task::render_env) and with one (TaskContextBuilder).
+
+# global pattern, value supplied only by the caller
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[tasks.a]
+env = { CALLER_TOKEN = { required = true } }
+run = 'echo "value:$CALLER_TOKEN"'
+TOML
+assert "CALLER_TOKEN=caller_secret mise run a" "value:[redacted]"
+
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[env]
+UNRELATED = "unrelated_value"
+[tasks.a]
+env = { CALLER_TOKEN = { required = true } }
+run = 'echo "value:$CALLER_TOKEN"'
+TOML
+assert "CALLER_TOKEN=caller_secret mise run a" "value:[redacted]"
+
+# redact = true with no matching global pattern
+cat <<'TOML' >mise.toml
+[tasks.a]
+env = { ASC_KEY_ID = { required = true, redact = true } }
+run = 'echo "value:$ASC_KEY_ID"'
+TOML
+assert "ASC_KEY_ID=caller_key mise run a" "value:[redacted]"
+
+cat <<'TOML' >mise.toml
+[env]
+UNRELATED = "unrelated_value"
+[tasks.a]
+env = { ASC_KEY_ID = { required = true, redact = true } }
+run = 'echo "value:$ASC_KEY_ID"'
+TOML
+assert "ASC_KEY_ID=caller_key mise run a" "value:[redacted]"
+
+# inherited from a task template
+cat <<'TOML' >mise.toml
+[task_templates.secrets]
+env = { TMPL_KEY_ID = { required = true, redact = true } }
+[tasks.a]
+extends = "secrets"
+run = 'echo "value:$TMPL_KEY_ID"'
+TOML
+assert "TMPL_KEY_ID=caller_tmpl mise run a" "value:[redacted]"
+
+# redact = false overrides a global pattern
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[tasks.a]
+env = { CALLER_TOKEN = { required = true, redact = false } }
+run = 'echo "value:$CALLER_TOKEN"'
+TOML
+assert "CALLER_TOKEN=caller_secret mise run a" "value:caller_secret"
+
+# The same opt-out on the TaskContextBuilder path, which over-redacted instead: that path matches
+# global patterns against the full env, and a required directive recorded no exclusion to honour.
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[env]
+UNRELATED = "unrelated_value"
+[tasks.a]
+env = { CALLER_TOKEN = { required = true, redact = false } }
+run = 'echo "value:$CALLER_TOKEN"'
+TOML
+assert "CALLER_TOKEN=caller_secret mise run a" "value:caller_secret"
+
+# Redaction is substring replacement with no word boundaries, so a short secret also rewrites
+# unrelated text. A required directive must register its value exactly as an assignment does --
+# no wider, no narrower -- so both spellings mangle `latest` and `contest` the same way.
+cat <<'TOML' >mise.toml
+[tasks.required]
+env = { SHORT = { required = true, redact = true } }
+run = 'echo "latest contest $SHORT"'
+
+[tasks.assigned]
+env = { SHORT2 = { value = "test", redact = true } }
+run = 'echo "latest contest $SHORT2"'
+TOML
+assert "SHORT=test mise run required" "la[redacted] con[redacted] [redacted]"
+assert "mise run assigned" "la[redacted] con[redacted] [redacted]"
+
+# an empty caller value must not become a redaction pattern
+cat <<'TOML' >mise.toml
+[tasks.a]
+env = { ASC_KEY_ID = { required = true, redact = true } }
+run = 'echo "version 1.2.3 value:$ASC_KEY_ID"'
+TOML
+assert "ASC_KEY_ID= mise run a" "version 1.2.3 value:"
+
+# rebinding the caller value explicitly keeps working
+cat <<'TOML' >mise.toml
+[tasks.a]
+env = { REBOUND_TOKEN = { value = "{{env.REBOUND_TOKEN}}", redact = true } }
+run = 'echo "value:$REBOUND_TOKEN"'
+TOML
+assert "REBOUND_TOKEN=caller_rebind mise run a" "value:[redacted]"
+
+# a `default` the caller overrides redacts the caller's value, not just the fallback
+cat <<'TOML' >mise.toml
+[tasks.a]
+env = { DEF_TOKEN = { default = "fallback", redact = true } }
+run = 'echo "value:$DEF_TOKEN"'
+TOML
+assert "DEF_TOKEN=caller_default mise run a" "value:[redacted]"
+
+# --raw bypasses the output interceptor entirely
+cat <<'TOML' >mise.toml
+redactions = ["*TOKEN*"]
+[tasks.a]
+env = { CALLER_TOKEN = { required = true, redact = true } }
+run = 'echo "value:$CALLER_TOKEN"'
+TOML
+assert "CALLER_TOKEN=caller_secret mise run --raw a" "value:caller_secret"
+
+# A `redact = false` exclusion from another config file survives a task that only declares the
+# variable `required`. The exclusion lives in the global config so the task's own config file has
+# no [env] table, which is what selects the Task::render_env path. The one-character value would
+# mangle the whole line if it were registered as a redaction pattern.
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.toml"
+redactions = ["*TOKEN*"]
+[env]
+TEST_TOKEN = { value = "e", redact = false }
+TOML
+cat <<'TOML' >mise.toml
+[tasks.a]
+env = { TEST_TOKEN = { required = true } }
+run = 'echo "version 1.2.3 value:$TEST_TOKEN"'
+TOML
+assert "mise run a" "version 1.2.3 value:e"
