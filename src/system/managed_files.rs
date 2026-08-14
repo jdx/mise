@@ -791,11 +791,14 @@ pub fn validate_principals(
 
 #[cfg(not(unix))]
 pub fn validate_principals(
-    _files: &[ManagedFileRequest],
-    _directories: &[ManagedDirectoryRequest],
+    files: &[ManagedFileRequest],
+    directories: &[ManagedDirectoryRequest],
     _accounts: Option<&super::accounts::AccountRequests>,
     _allow_pending_accounts: bool,
 ) -> Result<()> {
+    if files.is_empty() && directories.is_empty() {
+        return Ok(());
+    }
     bail!("managed system files are only supported on Unix")
 }
 
