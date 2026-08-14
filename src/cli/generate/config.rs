@@ -10,7 +10,9 @@ use crate::cli::edit::Edit;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Config {
     /// Generate the global config file (~/.config/mise/config.toml)
-    #[clap(long, short = 'g')]
+    // Declared here as well as on `Edit`: this command parses its own arguments before handing
+    // them over, so the conflict does not carry across on its own.
+    #[clap(long, short = 'g', conflicts_with = "path")]
     global: bool,
     /// Show what would be generated without writing to file
     #[clap(long, short = 'n')]

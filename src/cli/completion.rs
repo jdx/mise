@@ -118,6 +118,46 @@ impl ValueEnum for Shell {
         &[Self::Bash, Self::Fish, Self::Powershell, Self::Zsh]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
-        Some(PossibleValue::new(self.to_string()))
+        let value = PossibleValue::new(self.to_string());
+        Some(match self {
+            // `mise activate` names this shell `pwsh`, and the two commands are run one after the
+            // other during setup, so whichever name a user learns first is rejected by the other.
+            // The names differ only because the two lists come from different places, not because
+            // they mean different shells.
+            //
+            // `mise usage` renders aliases, so this shows up in the generated CLI docs as a
+            // choice alongside `powershell` rather than being hidden.
+            Self::Powershell => value.alias("pwsh"),
+            _ => value,
+        })
+    }
+}
+
+#[cfg(test)]
+mod shell_name_tests {
+    use super::*;
+
+    #[test]
+    fn pwsh_is_accepted_as_powershell() {
+        assert!(matches!(
+            <Shell as ValueEnum>::from_str("pwsh", true),
+            Ok(Shell::Powershell)
+        ));
+        assert!(matches!(
+            <Shell as ValueEnum>::from_str("powershell", true),
+            Ok(Shell::Powershell)
+        ));
+    }
+
+    #[test]
+    fn the_primary_names_are_unchanged() {
+        // Only the *names* -- the alias is rendered into the CLI docs, so asserting it absent
+        // here would state something false. This pins that adding it renamed nothing.
+        let listed: Vec<String> = Shell::value_variants()
+            .iter()
+            .filter_map(|v| v.to_possible_value())
+            .map(|pv| pv.get_name().to_string())
+            .collect();
+        assert_eq!(listed, ["bash", "fish", "powershell", "zsh"]);
     }
 }
