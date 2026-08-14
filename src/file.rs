@@ -923,7 +923,51 @@ pub fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
     };
     let target = target.absolutize()?;
     let root = root.absolutize()?;
-    Ok(target.starts_with(root.as_ref()))
+    Ok(path_starts_with(&target, &root))
+}
+
+#[cfg(unix)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    path.starts_with(root)
+}
+
+#[cfg(windows)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+
+    if path.starts_with(root) {
+        return true;
+    }
+
+    let root_component_count = root.components().count();
+    let candidate = path
+        .components()
+        .take(root_component_count)
+        .collect::<PathBuf>();
+    if candidate.components().count() != root_component_count {
+        return false;
+    }
+
+    let candidate_wide = candidate.as_os_str().encode_wide().collect::<Vec<_>>();
+    let root_wide = root.as_os_str().encode_wide().collect::<Vec<_>>();
+    let Ok(candidate_len) = i32::try_from(candidate_wide.len()) else {
+        return false;
+    };
+    let Ok(root_len) = i32::try_from(root_wide.len()) else {
+        return false;
+    };
+    let equal_ignoring_case = unsafe {
+        CompareStringOrdinal(
+            candidate_wide.as_ptr(),
+            candidate_len,
+            root_wide.as_ptr(),
+            root_len,
+            1,
+        ) == CSTR_EQUAL
+    };
+
+    equal_ignoring_case && same_file::is_same_file(&candidate, root).unwrap_or(false)
 }
 
 #[cfg(unix)]
@@ -999,22 +1043,71 @@ pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
 
 #[cfg(windows)]
 pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
-    use std::os::windows::fs::FileTypeExt;
+    let link_handle = open_link_for_removal(link)?;
+    remove_open_link(link_handle)
+        .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+}
 
-    let metadata = fs::symlink_metadata(link)
-        .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)))?;
-    if dir_link_target(link)?.is_none() {
-        bail!(
-            "refusing to remove non-link directory: {}",
-            display_path(link)
-        );
+#[cfg(windows)]
+fn open_link_for_removal(link: &Path) -> Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        DELETE, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FileAttributeTagInfo, GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::{
+        IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(link)
+        .wrap_err_with(|| format!("failed to open link: {}", display_path(link)))?;
+    let mut tag_info = FILE_ATTRIBUTE_TAG_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            std::ptr::from_mut(&mut tag_info).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if inspected == 0 {
+        return Err(std::io::Error::last_os_error())
+            .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
     }
-    if metadata.file_type().is_symlink_file() {
-        fs::remove_file(link)
-    } else {
-        fs::remove_dir(link)
+    if !matches!(
+        tag_info.ReparseTag,
+        IO_REPARSE_TAG_SYMLINK | IO_REPARSE_TAG_MOUNT_POINT
+    ) {
+        bail!("refusing to remove non-link: {}", display_path(link));
     }
-    .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn remove_open_link(file: File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    let removed = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            std::ptr::from_ref(&disposition).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    };
+    if removed == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    drop(file);
+    Ok(())
 }
 
 pub fn remove_symlinks_with_target_prefix(
@@ -2763,6 +2856,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn test_symlink_prefix_detection_uses_filesystem_casing() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "Windows path containment should honor filesystem casing semantics"
+        );
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_symlink_prefix_detection_uses_the_immediate_target() {
         let dir = tempfile::tempdir().unwrap();
@@ -2812,6 +2921,26 @@ mod tests {
 
         remove_symlink_or_junction(&link).unwrap();
         assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_open_link_preserves_path_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        let moved_link = dir.path().join("moved-link");
+        fs::create_dir(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        let link_handle = open_link_for_removal(&link).unwrap();
+        fs::rename(&link, &moved_link).unwrap();
+        fs::create_dir(&link).unwrap();
+        remove_open_link(link_handle).unwrap();
+
+        assert!(link.is_dir());
+        assert!(fs::symlink_metadata(&moved_link).is_err());
         assert!(target.is_dir());
     }
 
