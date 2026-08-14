@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+mkdir -p bin
+cat <<'EOF' >bin/strace
+#!/usr/bin/env bash
+set -euo pipefail
+
+trace=
+while (($#)); do
+  case $1 in
+  -o)
+    trace=$2
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *) shift ;;
+  esac
+done
+if [[ -z $trace ]]; then
+  exec "$@"
+fi
+: >"$trace"
+for i in $(seq 1 25); do
+  echo "123 openat(AT_FDCWD<$PWD>, \"undeclared$i.txt\", O_RDONLY) = 3" >>"$trace"
+done
+exec "$@"
+EOF
+chmod +x bin/strace
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+run = "mkdir -p dist && cat input.txt >dist/result.txt"
+sources = ["input.txt"]
+outputs = ["dist"]
+cache = { enabled = true, audit = true }
+EOF
+
+printf 'declared\n' >input.txt
+for i in $(seq 1 25); do
+  printf 'undeclared\n' >"undeclared$i.txt"
+done
+
+output=$(PATH="$PWD/bin:$PATH" mise run --force build 2>&1)
+count=$(grep -c 'cache audit detected undeclared read:' <<<"$output" || true)
+assert "echo $count" "20"
+assert_contains_text "$output" "cache audit omitted 5 additional paths"
+assert_not_contains_text "$output" "full report written to"
+assert "test -e audit.jsonl && echo exists || echo missing" "missing"
+
+output=$(PATH="$PWD/bin:$PATH" MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --force build 2>&1)
+count=$(grep -c 'cache audit detected undeclared read:' <<<"$output" || true)
+assert "echo $count" "20"
+assert_contains_text "$output" "cache audit omitted 5 additional paths; full report written to audit.jsonl"
+assert "grep -c . audit.jsonl" "25"
+assert_contains "cat audit.jsonl" '{"task":"build","kind":"read","path":"undeclared1.txt"}'
+assert_contains "cat audit.jsonl" '{"task":"build","kind":"read","path":"undeclared9.txt"}'

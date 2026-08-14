@@ -613,6 +613,17 @@ Audit mode requires `strace` on `PATH`. Mise warns and runs the task normally wh
 available; other platforms are not currently supported. Cached tasks are not executed and therefore
 produce no audit report, so use `mise run --force <task>` when checking an existing cache entry.
 
+Console warnings are limited to the first 20 paths per task, which is not enough to classify a task
+that reads thousands of undeclared files. Set
+[`task.cache.audit_report`](/configuration/settings.html#task-cache-audit-report) to also write every
+undeclared path as JSON Lines, one `{"task", "kind", "path"}` object per entry. The first audited
+task to execute truncates the file and later tasks append to it, so it covers every audited task
+that ran.
+
+```shell
+MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --force build
+```
+
 ```mise-toml
 [tasks.build]
 run = "npm run build"
