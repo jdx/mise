@@ -3823,62 +3823,77 @@ fn prefer_windows_file_task_siblings(file_tasks: Vec<Task>) -> Vec<Task> {
     prefer_windows_file_task_siblings_inner(file_tasks)
 }
 
+/// On Windows, keep the native script when a task exists in both a POSIX and a Windows form.
+///
+/// File tasks have no way to branch on platform — `run_windows` is a TOML-task key and is rejected
+/// in a file-task header — so writing the task twice, once per platform, is the only option
+/// available. Both files then reduce to the same task name, because the name is the file stem, and
+/// `mise run <name>` would run both.
+///
+/// The POSIX side is anything *not* carrying a Windows-native extension, which includes both
+/// `build` and `build.sh`. Keying on "no extension at all" is what this used to do, and it stopped
+/// being enough once shebang scripts became discoverable (#7941): `build.sh` is the shape people
+/// actually write, and it was passing straight through.
 fn prefer_windows_file_task_siblings_inner(file_tasks: Vec<Task>) -> Vec<Task> {
     let windows_exts = Settings::get()
         .windows_executable_extensions
         .iter()
         .map(|ext| ext.to_lowercase())
         .collect::<IndexSet<_>>();
-    let extensionless_task_keys = file_tasks
-        .iter()
-        .filter(|task| task.config_source.extension().is_none())
-        .map(|task| (task.config_source.clone(), task.name.clone()))
-        .collect::<IndexSet<_>>();
-    let mut windows_native_task_key_counts = IndexMap::new();
-    for task in &file_tasks {
-        let Some(ext) = task
-            .config_source
+    let is_windows_native = |task: &Task| {
+        task.config_source
             .extension()
             .and_then(|ext| ext.to_str())
-            .map(str::to_lowercase)
-        else {
-            continue;
-        };
-        if windows_exts.contains(&ext) {
-            *windows_native_task_key_counts
-                .entry((
-                    task.config_source.with_extension(""),
-                    strip_task_extension(&task.name).to_string(),
-                ))
-                .or_insert(0) += 1;
-        }
+            .is_some_and(|ext| windows_exts.contains(&ext.to_lowercase()))
+    };
+    // Path and name with the extension dropped, so `build.sh` and `build.ps1` land on one key.
+    // `with_extension("")` keeps the directory, which is what confines a pair to a single
+    // task-file family instead of matching same-named tasks from unrelated directories.
+    //
+    // The name has to be stripped too: `name_from_path` keeps the extension, so a file task is
+    // named `build.sh` and only `display_name` drops it. `strip_task_extension` removes just the
+    // last one, so `build.release.sh` keys as `build.release` rather than `build`.
+    let task_key = |task: &Task| {
+        (
+            task.config_source.with_extension(""),
+            strip_task_extension(&task.name).to_string(),
+        )
+    };
+    let posix_task_keys = file_tasks
+        .iter()
+        .filter(|task| !is_windows_native(task))
+        .map(&task_key)
+        .collect::<IndexSet<_>>();
+    let mut windows_native_task_key_counts = IndexMap::new();
+    for task in file_tasks.iter().filter(|task| is_windows_native(task)) {
+        *windows_native_task_key_counts
+            .entry(task_key(task))
+            .or_insert(0) += 1;
     }
-    let windows_takeover_keys = extensionless_task_keys
+    // Exactly one, deliberately: with two Windows siblings there is no basis for choosing between
+    // them, so everything is left alone rather than picking arbitrarily.
+    let windows_takeover_keys = posix_task_keys
         .iter()
         .filter(|key| windows_native_task_key_counts.get(*key) == Some(&1))
         .cloned()
         .collect::<IndexSet<_>>();
 
+    // The POSIX half is dropped and the Windows one is renamed to the bare stem, so `build.ps1`
+    // becomes the `build` the POSIX file used to answer to. Without that the task would only be
+    // reachable as `build.ps1`, which is not a name anyone wrote down.
     file_tasks
         .into_iter()
         .filter_map(|mut task| {
-            if task.config_source.extension().is_none()
-                && windows_takeover_keys.contains(&(task.config_source.clone(), task.name.clone()))
-            {
-                return None;
+            let key = task_key(&task);
+            if !is_windows_native(&task) {
+                return if windows_takeover_keys.contains(&key) {
+                    None
+                } else {
+                    Some(task)
+                };
             }
-            if task
-                .config_source
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| windows_exts.contains(&ext.to_lowercase()))
-            {
-                let stem = strip_task_extension(&task.name);
-                if windows_takeover_keys
-                    .contains(&(task.config_source.with_extension(""), stem.to_string()))
-                {
-                    task.name = stem.to_string();
-                }
+            if windows_takeover_keys.contains(&key) {
+                task.name = key.1;
             }
             Some(task)
         })
@@ -5058,12 +5073,14 @@ mod tests {
             },
         ];
 
-        let names = prefer_windows_file_task_siblings_inner(file_tasks)
-            .into_iter()
-            .map(|task| task.name)
-            .collect_vec();
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
 
-        assert_eq!(names, vec!["pkl:gen"]);
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "pkl:gen");
+        assert_eq!(
+            tasks[0].config_source,
+            PathBuf::from("mise-tasks/pkl/gen.ps1")
+        );
     }
 
     #[test]
@@ -5227,6 +5244,140 @@ mod tests {
                 Path::new("included-tasks/build"),
                 Path::new("mise-tasks/build.ps1"),
             ]
+        );
+    }
+
+    /// The case this function exists for.
+    ///
+    /// `name_from_path` keeps the extension, so these arrive as `build.sh` and `build.ps1`; both
+    /// reduce to `build` once the extension is stripped, which is why they collide.
+    #[test]
+    fn test_prefer_windows_file_task_siblings_takes_over_a_posix_extension() {
+        let file_tasks = vec![
+            Task {
+                name: "build.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.sh"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.ps1"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "build");
+        assert_eq!(
+            tasks[0].config_source,
+            PathBuf::from("mise-tasks/build.ps1")
+        );
+    }
+
+    /// A dot inside the task name is not the extension.
+    ///
+    /// `build.release.sh` is named `build.release.sh`, and `strip_task_extension` takes off only
+    /// the last extension — so the pair keys as `build.release` and the survivor is renamed to
+    /// `build.release`, not to `build`. Getting that wrong would leave `mise run build.release`
+    /// with nothing to resolve.
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_a_dotted_task_name() {
+        let file_tasks = vec![
+            Task {
+                name: "build.release.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.release.sh"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.release.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.release.ps1"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "build.release");
+        assert_eq!(
+            tasks[0].config_source,
+            PathBuf::from("mise-tasks/build.release.ps1")
+        );
+    }
+
+    /// A control for the test above: taking over requires something to take over *from*. A `.sh`
+    /// with no Windows sibling is the common shape on a project that never had a Windows script,
+    /// and it has to keep working — dropping it would break every such project on Windows.
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_a_lone_posix_extension() {
+        let file_tasks = vec![Task {
+            name: "build.sh".to_string(),
+            config_source: PathBuf::from("mise-tasks/build.sh"),
+            ..Default::default()
+        }];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+
+        assert_eq!(tasks.len(), 1);
+        // Name untouched as well as kept: renaming it to `build` here would invent a task the
+        // POSIX-only project never had.
+        assert_eq!(tasks[0].name, "build.sh");
+        assert_eq!(tasks[0].config_source, PathBuf::from("mise-tasks/build.sh"));
+    }
+
+    /// The other control: two POSIX files are not a platform pair, so neither is Windows' to
+    /// prefer. Widening the POSIX side must not turn "same stem" alone into a reason to delete.
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_two_posix_files() {
+        let file_tasks = vec![
+            Task {
+                name: "build".to_string(),
+                config_source: PathBuf::from("mise-tasks/build"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.sh"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+
+        assert_eq!(tasks.len(), 2);
+    }
+
+    /// Ambiguity is unchanged by the widening: with two Windows siblings there is no basis for
+    /// choosing, so the `.sh` survives alongside them rather than being deleted for nothing.
+    #[test]
+    fn test_prefer_windows_file_task_siblings_keeps_posix_when_windows_is_ambiguous() {
+        let file_tasks = vec![
+            Task {
+                name: "build.sh".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.sh"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.ps1".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.ps1"),
+                ..Default::default()
+            },
+            Task {
+                name: "build.cmd".to_string(),
+                config_source: PathBuf::from("mise-tasks/build.cmd"),
+                ..Default::default()
+            },
+        ];
+
+        let tasks = prefer_windows_file_task_siblings_inner(file_tasks);
+
+        assert_eq!(tasks.len(), 3);
+        // Names untouched too: nothing was chosen, so nothing should have been renamed.
+        assert_eq!(
+            tasks.iter().map(|task| task.name.as_str()).collect_vec(),
+            vec!["build.sh", "build.ps1", "build.cmd"]
         );
     }
 
