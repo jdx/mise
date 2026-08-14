@@ -385,6 +385,7 @@ impl PlannedAdd {
             target_raw: self.target_raw.clone(),
             target: self.target.clone(),
             source: self.source.clone(),
+            content: None,
             mode: self.mode,
             exclude: vec![],
             base: config_path
@@ -457,6 +458,7 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
+        FileMode::Content => unreachable!("dotfiles add always captures a source file"),
     }
 }
 
