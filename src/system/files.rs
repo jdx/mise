@@ -1601,20 +1601,20 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    // on Windows, file "symlinks" are applied as copies (see `link_path`),
-    // so existing regular-file targets are routine content updates there,
-    // not conflicts — only a type mismatch blocks
-    let file_link_conflicts = |source: &Path, target: &Path| -> Result<bool> {
-        if cfg!(windows) && source.is_file() {
-            Ok(target.exists() && target.is_dir())
-        } else {
-            Ok(target.exists() && !target.is_symlink())
-        }
-    };
+    // A symlink at the target is one mise made, so it is re-pointable. Anything else that is
+    // there — a regular file or a directory — belongs to someone else and needs `--force`.
+    //
+    // Windows used to exempt regular files here, on the grounds that a file link becomes a copy
+    // on that platform so an existing file is only a content update. That reasoning holds for
+    // `copy` mode, which is declared as overwriting; for a `symlink` entry it meant the copy
+    // silently destroyed a file the user wrote, with no `--force` and no message — while unix
+    // refused the same apply.
+    let file_link_conflicts =
+        |target: &Path| -> Result<bool> { Ok(target.exists() && !target.is_symlink()) };
     let mut out = vec![];
     match req.mode {
         FileMode::Symlink => {
-            if file_link_conflicts(&req.source, &req.target)? {
+            if file_link_conflicts(&req.target)? {
                 out.push(req.target.clone());
             }
         }
@@ -1626,8 +1626,8 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                     out.push(dir);
                 }
             }
-            for (source, target) in walk_source_files(req)? {
-                if file_link_conflicts(&source, &target)? {
+            for (_source, target) in walk_source_files(req)? {
+                if file_link_conflicts(&target)? {
                     out.push(target);
                 }
             }
@@ -2010,5 +2010,107 @@ mod tests {
             target,
             PathBuf::from(native_path_separators("C:/Users/me/.config/tool.toml"))
         );
+    }
+
+    fn link_req(source: &Path, target: &Path, mode: FileMode) -> FileRequest {
+        FileRequest {
+            target_raw: target.to_string_lossy().to_string(),
+            target: target.to_path_buf(),
+            source: source.to_path_buf(),
+            mode,
+            exclude: vec![],
+            base: source.parent().expect("source parent").to_path_buf(),
+        }
+    }
+
+    fn symlink_req(source: &Path, target: &Path) -> FileRequest {
+        link_req(source, target, FileMode::Symlink)
+    }
+
+    /// The fix: a file the user wrote is not mise's to replace. This used to pass on Windows,
+    /// where the entry applied and overwrote it with no `--force` and no message.
+    #[test]
+    fn an_unmanaged_file_at_the_target_is_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        file::write(&target, "the user's own file")?;
+
+        assert_eq!(
+            find_conflicts(&symlink_req(&source, &target))?,
+            vec![target]
+        );
+        Ok(())
+    }
+
+    /// The control for the test above: the two cases that must *not* start blocking. A symlink
+    /// is one mise made, so re-pointing it is the normal path and would be a regression to
+    /// refuse; a missing target has nothing to protect.
+    #[test]
+    fn a_managed_symlink_and_a_missing_target_are_not_conflicts() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+
+        let absent = dir.path().join("absent");
+        assert!(find_conflicts(&symlink_req(&source, &absent))?.is_empty());
+
+        // Created directly rather than through `link_path`, which copies on Windows: the point
+        // here is what `find_conflicts` does when a symlink *is* present.
+        let link = dir.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&source, &link)?;
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_file(&source, &link).is_ok();
+        #[cfg(unix)]
+        let created = true;
+        if created {
+            assert!(link.is_symlink(), "precondition: target must be a symlink");
+            assert!(find_conflicts(&symlink_req(&source, &link))?.is_empty());
+        }
+        Ok(())
+    }
+
+    /// `symlink-each` shares the predicate, so it gains the same protection: a file the user
+    /// wrote inside the target directory is not mise's to replace either. Asserted separately
+    /// because it reaches `file_link_conflicts` through `walk_source_files` rather than
+    /// directly, and the mode is the half of this change most likely to be overlooked.
+    #[test]
+    fn symlink_each_also_treats_an_unmanaged_file_as_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        // `file::write` does not create parents, and the target directory must already exist or
+        // `needed_dirs` would report it as its own conflict and drown the assertion.
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        file::write(source.join("one"), "managed")?;
+        file::write(source.join("two"), "managed")?;
+        // Only `one` is squatted on; `two` has nothing in its way.
+        file::write(target.join("one"), "the user's own file")?;
+
+        assert_eq!(
+            find_conflicts(&link_req(&source, &target, FileMode::SymlinkEach))?,
+            vec![target.join("one")]
+        );
+        Ok(())
+    }
+
+    /// A directory where a file belongs blocked before this change and still does — the
+    /// type-mismatch case is untouched.
+    #[test]
+    fn a_directory_at_the_target_is_still_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        file::create_dir_all(&target)?;
+
+        assert_eq!(
+            find_conflicts(&symlink_req(&source, &target))?,
+            vec![target]
+        );
+        Ok(())
     }
 }
