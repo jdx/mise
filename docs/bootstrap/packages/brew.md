@@ -87,7 +87,8 @@ gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
-simple macOS installer packages (`pkg` artifacts), and shell completions
+generic prefix artifacts (`artifact`), simple macOS installer packages (`pkg`
+artifacts), and shell completions
 (`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
