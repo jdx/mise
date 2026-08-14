@@ -2111,6 +2111,7 @@ mod tests {
             target_raw: target.to_string_lossy().to_string(),
             target: target.to_path_buf(),
             source: source.to_path_buf(),
+            content: None,
             mode,
             exclude: vec![],
             base: source.parent().expect("source parent").to_path_buf(),
