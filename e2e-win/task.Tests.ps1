@@ -273,4 +273,45 @@ Write-Output ([Environment]::GetCommandLineArgs() -join " ")
             $output | Should -BeLike '*-NoProfile*'
         }
     }
+
+    Context 'a task file Windows cannot execute' {
+        BeforeAll {
+            $script:notExecDir = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
+            New-Item -ItemType Directory -Path (Join-Path $script:notExecDir 'scripts') | Out-Null
+            # No shebang and no known extension, which is what `is_executable` looks at here --
+            # there is no permission bit involved on this platform.
+            Set-Content (Join-Path $script:notExecDir 'scripts\thing') 'echo hi' -NoNewline
+            @'
+[tasks.x]
+file = "scripts/thing"
+'@ | Out-File -FilePath (Join-Path $script:notExecDir 'mise.toml') -Encoding utf8NoBOM
+        }
+
+        It 'does not tell the user to run chmod' {
+            Push-Location $script:notExecDir
+            try {
+                $out = mise tasks validate 2>&1 | Out-String
+                $out | Should -BeLike '*not executable*'
+                # chmod does not exist here, and it is not the fix either: adding a shebang or a
+                # known extension is.
+                $out | Should -Not -BeLike '*chmod*'
+                $out | Should -BeLike '*shebang*'
+            } finally {
+                Pop-Location
+            }
+        }
+
+        It 'says how to fix it when the task is run' {
+            Push-Location $script:notExecDir
+            try {
+                $out = mise run x 2>&1 | Out-String
+                $LASTEXITCODE | Should -Not -Be 0
+                $out | Should -BeLike '*not executable*'
+                $out | Should -BeLike '*shebang*'
+                $out | Should -Not -BeLike '*chmod*'
+            } finally {
+                Pop-Location
+            }
+        }
+    }
 }
