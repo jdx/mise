@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Writing to the global config must never land in a `conf.d` drop-in.
+# A config write must never land in a `conf.d` drop-in — global or local.
 #
-# `first_config_file` skips conf.d entries while choosing, but falls back to the
-# first candidate when nothing else qualifies — and `config_files_from_dir`
-# inserts conf.d entries first. A config dir holding only drop-ins therefore
-# handed one back as the write target.
+# `first_config_file` skips conf.d entries while choosing but has to fall back when
+# nothing else qualifies, and `config_files_from_dir` inserts conf.d entries first.
+# The fallback is therefore where a drop-in gets handed back as the write target.
 #
 # See: https://github.com/jdx/mise/discussions/5842
 
@@ -50,3 +49,17 @@ mise unuse -y dummy@system
 assert_not_contains "cat $HOME/.config/mise/config.toml" "dummy"
 assert_contains "cat $HOME/.config/mise/conf.d/10-drop-in.toml" "FROM_CONFD"
 assert_contains "mise env -s bash" "FROM_CONFD"
+
+# The rule is not specific to the global config dir. `.config/mise/conf.d/*.toml` is a
+# local config filename too, so a project directory holding only drop-ins reached the
+# same fallback through `config_file_in_dir`, and `mise use --path` wrote into it.
+mkdir -p localconfd/.config/mise/conf.d
+cat >localconfd/.config/mise/conf.d/10-drop-in.toml <<'TOML'
+[env]
+FROM_LOCAL_CONFD = "yes"
+TOML
+
+mise use --path localconfd dummy@system
+assert_contains "cat localconfd/mise.toml" "dummy"
+assert_not_contains "cat localconfd/.config/mise/conf.d/10-drop-in.toml" "dummy"
+assert_contains "cat localconfd/.config/mise/conf.d/10-drop-in.toml" "FROM_LOCAL_CONFD"

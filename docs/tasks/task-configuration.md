@@ -267,6 +267,10 @@ tools.rust = "1.50.0"
 run = "cargo build"
 ```
 
+Run [`mise lock`](/dev-tools/mise-lock.html) to resolve task-specific tools into the owning
+config's lockfile before running the task. This reads the task definition without executing the
+task or installing its tools.
+
 ### `dir`
 
 - **Type**: `string`

@@ -124,7 +124,12 @@ impl BackendProvider for MiseBackendProvider {
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Edit {
     /// Edit the global config file (~/.config/mise/config.toml)
-    #[clap(long, short = 'g')]
+    // Rejected alongside a path rather than resolved in its favour: "edit the global config
+    // file, namely ./custom.toml" has no meaning, and resolving it silently is how
+    // `mise edit config --global` came to write a file called `config` into the current
+    // directory and report success. `mise bootstrap dotfiles add` states the same collision the
+    // same way, with `conflicts_with_all` between its own `--global` and `--path`.
+    #[clap(long, short = 'g', conflicts_with = "path")]
     global: bool,
     /// Show what would be generated without writing to file
     #[clap(long, short = 'n')]

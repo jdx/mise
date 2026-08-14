@@ -2239,6 +2239,12 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// Whether an opaque version string should use [`Backend::resolve_exact_version`]
+    /// even when it does not have the usual dotted release shape.
+    fn is_exact_version(&self, _version: &str) -> bool {
+        false
+    }
+
     /// Whether `version` names a rolling release channel (e.g. zig's "master")
     /// rather than a concrete version. Cheap (no network). Channels are re-resolved
     /// to a concrete version like "latest" so `mise upgrade`/`outdated` can track
@@ -2268,6 +2274,13 @@ pub trait Backend: Debug + Send + Sync {
         _version: &str,
     ) -> eyre::Result<Option<String>> {
         Ok(None)
+    }
+
+    /// Whether a rolling channel must be resolved to a concrete version before it
+    /// can be used. Backends that opt in fail in offline mode when neither a lock
+    /// entry nor a concrete installed channel build is available.
+    fn requires_concrete_channel_version(&self, _version: &str) -> bool {
+        false
     }
 
     /// Backend opt-in for installing an unresolved `latest` request.
@@ -3858,6 +3871,12 @@ pub trait Backend: Debug + Send + Sync {
         _opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
+    }
+
+    /// Whether [`Backend::outdated_info`] fully replaces the generic outdated
+    /// resolver rather than supplementing it.
+    fn uses_custom_outdated_info(&self) -> bool {
+        false
     }
 
     // ========== Lockfile Metadata Fetching Methods ==========

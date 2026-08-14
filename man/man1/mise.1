@@ -2541,7 +2541,8 @@ e.g.: ~/.nvm/versions/node/v20.0.0
 Update lockfile checksums and URLs for all specified platforms
 
 Updates checksums and download URLs for all platforms already specified in the lockfile.
-If no lockfile exists, shows what would be created based on the current configuration.
+If no lockfile exists, shows what would be created based on the current configuration,
+including tools declared by tasks.
 This allows you to refresh lockfile data for platforms other than the one you're currently on.
 Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 .PP
@@ -2605,7 +2606,7 @@ Existing matching lockfile entries are preserved and are not downgraded solely b
 \fB<TOOL>\fR
 Tool(s) to update in lockfile
 e.g.: node python
-If not specified, all tools in lockfile will be updated
+If not specified, all configured and task\-specific tools will be updated
 .SH "MISE LS"
 List installed and active tool versions
 
