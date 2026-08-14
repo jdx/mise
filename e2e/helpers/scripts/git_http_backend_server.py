@@ -14,8 +14,9 @@ import socketserver
 from pathlib import Path
 
 class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
-    def __init__(self, *args, repo_dir=None, **kwargs):
+    def __init__(self, *args, repo_dir=None, upload_pack_count_file=None, **kwargs):
         self.repo_dir = repo_dir
+        self.upload_pack_count_file = upload_pack_count_file
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
@@ -46,6 +47,14 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         # Read request body for POST
         content_length = int(self.headers.get('Content-Length', 0))
         request_body = self.rfile.read(content_length) if content_length > 0 else b''
+
+        if (
+            self.command == 'POST'
+            and path_info.endswith('/git-upload-pack')
+            and self.upload_pack_count_file is not None
+        ):
+            with self.upload_pack_count_file.open('a') as count_file:
+                count_file.write('1\n')
 
         # Set content type if provided
         if 'Content-Type' in self.headers:
@@ -119,6 +128,33 @@ def create_test_repo(repo_path):
     remote_task_file.write_text('#!/usr/bin/env bash\necho "remote task executed"\n')
     remote_task_file.chmod(0o755)
 
+    snapshot_root = Path(repo_path) / 'xtasks' / 'snapshot'
+    snapshot_parent = snapshot_root / 'parent' / 'snapshot_parent'
+    snapshot_parent.parent.mkdir(parents=True)
+    snapshot_parent.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE depends=["snapshot_child"]\n'
+        'echo "snapshot parent checkout: ${0%%/xtasks/*}"\n'
+    )
+    snapshot_parent.chmod(0o755)
+
+    snapshot_child = snapshot_root / 'child' / 'snapshot_child'
+    snapshot_child.parent.mkdir(parents=True)
+    snapshot_child.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "snapshot child checkout: ${0%%/xtasks/*}"\n'
+    )
+    snapshot_child.chmod(0o755)
+
+    snapshot_failure = snapshot_root / 'failure' / 'snapshot_failure'
+    snapshot_failure.parent.mkdir(parents=True)
+    snapshot_failure.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "snapshot failure"\n'
+        'exit 1\n'
+    )
+    snapshot_failure.chmod(0o755)
+
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering
     # remote toml task includes.
@@ -165,13 +201,23 @@ def start_server(port=0):
     # Create temp directory
     temp_dir = Path(tempfile.mkdtemp(prefix='mise_git_http_'))
     repo_path = temp_dir / 'repo'
+    upload_pack_count_path = os.environ.get('MISE_GIT_HTTP_UPLOAD_PACK_COUNT_FILE')
+    upload_pack_count_file = Path(upload_pack_count_path) if upload_pack_count_path else None
+    if upload_pack_count_file is not None:
+        upload_pack_count_file.parent.mkdir(parents=True, exist_ok=True)
+        upload_pack_count_file.write_text('')
 
     print(f"Creating test repository at {repo_path}")
     create_test_repo(str(repo_path))
 
     # Create handler with repo directory
     def handler(*args, **kwargs):
-        return GitHTTPHandler(*args, repo_dir=temp_dir, **kwargs)
+        return GitHTTPHandler(
+            *args,
+            repo_dir=temp_dir,
+            upload_pack_count_file=upload_pack_count_file,
+            **kwargs,
+        )
 
     # Let the OS assign an available port if port=0
     # This avoids race conditions between finding and binding
@@ -206,6 +252,8 @@ def start_server(port=0):
             port_file.unlink(missing_ok=True)
             info_file.unlink(missing_ok=True)
             ready_file.unlink(missing_ok=True)
+            if upload_pack_count_file is not None:
+                upload_pack_count_file.unlink(missing_ok=True)
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
