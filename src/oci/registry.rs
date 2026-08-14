@@ -1732,7 +1732,8 @@ mod tests {
         // Tag + digest: the digest wins, and the tag must NOT leak into the
         // repository (it corrupted the auth scope and the manifests URL).
         let digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        let r = Reference::parse(&format!("cgr.dev/chainguard/wolfi-base:latest@{digest}")).unwrap();
+        let r =
+            Reference::parse(&format!("cgr.dev/chainguard/wolfi-base:latest@{digest}")).unwrap();
         assert_eq!(r.registry, "cgr.dev");
         assert_eq!(r.repository, "chainguard/wolfi-base");
         assert_eq!(r.tag, digest);
