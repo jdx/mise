@@ -444,11 +444,15 @@ fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
+/// Canonicalise a task's working directory before it is used as a matching
+/// base, an enumeration root, and part of [`task_state_key`].
+///
+/// A `dir` of `.` normalizes away to nothing, which is not a usable directory,
+/// so it is restored. Two spellings of the same directory must not produce two
+/// state keys, which is why this runs on the way out of [`task_cwd`] rather
+/// than at each use.
 fn normalize_task_cwd(path: PathBuf) -> PathBuf {
-    let mut normalized: PathBuf = path
-        .components()
-        .filter(|component| !matches!(component, Component::CurDir))
-        .collect();
+    let mut normalized = lexical_normalize(&path);
     if normalized.as_os_str().is_empty() && !path.as_os_str().is_empty() {
         normalized.push(".");
     }
@@ -1880,6 +1884,39 @@ mod tests {
             [source]
         );
         Ok(())
+    }
+
+    /// `..` in a task dir has to collapse for the same reason `.` does: the
+    /// directory is also hashed into `task_state_key`, so two spellings of one
+    /// directory would otherwise keep two independent freshness baselines.
+    #[test]
+    fn relative_sources_match_when_task_dir_contains_parent_dirs() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let workspace = temp.path();
+        let task_cwd = normalize_task_cwd(workspace.join("other/../sub"));
+        let source = workspace.join("sub/input.txt");
+        fs::create_dir_all(source.parent().unwrap())?;
+        fs::write(&source, "source")?;
+
+        assert_eq!(task_cwd, workspace.join("sub"));
+
+        let sources = vec!["input.txt".to_string()];
+        let matcher = build_source_matcher(workspace, &task_cwd, &sources);
+        let metadatas = get_file_metadatas(&task_cwd, &sources, &matcher)?;
+
+        assert_eq!(
+            metadatas.into_iter().map(|(path, _)| path).collect_vec(),
+            [source]
+        );
+        Ok(())
+    }
+
+    /// A `dir` of `.` normalizes away to nothing and must be restored, or the
+    /// task would run from an empty path.
+    #[test]
+    fn normalize_task_cwd_keeps_a_bare_current_dir() {
+        assert_eq!(normalize_task_cwd(PathBuf::from(".")), PathBuf::from("."));
+        assert_eq!(normalize_task_cwd(PathBuf::new()), PathBuf::new());
     }
 
     #[test]
