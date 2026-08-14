@@ -54,3 +54,4 @@ The validate command performs the following checks:
   • Shell Commands: Checks shell executables exist
   • Glob Patterns: Validates source and output patterns
   • Run Entries: Ensures tasks reference valid dependencies
+  • Task Includes: Flags task_config.includes paths that do not exist

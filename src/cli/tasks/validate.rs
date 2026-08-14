@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::dirs;
 use crate::duration;
 use crate::file;
 use crate::task::task_fetcher::TaskFetcher;
@@ -110,6 +111,7 @@ impl TasksValidate {
         for task in &tasks {
             issues.extend(self.validate_task(task, &all_tasks, &config).await);
         }
+        issues.extend(self.validate_task_includes(&config)?);
 
         // Filter by severity if needed
         if self.errors_only {
@@ -142,6 +144,32 @@ impl TasksValidate {
         }
 
         Ok(())
+    }
+
+    /// Report `task_config.includes` entries that point at nothing.
+    ///
+    /// Not attached to any task — a dead include is why a task is *missing*, so there is nothing to
+    /// hang it off. Uses the same pseudo-task convention as `graph_error_issue`.
+    fn validate_task_includes(&self, config: &Arc<Config>) -> Result<Vec<ValidationIssue>> {
+        let Some(cwd) = &*dirs::CWD else {
+            return Ok(vec![]);
+        };
+        Ok(
+            crate::config::missing_task_includes_for_dir(cwd, &config.config_files)?
+                .into_iter()
+                .map(|path| ValidationIssue {
+                    task: "task_config.includes".to_string(),
+                    severity: Severity::Warning,
+                    category: "missing-include".to_string(),
+                    message: format!("Include path does not exist: {}", file::display_path(&path)),
+                    details: Some(
+                        "Tasks from this include are silently absent. Remove it from \
+                         task_config.includes or create the path."
+                            .to_string(),
+                    ),
+                })
+                .collect(),
+        )
     }
 
     async fn find_additional_graph_issues(
@@ -837,6 +865,7 @@ The validate command performs the following checks:
   • <bold>Shell Commands</bold>: Checks shell executables exist
   • <bold>Glob Patterns</bold>: Validates source and output patterns
   • <bold>Run Entries</bold>: Ensures tasks reference valid dependencies
+  • <bold>Task Includes</bold>: Flags task_config.includes paths that do not exist
 "#
 );
 

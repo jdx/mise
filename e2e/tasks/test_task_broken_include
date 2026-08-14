@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# A task_config.includes entry that points at nothing used to be dropped in silence, so a typo or a
+# moved file made tasks disappear with nothing to say why.
+# See: https://github.com/jdx/mise/discussions/4792
+
+cat <<EOF >tasks.toml
+[hello]
+run = 'echo "hi"'
+EOF
+
+cat <<EOF >mise.toml
+[task_config]
+includes = ["gone.toml", "tasks.toml"]
+EOF
+
+# the surviving include still loads, and the dead one is now named
+assert_contains "mise tasks 2>&1" "hello"
+assert_contains "mise tasks 2>&1" "gone.toml"
+assert_contains "mise tasks 2>&1" "does not exist"
+
+# mise tasks validate reports it too, and says which include.
+# These also pin the severity: assert_contains fails the test on a non-zero exit, and `validate`
+# only exits non-zero when it found an *error*, so a passing assertion here is the warning-not-error
+# check as well.
+assert_contains "mise tasks validate 2>&1" "missing-include"
+assert_contains "mise tasks validate --json 2>&1" "missing-include"
+
+# a directory include is satisfied by the directory existing
+mkdir -p mytasks
+cat <<EOF >mytasks/fromdir
+#!/usr/bin/env bash
+echo "from dir"
+EOF
+chmod +x mytasks/fromdir
+
+cat <<EOF >mise.toml
+[task_config]
+includes = ["mytasks", "tasks.toml"]
+EOF
+
+assert_contains "mise tasks 2>&1" "fromdir"
+assert_not_contains "mise tasks 2>&1" "does not exist"
+
+# The built-in default includes must never warn. Only one of the five default task directories
+# usually exists, so warning on the rest would fire on nearly every mise invocation.
+rm -f mise.toml
+mkdir -p mise-tasks
+cat <<EOF >mise-tasks/fromdefault
+#!/usr/bin/env bash
+echo "from default"
+EOF
+chmod +x mise-tasks/fromdefault
+
+assert_contains "mise tasks 2>&1" "fromdefault"
+assert_not_contains "mise tasks 2>&1" "does not exist"
+
+# A glob matching nothing is the normal state of a directory whose task files are not written yet.
+cat <<EOF >mise.toml
+[task_config]
+includes = ["empty/*.toml", "tasks.toml"]
+EOF
+
+assert_contains "mise tasks 2>&1" "hello"
+assert_not_contains "mise tasks 2>&1" "does not exist"

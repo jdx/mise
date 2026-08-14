@@ -4184,6 +4184,101 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     }
 }
 
+/// The path a literal task include resolves to, when nothing exists there.
+///
+/// Globs are deliberately excluded: a glob matching nothing is the normal state of a directory
+/// whose task files have not been written yet, so reporting it would be noise. `git::` entries
+/// never reach here — callers branch on them before expanding.
+///
+/// Only ever called for *explicit* `task_config.includes`. The built-in defaults
+/// (`default_task_includes`) are mostly absent on any given project, so running this over them
+/// would warn on every mise invocation.
+fn missing_literal_include(dir: &Path, pattern: &str) -> Option<PathBuf> {
+    let pattern = file::replace_path(pattern);
+    let pattern = pattern.to_string_lossy();
+    if is_glob_pattern(&pattern) {
+        return None;
+    }
+    let path = PathBuf::from(&*pattern);
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        dir.join(path)
+    };
+    if resolved.exists() {
+        return None;
+    }
+    // `dir.join("./tasks.toml")` keeps the `.` component, and `<root>/./tasks.toml` in a warning
+    // reads like mise mangled the path. Only the displayed form changes; both spellings name the
+    // same file, and the existence check above already ran.
+    Some(
+        resolved
+            .components()
+            .filter(|c| !matches!(c, std::path::Component::CurDir))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod task_include_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn missing_literal_include_only_flags_absent_literal_paths() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let dir = tmp.path();
+        fs::write(dir.join("tasks.toml"), "")?;
+        fs::create_dir(dir.join("mytasks"))?;
+
+        // an include that resolves to something is fine, file or directory alike
+        assert_eq!(missing_literal_include(dir, "tasks.toml"), None);
+        assert_eq!(missing_literal_include(dir, "mytasks"), None);
+
+        // an include that resolves to nothing is reported, resolved against the include root
+        assert_eq!(
+            missing_literal_include(dir, "gone.toml"),
+            Some(dir.join("gone.toml"))
+        );
+
+        // a `./` prefix resolves to the same file, and must not survive into the message
+        assert_eq!(missing_literal_include(dir, "./tasks.toml"), None);
+        assert_eq!(
+            missing_literal_include(dir, "./gone.toml"),
+            Some(dir.join("gone.toml"))
+        );
+
+        // globs are never reported: matching nothing is the normal state of a directory whose
+        // task files have not been written yet
+        assert_eq!(missing_literal_include(dir, "nope/*.toml"), None);
+        assert_eq!(missing_literal_include(dir, "*.toml"), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn missing_literal_include_keeps_absolute_paths_absolute() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let other = TempDir::new()?;
+        let absent = other.path().join("gone.toml");
+
+        // an absolute include must not be joined onto the include root
+        assert_eq!(
+            missing_literal_include(tmp.path(), &absent.to_string_lossy()),
+            Some(absent.clone())
+        );
+
+        fs::write(&absent, "")?;
+        assert_eq!(
+            missing_literal_include(tmp.path(), &absent.to_string_lossy()),
+            None
+        );
+
+        Ok(())
+    }
+}
+
 fn task_include_patterns_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
@@ -4236,6 +4331,24 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec
         })
         .unique()
         .collect::<Vec<_>>())
+}
+
+/// Explicit `task_config.includes` entries that point at nothing.
+///
+/// Returns the resolved paths, in the order they are declared. Empty when the config does not set
+/// `includes` at all — the built-in defaults are not reported, because they are absent on almost
+/// every project and are not something the user asked for.
+pub fn missing_task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+    let (includes, resolve_dir, uses_defaults) = task_include_patterns_for_dir(dir, config_files)?;
+    if uses_defaults {
+        return Ok(vec![]);
+    }
+    Ok(includes
+        .iter()
+        .filter(|include| !include.starts_with("git::"))
+        .filter_map(|include| missing_literal_include(&resolve_dir, include))
+        .unique()
+        .collect())
 }
 
 /// Returns the directory where a new file task should be created.
@@ -4490,7 +4603,7 @@ async fn load_task_sources_from_configs(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-    let (includes, resolve_dir, include_config_precedence) = configs
+    let explicit_includes = configs
         .iter()
         .enumerate()
         .find_map(|(precedence, cf)| match cf.task_config_includes() {
@@ -4506,7 +4619,11 @@ async fn load_task_sources_from_configs(
                     .clone()
                     .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
             })
-        })
+        });
+    // Only an include the user wrote is worth complaining about; the built-in defaults are absent
+    // on nearly every project.
+    let uses_default_includes = explicit_includes.is_none();
+    let (includes, resolve_dir, include_config_precedence) = explicit_includes
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
 
     // Resolve task defaults once for the config root so inline tasks from
@@ -4564,6 +4681,24 @@ async fn load_task_sources_from_configs(
         let paths = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(include).await?]
         } else {
+            if !uses_default_includes
+                && let Some(missing) = missing_literal_include(&resolve_dir, include)
+            {
+                // The message carries both halves on purpose, which also makes it the right
+                // dedup key for `warn_once!`: one line per (entry, resolved path) pair, i.e. one
+                // per distinct broken thing.
+                //
+                // - the entry, because it can look nothing like the path it resolves to — a
+                //   `~/tasks.toml` entry resolves to `$HOME/tasks.toml`, and the path alone
+                //   leaves the reader hunting for the config line to delete
+                // - the resolved path, because the same config is loaded once per directory and
+                //   every one of them resolves the entry identically, so including it collapses a
+                //   monorepo's worth of repeats into a single line
+                warn_once!(
+                    "task_config.includes entry '{include}' does not exist: {}",
+                    display_path(&missing)
+                );
+            }
             expand_task_include(&resolve_dir, include)
         };
         for p in paths {

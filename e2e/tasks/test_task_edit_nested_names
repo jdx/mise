@@ -110,7 +110,9 @@ cat <<'EOF' >mise.toml
 includes = ["tasks.d", "existing-tasks"]
 EOF
 
-TASK_PATH5=$(mise tasks edit dotted --path 2>&1)
+# stdout only: `tasks.d` is deliberately absent here, so loading the tasks now warns about it, and
+# folding stderr into a path capture would compare the warning against the path.
+TASK_PATH5=$(mise tasks edit dotted --path)
 assert "printf '%s' \"$TASK_PATH5\"" "$PWD/existing-tasks/dotted"
 assert "test -f \"$TASK_PATH5\""
 
