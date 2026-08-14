@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
 mkdir -p bin
+# One fake strace serves both tasks; it is spawned in each task's directory, so
+# every task gets its own trace. The write it emits is a plain file so these
+# assertions do not depend on how directory writes are reported.
 cat <<'EOF' >bin/strace
 #!/usr/bin/env bash
 set -euo pipefail
@@ -26,6 +29,7 @@ fi
 for i in $(seq 1 25); do
   echo "123 openat(AT_FDCWD<$PWD>, \"undeclared$i.txt\", O_RDONLY) = 3" >>"$trace"
 done
+echo "123 openat(AT_FDCWD<$PWD>, \"generated.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3" >>"$trace"
 exec "$@"
 EOF
 chmod +x bin/strace
@@ -34,29 +38,62 @@ cat <<'EOF' >mise.toml
 [settings]
 experimental = true
 
-[tasks.build]
-run = "mkdir -p dist && cat input.txt >dist/result.txt"
-sources = ["input.txt"]
-outputs = ["dist"]
+[tasks.alpha]
+dir = "alpha"
+run = "cat declared.txt >/dev/null"
+sources = ["declared.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+
+[tasks.beta]
+dir = "beta"
+run = "cat declared.txt >/dev/null"
+sources = ["declared.txt"]
+outputs = []
 cache = { enabled = true, audit = true }
 EOF
 
-printf 'declared\n' >input.txt
-for i in $(seq 1 25); do
-  printf 'undeclared\n' >"undeclared$i.txt"
+for task in alpha beta; do
+	mkdir -p "$task"
+	printf 'declared\n' >"$task/declared.txt"
+	for i in $(seq 1 25); do
+		printf 'undeclared\n' >"$task/undeclared$i.txt"
+	done
 done
 
-output=$(PATH="$PWD/bin:$PATH" mise run --force build 2>&1)
-count=$(grep -c 'cache audit detected undeclared read:' <<<"$output" || true)
-assert "echo $count" "20"
-assert_contains_text "$output" "cache audit omitted 5 additional paths"
+export PATH="$PWD/bin:$PATH"
+
+# Each task sees 25 undeclared reads and 1 undeclared write. Reads sort ahead of
+# writes, so all 20 console lines per task are reads and the write appears only
+# in the report file.
+output=$(mise run --jobs 2 --force alpha ::: beta 2>&1)
+reads=$(grep -c 'cache audit detected undeclared read:' <<<"$output" || true)
+assert "echo $reads" "40"
+assert_contains_text "$output" "task alpha cache audit omitted 6 additional paths"
+assert_contains_text "$output" "task beta cache audit omitted 6 additional paths"
+assert_not_contains_text "$output" "cache audit detected undeclared write:"
 assert_not_contains_text "$output" "full report written to"
 assert "test -e audit.jsonl && echo exists || echo missing" "missing"
 
-output=$(PATH="$PWD/bin:$PATH" MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --force build 2>&1)
-count=$(grep -c 'cache audit detected undeclared read:' <<<"$output" || true)
-assert "echo $count" "20"
-assert_contains_text "$output" "cache audit omitted 5 additional paths; full report written to audit.jsonl"
-assert "grep -c . audit.jsonl" "25"
-assert_contains "cat audit.jsonl" '{"task":"build","kind":"read","path":"undeclared1.txt"}'
-assert_contains "cat audit.jsonl" '{"task":"build","kind":"read","path":"undeclared9.txt"}'
+output=$(MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --jobs 2 --force alpha ::: beta 2>&1)
+reads=$(grep -c 'cache audit detected undeclared read:' <<<"$output" || true)
+assert "echo $reads" "40"
+assert_contains_text "$output" "task alpha cache audit omitted 6 additional paths; full report written to audit.jsonl"
+assert_contains_text "$output" "task beta cache audit omitted 6 additional paths; full report written to audit.jsonl"
+assert_not_contains_text "$output" "cache audit detected undeclared write:"
+
+# jq -s parses every line, so this fails if any record is malformed or if the
+# two tasks interleaved their blocks while running concurrently.
+assert "jq -s length audit.jsonl" "52"
+assert "jq -sr '[.[].task] | unique | join(\",\")' audit.jsonl" "alpha,beta"
+assert "jq -sr '[.[].kind] | unique | join(\",\")' audit.jsonl" "read,write"
+assert "jq -s '[.[] | select(.task == \"alpha\")] | length' audit.jsonl" "26"
+assert "jq -s '[.[] | select(.task == \"beta\")] | length' audit.jsonl" "26"
+assert "jq -sr '[.[] | select(.kind == \"write\")] | sort_by(.task) | map(.task + \":\" + .path) | join(\",\")' audit.jsonl" "alpha:generated.txt,beta:generated.txt"
+assert_contains "cat audit.jsonl" '{"task":"alpha","kind":"read","path":"undeclared1.txt"}'
+assert_contains "cat audit.jsonl" '{"task":"beta","kind":"read","path":"undeclared9.txt"}'
+
+# The first audited task of an invocation truncates, so a second run replaces the
+# report rather than appending to it.
+MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --jobs 2 --force alpha ::: beta >/dev/null 2>&1
+assert "jq -s length audit.jsonl" "52"
