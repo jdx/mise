@@ -60,6 +60,10 @@ struct Cask {
     sha256: Option<String>,
     #[serde(default)]
     artifacts: Vec<Value>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    depends_on: CaskDependencies,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    conflicts_with: CaskConflicts,
     #[serde(default)]
     ruby_source_path: Option<String>,
     #[serde(default)]
@@ -68,6 +72,28 @@ struct Cask {
     tap_git_head: Option<String>,
     #[serde(skip)]
     raw_base: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskDependencies {
+    #[serde(default)]
+    formula: Vec<String>,
+    #[serde(default)]
+    cask: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskConflicts {
+    #[serde(default)]
+    cask: Vec<String>,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +121,12 @@ struct CommandWrapperArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgArtifact {
     source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstallerArtifact {
+    executable: String,
+    args: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +175,14 @@ enum FlightStep {
     Remove {
         paths: Vec<FlightPath>,
         recursive: bool,
+    },
+    Copy {
+        source: FlightPath,
+        target: FlightPath,
+        recursive: bool,
+        overwrite: bool,
+        source_glob: bool,
+        guards: Vec<FlightGuard>,
     },
     Symlink {
         source: FlightPath,
@@ -212,6 +252,7 @@ struct CaskArtifacts {
     binaries: Vec<BinaryArtifact>,
     command_wrappers: Vec<CommandWrapperArtifact>,
     pkgs: Vec<PkgArtifact>,
+    installers: Vec<InstallerArtifact>,
     generic: Vec<GenericArtifact>,
     fonts: Vec<FontArtifact>,
     completions: Vec<CompletionArtifact>,
@@ -315,7 +356,23 @@ impl BrewCaskManager {
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
+        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new())
+            .await
+    }
+
+    async fn install_one_with_ancestors(
+        &self,
+        req: &PackageRequest,
+        opts: &InstallOpts,
+        pr: Option<&dyn SingleReport>,
+        ancestors: &BTreeSet<String>,
+    ) -> Result<String> {
         let cask = fetch_cask(req).await?;
+        if ancestors.contains(&cask.token) {
+            bail!("brew-cask:{}: dependency cycle detected", cask.token);
+        }
+        let mut ancestors = ancestors.clone();
+        ancestors.insert(cask.token.clone());
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         if homebrew_metadata_present(&cask.token) {
@@ -327,6 +384,38 @@ impl BrewCaskManager {
         if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
             info!("brew-cask:{}: already installed", cask.token);
             return Ok(cask.version);
+        }
+        for conflict in &cask.conflicts_with.cask {
+            if !installed_versions(conflict).is_empty() {
+                bail!(
+                    "brew-cask:{}: conflicts with installed cask {}",
+                    cask.token,
+                    conflict
+                );
+            }
+        }
+        if !cask.depends_on.formula.is_empty() {
+            let dependencies = cask
+                .depends_on
+                .formula
+                .iter()
+                .map(|name| PackageRequest {
+                    name: name.clone(),
+                    version: None,
+                    tap_url: None,
+                })
+                .collect::<Vec<_>>();
+            super::BrewManager::new()
+                .install(&dependencies, opts)
+                .await?;
+        }
+        for dependency in &cask.depends_on.cask {
+            let request = PackageRequest {
+                name: dependency.clone(),
+                version: None,
+                tap_url: None,
+            };
+            Box::pin(self.install_one_with_ancestors(&request, opts, None, &ancestors)).await?;
         }
         if opts.dry_run {
             miseprintln!("install cask {}/{}", cask.token, cask.version);
@@ -341,6 +430,9 @@ impl BrewCaskManager {
             }
             for pkg in &artifacts.pkgs {
                 miseprintln!("install pkg {}", pkg.source);
+            }
+            for installer in &artifacts.installers {
+                miseprintln!("run installer {}", installer.executable);
             }
             for artifact in &artifacts.generic {
                 miseprintln!("install artifact {}", artifact.target);
@@ -424,7 +516,13 @@ impl BrewCaskManager {
         for target in &previous_flight_symlinks {
             flight_targets.protect(target)?;
         }
-        durabilize_staged_symlink_targets(&stage, &tmp_caskroom, &mut flight_targets)?;
+        run_installers_before_durabilizing(
+            &stage,
+            &tmp_caskroom,
+            &artifacts.installers,
+            &mut flight_targets,
+            |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
+        )?;
         for (index, app) in artifacts.apps.iter().enumerate() {
             install_app(&stage, &tmp_caskroom, app)?;
             record_cask_action(&mut journal, &format!("app[{index}]"))?;
@@ -2013,6 +2111,59 @@ fn open_trusted_operation_parent(
     Ok(TrustedOperationParent { fd })
 }
 
+fn run_installer_artifact(
+    stage: &Path,
+    installer: &InstallerArtifact,
+    copied_files: &BTreeSet<PathBuf>,
+) -> Result<()> {
+    let executable = stage.join(&installer.executable);
+    if staged_relative_path(stage, &executable).is_none() {
+        bail!(
+            "brew-cask: refusing installer executable outside trusted installer roots: {}",
+            executable.display()
+        );
+    }
+    if !executable.is_file() {
+        bail!(
+            "brew-cask: installer executable '{}' was not found",
+            installer.executable
+        );
+    }
+    let executable = file::desymlink_path(&executable);
+    if !executable.starts_with(file::desymlink_path(stage)) && !copied_files.contains(&executable) {
+        bail!(
+            "brew-cask: refusing installer executable outside trusted installer roots: {}",
+            executable.display()
+        );
+    }
+    file::make_executable(&executable)?;
+    let prefix = prefix::prefix();
+    let mut paths = vec![prefix.join("bin"), prefix.join("sbin")];
+    if let Some(path) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&path));
+    }
+    let path = std::env::join_paths(paths)?;
+    CmdLineRunner::new(executable)
+        .env("PATH", path)
+        .args(&installer.args)
+        .raw(true)
+        .execute()
+}
+
+fn run_installers_before_durabilizing(
+    stage: &Path,
+    temporary_caskroom: &Path,
+    installers: &[InstallerArtifact],
+    targets: &mut FlightTargetTransaction,
+    mut completed: impl FnMut(usize) -> Result<()>,
+) -> Result<()> {
+    for (index, installer) in installers.iter().enumerate() {
+        run_installer_artifact(stage, installer, targets.copied_files())?;
+        completed(index)?;
+    }
+    durabilize_staged_symlink_targets(stage, temporary_caskroom, targets)
+}
+
 fn generic_artifact_target_path(target: &str) -> Result<PathBuf> {
     let prefix = prefix::prefix();
     let expanded = target.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
@@ -2409,6 +2560,7 @@ struct FlightTargetTransaction {
     installed: Vec<PathBuf>,
     uninstall: BTreeMap<PathBuf, bool>,
     previous_symlinks: BTreeSet<PathBuf>,
+    copied_files: BTreeSet<PathBuf>,
     previous_directories: BTreeSet<PathBuf>,
     installed_directories: Vec<PathBuf>,
     committed: bool,
@@ -2541,6 +2693,27 @@ impl FlightTargetTransaction {
         &self.uninstall
     }
 
+    fn record_copied_files(&mut self, source: &Path, target: &Path) -> Result<()> {
+        let metadata = source.symlink_metadata()?;
+        if metadata.is_file() {
+            self.copied_files.insert(file::desymlink_path(target));
+            return Ok(());
+        }
+        for entry in WalkDir::new(source).follow_links(false) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let relative = entry.path().strip_prefix(source)?;
+                self.copied_files
+                    .insert(file::desymlink_path(&target.join(relative)));
+            }
+        }
+        Ok(())
+    }
+
+    fn copied_files(&self) -> &BTreeSet<PathBuf> {
+        &self.copied_files
+    }
+
     fn record_installed_directory(&mut self, target: PathBuf) {
         if !self.installed_directories.contains(&target) {
             self.installed_directories.push(target);
@@ -2590,6 +2763,7 @@ impl FlightTargetTransaction {
         self.backups = failed;
         self.installed.clear();
         self.uninstall.clear();
+        self.copied_files.clear();
         self.installed_directories.clear();
         if let Some(err) = first_error {
             Err(err)
@@ -2888,6 +3062,7 @@ impl FlightStep {
         match self {
             Self::Move { .. } => "move",
             Self::Remove { .. } => "remove",
+            Self::Copy { .. } => "copy",
             Self::Symlink { .. } => "symlink",
             Self::Run { .. } => "run",
             Self::TerminateProcess { .. } => "terminate_process",
@@ -2945,6 +3120,68 @@ fn execute_flight_step(
                     }
                 }
             }
+        }
+        FlightStep::Copy {
+            source,
+            target,
+            recursive,
+            overwrite,
+            source_glob,
+            guards,
+        } => {
+            if !guards
+                .iter()
+                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .all(|matches| matches)
+            {
+                return Ok(());
+            }
+            let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
+            let [source] = sources.as_slice() else {
+                bail!("brew-cask: structured copy source must resolve to exactly one path");
+            };
+            if !source.exists() {
+                bail!(
+                    "brew-cask: structured copy source '{}' was not found",
+                    source.display()
+                );
+            }
+            if source.is_dir() && !recursive {
+                bail!("brew-cask: structured directory copy requires recursive=true");
+            }
+            let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
+            let external = !target.starts_with(staged_path);
+            let target_metadata = target.symlink_metadata().ok();
+            if target_metadata.is_some() {
+                if !overwrite {
+                    bail!(
+                        "brew-cask: structured copy target '{}' already exists",
+                        target.display()
+                    );
+                }
+                if external {
+                    targets.protect(&target)?;
+                } else {
+                    file::remove_all(&target)?;
+                }
+            }
+            if let Some(parent) = target.parent() {
+                create_dir_all_elevating(parent)?;
+            }
+            if external && target_metadata.is_none() {
+                // Bind an absent target to its resolved parent only after
+                // creating that parent so rollback can validate its identity.
+                targets.protect(&target)?;
+            }
+            copy_cask_artifact(source, &target)?;
+            if external {
+                targets.record_copied_files(source, &target)?;
+            }
+            // External copy trees may be modified during normal use. The
+            // transaction backup is sufficient for rollback; recording them
+            // would fingerprint their contents and force later reinstalls.
         }
         FlightStep::Symlink {
             source,
@@ -4284,6 +4521,10 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.pkgs.push(pkg);
             continue;
         }
+        if let Some(installer) = parse_installer_artifact(artifact)? {
+            artifacts.installers.push(installer);
+            continue;
+        }
         if let Some(artifact) = parse_generic_artifact(artifact)? {
             artifacts.generic.push(artifact);
             continue;
@@ -4310,6 +4551,7 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         && artifacts.binaries.is_empty()
         && artifacts.command_wrappers.is_empty()
         && artifacts.pkgs.is_empty()
+        && artifacts.installers.is_empty()
         && artifacts.generic.is_empty()
         && artifacts.fonts.is_empty()
         && artifacts.completions.is_empty()
@@ -4341,6 +4583,7 @@ fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<(
             && artifacts.binaries.is_empty()
             && artifacts.command_wrappers.is_empty()
             && artifacts.pkgs.is_empty()
+            && artifacts.installers.is_empty()
             && artifacts.generic.is_empty()
             && artifacts.completions.is_empty()
             && artifacts.generated_completions.is_empty()
@@ -4532,6 +4775,64 @@ fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
         }
         _ => Ok(None),
     }
+}
+
+fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> {
+    let Some(installer) = value.as_object().and_then(|object| object.get("installer")) else {
+        return Ok(None);
+    };
+    let values = installer
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: installer metadata must be an array"))?;
+    let script = values
+        .first()
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("script"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| eyre!("brew-cask: only script installers are supported"))?;
+    reject_unsupported_artifact_fields("installer script", script, &["executable", "args"])?;
+    let executable = script
+        .get("executable")
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask: installer script requires an executable"))?;
+    let args = script
+        .get("args")
+        .map(|args| {
+            args.as_array()
+                .ok_or_else(|| eyre!("brew-cask: installer script args must be an array"))?
+                .iter()
+                .map(|arg| {
+                    arg.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| eyre!("brew-cask: installer script args must be strings"))
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(Some(InstallerArtifact {
+        executable: executable.to_string(),
+        args,
+    }))
+}
+
+fn reject_unsupported_artifact_fields(
+    context: &str,
+    object: &serde_json::Map<String, Value>,
+    allowed: &[&str],
+) -> Result<()> {
+    let unsupported = object
+        .keys()
+        .filter(|key| !allowed.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unsupported.is_empty() {
+        bail!(
+            "brew-cask: unsupported {context} field {}",
+            unsupported.join(", ")
+        );
+    }
+    Ok(())
 }
 
 fn parse_generic_artifact(value: &Value) -> Result<Option<GenericArtifact>> {
@@ -4795,6 +5096,41 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                     .unwrap_or(false),
             })
         }
+        "copy" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "copy step",
+                object,
+                &[
+                    "type",
+                    "source",
+                    "target",
+                    "recursive",
+                    "overwrite",
+                    "source_glob",
+                    "guards",
+                ],
+            )?;
+            Ok(FlightStep::Copy {
+                source: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "copy source",
+                    object.get("source"),
+                )?,
+                target: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "copy target",
+                    object.get("target"),
+                )?,
+                recursive: parse_optional_flight_bool(cask, kind, object, "recursive", false)?,
+                overwrite: parse_optional_flight_bool(cask, kind, object, "overwrite", true)?,
+                source_glob: parse_optional_flight_bool(cask, kind, object, "source_glob", false)?,
+                guards: parse_flight_guards(cask, kind, object.get("guards"))?,
+            })
+        }
         "symlink" => {
             reject_unsupported_flight_fields(
                 cask,
@@ -4838,7 +5174,15 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                 kind,
                 "run step",
                 object,
-                &["type", "command", "args", "env", "sudo", "guards"],
+                &[
+                    "type",
+                    "command",
+                    "args",
+                    "env",
+                    "sudo",
+                    "guards",
+                    "network_access",
+                ],
             )?;
             let args = object
                 .get("args")
@@ -5457,9 +5801,23 @@ fn binary_target_path(target_name: &str, appdir: &Path) -> Result<PathBuf> {
 }
 
 fn installed_version(token: &str) -> Option<String> {
+    let versions = installed_versions(token);
+    match versions.as_slice() {
+        [version] => Some(version.clone()),
+        [] => None,
+        _ => {
+            warn!("brew-cask:{token}: multiple Caskroom versions found; reinstall to reconcile");
+            None
+        }
+    }
+}
+
+fn installed_versions(token: &str) -> Vec<String> {
     let dir = caskroom_token_dir(token);
-    let entries = std::fs::read_dir(dir).ok()?;
-    let versions = entries
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
@@ -5469,15 +5827,7 @@ fn installed_version(token: &str) -> Option<String> {
                 .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
                 .map(|_| name)
         })
-        .collect::<Vec<_>>();
-    match versions.as_slice() {
-        [version] => Some(version.clone()),
-        [] => None,
-        _ => {
-            warn!("brew-cask:{token}: multiple Caskroom versions found; reinstall to reconcile");
-            None
-        }
-    }
+        .collect()
 }
 
 fn homebrew_metadata_present(token: &str) -> bool {
@@ -5684,6 +6034,9 @@ fn installed_cask_version_in(
 fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> {
     if !artifacts.pkgs.is_empty() {
         return Some("pkg artifacts require uninstall support".to_string());
+    }
+    if !artifacts.installers.is_empty() {
+        return Some("installer artifacts may have untracked side effects".to_string());
     }
     if !artifacts.command_wrappers.is_empty() {
         return Some("command wrapper artifacts are not supported for pruning".to_string());
@@ -6687,6 +7040,8 @@ mod tests {
             url_specs: CaskUrlSpecs::default(),
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
+            depends_on: CaskDependencies::default(),
+            conflicts_with: CaskConflicts::default(),
             ruby_source_path: None,
             ruby_source_checksum: None,
             tap_git_head: None,
@@ -7101,6 +7456,353 @@ mod tests {
                 ..
             }] if guards.len() == 1
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn parses_gcloud_copy_installer_and_run_metadata() -> Result<()> {
+        let mut cask = test_cask("gcloud-cli", "580.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "preflight_steps": [{"steps": [{
+                    "type": "copy",
+                    "source": {"base": "staged_path", "path": "google-cloud-sdk/."},
+                    "target": {"base": "homebrew_prefix", "path": "share/google-cloud-sdk"},
+                    "recursive": true
+                }]}]
+            }),
+            serde_json::json!({
+                "installer": [{"script": {
+                    "executable": "google-cloud-sdk/install.sh",
+                    "args": ["--quiet", "--install-python", "false"]
+                }}]
+            }),
+            serde_json::json!({"binary": "google-cloud-sdk/bin/gcloud"}),
+            serde_json::json!({
+                "postflight_steps": [{"steps": [{
+                    "type": "run",
+                    "command": {"base": "homebrew_prefix", "path": "share/google-cloud-sdk/bin/gcloud"},
+                    "args": ["version"],
+                    "network_access": true
+                }]}]
+            }),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert!(matches!(
+            artifacts.preflight_steps.as_slice(),
+            [FlightStep::Copy {
+                recursive: true,
+                overwrite: true,
+                ..
+            }]
+        ));
+        assert_eq!(
+            artifacts.installers,
+            [InstallerArtifact {
+                executable: "google-cloud-sdk/install.sh".to_string(),
+                args: vec![
+                    "--quiet".to_string(),
+                    "--install-python".to_string(),
+                    "false".to_string()
+                ],
+            }]
+        );
+        assert!(matches!(
+            artifacts.postflight_steps.as_slice(),
+            [FlightStep::Run { .. }]
+        ));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_is_made_executable_before_running() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        file::create_dir_all(prefix.join("bin"))?;
+        file::create_dir_all(prefix.join("sbin"))?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let script = stage.join("install.sh");
+        let marker = tmp.path().join("installed");
+        file::write(&script, "#!/bin/sh\nprintf '%s' \"$PATH\" > \"$1\"\n")?;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644))?;
+        let installer = InstallerArtifact {
+            executable: "install.sh".to_string(),
+            args: vec![marker.display().to_string()],
+        };
+
+        run_installer_artifact(&stage, &installer, &BTreeSet::new())?;
+
+        let installed_path = file::read_to_string(marker)?;
+        let installed_paths = std::env::split_paths(std::ffi::OsStr::new(&installed_path))
+            .take(2)
+            .collect::<Vec<_>>();
+        assert_eq!(installed_paths, [prefix.join("bin"), prefix.join("sbin")]);
+        assert_ne!(script.metadata()?.permissions().mode() & 0o111, 0);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_rejects_paths_outside_stage() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let outside = tmp.path().join("outside.sh");
+        file::write(&outside, "#!/bin/sh\nexit 0\n")?;
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644))?;
+        file::make_symlink(&outside, &stage.join("linked.sh"))?;
+
+        for executable in [
+            outside.display().to_string(),
+            "../outside.sh".to_string(),
+            "linked.sh".to_string(),
+        ] {
+            let err = run_installer_artifact(
+                &stage,
+                &InstallerArtifact {
+                    executable,
+                    args: Vec::new(),
+                },
+                &BTreeSet::new(),
+            )
+            .unwrap_err()
+            .to_string();
+
+            assert!(err.contains("outside trusted installer roots"));
+            assert_eq!(outside.metadata()?.permissions().mode() & 0o111, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_accepts_preflight_copied_root() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        file::create_dir_all(prefix.join("bin"))?;
+        file::create_dir_all(prefix.join("sbin"))?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let copied = prefix.join("share/example");
+        file::create_dir_all(&copied)?;
+        let marker = tmp.path().join("installed");
+        file::write(
+            copied.join("install.sh"),
+            "#!/bin/sh\nprintf installed > \"$1\"\n",
+        )?;
+        file::make_symlink(&copied, &stage.join("payload"))?;
+
+        let copied_files = BTreeSet::from([file::desymlink_path(&copied.join("install.sh"))]);
+        run_installer_artifact(
+            &stage,
+            &InstallerArtifact {
+                executable: "payload/install.sh".to_string(),
+                args: vec![marker.display().to_string()],
+            },
+            &copied_files,
+        )?;
+
+        assert_eq!(file::read_to_string(marker)?, "installed");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_rejects_unrecorded_file_beneath_copied_target() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let broad_target = tmp.path().join("prefix");
+        file::create_dir_all(broad_target.join("bin"))?;
+        let outside = broad_target.join("bin/existing.sh");
+        file::write(&outside, "#!/bin/sh\nexit 0\n")?;
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644))?;
+        file::make_symlink(&broad_target, &stage.join("payload"))?;
+        let copied_files = BTreeSet::from([broad_target.join("copied.txt")]);
+
+        let err = run_installer_artifact(
+            &stage,
+            &InstallerArtifact {
+                executable: "payload/bin/existing.sh".to_string(),
+                args: Vec::new(),
+            },
+            &copied_files,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("outside trusted installer roots"));
+        assert_eq!(outside.metadata()?.permissions().mode() & 0o111, 0);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_mutations_are_included_in_durable_symlink_sources() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        file::create_dir_all(prefix.join("bin"))?;
+        file::create_dir_all(prefix.join("sbin"))?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("payload");
+        file::create_dir_all(&source)?;
+        let script = stage.join("install.sh");
+        file::write(&script, "#!/bin/sh\nprintf mutated > \"$1\"\n")?;
+        let installer = InstallerArtifact {
+            executable: "install.sh".to_string(),
+            args: vec![source.join("generated").display().to_string()],
+        };
+        let target = tmp.path().join("share/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&source, &target)?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.record_installed(target);
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+
+        run_installers_before_durabilizing(
+            &stage,
+            &temporary_caskroom,
+            &[installer],
+            &mut targets,
+            |_| Ok(()),
+        )?;
+
+        assert_eq!(
+            file::read_to_string(temporary_caskroom.join(".homebrew-staged/payload/generated"))?,
+            "mutated"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn structured_copy_restores_external_target_without_status_tracking() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let stage = tmp.path().join("stage");
+        let source = stage.join("google-cloud-sdk");
+        file::create_dir_all(&source)?;
+        file::write(source.join("gcloud"), "sdk")?;
+        let target = prefix.join("share/google-cloud-sdk");
+        file::create_dir_all(&target)?;
+        file::write(target.join("old"), "old")?;
+        let step = FlightStep::Copy {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "google-cloud-sdk/.".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::HomebrewPrefix,
+                path: "share/google-cloud-sdk".to_string(),
+            },
+            recursive: true,
+            overwrite: true,
+            source_glob: false,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+        execute_flight_steps_with_completion(
+            &test_cask("gcloud-cli", "580.0.0"),
+            &[step],
+            &stage,
+            Path::new("/Applications"),
+            "preflight_steps",
+            &mut targets,
+            |_, _| Ok(()),
+        )?;
+        assert!(target.join("gcloud").is_file());
+        assert!(!target.join("old").exists());
+        assert!(targets.installed_targets().is_empty());
+        assert_eq!(
+            targets.copied_files(),
+            &BTreeSet::from([file::desymlink_path(&target.join("gcloud"))])
+        );
+        targets.rollback()?;
+        assert_eq!(file::read_to_string(target.join("old"))?, "old");
+        Ok(())
+    }
+
+    #[test]
+    fn structured_copy_rollback_removes_target_with_created_parent() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let stage = tmp.path().join("stage");
+        let source = stage.join("payload");
+        file::create_dir_all(&source)?;
+        file::write(source.join("installed"), "content")?;
+        let target = prefix.join("share/new-parent/payload");
+        let copy = FlightStep::Copy {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "payload/.".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::HomebrewPrefix,
+                path: "share/new-parent/payload".to_string(),
+            },
+            recursive: true,
+            overwrite: true,
+            source_glob: false,
+            guards: Vec::new(),
+        };
+        let fail = FlightStep::Copy {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "missing".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::HomebrewPrefix,
+                path: "share/unused".to_string(),
+            },
+            recursive: false,
+            overwrite: true,
+            source_glob: false,
+            guards: Vec::new(),
+        };
+
+        let err = execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[copy, fail],
+            &stage,
+            Path::new("/Applications"),
+            "preflight_steps",
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("was not found"));
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn cask_metadata_accepts_null_dependencies_and_conflicts() -> Result<()> {
+        let cask: Cask = serde_json::from_value(serde_json::json!({
+            "token": "example",
+            "version": "1.0.0",
+            "url": "https://example.com/example.zip",
+            "depends_on": null,
+            "conflicts_with": null
+        }))?;
+        assert!(cask.depends_on.formula.is_empty());
+        assert!(cask.conflicts_with.cask.is_empty());
         Ok(())
     }
 
@@ -7682,6 +8384,7 @@ mod tests {
             installed: Vec::new(),
             uninstall: BTreeMap::new(),
             previous_symlinks: BTreeSet::new(),
+            copied_files: BTreeSet::new(),
             previous_directories: BTreeSet::new(),
             installed_directories: Vec::new(),
             committed: false,
@@ -11651,6 +12354,20 @@ end
         Ok(())
     }
 
+    #[test]
+    fn installed_versions_preserve_conflict_presence_with_multiple_versions() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("conflicting-cask");
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        file::create_dir_all(token_dir.join("2.0.0"))?;
+
+        assert_eq!(installed_version("conflicting-cask"), None);
+        assert_eq!(installed_versions("conflicting-cask").len(), 2);
+        Ok(())
+    }
+
     #[cfg(unix)]
     #[test]
     fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
@@ -11795,6 +12512,8 @@ end
             },
             sha256: Some("no_check".to_string()),
             artifacts: vec![],
+            depends_on: CaskDependencies::default(),
+            conflicts_with: CaskConflicts::default(),
             ruby_source_path: None,
             ruby_source_checksum: None,
             tap_git_head: None,
