@@ -17,7 +17,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{preflight_system_deps, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
-use crate::toolset::tool_deps::{ToolDeps, tool_key};
+use crate::toolset::tool_deps::{ToolDeps, ensure_compatible_install_requests, tool_key};
 use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
@@ -152,14 +152,19 @@ impl Toolset {
         mut versions: Vec<ToolRequest>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
-        // Install all plugins from [plugins] config section first
-        // This must happen before the empty check so plugins are installed
-        // even when there are no tools to install (e.g., env-only plugins)
-        Self::ensure_config_plugins_installed(config, opts.dry_run).await?;
-
         if versions.is_empty() {
+            // Configured plugins are still installed when no tools need work
+            // (for example, env-only plugins).
+            Self::ensure_config_plugins_installed(config, opts.dry_run).await?;
             return Ok(vec![]);
         }
+
+        self.init_request_options(&mut versions);
+        ensure_compatible_install_requests(&versions)?;
+
+        // Validate shared install destinations before plugin installation or
+        // hooks introduce side effects.
+        Self::ensure_config_plugins_installed(config, opts.dry_run).await?;
 
         // Initialize a footer for the entire install session once (before batching)
         let mpr = MultiProgressReport::get();
@@ -172,7 +177,6 @@ impl Toolset {
 
         hooks::run_one_hook(config, self, Hooks::Preinstall, None, opts.dry_run).await;
 
-        self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
 
         let mut disabled_backend_errors = vec![];
@@ -280,20 +284,14 @@ impl Toolset {
             .await;
         } else {
             // Run post-install hook with installed tools info
-            // Use the full resolved toolset so all installed tools are on PATH
-            // Fall back to self if toolset resolution fails (e.g. due to config issues)
+            // `self` was re-resolved after the config reload above and still
+            // contains explicitly requested and task-only tools that are not
+            // present in the reloaded project config.
             let installed_tools: Vec<InstalledToolInfo> =
                 installed.iter().map(InstalledToolInfo::from).collect();
-            let ts = match config.get_toolset().await {
-                Ok(ts) => ts,
-                Err(e) => {
-                    debug!("error resolving toolset for postinstall hook: {e:#}");
-                    self
-                }
-            };
             hooks::run_one_hook_with_context(
                 config,
-                ts,
+                self,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),

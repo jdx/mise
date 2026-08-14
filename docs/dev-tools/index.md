@@ -374,6 +374,11 @@ There are many ways it can be used:
 - `mise install node` - install whatever version of node currently specified in `mise.toml` (or other
   config files)
 - `mise install` - install all plugins and tools specified in the config files
+- `mise install --include-task-tools` - also install every tool required by tasks in the current
+  scope without running those tasks
+
+The last form is useful for warming CI, container, or offline caches before running any task. Add
+`--monorepo` to include task tools from every configured monorepo root.
 
 ### [`mise exec`|`mise x`](/cli/exec)
 
