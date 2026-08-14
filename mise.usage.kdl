@@ -125,7 +125,7 @@ Examples:
     flag "-q --quiet" help="Suppress non-error messages"
     flag "-s --shell" help="Shell type to generate the script for" hide=#true {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     flag --no-hook-env help="Do not automatically call hook-env" {
@@ -151,7 +151,7 @@ See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
     }
     flag --status help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=#true
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" required=#false {
-        choices bash elvish fish nu xonsh zsh pwsh
+        choices bash elvish fish nu xonsh zsh pwsh powershell
     }
 }
 cmd tool-alias help="Manage tool version aliases." effect=read {
@@ -996,7 +996,7 @@ Examples:
 """#
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL_TYPE> {
-            choices bash fish powershell zsh
+            choices bash fish powershell pwsh zsh
         }
     }
     flag --include-bash-completion-lib help="Include the bash completion library in the bash completion script" {
@@ -1022,7 +1022,7 @@ https://usage.jdx.dev
 """#
     }
     arg "[SHELL]" help="Shell type to generate completions for" required=#false {
-        choices bash fish powershell zsh
+        choices bash fish powershell pwsh zsh
     }
 }
 cmd config help="Manage config files" effect=read {
@@ -1383,7 +1383,7 @@ Examples:
     flag "-J --json" help="Output in JSON format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     flag --json-extended help="Output in JSON format with additional information (source, tool)"
@@ -1877,7 +1877,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
     flag "-s --shell" help="Shell type to generate script for" {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     flag --reason help="Reason for calling hook-env (e.g., \"precmd\", \"chpwd\")" hide=#true {
@@ -1890,7 +1890,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
 cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" effect=write {
     flag "-s --shell" help="Shell type to generate script for" {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     arg <BIN> help="Attempted bin to run"

@@ -18,6 +18,7 @@ Shell type to generate completions for
 - `bash`
 - `fish`
 - `powershell`
+- `pwsh`
 - `zsh`
 
 ## Flags
