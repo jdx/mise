@@ -1498,7 +1498,8 @@ fn plan_unapply_one<'a>(
 }
 
 fn plan_inline_file(req: &FileRequest, paths: &mut IndexMap<PathBuf, ()>) -> Result<()> {
-    if req.target.is_file()
+    if !req.target.is_symlink()
+        && req.target.is_file()
         && file::read(&req.target)? == req.content.as_deref().expect("inline content").as_bytes()
     {
         paths.insert(req.target.clone(), ());
@@ -1893,6 +1894,11 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
         FileMode::Content => {
             remove_existing(&req.target)?;
             file::write(&req.target, req.content.as_deref().expect("inline content"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&req.target, std::fs::Permissions::from_mode(0o600))?;
+            }
         }
     }
     Ok(())

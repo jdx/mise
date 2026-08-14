@@ -52,6 +52,16 @@ assert_contains "mise dotfiles status ~/.config/inline.conf" "content differs"
 assert_succeed "mise dotfiles apply ~/.config/inline.conf --yes"
 assert "cat ~/.config/inline.conf" "inline content"
 
+# A matching symlink was not created by inline content mode and must not be
+# removed without --force.
+echo "linked inline" >linked-inline-source
+ln -s "$PWD/linked-inline-source" ~/.config/linked-inline.conf
+cat <<EOF >>mise.toml
+"~/.config/linked-inline.conf" = { content = "linked inline\n" }
+EOF
+assert_fail "mise dotfiles unapply ~/.config/linked-inline.conf --yes" "target differs from the managed content"
+assert "readlink ~/.config/linked-inline.conf" "$PWD/linked-inline-source"
+
 # Inline content can target any path writable by the current user.
 inline_absolute="$PWD/inline-absolute.conf"
 cat <<EOF >>mise.toml

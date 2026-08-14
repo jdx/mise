@@ -915,7 +915,7 @@ fn build_dotfiles_layer(
                         .expect("inline content")
                         .as_bytes()
                         .to_vec(),
-                    0o644,
+                    0o600,
                 )?;
             }
         }
