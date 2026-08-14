@@ -583,6 +583,27 @@ impl ManagedDirectoryRequest {
     }
 }
 
+impl PrivilegedPlan {
+    /// Apply actions as the current user until the filesystem says elevation
+    /// is required. The failed action and everything after it stay ordered in
+    /// the returned plan for one privileged retry.
+    fn apply_until_elevation_required(self) -> Result<Self> {
+        let mut actions = self.actions.into_iter();
+        while let Some(action) = actions.next() {
+            match action.apply() {
+                Ok(()) => {}
+                Err(error) if is_permission_denied(&error) => {
+                    return Ok(Self {
+                        actions: std::iter::once(action).chain(actions).collect(),
+                    });
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(Self::default())
+    }
+}
+
 pub fn apply_with_accounts(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
@@ -678,20 +699,24 @@ pub fn apply_with_accounts(
         info!("system files: skipped");
         return Ok(ApplyReport::default());
     }
-    let input = serde_json::to_vec(&plan)?;
-    let executable = std::env::current_exe()?.to_string_lossy().to_string();
-    crate::system::sudo::run_with_input(
-        &executable,
-        &[
-            "--no-config".to_string(),
-            "--no-env".to_string(),
-            "--no-hooks".to_string(),
-            "bootstrap".to_string(),
-            "__apply-system-plan".to_string(),
-        ],
-        &input,
-    )?;
-    info!("system files: applied {} change(s)", plan.actions.len());
+    let change_count = plan.actions.len();
+    let privileged_plan = plan.apply_until_elevation_required()?;
+    if !privileged_plan.actions.is_empty() {
+        let input = serde_json::to_vec(&privileged_plan)?;
+        let executable = std::env::current_exe()?.to_string_lossy().to_string();
+        crate::system::sudo::run_with_input(
+            &executable,
+            &[
+                "--no-config".to_string(),
+                "--no-env".to_string(),
+                "--no-hooks".to_string(),
+                "bootstrap".to_string(),
+                "__apply-system-plan".to_string(),
+            ],
+            &input,
+        )?;
+    }
+    info!("system files: applied {change_count} change(s)");
     Ok(report)
 }
 
@@ -804,7 +829,7 @@ pub fn inspect_privileged_files_from_stdin() -> Result<()> {
 }
 
 impl PrivilegedAction {
-    fn apply(self) -> Result<()> {
+    fn apply(&self) -> Result<()> {
         match self {
             Self::WriteFile {
                 path,
@@ -814,14 +839,14 @@ impl PrivilegedAction {
                 mode,
                 replace,
             } => write_file(
-                &validate_privileged_target(&path)?,
+                &validate_privileged_target(path)?,
                 content.as_bytes(),
                 owner.as_deref(),
                 group.as_deref(),
-                mode,
-                replace,
+                *mode,
+                *replace,
             ),
-            Self::RemoveFile { path } => remove_file(&validate_privileged_target(&path)?),
+            Self::RemoveFile { path } => remove_file(&validate_privileged_target(path)?),
             Self::CreateDirectory {
                 path,
                 owner,
@@ -829,14 +854,14 @@ impl PrivilegedAction {
                 mode,
                 replace,
             } => create_directory(
-                &validate_privileged_target(&path)?,
+                &validate_privileged_target(path)?,
                 owner.as_deref(),
                 group.as_deref(),
-                mode,
-                replace,
+                *mode,
+                *replace,
             ),
             Self::RemoveDirectory { path, recursive } => {
-                remove_directory(&validate_privileged_target(&path)?, recursive)
+                remove_directory(&validate_privileged_target(path)?, *recursive)
             }
         }
     }
@@ -1080,9 +1105,16 @@ fn inspect_path(request: PrivilegedPathInspection) -> Result<PathInspection> {
 }
 
 fn is_permission_denied(error: &eyre::Report) -> bool {
-    error
-        .downcast_ref::<std::io::Error>()
-        .is_some_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+    error.chain().any(|error| {
+        error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+            || error
+                .downcast_ref::<nix::errno::Errno>()
+                .is_some_and(|error| {
+                    matches!(error, nix::errno::Errno::EACCES | nix::errno::Errno::EPERM)
+                })
+    })
 }
 
 impl ManagedPathKind {
@@ -1388,6 +1420,19 @@ mod tests {
         assert_eq!(parse_mode(Some("0600"), 0).unwrap(), 0o600);
         assert_eq!(parse_mode(Some("0o1750"), 0).unwrap(), 0o1750);
         assert!(parse_mode(Some("888"), 0).is_err());
+    }
+
+    #[test]
+    fn detects_permission_errors_through_context() {
+        let io_error = Err::<(), _>(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            .wrap_err("wrapped permission error")
+            .unwrap_err();
+        assert!(is_permission_denied(&io_error));
+
+        let nix_error: eyre::Report = nix::errno::Errno::EPERM.into();
+        assert!(is_permission_denied(&nix_error));
+        let other_error: eyre::Report = std::io::Error::from(std::io::ErrorKind::NotFound).into();
+        assert!(!is_permission_denied(&other_error));
     }
 
     #[cfg(unix)]

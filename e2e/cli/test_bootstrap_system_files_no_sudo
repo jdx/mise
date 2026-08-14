@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "skipping: managed system files require Linux"
+  exit 0
+fi
+
+managed_dir="$PWD/user-managed-system"
+managed_file="$managed_dir/example.conf"
+
+cat <<EOF >mise.toml
+[bootstrap.directories."$managed_dir"]
+mode = "0750"
+
+[bootstrap.files."$managed_file"]
+content = "first"
+mode = "0640"
+EOF
+
+# A completely user-writable plan succeeds even when elevation is forbidden.
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "first"
+assert "stat -c %a '$managed_dir'" "750"
+assert "stat -c %a '$managed_file'" "640"
+
+cat <<EOF >mise.toml
+[bootstrap.files."$managed_file"]
+content = "second"
+mode = "0600"
+EOF
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "second"
+assert "stat -c %a '$managed_file'" "600"
+
+cat <<EOF >mise.toml
+[bootstrap.files."$managed_file"]
+state = "absent"
+
+[bootstrap.directories."$managed_dir"]
+state = "absent"
+EOF
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_directory_not_exists "$managed_dir"
