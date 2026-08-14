@@ -9,7 +9,7 @@ use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::{CmdLineRunner, cmd};
 use crate::config::{Config, Settings};
-use crate::http::HTTP;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -17,13 +17,46 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, ToolVersionOption
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Context, Result};
 use indexmap::IndexMap;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct RustPlugin {
     ba: Arc<BackendArg>,
+}
+
+const RUST_NIGHTLY_MANIFEST_URL: &str =
+    "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+
+fn parse_nightly_manifest(manifest: &str) -> Result<String> {
+    let manifest: toml::Value =
+        toml::from_str(manifest).wrap_err("failed to parse the Rust nightly channel manifest")?;
+    let date = manifest
+        .get("date")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| eyre::eyre!("Rust nightly channel manifest is missing its date"))?;
+    date.parse::<jiff::civil::Date>()
+        .wrap_err_with(|| format!("invalid Rust nightly channel manifest date: {date}"))?;
+    Ok(format!("nightly-{date}"))
+}
+
+async fn current_nightly_version() -> Result<String> {
+    let manifest = HTTP_FETCH
+        .get_text_cached(RUST_NIGHTLY_MANIFEST_URL)
+        .await
+        .wrap_err("failed to fetch the Rust nightly channel manifest")?;
+    parse_nightly_manifest(&manifest)
+}
+
+fn is_dated_nightly(version: &str) -> bool {
+    version
+        .strip_prefix("nightly-")
+        .is_some_and(|date| date.parse::<jiff::civil::Date>().is_ok())
+}
+
+fn latest_installed_nightly(versions: impl DoubleEndedIterator<Item = String>) -> Option<String> {
+    versions.rev().find(|version| is_dated_nightly(version))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -328,7 +361,7 @@ impl Backend for RustPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
+        let mut versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
             .map(|r| {
@@ -341,26 +374,70 @@ impl Backend for RustPlugin {
                 }
             })
             .rev()
-            .chain(vec![
-                // Special channels - these are rolling releases that should always be updated
-                VersionInfo {
-                    version: "nightly".into(),
-                    rolling: true,
-                    ..Default::default()
-                },
-                VersionInfo {
-                    version: "beta".into(),
-                    rolling: true,
-                    ..Default::default()
-                },
-                VersionInfo {
-                    version: "stable".into(),
-                    rolling: true,
-                    ..Default::default()
-                },
-            ])
             .collect();
+        if let Ok(current_nightly) = current_nightly_version().await {
+            versions.push(VersionInfo {
+                version: current_nightly,
+                ..Default::default()
+            });
+        }
+        versions.extend([
+            // Special channels - these are rolling releases that should always be updated
+            VersionInfo {
+                version: "nightly".into(),
+                rolling: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "beta".into(),
+                rolling: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "stable".into(),
+                rolling: true,
+                ..Default::default()
+            },
+        ]);
         Ok(versions)
+    }
+
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "nightly"
+    }
+
+    fn latest_installed_channel_version(&self, channel: &str) -> Option<String> {
+        if !self.is_rolling_channel(channel) {
+            return None;
+        }
+        latest_installed_nightly(self.list_installed_versions().into_iter())
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        current_nightly_version().await.map(Some)
+    }
+
+    fn requires_concrete_channel_version(&self, version: &str) -> bool {
+        self.is_rolling_channel(version)
+    }
+
+    fn is_exact_version(&self, version: &str) -> bool {
+        is_dated_nightly(version)
+    }
+
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        Ok(is_dated_nightly(version).then(|| version.to_string()))
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -461,6 +538,34 @@ impl Backend for RustPlugin {
         bump: bool,
         opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
+        let requested = tv.request.version();
+        if requested == "nightly" {
+            if Settings::get().offline() || opts.offline {
+                let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
+                return Ok((oi.current.as_ref() != Some(&tv.version)).then_some(oi));
+            }
+            let latest = current_nightly_version().await?;
+            let oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
+            return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
+        }
+        if is_dated_nightly(&requested) {
+            let latest = if bump && !Settings::get().offline() && !opts.offline {
+                current_nightly_version().await?
+            } else {
+                tv.version.clone()
+            };
+            let mut oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
+            if bump && requested != latest {
+                oi.bump = Some(latest.clone());
+                oi.tool_request = ToolRequest::new_opts(
+                    tv.request.ba().clone(),
+                    &latest,
+                    tv.request.options(),
+                    tv.request.source().clone(),
+                )?;
+            }
+            return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
+        }
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
             let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
@@ -498,6 +603,10 @@ impl Backend for RustPlugin {
             }
             Ok(None)
         }
+    }
+
+    fn uses_custom_outdated_info(&self) -> bool {
+        true
     }
 }
 
@@ -1008,6 +1117,47 @@ mod tests {
         opts.opts
             .insert(key.to_string(), toml::Value::String(value.to_string()));
         opts
+    }
+
+    #[test]
+    fn parses_nightly_manifest_date() {
+        assert_eq!(
+            parse_nightly_manifest("manifest-version = \"2\"\ndate = \"2026-08-13\"\n").unwrap(),
+            "nightly-2026-08-13"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_invalid_nightly_manifest_date() {
+        assert!(parse_nightly_manifest("manifest-version = \"2\"\n").is_err());
+        assert!(parse_nightly_manifest("date = \"2026-13-40\"\n").is_err());
+        assert!(parse_nightly_manifest("not toml").is_err());
+    }
+
+    #[test]
+    fn recognizes_only_valid_dated_nightlies() {
+        assert!(is_dated_nightly("nightly-2026-08-13"));
+        assert!(!is_dated_nightly("nightly"));
+        assert!(!is_dated_nightly("nightly-2026-13-40"));
+        assert!(!is_dated_nightly("1.90.0"));
+    }
+
+    #[test]
+    fn selects_latest_installed_dated_nightly() {
+        let versions = vec![
+            "nightly-2026-08-11".to_string(),
+            "nightly".to_string(),
+            "1.90.0".to_string(),
+            "nightly-2026-08-13".to_string(),
+        ];
+        assert_eq!(
+            latest_installed_nightly(versions.into_iter()).as_deref(),
+            Some("nightly-2026-08-13")
+        );
+        assert_eq!(
+            latest_installed_nightly(["nightly".to_string()].into_iter()),
+            None
+        );
     }
 
     #[test]

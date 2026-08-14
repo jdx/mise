@@ -27,7 +27,6 @@ PROJECT = "b"
 
     AfterAll {
         Set-Location $script:OriginalDir
-        Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction Ignore
         if ($null -eq $script:OriginalTrusted) {
             Remove-Item Env:MISE_TRUSTED_CONFIG_PATHS -ErrorAction Ignore
         } else {

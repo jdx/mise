@@ -79,7 +79,7 @@ impl ToolsetBuilder {
                 .resolve_with_opts(config, &self.resolve_options)
                 .await
             {
-                if Error::is_argument_err(&err) {
+                if Error::is_argument_err(&err) || Error::is_required_channel_resolution_err(&err) {
                     return Err(err);
                 }
                 warn!("failed to resolve toolset: {err}");

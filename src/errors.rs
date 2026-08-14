@@ -15,6 +15,11 @@ pub enum Error {
         ts: ToolSource,
         source: Report,
     },
+    #[error("failed to resolve required rolling channel {backend}@{version}")]
+    RequiredChannelResolution {
+        backend: Box<BackendArg>,
+        version: String,
+    },
     #[error("[{0}] plugin not installed")]
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
@@ -155,6 +160,15 @@ impl Error {
                 )
             })
             .unwrap_or(false)
+    }
+
+    pub fn is_required_channel_resolution_err(err: &Report) -> bool {
+        err.chain().any(|source| {
+            matches!(
+                source.downcast_ref::<Error>(),
+                Some(Error::RequiredChannelResolution { .. })
+            )
+        })
     }
 }
 

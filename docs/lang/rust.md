@@ -41,6 +41,26 @@ mise use -g rust@beta
 cargo build
 ```
 
+Use the rolling nightly channel:
+
+```sh
+mise use -g rust@nightly
+cargo build
+```
+
+The configuration remains `nightly`, while mise resolves the current Rust channel manifest to a concrete
+`nightly-YYYY-MM-DD` toolchain for installation and lockfiles. This keeps the configured channel rolling while making
+locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to advance the locked nightly.
+
+To keep a specific nightly instead, configure its date explicitly:
+
+```sh
+mise use -g rust@nightly-2026-08-13
+```
+
+An explicitly dated nightly is an exact pin. Commands using `--bump`, such as `mise upgrade --bump rust`, can replace
+that pin with the current nightly.
+
 Use a specific version of rust:
 
 ```sh

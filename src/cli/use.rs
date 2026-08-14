@@ -152,6 +152,7 @@ impl Use {
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
+            resolve_rolling_channels: false,
             prefer_exact_version: pin,
             before_date: self.get_before_date()?,
             before_date_from_default: false,

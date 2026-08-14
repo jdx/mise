@@ -291,6 +291,7 @@ impl ToolVersion {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
+            resolve_rolling_channels: false,
             prefer_exact_version: false,
             before_date: base_opts.before_date,
             before_date_from_default: base_opts.before_date_from_default,
@@ -425,12 +426,6 @@ impl ToolVersion {
             backend.version_order(&request.options())?;
         }
 
-        if let Some(plugin) = backend.plugin()
-            && !plugin.is_installed()
-        {
-            return build(v);
-        }
-
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline =
@@ -440,6 +435,58 @@ impl ToolVersion {
             && !opts.before_date_from_default
             && !is_offline
             && !prefer_offline;
+        // Rolling release channels (e.g. zig's "master") are moving pointers that
+        // mise must resolve before the plugin-installed shortcut can preserve their
+        // symbolic name as an install identity.
+        if backend.is_rolling_channel(&v) {
+            if !opts.latest_versions
+                && !opts.resolve_rolling_channels
+                && !should_filter_installed_versions
+                && let Some(installed) = backend.latest_installed_channel_version(&v)
+            {
+                return build(installed);
+            }
+            if !is_offline {
+                match backend.resolve_channel_version(config, &v).await {
+                    Ok(Some(concrete)) => return build(concrete),
+                    Ok(None) => {}
+                    Err(source) if backend.requires_concrete_channel_version(&v) => {
+                        return Err(source.wrap_err(
+                            crate::errors::Error::RequiredChannelResolution {
+                                backend: Box::new(backend.ba().as_ref().clone()),
+                                version: v.clone(),
+                            },
+                        ));
+                    }
+                    Err(source) => {
+                        debug!(
+                            "{backend}: failed to resolve optional rolling channel {v}: {source:#}"
+                        );
+                    }
+                }
+            }
+            if opts.offline {
+                return build(v);
+            }
+            if is_offline && backend.requires_concrete_channel_version(&v) {
+                let err = crate::errors::Error::RequiredChannelResolution {
+                    backend: Box::new(backend.ba().as_ref().clone()),
+                    version: v.clone(),
+                };
+                return Err(eyre::Report::new(err).wrap_err(format!(
+                    "cannot resolve rolling channel {backend}@{v} while offline; create a lockfile or install a concrete channel version first"
+                )));
+            }
+            // Backends whose channel resolver is best-effort can still fall through
+            // to their legacy symbolic-channel resolution.
+        }
+
+        if let Some(plugin) = backend.plugin()
+            && !plugin.is_installed()
+        {
+            return build(v);
+        }
+
         if v == "latest" {
             if !opts.latest_versions
                 && !should_filter_installed_versions
@@ -477,36 +524,6 @@ impl ToolVersion {
                 return build(v);
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
-        }
-        // Rolling release channels (e.g. zig's "master") are moving pointers that
-        // mise must re-resolve to a concrete version -- like "latest" -- so they are
-        // not pinned forever. Mirror the "latest" fast paths: prefer an installed
-        // concrete version when not explicitly resolving latest (keeps hook-env /
-        // exec network-free), otherwise re-resolve the channel. (#10251)
-        if backend.is_rolling_channel(&v) {
-            // Reuse an installed build of THIS channel (e.g. a -dev nightly for
-            // zig@master), never an unrelated installed release, so we don't
-            // short-circuit zig@master to a stable version that happens to be
-            // installed.
-            if !opts.latest_versions
-                && !should_filter_installed_versions
-                && let Some(installed) = backend.latest_installed_channel_version(&v)
-            {
-                return build(installed);
-            }
-            if !is_offline
-                && let Some(concrete) = backend.resolve_channel_version(config, &v).await?
-            {
-                return build(concrete);
-            }
-            if opts.offline {
-                return build(v);
-            }
-            // Online but the channel did not resolve to a concrete version --
-            // either the index lacked the channel key, or the fetch failed
-            // transiently (resolve_channel_version maps both to Ok(None)). Fall
-            // through to normal resolution, which still matches the literal
-            // channel name in the backend's version list as before.
         }
         let installed_matches =
             (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
@@ -599,7 +616,7 @@ impl ToolVersion {
         // filtering. If the backend returns None, fall through to normal
         // prefix resolution so requests like "1.2.3" can still resolve to
         // "1.2.3.4" when that is the latest matching version.
-        if v.matches('.').count() >= 2
+        if (v.matches('.').count() >= 2 || backend.is_exact_version(&v))
             && let Some(v) = backend.resolve_exact_version(config, &v).await?
         {
             return build(v);
@@ -817,6 +834,9 @@ impl Hash for ToolVersion {
 pub struct ResolveOptions {
     pub latest_versions: bool,
     pub use_locked_version: bool,
+    /// Resolve rolling channels to their current concrete version even when
+    /// ordinary version requests may reuse installed versions.
+    pub resolve_rolling_channels: bool,
     /// Prefer an exact remote release over a fuzzy installed match.
     pub prefer_exact_version: bool,
     /// Only consider versions released before this timestamp
@@ -845,6 +865,7 @@ impl Default for ResolveOptions {
         Self {
             latest_versions: false,
             use_locked_version: true,
+            resolve_rolling_channels: false,
             prefer_exact_version: false,
             before_date: None,
             before_date_from_default: false,
@@ -945,6 +966,9 @@ impl Display for ResolveOptions {
         }
         if self.use_locked_version {
             opts.push("use_locked_version".to_string());
+        }
+        if self.resolve_rolling_channels {
+            opts.push("resolve_rolling_channels".to_string());
         }
         if self.prefer_exact_version {
             opts.push("prefer_exact_version".to_string());
