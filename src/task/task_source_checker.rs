@@ -303,6 +303,27 @@ fn parent_dir_pops_glob(pattern: &Path) -> bool {
     false
 }
 
+/// Render a relative path as a gitignore pattern body.
+///
+/// Gitignore patterns are always `/`-separated, but `Path` renders the platform
+/// separator, so on Windows a pattern rebuilt from a `PathBuf` arrives as
+/// `dist\**\*.map`. `globset` reads `\` as an escape rather than a separator,
+/// which silently turns the pattern into one that matches something else
+/// entirely — a negated entry then stops excluding and the matcher widens.
+/// Joining the components explicitly keeps the separator independent of the
+/// platform the path was built on.
+fn pattern_from_path(path: &Path) -> Option<String> {
+    let mut pattern = String::new();
+    for component in path.components() {
+        let part = component.as_os_str().to_str()?;
+        if !pattern.is_empty() {
+            pattern.push('/');
+        }
+        pattern.push_str(part);
+    }
+    Some(pattern)
+}
+
 /// Normalise `pattern` so it is always expressed relative to `match_root`.
 ///
 /// A relative body is resolved against `task_cwd` and an absolute one taken as
@@ -340,7 +361,7 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
     let Ok(rel) = body_abs.strip_prefix(match_root) else {
         return pattern.to_string();
     };
-    let Some(rel_str) = rel.to_str() else {
+    let Some(rel_str) = pattern_from_path(rel) else {
         return pattern.to_string();
     };
     if rel_str.is_empty() {
@@ -1246,6 +1267,22 @@ mod tests {
         let root = Path::new(".");
         let matcher = build_source_matcher(root, root, &sources);
         is_source(&matcher, Path::new(path))
+    }
+
+    /// Gitignore patterns are `/`-separated on every platform, but `Path`
+    /// renders `\` on Windows and `globset` reads that as an escape. A pattern
+    /// rebuilt from a `PathBuf` there stops meaning what it says: a negated
+    /// entry no longer excludes, so the matcher widens instead of narrowing.
+    /// This only bites on Windows, so it is asserted rather than left to the
+    /// platform-specific tests that happen to cover it.
+    #[test]
+    fn patterns_stay_slash_separated_on_every_platform() {
+        let joined = Path::new("dist").join("**").join("*.map");
+        assert_eq!(pattern_from_path(&joined).unwrap(), "dist/**/*.map");
+
+        let root = Path::new("/project");
+        let normalized = normalize_pattern(root, root, "!dist/**/*.map");
+        assert_eq!(normalized, "!dist/**/*.map");
     }
 
     #[test]
