@@ -967,7 +967,74 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
         ) == CSTR_EQUAL
     };
 
-    equal_ignoring_case && same_file::is_same_file(&candidate, root).unwrap_or(false)
+    if !equal_ignoring_case {
+        return false;
+    }
+
+    match same_file::is_same_file(&candidate, root) {
+        Ok(same) => same,
+        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, root),
+    }
+}
+
+#[cfg(windows)]
+fn dangling_paths_share_case_insensitive_parent(path: &Path, root: &Path) -> bool {
+    let Some((path_parent, path_missing_components)) = nearest_existing_directory(path) else {
+        return false;
+    };
+    let Some((root_parent, root_missing_components)) = nearest_existing_directory(root) else {
+        return false;
+    };
+
+    path_missing_components == root_missing_components
+        && same_file::is_same_file(&path_parent, &root_parent).unwrap_or(false)
+        && directory_is_case_sensitive(&path_parent) == Some(false)
+}
+
+#[cfg(windows)]
+fn nearest_existing_directory(path: &Path) -> Option<(PathBuf, usize)> {
+    let mut path = path;
+    let mut missing_components = 0;
+    loop {
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.is_dir() => {
+                return Some((path.to_path_buf(), missing_components));
+            }
+            Ok(_) => return None,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                path = path.parent()?;
+                missing_components += 1;
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+#[cfg(windows)]
+fn directory_is_case_sensitive(path: &Path) -> Option<bool> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FileCaseSensitiveInfo,
+        GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut case_info = FILE_CASE_SENSITIVE_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            directory.as_raw_handle(),
+            FileCaseSensitiveInfo,
+            std::ptr::from_mut(&mut case_info).cast(),
+            std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+        )
+    };
+    (inspected != 0).then_some(case_info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR != 0)
 }
 
 #[cfg(unix)]
@@ -2869,6 +2936,71 @@ mod tests {
             is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
             "Windows path containment should honor filesystem casing semantics"
         );
+
+        fs::remove_dir_all(&prefix).unwrap();
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "dangling Windows targets should retain case-insensitive containment"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_dangling_symlink_prefix_detection_honors_case_sensitive_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let case_sensitive_parent = dir.path().join("case-sensitive");
+        fs::create_dir(&case_sensitive_parent).unwrap();
+        if enable_directory_case_sensitivity(&case_sensitive_parent).is_err() {
+            return;
+        }
+        assert_eq!(
+            directory_is_case_sensitive(&case_sensitive_parent),
+            Some(true)
+        );
+
+        let prefix = case_sensitive_parent.join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+        fs::remove_dir_all(&prefix).unwrap();
+
+        assert!(
+            !is_symlink_target_within(&link, &case_sensitive_parent.join("PROVIDER")).unwrap(),
+            "case-sensitive directories must not equate differently-cased dangling paths"
+        );
+    }
+
+    #[cfg(windows)]
+    fn enable_directory_case_sensitivity(path: &Path) -> std::io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            FileCaseSensitiveInfo, SetFileInformationByHandle,
+        };
+        use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+        let directory = fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        let case_info = FILE_CASE_SENSITIVE_INFO {
+            Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR,
+        };
+        let updated = unsafe {
+            SetFileInformationByHandle(
+                directory.as_raw_handle(),
+                FileCaseSensitiveInfo,
+                std::ptr::from_ref(&case_info).cast(),
+                std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+            )
+        };
+        if updated == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 
     #[test]
