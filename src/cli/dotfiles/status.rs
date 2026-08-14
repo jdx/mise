@@ -55,7 +55,8 @@ impl DotfilesStatus {
             if self.json {
                 json_files.push(json!({
                     "target": req.target_raw,
-                    "source": req.source.display_user(),
+                    "source": (req.mode != system::files::FileMode::Content)
+                        .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "state": match &state {
                         FileState::Applied => "applied",
@@ -68,7 +69,11 @@ impl DotfilesStatus {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
-                    req.source.display_user(),
+                    if req.mode == system::files::FileMode::Content {
+                        "inline".to_string()
+                    } else {
+                        req.source.display_user()
+                    },
                     state_str,
                 ]);
             }
