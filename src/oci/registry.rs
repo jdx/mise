@@ -47,6 +47,15 @@ impl Reference {
         // v2 URL scheme the full `sha256:hex` string takes the place of the
         // tag for GET /v2/<name>/manifests/<reference>.
         let (name, tag) = if let Some((n, digest)) = s.split_once('@') {
+            // `name:tag@digest` is valid reference grammar: the digest is
+            // authoritative and the tag is informational (docker/containerd
+            // accept and ignore it). Strip it, or it stays inside the
+            // repository and corrupts the token scope
+            // (`repository:name:tag:pull`) and the manifests URL.
+            let n = match n.rsplit_once(':') {
+                Some((base, t)) if !t.contains('/') => base,
+                _ => n,
+            };
             (n, digest.to_string())
         } else {
             let (n, t) = match s.rsplit_once(':') {
@@ -1715,6 +1724,29 @@ mod tests {
         let r = Reference::parse(&format!("ubuntu@{digest}")).unwrap();
         assert_eq!(r.registry, "docker.io");
         assert_eq!(r.repository, "library/ubuntu");
+        assert_eq!(r.tag, digest);
+    }
+
+    #[test]
+    fn parses_tag_and_digest_reference() {
+        // Tag + digest: the digest wins, and the tag must NOT leak into the
+        // repository (it corrupted the auth scope and the manifests URL).
+        let digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let r =
+            Reference::parse(&format!("cgr.dev/chainguard/wolfi-base:latest@{digest}")).unwrap();
+        assert_eq!(r.registry, "cgr.dev");
+        assert_eq!(r.repository, "chainguard/wolfi-base");
+        assert_eq!(r.tag, digest);
+    }
+
+    #[test]
+    fn parses_digest_reference_with_registry_port() {
+        // The port's ':' must not be mistaken for a tag separator when
+        // stripping the tag half of a digest reference.
+        let digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let r = Reference::parse(&format!("localhost:5000/img@{digest}")).unwrap();
+        assert_eq!(r.registry, "localhost:5000");
+        assert_eq!(r.repository, "img");
         assert_eq!(r.tag, digest);
     }
 
