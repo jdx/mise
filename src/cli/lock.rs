@@ -180,16 +180,11 @@ impl Lock {
             filter_installed_versions_by_release_date: true,
             latest_versions: self.bump,
             use_locked_version: !self.bump,
+            // Lock moving channels to their current concrete value without making
+            // ordinary `latest` requests ignore an installed concrete version.
+            resolve_rolling_channels: true,
             ..Default::default()
         };
-        let has_configured_release_age = settings.minimum_release_age.is_some()
-            || config
-                .get_tool_request_set()
-                .await?
-                .tools
-                .values()
-                .flatten()
-                .any(|request| request.options().minimum_release_age().is_some());
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
             Some(config.monorepo_union().await?)
         } else {
@@ -210,12 +205,10 @@ impl Lock {
                 .await?;
             ts_owned = monorepo_ts;
             &ts_owned
-        } else if self.bump || before_date.is_some() || has_configured_release_age {
+        } else {
             let builder = ToolsetBuilder::new().with_resolve_options(lock_resolve_options.clone());
             ts_owned = builder.build(&config).await?;
             &ts_owned
-        } else {
-            config.get_toolset().await?
         };
 
         let scoped_config_paths = self.config_paths_in_lock_scope(&config, effective_config_files);
@@ -931,7 +924,12 @@ impl Lock {
             }
             // Skip unresolved symbolic versions (e.g., a lockfile poisoned with "latest"
             // as the version). Pass 2's fallback will resolve these to a concrete version.
-            if tv.version == "latest" {
+            if tv.version == "latest"
+                || backend
+                    .ba()
+                    .backend()
+                    .is_ok_and(|backend| backend.is_rolling_channel(&tv.version))
+            {
                 continue;
             }
             push_unique_lock_tool(&mut all_tools, (backend.ba().as_ref().clone(), tv));
@@ -958,6 +956,9 @@ impl Lock {
                                 for tv in &resolved_tv.versions {
                                     if request_matches(&tv.request, request)
                                         && tv.version != "latest"
+                                        && !ba.backend().is_ok_and(|backend| {
+                                            backend.is_rolling_channel(&tv.version)
+                                        })
                                     {
                                         matched_resolved = true;
                                         push_unique_lock_tool(
@@ -1060,9 +1061,14 @@ impl Lock {
             {
                 if let Some(Some(request)) = specified_versions.get(&ba.short) {
                     let version = request.version();
+                    let backend = crate::backend::get(&ba);
+                    let effective_version = match &backend {
+                        Some(backend) => config.resolve_alias(backend, &version).await?,
+                        None => version.clone(),
+                    };
                     let request = ToolRequest::new_opts(
                         Arc::new(ba.clone()),
-                        &version,
+                        &effective_version,
                         tv.request.options(),
                         ToolSource::Argument,
                     );
@@ -1070,13 +1076,20 @@ impl Lock {
                         .as_ref()
                         .ok()
                         .and_then(|request| request.resolve_options(context.resolve_options).ok());
+                    let is_rolling = backend
+                        .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
-                        && (self.bump || resolve_options.before_date.is_some())
+                        && (self.bump || resolve_options.before_date.is_some() || is_rolling)
                     {
                         resolve_options.use_locked_version = false;
                         resolve_options.latest_versions = true;
                         match request.resolve(config, &resolve_options).await {
                             Ok(resolved_tv) => tv = resolved_tv,
+                            Err(err) if is_rolling => {
+                                return Err(err.wrap_err(format!(
+                                    "failed to resolve specified rolling channel {request}"
+                                )));
+                            }
                             Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
                     } else if version == "latest" {
