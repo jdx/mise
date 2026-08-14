@@ -1,5 +1,123 @@
 # Changelog
 
+## [2026.8.6](https://github.com/jdx/mise/compare/v2026.8.5..v2026.8.6) - 2026-08-14
+
+### 🚀 Features
+
+- **(brew)** support structured cask symlinks by @jdx in [#11962](https://github.com/jdx/mise/pull/11962)
+- **(brew)** support generic cask artifacts by @jdx in [#11963](https://github.com/jdx/mise/pull/11963)
+- **(brew)** support cask copy and installer steps by @jdx in [#11964](https://github.com/jdx/mise/pull/11964)
+- **(config)** add config-root-scoped locked tool policy by @jdx in [#11940](https://github.com/jdx/mise/pull/11940)
+- **(config)** deprecate nixos all_compile default by @jdx in [#11956](https://github.com/jdx/mise/pull/11956)
+- **(deps)** support templates in provider configs by @Marukome0743 in [#11886](https://github.com/jdx/mise/pull/11886)
+- **(dotfiles)** add inline whole-file content by @jdx in [#11983](https://github.com/jdx/mise/pull/11983)
+- **(http)** resume interrupted downloads by @Marukome0743 in [#11866](https://github.com/jdx/mise/pull/11866)
+- **(task)** add --all to run picker by @jdx in [#11920](https://github.com/jdx/mise/pull/11920)
+- **(task)** add task.cache.audit_report for the full audit report by @stevenpollack in [#11997](https://github.com/jdx/mise/pull/11997)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** error instead of returning a wrong checksum on filename mismatch by @jakedgy in [#11973](https://github.com/jdx/mise/pull/11973)
+- **(bootstrap)** avoid sudo for user-writable files by @jdx in [#11984](https://github.com/jdx/mise/pull/11984)
+- **(bootstrap)** allow Windows bootstrap without system files by @jdx in [#12003](https://github.com/jdx/mise/pull/12003)
+- **(cli)** accept both pwsh and powershell in activate and completion by @JamBalaya56562 in [#11928](https://github.com/jdx/mise/pull/11928)
+- **(cli)** reject --global alongside a path instead of ignoring it by @JamBalaya56562 in [#11935](https://github.com/jdx/mise/pull/11935)
+- **(conda)** preserve cross-platform lock data by @jdx in [#11946](https://github.com/jdx/mise/pull/11946)
+- **(conda)** honor url replacements by @Marukome0743 in [#11930](https://github.com/jdx/mise/pull/11930)
+- **(config)** allow typing j/k to filter in mise edit's tool picker by @jakedgy in [#11969](https://github.com/jdx/mise/pull/11969)
+- **(config)** create the config directory before writing into it by @JamBalaya56562 in [#11934](https://github.com/jdx/mise/pull/11934)
+- **(config)** stop a conf.d drop-in from becoming the write target by @JamBalaya56562 in [#11917](https://github.com/jdx/mise/pull/11917)
+- **(dotfiles)** treat an unmanaged file as a conflict on Windows too by @JamBalaya56562 in [#11981](https://github.com/jdx/mise/pull/11981)
+- **(dotfiles)** give the test helper the field FileRequest now requires by @JamBalaya56562 in [#11989](https://github.com/jdx/mise/pull/11989)
+- **(exec)** allow symlinked resolv.conf in sandbox by @jdx in [#11958](https://github.com/jdx/mise/pull/11958)
+- **(generate)** honor absolute localized directories by @NgoQuocViet2001 in [#11975](https://github.com/jdx/mise/pull/11975)
+- **(hooks)** skip tool installation in preinstall tasks by @Marukome0743 in [#11927](https://github.com/jdx/mise/pull/11927)
+- **(http)** retry send failures that never produced a response (HTTP/2 REFUSED_STREAM) by @mariadeluna-tomtom in [#11961](https://github.com/jdx/mise/pull/11961)
+- **(http)** honor system install destinations by @Marukome0743 in [#11851](https://github.com/jdx/mise/pull/11851)
+- **(install)** write manifests atomically by @jdx in [#11957](https://github.com/jdx/mise/pull/11957)
+- **(lock)** include task-specific tools by @Marukome0743 in [#11976](https://github.com/jdx/mise/pull/11976)
+- **(npm)** render lifecycle logs through progress by @jdx in [#11939](https://github.com/jdx/mise/pull/11939)
+- **(oci)** strip the tag from name:tag@digest references by @fire-ant in [#11979](https://github.com/jdx/mise/pull/11979)
+- **(pipx)** discover wheel-only package versions by @jdx in [#11959](https://github.com/jdx/mise/pull/11959)
+- **(ruby)** support ruby-build cli options by @Marukome0743 in [#11918](https://github.com/jdx/mise/pull/11918)
+- **(rust)** resolve nightly to dated toolchains by @Marukome0743 in [#11980](https://github.com/jdx/mise/pull/11980)
+- **(semver)** stop calling a mangled value a semver range by @JamBalaya56562 in [#11949](https://github.com/jdx/mise/pull/11949)
+- **(shell)** resolve a shell named by a Windows path by @JamBalaya56562 in [#11950](https://github.com/jdx/mise/pull/11950)
+- **(shims)** stop treating a full-path argv[0] as a shim name by @JamBalaya56562 in [#11982](https://github.com/jdx/mise/pull/11982)
+- **(task)** normalize variadic usage env values by @Marukome0743 in [#11881](https://github.com/jdx/mise/pull/11881)
+- **(task)** resolve monorepo task names from subdirectories by @pikeas in [#11941](https://github.com/jdx/mise/pull/11941)
+- **(task)** mask archive modes in remote cache nodes by @stevenpollack in [#11877](https://github.com/jdx/mise/pull/11877)
+- **(task)** avoid zsh process substitution hangs by @Marukome0743 in [#11904](https://github.com/jdx/mise/pull/11904)
+- **(task)** bound buffered command output by @Marukome0743 in [#11922](https://github.com/jdx/mise/pull/11922)
+- **(task)** normalize task cwd for source freshness by @jdx in [#11987](https://github.com/jdx/mise/pull/11987)
+- **(tasks)** stop telling Windows users to run chmod +x by @JamBalaya56562 in [#11923](https://github.com/jdx/mise/pull/11923)
+- **(toolset)** accept a Windows tool path spelled with backslashes by @JamBalaya56562 in [#11937](https://github.com/jdx/mise/pull/11937)
+- **(toolset)** reject cmd.exe metacharacters in a Windows tool path by @JamBalaya56562 in [#11947](https://github.com/jdx/mise/pull/11947)
+- **(upgrade)** deprecate ambiguous -l shorthand by @jdx in [#11945](https://github.com/jdx/mise/pull/11945)
+
+### 🚜 Refactor
+
+- **(backend)** add request-aware version selection by @risu729 in [#11551](https://github.com/jdx/mise/pull/11551)
+
+### ⚡ Performance
+
+- **(cache)** accelerate artifact materialization by @jdx in [#11932](https://github.com/jdx/mise/pull/11932)
+
+### 🧪 Testing
+
+- **(aqua)** cover claude registry install by @jdx in [#11925](https://github.com/jdx/mise/pull/11925)
+- **(aqua)** install latest claude release by @jdx in [#11931](https://github.com/jdx/mise/pull/11931)
+- **(windows)** restore MISE_TRUSTED_CONFIG_PATHS after the trust suite by @JamBalaya56562 in [#11948](https://github.com/jdx/mise/pull/11948)
+- **(windows)** drop teardown Pester already does by @JamBalaya56562 in [#11985](https://github.com/jdx/mise/pull/11985)
+- **(windows)** make the extensionless task test exercise the file it names by @JamBalaya56562 in [#11924](https://github.com/jdx/mise/pull/11924)
+
+### 📦️ Dependency Updates
+
+- invalidate state when commands change by @Marukome0743 in [#11849](https://github.com/jdx/mise/pull/11849)
+- bump msrv to 1.93 by @jdx in [#11916](https://github.com/jdx/mise/pull/11916)
+- update aube to 1.39.0 by @jdx in [#11933](https://github.com/jdx/mise/pull/11933)
+- update rust crate aube-registry to v1.40.0 by @renovate[bot] in [#11972](https://github.com/jdx/mise/pull/11972)
+- honor source and output overrides by @Marukome0743 in [#11896](https://github.com/jdx/mise/pull/11896)
+
+### 📦 Registry
+
+- add native-sdk ([github:vercel-labs/native](https://github.com/vercel-labs/native)) by @phall1 in [#11942](https://github.com/jdx/mise/pull/11942)
+- add restate binaries ([github:restatedev/restate](https://github.com/restatedev/restate)) by @Bing-su in [#11953](https://github.com/jdx/mise/pull/11953)
+- add mailpit ([aqua:axllent/mailpit](https://github.com/axllent/mailpit)) by @joealden in [#11960](https://github.com/jdx/mise/pull/11960)
+
+### Chore
+
+- **(ci)** avoid rate-limit helper bootstrap by @Marukome0743 in [#11914](https://github.com/jdx/mise/pull/11914)
+- **(ci)** verify actual aws sdk msrv compatibility by @jdx in [#11926](https://github.com/jdx/mise/pull/11926)
+- **(ci)** install cmake for snapcraft builds by @jdx in [#11974](https://github.com/jdx/mise/pull/11974)
+- integrate hk agent workflow by @jdx in [#11936](https://github.com/jdx/mise/pull/11936)
+
+### New Contributors
+
+- @stevenpollack made their first contribution in [#11997](https://github.com/jdx/mise/pull/11997)
+- @mariadeluna-tomtom made their first contribution in [#11961](https://github.com/jdx/mise/pull/11961)
+- @pikeas made their first contribution in [#11941](https://github.com/jdx/mise/pull/11941)
+- @phall1 made their first contribution in [#11942](https://github.com/jdx/mise/pull/11942)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`OpenRouterLabs/ori-releases`](https://github.com/OpenRouterLabs/ori-releases)
+- [`mekedron/wolt-cli`](https://github.com/mekedron/wolt-cli)
+- [`mikevalstar/okq`](https://github.com/mikevalstar/okq)
+
+#### Updated Packages (8)
+
+- [`apstndb/execspansql`](https://github.com/apstndb/execspansql)
+- [`apstndb/spannerplanviz/rendertree`](https://github.com/apstndb/spannerplanviz)
+- [`concourse/concourse/fly`](https://github.com/concourse/concourse)
+- [`jgm/pandoc`](https://github.com/jgm/pandoc)
+- [`kunobi-ninja/kunobi`](https://github.com/kunobi-ninja/kunobi)
+- [`masutaka/github-nippou`](https://github.com/masutaka/github-nippou)
+- [`modem-dev/hunk`](https://github.com/modem-dev/hunk)
+- [`stefanprodan/timoni`](https://github.com/stefanprodan/timoni)
+
 ## [2026.8.5](https://github.com/jdx/mise/compare/v2026.8.4..v2026.8.5) - 2026-08-12
 
 ### 🚀 Features
