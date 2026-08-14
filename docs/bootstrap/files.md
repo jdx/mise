@@ -42,10 +42,14 @@ output.
 
 Mise compares content, type, mode, owner, and group before applying changes.
 Writes use a temporary file in the target directory followed by an atomic
-rename. If the current user cannot inspect a target or search one of its parent
-directories, mise compares its metadata and content in one privileged batch.
-Plans and file content are sent to narrowly scoped mise helpers over stdin, so
-file content does not appear in process arguments or logs.
+rename. Changes are attempted as the current user first. If the filesystem
+rejects an operation with a permission error, mise retries that operation and
+the remaining ordered changes in one privileged batch. User-writable targets
+therefore do not require `sudo`. If the current user cannot inspect a target or
+search one of its parent directories, mise compares its metadata and content in
+one privileged batch. Plans and file content are sent to narrowly scoped mise
+helpers over stdin, so file content does not appear in process arguments or
+logs.
 
 ## Removing resources
 

@@ -1377,11 +1377,23 @@ impl Run {
             && !file::is_executable(path)
         {
             let dp = crate::file::display_path(path);
+            // Only offer the fix where accepting it can change the answer. `make_executable` is a
+            // no-op on Windows, so the prompt would take a "yes" and then fail anyway; the same
+            // reasoning already keeps `make_task_executable` from running there.
+            if cfg!(windows) {
+                bail!(
+                    "`{dp}` is not executable. {}",
+                    file::make_executable_hint(path)
+                )
+            }
             let msg = format!("Script `{dp}` is not executable. Make it executable?");
             if ui::confirm(msg)? {
                 file::make_executable(path)?;
             } else {
-                bail!("`{dp}` is not executable")
+                bail!(
+                    "`{dp}` is not executable. {}",
+                    file::make_executable_hint(path)
+                )
             }
         }
         Ok(())

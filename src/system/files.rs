@@ -47,6 +47,8 @@ pub enum FileMode {
     /// render the source through the mise template engine and write the
     /// result (permissions are taken from the source file)
     Template,
+    /// write literal content declared directly in mise.toml
+    Content,
 }
 
 impl FileMode {
@@ -66,6 +68,7 @@ impl FileMode {
             Self::SymlinkEach => "symlink-each",
             Self::Copy => "copy",
             Self::Template => "template",
+            Self::Content => "content",
         }
     }
 }
@@ -84,6 +87,8 @@ pub enum FileTomlEntry {
         #[serde(default)]
         source: Option<String>,
         #[serde(default)]
+        content: Option<String>,
+        #[serde(default)]
         mode: Option<String>,
         #[serde(default)]
         exclude: Option<Vec<String>>,
@@ -100,6 +105,8 @@ pub struct FileRequest {
     /// absolute source path (relative sources resolve against the config
     /// file's directory; omitted sources resolve under dotfiles.root)
     pub source: PathBuf,
+    /// literal whole-file content; present only for inline content entries
+    pub content: Option<String>,
     pub mode: FileMode,
     /// glob patterns, matched against source-relative paths, for files a
     /// directory-walking mode should skip (see [`is_excluded`])
@@ -177,7 +184,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
             if table.is_empty()
                 || table.contains_key("mode")
                 || table.contains_key("exclude")
-                || (table.contains_key("source")
+                || ((table.contains_key("source") || table.contains_key("content"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -203,14 +210,27 @@ fn merge_file_entry(
     base: &Path,
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
-    let (source, mode, exclude) = match entry {
-        FileTomlEntry::Source(source) => (Some(source), None, None),
+    let (source, content, mode, exclude) = match entry {
+        FileTomlEntry::Source(source) => (Some(source), None, None, None),
         FileTomlEntry::Table {
             source,
+            content,
             mode,
             exclude,
-        } => (source, mode, exclude),
+        } => (source, content, mode, exclude),
     };
+    if source.is_some() && content.is_some() {
+        warn!(
+            "[dotfiles].\"{target_raw}\": source and content are mutually exclusive, ignoring entry"
+        );
+        return;
+    }
+    if content.is_some() && (mode.is_some() || exclude.is_some()) {
+        warn!(
+            "[dotfiles].\"{target_raw}\": inline content does not support mode or exclude, ignoring entry"
+        );
+        return;
+    }
     // compile once here so a typo is reported against the entry that wrote
     // it, not on every walk of the source
     let exclude = exclude
@@ -238,6 +258,21 @@ fn merge_file_entry(
     if target.is_relative() {
         warn!(
             "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+        );
+        return;
+    }
+    if let Some(content) = content {
+        merged.insert(
+            target.clone(),
+            FileRequest {
+                target_raw,
+                target,
+                source: PathBuf::new(),
+                content: Some(content),
+                mode: FileMode::Content,
+                exclude: vec![],
+                base: base.to_path_buf(),
+            },
         );
         return;
     }
@@ -301,6 +336,9 @@ pub fn implied_source(target: &Path) -> Result<PathBuf> {
 }
 
 pub fn source_is_implied(req: &FileRequest) -> bool {
+    if req.mode == FileMode::Content {
+        return false;
+    }
     match implied_source(&req.target) {
         Ok(source) => source == req.source,
         Err(_) => false,
@@ -367,6 +405,7 @@ fn expand_request(
             target_raw,
             target,
             source,
+            content: None,
             mode,
             exclude,
             base,
@@ -409,6 +448,7 @@ fn expand_request(
             target_raw,
             target,
             source: matches[0].clone(),
+            content: None,
             mode,
             exclude,
             base,
@@ -436,6 +476,7 @@ fn expand_request(
                 target_raw: target_path.display_user().to_string(),
                 target: target_path,
                 source: matched_source,
+                content: None,
                 mode,
                 exclude: exclude.clone(),
                 base: base.clone(),
@@ -576,7 +617,7 @@ where
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
 pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
-    if !req.source.exists() {
+    if req.mode != FileMode::Content && !req.source.exists() {
         return Ok(FileState::SourceMissing);
     }
     // render at most once per call — templates may use exec()
@@ -596,6 +637,10 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => check_copy_dir(req),
         FileMode::Copy => check_copy(&req.source, &req.target),
+        FileMode::Content => check_content(
+            &req.target,
+            req.content.as_deref().expect("inline content").as_bytes(),
+        ),
         FileMode::Template => {
             let state = check_content(
                 &req.target,
@@ -1094,7 +1139,7 @@ pub fn plan_apply<'a>(
     for req in requests {
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
-        if !req.source.exists() {
+        if req.mode != FileMode::Content && !req.source.exists() {
             missing_sources.push(format!(
                 "  [dotfiles].\"{}\": {}",
                 req.target_raw,
@@ -1402,6 +1447,16 @@ fn plan_unapply_one<'a>(
             }
             plan_single_file(req, opts, &mut paths)?;
         }
+        FileMode::Content => {
+            if !req.target.exists() && !req.target.is_symlink() {
+                return Ok(None);
+            }
+            if opts.force {
+                paths.insert(req.target.clone(), ());
+            } else {
+                plan_inline_file(req, &mut paths)?;
+            }
+        }
         FileMode::Symlink => {
             plan_single_file(req, opts, &mut paths)?;
         }
@@ -1440,6 +1495,18 @@ fn plan_unapply_one<'a>(
             clear_symlink_each_state,
         }))
     }
+}
+
+fn plan_inline_file(req: &FileRequest, paths: &mut IndexMap<PathBuf, ()>) -> Result<()> {
+    if !req.target.is_symlink()
+        && req.target.is_file()
+        && file::read(&req.target)? == req.content.as_deref().expect("inline content").as_bytes()
+    {
+        paths.insert(req.target.clone(), ());
+    } else if req.target.exists() || req.target.is_symlink() {
+        bail!("target differs from the managed content, use --force to remove it");
+    }
+    Ok(())
 }
 
 fn plan_single_file(
@@ -1639,6 +1706,11 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 out.push(req.target.clone());
             }
         }
+        FileMode::Content => {
+            if req.target.is_dir() {
+                out.push(req.target.clone());
+            }
+        }
     }
     Ok(out)
 }
@@ -1662,6 +1734,7 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
+        FileMode::Content => format!("write inline content to {tgt}"),
     })
 }
 
@@ -1676,6 +1749,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         ),
         FileMode::Copy => format!("copied {src} to {tgt}"),
         FileMode::Template => format!("rendered {src} to {tgt}"),
+        FileMode::Content => format!("wrote inline content to {tgt}"),
     })
 }
 
@@ -1734,6 +1808,17 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 req.source.display_user(),
                 req.target.display_user()
             );
+        }
+        FileMode::Content => {
+            let desired = req.content.as_deref().expect("inline content").as_bytes();
+            let current = if req.target.is_file() {
+                file::read(&req.target)?
+            } else {
+                vec![]
+            };
+            if current != desired {
+                miseprintln!("  inline content differs: {}", req.target.display_user());
+            }
         }
     }
     Ok(())
@@ -1805,6 +1890,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             file::write(&req.target, rendered)?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+        }
+        FileMode::Content => {
+            remove_existing(&req.target)?;
+            file::write(&req.target, req.content.as_deref().expect("inline content"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&req.target, std::fs::Permissions::from_mode(0o600))?;
+            }
         }
     }
     Ok(())

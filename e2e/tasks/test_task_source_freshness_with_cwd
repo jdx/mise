@@ -38,3 +38,25 @@ pushd b
 assert "mise run -q cwd_task" "running b 2"
 assert_empty "mise run -q cwd_task"
 popd
+
+# A static task dir may use the conventional ./ prefix. Relative sources and
+# outputs should still be matched against the same effective directory.
+cat <<EOF >>mise.toml
+
+[tasks.relative_dir]
+run = "cp input.txt output.txt && cat output.txt"
+dir = "./relative"
+sources = ["input.txt"]
+outputs = ["output.txt"]
+EOF
+
+mkdir relative
+echo "relative 1" >relative/input.txt
+
+assert "mise run -q relative_dir" "relative 1"
+assert_empty "mise run -q relative_dir"
+
+echo "relative 2" >relative/input.txt
+
+assert "mise run -q relative_dir" "relative 2"
+assert_empty "mise run -q relative_dir"

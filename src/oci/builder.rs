@@ -859,7 +859,7 @@ fn build_dotfiles_layer(
     let mut entries = DotfilesLayerEntries::default();
 
     for req in requests {
-        if !req.source.exists() {
+        if req.mode != FileMode::Content && !req.source.exists() {
             bail!(
                 "[dotfiles].\"{}\": source does not exist: {}",
                 req.target_raw,
@@ -905,6 +905,17 @@ fn build_dotfiles_layer(
                     oci_target_path(req)?,
                     rendered.into_bytes(),
                     source_mode(&req.source)?,
+                )?;
+            }
+            FileMode::Content => {
+                entries.add_file(
+                    oci_target_path(req)?,
+                    req.content
+                        .as_deref()
+                        .expect("inline content")
+                        .as_bytes()
+                        .to_vec(),
+                    0o600,
                 )?;
             }
         }

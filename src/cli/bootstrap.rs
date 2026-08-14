@@ -1771,7 +1771,9 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_mise_config_target(&file.target) || !file.source.is_file() {
+        if !is_mise_config_target(&file.target)
+            || (file.mode != system::files::FileMode::Content && !file.source.is_file())
+        {
             continue;
         }
         if file.mode == FileMode::Template {
@@ -1784,7 +1786,12 @@ fn config_files_after_dotfiles_dry_run(
             );
             continue;
         }
-        match crate::file::read_to_string(&file.source) {
+        let contents = if file.mode == system::files::FileMode::Content {
+            Ok(file.content.clone().expect("inline content"))
+        } else {
+            crate::file::read_to_string(&file.source)
+        };
+        match contents {
             Ok(body) => match parse_mise_config_body(&file.target, &body) {
                 Ok(cf) => {
                     bodies.insert(file.target.clone(), body);
@@ -2882,13 +2889,18 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                format!("{} {}", req.mode.name(), req.source.display_user()),
+                if req.mode == system::files::FileMode::Content {
+                    "content inline".to_string()
+                } else {
+                    format!("{} {}", req.mode.name(), req.source.display_user())
+                },
                 state_str,
                 missing,
             );
             json_files.push(json!({
                 "target": req.target_raw,
-                "source": req.source.display_user(),
+                "source": (req.mode != system::files::FileMode::Content)
+                    .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
             }));
