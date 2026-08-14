@@ -32,6 +32,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libgl1 \
     libglib2.0-0 \
+    libgtk-3-0t64 \
     libicu-dev \
     libncurses-dev \
     libreadline-dev \
