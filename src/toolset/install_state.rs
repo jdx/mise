@@ -413,7 +413,17 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
     }
 
-    for (short, pt) in init_plugins().await?.iter() {
+    let plugins = init_plugins().await?;
+    merge_plugin_tools(&mut tools, plugins.as_ref());
+    let tools = Arc::new(tools);
+    *INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed") = Some(tools.clone());
+    Ok(tools)
+}
+
+fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugins) {
+    for (short, pt) in plugins {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
@@ -430,13 +440,10 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 opts: BTreeMap::new(),
                 installs_path: None,
             });
-        tool.full = Some(full);
+        // Installed metadata describes the versions already on disk. Plugin
+        // discovery should only supply an identity when no metadata exists.
+        tool.full.get_or_insert(full);
     }
-    let tools = Arc::new(tools);
-    *INSTALL_STATE_TOOLS
-        .lock()
-        .expect("INSTALL_STATE_TOOLS lock failed") = Some(tools.clone());
-    Ok(tools)
 }
 
 pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
@@ -695,8 +702,10 @@ pub fn reset() {
 #[cfg(test)]
 mod tests {
     use super::{
-        lock_tool_version, normalize_version_for_sort, read_tool_manifest_from, tool_version_lock,
+        InstallStateTool, lock_tool_version, merge_plugin_tools, normalize_version_for_sort,
+        read_tool_manifest_from, tool_version_lock,
     };
+    use crate::plugins::PluginType;
     use itertools::Itertools;
     use std::collections::BTreeMap;
     use std::sync::mpsc;
@@ -710,6 +719,40 @@ mod tests {
         std::fs::write(&path, "").unwrap();
 
         assert!(read_tool_manifest_from(&path).is_none());
+    }
+
+    #[test]
+    fn plugin_discovery_preserves_installed_backend_metadata() {
+        let mut tools = BTreeMap::from([(
+            "babashka".to_string(),
+            InstallStateTool {
+                short: "babashka".to_string(),
+                full: Some("github:babashka/babashka".to_string()),
+                versions: vec!["1.13.219".to_string()],
+                explicit_backend: false,
+                opts: BTreeMap::new(),
+                installs_path: None,
+            },
+        )]);
+        let plugins = BTreeMap::from([("babashka".to_string(), PluginType::Asdf)]);
+
+        merge_plugin_tools(&mut tools, &plugins);
+
+        assert_eq!(
+            tools["babashka"].full.as_deref(),
+            Some("github:babashka/babashka")
+        );
+    }
+
+    #[test]
+    fn plugin_discovery_adds_missing_tool_metadata() {
+        let mut tools = BTreeMap::new();
+        let plugins = BTreeMap::from([("babashka".to_string(), PluginType::Asdf)]);
+
+        merge_plugin_tools(&mut tools, &plugins);
+
+        assert_eq!(tools["babashka"].full.as_deref(), Some("asdf:babashka"));
+        assert!(tools["babashka"].explicit_backend);
     }
 
     #[test]
