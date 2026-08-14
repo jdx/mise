@@ -1363,8 +1363,8 @@ fn write_file(
     // particular, a metadata permission error must leave the old path intact.
     let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
     temporary.write_all(content)?;
-    temporary.as_file_mut().sync_all()?;
     set_metadata(temporary.path(), owner, group, mode)?;
+    temporary.as_file_mut().sync_all()?;
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
