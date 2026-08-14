@@ -1448,11 +1448,20 @@ impl Task {
         unparsed.sort();
 
         if !unparsed.is_empty() {
-            return Err(eyre::eyre!(
-                "unknown field(s) {:?} in task file header: {}",
+            // A warning rather than an error, matching how `mise.toml` treats a key it does not
+            // recognise (`MiseToml::from_str` reports one through `serde_ignored` and carries on).
+            // A file task has no reason to be stricter than the config file, and it is in a worse
+            // position to be: this parse runs inside the loop that loads *every* task in the
+            // project, so returning here made one unrecognised key in one file take all of them
+            // down -- `mise run <some other task>` failed too.
+            //
+            // Only genuinely unknown key names reach this point. `TrackingTomlParser` records a key
+            // as parsed when it is looked up, so a known key holding the wrong type is not here.
+            warn!(
+                "unknown field(s) {:?} in task file header, ignoring: {}",
                 unparsed,
                 display_path(path)
-            ));
+            );
         }
 
         #[cfg(test)]
@@ -4359,6 +4368,43 @@ echo "hello world"
                 .to_string()
                 .contains("failed to parse task header TOML")
         );
+    }
+
+    /// An unrecognised header key is a warning, not an error.
+    ///
+    /// This parse runs for every task file in the project, so failing here took down tasks in
+    /// other files — including TOML ones — over a single typo. `mise.toml` already treats an
+    /// unknown key as a warning; a file task should not be stricter.
+    ///
+    /// `run_windows` is the real case that turned this up: it is a TOML-task key, so a file task
+    /// header does not know it.
+    #[tokio::test]
+    async fn test_from_path_unknown_header_field_is_ignored() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE description="still parsed"
+#MISE run_windows="echo nope"
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+
+        // The known key beside it still takes effect: what is dropped is the unknown key alone,
+        // not the whole header and not the task.
+        assert_eq!(task.description, "still parsed");
+        assert!(task.run_windows.is_empty());
     }
 
     #[test]
