@@ -82,8 +82,8 @@ assert_contains_text "$output" "task alpha cache audit omitted 6 additional path
 assert_contains_text "$output" "task beta cache audit omitted 6 additional paths; full report written to audit.jsonl"
 assert_not_contains_text "$output" "cache audit detected undeclared write:"
 
-# jq -s parses every line, so this fails if any record is malformed or if the
-# two tasks interleaved their blocks while running concurrently.
+# jq -s parses every line, so this fails on a torn record. It does not detect
+# whole records from the two tasks alternating; the contiguity check below does.
 assert "jq -s length audit.jsonl" "52"
 assert "jq -sr '[.[].task] | unique | join(\",\")' audit.jsonl" "alpha,beta"
 assert "jq -sr '[.[].kind] | unique | join(\",\")' audit.jsonl" "read,write"
@@ -92,6 +92,18 @@ assert "jq -s '[.[] | select(.task == \"beta\")] | length' audit.jsonl" "26"
 assert "jq -sr '[.[] | select(.kind == \"write\")] | sort_by(.task) | map(.task + \":\" + .path) | join(\",\")' audit.jsonl" "alpha:generated.txt,beta:generated.txt"
 assert_contains "cat audit.jsonl" '{"task":"alpha","kind":"read","path":"undeclared1.txt"}'
 assert_contains "cat audit.jsonl" '{"task":"beta","kind":"read","path":"undeclared9.txt"}'
+
+# Each task writes its records as one block under a lock, so a task's records
+# must be contiguous. uniq collapses consecutive runs, leaving one line per
+# block: two blocks for two tasks, however the two happened to be ordered.
+assert "jq -r .task audit.jsonl | uniq | wc -l | tr -d ' '" "2"
+
+# That check is only meaningful if it can fail, so run it against a file that is
+# interleaved on purpose. Alternating every record leaves uniq nothing to
+# collapse, so a broken lock would report 52 blocks rather than 2.
+paste -d '\n' <(jq -c 'select(.task == "alpha")' audit.jsonl) <(jq -c 'select(.task == "beta")' audit.jsonl) >interleaved.jsonl
+assert "jq -s length interleaved.jsonl" "52"
+assert "jq -r .task interleaved.jsonl | uniq | wc -l | tr -d ' '" "52"
 
 # The first audited task of an invocation truncates, so a second run replaces the
 # report rather than appending to it.
