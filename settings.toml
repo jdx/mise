@@ -406,8 +406,8 @@ This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
 config file discovery has already occurred by the time `mise.toml` is read.
 
-Paths are separated by the OS path separator when using the environment variable
-(`:` on Unix, `;` on Windows).
+Paths are separated by the OS path separator when using the environment variable,
+`mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).
 """
 env = "MISE_CEILING_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -1333,8 +1333,8 @@ This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
 config file discovery has already occurred by the time `mise.toml` is read.
 
-Paths are separated by the OS path separator when using the environment variable
-(`:` on Unix, `;` on Windows).
+Paths are separated by the OS path separator when using the environment variable,
+`mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -2494,8 +2494,8 @@ This is useful for shared environments like Docker containers or bastion hosts w
 base set of tools is pre-installed in a shared location, and users can install additional
 tools in their own directory.
 
-Paths are separated by the OS path separator when using the environment variable
-(`:` on Unix, `;` on Windows).
+Paths are separated by the OS path separator when using the environment variable,
+`mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).
 """
 env = "MISE_SHARED_INSTALL_DIRS"
 optional = true
@@ -2919,8 +2919,8 @@ description = "Paths that mise will not look for tasks in."
 docs = """
 Paths that mise will not look for tasks in.
 
-Paths are separated by the OS path separator when using the environment variable
-(`:` on Unix, `;` on Windows).
+Paths are separated by the OS path separator when using the environment variable,
+`mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).
 """
 env = "MISE_TASK_DISABLE_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -3220,8 +3220,8 @@ default = []
 description = """This is a list of config paths that mise will automatically mark as \
 trusted. Any config files under these paths will be trusted without prompting. \
 Set to `["/"]` to trust all config files, effectively disabling the trust mechanism. \
-Paths are separated by the OS path separator when using the environment variable \
-(`:` on Unix, `;` on Windows)."""
+Paths are separated by the OS path separator when using the environment variable, \
+`mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows)."""
 env = "MISE_TRUSTED_CONFIG_PATHS"
 global_only = true
 parse_env = "list_by_os_path_separator"
