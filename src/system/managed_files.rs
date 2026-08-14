@@ -1552,6 +1552,58 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn permission_failure_preserves_remaining_action_order() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Root can write through the mode restriction used to induce EACCES.
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let blocked_parent = temp.path().join("blocked");
+        let blocked = blocked_parent.join("second");
+        let remaining = temp.path().join("third");
+        fs::create_dir(&blocked_parent).unwrap();
+        fs::set_permissions(&blocked_parent, fs::Permissions::from_mode(0o555)).unwrap();
+
+        let write = |path: PathBuf| PrivilegedAction::WriteFile {
+            path,
+            content: "content".to_string(),
+            owner: None,
+            group: None,
+            mode: 0o644,
+            replace: false,
+        };
+        let pending = PrivilegedPlan {
+            actions: vec![
+                write(first.clone()),
+                write(blocked.clone()),
+                write(remaining.clone()),
+            ],
+        }
+        .apply_until_elevation_required()
+        .unwrap();
+
+        // Let TempDir clean up even if an assertion below fails.
+        fs::set_permissions(&blocked_parent, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(first.is_file());
+        assert!(!blocked.exists());
+        assert!(!remaining.exists());
+        assert_eq!(pending.actions.len(), 2);
+        assert!(matches!(
+            &pending.actions[0],
+            PrivilegedAction::WriteFile { path, .. } if path == &blocked
+        ));
+        assert!(matches!(
+            &pending.actions[1],
+            PrivilegedAction::WriteFile { path, .. } if path == &remaining
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn atomically_writes_and_updates_files() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("config");
