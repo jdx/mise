@@ -54,11 +54,11 @@ cache = { enabled = true, audit = true }
 EOF
 
 for task in alpha beta; do
-	mkdir -p "$task"
-	printf 'declared\n' >"$task/declared.txt"
-	for i in $(seq 1 25); do
-		printf 'undeclared\n' >"$task/undeclared$i.txt"
-	done
+  mkdir -p "$task"
+  printf 'declared\n' >"$task/declared.txt"
+  for i in $(seq 1 25); do
+    printf 'undeclared\n' >"$task/undeclared$i.txt"
+  done
 done
 
 export PATH="$PWD/bin:$PATH"
