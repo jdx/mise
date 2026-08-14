@@ -584,12 +584,17 @@ impl ManagedDirectoryRequest {
 }
 
 impl PrivilegedPlan {
-    /// Apply actions as the current user until the filesystem says elevation
-    /// is required. The failed action and everything after it stay ordered in
-    /// the returned plan for one privileged retry.
+    /// Apply actions as the current user until elevation is required. Actions
+    /// that could mutate state before reporting a permission error are sent to
+    /// the privileged helper without first attempting them.
     fn apply_until_elevation_required(self) -> Result<Self> {
         let mut actions = self.actions.into_iter();
         while let Some(action) = actions.next() {
+            if action.requires_preemptive_elevation()? {
+                return Ok(Self {
+                    actions: std::iter::once(action).chain(actions).collect(),
+                });
+            }
             match action.apply() {
                 Ok(()) => {}
                 Err(error) if is_permission_denied(&error) => {
@@ -795,6 +800,37 @@ pub fn validate_principals(
 }
 
 impl PrivilegedAction {
+    fn requires_preemptive_elevation(&self) -> Result<bool> {
+        match self {
+            // Ownership changes normally require privilege. Avoid creating or
+            // replacing a path before discovering that at set_metadata().
+            Self::WriteFile {
+                path,
+                owner,
+                group,
+                replace,
+                ..
+            } => Ok(owner.is_some()
+                || group.is_some()
+                || (*replace && replacement_is_not(path, ManagedPathKind::File)?)),
+            Self::CreateDirectory {
+                path,
+                owner,
+                group,
+                replace,
+                ..
+            } => Ok(owner.is_some()
+                || group.is_some()
+                || (*replace && replacement_is_not(path, ManagedPathKind::Directory)?)),
+            // Recursive removal can delete writable descendants before an
+            // inaccessible one fails. Run it once with the required access.
+            Self::RemoveDirectory {
+                recursive: true, ..
+            } => Ok(true),
+            Self::RemoveFile { .. } | Self::RemoveDirectory { .. } => Ok(false),
+        }
+    }
+
     fn description(&self) -> String {
         match self {
             Self::WriteFile { path, .. } => format!("write file {}", path.display()),
@@ -806,6 +842,15 @@ impl PrivilegedAction {
                 if *recursive { " recursively" } else { "" }
             ),
         }
+    }
+}
+
+fn replacement_is_not(path: &Path, expected: ManagedPathKind) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(ManagedPathKind::from_metadata(&metadata) != expected),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => Ok(true),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -1106,14 +1151,19 @@ fn inspect_path(request: PrivilegedPathInspection) -> Result<PathInspection> {
 
 fn is_permission_denied(error: &eyre::Report) -> bool {
     error.chain().any(|error| {
-        error
+        let io_permission_denied = error
             .downcast_ref::<std::io::Error>()
-            .is_some_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
-            || error
+            .is_some_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied);
+        #[cfg(unix)]
+        let platform_permission_denied =
+            error
                 .downcast_ref::<nix::errno::Errno>()
                 .is_some_and(|error| {
                     matches!(error, nix::errno::Errno::EACCES | nix::errno::Errno::EPERM)
-                })
+                });
+        #[cfg(not(unix))]
+        let platform_permission_denied = false;
+        io_permission_denied || platform_permission_denied
     })
 }
 
@@ -1298,9 +1348,23 @@ fn write_file(
     let parent = path
         .parent()
         .ok_or_else(|| eyre!("managed file has no parent: {}", path.display()))?;
-    if !parent.is_dir() {
-        bail!("managed file parent does not exist: {}", parent.display());
+    match fs::metadata(parent) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => bail!(
+            "managed file parent is not a directory: {}",
+            parent.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            bail!("managed file parent does not exist: {}", parent.display())
+        }
+        Err(error) => return Err(error.into()),
     }
+    // Prepare the complete replacement before mutating the destination. In
+    // particular, a metadata permission error must leave the old path intact.
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    temporary.write_all(content)?;
+    temporary.as_file_mut().sync_all()?;
+    set_metadata(temporary.path(), owner, group, mode)?;
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
@@ -1318,10 +1382,6 @@ fn write_file(
         }
         Ok(_) => fs::remove_file(path)?,
     }
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    temporary.write_all(content)?;
-    temporary.as_file_mut().sync_all()?;
-    set_metadata(temporary.path(), owner, group, mode)?;
     temporary
         .persist(path)
         .map_err(|error| error.error)
@@ -1429,10 +1489,65 @@ mod tests {
             .unwrap_err();
         assert!(is_permission_denied(&io_error));
 
-        let nix_error: eyre::Report = nix::errno::Errno::EPERM.into();
-        assert!(is_permission_denied(&nix_error));
+        #[cfg(unix)]
+        {
+            let nix_error: eyre::Report = nix::errno::Errno::EPERM.into();
+            assert!(is_permission_denied(&nix_error));
+        }
         let other_error: eyre::Report = std::io::Error::from(std::io::ErrorKind::NotFound).into();
         assert!(!is_permission_denied(&other_error));
+    }
+
+    #[test]
+    fn elevates_before_destructive_composite_actions() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("file");
+        fs::write(&file_path, "content").unwrap();
+        let directory_path = temp.path().join("directory");
+        fs::create_dir(&directory_path).unwrap();
+
+        let replace_file_with_directory = PrivilegedAction::CreateDirectory {
+            path: file_path,
+            owner: None,
+            group: None,
+            mode: 0o755,
+            replace: true,
+        };
+        assert!(
+            replace_file_with_directory
+                .requires_preemptive_elevation()
+                .unwrap()
+        );
+
+        let replace_directory_with_file = PrivilegedAction::WriteFile {
+            path: directory_path,
+            content: "content".to_string(),
+            owner: None,
+            group: None,
+            mode: 0o644,
+            replace: true,
+        };
+        assert!(
+            replace_directory_with_file
+                .requires_preemptive_elevation()
+                .unwrap()
+        );
+
+        let recursive_removal = PrivilegedAction::RemoveDirectory {
+            path: temp.path().join("tree"),
+            recursive: true,
+        };
+        assert!(recursive_removal.requires_preemptive_elevation().unwrap());
+
+        let ordinary_write = PrivilegedAction::WriteFile {
+            path: temp.path().join("ordinary"),
+            content: "content".to_string(),
+            owner: None,
+            group: None,
+            mode: 0o644,
+            replace: false,
+        };
+        assert!(!ordinary_write.requires_preemptive_elevation().unwrap());
     }
 
     #[cfg(unix)]
