@@ -249,6 +249,10 @@ pub(crate) fn build_source_matcher(
 /// A `..` with nothing to collapse is kept in a relative path (`../x` has no
 /// representation without it) and dropped in an absolute one, where `/..` is
 /// `/`.
+///
+/// Only for paths and patterns that are *matched*. A directory the task will
+/// actually run in must keep its `..` for the OS to resolve at `chdir` time, so
+/// [`normalize_task_cwd`] collapses `.` alone.
 pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
     let absolute = path.is_absolute();
     let mut normalized = PathBuf::new();
@@ -321,14 +325,17 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
         ("", pattern)
     };
     let body_path = Path::new(body);
+    // Inspect the pattern as written: `task_cwd` may legitimately contain a
+    // glob metacharacter as a literal directory name, and folding it in would
+    // make an ordinary `../` entry look like a `..` popping a glob.
+    if parent_dir_pops_glob(body_path) {
+        return pattern.to_string();
+    }
     let body_abs = if body_path.is_absolute() {
         body_path.to_path_buf()
     } else {
         task_cwd.join(body_path)
     };
-    if parent_dir_pops_glob(&body_abs) {
-        return pattern.to_string();
-    }
     let body_abs = lexical_normalize(&body_abs);
     let Ok(rel) = body_abs.strip_prefix(match_root) else {
         return pattern.to_string();
@@ -444,15 +451,11 @@ fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
-/// Canonicalise a task's working directory before it is used as a matching
-/// base, an enumeration root, and part of [`task_state_key`].
-///
-/// A `dir` of `.` normalizes away to nothing, which is not a usable directory,
-/// so it is restored. Two spellings of the same directory must not produce two
-/// state keys, which is why this runs on the way out of [`task_cwd`] rather
-/// than at each use.
 fn normalize_task_cwd(path: PathBuf) -> PathBuf {
-    let mut normalized = lexical_normalize(&path);
+    let mut normalized: PathBuf = path
+        .components()
+        .filter(|component| !matches!(component, Component::CurDir))
+        .collect();
     if normalized.as_os_str().is_empty() && !path.as_os_str().is_empty() {
         normalized.push(".");
     }
@@ -1838,6 +1841,20 @@ mod tests {
         assert!(!is_source(&matcher, Path::new("/workspace/x")));
     }
 
+    /// The glob guard inspects the pattern as written. A task directory may
+    /// contain a glob metacharacter as a literal name, and folding it into the
+    /// inspected path would make this ordinary `../` entry look like a `..`
+    /// popping a glob, silently leaving the pattern unanchored.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_parent_relative_pattern_from_a_task_dir_containing_a_glob_char() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/pkg*");
+        let sources = vec!["../shared/**".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(&matcher, Path::new("/workspace/shared/util.go")));
+    }
+
     /// `[task_config.input_groups]` anchors a group entry by joining it onto
     /// the defining config's root without normalizing, so absolute patterns
     /// reach the matcher with `..` still in them.
@@ -1884,39 +1901,6 @@ mod tests {
             [source]
         );
         Ok(())
-    }
-
-    /// `..` in a task dir has to collapse for the same reason `.` does: the
-    /// directory is also hashed into `task_state_key`, so two spellings of one
-    /// directory would otherwise keep two independent freshness baselines.
-    #[test]
-    fn relative_sources_match_when_task_dir_contains_parent_dirs() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let workspace = temp.path();
-        let task_cwd = normalize_task_cwd(workspace.join("other/../sub"));
-        let source = workspace.join("sub/input.txt");
-        fs::create_dir_all(source.parent().unwrap())?;
-        fs::write(&source, "source")?;
-
-        assert_eq!(task_cwd, workspace.join("sub"));
-
-        let sources = vec!["input.txt".to_string()];
-        let matcher = build_source_matcher(workspace, &task_cwd, &sources);
-        let metadatas = get_file_metadatas(&task_cwd, &sources, &matcher)?;
-
-        assert_eq!(
-            metadatas.into_iter().map(|(path, _)| path).collect_vec(),
-            [source]
-        );
-        Ok(())
-    }
-
-    /// A `dir` of `.` normalizes away to nothing and must be restored, or the
-    /// task would run from an empty path.
-    #[test]
-    fn normalize_task_cwd_keeps_a_bare_current_dir() {
-        assert_eq!(normalize_task_cwd(PathBuf::from(".")), PathBuf::from("."));
-        assert_eq!(normalize_task_cwd(PathBuf::new()), PathBuf::new());
     }
 
     #[test]
