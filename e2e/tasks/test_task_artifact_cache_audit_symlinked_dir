@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# A task dir that resolves through a symlink runs in the link's target, and
+# strace reports paths from there. The audit has to work in that same directory
+# or a declared source looks undeclared and the reported path names a file the
+# task never read.
+
+mkdir -p bin
+cat <<'EOF' >bin/strace
+#!/usr/bin/env bash
+set -euo pipefail
+
+trace=
+while (($#)); do
+  case $1 in
+  -o)
+    trace=$2
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *) shift ;;
+  esac
+done
+if [[ -z $trace ]]; then
+  exec "$@"
+fi
+# `pwd -P` rather than $PWD: real strace annotates the dirfd with the path the
+# kernel resolved, which is the symlink's target.
+cwd=$(pwd -P)
+cat <<TRACE >"$trace"
+123 openat(AT_FDCWD<$cwd>, "input.txt", O_RDONLY) = 3
+123 openat(AT_FDCWD<$cwd>, "secret.txt", O_RDONLY) = 3
+TRACE
+exec "$@"
+EOF
+chmod +x bin/strace
+
+mkdir -p real/inner
+ln -s real/inner link
+printf 'declared\n' >real/inner/input.txt
+printf 'undeclared\n' >real/inner/secret.txt
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+dir = "link"
+run = "cat input.txt secret.txt"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+EOF
+
+output=$(PATH="$PWD/bin:$PATH" mise run --force build 2>&1)
+
+# The declared source must be recognised even though it was traced under the
+# link's target rather than the configured dir.
+assert_not_contains "echo \"$output\"" "undeclared read: input.txt"
+
+# The undeclared read is reported relative to the task dir, not climbed out of
+# it and back down through the link target.
+assert_contains "echo \"$output\"" "cache audit detected undeclared read: secret.txt"
+assert_not_contains "echo \"$output\"" "undeclared read: ../real/inner"

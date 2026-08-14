@@ -92,7 +92,13 @@ impl TaskCacheAudit {
             let Some(strace) = usable_strace().await else {
                 return Ok(None);
             };
+            // strace reports paths as the kernel resolved them, so the audit
+            // has to work in the directory the task actually ran in. `task_cwd`
+            // stays lexical because `Command::current_dir` resolves the symlink
+            // itself; resolving it here as well is what keeps the traced paths,
+            // the source matcher, and the reported paths in one namespace.
             let root = task_cwd(task, config).await?;
+            let root = root.canonicalize().unwrap_or(root);
             let source_root = task_source_match_root(&root, config);
             let sources = build_source_matcher(&source_root, &root, &task.sources);
             let outputs = build_output_matcher(&root, &task.outputs.patterns())?;
