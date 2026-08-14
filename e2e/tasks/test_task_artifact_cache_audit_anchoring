@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+mkdir -p bin
+cat <<'EOF' >bin/strace
+#!/usr/bin/env bash
+set -euo pipefail
+
+trace=
+while (($#)); do
+  case $1 in
+  -o)
+    trace=$2
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *) shift ;;
+  esac
+done
+if [[ -z $trace ]]; then
+  exec "$@"
+fi
+cat <<TRACE >"$trace"
+123 openat(AT_FDCWD<$PWD>, "node_modules/dep.js", O_RDONLY) = 3
+123 openat(AT_FDCWD<$PWD>, "../node_modules/dep.js", O_RDONLY) = 3
+123 openat(AT_FDCWD<$PWD>, "dist/result.txt", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3
+TRACE
+exec "$@"
+EOF
+chmod +x bin/strace
+
+write_config() {
+  cat <<EOF >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+dir = "pkg"
+run = "mkdir -p dist && cat node_modules/dep.js ../node_modules/dep.js >dist/result.txt"
+sources = [$1]
+outputs = ["dist"]
+cache = { enabled = true, audit = true }
+EOF
+}
+
+mkdir -p pkg/node_modules node_modules
+printf 'workspace dep\n' >node_modules/dep.js
+printf 'package dep\n' >pkg/node_modules/dep.js
+
+# Both files are named node_modules/dep.js; only the one inside the task
+# directory is declared, so the report must distinguish them.
+write_config '"node_modules/**"'
+output=$(PATH="$PWD/bin:$PATH" mise run --force build 2>&1)
+assert_contains "echo \"$output\"" "cache audit detected undeclared read: ../node_modules/dep.js"
+assert_not_contains "echo \"$output\"" "undeclared read: node_modules/dep.js"
+
+# The reported path is a usable sources entry: declaring it silences the audit.
+write_config '"node_modules/**", "../node_modules/**"'
+output=$(PATH="$PWD/bin:$PATH" mise run --force build 2>&1)
+assert_not_contains "echo \"$output\"" "cache audit detected undeclared read"

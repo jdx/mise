@@ -414,6 +414,18 @@ outputs = ["target/debug/mycli"]
 Running the above will only execute `cargo build` if `mise.toml`, `Cargo.toml`, or any ".rs" file in the `src` directory
 has changed since the last build.
 
+Relative entries are resolved from the task directory (the task's `dir`, or the project root when it
+has none) and may use `..` to reach files above it, such as a `node_modules` directory shared at the
+root of a monorepo:
+
+```mise-toml
+[tasks.build]
+dir = "packages/web"
+run = "npm run build"
+sources = ["src/**/*.ts", "../../node_modules/**"]
+outputs = ["dist"]
+```
+
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
 
@@ -612,6 +624,9 @@ beneath the task directory that do not match `outputs`. The audit is advisory an
 task or prevent a successful result from being cached. Access outside those roots and directory
 metadata reads are ignored to keep system libraries, executables, and path traversal out of the
 report.
+
+Reported paths are always relative to the task directory, using `..` for the paths above it that a
+read may legitimately touch. A reported read can be added to `sources` exactly as it was printed.
 
 Audit mode requires `strace` on `PATH`. Mise warns and runs the task normally when tracing is not
 available; other platforms are not currently supported. Cached tasks are not executed and therefore
