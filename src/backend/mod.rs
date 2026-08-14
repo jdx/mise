@@ -3082,13 +3082,6 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
-        println!(
-            "Installing {}@{} (requested {})",
-            self.ba(),
-            tv.version,
-            tv.request
-        );
-
         // A rolling release (e.g. a `nightly` tag) keeps the same version string,
         // so its install dir already existing does NOT mean it's up-to-date.
         let rolling_reinstall = !ctx.force
