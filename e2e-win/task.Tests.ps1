@@ -3,8 +3,20 @@ Describe 'task' {
     BeforeAll {
         $originalPath = Get-Location
         Set-Location TestDrive:
+        # Saved before overwriting, restored in AfterAll: Pester runs every suite in one process,
+        # so removing an inherited value here would leave the next suite without it.
+        $script:originalTrusted = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
         # Trust the TestDrive config path - use $TestDrive for physical path, not PSDrive path
         $env:MISE_TRUSTED_CONFIG_PATHS = $TestDrive
+
+        # Saved here, restored in AfterAll: the tests below set these and `BeforeEach` only clears
+        # them between tests in this file.
+        $script:originalShellEnv = @{}
+        foreach ($name in 'MISE_WINDOWS_EXECUTABLE_EXTENSIONS',
+            'MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS',
+            'MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS') {
+            $script:originalShellEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+        }
 
         # Create mise.toml that includes tasks directory
         @'
@@ -21,11 +33,13 @@ includes = ["tasks"]
 echo mytask
 '@ | Out-File -FilePath "tasks\filetask.bat" -Encoding ascii -NoNewline
 
-        # Create filetask (no extension) for MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS test
+        # A task file with neither an extension nor a shebang. Deliberately *not* named
+        # `filetask`: that collapses to the same task name as `filetask.bat`, and the `.bat` is
+        # what runs, so nothing here would be exercised.
         @'
 @echo off
-echo mytask
-'@ | Out-File -FilePath "tasks\filetask" -Encoding ascii -NoNewline
+echo from-noext
+'@ | Out-File -FilePath "tasks\noexttask" -Encoding ascii -NoNewline
 
         # Create testtask.ps1 for pwsh test
         @'
@@ -35,7 +49,20 @@ Write-Output "windows"
 
     AfterAll {
         Set-Location $originalPath
-        Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
+        if ($null -eq $script:originalTrusted) {
+            Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', $script:originalTrusted, 'Process')
+        }
+        # `BeforeEach` clears these for tests *inside* this Describe, but Pester runs every suite
+        # in one process, so whatever the last test left set would leak into the next suite.
+        foreach ($name in $script:originalShellEnv.Keys) {
+            if ($null -eq $script:originalShellEnv[$name]) {
+                Remove-Item -Path "Env:\$name" -ErrorAction SilentlyContinue
+            } else {
+                [Environment]::SetEnvironmentVariable($name, $script:originalShellEnv[$name], 'Process')
+            }
+        }
     }
 
     BeforeEach {
@@ -48,9 +75,25 @@ Write-Output "windows"
         mise run filetask.bat | Select -Last 1 | Should -Be 'mytask'
     }
 
-    It 'executes a task without extension' {
-        $env:MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS = "bat"
-        mise run filetask | Select -Last 1 | Should -Be 'mytask'
+    # `windows_executable_extensions` is what decides whether a file with no extension and no
+    # shebang is a task at all -- there is no permission bit here for `is_executable` to consult.
+    # Nothing else in this suite covers that boundary, and it is the reason the extensionless
+    # fixture above is invisible by default.
+    It 'does not discover an extensionless file task by default' {
+        $out = mise tasks ls | Out-String
+        # Both guards matter for the negative assertion below: it would also hold if the command
+        # had failed outright, or listed nothing at all.
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*filetask*'
+        $out | Should -Not -BeLike '*noexttask*'
+    }
+
+    It 'discovers an extensionless file task when the setting admits it' {
+        # The leading comma is the empty entry, which is what matches a file with no extension.
+        $env:MISE_WINDOWS_EXECUTABLE_EXTENSIONS = ",exe,bat,cmd"
+        $out = mise tasks ls | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*noexttask*'
     }
 
     It 'executes a shebang task with bash' {
