@@ -896,11 +896,19 @@ impl Backend for AquaBackend {
         // Try to get checksum from checksum file if not available from GitHub API
         let checksum = match checksum {
             Some(c) => Some(c),
-            None => self
+            None => match self
                 .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref())
                 .await
-                .ok()
-                .flatten(),
+            {
+                Ok(checksum) => checksum,
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to get checksum from checksum file: {e}",
+                        self.ba()
+                    );
+                    None
+                }
+            },
         };
 
         // Detect provenance from aqua registry config
@@ -2218,17 +2226,13 @@ impl AquaBackend {
             let pattern = checksum_config.pattern();
             if let Some(file_pattern) = &pattern.file {
                 let re = regex::Regex::new(file_pattern.as_str())?;
-                if let Some(line) = checksum_file
+                let Some(line) = checksum_file
                     .lines()
                     .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
-                {
-                    checksum_file = line.to_string();
-                } else {
-                    debug!(
-                        "no line found matching {} in checksum file for {}",
-                        file_pattern, filename
-                    );
-                }
+                else {
+                    bail!("no checksum entry found for {filename} in checksum file");
+                };
+                checksum_file = line.to_string();
             }
             let re = regex::Regex::new(pattern.checksum.as_str())?;
             if let Some(caps) = re.captures(checksum_file.as_str()) {
@@ -2242,7 +2246,7 @@ impl AquaBackend {
         }
 
         // Standard format: "<hash>  <filename>" or "<hash> *<filename>"
-        let checksum_str = checksum_file
+        let entries = checksum_file
             .lines()
             .filter_map(|l| {
                 let split = l.split_whitespace().collect_vec();
@@ -2260,9 +2264,22 @@ impl AquaBackend {
                     None
                 }
             })
-            .find(|(_, f)| f == filename)
-            .map(|(c, _)| c)
-            .unwrap_or(checksum_file);
+            .collect_vec();
+
+        let checksum_str = if let Some((c, _)) = entries.iter().find(|(_, f)| f == filename) {
+            c.clone()
+        } else if entries.is_empty() {
+            // No "<hash>  <filename>" entries were found at all, so the file is either a
+            // single bare checksum (no filename column) or was already reduced to just the
+            // checksum by the regexp format handling above. There's nothing to disambiguate
+            // against, so use the content as-is.
+            checksum_file
+        } else {
+            // The file lists checksums for other filenames, but not this one. Silently
+            // falling back to some other entry's checksum would produce a wrong-but-valid-
+            // looking checksum, so treat this as an error instead.
+            bail!("no checksum entry found for {filename} in checksum file");
+        };
 
         let checksum_str = checksum_str
             .split_whitespace()
@@ -4787,6 +4804,70 @@ mod lock_candidate_tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not match expected checksum"), "{err}");
+    }
+
+    /// A checksum file listing several other filenames, but not the requested one, must not
+    /// silently hand back some other entry's checksum (or the raw file content) as if it were a
+    /// match — that produced a wrong-but-valid-looking checksum, as reported in a case where the
+    /// target asset's filename changed and no line in the multi-platform checksums file matched.
+    #[test]
+    fn test_parse_checksum_from_content_errors_on_filename_mismatch() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha256"}"#).unwrap();
+        let content = "\
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tool-1.0.0-linux-amd64.tar.gz\n\
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  tool-1.0.0-darwin-amd64.tar.gz\n";
+
+        let err = backend
+            .parse_checksum_from_content(content, &checksum, "tool-1.0.0-windows-amd64.zip")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tool-1.0.0-windows-amd64.zip"), "{err}");
+    }
+
+    /// A checksum file with no filename column at all (a single bare hash) is a legitimate,
+    /// unambiguous format still supported via the same fallback the mismatch case above disables.
+    #[test]
+    fn test_parse_checksum_from_content_accepts_bare_single_checksum() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha256"}"#).unwrap();
+        const DIGEST: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+        let result = backend
+            .parse_checksum_from_content(&format!("{DIGEST}\n"), &checksum, "tool-1.0.0.tar.gz")
+            .unwrap();
+        assert_eq!(result, DIGEST);
+    }
+
+    /// The `file_format: "regexp"` path has its own line-selection step ahead of the raw-entries
+    /// fallback above. If it can't find a line for the requested filename, it must not fall
+    /// through to running the checksum pattern against the whole (still multi-entry) file — that
+    /// would extract some other line's digest instead of erroring, bypassing the mismatch check.
+    #[test]
+    fn test_parse_checksum_from_content_errors_on_regexp_filename_mismatch() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(
+            r#"{"algorithm":"sha256","file_format":"regexp","pattern":{"checksum":"^(\\S+)","file":"\\S+\\s+(\\S+)$"}}"#,
+        )
+        .unwrap();
+        let content = "\
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tool-1.0.0-linux-amd64.tar.gz\n\
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  tool-1.0.0-darwin-amd64.tar.gz\n";
+
+        let err = backend
+            .parse_checksum_from_content(content, &checksum, "tool-1.0.0-windows-amd64.zip")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tool-1.0.0-windows-amd64.zip"), "{err}");
     }
 
     /// The counterpart over HTTP, which needs no decoding of its own: reqwest's `text()` goes
