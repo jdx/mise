@@ -746,13 +746,29 @@ mod tests {
 
     #[test]
     fn plugin_discovery_adds_missing_tool_metadata() {
-        let mut tools = BTreeMap::new();
+        let installs_path = std::path::PathBuf::from("installs/babashka");
+        let mut tools = BTreeMap::from([(
+            "babashka".to_string(),
+            InstallStateTool {
+                short: "babashka".to_string(),
+                full: None,
+                versions: vec!["1.13.219".to_string()],
+                explicit_backend: false,
+                opts: BTreeMap::new(),
+                installs_path: Some(installs_path.clone()),
+            },
+        )]);
         let plugins = BTreeMap::from([("babashka".to_string(), PluginType::Asdf)]);
 
         merge_plugin_tools(&mut tools, &plugins);
 
         assert_eq!(tools["babashka"].full.as_deref(), Some("asdf:babashka"));
-        assert!(tools["babashka"].explicit_backend);
+        assert_eq!(tools["babashka"].versions, ["1.13.219"]);
+        assert_eq!(
+            tools["babashka"].installs_path.as_ref(),
+            Some(&installs_path)
+        );
+        assert!(!tools["babashka"].explicit_backend);
     }
 
     #[test]
