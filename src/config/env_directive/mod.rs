@@ -592,6 +592,10 @@ impl EnvResults {
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
                     r.redaction_exclusions.remove(&k);
+                    // The key is gone from the environment, so its caller value is no longer
+                    // reachable by the task. Leaving it here would let `redactable_env` resolve
+                    // it anyway and register a pattern that rewrites unrelated output.
+                    r.caller_env_keys.remove(&k);
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, _opts) => {
@@ -1393,6 +1397,67 @@ mod tests {
             results.redactable_env(&initial).get("ASC_KEY_ID"),
             Some(&"caller_key".to_string())
         );
+    }
+
+    /// A key removed by `_.rm` is unreachable by the task, so its caller value must stop being
+    /// resolvable for redaction. Otherwise `redactable_env` would keep supplying it and register
+    /// a pattern for a variable the config explicitly removed — over-redaction that rewrites
+    /// unrelated output when the value is short.
+    #[tokio::test]
+    async fn test_rm_clears_a_recorded_caller_key() {
+        let initial = EnvMap::from_iter([
+            ("ASC_KEY_ID".to_string(), "caller_key".to_string()),
+            ("DEF_TOKEN".to_string(), "caller_default".to_string()),
+        ]);
+        let config = Config::get().await.unwrap();
+        let redacted = EnvDirectiveOptions {
+            redact: Some(true),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![
+                (
+                    EnvDirective::Required("ASC_KEY_ID".into(), redacted.clone()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Default(
+                        "DEF_TOKEN".into(),
+                        "fallback".into(),
+                        EnvDirectiveOptions {
+                            redact: Some(true),
+                            ..Default::default()
+                        },
+                    ),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Rm("ASC_KEY_ID".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Rm("DEF_TOKEN".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.caller_env_keys.contains("ASC_KEY_ID"));
+        assert!(!results.caller_env_keys.contains("DEF_TOKEN"));
+        let redactable = results.redactable_env(&initial);
+        assert!(!redactable.contains_key("ASC_KEY_ID"));
+        assert!(!redactable.contains_key("DEF_TOKEN"));
     }
 
     /// `required = true, redact = false` on a directive that assigns nothing must still record

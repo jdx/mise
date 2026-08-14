@@ -110,6 +110,26 @@ run = 'echo "value:$DEF_TOKEN"'
 TOML
 assert "DEF_TOKEN=caller_default mise run a" "value:[redacted]"
 
+# the same case on the other task-env path: a config-level [env] table selects
+# TaskContextBuilder::resolve_task_env_with_config instead of Task::render_env
+cat <<'TOML' >mise.toml
+[env]
+UNRELATED = "1"
+[tasks.a]
+env = { DEF_TOKEN = { default = "fallback", redact = true } }
+run = 'echo "value:$DEF_TOKEN"'
+TOML
+assert "DEF_TOKEN=caller_default mise run a" "value:[redacted]"
+
+# a key the config removes must not leave its caller value registered as a
+# redaction pattern; the one-character value would rewrite the whole line
+cat <<'TOML' >mise.toml
+env = [{ SHORT_TOKEN = { required = true, redact = true } }, { SHORT_TOKEN = false }]
+[tasks.a]
+run = 'echo "version 1.2.3"'
+TOML
+assert "SHORT_TOKEN=e mise run a" "version 1.2.3"
+
 # --raw bypasses the output interceptor entirely
 cat <<'TOML' >mise.toml
 redactions = ["*TOKEN*"]
