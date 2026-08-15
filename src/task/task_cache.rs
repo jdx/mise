@@ -1810,7 +1810,19 @@ mod tests {
         assert!(output.contains("variable: password"));
         assert!(output.contains("sources: 2 files"));
         assert!(output.contains("source: input.txt"));
-        assert!(output.contains(r"source: src/\u{1b}[2J\nfile.rs"));
+        // `display_cache_path` settles separators for display and then `escape_debug`s the
+        // result, so on Windows the separator arrives doubled alongside the escaped control
+        // characters this assertion is really about.
+        #[cfg(windows)]
+        assert!(
+            output.contains(r"source: src\\\u{1b}[2J\nfile.rs"),
+            "{output}"
+        );
+        #[cfg(not(windows))]
+        assert!(
+            output.contains(r"source: src/\u{1b}[2J\nfile.rs"),
+            "{output}"
+        );
         assert!(output.contains("pattern: !dist/private/**"));
         assert!(output.contains("output: dist"));
         assert!(output.contains("dependencies: 1 artifact keys"));

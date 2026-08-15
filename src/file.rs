@@ -561,9 +561,13 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-/// replaces $HOME with "~"
+/// A path formatted for a person to read: `$HOME` becomes `~`, a Windows extended-length prefix
+/// is dropped, and separators settle on the host's.
+///
+/// The separator step lives here rather than in [`PathExt::display_user`] because that one also
+/// feeds strings mise *matches* rather than shows — see [`crate::path::settle_display_separators`].
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
-    path.as_ref().display_user()
+    crate::path::settle_display_separators(path.as_ref().display_user())
 }
 
 pub fn display_filename<P: AsRef<Path>>(path: P) -> String {
@@ -577,7 +581,10 @@ pub fn display_filename<P: AsRef<Path>>(path: P) -> String {
 pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
     let path = path.as_ref();
     match path.strip_prefix(dirs::CWD.as_ref().unwrap()) {
-        Ok(rel) => format!("./{}", rel.display()),
+        // Both halves take the host's separator. Hardcoding `./` and printing the remainder raw
+        // produced `./mise-tasks\build` on Windows. Byte-identical off Windows, where
+        // `MAIN_SEPARATOR` is `/` and nothing is rewritten.
+        Ok(rel) => format!(".{}{}", std::path::MAIN_SEPARATOR, display_path(rel)),
         Err(_) => display_path(path),
     }
 }
@@ -3842,5 +3849,44 @@ mod tests {
         assert!(!has_shebang(&write("one_byte", b"#")));
         // A UTF-16 mark is deliberately not accepted.
         assert!(!has_shebang(&write("utf16", b"\xff\xfe#\0!\0")));
+    }
+
+    /// `Path::join` appends a multi-segment literal verbatim, and some roots arrive
+    /// `/`-separated, so one printed path could switch form more than once.
+    #[cfg(windows)]
+    #[test]
+    fn display_path_settles_on_one_separator() {
+        assert_eq!(
+            display_path(r"C:/Users/me\proj\.git/hooks\pre-commit"),
+            r"C:\Users\me\proj\.git\hooks\pre-commit"
+        );
+        assert_eq!(display_path("C:/Users/me"), r"C:\Users\me");
+        // Already uniform, and a relative path: both unchanged.
+        assert_eq!(display_path(r"C:\Users\me"), r"C:\Users\me");
+        assert_eq!(display_path(r"a\b"), r"a\b");
+        assert_eq!(display_path("a/b"), r"a\b");
+        // Composes with the extended-length prefix being dropped.
+        assert_eq!(display_path(r"\\?\C:\a\b"), r"C:\a\b");
+        // Measured, not assumed: `/` is not a separator inside `\\?\`, so `a/b` reads as a single
+        // component there and `dunce` declines to simplify a name Windows could not hold. The
+        // separators still settle; the prefix stays. `canonicalize` never emits this shape.
+        assert_eq!(display_path(r"\\?\C:\a/b"), r"\\?\C:\a\b");
+        // A UNC path keeps its leading pair while its interior settles.
+        assert_eq!(display_path(r"\\server\share/dir"), r"\\server\share\dir");
+    }
+
+    /// Both halves of the string take the host's separator. Hardcoding `./` and printing the
+    /// remainder raw gave `./mise-tasks\build` on Windows.
+    #[test]
+    fn display_rel_path_uses_one_separator() {
+        let cwd = dirs::CWD.as_ref().expect("a cwd").clone();
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            display_rel_path(cwd.join("mise-tasks").join("build")),
+            format!(".{sep}mise-tasks{sep}build")
+        );
+        // A path outside the cwd falls through to `display_path`, which settles separators too.
+        let outside = display_rel_path(Path::new("relative-to-nothing"));
+        assert!(!outside.starts_with('.'), "{outside}");
     }
 }
