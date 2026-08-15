@@ -3847,6 +3847,14 @@ By default, only tasks from the current directory hierarchy are loaded.
     }
     flag --usage hide=#true
     arg "[TASK]" help="Task name to get info of" required=#false
+    cmd __usage hide=#true help="Resolve a file task's generated usage specification" {
+        long_help #"""
+Resolve a file task's generated usage specification.
+
+This is an internal target for usage mounts. Keeping the raw generator command behind mise preserves the task's config root, environment, trust, and sandbox behavior without eagerly running every generator in `tasks ls`.
+"""#
+        arg <TASK> help="Canonical task name to resolve"
+    }
     cmd add help="Create a new task" effect=write {
         long_help #"""
 Create a new task

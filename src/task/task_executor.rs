@@ -1213,51 +1213,7 @@ impl TaskExecutor {
         task: &Task,
         args: &[String],
     ) -> Result<(String, Vec<String>, bool)> {
-        let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
-        let (program, _shell_args) = task_shell_parts(&shell, "inline shell")?;
-        trace!("using shell: {}", shell.join(" "));
-        let mut full_args = shell.clone();
-
-        #[cfg(windows)]
-        {
-            // When the inline shell is cmd.exe, hand the script to cmd verbatim
-            // instead of letting std::process::Command apply MSVCRT-style
-            // quoting. std would wrap the script in quotes and escape any inner
-            // `"` as `\"`, but cmd.exe does not understand that escaping, so
-            // commands like `python -c "import x"` get mangled (the child sees
-            // `\"import`). We assemble the whole command into one body, wrap it
-            // in a single outer quote pair, and use `/s` so cmd strips exactly
-            // that pair and runs the rest — inner quotes included — verbatim.
-            // See discussion #9355.
-            match inline_args_style(program, _shell_args) {
-                InlineArgsStyle::CmdCommandText => {
-                    let cmd_args = crate::path::cmd_verbatim_args(_shell_args, script, args);
-                    return Ok((program.to_string(), cmd_args, true));
-                }
-                InlineArgsStyle::SeparateArgv => {
-                    // Non-POSIX, non-cmd shells (e.g. `pwsh -Command`) use a
-                    // different quoting convention than `shell_words` (which is
-                    // POSIX), so keep passing forwarded args as separate argv.
-                    full_args.push(script.to_string());
-                    full_args.extend(args.iter().cloned());
-                    return Ok((program.to_string(), full_args[1..].to_vec(), false));
-                }
-                InlineArgsStyle::PosixCommandText => {}
-            }
-        }
-
-        // Shared (Unix, and Windows POSIX shells like `bash -c`): append the
-        // forwarded args to the command string so they reach an inline `-c` shell
-        // as part of the command — the documented behavior for inline TOML
-        // scripts — rather than as positional parameters. Passing them as separate
-        // argv to `bash -c` on Windows shifted the user's first arg into `$0`.
-        // See #9355.
-        let mut script = script.to_string();
-        if !args.is_empty() {
-            script = format!("{script} {}", shell_words::join(args));
-        }
-        full_args.push(script);
-        Ok((program.to_string(), full_args[1..].to_vec(), false))
+        task_inline_command(task, script, args, self.shell.as_deref())
     }
 
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
@@ -2199,6 +2155,53 @@ fn task_shell_parts<'a>(shell: &'a [String], shell_kind: &str) -> Result<(&'a st
         })
 }
 
+/// Build an inline task command without constructing a full [`TaskExecutor`].
+///
+/// Dynamic usage generators use this so their shell behavior stays identical
+/// to ordinary inline task commands, including Windows `cmd.exe` quoting.
+pub(crate) fn task_inline_command(
+    task: &Task,
+    script: &str,
+    args: &[String],
+    shell_override: Option<&str>,
+) -> Result<(String, Vec<String>, bool)> {
+    let default_shell = || -> Result<Vec<String>> {
+        if let Some(shell) = shell_override {
+            let mut shell = crate::path::split_shell_command(shell)?;
+            Settings::get().maybe_no_profile(&mut shell);
+            Ok(shell)
+        } else {
+            Settings::get().default_inline_shell()
+        }
+    };
+    let shell = task.shell()?.unwrap_or(default_shell()?);
+    let (program, shell_args) = task_shell_parts(&shell, "inline shell")?;
+    trace!("using shell: {}", shell.join(" "));
+    let mut full_args = shell.clone();
+
+    #[cfg(windows)]
+    {
+        match inline_args_style(program, shell_args) {
+            InlineArgsStyle::CmdCommandText => {
+                let cmd_args = crate::path::cmd_verbatim_args(shell_args, script, args);
+                return Ok((program.to_string(), cmd_args, true));
+            }
+            InlineArgsStyle::SeparateArgv => {
+                full_args.push(script.to_string());
+                full_args.extend(args.iter().cloned());
+                return Ok((program.to_string(), full_args[1..].to_vec(), false));
+            }
+            InlineArgsStyle::PosixCommandText => {}
+        }
+    }
+
+    #[cfg(not(windows))]
+    let _ = shell_args;
+    let script = append_inline_args(script, args, InlineArgsStyle::PosixCommandText);
+    full_args.push(script);
+    Ok((program.to_string(), full_args[1..].to_vec(), false))
+}
+
 /// On Windows, when spawning a POSIX-style shell (bash/sh/zsh/...) for a task, the
 /// child needs PATH in MSYS Unix format — `/c/foo:/d/bar` rather than `C:\foo;D:\bar`.
 /// PowerShell-launched mise inherits no `MSYSTEM`, so the conversion has to happen
@@ -2206,7 +2209,7 @@ fn task_shell_parts<'a>(shell: &'a [String], shell_kind: &str) -> Result<(&'a st
 ///
 /// The cfg-attribute pattern keeps the call site OS-agnostic and avoids cloning the
 /// env on the common path (Windows + non-POSIX-shell, or any non-Windows host).
-fn maybe_convert_env_for_msys_shell<'a>(
+pub(crate) fn maybe_convert_env_for_msys_shell<'a>(
     program: &Path,
     env: &'a BTreeMap<String, String>,
 ) -> std::borrow::Cow<'a, BTreeMap<String, String>> {

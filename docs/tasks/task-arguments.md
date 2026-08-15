@@ -151,6 +151,34 @@ The mount command runs when shell completion asks for the task spec, so it must
 work outside the task's final process. Calling the task itself, as shown above,
 lets mise apply task configuration before forwarding `--usage-spec`.
 
+#### Generating a File Task Spec
+
+When a file task's own argument parser can output a usage KDL spec, declare a
+`usage_command` instead of duplicating the arguments in comments:
+
+```python [.mise/tasks/my-task.py]
+#!/usr/bin/env python3
+#MISE description="Run my Python command"
+#MISE usage_command=".mise/tasks/my-task.py --usage-spec"
+
+# Print the KDL spec and exit when --usage-spec is passed.
+# Run the normal command for all other arguments.
+```
+
+The command runs lazily when mise needs the selected task's complete spec, such
+as for task help, argument parsing, validation, documentation, or shell
+completion. Listing all task specs only emits a lazy mount and does not run
+every generator. Generated specs are cached only within the current mise
+process; mise does not persist them between invocations.
+
+The generator runs with the task's configured shell, directory, environment,
+installed tool paths, sandbox, and timeout. Metadata-only commands such as
+completion do not install missing task tools or run task dependencies. Keep the
+generator fast, non-interactive, and free of side effects, and ensure its
+dependencies are already available. Because it executes code, an untrusted task
+file cannot run its generator. `usage_command` cannot be combined with embedded
+`#MISE` or `#USAGE` usage declarations in the same file.
+
 ## Complete Usage Specification Reference
 
 ### Positional Arguments (`arg`)

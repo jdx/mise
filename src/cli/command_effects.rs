@@ -300,6 +300,10 @@ pub const UNCLASSIFIED: &[(&str, &str)] = &[
     ("mcp", "serves tools that run tasks on request"),
     ("oci run", "runs an arbitrary command in a container"),
     ("run", "runs project tasks"),
+    (
+        "tasks __usage",
+        "runs a task-supplied usage specification generator",
+    ),
     ("tasks run", "runs project tasks"),
     ("test-tool", "installs and executes a tool"),
     ("tool-stub", "executes the tool a stub points at"),

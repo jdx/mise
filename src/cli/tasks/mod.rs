@@ -9,6 +9,7 @@ mod edit;
 mod graph;
 mod info;
 mod ls;
+mod usage;
 mod validate;
 
 /// Manage tasks
@@ -27,6 +28,8 @@ pub struct Tasks {
 
 #[derive(Subcommand)]
 enum Commands {
+    #[clap(name = "__usage", hide = true)]
+    Usage(usage::TasksUsage),
     Add(Box<add::TasksAdd>),
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
@@ -40,6 +43,7 @@ enum Commands {
 impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
+            Self::Usage(cmd) => cmd.run().await,
             Self::Add(cmd) => (*cmd).run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Edit(cmd) => cmd.run().await,

@@ -3087,7 +3087,7 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
-fn is_global_task_include_path(path: &Path) -> bool {
+pub(crate) fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),
         dirs::SYSTEM_CONFIG.join("tasks"),
@@ -4110,6 +4110,9 @@ async fn load_tasks_includes(
                 &config_root,
                 monorepo_cf.cloned(),
             )?;
+            task.usage_command_requires_trust = require_trust
+                && !is_global_task_include_path(&path)
+                && task.usage_command.is_some();
             if let Err(err) = resolve_task_template(&mut task, templates) {
                 if monorepo_cf.is_some() {
                     warn!(

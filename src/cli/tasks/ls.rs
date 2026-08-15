@@ -222,8 +222,9 @@ impl TasksLs {
 
     async fn display_usage(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
+        let display_name_counts = tasks.iter().map(|task| task.display_name.clone()).counts();
         for task in tasks {
-            let mut task_spec = task.parse_usage_spec_for_display(config).await?;
+            let mut task_spec = task.parse_usage_spec_for_listing(config).await?;
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
@@ -252,10 +253,14 @@ impl TasksLs {
                     .collect();
                 task_spec.cmd.aliases.extend(prefixed_aliases);
             }
-            usage
-                .cmd
-                .subcommands
-                .insert(task.display_name.clone(), task_spec.cmd);
+            let usage_name = if display_name_counts[&task.display_name] > 1 {
+                task.name.clone()
+            } else {
+                task.display_name.clone()
+            };
+            task_spec.cmd.name = usage_name.clone();
+            task_spec.cmd.usage = task_spec.cmd.usage();
+            usage.cmd.subcommands.insert(usage_name, task_spec.cmd);
         }
         miseprintln!("{}", usage.to_string());
         Ok(())

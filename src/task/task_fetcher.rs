@@ -72,6 +72,7 @@ impl TaskFetcher {
                 // Preserve runtime state that is not task metadata and therefore is
                 // intentionally not handled by merge_toml_overlay().
                 remote.global = original.global;
+                remote.usage_command_requires_trust = original.usage_command_requires_trust;
                 remote.remote_file_source = Some(source);
                 *t = remote;
             }
@@ -107,6 +108,7 @@ mod tests {
 #MISE hide=true
 #MISE quiet=true
 #MISE tools={node="24", python="3.12"}
+#MISE usage_command="echo 'arg \"<name>\"'"
 echo ok
 "#,
             )
@@ -125,6 +127,7 @@ echo ok
             config_root: Some(config_root.path().to_path_buf()),
             file: Some(PathBuf::from(&source)),
             args: vec!["--fix".into()],
+            usage_command_requires_trust: true,
             tools: [("python".into(), TaskToolValue::String("3.13".into()))]
                 .into_iter()
                 .collect(),
@@ -148,6 +151,7 @@ echo ok
         assert_eq!(task.config_root.as_deref(), Some(config_root.path()));
         assert_eq!(task.remote_file_source.as_deref(), Some(source.as_str()));
         assert!(task.is_remote());
+        assert!(task.usage_command_requires_trust);
         assert_eq!(
             task.tools.get("node"),
             Some(&TaskToolValue::String("24".into()))

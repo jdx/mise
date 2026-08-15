@@ -9,7 +9,7 @@ use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
-use eyre::{Result, bail, eyre};
+use eyre::{Context, Result, bail, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -33,9 +33,14 @@ static TASK_VARS_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, IndexMap<String,
 static TASK_ENV_CACHE: Lazy<std::sync::Mutex<IndexMap<PathBuf, EnvMap>>> =
     Lazy::new(|| std::sync::Mutex::new(IndexMap::new()));
 
+type GeneratedUsageCell = Arc<tokio::sync::OnceCell<usage::Spec>>;
+static GENERATED_USAGE_CACHE: Lazy<dashmap::DashMap<String, GeneratedUsageCell>> =
+    Lazy::new(dashmap::DashMap::new);
+
 pub(crate) fn reset() {
     TASK_VARS_CACHE.lock().unwrap().clear();
     TASK_ENV_CACHE.lock().unwrap().clear();
+    GENERATED_USAGE_CACHE.clear();
 }
 
 /// Type alias for tracking failed tasks with their exit codes
@@ -740,6 +745,12 @@ pub struct Task {
     pub tools: IndexMap<String, TaskToolValue>,
     #[serde(default)]
     pub usage: String,
+    /// A file-task-only command that prints a usage KDL specification.
+    #[serde(skip)]
+    pub usage_command: Option<String>,
+    /// Whether the task file must be trusted before `usage_command` may run.
+    #[serde(skip)]
+    pub(crate) usage_command_requires_trust: bool,
     #[serde(default)]
     pub timeout: Option<String>,
 
@@ -1453,6 +1464,13 @@ impl Task {
             })
             .transpose()?
             .unwrap_or_default();
+        task.usage_command = p.parse_str("usage_command");
+        if task.usage_command.is_some() && !extract_usage_from_comments(&body).trim().is_empty() {
+            bail!(
+                "task {} cannot combine usage_command with embedded usage declarations",
+                display_path(path)
+            );
+        }
 
         let mut unparsed = p.unparsed_keys();
         unparsed.sort();
@@ -1958,6 +1976,204 @@ impl Task {
             }
         }
     }
+
+    fn usage_mount_command(&self) -> String {
+        shell_words::join([
+            "mise".to_string(),
+            "tasks".to_string(),
+            "__usage".to_string(),
+            self.name.clone(),
+        ])
+    }
+
+    async fn usage_command_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        let context_builder = task_context_builder::TaskContextBuilder::new();
+        let tools = self.tool_args()?;
+        let task_cf = if self.is_remote() {
+            None
+        } else {
+            self.cf(config)
+        };
+        let toolset = context_builder
+            .build_toolset_for_task(config, self, task_cf, &tools)
+            .await?;
+        let (mut env, _, _) = if let Some(task_cf) = task_cf {
+            context_builder
+                .resolve_task_env_with_config(config, self, task_cf, &toolset)
+                .await?
+        } else {
+            let (env, task_env) = self.render_env(config, &toolset).await?;
+            (env, task_env, None)
+        };
+        env.insert("MISE_TASK_NAME".into(), self.name.clone());
+        env.insert(
+            "MISE_TASK_FILE".into(),
+            self.file_path(config)
+                .await?
+                .unwrap_or_else(|| self.config_source.clone())
+                .display()
+                .to_string(),
+        );
+        if let Some(root) = &self.config_root {
+            env.insert("MISE_CONFIG_ROOT".into(), root.display().to_string());
+        }
+        Ok(env)
+    }
+
+    async fn usage_command_sandbox(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<crate::sandbox::SandboxConfig> {
+        let task_base = self.dir(config).await?;
+        let resolve = |path: &PathBuf| {
+            if path.as_os_str().is_empty() {
+                return PathBuf::new();
+            }
+            let path = file::replace_path(path);
+            if path.is_absolute() {
+                path
+            } else if let Some(base) = &task_base {
+                base.join(path)
+            } else {
+                path
+            }
+        };
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_read: self.deny_all || self.deny_read,
+            deny_write: self.deny_all || self.deny_write,
+            deny_net: self.deny_all || self.deny_net,
+            deny_env: self.deny_all || self.deny_env,
+            allow_read: self.allow_read.iter().map(&resolve).collect(),
+            allow_write: self.allow_write.iter().map(&resolve).collect(),
+            allow_net: self.allow_net.clone(),
+            allow_env: self.allow_env.clone(),
+            pass_through_env: self.pass_through_env.clone(),
+            cache_env: self
+                .cache
+                .iter()
+                .filter(|cache| cache.enabled)
+                .flat_map(|cache| cache.env.iter().cloned())
+                .collect(),
+        };
+        sandbox.resolve_paths();
+        Ok(sandbox)
+    }
+
+    fn generated_usage_cache_key(
+        &self,
+        command: &str,
+        cwd: &Path,
+        sandbox: &crate::sandbox::SandboxConfig,
+        env: &EnvMap,
+    ) -> String {
+        crate::hash::hash_to_str(&(
+            &self.config_source,
+            &self.name,
+            command,
+            cwd,
+            env,
+            format!("{sandbox:?}"),
+            &self.shell,
+            &self.timeout,
+        ))
+    }
+
+    async fn resolve_generated_usage_spec(
+        &self,
+        config: &Arc<Config>,
+        cwd: Option<PathBuf>,
+    ) -> Result<usage::Spec> {
+        let Some(command) = self.usage_command.as_deref() else {
+            return Ok(usage::Spec::default());
+        };
+        if self.usage_command_requires_trust {
+            crate::config::config_file::trust_check(&self.config_source)?;
+        }
+        // Generate the environment independently of an invocation's parsed
+        // arguments and dependency results. The generated spec is task
+        // metadata, so every resolution path must use the same task/config
+        // environment and therefore the same cache identity.
+        let env = self.usage_command_env(config).await?;
+        let cwd = match cwd {
+            Some(cwd) => cwd,
+            None => task_source_checker::task_cwd(self, config).await?,
+        };
+        let sandbox = self.usage_command_sandbox(config).await?;
+        let filtered_env = if sandbox.is_active() {
+            sandbox.filter_env(&env)
+        } else {
+            env
+        };
+        let cache_key = self.generated_usage_cache_key(command, &cwd, &sandbox, &filtered_env);
+        let cell = GENERATED_USAGE_CACHE
+            .entry(cache_key)
+            .or_insert_with(|| Arc::new(tokio::sync::OnceCell::new()))
+            .clone();
+        let spec = cell
+            .get_or_try_init(|| async {
+                let (program, args, cmd_verbatim) =
+                    task_executor::task_inline_command(self, command, &[], None)?;
+                #[cfg(windows)]
+                let program = {
+                    let program = PathBuf::from(program);
+                    crate::path::resolve_posix_shell_program_path(
+                        program.as_os_str(),
+                        &filtered_env,
+                    )
+                    .map(PathBuf::from)
+                    .unwrap_or(program)
+                };
+                #[cfg(not(windows))]
+                let program = PathBuf::from(&program);
+                let env = task_executor::maybe_convert_env_for_msys_shell(&program, &filtered_env);
+                let runner = crate::cmd::CmdLineRunner::new(&program);
+                #[cfg(windows)]
+                let runner = if cmd_verbatim {
+                    args.iter().fold(runner, |runner, arg| runner.raw_arg(arg))
+                } else {
+                    runner.args(&args)
+                };
+                #[cfg(not(windows))]
+                let runner = {
+                    let _ = cmd_verbatim;
+                    runner.args(&args)
+                };
+                let mut runner = runner
+                    .current_dir(cwd)
+                    .envs(env.as_ref())
+                    .redact(config.redactions().iter().cloned())
+                    .with_sandbox(sandbox);
+                if let Some(timeout) = self
+                    .timeout
+                    .as_ref()
+                    .map(|timeout| crate::duration::parse_duration(timeout))
+                    .transpose()?
+                {
+                    runner = runner.with_timeout(timeout);
+                }
+                runner.apply_sandbox().await?;
+                let output = runner.read().await.wrap_err_with(|| {
+                    format!(
+                        "usage command failed for task {} from {}: {command}",
+                        self.name,
+                        display_path(&self.config_source)
+                    )
+                })?;
+                let mut spec: usage::Spec = output.parse().wrap_err_with(|| {
+                    format!(
+                        "invalid usage spec generated for task {} from {}: {command}",
+                        self.name,
+                        display_path(&self.config_source)
+                    )
+                })?;
+                self.populate_spec_metadata(&mut spec);
+                self.populate_usage_about(&mut spec);
+                Ok::<_, eyre::Report>(spec)
+            })
+            .await?;
+        Ok(spec.clone())
+    }
+
     pub async fn parse_usage_spec_with_vars(
         &self,
         config: &Arc<Config>,
@@ -1970,14 +2186,19 @@ impl Task {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            let spec = parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default();
+            let spec = if self.usage_command.is_some() {
+                self.resolve_generated_usage_spec(config, cwd.clone())
+                    .await?
+            } else {
+                parse_task_script_usage(&file)
+                    .inspect_err(|e| {
+                        warn!(
+                            "failed to parse task file {} with usage: {e:?}",
+                            file::display_path(&file)
+                        )
+                    })
+                    .unwrap_or_default()
+            };
             (spec, vec![])
         } else {
             let scripts_only = self.run_script_strings();
@@ -2008,6 +2229,9 @@ impl Task {
 
     /// Parse usage spec for display purposes without expensive environment rendering
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
+        if self.usage_command.is_some() {
+            return self.resolve_generated_usage_spec(config, None).await;
+        }
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
             parse_task_script_usage(&file)
@@ -2029,6 +2253,25 @@ impl Task {
         Ok(spec)
     }
 
+    /// Parse a task spec without executing a dynamic generator. Dynamic file
+    /// tasks expose an internal usage mount which is resolved only when usage
+    /// selects that task for help or completion.
+    pub(crate) async fn parse_usage_spec_for_listing(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
+        if self.usage_command.is_none() {
+            return self.parse_usage_spec_for_display(config).await;
+        }
+        let mut spec = usage::Spec::default();
+        spec.cmd
+            .mounts
+            .push(usage::SpecMount::new(self.usage_mount_command()));
+        self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
+        Ok(spec)
+    }
+
     /// Parse usage metadata without resolving task- or subproject-specific
     /// environment directives. This is used before the scheduler starts, where
     /// source/module hooks must not run ahead of task dependencies.
@@ -2036,6 +2279,9 @@ impl Task {
         &self,
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
+        if self.usage_command.is_some() {
+            return self.resolve_generated_usage_spec(config, None).await;
+        }
         let mut spec = if let Some(file) = self.file_path_raw() {
             parse_task_script_usage(&file)
                 .inspect_err(|e| {
@@ -2631,6 +2877,10 @@ impl Task {
                 .timeout
                 .as_ref()
                 .is_some_and(|s| contains_template_syntax(s))
+            || self
+                .usage_command
+                .as_ref()
+                .is_some_and(|s| contains_template_syntax(s))
             || self.allow_read.iter().any(|p| path_contains_template(p))
             || self.allow_write.iter().any(|p| path_contains_template(p))
             || tools_have_template
@@ -2706,6 +2956,11 @@ impl Task {
             && contains_template_syntax(timeout)
         {
             *timeout = render_str(&mut tera, timeout, &tera_ctx)?;
+        }
+        if let Some(usage_command) = &mut self.usage_command
+            && contains_template_syntax(usage_command)
+        {
+            *usage_command = render_str(&mut tera, usage_command, &tera_ctx)?;
         }
         let mut render_sandbox_paths = |paths: &mut Vec<PathBuf>| -> Result<()> {
             let mut rendered = Vec::with_capacity(paths.len());
@@ -3145,6 +3400,8 @@ impl Default for Task {
             quiet: false,
             tools: Default::default(),
             usage: "".to_string(),
+            usage_command: None,
+            usage_command_requires_trust: false,
             timeout: None,
             remote_file_source: None,
             deny_all: false,
@@ -3601,12 +3858,12 @@ mod tests {
 
     #[cfg(unix)]
     use super::TaskConfirm;
-    #[cfg(unix)]
-    use super::{TaskCacheConfig, TaskOutput};
     use super::{
-        clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
+        EnvMap, clear_usage_env, env_contains_key, name_from_path, tera_tag_has_usage_ref,
         tera_template_has_usage_ref,
     };
+    #[cfg(unix)]
+    use super::{TaskCacheConfig, TaskOutput};
 
     #[derive(Debug)]
     struct BrokenWorkspaceProvider;
@@ -4143,6 +4400,38 @@ exec proxy "$@"
         }
     }
 
+    #[test]
+    fn generated_usage_mount_uses_canonical_task_name() {
+        let task = Task {
+            name: "build.py".into(),
+            display_name: "build".into(),
+            usage_command: Some("echo spec".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(task.usage_mount_command(), "mise tasks __usage build.py");
+    }
+
+    #[test]
+    fn generated_usage_cache_key_includes_environment() {
+        let task = Task {
+            name: "build".into(),
+            config_source: "/project/mise.toml".into(),
+            usage_command: Some("echo spec".into()),
+            ..Default::default()
+        };
+        let mut first = EnvMap::new();
+        first.insert("PROFILE".into(), "debug".into());
+        let mut second = first.clone();
+        second.insert("PROFILE".into(), "release".into());
+        let sandbox = crate::sandbox::SandboxConfig::default();
+
+        assert_ne!(
+            task.generated_usage_cache_key("echo spec", Path::new("/project"), &sandbox, &first),
+            task.generated_usage_cache_key("echo spec", Path::new("/project"), &sandbox, &second)
+        );
+    }
+
     #[tokio::test]
     async fn test_render_sandbox_allow_paths() {
         let config = Config::get().await.unwrap();
@@ -4357,6 +4646,67 @@ echo "hello world"
         expected.aliases = vec!["b".to_string()];
         expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn test_from_path_usage_command_header() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("generated-usage");
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+# [MISE] usage_command="printf 'arg \"<name>\" help=\"Name\"'"
+echo "$@"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            task.usage_command.as_deref(),
+            Some("printf 'arg \"<name>\" help=\"Name\"'")
+        );
+
+        let listing = task.parse_usage_spec_for_listing(&config).await.unwrap();
+        assert_eq!(listing.cmd.mounts.len(), 1);
+        assert!(listing.cmd.args.is_empty());
+
+        let generated = task.parse_usage_spec_for_display(&config).await.unwrap();
+        assert_eq!(generated.cmd.args.len(), 1);
+        assert_eq!(generated.cmd.args[0].name, "name");
+    }
+
+    #[tokio::test]
+    async fn test_usage_command_conflicts_with_embedded_usage() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("conflicting-usage");
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE usage_command="echo 'arg \"<name>\"'"
+#USAGE flag "--verbose"
+echo "$@"
+"#,
+        )
+        .unwrap();
+
+        let err = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot combine usage_command with embedded usage declarations")
+        );
     }
 
     #[tokio::test]
@@ -5081,6 +5431,7 @@ echo "hello world"
 #MISE silent=true
 #MISE output="prefix"
 #MISE tools={node={prefix="20"}, python="3.11"}
+#MISE usage_command="echo 'arg \"<name>\"'"
 #MISE confirm="Are you sure?"
 echo "test"
 "#;
@@ -5124,6 +5475,7 @@ echo "test"
         assert_eq!(task.quiet, true);
         assert_eq!(task.output, Some(TaskOutput::Prefix));
         assert!(!task.tools.is_empty());
+        assert_eq!(task.usage_command.as_deref(), Some("echo 'arg \"<name>\"'"));
         assert_eq!(
             task.tools.get("node"),
             Some(&super::TaskToolValue::Map(super::TaskToolValueMap {

@@ -502,7 +502,10 @@ pub async fn get_task_lists(
                     .clone()
                     .or_else(|| dirs::CWD.clone())
                     .unwrap_or_default();
-                let task = Task::from_path(config, &path, &PathBuf::new(), &config_root).await?;
+                let mut task =
+                    Task::from_path(config, &path, &PathBuf::new(), &config_root).await?;
+                task.usage_command_requires_trust = task.usage_command.is_some()
+                    && !crate::config::is_global_task_include_path(&path);
                 return Ok(vec![task.with_args(args)]);
             }
         }

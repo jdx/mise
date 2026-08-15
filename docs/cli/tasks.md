@@ -68,9 +68,6 @@ Sort order. Default is asc.
 
 - `asc`
 - `desc`
-
-## Subcommands
-
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
 - [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/dynamic
+#!/usr/bin/env bash
+#MISE description="Dynamic usage task"
+#MISE usage_command=".mise/tasks/dynamic --usage-spec"
+
+if [[ ${1:-} == --usage-spec ]]; then
+  echo run >>.usage-runs
+  cat <<'KDL'
+arg "<name>" help="Name to greet"
+flag "--mode <mode>" help="Greeting mode" {
+  choices "fast" "slow"
+}
+KDL
+  exit 0
+fi
+
+echo "name=$usage_name mode=$usage_mode"
+EOF
+chmod +x .mise/tasks/dynamic
+
+# Extension-qualified siblings share a display name, so aggregate usage must
+# retain both under their canonical names instead of overwriting one mount.
+cat <<'EOF' >.mise/tasks/build.sh
+#!/usr/bin/env bash
+#MISE usage_command="printf 'flag \"--shell\"\n'"
+echo shell
+EOF
+cat <<'EOF' >.mise/tasks/build.bash
+#!/usr/bin/env bash
+#MISE usage_command="printf 'flag \"--bash\"\n'"
+echo bash
+EOF
+chmod +x .mise/tasks/build.sh .mise/tasks/build.bash
+
+# Listing the aggregate usage spec must stay lazy. It exposes an internal mount
+# but does not execute the task's generator.
+assert_contains "mise tasks ls --usage" 'cmd dynamic help="Dynamic usage task"'
+assert_contains "mise tasks ls --usage" 'mount run="mise tasks __usage dynamic"'
+assert_contains "mise tasks ls --usage" 'cmd build.sh'
+assert_contains "mise tasks ls --usage" 'mount run="mise tasks __usage build.sh"'
+assert_contains "mise tasks ls --usage" 'cmd build.bash'
+assert_contains "mise tasks ls --usage" 'mount run="mise tasks __usage build.bash"'
+[[ ! -e .usage-runs ]] || fail "usage_command ran while listing tasks"
+
+# Explicit help resolves the generated spec.
+assert_contains "mise run dynamic --help" "<name>"
+assert_contains "mise run dynamic --help" "--mode <mode>"
+
+# Normal task parsing consumes the same generated spec.
+assert "mise run dynamic Alice --mode fast" "name=Alice mode=fast"
+
+# Completion resolves only the selected task mount and sees generated choices.
+# Completion is delegated to the external usage CLI. Configure it explicitly
+# here so the test does not depend on the developer checkout's tool environment
+# while the earlier metadata-only paths remain free of tool installation.
+cat <<'EOF' >mise.toml
+[tools]
+"usage" = { version = "5.0.0", os = ["linux", "macos"] }
+EOF
+mise usage >mise.usage.kdl
+assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run dynamic --mode ''" "fast
+slow"
+assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run build.sh --sh" "--shell"
+assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run build.bash --ba" "--bash"
+# The two help commands, task run, and completion each start a separate mise
+# process, so the per-process cache intentionally results in four executions.
+[[ $(wc -l <.usage-runs) -eq 4 ]] || fail "usage_command was evaluated more than once in one mise invocation"
+
+# Generator failures include the task and command context and never execute the
+# task body.
+cat <<'EOF' >.mise/tasks/bad
+#!/usr/bin/env bash
+#MISE usage_command="exit 17"
+touch .bad-task-body
+EOF
+chmod +x .mise/tasks/bad
+if output=$(mise run bad --help 2>&1); then
+  fail "failing usage_command unexpectedly succeeded"
+fi
+[[ $output == *"usage command failed for task bad"* ]] || fail "missing task context: $output"
+[[ $output == *"exit 17"* ]] || fail "missing command context: $output"
+[[ ! -e .bad-task-body ]] || fail "task body ran after usage_command failed"
+
+# A generator may not be combined with embedded usage declarations.
+cat <<'EOF' >.mise/tasks/conflict
+#!/usr/bin/env bash
+#MISE usage_command="echo 'arg \"<name>\"'"
+#USAGE flag "--verbose"
+echo conflict
+EOF
+chmod +x .mise/tasks/conflict
+assert_fail "mise tasks ls"
