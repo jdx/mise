@@ -34,7 +34,7 @@ impl IntoLua for PostInstallContext {
 
 #[cfg(test)]
 mod tests {
-    use crate::Plugin;
+    use crate::{Plugin, embedded_plugins};
     use tokio::test;
 
     use super::*;
@@ -60,5 +60,38 @@ mod tests {
             "runtime_version"
         );
         assert!(root.join("bin").join("dummy").exists());
+    }
+
+    #[test]
+    async fn embedded_chromedriver() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("O'Brien");
+        std::fs::create_dir_all(&root).unwrap();
+        let binary_name = if cfg!(windows) {
+            "chromedriver.exe"
+        } else {
+            "chromedriver"
+        };
+        std::fs::write(root.join(binary_name), "chromedriver").unwrap();
+
+        let embedded = embedded_plugins::get_embedded_plugin("chromedriver").unwrap();
+        let plugin = Plugin::from_embedded("chromedriver", embedded).unwrap();
+        let sdk_info = SdkInfo::new(
+            "chromedriver".to_string(),
+            "153.0.8009.0".to_string(),
+            root.clone(),
+        );
+        let ctx = PostInstallContext {
+            root_path: root.clone(),
+            runtime_version: "153.0.8009.0".to_string(),
+            sdk_info: BTreeMap::from([("chromedriver".to_string(), sdk_info)]),
+        };
+
+        plugin.post_install(ctx).await.unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("bin").join(binary_name)).unwrap(),
+            "chromedriver"
+        );
     }
 }
