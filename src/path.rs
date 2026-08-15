@@ -2,6 +2,28 @@ pub use std::path::*;
 
 use crate::dirs;
 
+/// `s` with `/` rewritten to `\` on Windows.
+///
+/// For text a person reads, and nothing else. `Path::join` appends a multi-segment literal
+/// verbatim, so `root.join(".git/hooks")` resolves correctly through `components()` while
+/// `Display` shows the `/` it was given — and roots handed back by libraries arrive
+/// `/`-separated already, so one printed path could switch form three times:
+/// `C:/Users/me\proj\.git/hooks\pre-commit`. `/` is a separator on Windows and never part of a
+/// name, so both spellings address the same file.
+///
+/// Deliberately *not* applied in [`PathExt::display_user`], which is not only a display helper:
+/// `ToolRequest::Path::version()` builds `path:<display_user>` and lockfile entries are matched
+/// on that string, and `system::edits` compares a user-supplied filter against one. Rewriting
+/// there would change identity, not presentation.
+///
+/// Off Windows this returns its input: `\` is an ordinary filename character there.
+pub fn settle_display_separators(s: String) -> String {
+    match cfg!(windows) {
+        true => s.replace('/', "\\"),
+        false => s,
+    }
+}
+
 pub trait PathExt {
     /// replaces $HOME with "~", and drops a Windows extended-length prefix
     fn display_user(&self) -> String;
@@ -19,6 +41,10 @@ impl PathExt for Path {
     /// `dunce::simplified` only strips the prefix when the result still names the same file:
     /// verbatim UNC, device paths, reserved names and paths past `MAX_PATH` keep it, because those
     /// genuinely do not resolve without it.
+    ///
+    /// Separators are deliberately left as they are here — see [`settle_display_separators`],
+    /// which `file::display_path` applies. This function also feeds strings that are matched
+    /// rather than merely shown.
     fn display_user(&self) -> String {
         let path = dunce::simplified(self);
         let home = dirs::HOME.to_string_lossy();
@@ -702,13 +728,40 @@ mod tests {
         );
     }
 
+    /// The rewrite is display-only, so it lives beside `display_path` rather than in
+    /// `display_user` -- see the tests over there. This one pins the piece in isolation, and that
+    /// `display_user` itself leaves separators alone, since strings mise *matches* go through it.
+    #[test]
+    fn test_settle_display_separators() {
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                settle_display_separators(r"C:/Users/me\proj\.git/hooks".to_string()),
+                r"C:\Users\me\proj\.git\hooks"
+            );
+            assert_eq!(
+                Path::new("C:/Users/me").display_user(),
+                "C:/Users/me",
+                "display_user must not settle separators"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            // `\` is an ordinary filename character here, so nothing is rewritten.
+            assert_eq!(settle_display_separators(r"/a/b\c".to_string()), r"/a/b\c");
+        }
+    }
+
     /// The prefix cannot occur on unix (`\` is an ordinary filename character there), so nothing
-    /// is stripped and the `~` substitution keeps working.
+    /// is stripped, no separator is rewritten, and the `~` substitution keeps working.
     #[cfg(not(windows))]
     #[test]
     fn test_display_user_leaves_unix_paths_alone() {
         assert_eq!(Path::new("/usr/local/bin").display_user(), "/usr/local/bin");
+        // The boundary for the separator rewrite: a file really can be named `weird\name` here,
+        // so turning that into a separator would rename it in the message.
         assert_eq!(Path::new(r"weird\name").display_user(), r"weird\name");
+        assert_eq!(Path::new(r"/a/b\c").display_user(), r"/a/b\c");
         // The substitution the refactor had to leave intact. `display_user` skips it when HOME is
         // `/`, so the assertion does too rather than depending on the runner's environment.
         if dirs::HOME.as_os_str() != "/" {

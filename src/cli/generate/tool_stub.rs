@@ -4,6 +4,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::tool_stub::ToolStubFile;
 use crate::config::{Config, Settings};
+use crate::file::display_path;
 use crate::file::{self, ExtractionFormat};
 use crate::http::HTTP;
 use crate::lockfile::PlatformInfo;
@@ -20,7 +21,6 @@ use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
-use xx::file::display_path;
 
 /// Generate a tool stub for HTTP-based tools
 ///
