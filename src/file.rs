@@ -1023,20 +1023,39 @@ pub fn has_shebang(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Extensions that `windows_executable_extensions` lists but `CreateProcess` cannot
-/// launch: they need an interpreter (`pwsh -File`, `wscript`/`cscript`). `.bat` and
-/// `.cmd` are not here — std routes those through cmd.exe with escaped arguments.
+/// Extensions `std::process::Command` can start from a path alone on Windows: `exe` and `com`
+/// natively, `bat` and `cmd` because std routes those through cmd.exe with escaped arguments.
+/// Anything else needs an interpreter named for it — `pwsh -File` for a `.ps1`,
+/// `cscript` for a `.vbs`, whatever a shebang asks for.
 ///
-/// `pub(crate)` so `task::task_executor` can assert that its `shell_from_extension` names
-/// an interpreter for every entry. That function is not `cfg(windows)`-gated, so it cannot
-/// match against this list directly; the correspondence is enforced by a test instead.
+/// A fixed list on purpose. It describes what the OS can start, which
+/// `windows_executable_extensions` has no say over: that setting decides what mise *treats* as
+/// executable. Deriving it the other way round — subtracting known interpreter-only extensions
+/// from the setting — happened to be right for the default list and wrong for any other, since a
+/// user who added `sh` or `py` was then answered "yes, `CreateProcess` can start this" and the
+/// task died with "not a valid Win32 application" instead of using its shebang.
+///
+/// `pub(crate)` so `task::task_executor` can assert that `shell_from_extension` names an
+/// interpreter for every default extension this list excludes.
 #[cfg(windows)]
-pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
+pub(crate) const OS_LAUNCHABLE_EXTENSIONS: [&str; 4] = ["exe", "com", "bat", "cmd"];
+
+/// Whether the OS can start a file with this extension without an interpreter.
+///
+/// Compared case-insensitively, the way [`has_known_executable_extension`] does: Windows
+/// extensions are not case-sensitive, so `PIPX.PS1` is the same file as `pipx.ps1`.
+#[cfg(windows)]
+pub(crate) fn os_can_launch_extension(ext: &str) -> bool {
+    OS_LAUNCHABLE_EXTENSIONS
+        .iter()
+        .any(|known| ext.eq_ignore_ascii_case(known))
+}
 
 /// Check if a file can be executed directly by the OS without a shell wrapper.
 /// On Unix, this checks the executable permission bit.
-/// On Windows, this checks for a known executable extension (.bat, .cmd, .exe, ...)
-/// minus the ones that only an interpreter can run.
+/// On Windows, it takes both questions in turn: does mise treat this extension as executable
+/// (`windows_executable_extensions`, which a user may narrow), and can the OS actually start it
+/// ([`OS_LAUNCHABLE_EXTENSIONS`], which a user may not widen)?
 ///
 /// Distinct from [`is_executable`], which on Windows deliberately also accepts a
 /// shebang-only file. Callers that hand the path to `Command::new` need this one:
@@ -1050,20 +1069,11 @@ pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
 pub fn can_execute_directly(path: &Path) -> bool {
     #[cfg(windows)]
     {
-        // Compared case-insensitively, the way has_known_executable_extension does:
-        // Windows extensions are not case-sensitive, so PIPX.PS1 is the same file.
-        if path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                INTERPRETER_ONLY_EXTENSIONS
-                    .iter()
-                    .any(|only| ext.eq_ignore_ascii_case(only))
-            })
-        {
-            return false;
-        }
         has_known_executable_extension(path)
+            && path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(os_can_launch_extension)
     }
     #[cfg(not(windows))]
     {
@@ -3888,5 +3898,34 @@ mod tests {
         // A path outside the cwd falls through to `display_path`, which settles separators too.
         let outside = display_rel_path(Path::new("relative-to-nothing"));
         assert!(!outside.starts_with('.'), "{outside}");
+    }
+
+    /// The list answers only "can the OS start this", so it is fixed and does not consult
+    /// settings. Case-insensitive, since Windows extensions are.
+    #[cfg(windows)]
+    #[test]
+    fn os_can_launch_extension_names_only_what_the_os_starts() {
+        for ext in ["exe", "com", "bat", "cmd", "EXE", "Cmd"] {
+            assert!(os_can_launch_extension(ext), "{ext}");
+        }
+        // ps1 and vbs need an interpreter; the rest are extensions a user might add to
+        // `windows_executable_extensions`, which does not make CreateProcess able to start them.
+        for ext in ["ps1", "PS1", "vbs", "sh", "py", "js", ""] {
+            assert!(!os_can_launch_extension(ext), "{ext}");
+        }
+    }
+
+    /// Under the shipped default `windows_executable_extensions` the answers are exactly what
+    /// they were before the whitelist replaced the interpreter-only blacklist -- the two agree on
+    /// that list, which is why the old shape looked correct.
+    #[cfg(windows)]
+    #[test]
+    fn can_execute_directly_is_unchanged_for_the_default_extensions() {
+        for name in [r"C:\x\tool.exe", r"C:\x\tool.com", "tool.bat", "tool.CMD"] {
+            assert!(can_execute_directly(Path::new(name)), "{name}");
+        }
+        for name in ["tool.ps1", "tool.PS1", "tool.vbs", "tool", r"C:\x\tool"] {
+            assert!(!can_execute_directly(Path::new(name)), "{name}");
+        }
     }
 }
