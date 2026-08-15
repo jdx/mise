@@ -185,7 +185,8 @@ outputs = ["packages/app/node_modules"]
 ### Templates and Environment Variables
 
 String values in provider configuration support Tera templates such as
-`{{ config_root }}`, `{{ env.NAME }}`, and `{{ vars.name }}`. Shell-style environment variables
+<span v-pre>`{{ config_root }}`</span>, <span v-pre>`{{ env.NAME }}`</span>, and
+<span v-pre>`{{ vars.name }}`</span>. Shell-style environment variables
 such as `$NAME` and `${NAME:-default}` are expanded after Tera templates, using the same
 `env_shell_expand` setting as `[env]` values.
 
