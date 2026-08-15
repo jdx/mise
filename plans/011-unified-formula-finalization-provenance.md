@@ -1,11 +1,11 @@
 # Plan 011: Unify formula finalization and preserve truthful provenance
 
-Status: IN PROGRESS — EXACT-PREDECESSOR CORRECTION
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010
-Implementation commits: `a7f2352e1`, `43cc1d8c1`, `227664100`
+Implementation commits: `a7f2352e1`, `43cc1d8c1`, `227664100`, `7cebd5e51`
 
 Post-review correction (2026-08-15):
 
@@ -18,8 +18,28 @@ Post-review correction (2026-08-15):
 - same-version replacement remaps the captured keg path to the transaction
   backup. Missing or unprovable predecessor state takes the conservative
   `.default` path instead of inferring ownership from arbitrary old kegs;
-- focused compile and hosted exact-head proof must pass before this plan returns
-  to DONE.
+- focused compile and hosted exact-head proof pass. The review thread is
+  resolved with the fixing commit and exact-head evidence.
+
+Exact-predecessor completion proof:
+
+- exact #11915 head `7cebd5e51141c7ea97eb1f5febb32cc5ae465fa4`
+  passes the complete
+  [test workflow](https://github.com/jdx/mise/actions/runs/31896105424),
+  including Linux, macOS, Windows, lint/Clippy, unit, e2e, bootstrap, and the
+  aggregate gate;
+- [macOS oracle job 95039581724](https://github.com/jdx/mise/actions/runs/31896105424/job/95039581724)
+  records cask/formula counts `1`/`4` at `/opt/homebrew`. Both markers bind the
+  exact mise head and matching Homebrew reference/runtime `6.0.17` at
+  `4dacfe77a24dead72de749c0876028b77b99cd04`;
+- [Linux/source oracle job 95039581687](https://github.com/jdx/mise/actions/runs/31896105424/job/95039581687)
+  records counts `1`/`1` at `/home/linuxbrew/.linuxbrew` and
+  `/tmp/mise-brew-source-prefix`. Those intentionally brew-free bodies record
+  runtime Homebrew as `not-installed` while retaining the exact reference;
+- [macOS unit job 95039581757](https://github.com/jdx/mise/actions/runs/31896105424/job/95039581757)
+  executes the regressions proving that a stale non-predecessor default cannot
+  authorize overwrite and that same-version replacement compares against the
+  transaction backup containing the exact predecessor.
 
 ## Objective
 
