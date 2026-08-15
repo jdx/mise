@@ -4,7 +4,9 @@ use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::file::{canonicalize_cached, canonicalize_or_self, touch_dir};
 use crate::path_env::PathEnv;
-use crate::shell::{ActivateOptions, ActivatePrelude, Shell, ShellType, get_shell};
+use crate::shell::{
+    ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, Shell, ShellType, require_shell,
+};
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
@@ -67,8 +69,10 @@ pub struct Activate {
 
 impl Activate {
     pub fn run(self) -> Result<()> {
-        let shell = get_shell(self.shell_type.or(self.shell))
-            .expect("no shell provided. Run `mise activate zsh` or similar");
+        let shell = require_shell(
+            self.shell_type.or(self.shell),
+            &format!("Name the shell: `mise activate {EXAMPLE_SHELL}`."),
+        )?;
 
         // touch ROOT to allow hook-env to run
         let _ = touch_dir(&dirs::DATA);

@@ -1,7 +1,7 @@
 use eyre::Result;
 
 use crate::env;
-use crate::shell::{build_deactivation_script, get_shell};
+use crate::shell::{EXAMPLE_SHELL, build_deactivation_script, require_shell};
 
 /// Disable mise for current shell session
 ///
@@ -20,7 +20,10 @@ impl Deactivate {
             return Ok(());
         }
 
-        let shell = get_shell(None).expect("no shell detected");
+        let shell = require_shell(
+            None,
+            &format!("Re-run `mise activate {EXAMPLE_SHELL}` in your shell rc file."),
+        )?;
 
         let mut output = build_deactivation_script(&*shell);
         output.push_str(&shell.unset_env("__MISE_ORIG_PATH"));
