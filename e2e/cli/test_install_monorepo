@@ -17,11 +17,19 @@ EOF
 cat >monorepo/packages/a/mise.toml <<'EOF'
 [tools]
 tiny = "1.0.0"
+
+[tasks.prepare]
+tools.tiny = "3.1.0"
+run = "touch task-ran"
 EOF
 cat >monorepo/packages/b/mise.toml <<'EOF'
 [tools]
 tiny = "2.1.0"
 dummy = "1.0.0"
+
+[tasks.prepare]
+tools.dummy = "2.0.0"
+run = "touch task-ran"
 EOF
 echo "2" >monorepo/packages/c/.dummy-version
 
@@ -50,6 +58,13 @@ assert "test -d '$MISE_DATA_DIR/installs/tiny/2.1.0'"
 assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/3.1.0'"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+
+echo "=== install --monorepo --include-task-tools includes every root task ==="
+assert "cd monorepo && mise install --monorepo --include-task-tools"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/3.1.0'"
+assert "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+assert_fail "test -e monorepo/packages/a/task-ran"
+assert_fail "test -e monorepo/packages/b/task-ran"
 
 echo "=== ls --monorepo includes every configured root ==="
 output=$(cd monorepo && mise ls --monorepo 2>&1)

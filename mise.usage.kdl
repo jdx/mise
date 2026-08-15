@@ -1942,6 +1942,7 @@ Examples:
     $ mise install node@20      # install fuzzy node version
     $ mise install node         # install version specified in mise.toml
     $ mise install              # installs everything specified in mise.toml
+    $ mise install --include-task-tools # also install tools required by tasks
 
 """#
     flag "-f --force" help=#"""
@@ -1968,6 +1969,14 @@ This argument will print backend output such as download, configuration, and com
 Like --dry-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
+"""#
+    }
+    flag --include-task-tools help="Also install tools required by tasks in the current scope" {
+        long_help #"""
+Also install tools required by tasks in the current scope
+
+This prepares task tools without running task commands or dependencies.
+Combine with --monorepo to include tasks from every configured root.
 """#
     }
     flag --minimum-release-age help="Only install versions released before this date or older than this duration" {

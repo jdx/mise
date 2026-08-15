@@ -33,6 +33,7 @@ use std::{
 use tokio::sync::OnceCell;
 
 pub use install_options::InstallOptions;
+pub(crate) use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,

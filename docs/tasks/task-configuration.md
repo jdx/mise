@@ -271,6 +271,10 @@ Run [`mise lock`](/dev-tools/mise-lock.html) to resolve task-specific tools into
 config's lockfile before running the task. This reads the task definition without executing the
 task or installing its tools.
 
+Run `mise install --include-task-tools` to install tools for every task in the current scope without
+executing task commands or dependencies. This is useful for preparing CI caches or container images;
+combine it with `--monorepo` to include every configured monorepo root.
+
 ### `dir`
 
 - **Type**: `string`
