@@ -1306,38 +1306,49 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_task_source_files() {
-        let cases: &[(&[&str], &str, &str)] = &[
-            (&[], "echo {{ task_source_files() }}", "echo []"),
+        // A source that reaches the filesystem comes back with the platform separator, so its
+        // expectation has to follow. A source containing template syntax never reaches the
+        // filesystem -- it is passed through verbatim, keeping whatever the user wrote -- so
+        // `native` must not be applied to it, or the expectation rewrites a template instead
+        // of a path.
+        fn native(expected: &str) -> String {
+            match cfg!(windows) {
+                true => expected.replace('/', "\\"),
+                false => expected.to_string(),
+            }
+        }
+
+        let cases: Vec<(&[&str], &str, String)> = vec![
+            (&[], "echo {{ task_source_files() }}", native("echo []")),
             (
                 &["**/filetask"],
                 "echo {{ task_source_files() | first }}",
-                "echo .mise/tasks/filetask", // created by constructor in `src/test.rs`, guaranteed to exist
+                native("echo .mise/tasks/filetask"), // created by constructor in `src/test.rs`, guaranteed to exist
             ),
             (
                 &["nonexistent/*.xyz"],
                 "echo {{ task_source_files() }}",
-                "echo []",
+                native("echo []"),
             ),
             (
                 &["../../Cargo.toml"],
                 "echo {{ task_source_files() | first }}",
-                "echo ../../Cargo.toml",
+                native("echo ../../Cargo.toml"),
             ),
             (
                 &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],
                 "echo {{ task_source_files() | first }}",
-                concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                native(concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")),
             ),
-            #[cfg(not(windows))] // TODO: this cases panics on windows currently
             (
                 &["{{ env.HOME }}/file.txt", "src/*.rs"],
                 "echo {{ task_source_files() | first }}",
-                "echo {{ env.HOME }}/file.txt",
+                "echo {{ env.HOME }}/file.txt".to_string(),
             ),
             (
                 &["[invalid"],
                 "echo {{ task_source_files() | first }}",
-                "echo [invalid",
+                native("echo [invalid"),
             ),
             (
                 &[
@@ -1345,24 +1356,24 @@ mod tests {
                     concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"),
                 ],
                 "{% for file in task_source_files() %}echo {{ file }}; {% endfor %}",
-                concat!(
+                native(concat!(
                     "echo ",
                     env!("CARGO_MANIFEST_DIR"),
                     "/Cargo.toml; echo ",
                     env!("CARGO_MANIFEST_DIR"),
                     "/README.md; ",
-                ),
+                )),
             ),
             // `!` excludes a previously matched file
             (
                 &["**/filetask", "!**/filetask"],
                 "echo {{ task_source_files() }}",
-                "echo []",
+                native("echo []"),
             ),
         ];
 
-        for (sources, template, expected) in cases {
-            let (sources, template, expected) = (*sources, *template, *expected);
+        for (sources, template, expected) in &cases {
+            let (sources, template) = (*sources, *template);
 
             let (mut task, scripts, parser, config) = (
                 Task::default(),
@@ -1378,10 +1389,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            #[cfg(windows)]
-            let expected = expected.replace("/", r"\"); // 🙄
-
-            assert_eq!(parsed, vec![expected]);
+            assert_eq!(parsed, vec![expected.clone()]);
         }
     }
 
