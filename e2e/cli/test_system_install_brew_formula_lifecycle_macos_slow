@@ -15,7 +15,9 @@ brew_oracle_configure_runtime "$MISE_SYSTEM_BREW_PREFIX"
 brew=$BREW_ORACLE_BREW
 
 formula_fixtures=(ca-certificates openssl@3 node kimi-code)
-permission_fixture=python@3.14
+# Hosted images reserve python@3.14. python@3.12 exposes the same guarded
+# `set_permissions u+w` venv lifecycle shape without adopting runner state.
+permission_fixture=python@3.12
 shared_fixture_paths=(
   "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates"
   "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3"
