@@ -2111,6 +2111,9 @@ mod tests {
             target_raw: target.to_string_lossy().to_string(),
             target: target.to_path_buf(),
             source: source.to_path_buf(),
+            // These tests are about link and copy modes, which read the file at `source`. Inline
+            // content is the other kind of entry and has nothing to do with what they assert.
+            content: None,
             mode,
             exclude: vec![],
             base: source.parent().expect("source parent").to_path_buf(),

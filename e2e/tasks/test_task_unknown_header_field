@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# An unrecognised key in one file task's header used to abort loading *every* task in the project,
+# so a typo in one script made unrelated tasks — including TOML ones — unrunnable.
+#
+# `run_windows` is the real case: it is a TOML-task key, so a file task header does not know it.
+
+cat <<EOF >mise.toml
+[tasks.good]
+run = "echo GOOD-TOML-TASK"
+EOF
+
+mkdir -p mise-tasks
+cat <<EOF >mise-tasks/badheader
+#!/usr/bin/env bash
+#MISE description="has an unknown key"
+#MISE run_windows="echo nope"
+echo FROM-FILE-TASK
+EOF
+chmod +x mise-tasks/badheader
+
+# The task in the *other* file has to keep working. This is what regressed.
+assert "mise run good" "GOOD-TOML-TASK"
+
+# And the file task itself is still usable, with its known keys applied.
+assert "mise run badheader" "FROM-FILE-TASK"
+assert_contains "mise tasks ls" "has an unknown key"
+
+# Ignored, not silent: the warning names the file so the typo is findable.
+assert_contains "mise tasks ls 2>&1" "run_windows"
+
+# The control: a header that cannot be parsed at all is still an error. Ignoring an unknown key
+# must not turn into ignoring a broken header.
+cat <<EOF >mise-tasks/brokenheader
+#!/usr/bin/env bash
+#MISE env={invalid=toml=here}
+echo unreachable
+EOF
+chmod +x mise-tasks/brokenheader
+assert_fail_contains "mise tasks ls" "task header TOML"

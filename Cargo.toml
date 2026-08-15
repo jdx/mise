@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.8.5"
+version = "2026.8.6"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -241,7 +241,7 @@ zstd = "0.13"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
-nix = { version = "0.31", features = ["signal", "term", "user"] }
+nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
 self_update = { version = "0.44", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",

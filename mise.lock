@@ -312,6 +312,10 @@ checksum = "sha256:7e23929588aaf5daff1e93bfc4addca7ccf55195444e84552b6588c9d8646
 url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757862"
 
+[[tools."cargo:flamegraph"]]
+version = "0.6.14"
+backend = "cargo:flamegraph"
+
 [[tools.communique]]
 version = "1.2.4"
 backend = "github:jdx/communique"

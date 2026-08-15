@@ -1106,6 +1106,7 @@ impl Config {
                 env_scripts: cached.env_scripts.clone(),
                 redactions: cached.redactions.clone(),
                 redaction_exclusions: cached.redaction_exclusions.clone(),
+                caller_env_keys: cached.caller_env_keys.clone(),
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
@@ -1117,11 +1118,7 @@ impl Config {
                 .collect_vec();
             self.add_redactions_excluding(
                 redact_keys,
-                &env_results
-                    .env
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.0.clone()))
-                    .collect(),
+                &env_results.redactable_env(&env::PRISTINE_ENV),
                 &env_results.redaction_exclusions,
             );
             if log::log_enabled!(log::Level::Trace) {
@@ -1184,11 +1181,7 @@ impl Config {
             .collect_vec();
         self.add_redactions_excluding(
             redact_keys,
-            &env_results
-                .env
-                .iter()
-                .map(|(k, v)| (k.clone(), v.0.clone()))
-                .collect(),
+            &env_results.redactable_env(&env::PRISTINE_ENV),
             &env_results.redaction_exclusions,
         );
         if cache_enabled
@@ -1214,6 +1207,7 @@ impl Config {
                 env_scripts: env_results.env_scripts.clone(),
                 redactions: env_results.redactions.clone(),
                 redaction_exclusions: env_results.redaction_exclusions.clone(),
+                caller_env_keys: env_results.caller_env_keys.clone(),
                 watch_files,
                 watch_file_mtimes,
                 created_at: now,
