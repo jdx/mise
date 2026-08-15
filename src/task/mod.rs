@@ -2824,15 +2824,18 @@ impl Task {
             .redaction_keys()
             .into_iter()
             .chain(env_results.redactions.iter().cloned());
-        let task_env_map: EnvMap = env_results
-            .env
-            .iter()
-            .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect();
+        // Config-level exclusions are resolved separately from task env, so carry them over
+        // here or a `redact = false` variable the task merely declares `required` would be
+        // registered anyway. A task *assignment* still overrides the config-level exclusion.
+        let mut redaction_exclusions = config.env_results().await?.redaction_exclusions.clone();
+        for key in env_results.env.keys() {
+            redaction_exclusions.remove(key);
+        }
+        redaction_exclusions.extend(env_results.redaction_exclusions.iter().cloned());
         config.add_redactions_excluding(
             redact_keys,
-            &task_env_map,
-            &env_results.redaction_exclusions,
+            &env_results.redactable_env(&env),
+            &redaction_exclusions,
         );
 
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
