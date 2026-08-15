@@ -35,10 +35,14 @@ impl Where {
                 Some(version) => self.tool.with_version(&version).tvr.unwrap(),
                 None => {
                     let ts = ToolsetBuilder::new().build(&config).await?;
-                    ts.versions
-                        .get(self.tool.ba.as_ref())
-                        .and_then(|tvr| tvr.requests.first().cloned())
-                        .unwrap_or_else(|| self.tool.with_version("latest").tvr.unwrap())
+                    match ts.versions.get(self.tool.ba.as_ref()) {
+                        Some(tvl) => {
+                            tvl.os_supported_requests().next().cloned().ok_or_else(|| {
+                                eyre::eyre!("{} does not have an active version", self.tool.ba)
+                            })?
+                        }
+                        None => self.tool.with_version("latest").tvr.unwrap(),
+                    }
                 }
             },
         };

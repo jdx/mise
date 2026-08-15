@@ -61,7 +61,7 @@ impl Tool {
         let mut ts = ToolsetBuilder::new().build(&config).await?;
         ts.resolve(&config).await?;
         let tvl = ts.versions.get(&self.tool);
-        let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
+        let tv = tvl.and_then(|tvl| tvl.os_supported_versions().next());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
 
         // Check if the backend exists and fail if it doesn't
@@ -93,8 +93,7 @@ impl Tool {
                 .unique()
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {
-                tvl.versions
-                    .iter()
+                tvl.os_supported_versions()
                     .map(|tv| tv.version.clone())
                     .collect::<Vec<_>>()
             }),
