@@ -159,7 +159,24 @@ Adding `#!/usr/bin/env bash` is usually all it takes, and it costs nothing on th
 File tasks have no equivalent of a TOML task's
 [`run_windows`](/tasks/task-configuration.html#run-windows) — the script _is_ the command, so there
 is nowhere to put a second one. Write the two scripts side by side instead, giving the Windows one an
-executable extension and the other no extension at all:
+executable extension:
+
+```
+mise-tasks/
+  build.sh       # #!/usr/bin/env bash
+  build.ps1      # the Windows version
+```
+
+The two have to share a directory and a stem — that pairing is what makes them one task rather than
+two that happen to be named alike.
+
+On Windows mise prefers the native script: `build.ps1` answers to `build`, and the POSIX one is
+dropped. On Linux and macOS the `.ps1` has no execute permission, so only `build.sh` is found.
+`mise run build` does the right thing on each.
+
+The POSIX half is anything _without_ one of the
+[`windows_executable_extensions`](/configuration/settings.html#windows_executable_extensions), so a
+file with no extension at all works the same way:
 
 ```
 mise-tasks/
@@ -167,15 +184,24 @@ mise-tasks/
   build.ps1      # the Windows version
 ```
 
-On Windows mise prefers the native script: `build.ps1` answers to `build`, and the extensionless
-file is dropped. On Linux and macOS the `.ps1` has no execute permission, so only `build` is found.
-`mise run build` does the right thing on each.
-
 Marking the `.ps1` executable on Linux or macOS does not break that — it simply appears there as a
 separate task called `build.ps1`, since the rename to `build` only happens on Windows.
 
+If you would rather name the two files something unrelated, or say which is which explicitly, use a
+[TOML task](/tasks/toml-tasks.html) that calls them:
+
+```toml
+[tasks.build]
+run = "./scripts/build.sh"
+run_windows = "pwsh -File ./scripts/windows-build.ps1"
+```
+
+Spelled out rather than `./scripts/windows-build.ps1`, because
+[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+defaults to `cmd /c`, and cmd will not start a `.ps1` on its own.
+
 If there is more than one Windows candidate — say `build.ps1` _and_ `build.cmd` — mise cannot choose
-between them, so it leaves everything alone: all three files stay, listed as `build`, `build.ps1`
+between them, so it leaves everything alone: all three files stay, listed as `build.sh`, `build.ps1`
 and `build.cmd`.
 
 ## Editing tasks
