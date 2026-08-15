@@ -2,13 +2,10 @@
 --- @param ctx table Context provided by vfox
 function PLUGIN:PostInstall(ctx)
     local cmd = require("cmd")
+    local file = require("file")
 
     local sdkInfo = ctx.sdkInfo["chromedriver"]
     local path = sdkInfo.path
-    local version = sdkInfo.version
-
-    -- Create bin directory
-    cmd.exec("mkdir -p '" .. path .. "/bin'")
 
     -- Determine platform suffix for the extracted directory using RUNTIME global
     local osType = RUNTIME.osType
@@ -32,31 +29,47 @@ function PLUGIN:PostInstall(ctx)
     end
 
     -- The zip extracts to chromedriver-{platform}/
-    local srcDir = path .. "/chromedriver-" .. platform
+    local binaryName = osType == "windows" and "chromedriver.exe" or "chromedriver"
+    local srcDir = file.join_path(path, "chromedriver-" .. platform)
+    local srcPath = file.join_path(srcDir, binaryName)
 
     -- Check if srcDir exists, if not try without subdirectory
-    local file = io.open(srcDir .. "/chromedriver", "r")
-    if file then
-        file:close()
-    else
+    if not file.exists(srcPath) then
         -- Try direct path (files extracted directly)
-        srcDir = path
+        srcPath = file.join_path(path, binaryName)
     end
 
-    -- Copy chromedriver binary
+    local binDir = file.join_path(path, "bin")
+    local destPath = file.join_path(binDir, binaryName)
+
+    -- Copy chromedriver binary using the platform's native shell. Passing paths
+    -- through environment variables avoids shell-quoting issues.
     if osType == "windows" then
-        cmd.exec("cp -f '" .. srcDir .. "/chromedriver.exe' '" .. path .. "/bin/'")
+        cmd.exec(
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -Command "
+                .. "$null = New-Item -ItemType Directory -Force -Path $env:BIN_DIR; "
+                .. "Copy-Item -LiteralPath $env:SRC_PATH -Destination $env:DEST_PATH -Force",
+            {
+                env = {
+                    BIN_DIR = binDir,
+                    SRC_PATH = srcPath,
+                    DEST_PATH = destPath,
+                },
+            }
+        )
     else
-        cmd.exec("cp -f '" .. srcDir .. "/chromedriver' '" .. path .. "/bin/'")
-        cmd.exec("chmod +x '" .. path .. "/bin/chromedriver'")
+        local env = {
+            BIN_DIR = binDir,
+            SRC_PATH = srcPath,
+            DEST_PATH = destPath,
+        }
+        cmd.exec('mkdir -p "$BIN_DIR"', { env = env })
+        cmd.exec('cp -f "$SRC_PATH" "$DEST_PATH"', { env = env })
+        cmd.exec('chmod +x "$DEST_PATH"', { env = env })
     end
 
     -- Verify installation
-    local binaryName = osType == "windows" and "chromedriver.exe" or "chromedriver"
-    local verifyFile = io.open(path .. "/bin/" .. binaryName, "r")
-    if verifyFile then
-        verifyFile:close()
-    else
-        error("Failed to install chromedriver - binary not found at " .. path .. "/bin/" .. binaryName)
+    if not file.exists(destPath) then
+        error("Failed to install chromedriver - binary not found at " .. destPath)
     end
 end

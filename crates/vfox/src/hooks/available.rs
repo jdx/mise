@@ -60,8 +60,13 @@ impl FromLua for AvailableVersion {
 #[cfg(test)]
 mod tests {
     use crate::Plugin;
+    use crate::embedded_plugins;
     use crate::hooks::available::AvailableVersion;
     use mlua::{FromLua, Lua, Value};
+    use std::sync::Arc;
+    use url::Url;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn test_available_version_rejects_non_table() {
@@ -96,6 +101,38 @@ mod tests {
     async fn test_nodejs_async() {
         let versions = run_async("test-nodejs").await;
         assert!(versions.contains(&"20.0.0".to_string()));
+    }
+
+    #[tokio::test]
+    async fn chromedriver_returns_newest_version_first() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/versions.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "versions": [
+                    {"version": "115.0.5763.0", "downloads": {"chromedriver": [{}]}},
+                    {"version": "152.0.7999.0"},
+                    {"version": "153.0.8009.0", "downloads": {"chromedriver": [{}]}}
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let embedded = embedded_plugins::get_embedded_plugin("chromedriver").unwrap();
+        let plugin = Plugin::from_embedded("chromedriver", embedded).unwrap();
+        let mock_url = Url::parse(&format!("{}/versions.json", server.uri())).unwrap();
+        plugin
+            .set_url_rewriter(Arc::new(move |url| *url = mock_url.clone()))
+            .unwrap();
+
+        let versions = plugin.available_async().await.unwrap();
+        assert_eq!(
+            versions
+                .into_iter()
+                .map(|version| version.version)
+                .collect::<Vec<_>>(),
+            ["153.0.8009.0", "115.0.5763.0"]
+        );
     }
 
     fn run(plugin: &str) -> Vec<String> {

@@ -306,8 +306,14 @@ function PLUGIN:Available(ctx)
         table.insert(result, {version = version})
     end
 
-    -- Sort versions semantically (ascending order - oldest first)
-    return semver.sort_by(result, "version")
+    -- Available() must return newest-first. semver.sort_by() sorts ascending,
+    -- so reverse that result before returning it.
+    local sorted = semver.sort_by(result, "version")
+    local newest_first = {}
+    for i = #sorted, 1, -1 do
+        table.insert(newest_first, sorted[i])
+    end
+    return newest_first
 end
 ```
 
@@ -321,7 +327,7 @@ table.sort(versions, function(a, b)
     return semver.compare(a.version, b.version) > 0
 end)
 
--- Sort ascending (oldest first) - default for Available()
+-- Sort ascending (oldest first); reverse this before returning from Available()
 table.sort(versions, function(a, b)
     return semver.compare(a.version, b.version) < 0
 end)

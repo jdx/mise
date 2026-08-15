@@ -27,8 +27,11 @@ function PLUGIN:Available(ctx)
         return result
     end
 
-    -- Collect versions that have chromedriver downloads
-    for _, v in ipairs(data.versions) do
+    -- vfox expects the newest available version first. Google's API returns
+    -- versions oldest-first, so preserve its source ordering in reverse rather
+    -- than trying to interpret the version strings.
+    for i = #data.versions, 1, -1 do
+        local v = data.versions[i]
         if v.downloads and v.downloads.chromedriver then
             table.insert(result, {
                 version = v.version,
