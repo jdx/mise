@@ -494,7 +494,11 @@ exact binary release. mise treats that value as a normal version request, so a v
 `3.25` selects the latest matching CMake 3.25 release and a GoReleaser config `version: 2` selects
 the latest GoReleaser 2.x release.
 
-For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn`), mise reads `devEngines.runtime` for runtime tools (`node`, `bun`, and `deno`), and `devEngines.packageManager` or top-level `packageManager` (e.g. `pnpm@9.1.0` or `npm@10.0.0`) for package managers.
+For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn`):
+
+- Runtime tools (`node`, `deno`, and `bun`) read `devEngines.runtime` (both single object and array formats are supported).
+- Package managers (`npm`, `pnpm`, and `yarn`) read `devEngines.packageManager` or top-level `packageManager` (e.g. `pnpm@9.1.0` or `npm@10.0.0`).
+- For `bun`, mise checks `devEngines.runtime` first, falling back to `devEngines.packageManager` and top-level `packageManager` (e.g. `bun@1.2.0`).
 
 For `go.mod`, the `toolchain goX.Y.Z` directive (an exact toolchain pin) is used when present.
 Otherwise the `go X.Y` directive is used; because it declares only the _minimum_ required Go
