@@ -41,6 +41,10 @@ cleanup_formula_fixtures() {
     # Ignore reverse dependencies so Homebrew cannot leave a fixture installed
     # merely because another preloaded runner formula refers to it.
     "$brew" uninstall --formula --force --ignore-dependencies "$formula" >/dev/null 2>&1 || true
+    # Homebrew can leave an empty rack directory behind after deleting every
+    # keg. Remove only a proven-empty rack; any remaining entry still fails the
+    # fresh-topology gate below.
+    rmdir "$MISE_SYSTEM_BREW_PREFIX/Cellar/$formula" 2>/dev/null || true
   done
   for path in "${shared_fixture_paths[@]}"; do
     rm -rf "$path"
