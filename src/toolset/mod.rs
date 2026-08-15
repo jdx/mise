@@ -280,10 +280,10 @@ impl Toolset {
             .collect()
     }
 
-    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &Vec<ToolVersion>)> {
+    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
         self.versions
             .iter()
-            .flat_map(|(ba, v)| eyre::Ok((ba.backend()?, &v.versions)))
+            .flat_map(|(ba, tvl)| eyre::Ok((ba.backend()?, tvl)))
             .collect()
     }
 
@@ -291,11 +291,7 @@ impl Toolset {
         trace!("list_current_versions");
         self.list_versions_by_plugin()
             .iter()
-            .flat_map(|(p, v)| {
-                v.iter()
-                    .filter(|v| v.request.is_os_supported())
-                    .map(|v| (p.clone(), v.clone()))
-            })
+            .flat_map(|(p, tvl)| tvl.os_supported_versions().map(|v| (p.clone(), v.clone())))
             .collect()
     }
 

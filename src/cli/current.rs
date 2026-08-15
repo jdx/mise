@@ -48,11 +48,8 @@ impl Current {
             .into_iter()
             .find(|(p, _)| p.id() == tool.id())
         {
-            Some((_, versions)) => {
-                let versions = versions
-                    .iter()
-                    .filter(|v| v.request.is_os_supported())
-                    .collect::<Vec<_>>();
+            Some((_, tvl)) => {
+                let versions = tvl.os_supported_versions().collect::<Vec<_>>();
                 if versions.is_empty() {
                     warn!(
                         "Plugin {} does not have a version set",
@@ -81,11 +78,8 @@ impl Current {
 
     async fn all(&self, ts: Toolset) -> Result<()> {
         let config = Config::get().await?;
-        for (plugin, versions) in ts.list_versions_by_plugin() {
-            let versions = versions
-                .iter()
-                .filter(|v| v.request.is_os_supported())
-                .collect::<Vec<_>>();
+        for (plugin, tvl) in ts.list_versions_by_plugin() {
+            let versions = tvl.os_supported_versions().collect::<Vec<_>>();
             if versions.is_empty() {
                 continue;
             }
