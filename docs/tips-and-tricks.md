@@ -74,6 +74,13 @@ mise generate task-stubs --mise-bin ./bin/mise
 The generated task stubs behave like small project commands, while `bin/mise`
 downloads and runs the pinned mise binary for the project.
 
+If contributors work on Windows, add `--windows`. Windows cannot execute a shebang script, so
+`mise generate bootstrap --write ./bin/mise --windows` writes `bin/mise.cmd` alongside it and they
+run `.\bin\mise.cmd`. It is generated on every platform, so a `bin/` committed from Linux or macOS
+still works for someone who clones the repository on Windows. The launcher downloads the standalone
+`mise.exe` for the release and checks it against a checksum embedded when the script was generated,
+so it needs nothing beyond what Windows already ships.
+
 ## Machine bootstrapping
 
 Beyond `[tools]`, mise can declare the rest of the machine setup needed for

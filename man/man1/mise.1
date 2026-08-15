@@ -2130,6 +2130,16 @@ Directory to put localized data into
 .RS
 \fIDefault: \fR.mise
 .RE
+.TP
+\fB\-\-windows\fR
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `\-\-write`, since stdout cannot
+carry two files.
 .SH "MISE GENERATE CONFIG"
 Generate a mise.toml file
 .PP
