@@ -1033,6 +1033,11 @@ fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Re
 /// only part parsed and rendered at load).
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     use crate::config::config_file::mise_toml::toml_value_has_template;
+    // Must see exactly what the loader sees. `Task::from_path_unrendered_with_cf` strips a
+    // byte-order mark before scanning headers, so leaving one here would let a `#MISE` on line 1
+    // hide an escaped template from this check and then render it anyway -- the caller runs the
+    // two back to back on the same file.
+    let body = file::strip_utf8_bom(body);
     if path.extension().is_some_and(|e| e == "toml") {
         // Unparseable TOML won't load as a task file (it errors before any
         // render), so it doesn't need trust on this account.
@@ -1049,7 +1054,8 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
 
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
-    let raw = extract_usage_from_comments(&script);
+    // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
+    let raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
     if raw.trim().is_empty() {
         return usage::Spec::parse_script(file);
     }
@@ -1328,7 +1334,11 @@ impl Task {
     ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
         task.cf = cf;
-        let info = parse_mise_header_toml(&file::read_to_string(path)?)?
+        // Stripped before scanning: the header patterns anchor at the start of a line, so a
+        // byte-order mark would hide a `#MISE` written on line 1 -- which is where a task with
+        // an executable extension rather than a shebang puts it.
+        let body = file::read_to_string(path)?;
+        let info = parse_mise_header_toml(file::strip_utf8_bom(&body))?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
@@ -3839,6 +3849,23 @@ rust_cache = { unknown = true }
             script,
             "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
         ));
+
+        // A byte-order mark must not hide the header from this check. The loader strips one
+        // before parsing the same header, so a miss here would mean rendering a template that
+        // was never gated on trust.
+        assert!(file_has_decoded_template(
+            script,
+            "\u{feff}#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
+        assert!(file_has_decoded_template(
+            toml,
+            "\u{feff}[hello]\nrun = \"echo hi\"\ndescription = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        ));
+        // and it must not turn a plain file into one that needs trust
+        assert!(!file_has_decoded_template(
+            script,
+            "\u{feff}#MISE description=\"a plain task\"\necho hi\n"
+        ));
     }
 
     #[test]
@@ -3865,6 +3892,27 @@ exec shapeme "$@"
             assert_eq!(spec.cmd.mounts.len(), 1);
             assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
             assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+        }
+    }
+
+    /// A `#USAGE` on line 1 is the case a byte-order mark hides: the extractor anchors at the
+    /// start of a line, and `str::trim` does not remove U+FEFF. Without the mark stripped the
+    /// flag never reaches the spec, so `mise run task -- -f` leaves `usage_force` unset.
+    #[test]
+    fn test_parse_task_script_usage_reads_a_marked_first_line() {
+        use std::io::Write;
+
+        let directives = "#USAGE flag \"-f --force\" help=\"force it\"\nexec tool \"$@\"\n";
+        for (label, body) in [
+            ("marked", format!("\u{feff}{directives}")),
+            ("unmarked", directives.to_string()),
+        ] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(body.as_bytes()).unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+            assert_eq!(spec.cmd.flags.len(), 1, "{label}");
+            assert_eq!(&spec.cmd.flags[0].name, "force", "{label}");
         }
     }
 
