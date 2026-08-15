@@ -140,6 +140,12 @@ pub fn linked_version(name: &str) -> Option<String> {
     record_keg(name, &opt).map(|(version, _)| version)
 }
 
+/// Capture the exact active predecessor before any keg or link mutation.
+pub(super) fn active_keg(name: &str) -> Option<PathBuf> {
+    let opt = prefix::prefix().join("opt").join(name);
+    record_keg(name, &opt).map(|(_, keg)| keg)
+}
+
 /// Return the active keg version and whether one of its active records can be repaired locally.
 pub(super) fn linked_state(name: &str) -> Option<(String, bool)> {
     let opt = prefix::prefix().join("opt").join(name);
@@ -813,6 +819,7 @@ pub async fn pour(input: BottlePour<'_>) -> Result<()> {
         lifecycle,
         pr,
         existing_backup: None,
+        predecessor_keg: active_keg(name),
     })
     .await
 }
@@ -980,6 +987,7 @@ pub(super) struct FormulaFinalizer<'a> {
     pub lifecycle: &'a super::lifecycle::PreparedFormulaLifecycle,
     pub pr: &'a dyn SingleReport,
     pub existing_backup: Option<PathBuf>,
+    pub predecessor_keg: Option<PathBuf>,
 }
 
 pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> {
@@ -994,6 +1002,7 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         lifecycle,
         pr,
         existing_backup,
+        predecessor_keg,
     } = input;
     let name = &rf.formula.name;
     let pkg_version = rf.formula.pkg_version()?;
@@ -1077,7 +1086,14 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
     }
 
     pr.set_message("shared state".to_string());
-    super::lifecycle::install(lifecycle)
+    let predecessor_keg = predecessor_keg.as_deref().and_then(|predecessor| {
+        if predecessor == keg {
+            backup.as_deref()
+        } else {
+            Some(predecessor)
+        }
+    });
+    super::lifecycle::install(lifecycle, predecessor_keg)
         .await
         .wrap_err_with(|| {
             format!(
@@ -2127,6 +2143,7 @@ mod tests {
             lifecycle: &prepared,
             pr: &pr,
             existing_backup: None,
+            predecessor_keg: None,
         })
         .await?;
 
@@ -2173,6 +2190,7 @@ mod tests {
             lifecycle: &prepared,
             pr: &pr,
             existing_backup: Some(backup.clone()),
+            predecessor_keg: Some(keg.clone()),
         })
         .await
         .unwrap_err();
@@ -2202,6 +2220,10 @@ mod tests {
         let keg = keg_path("foo", "1.0");
         let _state = FormulaStateGuard::new(&keg);
         write_source_keg(&keg, "old")?;
+        crate::file::create_dir_all(keg.join(".bottle/etc/foo"))?;
+        crate::file::write(keg.join(".bottle/etc/foo/config"), "old-default")?;
+        crate::file::create_dir_all(prefix.join("etc/foo"))?;
+        crate::file::write(prefix.join("etc/foo/config"), "old-default")?;
         let backup = backup_existing_keg(&keg)?.unwrap();
         let snapshot = write_source_keg(&keg, "new")?;
         crate::file::create_dir_all(keg.join(".bottle/etc/foo"))?;
@@ -2220,6 +2242,7 @@ mod tests {
             lifecycle: &prepared,
             pr: &pr,
             existing_backup: Some(backup.clone()),
+            predecessor_keg: Some(keg.clone()),
         })
         .await
         .unwrap_err();

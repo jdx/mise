@@ -126,6 +126,7 @@ pub async fn build(
     // formulae bake the final keg path into binaries, so the build installs
     // straight into the Cellar (same as brew); a failed build removes the keg
     let keg = pour::keg_path(name, &pkg_version);
+    let predecessor_keg = pour::active_keg(name);
     let existing_backup = pour::backup_existing_keg(&keg)?;
 
     pr.set_message("build from source".to_string());
@@ -182,6 +183,7 @@ pub async fn build(
         lifecycle,
         pr,
         existing_backup,
+        predecessor_keg,
     })
     .await;
     if finalized.is_ok() {

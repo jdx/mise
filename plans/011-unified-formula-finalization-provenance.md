@@ -1,11 +1,25 @@
 # Plan 011: Unify formula finalization and preserve truthful provenance
 
-Status: DONE
+Status: IN PROGRESS — EXACT-PREDECESSOR CORRECTION
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010
 Implementation commits: `a7f2352e1`, `43cc1d8c1`, `227664100`
+
+Post-review correction (2026-08-15):
+
+- [#11915 review thread](https://github.com/jdx/mise/pull/11915#discussion_r3789746144)
+  identified that matching a live shared file against every stale keg default
+  can overwrite user-selected configuration that happens to equal a
+  non-predecessor default;
+- formula finalization now captures the exact active keg before any keg/link
+  mutation and compares persistent defaults only against that predecessor;
+- same-version replacement remaps the captured keg path to the transaction
+  backup. Missing or unprovable predecessor state takes the conservative
+  `.default` path instead of inferring ownership from arbitrary old kegs;
+- focused compile and hosted exact-head proof must pass before this plan returns
+  to DONE.
 
 ## Objective
 

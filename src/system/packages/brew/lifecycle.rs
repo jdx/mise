@@ -725,7 +725,10 @@ fn shared_missing_paths(keg: &Path) -> Vec<(PathBuf, PathBuf)> {
     paths
 }
 
-pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
+pub(super) async fn install(
+    prepared: &PreparedFormulaLifecycle,
+    predecessor_keg: Option<&Path>,
+) -> Result<()> {
     let keg = &prepared.keg;
     let state_path = state_path(keg);
     write_state(
@@ -746,10 +749,10 @@ pub(super) async fn install(prepared: &PreparedFormulaLifecycle) -> Result<()> {
         for root in ["etc", "var"] {
             required_paths.extend(install_shared_tree(
                 &prepared.formula,
-                keg,
                 root,
                 &keg.join(".bottle").join(root),
                 &prefix::prefix().join(root),
+                predecessor_keg,
             )?);
         }
         write_state(
@@ -823,7 +826,7 @@ pub(super) async fn repair(
     let path = state_path(keg);
     if path.symlink_metadata().is_err() {
         validate_legacy_formula_snapshot(prepared)?;
-        install(prepared).await?;
+        install(prepared, None).await?;
         return Ok(true);
     }
     let mut state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
@@ -1089,10 +1092,10 @@ fn write_state(path: &Path, state: &LifecycleState) -> Result<()> {
 
 fn install_shared_tree(
     formula: &str,
-    keg: &Path,
     root: &str,
     source_root: &Path,
     destination_root: &Path,
+    predecessor_keg: Option<&Path>,
 ) -> Result<Vec<PathBuf>> {
     if !source_root.is_dir() {
         return Ok(vec![]);
@@ -1109,8 +1112,14 @@ fn install_shared_tree(
             crate::file::create_dir_all(&destination)?;
             continue;
         }
-        let destination =
-            install_destination(formula, keg, root, entry.path(), relative, &destination)?;
+        let destination = install_destination(
+            formula,
+            root,
+            entry.path(),
+            relative,
+            &destination,
+            predecessor_keg,
+        )?;
         atomic_copy(entry.path(), &destination)?;
         installed_paths.push(destination);
     }
@@ -1119,23 +1128,17 @@ fn install_shared_tree(
 
 fn install_destination(
     formula: &str,
-    keg: &Path,
     root: &str,
     source: &Path,
     relative: &Path,
     destination: &Path,
+    predecessor_keg: Option<&Path>,
 ) -> Result<PathBuf> {
     if destination.symlink_metadata().is_err() || files_equal(source, destination) {
         return Ok(destination.to_path_buf());
     }
-    let rack = keg
-        .parent()
-        .ok_or_else(|| eyre!("keg has no formula rack"))?;
-    for old_keg in crate::file::ls(rack).unwrap_or_default() {
-        if old_keg == keg || !old_keg.is_dir() {
-            continue;
-        }
-        let old_default = old_keg.join(".bottle").join(root).join(relative);
+    if let Some(predecessor_keg) = predecessor_keg {
+        let old_default = predecessor_keg.join(".bottle").join(root).join(relative);
         if old_default.symlink_metadata().is_ok() && files_equal(&old_default, destination) {
             return Ok(destination.to_path_buf());
         }
@@ -1780,10 +1783,10 @@ mod tests {
         crate::file::write(&destination, "user")?;
         let installed = install_shared_tree(
             "openssl@3",
-            &keg,
             "etc",
             &keg.join(".bottle/etc"),
             &tmp.path().join("etc"),
+            None,
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "user");
         let default = PathBuf::from(format!("{}.default", destination.display()));
@@ -1808,14 +1811,47 @@ mod tests {
         crate::file::write(&source, "new")?;
         let installed = install_shared_tree(
             "openssl@3",
-            &keg,
             "etc",
             &keg.join(".bottle/etc"),
             &tmp.path().join("etc"),
+            Some(&rack.join("1")),
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "new");
         assert_eq!(installed, vec![destination.clone()]);
         assert!(!PathBuf::from(format!("{}.default", destination.display())).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn ignores_non_predecessor_keg_defaults() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let rack = tmp.path().join("Cellar/foo");
+        let stale = rack.join("1/.bottle/etc/foo/config");
+        let predecessor = rack.join("2");
+        let active = predecessor.join(".bottle/etc/foo/config");
+        let keg = rack.join("3");
+        let source = keg.join(".bottle/etc/foo/config");
+        let destination = tmp.path().join("etc/foo/config");
+        for path in [&stale, &active, &source, &destination] {
+            crate::file::create_dir_all(path.parent().unwrap())?;
+        }
+        crate::file::write(&stale, "user-selected")?;
+        crate::file::write(&active, "active-default")?;
+        crate::file::write(&destination, "user-selected")?;
+        crate::file::write(&source, "new-default")?;
+
+        let installed = install_shared_tree(
+            "foo",
+            "etc",
+            &keg.join(".bottle/etc"),
+            &tmp.path().join("etc"),
+            Some(&predecessor),
+        )?;
+
+        assert_eq!(crate::file::read_to_string(&destination)?, "user-selected");
+        let default = PathBuf::from(format!("{}.default", destination.display()));
+        assert_eq!(crate::file::read_to_string(&default)?, "new-default");
+        assert_eq!(installed, vec![default]);
         Ok(())
     }
 
@@ -1835,10 +1871,10 @@ mod tests {
         crate::file::write(&source, "new")?;
         let installed = install_shared_tree(
             "openssl@3",
-            &keg,
             "etc",
             &keg.join(".bottle/etc"),
             &tmp.path().join("etc"),
+            Some(&rack.join("1")),
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "user");
         assert_eq!(
@@ -1863,10 +1899,10 @@ mod tests {
 
             let installed = install_shared_tree(
                 "foo",
-                &keg,
                 root,
                 &keg.join(".bottle").join(root),
                 &tmp.path().join(root),
+                None,
             )?;
             assert!(installed.is_empty());
             assert_eq!(crate::file::read_to_string(&destination)?, "user-kept");
@@ -1878,10 +1914,10 @@ mod tests {
             crate::file::create_dir_all(&destination)?;
             install_shared_tree(
                 "foo",
-                &keg,
                 root,
                 &keg.join(".bottle").join(root),
                 &tmp.path().join(root),
+                None,
             )?;
             assert!(destination.is_dir());
             assert_eq!(
