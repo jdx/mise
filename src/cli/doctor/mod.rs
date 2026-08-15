@@ -201,10 +201,9 @@ impl Doctor {
         );
         data.insert("plugins".into(), render_plugins_json());
 
-        let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
-            let versions: serde_json::Value = tv
-                .iter()
-                .filter(|tv| tv.request.is_os_supported())
+        let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tvl)| {
+            let versions: serde_json::Value = tvl
+                .os_supported_versions()
                 .map(|tv: &ToolVersion| {
                     let mut tool = serde_json::Map::new();
                     match f.is_version_installed(&config, tv, true) {
