@@ -1,12 +1,20 @@
 # Plan 010: Compile formula lifecycle once, preflight it, and confine it
 
-Status: DONE
+Status: IN PROGRESS — essential-mac closure extension
 Priority: P0
 Effort: L
 Planned against: #11915 `b94b6b1c1`
 Depends on: 009
 Implementation start: #11915 `4989ac953`
 Implementation commits: `4989ac953`, `43cc1d8c1`, `57319487b`, `5bc0ba042`
+
+Acceptance extension (2026-08-16): direct resolution of all 31 essential-mac
+formula roots reaches current `python@3.14`, whose typed lifecycle requires
+`set_permissions` with `u+w` over guarded framework/lib glob paths. The prior
+closed enum rejected this mutation closure before side effects. Plan 010 is
+reopened until this operation has typed preparation, contained execution, and
+exact-head differential proof. Unsupported permission strings remain fail
+closed; no generic chmod interpreter is added.
 
 Drift check (2026-08-13): the typed preparation and confined executor are now
 present. Exact-head macOS proof exposed one ordered-effect defect: Node removes

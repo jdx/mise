@@ -1,12 +1,18 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: DONE
+Status: IN PROGRESS — permission health/repair extension
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010, 011
 Implementation start: #11915 `94c66938ca1163d26de49902575f0b779367ee41`
 Implementation commits: `94c66938c`, `06a9bf68c`, `57319487b`, `b5b4810c3`
+
+Acceptance extension (2026-08-16): `python@3.14` makes lifecycle permissions an
+operational output. Mise-owned lifecycle state must record each affected path,
+status must detect a removed owner-write bit offline, and apply may restore only
+the idempotent recorded `u+w` effect. Missing or symlink-escaping targets remain
+reinstall-required. Exact-head macOS proof must exercise damage and repair.
 
 Drift check (2026-08-13): installed status still inspected only the configured
 formula's active records. Existing lifecycle state could classify local damage,

@@ -60,6 +60,12 @@ enum PreparedStep {
         force: bool,
         guards: Vec<PreparedGuard>,
     },
+    SetPermissions {
+        paths: Vec<PreparedPattern>,
+        permission: LifecyclePermissionKind,
+        non_recursive: bool,
+        guards: Vec<PreparedGuard>,
+    },
     Run(PreparedRun),
 }
 
@@ -173,6 +179,19 @@ struct RawSymlink {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawSetPermissions {
+    #[serde(rename = "type")]
+    kind: String,
+    paths: Vec<RawPathSpec>,
+    permissions: String,
+    #[serde(default)]
+    non_recursive: bool,
+    #[serde(default)]
+    guards: Vec<RawGuard>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawRun {
     #[serde(rename = "type")]
     kind: String,
@@ -203,6 +222,8 @@ struct LifecycleState {
     #[serde(default)]
     absent_patterns: Vec<String>,
     #[serde(default)]
+    permissions: Vec<LifecyclePermission>,
+    #[serde(default)]
     repair: Option<LifecycleRepairJournal>,
 }
 
@@ -215,8 +236,18 @@ struct LifecycleRepairJournal {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum LifecycleRepairEffect {
-    Copy { source: PathBuf, target: PathBuf },
-    Symlink { source: PathBuf, target: PathBuf },
+    Copy {
+        source: PathBuf,
+        target: PathBuf,
+    },
+    Symlink {
+        source: PathBuf,
+        target: PathBuf,
+    },
+    SetPermissions {
+        path: PathBuf,
+        permission: LifecyclePermissionKind,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -241,6 +272,18 @@ struct LifecycleSymlink {
     target: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LifecyclePermissionKind {
+    UserWrite,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecyclePermission {
+    path: PathBuf,
+    permission: LifecyclePermissionKind,
+}
+
 /// Compile lifecycle metadata into the only representation execution accepts.
 /// This performs no filesystem mutation and must run for the complete mutation
 /// set before the first keg is extracted or built.
@@ -259,6 +302,9 @@ pub(super) fn prepare(formula: &Formula, keg: &Path) -> Result<PreparedFormulaLi
             "remove" => prepare_remove(formula, keg, parse_step(step)?),
             "copy" => prepare_copy(formula, keg, parse_step(step)?),
             "run" => prepare_run(formula, keg, index, parse_step(step)?),
+            "set_permissions" => {
+                prepare_set_permissions(formula, keg, parse_step(step)?)
+            }
             "symlink" => prepare_symlink(formula, keg, parse_step(step)?),
             _ => bail!("unsupported type {kind:?}"),
         })()
@@ -324,6 +370,34 @@ fn prepare_symlink(formula: &Formula, keg: &Path, raw: RawSymlink) -> Result<Pre
         sources: prepare_sources(formula, keg, &raw.source, raw.source_glob)?,
         target: resolve_write_path(formula, keg, &raw.target)?,
         force: raw.force,
+        guards: prepare_guards(formula, keg, raw.guards)?,
+    })
+}
+
+fn prepare_set_permissions(
+    formula: &Formula,
+    keg: &Path,
+    raw: RawSetPermissions,
+) -> Result<PreparedStep> {
+    ensure_step_kind(&raw.kind, "set_permissions")?;
+    if !cfg!(unix) {
+        bail!(
+            "brew:{} set_permissions requires Unix permission semantics; no package state was changed",
+            formula.name
+        );
+    }
+    let permission = match raw.permissions.as_str() {
+        "u+w" => LifecyclePermissionKind::UserWrite,
+        permissions => bail!("unsupported permissions mode {permissions:?}"),
+    };
+    Ok(PreparedStep::SetPermissions {
+        paths: raw
+            .paths
+            .iter()
+            .map(|path| prepare_pattern(formula, keg, path, PathAccess::Write))
+            .collect::<Result<Vec<_>>>()?,
+        permission,
+        non_recursive: raw.non_recursive,
         guards: prepare_guards(formula, keg, raw.guards)?,
     })
 }
@@ -670,6 +744,22 @@ pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
             }
         }
     }
+    for permission in &state.permissions {
+        if permission_satisfied(&permission.path, permission.permission) {
+            continue;
+        }
+        if node_exists(&permission.path) {
+            repairable.insert(format!(
+                "post-install permission is missing at {}",
+                permission.path.display()
+            ));
+        } else {
+            reinstall.insert(format!(
+                "post-install permission target is missing: {}",
+                permission.path.display()
+            ));
+        }
+    }
     for pattern in &state.absent_patterns {
         if glob::glob(pattern)
             .ok()
@@ -739,12 +829,14 @@ pub(super) async fn install(
             symlinks: vec![],
             required_paths: vec![],
             absent_patterns: vec![],
+            permissions: vec![],
             repair: None,
         },
     )?;
     let mut symlinks = vec![];
     let mut required_paths = vec![];
     let mut absent_patterns = vec![];
+    let mut permissions = vec![];
     let result: Result<()> = async {
         for root in ["etc", "var"] {
             required_paths.extend(install_shared_tree(
@@ -763,6 +855,7 @@ pub(super) async fn install(
                 symlinks: vec![],
                 required_paths: required_paths.clone(),
                 absent_patterns: vec![],
+                permissions: vec![],
                 repair: None,
             },
         )?;
@@ -772,6 +865,7 @@ pub(super) async fn install(
                 &mut symlinks,
                 &mut required_paths,
                 &mut absent_patterns,
+                &mut permissions,
                 effects,
             )?;
         }
@@ -787,6 +881,7 @@ pub(super) async fn install(
                 symlinks,
                 required_paths,
                 absent_patterns,
+                permissions,
                 repair: None,
             },
         )?;
@@ -950,6 +1045,16 @@ fn repair_effects(keg: &Path, state: &LifecycleState) -> Vec<LifecycleRepairEffe
                 target: link.target.clone(),
             }),
     );
+    effects.extend(
+        state
+            .permissions
+            .iter()
+            .filter(|permission| !permission_satisfied(&permission.path, permission.permission))
+            .map(|permission| LifecycleRepairEffect::SetPermissions {
+                path: permission.path.clone(),
+                permission: permission.permission,
+            }),
+    );
     effects
 }
 
@@ -991,6 +1096,18 @@ fn validate_repair_journal(
                     )
                 }
             }
+            LifecycleRepairEffect::SetPermissions { path, permission } => {
+                if !state
+                    .permissions
+                    .iter()
+                    .any(|expected| expected.path == *path && expected.permission == *permission)
+                {
+                    bail!(
+                        "lifecycle repair journal contains an unowned permission effect: {}",
+                        path.display()
+                    )
+                }
+            }
         }
     }
     Ok(())
@@ -1028,6 +1145,14 @@ fn preflight_repair_effects(effects: &[LifecycleRepairEffect]) -> Result<()> {
                     )
                 }
             }
+            LifecycleRepairEffect::SetPermissions { path, .. } => {
+                permission_target(path).wrap_err_with(|| {
+                    format!(
+                        "lifecycle repair permission target is missing or ambiguous: {}",
+                        path.display()
+                    )
+                })?;
+            }
         }
     }
     Ok(())
@@ -1045,6 +1170,9 @@ fn apply_repair_effect(effect: &LifecycleRepairEffect) -> Result<()> {
                 crate::file::create_dir_all(target.parent().unwrap())?;
                 crate::file::make_symlink(source, target)?;
             }
+        }
+        LifecycleRepairEffect::SetPermissions { path, permission } => {
+            apply_permission(path, *permission)?;
         }
     }
     Ok(())
@@ -1193,6 +1321,7 @@ struct StepEffects {
     symlinks: Vec<LifecycleSymlink>,
     required_paths: Vec<PathBuf>,
     absent_patterns: Vec<String>,
+    permissions: Vec<LifecyclePermission>,
     removed_paths: Vec<(PathBuf, bool)>,
 }
 
@@ -1206,12 +1335,14 @@ fn merge_step_effects(
     symlinks: &mut Vec<LifecycleSymlink>,
     required_paths: &mut Vec<PathBuf>,
     absent_patterns: &mut Vec<String>,
+    permissions: &mut Vec<LifecyclePermission>,
     effects: StepEffects,
 ) -> Result<()> {
     for (removed, recursive) in &effects.removed_paths {
         let removes = |path: &Path| path == removed || (*recursive && path.starts_with(removed));
         symlinks.retain(|link| !removes(&link.target));
         required_paths.retain(|path| !removes(path));
+        permissions.retain(|permission| !removes(&permission.path));
     }
     absent_patterns.extend(effects.absent_patterns);
 
@@ -1224,6 +1355,11 @@ fn merge_step_effects(
     }
     symlinks.extend(effects.symlinks);
     required_paths.extend(effects.required_paths);
+    for permission in effects.permissions {
+        if !permissions.contains(&permission) {
+            permissions.push(permission);
+        }
+    }
     Ok(())
 }
 
@@ -1243,7 +1379,8 @@ async fn execute_step(
         PreparedStep::Mkdir { guards, .. }
         | PreparedStep::Remove { guards, .. }
         | PreparedStep::Copy { guards, .. }
-        | PreparedStep::Symlink { guards, .. } => guards,
+        | PreparedStep::Symlink { guards, .. }
+        | PreparedStep::SetPermissions { guards, .. } => guards,
         PreparedStep::Run(run) => &run.guards,
     };
     if !guards_match(guards)? {
@@ -1360,8 +1497,86 @@ async fn execute_step(
                 ..Default::default()
             })
         }
+        PreparedStep::SetPermissions {
+            paths,
+            permission,
+            non_recursive,
+            ..
+        } => {
+            let mut targets = BTreeSet::new();
+            for pattern in paths {
+                for path in expand_pattern(pattern)? {
+                    targets.insert(path.clone());
+                    if !non_recursive && path.is_dir() {
+                        for entry in walkdir::WalkDir::new(&path).follow_links(false) {
+                            targets.insert(entry?.path().to_path_buf());
+                        }
+                    }
+                }
+            }
+            let mut permissions = Vec::with_capacity(targets.len());
+            for path in targets {
+                apply_permission(&path, *permission)?;
+                permissions.push(LifecyclePermission {
+                    path,
+                    permission: *permission,
+                });
+            }
+            Ok(StepEffects {
+                permissions,
+                ..Default::default()
+            })
+        }
         PreparedStep::Run(run) => execute_run(prepared, run).await,
     }
+}
+
+fn permission_target(path: &Path) -> Result<PathBuf> {
+    let metadata = path.symlink_metadata()?;
+    let target = if metadata.file_type().is_symlink() {
+        path.canonicalize()?
+    } else {
+        path.to_path_buf()
+    };
+    ensure_runtime_write_path(&target, true)?;
+    Ok(target)
+}
+
+fn apply_permission(path: &Path, permission: LifecyclePermissionKind) -> Result<()> {
+    let target = permission_target(path)?;
+    apply_permission_unchecked(&target, permission)
+}
+
+#[cfg(unix)]
+fn apply_permission_unchecked(path: &Path, permission: LifecyclePermissionKind) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = path.metadata()?.permissions();
+    let mode = match permission {
+        LifecyclePermissionKind::UserWrite => permissions.mode() | 0o200,
+    };
+    permissions.set_mode(mode);
+    fs::set_permissions(path, permissions)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_permission_unchecked(_path: &Path, _permission: LifecyclePermissionKind) -> Result<()> {
+    bail!("formula lifecycle permissions require Unix permission semantics")
+}
+
+#[cfg(unix)]
+fn permission_satisfied(path: &Path, permission: LifecyclePermissionKind) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    path.metadata().is_ok_and(|metadata| match permission {
+        LifecyclePermissionKind::UserWrite => metadata.permissions().mode() & 0o200 != 0,
+    })
+}
+
+#[cfg(not(unix))]
+fn permission_satisfied(_path: &Path, _permission: LifecyclePermissionKind) -> bool {
+    false
 }
 
 fn remove_prepared_node(
@@ -1696,6 +1911,7 @@ fn template_base(formula: &Formula, keg: &Path, base: &str) -> Result<PathBuf> {
         "prefix" => Ok(keg.to_path_buf()),
         "opt_prefix" => Ok(shared.join("opt").join(&formula.name)),
         "bin" | "sbin" | "lib" | "libexec" | "share" => Ok(keg.join(base)),
+        "frameworks" => Ok(keg.join("Frameworks")),
         "pkgshare" => Ok(keg.join("share").join(&formula.name)),
         "var" | "etc" => Ok(shared.join(base)),
         "pkgetc" => Ok(shared.join("etc").join(&formula.name)),
@@ -1749,6 +1965,44 @@ mod tests {
         let keg = prefix::cellar().join("openssl@3/1");
         prepare(&ca, &keg).unwrap();
         prepare(&openssl, &keg).unwrap();
+    }
+
+    #[test]
+    fn accepts_python_venv_permission_steps() {
+        let python = formula(vec![serde_json::json!({
+            "paths": [{
+                "base": "frameworks",
+                "path": "Python.framework/Versions/{{version.major_minor}}/lib/python{{version.major_minor}}/venv/scripts/**/*"
+            }],
+            "permissions": "u+w",
+            "non_recursive": true,
+            "guards": [{"condition": "on", "value": "macos", "id": "1"}],
+            "type": "set_permissions"
+        })]);
+        prepare(&python, &prefix::cellar().join("python@3.14/1")).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn user_write_permission_is_idempotent() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let path = tmp.path().join("script");
+        crate::file::write(&path, "script")?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444))?;
+        assert!(!permission_satisfied(
+            &path,
+            LifecyclePermissionKind::UserWrite
+        ));
+        apply_permission_unchecked(&path, LifecyclePermissionKind::UserWrite)?;
+        apply_permission_unchecked(&path, LifecyclePermissionKind::UserWrite)?;
+        assert!(permission_satisfied(
+            &path,
+            LifecyclePermissionKind::UserWrite
+        ));
+        assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o644);
+        Ok(())
     }
 
     #[test]
@@ -1981,11 +2235,16 @@ mod tests {
         }];
         let mut required_paths = vec![root.join("old-file")];
         let mut absent_patterns = vec![];
+        let mut permissions = vec![LifecyclePermission {
+            path: root.join("old-file"),
+            permission: LifecyclePermissionKind::UserWrite,
+        }];
 
         merge_step_effects(
             &mut symlinks,
             &mut required_paths,
             &mut absent_patterns,
+            &mut permissions,
             StepEffects {
                 absent_patterns: vec![root.to_string_lossy().into_owned()],
                 removed_paths: vec![(root.clone(), true)],
@@ -1994,6 +2253,7 @@ mod tests {
         )?;
         assert!(symlinks.is_empty());
         assert!(required_paths.is_empty());
+        assert!(permissions.is_empty());
         assert_eq!(absent_patterns, [root.to_string_lossy()]);
 
         let recreated = root.join("bin/npm-cli.js");
@@ -2001,6 +2261,7 @@ mod tests {
             &mut symlinks,
             &mut required_paths,
             &mut absent_patterns,
+            &mut permissions,
             StepEffects {
                 required_paths: vec![recreated.clone()],
                 ..Default::default()
@@ -2122,6 +2383,7 @@ mod tests {
             }],
             required_paths: vec![],
             absent_patterns: vec![],
+            permissions: vec![],
             repair: None,
         };
         remove_lifecycle_symlinks(&state)?;

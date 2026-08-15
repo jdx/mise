@@ -283,7 +283,7 @@ jobs:
             "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
           brew_oracle_verify_marker \
             "$result_dir/macos-formula-lifecycle.completed" \
-            test_system_install_brew_formula_lifecycle_macos_slow 4 /opt/homebrew \
+            test_system_install_brew_formula_lifecycle_macos_slow 5 /opt/homebrew \
             "$MISE_BREW_ORACLE_MISE_SHA" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \

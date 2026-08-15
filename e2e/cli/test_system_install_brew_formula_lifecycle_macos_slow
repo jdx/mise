@@ -15,6 +15,7 @@ brew_oracle_configure_runtime "$MISE_SYSTEM_BREW_PREFIX"
 brew=$BREW_ORACLE_BREW
 
 formula_fixtures=(ca-certificates openssl@3 node kimi-code)
+permission_fixture=python@3.14
 shared_fixture_paths=(
   "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates"
   "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3"
@@ -23,7 +24,7 @@ preexisting_record="$MISE_BREW_ORACLE_RESULT_DIR/macos-formula-lifecycle.preexis
 
 {
   printf 'prefix=%s\n' "$("$brew" --prefix)"
-  for formula in "${formula_fixtures[@]}"; do
+  for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
     "$brew" list --versions "$formula" 2>/dev/null || true
   done
   for path in "${shared_fixture_paths[@]}"; do
@@ -35,7 +36,7 @@ preexisting_record="$MISE_BREW_ORACLE_RESULT_DIR/macos-formula-lifecycle.preexis
 
 cleanup_formula_fixtures() {
   local formula path
-  for formula in "${formula_fixtures[@]}"; do
+  for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
     # These exact formulae are the recorded fixtures on a disposable runner.
     # Ignore reverse dependencies so Homebrew cannot leave a fixture installed
     # merely because another preloaded runner formula refers to it.
@@ -56,7 +57,7 @@ cleanup_formula_oracle() {
 cleanup_formula_fixtures
 trap cleanup_formula_oracle EXIT
 
-for formula in "${formula_fixtures[@]}"; do
+for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
   [[ ! -e $MISE_SYSTEM_BREW_PREFIX/Cellar/$formula ]] ||
     brew_oracle_fail "failed to prepare fresh formula fixture: $formula"
   [[ ! -e $MISE_SYSTEM_BREW_PREFIX/opt/$formula && ! -L $MISE_SYSTEM_BREW_PREFIX/opt/$formula ]] ||
@@ -93,4 +94,29 @@ mise bootstrap --yes
 assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
 assert_contains "mise bootstrap packages status" "installed"
 
-brew_oracle_complete test_system_install_brew_formula_lifecycle_macos_slow 4 "$MISE_SYSTEM_BREW_PREFIX"
+# Python's venv templates require Homebrew's typed `set_permissions u+w` step.
+# Damage one recorded path, prove offline health detection, then repair only
+# that idempotent permission effect.
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:$permission_fixture" = "latest"
+EOF
+mise bootstrap --yes
+python_keg=$(readlink -f "$MISE_SYSTEM_BREW_PREFIX/opt/$permission_fixture")
+python_scripts=$(find "$python_keg/Frameworks/Python.framework/Versions" -type d \
+  -path '*/lib/python*/venv/scripts' -print -quit)
+[[ -n $python_scripts ]] || brew_oracle_fail "Python venv scripts directory is missing"
+python_permission_target=$(find "$python_scripts" -type f -print -quit)
+[[ -n $python_permission_target ]] || brew_oracle_fail "Python permission target is missing"
+chmod u-w "$python_permission_target"
+python_status=$(mise bootstrap packages status 2>&1)
+grep -F "post-install permission is missing" <<<"$python_status" >/dev/null ||
+  brew_oracle_fail "Python status omitted its missing lifecycle permission"
+mise bootstrap --yes
+python_modes="$MISE_BREW_ORACLE_RESULT_DIR/python-permissions.tsv"
+find "$python_scripts" -mindepth 1 -exec stat -f '%Lp\t%N' {} + | LC_ALL=C sort >"$python_modes"
+awk '$1 !~ /^[2367]/ { print > "/dev/stderr"; bad=1 } END { exit bad }' "$python_modes" ||
+  brew_oracle_fail "Python venv lifecycle left a path without owner-write permission"
+assert_contains "mise bootstrap packages status" "installed"
+
+brew_oracle_complete test_system_install_brew_formula_lifecycle_macos_slow 5 "$MISE_SYSTEM_BREW_PREFIX"
