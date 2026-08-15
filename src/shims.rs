@@ -235,7 +235,7 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         })
         .lock();
 
-    let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
+    let mise_bin = mise_bin_for_shims();
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
     #[cfg(windows)]
@@ -334,6 +334,26 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         .collect::<Result<Vec<_>>>()?;
 
     Ok(())
+}
+
+/// Resolve the mise executable that Unix symlink shims should target.
+///
+/// Snap exposes applications through `/snap/bin`, where each command is a symlink to the
+/// `snap` dispatcher. That dispatcher identifies the application from argv[0], so invoking it
+/// through a mise shim named `node`, `python`, etc. runs the snap CLI instead of mise. Point Snap
+/// shims at the payload beneath its refresh-stable `current` symlink instead. For other package
+/// managers, retain the PATH-visible executable so their stable launcher survives upgrades.
+pub(crate) fn mise_bin_for_shims() -> PathBuf {
+    env::var_path("SNAP")
+        .as_deref()
+        .and_then(|snap| snap_mise_bin(&env::MISE_BIN, snap))
+        .unwrap_or_else(|| file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone()))
+}
+
+fn snap_mise_bin(mise_bin: &Path, snap: &Path) -> Option<PathBuf> {
+    let relative = mise_bin.strip_prefix(snap).ok()?;
+    let snap_mount = snap.parent()?;
+    Some(snap_mount.join("current").join(relative))
 }
 
 /// Remove all shim files from a directory individually, skipping dotfiles like
@@ -923,6 +943,28 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn snap_mise_bin_uses_refresh_stable_current_path() {
+        assert_eq!(
+            snap_mise_bin(
+                Path::new("/snap/mise/189/bin/mise"),
+                Path::new("/snap/mise/189")
+            ),
+            Some(PathBuf::from("/snap/mise/current/bin/mise"))
+        );
+    }
+
+    #[test]
+    fn snap_mise_bin_rejects_unrelated_executable() {
+        assert_eq!(
+            snap_mise_bin(
+                Path::new("/home/user/.local/bin/mise"),
+                Path::new("/snap/mise/189")
+            ),
+            None
+        );
+    }
 
     #[tokio::test]
     async fn unavailable_tool_message_prefers_matching_configured_tool() {
