@@ -369,8 +369,10 @@ jobs:
               retry_wait_seconds: 30
               max_attempts: 2
               command: |
-                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests
-                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests
+                e2e_status=0
+                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests || e2e_status=$?
+                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests || e2e_status=$?
+                exit "$e2e_status"
           - name: Test tranches 1 and 5
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
