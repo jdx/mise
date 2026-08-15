@@ -116,13 +116,30 @@ wait_for_file() {
 # Safeguard against running the test directly, which would execute in the actual user home
 [[ -n ${TEST_NAME:-} ]] || fail "tests should be called using run_test"
 
+# Capture stdout so a failure can show what the command actually said. Only stdout:
+# every caller but assert_succeed reads the return value back through `$(...)` and
+# compares it, so folding stderr in would break any assertion against a command that
+# warns. stderr still goes straight to the test's stderr, as before.
+#
+# The trailing `printf x` is what keeps trailing newlines: command substitution strips
+# them, so without it assert_succeed — the one caller that prints this straight through
+# rather than capturing it — would run the command's last line into the ok message.
+# Deliberately no temp file: tests are free to shadow commands on PATH, and
+# cli/test_bootstrap_remote stubs `mktemp` with one that hands back a directory.
 quiet_assert_succeed() {
-  local status=0
+  local status=0 output
   debug "$ $1"
-  bash -c "$1" || status=$?
+  output="$(
+    bash -c "$1"
+    s=$?
+    printf x
+    exit "$s"
+  )" || status=$?
+  output="${output%x}"
   if [[ $status -ne 0 ]]; then
-    fail "[$1] command failed with status $status"
+    fail "[$1] command failed with status $status"$'\n'"$output"
   fi
+  printf '%s' "$output"
 }
 quiet_assert_fail() {
   local status=0

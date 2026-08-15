@@ -121,6 +121,9 @@ pub struct CmdLineRunner<'a> {
     observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
+    /// Whether a sandbox was actually installed on this command. Outlives `sandbox`, which
+    /// `apply_sandbox` consumes, so a spawn failure can still say what it was.
+    sandbox_requested: bool,
 }
 
 const GUARD_RUNNING: u8 = 0;
@@ -550,6 +553,7 @@ impl<'a> CmdLineRunner<'a> {
             observe_stderr: None,
             timeout: None,
             sandbox: None,
+            sandbox_requested: false,
         }
     }
 
@@ -1498,6 +1502,7 @@ impl<'a> CmdLineRunner<'a> {
     /// as the file descriptor may not be fully closed yet.
     fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
         let mut attempt = 0;
+        let sandboxed = self.sandbox_requested;
         loop {
             match self.cmd.as_std_mut().spawn() {
                 Ok(child) => return Ok(child),
@@ -1507,13 +1512,14 @@ impl<'a> CmdLineRunner<'a> {
                     // Exponential backoff: 50ms, 100ms, 200ms
                     std::thread::sleep(std::time::Duration::from_millis(50 * (1 << (attempt - 1))));
                 }
-                Err(err) => return Err(err),
+                Err(err) => return Err(Self::explain_spawn_failure(sandboxed, err)),
             }
         }
     }
 
     async fn spawn_async_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
         let mut attempt = 0;
+        let sandboxed = self.sandbox_requested;
         loop {
             match self.cmd.spawn() {
                 Ok(child) => return Ok(child),
@@ -1523,9 +1529,30 @@ impl<'a> CmdLineRunner<'a> {
                     tokio::time::sleep(std::time::Duration::from_millis(50 * (1 << (attempt - 1))))
                         .await;
                 }
-                Err(err) => return Err(err),
+                Err(err) => return Err(Self::explain_spawn_failure(sandboxed, err)),
             }
         }
+    }
+
+    /// Say that a spawn failure may be the sandbox, since the hook itself cannot.
+    ///
+    /// The `pre_exec` hook runs post-fork, where it must stay async-signal-safe: it can return
+    /// an errno and nothing else. std has no channel for a message, and building one there
+    /// would allocate — an `io::Error::other` even arrives as a bare `EINVAL`, losing both the
+    /// text and the code. So the hook returns errnos and the explaining happens here, in the
+    /// parent, where formatting is free.
+    ///
+    /// Takes the flag by value rather than `&self`: the callers hold a `&mut` borrow of
+    /// `self.cmd` for the whole `match`, so reading a field there would not borrow-check.
+    ///
+    /// The original error becomes the source rather than text inside the message. See
+    /// [`SandboxSpawnFailure`] for why folding it into a string would be a behaviour change.
+    fn explain_spawn_failure(sandbox_requested: bool, err: std::io::Error) -> std::io::Error {
+        if !sandbox_requested {
+            return err;
+        }
+        let kind = err.kind();
+        std::io::Error::new(kind, SandboxSpawnFailure(err))
     }
 
     /// Prepare sandbox restrictions on the command. Must be called before execute()
@@ -1549,6 +1576,17 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
+            self.sandbox_requested = true;
+            // Landlock needs every allowed path to exist, and the hook cannot say so from
+            // post-fork — warn here, where stderr is safe to touch and someone is reading it.
+            for path in sandbox.allow_read.iter().chain(sandbox.allow_write.iter()) {
+                if !path.exists() {
+                    warn!(
+                        "sandbox: {} does not exist, so its rule will not apply",
+                        display_path(path)
+                    );
+                }
+            }
             // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
             // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
             if sandbox.effective_deny_env() {
@@ -1568,13 +1606,15 @@ impl<'a> CmdLineRunner<'a> {
             let sandbox = sandbox.clone();
             unsafe {
                 self.cmd.as_std_mut().pre_exec(move || {
+                    // Post-fork: no allocation, no I/O, no formatting. Return a bare errno and
+                    // let the parent explain — see explain_spawn_failure.
+                    let sandbox_failed =
+                        || std::io::Error::from_raw_os_error(nix::errno::Errno::EPERM as i32);
                     if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
-                        crate::sandbox::landlock_apply(&sandbox)
-                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                        crate::sandbox::landlock_apply(&sandbox).map_err(|_| sandbox_failed())?;
                     }
                     if sandbox.effective_deny_net() {
-                        crate::sandbox::seccomp_apply()
-                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                        crate::sandbox::seccomp_apply().map_err(|_| sandbox_failed())?;
                     }
                     Ok(())
                 });
@@ -1583,6 +1623,7 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "macos")]
         {
+            self.sandbox_requested = true;
             // On macOS, rewrite the command to go through sandbox-exec.
             // Build a new Command that wraps the original through sandbox-exec,
             // preserving stdio, cwd, and env from the original.
@@ -1741,6 +1782,40 @@ impl<'a> CmdLineRunner<'a> {
             .get_args()
             .map(|s| s.to_string_lossy().to_string())
             .collect::<Vec<_>>()
+    }
+}
+
+/// A spawn failure with the sandbox named as a likely cause.
+///
+/// Holds the original error as [`std::error::Error::source`] instead of formatting it into the
+/// message. `TaskExecutor::is_text_file_busy` looks for ETXTBSY by walking the error chain for an
+/// `io::Error` that carries an errno, and `io::Error::new(kind, String)` reports
+/// `raw_os_error() == None` — flattening the cause into text would silently switch off the outer
+/// ETXTBSY retry for every sandboxed task. Keeping it as the source leaves the errno reachable,
+/// and mise's error rendering joins the chain either way.
+#[derive(Debug)]
+struct SandboxSpawnFailure(std::io::Error);
+
+impl Display for SandboxSpawnFailure {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // Only set where a sandbox is actually installed, so the hint can name the mechanism.
+        #[cfg(target_os = "linux")]
+        const HOW: &str = "deny_read/deny_write need Landlock and deny_net needs seccomp, and a \
+                           kernel or container without Landlock cannot run them";
+        #[cfg(target_os = "macos")]
+        const HOW: &str = "the command is rewritten to run under sandbox-exec";
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const HOW: &str = "no sandbox mechanism is available on this platform";
+        write!(
+            f,
+            "this command was sandboxed, so applying the sandbox is a likely cause: {HOW}"
+        )
+    }
+}
+
+impl std::error::Error for SandboxSpawnFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
     }
 }
 
@@ -2286,6 +2361,42 @@ mod tests {
         // non-regression contract shared by every CmdLineRunner call site.
         let r = super::CmdLineRunner::new("bash").cmd_body_args(&["-c".to_string()], "echo hi");
         assert_eq!(r.get_args(), vec!["-c".to_string(), "echo hi".to_string()]);
+    }
+
+    #[test]
+    fn test_explain_spawn_failure_keeps_errno_reachable() {
+        let etxtbsy = nix::errno::Errno::ETXTBSY as i32;
+        let annotated = super::CmdLineRunner::explain_spawn_failure(
+            true,
+            std::io::Error::from_raw_os_error(etxtbsy),
+        );
+
+        assert!(annotated.to_string().contains("sandboxed"));
+
+        // Mirrors TaskExecutor::is_text_file_busy. That retry finds ETXTBSY by walking the chain
+        // for an io::Error carrying an errno, so annotating must leave one in place — formatting
+        // the cause into the message would drop the errno and disable the retry.
+        let report = eyre::Report::new(annotated);
+        assert!(report.chain().any(|cause| {
+            cause
+                .downcast_ref::<std::io::Error>()
+                .and_then(|err| err.raw_os_error())
+                == Some(etxtbsy)
+        }));
+    }
+
+    #[test]
+    fn test_explain_spawn_failure_passes_through_unsandboxed() {
+        // Control: without a sandbox the error must come back untouched, so the assertion above
+        // is about the annotation and not about io::Error in general.
+        let etxtbsy = nix::errno::Errno::ETXTBSY as i32;
+        let untouched = super::CmdLineRunner::explain_spawn_failure(
+            false,
+            std::io::Error::from_raw_os_error(etxtbsy),
+        );
+
+        assert_eq!(untouched.raw_os_error(), Some(etxtbsy));
+        assert!(!untouched.to_string().contains("sandboxed"));
     }
 }
 

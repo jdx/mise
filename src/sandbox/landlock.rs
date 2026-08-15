@@ -54,11 +54,10 @@ fn add_path_rule(
         Err(_) => {
             // Path doesn't exist — on Linux, Landlock requires existing paths.
             // This affects cases like --allow-write=./dist where the dir doesn't exist yet.
-            // We warn rather than silently skipping or granting broader ancestor access.
-            eprintln!(
-                "mise sandbox: path '{}' does not exist, sandbox rule may not apply as expected",
-                path.display()
-            );
+            // Skipped silently here on purpose: this runs inside a post-fork `pre_exec` hook,
+            // where taking the stderr lock can deadlock if another thread held it across the
+            // fork. `CmdLineRunner::apply_sandbox` warns about missing paths from the parent
+            // instead, before the fork.
             Ok(ruleset)
         }
     }
@@ -106,7 +105,12 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         if installs_dir.exists() {
             ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
         }
-        ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
+        // Guarded like installs_dir above: mise's own directories are created lazily, and a
+        // rule granting access to a directory that does not exist grants nothing.
+        let data_dir: &std::path::Path = &crate::env::MISE_DATA_DIR;
+        if data_dir.exists() {
+            ruleset = add_path_rule(ruleset, data_dir, read_access)?;
+        }
         for path in &config.allow_read {
             ruleset = add_path_rule(ruleset, path, read_access)?;
         }
@@ -128,7 +132,12 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         if installs_dir.exists() {
             ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
         }
-        ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
+        // Guarded like installs_dir above: mise's own directories are created lazily, and a
+        // rule granting access to a directory that does not exist grants nothing.
+        let data_dir: &std::path::Path = &crate::env::MISE_DATA_DIR;
+        if data_dir.exists() {
+            ruleset = add_path_rule(ruleset, data_dir, read_access)?;
+        }
         for path in &config.allow_read {
             ruleset = add_path_rule(ruleset, path, read_access)?;
         }
