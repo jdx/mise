@@ -440,10 +440,28 @@ fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugi
                 opts: BTreeMap::new(),
                 installs_path: None,
             });
-        // Installed metadata describes the versions already on disk. Plugin
-        // discovery should only supply an identity when no metadata exists.
-        tool.full.get_or_insert(full);
+        // Installed metadata describes the versions already on disk, so plugin discovery normally
+        // only supplies an identity when no metadata exists -- a tool installed as
+        // `github:babashka/babashka` must not be claimed by a same-named asdf plugin.
+        //
+        // A recorded `core:<short>` that mise ships no core backend for is the exception. That
+        // value names nothing resolvable, so keeping it leaves the tool unusable: `backend::get`
+        // returns `None` and every command reports "not found in mise tool registry". It reaches
+        // the manifest from a lockfile `backend` field, which is written through verbatim. An
+        // installed plugin is ground truth about what is on disk, so it wins over a name that
+        // cannot resolve.
+        match tool.full.as_deref() {
+            Some(existing) if names_missing_core_backend(existing) => tool.full = Some(full),
+            Some(_) => {}
+            None => tool.full = Some(full),
+        }
     }
+}
+
+/// Whether `full` asks for a core backend that this build does not ship.
+fn names_missing_core_backend(full: &str) -> bool {
+    full.strip_prefix("core:")
+        .is_some_and(|short| !crate::plugins::core::CORE_PLUGINS.contains_key(short))
 }
 
 pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
@@ -742,6 +760,58 @@ mod tests {
             tools["babashka"].full.as_deref(),
             Some("github:babashka/babashka")
         );
+    }
+
+    /// A lockfile `backend` field is written into the manifest verbatim, so it can name a core
+    /// backend this build does not ship. Keeping that value leaves the tool unresolvable, which
+    /// is what broke `mise where` for a plugin-installed tool.
+    #[test]
+    fn plugin_discovery_replaces_a_core_backend_that_does_not_exist() {
+        let mut tools = BTreeMap::from([(
+            "dummy".to_string(),
+            InstallStateTool {
+                short: "dummy".to_string(),
+                full: Some("core:dummy".to_string()),
+                versions: vec!["3.0.0".to_string()],
+                explicit_backend: true,
+                opts: BTreeMap::new(),
+                installs_path: None,
+            },
+        )]);
+        let plugins = BTreeMap::from([("dummy".to_string(), PluginType::Asdf)]);
+
+        merge_plugin_tools(&mut tools, &plugins);
+
+        assert_eq!(tools["dummy"].full.as_deref(), Some("asdf:dummy"));
+        // only the identity is corrected; what is on disk is untouched
+        assert_eq!(tools["dummy"].versions, ["3.0.0"]);
+    }
+
+    /// A core backend mise does ship is real metadata and must survive.
+    #[test]
+    fn plugin_discovery_keeps_a_core_backend_that_exists() {
+        let short = crate::plugins::core::CORE_PLUGINS
+            .keys()
+            .next()
+            .expect("mise ships at least one core plugin")
+            .clone();
+        let full = format!("core:{short}");
+        let mut tools = BTreeMap::from([(
+            short.clone(),
+            InstallStateTool {
+                short: short.clone(),
+                full: Some(full.clone()),
+                versions: vec!["1.0.0".to_string()],
+                explicit_backend: true,
+                opts: BTreeMap::new(),
+                installs_path: None,
+            },
+        )]);
+        let plugins = BTreeMap::from([(short.clone(), PluginType::Asdf)]);
+
+        merge_plugin_tools(&mut tools, &plugins);
+
+        assert_eq!(tools[&short].full.as_deref(), Some(full.as_str()));
     }
 
     #[test]
