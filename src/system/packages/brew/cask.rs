@@ -1948,23 +1948,29 @@ struct TrustedOperationParent {
 #[cfg(unix)]
 impl TrustedOperationParent {
     fn path(&self) -> Result<PathBuf> {
-        #[cfg(target_os = "linux")]
-        return Ok(
-            Path::new("/proc/self/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string())
-        );
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        {
-            let mut path = PathBuf::new();
-            nix::fcntl::fcntl(&self.fd, nix::fcntl::FcntlArg::F_GETPATH(&mut path))?;
-            return Ok(path);
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
-        Ok(Path::new("/dev/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string()))
+        trusted_operation_parent_path(&self.fd)
     }
 
     fn stable_path(&self) -> Result<PathBuf> {
         Ok(std::fs::canonicalize(self.path()?)?)
     }
+}
+
+#[cfg(target_os = "linux")]
+fn trusted_operation_parent_path(fd: &std::os::fd::OwnedFd) -> Result<PathBuf> {
+    Ok(Path::new("/proc/self/fd").join(std::os::fd::AsRawFd::as_raw_fd(fd).to_string()))
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn trusted_operation_parent_path(fd: &std::os::fd::OwnedFd) -> Result<PathBuf> {
+    let mut path = PathBuf::new();
+    nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_GETPATH(&mut path))?;
+    Ok(path)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+fn trusted_operation_parent_path(fd: &std::os::fd::OwnedFd) -> Result<PathBuf> {
+    Ok(Path::new("/dev/fd").join(std::os::fd::AsRawFd::as_raw_fd(fd).to_string()))
 }
 
 #[cfg(unix)]
