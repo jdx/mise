@@ -295,10 +295,29 @@ pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
     matcher.matched(path, false).is_whitelist()
 }
 
+/// Expands a trailing `**` to `**/*` so enumeration reaches files.
+///
+/// The `glob` crate matches a trailing `**` against directories only, while the
+/// `ignore`/`globset` matcher built from the same entry matches the files
+/// underneath it per gitignore semantics. Enumeration therefore never offers
+/// the files the matcher would have accepted, and because everything it does
+/// offer matches, nothing looks rejected and no diagnostic fires.
+///
+/// A `**` in the interior of a pattern (`src/**/foo.rs`) already spans
+/// directories correctly and is left alone.
+fn expand_trailing_globstar(pattern: &str) -> String {
+    if pattern == "**" || pattern.ends_with("/**") {
+        format!("{pattern}/*")
+    } else {
+        pattern.to_string()
+    }
+}
+
 /// Returns the include-side glob patterns from `sources`, suitable for file
 /// enumeration via `glob`. `!`-prefixed entries are dropped (they only
 /// constrain matching, not enumeration); `\!`-prefixed entries have the
-/// escape removed so they can be globbed as literal `!`-prefixed paths.
+/// escape removed so they can be globbed as literal `!`-prefixed paths; a
+/// trailing `**` is expanded so it enumerates files rather than directories.
 pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
     sources
         .iter()
@@ -311,6 +330,7 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
                 Some(s.clone())
             }
         })
+        .map(|pattern| expand_trailing_globstar(&pattern))
         .collect()
 }
 
@@ -1253,6 +1273,38 @@ mod tests {
             ]),
             ["dist", "!important"]
         );
+    }
+
+    /// A trailing `**` must enumerate files. The `glob` crate matches it against
+    /// directories only, so without the expansion `src/**` yields subdirectories
+    /// and no files at all — a `sources` entry that contributes nothing to
+    /// freshness and an `outputs` entry that archives nothing.
+    #[test]
+    fn trailing_globstar_expands_to_reach_files() {
+        assert_eq!(expand_trailing_globstar("src/**"), "src/**/*");
+        assert_eq!(expand_trailing_globstar("**"), "**/*");
+        assert_eq!(
+            source_glob_patterns(&["src/**".to_string(), "dist/**".to_string()]),
+            ["src/**/*", "dist/**/*"]
+        );
+    }
+
+    /// Only a *trailing* `**` is wrong. In the interior it already spans
+    /// directories correctly, and rewriting it would change what the pattern
+    /// selects rather than fixing what it enumerates.
+    #[test]
+    fn interior_globstar_and_other_patterns_are_untouched() {
+        for pattern in [
+            "src/**/foo.rs",
+            "src/**/*.ts",
+            "src/*",
+            "dist",
+            "src/**/*",
+            "**/*",
+            "a**",
+        ] {
+            assert_eq!(expand_trailing_globstar(pattern), pattern);
+        }
     }
 
     #[test]
