@@ -201,10 +201,9 @@ impl Doctor {
         );
         data.insert("plugins".into(), render_plugins_json());
 
-        let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
-            let versions: serde_json::Value = tv
-                .iter()
-                .filter(|tv| tv.request.is_os_supported())
+        let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tvl)| {
+            let versions: serde_json::Value = tvl
+                .os_supported_versions()
                 .map(|tv: &ToolVersion| {
                     let mut tool = serde_json::Map::new();
                     match f.is_version_installed(&config, tv, true) {
@@ -789,7 +788,7 @@ impl Doctor {
     }
 
     async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) -> HashSet<String> {
-        let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
+        let mise_bin = shims::mise_bin_for_shims();
 
         if let Ok(diffs) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");

@@ -115,13 +115,16 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
     let cfr = config_trust_root(&path);
     config_file::untrust(&cfr)?;
     let cfr = cfr.canonicalize()?;
-    info!("untrusted {}", cfr.display());
+    info!("untrusted {}", display_path(&cfr));
 
     let trusted_via_settings = Settings::get()
         .trusted_config_paths()
         .any(|p| cfr.starts_with(p));
     if trusted_via_settings {
-        warn!("{cfr:?} is trusted via settings so it will still be trusted.");
+        warn!(
+            "{} is trusted via settings so it will still be trusted.",
+            display_path(&cfr)
+        );
     }
 
     if !Settings::get().paranoid
@@ -166,13 +169,16 @@ impl Trust {
         let cfr = config_trust_root(&path);
         config_file::add_ignored(cfr.clone())?;
         let cfr = cfr.canonicalize()?;
-        info!("ignored {}", cfr.display());
+        info!("ignored {}", display_path(&cfr));
 
         let trusted_via_settings = Settings::get()
             .trusted_config_paths()
             .any(|p| cfr.starts_with(p));
         if trusted_via_settings {
-            warn!("{cfr:?} is trusted via settings so it will still be trusted.");
+            warn!(
+                "{} is trusted via settings so it will still be trusted.",
+                display_path(&cfr)
+            );
         }
         Ok(())
     }
@@ -189,7 +195,7 @@ impl Trust {
         };
         config_file::trust(&path)?;
         let cfr = path.canonicalize()?;
-        info!("trusted {}", cfr.display());
+        info!("trusted {}", display_path(&cfr));
         Ok(())
     }
 

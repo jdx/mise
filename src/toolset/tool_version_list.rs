@@ -63,6 +63,16 @@ impl ToolVersionList {
         }
         Ok(())
     }
+
+    pub fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
+        self.versions
+            .iter()
+            .filter(|tv| tv.request.is_os_supported())
+    }
+
+    pub fn os_supported_requests(&self) -> impl Iterator<Item = &ToolRequest> {
+        self.requests.iter().filter(|tvr| tvr.is_os_supported())
+    }
 }
 
 #[cfg(test)]

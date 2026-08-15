@@ -1,9 +1,9 @@
+use crate::file::display_path;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::{Result, file, minisign};
 use clap::ValueHint;
 use std::path::PathBuf;
-use xx::file::display_path;
 use xx::regex;
 
 /// Generate a script to download+execute mise

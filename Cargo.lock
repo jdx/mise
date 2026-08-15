@@ -6332,6 +6332,7 @@ dependencies = [
  "digest 0.11.3",
  "dotenvy",
  "duct",
+ "dunce",
  "exec",
  "expr-lang",
  "eyre",

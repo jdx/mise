@@ -1033,6 +1033,11 @@ fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Re
 /// only part parsed and rendered at load).
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     use crate::config::config_file::mise_toml::toml_value_has_template;
+    // Must see exactly what the loader sees. `Task::from_path_unrendered_with_cf` strips a
+    // byte-order mark before scanning headers, so leaving one here would let a `#MISE` on line 1
+    // hide an escaped template from this check and then render it anyway -- the caller runs the
+    // two back to back on the same file.
+    let body = file::strip_utf8_bom(body);
     if path.extension().is_some_and(|e| e == "toml") {
         // Unparseable TOML won't load as a task file (it errors before any
         // render), so it doesn't need trust on this account.
@@ -1049,7 +1054,8 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
 
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
-    let raw = extract_usage_from_comments(&script);
+    // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
+    let raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
     if raw.trim().is_empty() {
         return usage::Spec::parse_script(file);
     }
@@ -1328,7 +1334,11 @@ impl Task {
     ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
         task.cf = cf;
-        let info = parse_mise_header_toml(&file::read_to_string(path)?)?
+        // Stripped before scanning: the header patterns anchor at the start of a line, so a
+        // byte-order mark would hide a `#MISE` written on line 1 -- which is where a task with
+        // an executable extension rather than a shebang puts it.
+        let body = file::read_to_string(path)?;
+        let info = parse_mise_header_toml(file::strip_utf8_bom(&body))?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
@@ -1448,11 +1458,20 @@ impl Task {
         unparsed.sort();
 
         if !unparsed.is_empty() {
-            return Err(eyre::eyre!(
-                "unknown field(s) {:?} in task file header: {}",
+            // A warning rather than an error, matching how `mise.toml` treats a key it does not
+            // recognise (`MiseToml::from_str` reports one through `serde_ignored` and carries on).
+            // A file task has no reason to be stricter than the config file, and it is in a worse
+            // position to be: this parse runs inside the loop that loads *every* task in the
+            // project, so returning here made one unrecognised key in one file take all of them
+            // down -- `mise run <some other task>` failed too.
+            //
+            // Only genuinely unknown key names reach this point. `TrackingTomlParser` records a key
+            // as parsed when it is looked up, so a known key holding the wrong type is not here.
+            warn!(
+                "unknown field(s) {:?} in task file header, ignoring: {}",
                 unparsed,
                 display_path(path)
-            ));
+            );
         }
 
         #[cfg(test)]
@@ -2815,15 +2834,18 @@ impl Task {
             .redaction_keys()
             .into_iter()
             .chain(env_results.redactions.iter().cloned());
-        let task_env_map: EnvMap = env_results
-            .env
-            .iter()
-            .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect();
+        // Config-level exclusions are resolved separately from task env, so carry them over
+        // here or a `redact = false` variable the task merely declares `required` would be
+        // registered anyway. A task *assignment* still overrides the config-level exclusion.
+        let mut redaction_exclusions = config.env_results().await?.redaction_exclusions.clone();
+        for key in env_results.env.keys() {
+            redaction_exclusions.remove(key);
+        }
+        redaction_exclusions.extend(env_results.redaction_exclusions.iter().cloned());
         config.add_redactions_excluding(
             redact_keys,
-            &task_env_map,
-            &env_results.redaction_exclusions,
+            &env_results.redactable_env(&env),
+            &redaction_exclusions,
         );
 
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
@@ -3827,6 +3849,23 @@ rust_cache = { unknown = true }
             script,
             "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
         ));
+
+        // A byte-order mark must not hide the header from this check. The loader strips one
+        // before parsing the same header, so a miss here would mean rendering a template that
+        // was never gated on trust.
+        assert!(file_has_decoded_template(
+            script,
+            "\u{feff}#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
+        assert!(file_has_decoded_template(
+            toml,
+            "\u{feff}[hello]\nrun = \"echo hi\"\ndescription = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        ));
+        // and it must not turn a plain file into one that needs trust
+        assert!(!file_has_decoded_template(
+            script,
+            "\u{feff}#MISE description=\"a plain task\"\necho hi\n"
+        ));
     }
 
     #[test]
@@ -3853,6 +3892,27 @@ exec shapeme "$@"
             assert_eq!(spec.cmd.mounts.len(), 1);
             assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
             assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+        }
+    }
+
+    /// A `#USAGE` on line 1 is the case a byte-order mark hides: the extractor anchors at the
+    /// start of a line, and `str::trim` does not remove U+FEFF. Without the mark stripped the
+    /// flag never reaches the spec, so `mise run task -- -f` leaves `usage_force` unset.
+    #[test]
+    fn test_parse_task_script_usage_reads_a_marked_first_line() {
+        use std::io::Write;
+
+        let directives = "#USAGE flag \"-f --force\" help=\"force it\"\nexec tool \"$@\"\n";
+        for (label, body) in [
+            ("marked", format!("\u{feff}{directives}")),
+            ("unmarked", directives.to_string()),
+        ] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(body.as_bytes()).unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+            assert_eq!(spec.cmd.flags.len(), 1, "{label}");
+            assert_eq!(&spec.cmd.flags[0].name, "force", "{label}");
         }
     }
 
@@ -4359,6 +4419,43 @@ echo "hello world"
                 .to_string()
                 .contains("failed to parse task header TOML")
         );
+    }
+
+    /// An unrecognised header key is a warning, not an error.
+    ///
+    /// This parse runs for every task file in the project, so failing here took down tasks in
+    /// other files — including TOML ones — over a single typo. `mise.toml` already treats an
+    /// unknown key as a warning; a file task should not be stricter.
+    ///
+    /// `run_windows` is the real case that turned this up: it is a TOML-task key, so a file task
+    /// header does not know it.
+    #[tokio::test]
+    async fn test_from_path_unknown_header_field_is_ignored() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE description="still parsed"
+#MISE run_windows="echo nope"
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+
+        // The known key beside it still takes effect: what is dropped is the unknown key alone,
+        // not the whole header and not the task.
+        assert_eq!(task.description, "still parsed");
+        assert!(task.run_windows.is_empty());
     }
 
     #[test]

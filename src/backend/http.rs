@@ -65,6 +65,8 @@ struct FileInfo {
     format: file::ExtractionFormat,
     /// Whether this is a compressed single binary (not a tar archive)
     is_compressed_binary: bool,
+    /// Whether format detection used information other than the original filename
+    format_affects_cache: bool,
 }
 
 struct CachePlan {
@@ -80,9 +82,9 @@ struct CacheTarget<'a> {
 
 impl FileInfo {
     /// Analyze a file path and options to determine format information
-    fn new(file_path: &Path, opts: &HttpOptions<'_>) -> Self {
+    fn new(file_path: &Path, effective_filename: Option<&str>, opts: &HttpOptions<'_>) -> Self {
         // Apply format config to determine effective extension
-        let effective_path = if let Some(added_ext) = opts.format() {
+        let (effective_path, format_affects_cache) = if let Some(added_ext) = opts.format() {
             let mut path = file_path.to_path_buf();
             let current_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let new_ext = if current_ext.is_empty() {
@@ -91,9 +93,15 @@ impl FileInfo {
                 format!("{}.{}", current_ext, added_ext)
             };
             path.set_extension(new_ext);
-            path
+            (path, true)
+        } else if let Some(filename) = effective_filename
+            && file::ExtractionFormat::from_file_name(filename) != file::ExtractionFormat::Raw
+        {
+            let path = PathBuf::from(filename);
+            let affects_cache = path.file_name() != file_path.file_name();
+            (path, affects_cache)
         } else {
-            file_path.to_path_buf()
+            (file_path.to_path_buf(), false)
         };
 
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
@@ -114,6 +122,7 @@ impl FileInfo {
             extension,
             format,
             is_compressed_binary,
+            format_affects_cache,
         }
     }
 
@@ -290,6 +299,7 @@ impl HttpBackend {
         &self,
         file_path: &Path,
         opts: &HttpOptions<'_>,
+        file_info: &FileInfo,
         strip_components: usize,
     ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
@@ -297,6 +307,14 @@ impl HttpBackend {
         // Include extraction options that affect output structure
         // Note: bin_path is NOT included - handled at symlink time for deduplication
         let mut parts = vec![checksum];
+
+        if file_info.format_affects_cache {
+            parts.push(format!("format_{}", file_info.format));
+            if file_info.is_compressed_binary {
+                let destination = self.dest_filename(file_path, file_info, opts)?;
+                parts.push(format!("name_{}", hash::hash_blake3_to_str(&destination)));
+            }
+        }
 
         if let Some(strip) = opts.strip_components() {
             parts.push(format!("strip_{strip}"));
@@ -324,10 +342,15 @@ impl HttpBackend {
         Ok(key)
     }
 
-    fn cache_plan(&self, file_path: &Path, opts: &HttpOptions<'_>) -> Result<CachePlan> {
-        let file_info = FileInfo::new(file_path, opts);
+    fn cache_plan(
+        &self,
+        file_path: &Path,
+        effective_filename: Option<&str>,
+        opts: &HttpOptions<'_>,
+    ) -> Result<CachePlan> {
+        let file_info = FileInfo::new(file_path, effective_filename, opts);
         let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
-        let key = self.cache_key(file_path, opts, strip_components)?;
+        let key = self.cache_key(file_path, opts, &file_info, strip_components)?;
 
         Ok(CachePlan {
             key,
@@ -1119,7 +1142,8 @@ impl Backend for HttpBackend {
             .is_some();
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
+        let download = HTTP
+            .download_file_with_metadata(&url, &file_path, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify artifact (checksum if provided)
@@ -1129,7 +1153,8 @@ impl Backend for HttpBackend {
         verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
-        let cache_plan = self.cache_plan(&file_path, &opts)?;
+        let cache_plan =
+            self.cache_plan(&file_path, download.effective_filename.as_deref(), &opts)?;
         ctx.pr.next_operation();
         if tv.install_path_is_explicit {
             ctx.pr.set_message("extracting to install path".into());
@@ -1478,6 +1503,91 @@ mod tests {
     }
 
     #[test]
+    fn file_info_prefers_explicit_then_redirected_then_original_format() {
+        let no_opts = ToolVersionOptions::default();
+        let no_opts = HttpOptions::new(&no_opts);
+
+        let redirected = FileInfo::new(Path::new("download"), Some("tool.tar.gz"), &no_opts);
+        assert_eq!(redirected.format, file::ExtractionFormat::TarGz);
+        assert!(redirected.format_affects_cache);
+
+        let redirected_over_original =
+            FileInfo::new(Path::new("tool.zip"), Some("tool.tar.gz"), &no_opts);
+        assert_eq!(
+            redirected_over_original.format,
+            file::ExtractionFormat::TarGz
+        );
+        assert!(redirected_over_original.format_affects_cache);
+
+        let original = FileInfo::new(Path::new("tool.zip"), Some("download"), &no_opts);
+        assert_eq!(original.format, file::ExtractionFormat::Zip);
+        assert!(!original.format_affects_cache);
+
+        let raw = FileInfo::new(Path::new("download"), Some("artifact"), &no_opts);
+        assert_eq!(raw.format, file::ExtractionFormat::Raw);
+        assert!(!raw.format_affects_cache);
+
+        let explicit_opts = crate::toolset::parse_tool_options("format=tar.xz");
+        let explicit_opts = HttpOptions::new(&explicit_opts);
+        let explicit = FileInfo::new(Path::new("download"), Some("tool.tar.gz"), &explicit_opts);
+        assert_eq!(explicit.format, file::ExtractionFormat::TarXz);
+        assert!(explicit.format_affects_cache);
+    }
+
+    #[test]
+    fn redirected_format_has_a_distinct_cache_identity() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let artifact = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(artifact.path(), b"same-content").unwrap();
+        let raw_opts = ToolVersionOptions::default();
+        let opts = HttpOptions::new(&raw_opts);
+        let raw = FileInfo::new(artifact.path(), None, &opts);
+        let redirected = FileInfo::new(artifact.path(), Some("tool.tar.gz"), &opts);
+
+        let raw_key = backend.cache_key(artifact.path(), &opts, &raw, 0).unwrap();
+        let redirected_key = backend
+            .cache_key(artifact.path(), &opts, &redirected, 0)
+            .unwrap();
+
+        assert_ne!(raw_key, redirected_key);
+        assert!(redirected_key.ends_with("format_tar.gz"));
+    }
+
+    #[test]
+    fn redirected_compressed_filenames_have_distinct_cache_identities() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+        let artifact = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(artifact.path(), b"same-content").unwrap();
+        let raw_opts = ToolVersionOptions::default();
+        let opts = HttpOptions::new(&raw_opts);
+        let alpha = FileInfo::new(artifact.path(), Some("alpha.gz"), &opts);
+        let beta = FileInfo::new(artifact.path(), Some("beta.gz"), &opts);
+
+        let alpha_key = backend
+            .cache_key(artifact.path(), &opts, &alpha, 0)
+            .unwrap();
+        let beta_key = backend.cache_key(artifact.path(), &opts, &beta, 0).unwrap();
+
+        assert_ne!(alpha_key, beta_key);
+    }
+
+    #[test]
     fn dest_filename_uses_decompressed_name_for_rename_exe_extension() {
         let backend = HttpBackend {
             ba: Arc::new(BackendArg::new_raw(
@@ -1491,7 +1601,7 @@ mod tests {
         let raw_opts = crate::toolset::parse_tool_options("rename_exe=code2prompt");
         let opts = HttpOptions::new(&raw_opts);
         let file_path = Path::new("code2prompt-x86_64-pc-windows-msvc.exe.gz");
-        let file_info = FileInfo::new(file_path, &opts);
+        let file_info = FileInfo::new(file_path, None, &opts);
 
         assert!(file_info.is_compressed_binary);
         assert_eq!(
@@ -1519,7 +1629,7 @@ mod tests {
         ] {
             let raw_opts = crate::toolset::parse_tool_options(opt);
             let opts = HttpOptions::new(&raw_opts);
-            let file_info = FileInfo::new(file_path, &opts);
+            let file_info = FileInfo::new(file_path, None, &opts);
             let err = backend
                 .dest_filename(file_path, &file_info, &opts)
                 .unwrap_err();
@@ -1531,7 +1641,7 @@ mod tests {
 
         let raw_opts = crate::toolset::parse_tool_options(r#"bin="bin/mytool""#);
         let opts = HttpOptions::new(&raw_opts);
-        let file_info = FileInfo::new(file_path, &opts);
+        let file_info = FileInfo::new(file_path, None, &opts);
         assert_eq!(
             backend.dest_filename(file_path, &file_info, &opts).unwrap(),
             "bin/mytool"
@@ -1559,9 +1669,9 @@ mod tests {
 
         let key_for = |opt: &str| {
             let opts = crate::toolset::parse_tool_options(opt);
-            backend
-                .cache_key(tmp.path(), &HttpOptions::new(&opts), 0)
-                .unwrap()
+            let opts = HttpOptions::new(&opts);
+            let file_info = FileInfo::new(tmp.path(), None, &opts);
+            backend.cache_key(tmp.path(), &opts, &file_info, 0).unwrap()
         };
 
         // Scalar, table, and adversarial values all yield path-safe keys.

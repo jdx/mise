@@ -1,4 +1,5 @@
 {
+  "triggerOnDrafts": true,
   "disabledLabels": ["release", "autorelease: pending"],
   "ignoreKeywords": "chore: release\nchore(main): release\nThis PR was generated with release-plz\nThis PR was generated with Release Please"
 }

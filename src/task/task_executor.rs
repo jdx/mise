@@ -3,7 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{can_execute_directly, display_path, replace_path};
+use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
@@ -2289,13 +2289,17 @@ fn msys_drive_prefix_for(program: &Path, env: &BTreeMap<String, String>) -> Stri
 /// Read the shebang from a file and parse it into a shell command.
 /// e.g. `#!/usr/bin/env bash` → `["bash"]`
 /// e.g. `#!/bin/bash` → `["/bin/bash"]`
+///
+/// A byte-order mark in front of the `#!` is skipped, the same way `crate::file::has_shebang`
+/// skips one when deciding the file is a task at all. Without that, a marked script fell through
+/// to `default_file_shell` -- `cmd /c` on Windows -- not the interpreter its author named.
 fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     use std::io::{BufRead, BufReader};
     let f = std::fs::File::open(path).ok()?;
     let mut reader = BufReader::new(f);
     let mut first_line = String::new();
     reader.read_line(&mut first_line).ok()?;
-    let shebang = first_line.strip_prefix("#!")?;
+    let shebang = strip_utf8_bom(&first_line).strip_prefix("#!")?;
     let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
     let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
     let mut parts = shebang.split_whitespace();
@@ -2332,6 +2336,29 @@ mod tests {
         env.insert((*crate::env::PATH_KEY).to_string(), path.to_string());
         env.insert("OTHER".to_string(), "unchanged".to_string());
         env
+    }
+
+    /// Not gated on Windows: the mark reaches a shared repository from any platform, and the
+    /// fallback it caused -- `default_file_shell` instead of the named interpreter -- is wrong
+    /// everywhere, just most visible where that default is `cmd /c`.
+    #[test]
+    fn shell_from_shebang_looks_past_a_utf8_bom() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = tmp.path().join(name);
+            std::fs::write(&path, bytes).unwrap();
+            path
+        };
+        const SCRIPT: &[u8] = b"#!/usr/bin/env bash\necho hi\n";
+        let mut marked = b"\xef\xbb\xbf".to_vec();
+        marked.extend_from_slice(SCRIPT);
+
+        let expected = Some(vec!["bash".to_string()]);
+        assert_eq!(shell_from_shebang(&write("bom", &marked)), expected);
+        // Control: the unmarked twin resolves the same way, so the mark was the only difference.
+        assert_eq!(shell_from_shebang(&write("plain", SCRIPT)), expected);
+        // A file with no shebang still yields nothing, so callers keep falling back as before.
+        assert_eq!(shell_from_shebang(&write("none", b"echo hi\n")), None);
     }
 
     #[test]

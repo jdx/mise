@@ -663,8 +663,10 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
 }
 
 fn check_symlink(source: &Path, target: &Path) -> Result<FileState> {
-    // on Windows file "symlinks" are copies (see `link_file`)
-    if cfg!(windows) && source.is_file() {
+    // On Windows a file link is a real symlink when the privilege was available and a copy
+    // otherwise (see `link_path`), so which one is on disk decides how to read it. Only fall
+    // through to the copy comparison when it is not a symlink.
+    if cfg!(windows) && source.is_file() && !target.is_symlink() {
         return check_copy(source, target);
     }
     if target.is_symlink() {
@@ -1392,7 +1394,13 @@ fn plan_unapply_one<'a>(
     let mut conditional = false;
     let mut clear_symlink_each_state = false;
     match req.mode {
-        FileMode::Symlink if !(cfg!(windows) && req.source.is_file()) => {
+        // A Windows file link that came out as a copy is planned by content further down; one
+        // that is a real symlink belongs here, where the link target is what identifies it as
+        // ours. `plan_expected_content` requires a non-symlink, so routing a symlink there
+        // would make unapply demand `--force`.
+        FileMode::Symlink
+            if !(cfg!(windows) && req.source.is_file() && !req.target.is_symlink()) =>
+        {
             if req.target.is_symlink() {
                 let dest = std::fs::read_link(&req.target)?;
                 if opts.force || dest == req.source || points_at_same_file(&req.target, &req.source)
@@ -1832,7 +1840,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
     match req.mode {
         FileMode::Symlink => {
             remove_existing(&req.target)?;
-            link_path(&req.source, &req.target)?;
+            link_path(&req.source, &req.target, true)?;
         }
         FileMode::SymlinkEach => {
             // conflicts were vetted (or --force given): clear anything
@@ -1853,7 +1861,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                     file::create_dir_all(parent)?;
                 }
                 remove_existing(&target)?;
-                link_path(&source, &target)?;
+                link_path(&source, &target, false)?;
             }
             prune_stale_links(req)?;
         }
@@ -1951,14 +1959,26 @@ fn remove_existing(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn link_path(source: &Path, target: &Path) -> Result<()> {
-    if cfg!(windows) && source.is_file() {
-        // Windows file symlinks require elevation; junctions only work for
-        // directories — fall back to a copy like make_symlink_or_copy does
+/// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
+/// its unapply planner is `#[cfg(not(windows))]`-guarded and falls through to the content
+/// comparison, which rejects a symlink — creating one there would make unapply demand `--force`.
+fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Result<()> {
+    #[cfg(windows)]
+    if source.is_file() {
+        // Windows grants SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE when Developer Mode is
+        // on, so a file symlink is often creatable without elevation -- `windows_shim_mode`
+        // already relies on that. Try it rather than assume it fails. Junctions only cover
+        // directories, so a copy stays the fallback: it is what this did unconditionally
+        // before, and it keeps working where the privilege really is absent.
+        if allow_windows_symlink && std::os::windows::fs::symlink_file(source, target).is_ok() {
+            return Ok(());
+        }
         file::copy(source, target)?;
-    } else {
-        file::make_symlink(source, target)?;
+        return Ok(());
     }
+    #[cfg(not(windows))]
+    let _ = allow_windows_symlink;
+    file::make_symlink(source, target)?;
     Ok(())
 }
 
@@ -2208,6 +2228,66 @@ mod tests {
             find_conflicts(&symlink_req(&source, &target))?,
             vec![target]
         );
+        Ok(())
+    }
+
+    /// `link_path` produces either a symlink or a copy on Windows depending on a privilege the
+    /// test runner may or may not have, so these assert the property that has to hold for both:
+    /// whichever form lands, `check_symlink` reads it as Applied. Branching on what actually
+    /// happened rather than on an assumed privilege keeps this meaningful on a runner without
+    /// Developer Mode, where only the copy path is exercised.
+    #[test]
+    fn link_path_result_is_recognised_whichever_form_it_takes() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("linked");
+        file::write(&source, "contents")?;
+
+        link_path(&source, &target, true)?;
+
+        assert!(
+            target.exists() || target.is_symlink(),
+            "link_path produced nothing"
+        );
+        assert_eq!(check_symlink(&source, &target)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// `symlink-each` opts out of the Windows symlink attempt, so it keeps producing a copy
+    /// there. Pinned because the two modes share `link_path`: making it symlink for everyone
+    /// would route `symlink-each` unapply through a planner that rejects symlinks.
+    #[cfg(windows)]
+    #[test]
+    fn symlink_each_still_copies_on_windows() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("copied");
+        file::write(&source, "contents")?;
+
+        link_path(&source, &target, false)?;
+
+        assert!(
+            !target.is_symlink(),
+            "symlink-each must not create a symlink"
+        );
+        assert_eq!(file::read_to_string(&target)?, "contents");
+        Ok(())
+    }
+
+    /// The control for the test above: a target that is neither a copy of the source nor a link
+    /// to it must not read as Applied, or the assertion there would hold for the wrong reason.
+    #[test]
+    fn check_symlink_rejects_an_unrelated_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("unrelated");
+        file::write(&source, "contents")?;
+        file::write(&target, "something else")?;
+
+        assert!(!matches!(
+            check_symlink(&source, &target)?,
+            FileState::Applied
+        ));
         Ok(())
     }
 }

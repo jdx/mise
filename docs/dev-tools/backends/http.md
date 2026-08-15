@@ -295,7 +295,7 @@ format = "tar.xz"  # Explicitly specify the format
 ```
 
 ::: info
-If `format` is not specified, mise will automatically detect the format from the file extension in the URL. Only use `format` when the URL doesn't have a proper extension or when you need to override the detected format.
+If `format` is not specified, mise automatically detects the format from the final URL after HTTP redirects, falling back to the configured URL. This allows an extensionless download endpoint to redirect to an archive such as `.tar.gz`. An explicit `format` always takes precedence, so use it when neither URL has a useful extension or when you need to override the detected format.
 :::
 
 ### Platform-specific Format
