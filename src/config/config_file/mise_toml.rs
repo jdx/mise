@@ -3487,7 +3487,9 @@ mod tests {
         args = ["--watch"]
         run_at_load = true
         start_interval = 300
+        throttle_interval = 60
         start_calendar_interval = { hour = 2, minute = 0 }
+        queue_directories = ["~/Library/Queues/my-sync"]
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
@@ -3506,6 +3508,8 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(agent.throttle_interval, Some(60));
+        assert_eq!(agent.queue_directories, vec!["~/Library/Queues/my-sync"]);
         let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
             agent.start_calendar_interval.as_ref().unwrap()
         else {
