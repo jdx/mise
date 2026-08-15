@@ -1411,7 +1411,7 @@ impl ConfigFile for MiseToml {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        file::write(&self.path, contents)?;
+        file::write_atomic(&self.path, contents)?;
         trust(&config_trust_root(&self.path))?;
         Ok(())
     }
@@ -3055,6 +3055,33 @@ mod tests {
         assert_debug_snapshot!(cf.alias);
 
         assert_snapshot!(replace_path(&format!("{:#?}", cf)));
+    }
+
+    /// `save()` has to replace the config file, not rewrite it in place.
+    ///
+    /// An in-place `O_TRUNC` write is not atomic. A second mise process can read the
+    /// file while it is truncated and conclude no tools are configured, and because
+    /// `O_TRUNC` only shortens the file at open time, a shorter write landing on a
+    /// longer one leaves the previous tail attached — which is invalid TOML and breaks
+    /// every later mise command. Replacing through a rename makes the update
+    /// all-or-nothing for concurrent readers, so assert the file is genuinely swapped.
+    #[test]
+    fn save_replaces_the_config_file_rather_than_rewriting_in_place() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let p = temp.path().join("config.toml");
+        file::write(&p, "[tools]\nclaude = \"latest\"\n").unwrap();
+        let before = std::fs::metadata(&p).unwrap().ino();
+
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.save().unwrap();
+
+        let after = std::fs::metadata(&p).unwrap().ino();
+        assert_ne!(
+            before, after,
+            "save() rewrote the config in place, so a concurrent reader can observe a torn file"
+        );
     }
 
     #[tokio::test]
