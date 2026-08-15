@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export MISE_YES=1
+install_log="$HOME/go-install.log"
+
+make_go_stub() {
+  local version="$1"
+  local fail="${2:-false}"
+  local bin_dir="$MISE_DATA_DIR/installs/go/$version/bin"
+  mkdir -p "$bin_dir"
+  cat >"$bin_dir/go" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+compiler_version="$version"
+if [[ "\${1:-}" != "install" ]]; then
+  echo "go version go\$compiler_version stub/arch"
+  exit 0
+fi
+echo "\$compiler_version" >>"$install_log"
+if $fail; then
+  echo "go install failed for \$compiler_version" >&2
+  exit 1
+fi
+package="\${!#}"
+package="\${package%@*}"
+binary="\${package##*/}"
+mkdir -p "\$GOBIN"
+printf '#!/usr/bin/env bash\necho "built with %s"\n' "\$compiler_version" >"\$GOBIN/\$binary"
+chmod +x "\$GOBIN/\$binary"
+EOF
+  chmod +x "$bin_dir/go"
+}
+
+write_config() {
+  local version="$1"
+  cat >mise.toml <<EOF
+[tools]
+go = "$version"
+"go:example.com/compiler-tool" = "1.0.0"
+
+[tasks.check]
+run = "compiler-tool"
+EOF
+}
+
+make_go_stub 1.99.0
+make_go_stub 1.99.1
+make_go_stub 1.99.2 true
+write_config 1.99.0
+
+mise install
+assert "mise exec -- compiler-tool" "built with 1.99.0"
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 1
+
+# An unchanged managed Go compiler keeps the package fresh.
+mise install
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 1
+
+tool_path="$(mise where 'go:example.com/compiler-tool@1.0.0')"
+state_file="$tool_path/.mise-go-install.toml"
+assert_contains "cat '$state_file'" 'version = "1.99.0"'
+
+# A dry run reports the compiler change without touching the package or state.
+write_config 1.99.1
+assert_contains "mise install --dry-run 2>&1" "would install"
+assert "'$tool_path/bin/compiler-tool'" "built with 1.99.0"
+assert_contains "cat '$state_file'" 'version = "1.99.0"'
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 1
+
+# Task auto-install uses the same freshness check and rebuilds with the new Go.
+assert_contains "mise run check" "built with 1.99.1"
+assert "mise exec -- compiler-tool" "built with 1.99.1"
+assert_contains "cat '$state_file'" 'version = "1.99.1"'
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 2
+
+# An existing pre-sidecar install is rebuilt once to establish its compiler identity.
+rm "$state_file"
+mise install
+assert_contains "cat '$state_file'" 'version = "1.99.1"'
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 3
+mise install
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 3
+
+# Without a managed Go request, existing packages retain the legacy path-only check.
+cat >mise.toml <<'EOF'
+[tools]
+"go:example.com/compiler-tool" = "1.0.0"
+EOF
+mise install
+test "$(wc -l <"$install_log" | tr -d ' ')" -eq 3
+
+# A failed rebuild must not persist the requested compiler identity.
+write_config 1.99.2
+assert_fail "mise install"
+test ! -e "$state_file"

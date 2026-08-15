@@ -8,14 +8,16 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::file;
 use crate::hash::hash_to_str;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::timeout;
-use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use eyre::{Result, WrapErr};
+use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
 use std::{fmt::Debug, sync::Arc};
@@ -27,6 +29,21 @@ use xx::regex;
 pub struct GoBackend {
     ba: Arc<BackendArg>,
     module_versions_cache: DashMap<String, CacheManager<Option<Vec<VersionInfo>>>>,
+}
+
+const GO_INSTALL_STATE_FILENAME: &str = ".mise-go-install.toml";
+const GO_INSTALL_STATE_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+struct GoCompilerIdentity {
+    backend: String,
+    version: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+struct GoInstallState {
+    format_version: u8,
+    compiler: GoCompilerIdentity,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +91,21 @@ impl Backend for GoBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if !self.is_version_installed(config, tv, check_symlink) {
+            return Ok(false);
+        }
+        let Some(compiler) = self.configured_compiler_identity(config).await? else {
+            return Ok(true);
+        };
+        Ok(self.install_state_matches(tv, &compiler))
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -155,6 +187,7 @@ impl Backend for GoBackend {
 
         let raw_opts = tv.request.options();
         let opts = GoOptions::new(&raw_opts);
+        let compiler = self.configured_compiler_identity(&ctx.config).await?;
 
         // Hoisted: the closure below runs twice (with and without a `v` prefix), and the
         // program does not change between attempts.
@@ -182,11 +215,18 @@ impl Backend for GoBackend {
             if install(format!("v{}", install_version)).await.is_err() {
                 warn!("Failed to install, trying again without added 'v' prefix");
             } else {
+                if let Some(compiler) = compiler {
+                    self.write_install_state(&tv, compiler)?;
+                }
                 return Ok(tv);
             }
         }
 
         install(install_version).await?;
+
+        if let Some(compiler) = compiler {
+            self.write_install_state(&tv, compiler)?;
+        }
 
         Ok(tv)
     }
@@ -216,6 +256,48 @@ impl GoBackend {
             ba: Arc::new(ba),
             module_versions_cache: Default::default(),
         }
+    }
+
+    async fn configured_compiler_identity(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Option<GoCompilerIdentity>> {
+        let toolset = self.dependency_toolset(config).await?;
+        Ok(Self::compiler_identity_from_toolset(&toolset))
+    }
+
+    fn compiler_identity_from_toolset(toolset: &Toolset) -> Option<GoCompilerIdentity> {
+        let (_, tv) = toolset
+            .list_current_versions()
+            .into_iter()
+            .find(|(_, tv)| {
+                tv.ba().short == "go" && !matches!(tv.request, ToolRequest::System { .. })
+            })?;
+        Some(GoCompilerIdentity {
+            backend: tv.ba().full_without_opts(),
+            version: tv.version,
+        })
+    }
+
+    fn install_state_matches(&self, tv: &ToolVersion, compiler: &GoCompilerIdentity) -> bool {
+        let state_path = tv.install_path().join(GO_INSTALL_STATE_FILENAME);
+        file::read_to_string(&state_path)
+            .ok()
+            .and_then(|body| toml::from_str::<GoInstallState>(&body).ok())
+            .is_some_and(|state| {
+                state.format_version == GO_INSTALL_STATE_VERSION && state.compiler == *compiler
+            })
+    }
+
+    fn write_install_state(&self, tv: &ToolVersion, compiler: GoCompilerIdentity) -> Result<()> {
+        let state = GoInstallState {
+            format_version: GO_INSTALL_STATE_VERSION,
+            compiler,
+        };
+        file::write_atomic(
+            tv.install_path().join(GO_INSTALL_STATE_FILENAME),
+            toml::to_string(&state)?,
+        )
     }
 
     /// Query `$GOPROXY` to find versions, matching `go install`'s resolution algorithm.
@@ -690,7 +772,36 @@ async fn fetch_proxy_version_infos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::toolset::ToolVersionOptions;
+    use crate::cli::args::BackendResolution;
+    use crate::toolset::{ToolSource, ToolVersionOptions};
+
+    fn go_tool_version(version: &str) -> ToolVersion {
+        let backend = Arc::new(BackendArg::from("go:example.com/tool"));
+        let request = ToolRequest::new(backend, "1.0.0", ToolSource::Argument).unwrap();
+        ToolVersion::new(request, version.to_string())
+    }
+
+    fn configured_go_toolset(backend: &str, versions: &[&str]) -> Toolset {
+        let backend = Arc::new(BackendArg::new_raw(
+            "go".into(),
+            Some(backend.into()),
+            "go".into(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let mut toolset = Toolset::new(ToolSource::Argument);
+        for version in versions {
+            let request = ToolRequest::new(backend.clone(), version, ToolSource::Argument).unwrap();
+            toolset.add_version(request.clone());
+            toolset
+                .versions
+                .get_mut(&backend)
+                .unwrap()
+                .versions
+                .push(ToolVersion::new(request, (*version).to_string()));
+        }
+        toolset
+    }
 
     #[tokio::test]
     async fn exact_semver_versions_resolve_without_remote_discovery() {
@@ -773,6 +884,121 @@ mod tests {
 
         assert_eq!(GoOptions::new(&opts).tags(), None);
         assert_eq!(GoOptions::new(&opts).lockfile_options(), BTreeMap::new());
+    }
+
+    #[tokio::test]
+    async fn compiler_identity_uses_first_configured_go_version() {
+        crate::toolset::install_state::init().await.unwrap();
+        let toolset = configured_go_toolset("core:go", &["1.99.0", "1.98.0"]);
+
+        assert_eq!(
+            GoBackend::compiler_identity_from_toolset(&toolset),
+            Some(GoCompilerIdentity {
+                backend: "core:go".into(),
+                version: "1.99.0".into(),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn compiler_identity_ignores_system_go() {
+        crate::toolset::install_state::init().await.unwrap();
+        let backend = Arc::new(BackendArg::new_raw(
+            "go".into(),
+            Some("core:go".into()),
+            "go".into(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::System {
+            backend: backend.clone(),
+            source: ToolSource::Argument,
+            options: ToolVersionOptions::default(),
+        };
+        let mut toolset = Toolset::new(ToolSource::Argument);
+        toolset.add_version(request.clone());
+        toolset
+            .versions
+            .get_mut(&backend)
+            .unwrap()
+            .versions
+            .push(ToolVersion::new(request, "system".into()));
+
+        assert_eq!(GoBackend::compiler_identity_from_toolset(&toolset), None);
+    }
+
+    #[tokio::test]
+    async fn compiler_identity_uses_managed_go_after_system() {
+        crate::toolset::install_state::init().await.unwrap();
+        let backend = Arc::new(BackendArg::new_raw(
+            "go".into(),
+            Some("core:go".into()),
+            "go".into(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let system = ToolRequest::System {
+            backend: backend.clone(),
+            source: ToolSource::Argument,
+            options: ToolVersionOptions::default(),
+        };
+        let managed = ToolRequest::new(backend.clone(), "1.99.0", ToolSource::Argument).unwrap();
+        let mut toolset = Toolset::new(ToolSource::Argument);
+        toolset.add_version(system.clone());
+        toolset.add_version(managed.clone());
+        let versions = &mut toolset.versions.get_mut(&backend).unwrap().versions;
+        versions.push(ToolVersion::new(system, "system".into()));
+        versions.push(ToolVersion::new(managed, "1.99.0".into()));
+
+        assert_eq!(
+            GoBackend::compiler_identity_from_toolset(&toolset),
+            Some(GoCompilerIdentity {
+                backend: "core:go".into(),
+                version: "1.99.0".into(),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn compiler_install_state_round_trips_and_tracks_identity() {
+        crate::toolset::install_state::init().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = GoBackend::from_arg("go:example.com/tool".into());
+        let mut tv = go_tool_version("1.0.0");
+        tv.install_path = Some(tmp.path().join("tool"));
+        file::create_dir_all(tv.install_path()).unwrap();
+        let compiler = GoCompilerIdentity {
+            backend: "core:go".into(),
+            version: "1.99.0".into(),
+        };
+
+        assert!(!backend.install_state_matches(&tv, &compiler));
+        backend.write_install_state(&tv, compiler.clone()).unwrap();
+        assert!(backend.install_state_matches(&tv, &compiler));
+        assert!(!backend.install_state_matches(
+            &tv,
+            &GoCompilerIdentity {
+                backend: "core:go".into(),
+                version: "1.99.1".into(),
+            }
+        ));
+        assert!(!backend.install_state_matches(
+            &tv,
+            &GoCompilerIdentity {
+                backend: "asdf:https://example.com/go.git".into(),
+                version: "1.99.0".into(),
+            }
+        ));
+
+        let state_path = tv.install_path().join(GO_INSTALL_STATE_FILENAME);
+        let mut state: GoInstallState =
+            toml::from_str(&file::read_to_string(&state_path).unwrap()).unwrap();
+        state.format_version += 1;
+        file::write(&state_path, toml::to_string(&state).unwrap()).unwrap();
+        assert!(!backend.install_state_matches(&tv, &compiler));
+
+        file::write(state_path, "not valid toml =").unwrap();
+        assert!(!backend.install_state_matches(&tv, &compiler));
     }
 
     #[test]
