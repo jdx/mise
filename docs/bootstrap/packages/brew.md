@@ -87,7 +87,8 @@ gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
-simple macOS installer packages (`pkg` artifacts), and shell completions
+generic prefix artifacts (`artifact`), simple macOS installer packages (`pkg`
+artifacts), script-based cask installers, and shell completions
 (`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
@@ -104,6 +105,11 @@ delegating to Homebrew. mise also supports structured `preflight_steps` and
 operations using Homebrew's serialized command bases, arguments, environment,
 guards, and sudo setting, and `terminate_process` operations with
 Homebrew-compatible name/full matching, retries, notices, and failure policy.
+Structured `copy` and `symlink` steps support Homebrew path bases, templates,
+guards, source globs, replacement, and sudo behavior. External paths created by
+lifecycle steps are recorded in the mise receipt and restored if the install
+transaction fails. Cask formula and cask dependencies are installed first, and
+declared cask conflicts fail before mutation.
 Casks that require custom installer
 choices, services, unsupported hook DSL, unsupported structured lifecycle
 steps, or other cask artifact types fail with a clear unsupported artifact

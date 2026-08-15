@@ -47,6 +47,8 @@ pub enum FileMode {
     /// render the source through the mise template engine and write the
     /// result (permissions are taken from the source file)
     Template,
+    /// write literal content declared directly in mise.toml
+    Content,
 }
 
 impl FileMode {
@@ -66,6 +68,7 @@ impl FileMode {
             Self::SymlinkEach => "symlink-each",
             Self::Copy => "copy",
             Self::Template => "template",
+            Self::Content => "content",
         }
     }
 }
@@ -84,6 +87,8 @@ pub enum FileTomlEntry {
         #[serde(default)]
         source: Option<String>,
         #[serde(default)]
+        content: Option<String>,
+        #[serde(default)]
         mode: Option<String>,
         #[serde(default)]
         exclude: Option<Vec<String>>,
@@ -100,6 +105,8 @@ pub struct FileRequest {
     /// absolute source path (relative sources resolve against the config
     /// file's directory; omitted sources resolve under dotfiles.root)
     pub source: PathBuf,
+    /// literal whole-file content; present only for inline content entries
+    pub content: Option<String>,
     pub mode: FileMode,
     /// glob patterns, matched against source-relative paths, for files a
     /// directory-walking mode should skip (see [`is_excluded`])
@@ -177,7 +184,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
             if table.is_empty()
                 || table.contains_key("mode")
                 || table.contains_key("exclude")
-                || (table.contains_key("source")
+                || ((table.contains_key("source") || table.contains_key("content"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -203,14 +210,27 @@ fn merge_file_entry(
     base: &Path,
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
-    let (source, mode, exclude) = match entry {
-        FileTomlEntry::Source(source) => (Some(source), None, None),
+    let (source, content, mode, exclude) = match entry {
+        FileTomlEntry::Source(source) => (Some(source), None, None, None),
         FileTomlEntry::Table {
             source,
+            content,
             mode,
             exclude,
-        } => (source, mode, exclude),
+        } => (source, content, mode, exclude),
     };
+    if source.is_some() && content.is_some() {
+        warn!(
+            "[dotfiles].\"{target_raw}\": source and content are mutually exclusive, ignoring entry"
+        );
+        return;
+    }
+    if content.is_some() && (mode.is_some() || exclude.is_some()) {
+        warn!(
+            "[dotfiles].\"{target_raw}\": inline content does not support mode or exclude, ignoring entry"
+        );
+        return;
+    }
     // compile once here so a typo is reported against the entry that wrote
     // it, not on every walk of the source
     let exclude = exclude
@@ -238,6 +258,21 @@ fn merge_file_entry(
     if target.is_relative() {
         warn!(
             "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+        );
+        return;
+    }
+    if let Some(content) = content {
+        merged.insert(
+            target.clone(),
+            FileRequest {
+                target_raw,
+                target,
+                source: PathBuf::new(),
+                content: Some(content),
+                mode: FileMode::Content,
+                exclude: vec![],
+                base: base.to_path_buf(),
+            },
         );
         return;
     }
@@ -301,6 +336,9 @@ pub fn implied_source(target: &Path) -> Result<PathBuf> {
 }
 
 pub fn source_is_implied(req: &FileRequest) -> bool {
+    if req.mode == FileMode::Content {
+        return false;
+    }
     match implied_source(&req.target) {
         Ok(source) => source == req.source,
         Err(_) => false,
@@ -367,6 +405,7 @@ fn expand_request(
             target_raw,
             target,
             source,
+            content: None,
             mode,
             exclude,
             base,
@@ -409,6 +448,7 @@ fn expand_request(
             target_raw,
             target,
             source: matches[0].clone(),
+            content: None,
             mode,
             exclude,
             base,
@@ -436,6 +476,7 @@ fn expand_request(
                 target_raw: target_path.display_user().to_string(),
                 target: target_path,
                 source: matched_source,
+                content: None,
                 mode,
                 exclude: exclude.clone(),
                 base: base.clone(),
@@ -576,7 +617,7 @@ where
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
 pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
-    if !req.source.exists() {
+    if req.mode != FileMode::Content && !req.source.exists() {
         return Ok(FileState::SourceMissing);
     }
     // render at most once per call — templates may use exec()
@@ -596,6 +637,10 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => check_copy_dir(req),
         FileMode::Copy => check_copy(&req.source, &req.target),
+        FileMode::Content => check_content(
+            &req.target,
+            req.content.as_deref().expect("inline content").as_bytes(),
+        ),
         FileMode::Template => {
             let state = check_content(
                 &req.target,
@@ -1094,7 +1139,7 @@ pub fn plan_apply<'a>(
     for req in requests {
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
-        if !req.source.exists() {
+        if req.mode != FileMode::Content && !req.source.exists() {
             missing_sources.push(format!(
                 "  [dotfiles].\"{}\": {}",
                 req.target_raw,
@@ -1402,6 +1447,16 @@ fn plan_unapply_one<'a>(
             }
             plan_single_file(req, opts, &mut paths)?;
         }
+        FileMode::Content => {
+            if !req.target.exists() && !req.target.is_symlink() {
+                return Ok(None);
+            }
+            if opts.force {
+                paths.insert(req.target.clone(), ());
+            } else {
+                plan_inline_file(req, &mut paths)?;
+            }
+        }
         FileMode::Symlink => {
             plan_single_file(req, opts, &mut paths)?;
         }
@@ -1440,6 +1495,18 @@ fn plan_unapply_one<'a>(
             clear_symlink_each_state,
         }))
     }
+}
+
+fn plan_inline_file(req: &FileRequest, paths: &mut IndexMap<PathBuf, ()>) -> Result<()> {
+    if !req.target.is_symlink()
+        && req.target.is_file()
+        && file::read(&req.target)? == req.content.as_deref().expect("inline content").as_bytes()
+    {
+        paths.insert(req.target.clone(), ());
+    } else if req.target.exists() || req.target.is_symlink() {
+        bail!("target differs from the managed content, use --force to remove it");
+    }
+    Ok(())
 }
 
 fn plan_single_file(
@@ -1601,20 +1668,20 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
 /// content overwrites by copy/template (those are the declared intent) or
 /// re-pointing symlinks (always mise-owned territory)
 fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    // on Windows, file "symlinks" are applied as copies (see `link_path`),
-    // so existing regular-file targets are routine content updates there,
-    // not conflicts — only a type mismatch blocks
-    let file_link_conflicts = |source: &Path, target: &Path| -> Result<bool> {
-        if cfg!(windows) && source.is_file() {
-            Ok(target.exists() && target.is_dir())
-        } else {
-            Ok(target.exists() && !target.is_symlink())
-        }
-    };
+    // A symlink at the target is one mise made, so it is re-pointable. Anything else that is
+    // there — a regular file or a directory — belongs to someone else and needs `--force`.
+    //
+    // Windows used to exempt regular files here, on the grounds that a file link becomes a copy
+    // on that platform so an existing file is only a content update. That reasoning holds for
+    // `copy` mode, which is declared as overwriting; for a `symlink` entry it meant the copy
+    // silently destroyed a file the user wrote, with no `--force` and no message — while unix
+    // refused the same apply.
+    let file_link_conflicts =
+        |target: &Path| -> Result<bool> { Ok(target.exists() && !target.is_symlink()) };
     let mut out = vec![];
     match req.mode {
         FileMode::Symlink => {
-            if file_link_conflicts(&req.source, &req.target)? {
+            if file_link_conflicts(&req.target)? {
                 out.push(req.target.clone());
             }
         }
@@ -1626,8 +1693,8 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                     out.push(dir);
                 }
             }
-            for (source, target) in walk_source_files(req)? {
-                if file_link_conflicts(&source, &target)? {
+            for (_source, target) in walk_source_files(req)? {
+                if file_link_conflicts(&target)? {
                     out.push(target);
                 }
             }
@@ -1636,6 +1703,11 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
             // a dir where a file should go (or vice versa) must be removed;
             // file-over-file is an ordinary overwrite
             if req.target.exists() && req.target.is_dir() != req.source.is_dir() {
+                out.push(req.target.clone());
+            }
+        }
+        FileMode::Content => {
+            if req.target.is_dir() {
                 out.push(req.target.clone());
             }
         }
@@ -1662,6 +1734,7 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
+        FileMode::Content => format!("write inline content to {tgt}"),
     })
 }
 
@@ -1676,6 +1749,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         ),
         FileMode::Copy => format!("copied {src} to {tgt}"),
         FileMode::Template => format!("rendered {src} to {tgt}"),
+        FileMode::Content => format!("wrote inline content to {tgt}"),
     })
 }
 
@@ -1734,6 +1808,17 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 req.source.display_user(),
                 req.target.display_user()
             );
+        }
+        FileMode::Content => {
+            let desired = req.content.as_deref().expect("inline content").as_bytes();
+            let current = if req.target.is_file() {
+                file::read(&req.target)?
+            } else {
+                vec![]
+            };
+            if current != desired {
+                miseprintln!("  inline content differs: {}", req.target.display_user());
+            }
         }
     }
     Ok(())
@@ -1805,6 +1890,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             file::write(&req.target, rendered)?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+        }
+        FileMode::Content => {
+            remove_existing(&req.target)?;
+            file::write(&req.target, req.content.as_deref().expect("inline content"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&req.target, std::fs::Permissions::from_mode(0o600))?;
+            }
         }
     }
     Ok(())
@@ -2010,5 +2104,110 @@ mod tests {
             target,
             PathBuf::from(native_path_separators("C:/Users/me/.config/tool.toml"))
         );
+    }
+
+    fn link_req(source: &Path, target: &Path, mode: FileMode) -> FileRequest {
+        FileRequest {
+            target_raw: target.to_string_lossy().to_string(),
+            target: target.to_path_buf(),
+            source: source.to_path_buf(),
+            // These tests are about link and copy modes, which read the file at `source`. Inline
+            // content is the other kind of entry and has nothing to do with what they assert.
+            content: None,
+            mode,
+            exclude: vec![],
+            base: source.parent().expect("source parent").to_path_buf(),
+        }
+    }
+
+    fn symlink_req(source: &Path, target: &Path) -> FileRequest {
+        link_req(source, target, FileMode::Symlink)
+    }
+
+    /// The fix: a file the user wrote is not mise's to replace. This used to pass on Windows,
+    /// where the entry applied and overwrote it with no `--force` and no message.
+    #[test]
+    fn an_unmanaged_file_at_the_target_is_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        file::write(&target, "the user's own file")?;
+
+        assert_eq!(
+            find_conflicts(&symlink_req(&source, &target))?,
+            vec![target]
+        );
+        Ok(())
+    }
+
+    /// The control for the test above: the two cases that must *not* start blocking. A symlink
+    /// is one mise made, so re-pointing it is the normal path and would be a regression to
+    /// refuse; a missing target has nothing to protect.
+    #[test]
+    fn a_managed_symlink_and_a_missing_target_are_not_conflicts() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+
+        let absent = dir.path().join("absent");
+        assert!(find_conflicts(&symlink_req(&source, &absent))?.is_empty());
+
+        // Created directly rather than through `link_path`, which copies on Windows: the point
+        // here is what `find_conflicts` does when a symlink *is* present.
+        let link = dir.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&source, &link)?;
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_file(&source, &link).is_ok();
+        #[cfg(unix)]
+        let created = true;
+        if created {
+            assert!(link.is_symlink(), "precondition: target must be a symlink");
+            assert!(find_conflicts(&symlink_req(&source, &link))?.is_empty());
+        }
+        Ok(())
+    }
+
+    /// `symlink-each` shares the predicate, so it gains the same protection: a file the user
+    /// wrote inside the target directory is not mise's to replace either. Asserted separately
+    /// because it reaches `file_link_conflicts` through `walk_source_files` rather than
+    /// directly, and the mode is the half of this change most likely to be overlooked.
+    #[test]
+    fn symlink_each_also_treats_an_unmanaged_file_as_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        // `file::write` does not create parents, and the target directory must already exist or
+        // `needed_dirs` would report it as its own conflict and drown the assertion.
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        file::write(source.join("one"), "managed")?;
+        file::write(source.join("two"), "managed")?;
+        // Only `one` is squatted on; `two` has nothing in its way.
+        file::write(target.join("one"), "the user's own file")?;
+
+        assert_eq!(
+            find_conflicts(&link_req(&source, &target, FileMode::SymlinkEach))?,
+            vec![target.join("one")]
+        );
+        Ok(())
+    }
+
+    /// A directory where a file belongs blocked before this change and still does — the
+    /// type-mismatch case is untouched.
+    #[test]
+    fn a_directory_at_the_target_is_still_a_conflict() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "managed")?;
+        file::create_dir_all(&target)?;
+
+        assert_eq!(
+            find_conflicts(&symlink_req(&source, &target))?,
+            vec![target]
+        );
+        Ok(())
     }
 }

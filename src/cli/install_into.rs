@@ -8,6 +8,7 @@ use crate::ui::prompt;
 use clap::ValueHint;
 use console::style;
 use eyre::{Result, bail, eyre};
+use path_absolutize::Absolutize;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -31,6 +32,7 @@ pub struct InstallInto {
 
 impl InstallInto {
     pub async fn run(self) -> Result<()> {
+        let install_path = self.path.absolutize()?.into_owned();
         let config = Config::get().await?;
         let ts = Arc::new(
             ToolsetBuilder::new()
@@ -58,7 +60,9 @@ impl InstallInto {
             locked: false, // install-into doesn't support locked mode
             before_date,
         };
-        tv.install_path = Some(self.path.clone());
+        tv.install_path = Some(install_path.clone());
+        tv.install_path_is_exact = true;
+        tv.install_path_is_explicit = true;
         // install-into force-reinstalls, which uninstalls (rm -rf) whatever
         // already exists at the install path. Check immediately before the
         // install performs that deletion (rather than at the start of `run`) so
@@ -67,19 +71,19 @@ impl InstallInto {
         // directory (e.g. `.`) unless the user passes -y/--yes or confirms
         // interactively; the prompt defaults to "no" since it is destructive.
         // (#8115)
-        if path_has_contents(&self.path) {
+        if path_has_contents(&install_path) {
             let proceed = Settings::get().yes
                 || prompt::confirm_with_default(
                     format!(
                         "{} is not empty; install-into will delete its contents. Continue?",
-                        display_path(&self.path)
+                        display_path(&install_path)
                     ),
                     false,
                 )?;
             if !proceed {
                 bail!(
                     "refusing to overwrite non-empty directory {}; pass {} or choose an empty/new path",
-                    display_path(&self.path),
+                    display_path(&install_path),
                     style("--yes").yellow().for_stderr()
                 );
             }

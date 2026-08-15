@@ -9,7 +9,7 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 #[cfg(unix)]
 use crate::file::ExtractOptions;
 use crate::file::display_path;
@@ -94,7 +94,7 @@ impl ErlangPlugin {
 
     fn precompiled_unavailable(&self, reason: impl Into<String>) -> Result<Option<ToolVersion>> {
         let reason = reason.into();
-        if Settings::get().erlang.compile == Some(false) {
+        if Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(false) {
             bail!("precompiled erlang is not available: {reason}");
         }
         debug!("{reason}");
@@ -298,7 +298,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             return Ok(None);
         }
         let url = if let Some(url) = self.lockfile_url(ctx.locked, &tv) {
@@ -372,7 +372,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             return Ok(None);
         }
         let release_tag = Self::release_tag(&tv.version);
@@ -429,7 +429,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             return Ok(None);
         }
         let release_tag = Self::release_tag(&tv.version);
@@ -479,7 +479,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         _tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             Ok(None)
         } else {
             self.precompiled_unavailable("precompiled erlang is not supported on this platform")
@@ -571,7 +571,7 @@ impl Backend for ErlangPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = if Settings::get().erlang.compile == Some(false) {
+        let versions = if Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(false) {
             github::list_releases("erlef/otp_builds")
                 .await?
                 .into_iter()
@@ -615,11 +615,17 @@ impl Backend for ErlangPlugin {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let platform_key = self.get_platform_key();
+        let settings = Settings::get();
+        let erlang_compile = if ctx.locked {
+            settings.erlang_compile(CompilePurpose::Inspect)
+        } else {
+            settings.erlang_compile(CompilePurpose::Install)
+        };
         if should_install_from_source(
             ctx.locked,
             &tv.lock_platforms,
             &platform_key,
-            Settings::get().erlang.compile,
+            erlang_compile,
         ) {
             return self.install_via_kerl(ctx, tv).await;
         }
@@ -637,7 +643,7 @@ impl Backend for ErlangPlugin {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
 
-        match settings.erlang.compile {
+        match settings.erlang_compile(CompilePurpose::Inspect) {
             Some(true) => {
                 opts.insert("compile".to_string(), "true".to_string());
             }
@@ -662,7 +668,7 @@ impl Backend for ErlangPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let compile = Settings::get().erlang.compile;
+        let compile = Settings::get().erlang_compile(CompilePurpose::Inspect);
         if compile == Some(true) {
             return self.resolve_source_lock_info(&tv.version).await;
         }

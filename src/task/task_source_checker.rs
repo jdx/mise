@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
@@ -365,10 +365,21 @@ fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
+fn normalize_task_cwd(path: PathBuf) -> PathBuf {
+    let mut normalized: PathBuf = path
+        .components()
+        .filter(|component| !matches!(component, Component::CurDir))
+        .collect();
+    if normalized.as_os_str().is_empty() && !path.as_os_str().is_empty() {
+        normalized.push(".");
+    }
+    normalized
+}
+
 /// Get the working directory for a task
 pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
     if let Some(d) = task.dir(config).await? {
-        Ok(d)
+        Ok(normalize_task_cwd(d))
     } else {
         Ok(config
             .project_root
@@ -1665,6 +1676,26 @@ mod tests {
             Path::new("/workspace/lib/worker/src/main.go")
         ));
         assert!(!is_source(&matcher, Path::new("/workspace/src/other.go")));
+    }
+
+    #[test]
+    fn relative_sources_match_when_task_dir_starts_with_dot() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let workspace = temp.path();
+        let task_cwd = normalize_task_cwd(workspace.join("./sub"));
+        let source = workspace.join("sub/input.txt");
+        fs::create_dir_all(source.parent().unwrap())?;
+        fs::write(&source, "source")?;
+
+        let sources = vec!["input.txt".to_string()];
+        let matcher = build_source_matcher(workspace, &task_cwd, &sources);
+        let metadatas = get_file_metadatas(&task_cwd, &sources, &matcher)?;
+
+        assert_eq!(
+            metadatas.into_iter().map(|(path, _)| path).collect_vec(),
+            [source]
+        );
+        Ok(())
     }
 
     #[test]

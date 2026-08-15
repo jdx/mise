@@ -28,11 +28,12 @@ impl DepsProvider for BundlerDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![root.join("Gemfile.lock"), root.join("Gemfile")]
+        self.base
+            .sources(vec![root.join("Gemfile.lock"), root.join("Gemfile")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![]
+        self.base.outputs(vec![])
     }
 
     fn optional_outputs(&self) -> Vec<PathBuf> {
@@ -40,7 +41,8 @@ impl DepsProvider for BundlerDepsProvider {
         // only populates `vendor/bundle` when `--path vendor/bundle` is used.
         // Track it as optional so vendored projects detect deletion of
         // `vendor/bundle`, while non-vendored projects rely on source hashes.
-        vec![self.base.config_root().join("vendor/bundle")]
+        self.base
+            .optional_outputs(vec![self.base.config_root().join("vendor/bundle")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

@@ -9,6 +9,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
 pub use std::env::*;
+use std::process;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{
@@ -16,7 +17,6 @@ use std::{
     ffi::OsStr,
     sync::Mutex,
 };
-use std::{path, process};
 use std::{path::Path, string::ToString};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 
@@ -920,9 +920,20 @@ fn split_colon_list(value: &str) -> IndexSet<String> {
         .collect()
 }
 
+/// The basename of `path` by the host's path grammar, which on Windows means either separator.
+///
+/// `argv[0]` does not always arrive with `MAIN_SEPARATOR_STR`. libuv hands a Windows process a
+/// forward-slash path, which is how Neovim's `jobstart` spawns mise, and splitting on the platform
+/// separator left the whole path in [`MISE_BIN_NAME`]. [`is_mise_binary`] then said no and mise ran
+/// itself as a shim named after its own path (discussion #11423).
+///
+/// Deferring to [`Path`] rather than splitting on both separators unconditionally is deliberate:
+/// `\` is an ordinary filename character on unix, and splitting there would resolve a shim to a
+/// different tool than the one invoked.
 fn filename(path: &str) -> &str {
-    path.rsplit_once(path::MAIN_SEPARATOR_STR)
-        .map(|(_, file)| file)
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
         .unwrap_or(path)
 }
 
@@ -1233,5 +1244,75 @@ mod tests {
         remove_var("MISE_GITHUB_TOKEN");
         remove_var("GITHUB_TOKEN");
         remove_var("GITHUB_API_TOKEN");
+    }
+
+    #[test]
+    fn test_filename_takes_the_basename() {
+        // The reported case: libuv gives a Windows process a forward-slash argv[0], and splitting
+        // on MAIN_SEPARATOR_STR left the whole path behind. `/` separates on every platform, so
+        // the case the fix is for is pinned everywhere.
+        assert_eq!(filename("C:/Users/alice/.cargo/bin/mise.EXE"), "mise.EXE");
+        // A unix path was equally unhandled on Windows, since the separator there is `\`.
+        assert_eq!(filename("/usr/local/bin/mise"), "mise");
+        // A trailing separator used to yield an empty name.
+        assert_eq!(filename("/usr/local/bin/mise/"), "mise");
+        // Bare names pass through, which is the common case.
+        assert_eq!(filename("mise"), "mise");
+        assert_eq!(filename("mise.exe"), "mise.exe");
+    }
+
+    /// `\` separates path components only on Windows, so the two tests below are a deliberate
+    /// platform split rather than duplicated coverage.
+    ///
+    /// This half is the regression guard: the spelling that always worked has to keep working.
+    #[cfg(windows)]
+    #[test]
+    fn test_filename_splits_on_backslash_on_windows() {
+        assert_eq!(filename(r"C:\Users\alice\.cargo\bin\mise.EXE"), "mise.EXE");
+        assert_eq!(filename(r"C:\tools\mise\"), "mise");
+    }
+
+    /// The other half. On unix `\` is an ordinary filename character, so splitting on it would
+    /// resolve a shim to a different tool than the one invoked. `filename` defers to the host
+    /// path grammar to avoid that, and this pins the choice.
+    #[cfg(unix)]
+    #[test]
+    fn test_filename_keeps_backslashes_on_unix() {
+        assert_eq!(
+            filename(r"C:\Users\alice\.cargo\bin\mise.EXE"),
+            r"C:\Users\alice\.cargo\bin\mise.EXE"
+        );
+        assert_eq!(filename(r"/opt/odd/weird\name"), r"weird\name");
+    }
+
+    #[test]
+    fn test_a_full_path_argv0_is_recognised_as_mise_itself() {
+        // What the fix is actually for: `filename` is only interesting because its result feeds
+        // `is_mise_binary`, and a false there sends mise into shim mode against its own path.
+        for argv0 in [
+            "C:/Users/alice/.cargo/bin/mise.EXE",
+            "/usr/local/bin/mise",
+            "mise",
+        ] {
+            assert!(
+                is_mise_binary(filename(argv0)),
+                "argv[0] {argv0:?} should be recognised as mise, not a shim"
+            );
+        }
+        // The backslash spelling only resolves where `\` is a separator; see the pair of
+        // `filename` tests above.
+        #[cfg(windows)]
+        assert!(
+            is_mise_binary(filename(r"C:\Users\alice\.cargo\bin\mise.exe")),
+            "a backslash argv[0] should be recognised as mise on Windows"
+        );
+        // The control: a real shim invocation must still be treated as one, or this "fix" would
+        // be mise refusing to act as a shim at all.
+        for argv0 in ["/home/alice/.local/share/mise/shims/node", "node.exe"] {
+            assert!(
+                !is_mise_binary(filename(argv0)),
+                "argv[0] {argv0:?} should still be a shim"
+            );
+        }
     }
 }

@@ -37,7 +37,8 @@ impl DepsProvider for DartDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![root.join("pubspec.yaml"), root.join("pubspec.lock")]
+        self.base
+            .sources(vec![root.join("pubspec.yaml"), root.join("pubspec.lock")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
@@ -45,7 +46,7 @@ impl DepsProvider for DartDepsProvider {
         let pub_dir = root.join(".dart_tool/pub");
         let output = workspace_package_config(&pub_dir)
             .unwrap_or_else(|| root.join(".dart_tool/package_config.json"));
-        vec![output]
+        self.base.outputs(vec![output])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

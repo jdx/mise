@@ -123,6 +123,10 @@ pub struct CachedNonToolEnv {
     /// environment keys explicitly excluded from redaction
     #[serde(default)]
     pub redaction_exclusions: BTreeSet<String>,
+    /// keys whose value comes from the caller environment (`required`/`default` directives).
+    /// Names only — caller-supplied values are never cached.
+    #[serde(default)]
+    pub caller_env_keys: BTreeSet<String>,
     /// Files to watch for changes (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
     /// mtimes of watch files at cache creation time
@@ -452,7 +456,7 @@ pub fn compute_settings_hash() -> String {
 
     // Add settings that affect env computation
     hasher.update(settings.experimental.to_string().as_bytes());
-    hasher.update(settings.all_compile.to_string().as_bytes());
+    hasher.update(settings.all_compile().to_string().as_bytes());
     // Safe mode drops project [env]/_.path directives, so a cache entry built
     // with a different `safe` value must not be reused.
     hasher.update(settings.safe.to_string().as_bytes());

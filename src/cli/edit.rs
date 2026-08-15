@@ -124,7 +124,12 @@ impl BackendProvider for MiseBackendProvider {
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Edit {
     /// Edit the global config file (~/.config/mise/config.toml)
-    #[clap(long, short = 'g')]
+    // Rejected alongside a path rather than resolved in its favour: "edit the global config
+    // file, namely ./custom.toml" has no meaning, and resolving it silently is how
+    // `mise edit config --global` came to write a file called `config` into the current
+    // directory and report success. `mise bootstrap dotfiles add` states the same collision the
+    // same way, with `conflicts_with_all` between its own `--global` and `--path`.
+    #[clap(long, short = 'g', conflicts_with = "path")]
     global: bool,
     /// Show what would be generated without writing to file
     #[clap(long, short = 'n')]
@@ -179,7 +184,7 @@ impl Edit {
                 miseprintln!("{doc}");
             } else {
                 info!("writing to {}", display_path(&path));
-                file::write(&path, doc)?;
+                write_config(&path, doc)?;
             }
         } else if self.should_run_interactive() {
             // Run interactive TOML editor
@@ -193,7 +198,7 @@ impl Edit {
                 miseprintln!("{doc}");
             } else {
                 info!("writing to {}", display_path(&path));
-                file::write(&path, doc)?;
+                write_config(&path, doc)?;
             }
         }
 
@@ -306,6 +311,23 @@ impl Edit {
             # go = "latest"
         "#}
     }
+}
+
+/// Write a generated config, creating its directory if it is not there yet.
+///
+/// `--global` resolves to `~/.config/mise/config.toml`, and nothing creates that directory
+/// ahead of time. Every other writer of that same file goes through `MiseToml::save`, which
+/// has always created the parent first — these two commands reached `file::write` directly, so
+/// on a fresh install, where `mise generate config --global` is the first thing to touch the
+/// path, they failed with a bare "no such file or directory" and wrote nothing.
+///
+/// A bare relative name (`mise edit foo.toml`) gives an empty parent, which `create_dir_all`
+/// treats as a no-op.
+fn write_config(path: &Path, doc: String) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    file::write(path, doc)
 }
 
 // ============================================================================

@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, Settings};
 #[cfg(target_os = "linux")]
 use crate::file;
 use crate::task::Task;
@@ -8,13 +8,15 @@ use crate::task::task_source_checker::{
 };
 use eyre::Result;
 use ignore::overrides::Override;
+use serde::Serialize;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tempfile::NamedTempFile;
 #[cfg(target_os = "linux")]
 use tokio::sync::OnceCell;
@@ -24,10 +26,31 @@ const MAX_REPORTED_PATHS: usize = 20;
 #[cfg(target_os = "linux")]
 static STRACE: OnceCell<Option<PathBuf>> = OnceCell::const_new();
 
+/// `true` once the report file has been truncated by this process: the first writer replaces a
+/// report left by an earlier run, every later writer appends to it. Audited tasks run in parallel
+/// and share one file, so each task's block is written under this lock to keep blocks intact.
+static REPORT_FILE: Mutex<bool> = Mutex::new(false);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum AccessKind {
     Read,
     Write,
+}
+
+impl AccessKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            AccessKind::Read => "read",
+            AccessKind::Write => "write",
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ReportEntry<'a> {
+    task: &'a str,
+    kind: &'a str,
+    path: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,23 +183,38 @@ impl TaskCacheAudit {
             }
         }
         let total = undeclared.len();
-        for (kind, path) in undeclared.into_iter().take(MAX_REPORTED_PATHS) {
-            let kind = match kind {
-                AccessKind::Read => "read",
-                AccessKind::Write => "write",
-            };
+        let mut report = Settings::get().task.cache.audit_report.clone();
+        if let Some(path) = &report
+            && let Err(err) = write_report(path, task, &undeclared)
+        {
             warn!(
-                "task {} cache audit detected undeclared {kind}: {}",
+                "task {} cache audit could not write its report to {}: {err}",
                 task.name,
+                path.display()
+            );
+            report = None;
+        }
+        for (kind, path) in undeclared.into_iter().take(MAX_REPORTED_PATHS) {
+            warn!(
+                "task {} cache audit detected undeclared {}: {}",
+                task.name,
+                kind.as_str(),
                 path.display()
             );
         }
         if total > MAX_REPORTED_PATHS {
-            warn!(
-                "task {} cache audit omitted {} additional paths",
-                task.name,
-                total - MAX_REPORTED_PATHS
-            );
+            let omitted = total - MAX_REPORTED_PATHS;
+            match &report {
+                Some(path) => warn!(
+                    "task {} cache audit omitted {omitted} additional paths; full report written to {}",
+                    task.name,
+                    path.display()
+                ),
+                None => warn!(
+                    "task {} cache audit omitted {omitted} additional paths",
+                    task.name
+                ),
+            }
         }
     }
 
@@ -194,6 +232,40 @@ impl TaskCacheAudit {
                 .strip_prefix(&self.source_root)
                 .is_ok_and(|relative| matches_override(&self.sources, relative))
     }
+}
+
+fn write_report(
+    path: &Path,
+    task: &Task,
+    undeclared: &BTreeSet<(AccessKind, PathBuf)>,
+) -> Result<()> {
+    let mut block = String::new();
+    for (kind, undeclared_path) in undeclared {
+        let undeclared_path = undeclared_path.to_string_lossy();
+        let entry = ReportEntry {
+            task: &task.name,
+            kind: kind.as_str(),
+            path: &undeclared_path,
+        };
+        block.push_str(&serde_json::to_string(&entry)?);
+        block.push('\n');
+    }
+    let mut truncated = REPORT_FILE.lock().unwrap_or_else(|err| err.into_inner());
+    let mut file = if *truncated {
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?
+    } else {
+        fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)?
+    };
+    file.write_all(block.as_bytes())?;
+    *truncated = true;
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]

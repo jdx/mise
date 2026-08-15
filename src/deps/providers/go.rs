@@ -31,18 +31,20 @@ impl DepsProvider for GoDepsProvider {
         // Both go.mod and go.sum count as sources: go.mod declares the modules,
         // go.sum pins their checksums. A `go mod tidy` that updates only go.sum
         // should still trigger a re-run.
-        vec![root.join("go.mod"), root.join("go.sum")]
+        self.base
+            .sources(vec![root.join("go.mod"), root.join("go.sum")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![]
+        self.base.outputs(vec![])
     }
 
     fn optional_outputs(&self) -> Vec<PathBuf> {
         // Go downloads modules to GOPATH/pkg/mod by default. Track `vendor/` as
         // optional so vendored projects detect deletion without forcing a
         // re-run for non-vendored projects.
-        vec![self.base.config_root().join("vendor")]
+        self.base
+            .optional_outputs(vec![self.base.config_root().join("vendor")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

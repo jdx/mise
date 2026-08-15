@@ -107,8 +107,9 @@ impl ToolRequest {
                 }
             }
             Some(("path", p)) => {
-                validate_path_string(p)?;
-                let path = resolve_path(p, &source);
+                let p = windows_path_separators(p);
+                validate_path_string(&p)?;
+                let path = resolve_path(&p, &source);
                 Self::Path {
                     path,
                     options: backend.opts(),
@@ -519,6 +520,12 @@ fn validate_ref_string(s: &str) -> Result<()> {
 /// entry in a project config cannot inject shell syntax. Path traversal is
 /// intentionally not rejected here because `path:../tools/foo` is a normal
 /// relative-path use case.
+///
+/// The list is written for a POSIX shell, which is why `\` is on it. On Windows `\` is a path
+/// separator instead, so it is rewritten by [`windows_path_separators`] before it gets here rather
+/// than being allowed through — see that function. The shell those hooks run through there is
+/// `cmd.exe`, whose metacharacters are a different set, so a few more are rejected on Windows —
+/// see [`is_forbidden_path_char`].
 fn validate_path_string(s: &str) -> Result<()> {
     if s.is_empty() {
         return Ok(());
@@ -526,11 +533,49 @@ fn validate_path_string(s: &str) -> Result<()> {
     if let Some(c) = s.chars().find(|c| {
         // Allow newlines/tabs/etc. in paths is still bad — keep control-char
         // and quote/expansion rejection, but allow `/` since paths need it.
-        is_forbidden_version_char(*c)
+        is_forbidden_path_char(*c)
     }) {
+        // The only `\` that survives the rewrite is an extended-length or device prefix, so say
+        // what is actually wrong instead of naming a character the user cannot avoid.
+        #[cfg(windows)]
+        if c == '\\' {
+            bail!(
+                "invalid tool path {s:?}: extended-length and device paths (\\\\?\\, \\\\.\\) are not supported"
+            );
+        }
         bail!("invalid tool path {s:?}: contains forbidden character {c:?}");
     }
     Ok(())
+}
+
+/// Rewrite `\` to `/` in a `path:` value on Windows.
+///
+/// `\` is the path separator there, not a shell metacharacter, so [`validate_path_string`] used to
+/// reject every native path — anything copied out of Explorer or printed by `pwd`. Win32 accepts
+/// `/` wherever it accepts `\`, so rewriting is what makes those usable *without* letting a `\`
+/// reach a vfox hook's `ctx.rootPath`, which is the thing the list exists to prevent (#9814). The
+/// alternative — dropping `\` from the list on Windows — would have weakened that.
+///
+/// Extended-length and device prefixes (`\\?\`, `\\.\`) are left alone. Those are the one place
+/// Windows does not accept `/`, so rewriting would hand back a path that looks right and does not
+/// resolve; they keep being rejected, as they are today.
+#[cfg(windows)]
+fn windows_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.starts_with(r"\\?\") || s.starts_with(r"\\.\") {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    if s.contains('\\') {
+        std::borrow::Cow::Owned(s.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
+/// No-op off Windows: `\` is a legal character in a unix filename, so rewriting it would change
+/// which file is meant, and there it really is a shell escape — it stays rejected.
+#[cfg(not(windows))]
+fn windows_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    std::borrow::Cow::Borrowed(s)
 }
 
 fn is_forbidden_version_char(c: char) -> bool {
@@ -538,6 +583,30 @@ fn is_forbidden_version_char(c: char) -> bool {
         return true;
     }
     matches!(c, '"' | '\'' | '`' | '\\' | '$')
+}
+
+/// The `path:` denylist: the shared version list, plus `cmd.exe`'s metacharacters on Windows.
+///
+/// The version list covers a POSIX shell. On Windows the resolved path reaches vfox hooks that
+/// build `cmd.exe` command lines with it, so cmd's metacharacters are as dangerous here as the
+/// POSIX ones already are — this mirrors that rejection on the platform where cmd is the shell.
+/// `%` is the sharpest: cmd expands `%NAME%` even inside double quotes, so a hook that quotes its
+/// interpolation correctly still cannot contain it.
+///
+/// Only the `path:` arm uses this. Version strings keep the POSIX-only list, because `^` is a real
+/// npm-style range prefix (`^1.2.3`) that must not become a hard error.
+fn is_forbidden_path_char(c: char) -> bool {
+    is_forbidden_version_char(c) || is_forbidden_cmd_char(c)
+}
+
+#[cfg(windows)]
+fn is_forbidden_cmd_char(c: char) -> bool {
+    matches!(c, '&' | '|' | '<' | '>' | '^' | '%')
+}
+
+#[cfg(not(windows))]
+fn is_forbidden_cmd_char(_c: char) -> bool {
+    false
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.
@@ -783,6 +852,8 @@ mod tests {
 
     #[test]
     fn test_validate_path_string() {
+        // `validate_path_string` in isolation. On Windows the `path:` arm rewrites separators
+        // first, so a `\` in a real config does not reach here — that pair is covered below.
         use super::validate_path_string;
         // valid paths
         for p in [
@@ -813,6 +884,111 @@ mod tests {
                 "expected path {p:?} to be rejected"
             );
         }
+    }
+
+    /// Rewrite then validate, in the order the `path:` arm does it.
+    fn accept_tool_path(p: &str) -> Result<String, eyre::Report> {
+        let p = super::windows_path_separators(p);
+        super::validate_path_string(&p)?;
+        Ok(p.into_owned())
+    }
+
+    #[test]
+    fn test_tool_path_rewrite_does_not_widen_the_rest() {
+        // The control for the two platform-specific tests below: quote and expansion characters
+        // stay rejected everywhere, and a path with no separator to rewrite comes back untouched.
+        assert_eq!(
+            accept_tool_path("/home/user/tools/foo").unwrap(),
+            "/home/user/tools/foo"
+        );
+        assert_eq!(accept_tool_path("C:/Users/foo").unwrap(), "C:/Users/foo");
+        for p in [
+            "/tmp/$HOME",
+            "/tmp/`id`",
+            "/tmp/$(id)",
+            "/tmp/'rm",
+            "/tmp/\"rm",
+            "/tmp/\nrm",
+        ] {
+            assert!(
+                accept_tool_path(p).is_err(),
+                "expected path {p:?} to be rejected"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_native_windows_tool_path_is_accepted() {
+        // The reported case: a path spelled the way Windows spells it. Rewritten rather than
+        // allowed through, so no `\` reaches a plugin hook's `ctx.rootPath`.
+        for (input, expected) in [
+            (r"C:\Users\foo\bin", "C:/Users/foo/bin"),
+            (r"~\.local\bin", "~/.local/bin"),
+            (r"..\tools\foo", "../tools/foo"),
+            (r"C:\Program Files\tool", "C:/Program Files/tool"),
+        ] {
+            assert_eq!(accept_tool_path(input).unwrap(), expected, "{input:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_extended_length_tool_path_is_left_alone_and_rejected() {
+        // `\\?\` and `\\.\` are the one place Windows does not accept `/`, so rewriting them
+        // would produce a path that looks right and does not resolve. They stay rejected, as
+        // they are on every version before this change.
+        for input in [r"\\?\C:\Users\foo", r"\\.\COM1"] {
+            assert_eq!(
+                super::windows_path_separators(input),
+                input,
+                "{input:?} should not be rewritten"
+            );
+            assert!(accept_tool_path(input).is_err(), "{input:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_backslash_is_still_rejected_on_unix() {
+        // The control for the Windows tests: `\` is a legal character in a unix filename and a
+        // shell escape there, so none of the rewriting reaches this platform.
+        assert_eq!(super::windows_path_separators(r"/tmp/\rm"), r"/tmp/\rm");
+        assert!(accept_tool_path(r"/tmp/\rm").is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_validate_path_string_rejects_cmd_metacharacters() {
+        use super::validate_path_string;
+        // These pass a POSIX shell but are cmd.exe metacharacters, and the resolved path reaches
+        // vfox hooks that build cmd command lines with it. `%` is the one that survives quoting.
+        for p in [
+            "C:/a&b/tool",
+            "C:/%USERPROFILE%/tool",
+            "C:/a^b/tool",
+            "C:/a|b/tool",
+            "C:/a<b/tool",
+            "C:/a>b/tool",
+        ] {
+            assert!(
+                validate_path_string(p).is_err(),
+                "expected Windows path {p:?} to be rejected"
+            );
+        }
+        // An ordinary Windows path is still fine.
+        assert!(validate_path_string("C:/Program Files/tool").is_ok());
+    }
+
+    #[test]
+    fn test_version_string_keeps_the_posix_only_list() {
+        // The cmd-metacharacter rejection is `path:`-only. Versions keep the POSIX list, or `^1.2.3`
+        // — a real npm-style range — would become a hard error. `&` is not a version metacharacter
+        // there, so this stays accepted on every platform.
+        assert!(validate_version_string("^1.2.3").is_ok());
+        assert!(validate_version_string("1.0&x").is_ok());
+        // The POSIX shell characters are still rejected, unchanged.
+        assert!(validate_version_string("1.0$(id)").is_err());
     }
 
     #[test]

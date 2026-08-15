@@ -1429,7 +1429,14 @@ fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
         // Text aube would have written to stderr itself. Warnings are the
         // user's business; a fatal error also comes back as the returned
         // `Err`, so this is never the only place one surfaces.
-        InstallEvent::Output { level, message, .. } => match level {
+        InstallEvent::Output {
+            level,
+            code,
+            message,
+        } => match level {
+            InstallOutputLevel::Info if code.as_deref() == Some("AUBE_LIFECYCLE_SCRIPT_OUTPUT") => {
+                pr.println(message)
+            }
             InstallOutputLevel::Info => debug!("aube: {message}"),
             InstallOutputLevel::Warning | InstallOutputLevel::Error => warn!("{message}"),
         },
@@ -1564,6 +1571,15 @@ pub fn install_time_option_keys() -> Vec<String> {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+
+    #[derive(Debug, Default)]
+    struct RecordingReport(std::sync::Mutex<Vec<String>>);
+
+    impl SingleReport for RecordingReport {
+        fn println(&self, message: String) {
+            self.0.lock().unwrap().push(message);
+        }
+    }
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_eq;
 
@@ -2618,5 +2634,93 @@ mod tests {
         // Hyphen only inside build metadata (not legal semver, but be defensive)
         // — we treat it as stable since the version core has no pre-release.
         assert!(!is_semver_prerelease("1.0.0+build-5"));
+    }
+
+    #[test]
+    fn test_aube_lifecycle_output_prints_through_progress_report() {
+        let report = RecordingReport::default();
+
+        apply_aube_event(
+            aube::embed::InstallEvent::Output {
+                level: aube::embed::InstallOutputLevel::Info,
+                code: Some("AUBE_LIFECYCLE_SCRIPT_OUTPUT".to_string()),
+                message: "gyp info ok".to_string(),
+            },
+            &report,
+        );
+
+        assert_eq!(*report.0.lock().unwrap(), ["gyp info ok"]);
+
+        let report = RecordingReport::default();
+        for code in [None, Some("OTHER_AUBE_INFO".to_string())] {
+            apply_aube_event(
+                aube::embed::InstallEvent::Output {
+                    level: aube::embed::InstallOutputLevel::Info,
+                    code,
+                    message: "internal status".to_string(),
+                },
+                &report,
+            );
+            assert!(report.0.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_embedded_aube_emits_lifecycle_output_for_progress_report() {
+        crate::backend::aube_host::init();
+
+        let workspace = tempfile::tempdir().unwrap();
+        let app = workspace.path().join("packages/app");
+        let library = workspace.path().join("packages/library");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&library).unwrap();
+        std::fs::write(
+            workspace.path().join("package.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "private": true,
+                "scripts": {
+                    "pnpm:devPreinstall": "echo lifecycle-from-aube"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - packages/*\n",
+        )
+        .unwrap();
+        std::fs::write(app.join("package.json"), "{\"name\":\"app\"}\n").unwrap();
+        std::fs::write(
+            library.join("package.json"),
+            "{\"name\":\"library\",\"version\":\"1.0.0\"}\n",
+        )
+        .unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        aube::embed::add_with_overrides(
+            &app,
+            &["library@workspace:*".to_string()],
+            aube::embed::AddToProjectOptions {
+                offline: true,
+                control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx })),
+                ..Default::default()
+            },
+            aube::embed::EmbedderInstallOverrides {
+                use_global_virtual_store: Some(false),
+                cache_dir: Some(workspace.path().join("cache")),
+                store_dir: Some(workspace.path().join("store")),
+            },
+        )
+        .await
+        .unwrap();
+
+        let report = RecordingReport::default();
+        while let Ok(event) = rx.try_recv() {
+            apply_aube_event(event, &report);
+        }
+        let messages = report.0.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].trim_end(), "lifecycle-from-aube");
     }
 }

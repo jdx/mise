@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
 use crate::env::TERM_WIDTH;
+use crate::errors::Error;
 use crate::file::display_path;
 use crate::lockfile::{Lockfile, lockfile_path_for_config};
 use crate::registry::REGISTRY;
@@ -139,6 +140,9 @@ impl Toolset {
             .collect::<Vec<_>>();
         let tvls = parallel::parallel(versions, |(config, ba, mut tvl, opts)| async move {
             if let Err(err) = tvl.resolve(&config, &opts).await {
+                if Error::is_required_channel_resolution_err(&err) {
+                    return Err(err);
+                }
                 // warn_once: a command may resolve the same toolset more than
                 // once, and repeating an identical failure adds no information.
                 warn_once!("Failed to resolve tool version list for {ba}: {err}");
@@ -383,6 +387,9 @@ impl Toolset {
             {
                 trace!("skipping symlinked version {tv}");
                 // do not consider symlinked versions to be outdated
+                return Ok(outdated);
+            }
+            if t.uses_custom_outdated_info() {
                 return Ok(outdated);
             }
             match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {

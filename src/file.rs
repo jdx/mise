@@ -346,6 +346,108 @@ pub fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()>
     trace!("write {}", display_path(path));
     fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
 }
+
+/// Writes a complete replacement beside `path`, then atomically renames it into place.
+///
+/// New files use ordinary write permissions subject to the process umask. Replacements preserve
+/// the destination's existing Unix permissions.
+pub fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write_atomic {}", display_path(path));
+    let target = atomic_write_target(path)?;
+    let path = target.as_path();
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("path has no parent: {}", display_path(path)))?;
+    let prefix = format!(
+        ".{}.",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(&prefix);
+
+    #[cfg(unix)]
+    let existing_permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err.into()),
+    };
+
+    #[cfg(unix)]
+    if existing_permissions.is_none() {
+        builder.permissions(fs::Permissions::from_mode(0o666));
+    }
+
+    let mut temporary = builder.tempfile_in(parent)?;
+
+    #[cfg(unix)]
+    if let Some(permissions) = existing_permissions {
+        temporary.as_file().set_permissions(permissions)?;
+    }
+
+    temporary.write_all(contents.as_ref())?;
+
+    temporary.as_file_mut().sync_all()?;
+    persist_atomic(temporary, path)
+        .wrap_err_with(|| format!("failed atomic write: {}", display_path(path)))?;
+    sync_dir(parent)?;
+    Ok(())
+}
+
+fn atomic_write_target(path: &Path) -> Result<PathBuf> {
+    const MAX_SYMLINKS: usize = 40;
+
+    let mut target = path.to_path_buf();
+    for followed in 0..=MAX_SYMLINKS {
+        if !target.is_symlink() {
+            return Ok(desymlink_path(&target));
+        }
+        if followed == MAX_SYMLINKS {
+            break;
+        }
+        let link = fs::read_link(&target)
+            .wrap_err_with(|| format!("failed to read symlink: {}", display_path(&target)))?;
+        target = if link.is_absolute() {
+            link
+        } else {
+            target.parent().unwrap_or_else(|| Path::new("")).join(link)
+        };
+    }
+
+    bail!(
+        "too many symlinks while resolving atomic write target: {}",
+        display_path(path)
+    )
+}
+
+fn persist_atomic(mut temporary: tempfile::NamedTempFile, path: &Path) -> Result<()> {
+    const RETRIES: u32 = 20;
+
+    for attempt in 0..=RETRIES {
+        match temporary.persist(path) {
+            Ok(_) => return Ok(()),
+            Err(err) if should_retry_atomic_persist(&err.error) && attempt < RETRIES => {
+                temporary = err.file;
+                std::thread::sleep(Duration::from_millis(5 * u64::from(attempt + 1)));
+            }
+            Err(err) => return Err(err.error.into()),
+        }
+    }
+
+    unreachable!("atomic persist retry loop should always return");
+}
+
+#[cfg(windows)]
+fn should_retry_atomic_persist(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
+
+#[cfg(not(windows))]
+fn should_retry_atomic_persist(_err: &std::io::Error) -> bool {
+    false
+}
+
 pub async fn write_async<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
     trace!("write {}", display_path(path));
@@ -833,6 +935,28 @@ pub fn is_executable(path: &Path) -> bool {
         return true;
     }
     has_shebang(path)
+}
+
+/// How to make `path` count as executable, phrased for the platform the user is on.
+///
+/// Lives beside [`is_executable`] because it has to track it: the two platforms answer that
+/// question by different rules, so the remedy differs too. `chmod +x` is not merely unavailable on
+/// Windows — it is the wrong instruction, since the Windows branch never looks at a permission bit.
+#[cfg(unix)]
+pub fn make_executable_hint(path: &Path) -> String {
+    format!("Run: chmod +x {}", display_path(path))
+}
+
+#[cfg(windows)]
+pub fn make_executable_hint(path: &Path) -> String {
+    format!(
+        "Add a shebang line to {}, or give it one of these extensions: {}",
+        display_path(path),
+        // Read from the setting rather than hardcoded: a user who has changed
+        // `windows_executable_extensions` would otherwise be told to use extensions mise will not
+        // accept from them.
+        Settings::get().windows_executable_extensions.join(", ")
+    )
 }
 
 #[cfg(windows)]
@@ -2122,6 +2246,108 @@ mod tests {
         // `fs::hard_link` refuses an existing destination, so this exercises the copy arm.
         hard_link_or_copy(&from, &to).unwrap();
         assert_eq!(fs::read(&to).unwrap(), b"new");
+    }
+
+    #[test]
+    fn write_atomic_replaces_existing_contents_without_temp_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.toml");
+        write_atomic(&path, "old").unwrap();
+
+        write_atomic(&path, "new").unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(fs::read_dir(tmp.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_preserves_existing_permissions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.toml");
+        write_atomic(&path, "old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+
+        write_atomic(&path, "new").unwrap();
+
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_updates_symlink_target_without_replacing_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        let link = tmp.path().join("state.toml");
+        fs::write(&target, "old").unwrap();
+        symlink(&target, &link).unwrap();
+
+        write_atomic(&link, "new").unwrap();
+
+        assert!(link.is_symlink());
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_creates_dangling_relative_symlink_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        let link = tmp.path().join("state.toml");
+        symlink("target.toml", &link).unwrap();
+
+        write_atomic(&link, "new").unwrap();
+
+        assert!(link.is_symlink());
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_preserves_dangling_symlink_chain() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        let middle = tmp.path().join("middle.toml");
+        let link = tmp.path().join("state.toml");
+        symlink("target.toml", &middle).unwrap();
+        symlink("middle.toml", &link).unwrap();
+
+        write_atomic(&link, "new").unwrap();
+
+        assert!(link.is_symlink());
+        assert!(middle.is_symlink());
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_accepts_forty_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target.toml");
+        for index in 0..40 {
+            let link = tmp.path().join(format!("link-{index}.toml"));
+            let next = if index == 39 {
+                "target.toml".to_string()
+            } else {
+                format!("link-{}.toml", index + 1)
+            };
+            symlink(next, link).unwrap();
+        }
+
+        write_atomic(tmp.path().join("link-0.toml"), "new").unwrap();
+
+        assert_eq!(fs::read_to_string(target).unwrap(), "new");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_persist_retries_windows_sharing_violations() {
+        assert!(should_retry_atomic_persist(
+            &std::io::Error::from_raw_os_error(32)
+        ));
     }
 
     fn utf16le(s: &str) -> Vec<u8> {
@@ -3524,5 +3750,26 @@ mod tests {
 
         assert!(!src.exists());
         assert_eq!(fs::read(dst.join("nested/bun")).unwrap(), b"hello");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn make_executable_hint_names_chmod_on_unix() {
+        let hint = make_executable_hint(Path::new("/proj/mise-tasks/build"));
+        assert!(hint.contains("chmod +x"), "{hint}");
+        assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn make_executable_hint_does_not_name_chmod_on_windows() {
+        let hint = make_executable_hint(Path::new(r"C:\proj\mise-tasks\build"));
+        // The point of the change: `chmod` is not just unavailable here, it is the wrong fix --
+        // the Windows `is_executable` never looks at a permission bit.
+        assert!(!hint.contains("chmod"), "{hint}");
+        assert!(hint.contains("shebang"), "{hint}");
+        // and it must offer what that branch actually accepts
+        assert!(hint.contains("exe"), "{hint}");
+        assert!(hint.contains("build"), "{hint}");
     }
 }

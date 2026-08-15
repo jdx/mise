@@ -28,11 +28,13 @@ impl DepsProvider for ComposerDepsProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         let root = self.base.config_root();
-        vec![root.join("composer.lock"), root.join("composer.json")]
+        self.base
+            .sources(vec![root.join("composer.lock"), root.join("composer.json")])
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.base.config_root().join("vendor")]
+        self.base
+            .outputs(vec![self.base.config_root().join("vendor")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

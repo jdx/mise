@@ -8,7 +8,7 @@ use crate::backend::{
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::http::HTTP;
+use crate::http::{HTTP, apply_url_replacements};
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::toolset::{ToolVersion, ToolVersionOptions};
@@ -16,6 +16,7 @@ use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr};
+use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
@@ -27,6 +28,7 @@ use rattler_solve::{
     ChannelPriority, SolveStrategy, SolverImpl, SolverTask, resolvo::Solver as ResolvoSolver,
 };
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
+use reqwest_middleware::{ClientBuilder as MiddlewareClientBuilder, Middleware, Next};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
@@ -51,6 +53,26 @@ pub struct CondaBackend {
 #[derive(Debug, Clone, Copy)]
 struct CondaOptions<'a> {
     values: BackendOptions<'a>,
+}
+
+#[derive(Debug)]
+struct UrlReplacementMiddleware;
+
+fn rewrite_request_url(request: &mut reqwest::Request, rewriter: impl FnOnce(&mut url::Url)) {
+    rewriter(request.url_mut());
+}
+
+#[async_trait]
+impl Middleware for UrlReplacementMiddleware {
+    async fn handle(
+        &self,
+        mut request: reqwest::Request,
+        extensions: &mut Extensions,
+        next: Next<'_>,
+    ) -> reqwest_middleware::Result<reqwest::Response> {
+        rewrite_request_url(&mut request, apply_url_replacements);
+        next.run(request, extensions).await
+    }
 }
 
 impl<'a> CondaOptions<'a> {
@@ -98,10 +120,14 @@ impl CondaBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    fn create_gateway() -> Gateway {
-        Gateway::builder()
+    fn create_gateway() -> Result<Gateway> {
+        let client = MiddlewareClientBuilder::new(HTTP.reqwest()?.clone())
+            .with(UrlReplacementMiddleware)
+            .build();
+        Ok(Gateway::builder()
+            .with_client(client)
             .with_cache_dir(dirs::CACHE.join("conda"))
-            .finish()
+            .finish())
     }
 
     /// Map a mise PlatformTarget to a rattler conda Platform
@@ -116,10 +142,14 @@ impl CondaBackend {
         }
     }
 
-    fn detect_virtual_packages(platform: CondaPlatform) -> Vec<GenericVirtualPackage> {
-        VirtualPackages::detect_for_platform(platform, &VirtualPackageOverrides::default())
-            .map(|vp| vp.into_generic_virtual_packages().collect())
-            .unwrap_or_default()
+    fn detect_virtual_packages(platform: CondaPlatform) -> Result<Vec<GenericVirtualPackage>> {
+        VirtualPackages::detect_for_platform(
+            platform,
+            &VirtualPackageOverrides::from_env(),
+            Some(&dirs::CACHE.join("conda")),
+        )
+        .map(|vp| vp.into_generic_virtual_packages().collect())
+        .map_err(|e| eyre::eyre!("failed to detect conda virtual packages: {e}"))
     }
 
     /// Deduplicate records that share the same archive identifier
@@ -152,7 +182,7 @@ impl CondaBackend {
         opts: CondaOptions<'_>,
     ) -> Result<Vec<RepoDataRecord>> {
         let channel = opts.channel()?;
-        let gateway = Self::create_gateway();
+        let gateway = Self::create_gateway()?;
 
         let repodata: Vec<RepoData> = gateway
             .query([channel], [platform, CondaPlatform::NoArch], specs.clone())
@@ -162,7 +192,7 @@ impl CondaBackend {
             .to_vec();
 
         let flat_records = Self::flatten_repodata(&repodata);
-        let virtual_packages = Self::detect_virtual_packages(platform);
+        let virtual_packages = Self::detect_virtual_packages(platform)?;
 
         let task = SolverTask {
             available_packages: [flat_records.as_slice()],
@@ -831,7 +861,7 @@ impl Backend for CondaBackend {
         let current_platform = CondaPlatform::current();
         let tool_name = self.tool_name();
 
-        let gateway = Self::create_gateway();
+        let gateway = Self::create_gateway()?;
         let match_spec = MatchSpec::from_str(&tool_name, ParseStrictness::Lenient)
             .map_err(|e| eyre::eyre!("invalid match spec for '{}': {}", tool_name, e))?;
 
@@ -866,17 +896,17 @@ impl Backend for CondaBackend {
     }
 
     /// Override to bypass the shared remote_versions cache since conda's
-    /// channel option affects which versions are available. The override is
-    /// on `_with_refresh` so it applies to both cached and refresh-enabled
-    /// resolution paths; conda always queries the channel directly so the
-    /// `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_with_refresh(
+    /// channel option affects which versions are available. Conda always
+    /// queries the channel directly, so the `_refresh` flag is irrelevant.
+    async fn list_remote_versions_with_info_and_options(
         &self,
         config: &Arc<Config>,
+        _listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
         _refresh: bool,
+        _has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let want_prereleases = self.include_prereleases(&opts);
+        let want_prereleases = self.include_prereleases(selection_opts);
         let versions = self
             ._list_remote_versions(config)
             .await?
@@ -917,28 +947,15 @@ impl Backend for CondaBackend {
         let tool_name = self.tool_name();
         let spec_str = format!("{}=={}", tool_name, tv.version);
 
-        let match_spec = match MatchSpec::from_str(&spec_str, ParseStrictness::Lenient) {
-            Ok(s) => s,
-            Err(e) => {
-                debug!("invalid conda spec '{}': {}", spec_str, e);
-                return Ok(PlatformInfo::default());
-            }
-        };
+        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
+            .map_err(|e| eyre::eyre!("invalid conda spec '{spec_str}': {e}"))?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = match self.solve_packages(vec![match_spec], platform, opts).await {
-            Ok(r) => r,
-            Err(e) => {
-                debug!(
-                    "failed to resolve {} for {}: {}",
-                    tool_name,
-                    target.to_key(),
-                    e
-                );
-                return Ok(PlatformInfo::default());
-            }
-        };
+        let records = self
+            .solve_packages(vec![match_spec], platform, opts)
+            .await
+            .wrap_err_with(|| format!("failed to solve {tool_name} for {}", target.to_key()))?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut main_record = None;
@@ -952,17 +969,20 @@ impl Backend for CondaBackend {
             }
         }
 
-        match main_record {
-            Some(main) => Ok(PlatformInfo {
-                url: Some(main.url.to_string()),
-                checksum: Self::format_sha256(&main),
-                size: None,
-                url_api: None,
-                conda_deps: Some(dep_basenames),
-                ..Default::default()
-            }),
-            None => Ok(PlatformInfo::default()),
-        }
+        let main = main_record.ok_or_else(|| {
+            eyre::eyre!(
+                "conda solve for {tool_name} on {} did not return the requested package",
+                target.to_key()
+            )
+        })?;
+        Ok(PlatformInfo {
+            url: Some(main.url.to_string()),
+            checksum: Self::format_sha256(&main),
+            size: None,
+            url_api: None,
+            conda_deps: Some(dep_basenames),
+            ..Default::default()
+        })
     }
 
     async fn list_bin_paths(
@@ -1014,7 +1034,7 @@ fn cmd_escape_value(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CondaBackend, CondaOptions};
+    use super::{CondaBackend, CondaOptions, rewrite_request_url};
     #[cfg(unix)]
     use crate::file;
     use crate::toolset::ToolVersionOptions;
@@ -1050,6 +1070,42 @@ mod tests {
             url: Url::parse(url).unwrap(),
             channel: None,
         }
+    }
+
+    #[test]
+    fn request_url_rewrite_preserves_request_data() {
+        let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::POST, original);
+        request.headers_mut().insert(
+            "x-conda-test",
+            reqwest::header::HeaderValue::from_static("preserved"),
+        );
+        *request.body_mut() = Some("request-body".into());
+
+        rewrite_request_url(&mut request, |url| {
+            *url = Url::parse("https://mirror.invalid/conda/noarch/repodata.json").unwrap();
+        });
+
+        assert_eq!(
+            request.url().as_str(),
+            "https://mirror.invalid/conda/noarch/repodata.json"
+        );
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(request.headers()["x-conda-test"], "preserved");
+        assert_eq!(
+            request.body().and_then(reqwest::Body::as_bytes),
+            Some(&b"request-body"[..])
+        );
+    }
+
+    #[test]
+    fn request_url_rewrite_can_be_a_noop() {
+        let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::GET, original.clone());
+
+        rewrite_request_url(&mut request, |_| {});
+
+        assert_eq!(request.url(), &original);
     }
 
     #[test]

@@ -3,7 +3,7 @@ use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
-pub use settings::Settings;
+pub use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
@@ -1106,6 +1106,7 @@ impl Config {
                 env_scripts: cached.env_scripts.clone(),
                 redactions: cached.redactions.clone(),
                 redaction_exclusions: cached.redaction_exclusions.clone(),
+                caller_env_keys: cached.caller_env_keys.clone(),
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
@@ -1117,11 +1118,7 @@ impl Config {
                 .collect_vec();
             self.add_redactions_excluding(
                 redact_keys,
-                &env_results
-                    .env
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.0.clone()))
-                    .collect(),
+                &env_results.redactable_env(&env::PRISTINE_ENV),
                 &env_results.redaction_exclusions,
             );
             if log::log_enabled!(log::Level::Trace) {
@@ -1184,11 +1181,7 @@ impl Config {
             .collect_vec();
         self.add_redactions_excluding(
             redact_keys,
-            &env_results
-                .env
-                .iter()
-                .map(|(k, v)| (k.clone(), v.0.clone()))
-                .collect(),
+            &env_results.redactable_env(&env::PRISTINE_ENV),
             &env_results.redaction_exclusions,
         );
         if cache_enabled
@@ -1214,6 +1207,7 @@ impl Config {
                 env_scripts: env_results.env_scripts.clone(),
                 redactions: env_results.redactions.clone(),
                 redaction_exclusions: env_results.redaction_exclusions.clone(),
+                caller_env_keys: env_results.caller_env_keys.clone(),
                 watch_files,
                 watch_file_mtimes,
                 created_at: now,
@@ -1721,12 +1715,21 @@ pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
 /// it's the only option. This ensures commands like `mise use` write to mise.toml
 /// instead of mise.local.toml or .tool-versions when multiple configs exist.
 /// See: https://github.com/jdx/mise/discussions/6475
+///
+/// The two exclusions are not the same kind. `.tool-versions` is a *preference*: it is passed
+/// over while choosing and comes back once nothing else qualifies. A `conf.d` drop-in must not
+/// be written to at all, so it is excluded from the fallback as well, and this returns `None`
+/// instead — every caller turns that into a config of its own, which is the wanted outcome.
+///
+/// Carrying the drop-in exclusion in a filtered view rather than repeating it in each arm is
+/// what keeps the two apart: the preference needs a fallback, the exclusion must not have one,
+/// and a chain of `or_else` arms only holds that line for as long as every arm remembers to.
+/// See: <https://github.com/jdx/mise/discussions/5842>
 fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
-    files
-        .iter()
-        .find(|p| !is_tool_versions_file(p) && !is_conf_d_file(p))
-        .or_else(|| files.iter().find(|p| is_tool_versions_file(p)))
-        .or_else(|| files.first())
+    let writable = || files.iter().filter(|p| !is_conf_d_file(p));
+    writable()
+        .find(|p| !is_tool_versions_file(p))
+        .or_else(|| writable().next())
 }
 
 fn is_conf_d_file(p: &Path) -> bool {
@@ -2296,11 +2299,6 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
 pub fn global_config_path() -> PathBuf {
     let files = global_config_files();
     first_config_file(&files)
-        // Never write into a `conf.d` drop-in. `first_config_file` skips them
-        // while choosing, but falls back to `files.first()` when nothing else
-        // qualifies — and `config_files_from_dir` inserts conf.d entries first,
-        // so a config dir holding only drop-ins would hand one back here.
-        .filter(|p| !is_conf_d_file(p.as_path()))
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
@@ -5996,5 +5994,72 @@ vars = { target = "linux" }
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].description, "linux");
         Ok(())
+    }
+}
+
+/// Deliberately not inside the `#[cfg(unix)]` module above: `first_config_file` only inspects
+/// path components, so it behaves the same everywhere and is worth compiling on Windows too.
+#[cfg(test)]
+mod write_target_tests {
+    use super::*;
+
+    fn set(paths: &[&str]) -> IndexSet<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn a_drop_in_never_wins_over_tool_versions() {
+        // `global_config_files` lists conf.d entries first and appends `~/.tool-versions`
+        // after them, so a fallback that does not skip drop-ins hands one back — and
+        // `global_config_path`, refusing it, creates a `config.toml` rather than writing to
+        // the `.tool-versions` sitting right there. That ordering is what makes this
+        // reachable, and nothing else in the file says so.
+        let files = set(&[
+            "/home/u/.config/mise/conf.d/10-drop-in.toml",
+            "/home/u/.tool-versions",
+        ]);
+        assert_eq!(
+            first_config_file(&files),
+            Some(&PathBuf::from("/home/u/.tool-versions"))
+        );
+    }
+
+    #[test]
+    fn nothing_but_drop_ins_means_no_write_target() {
+        // Every caller turns `None` into a config of its own, which is the wanted outcome:
+        // creating `config.toml` beats editing somebody's drop-in.
+        let files = set(&["/home/u/.config/mise/conf.d/10-drop-in.toml"]);
+        assert_eq!(first_config_file(&files), None);
+    }
+
+    #[test]
+    fn a_real_config_still_wins() {
+        let files = set(&[
+            "/home/u/.config/mise/conf.d/10-drop-in.toml",
+            "/home/u/.config/mise/config.toml",
+            "/home/u/.tool-versions",
+        ]);
+        assert_eq!(
+            first_config_file(&files),
+            Some(&PathBuf::from("/home/u/.config/mise/config.toml"))
+        );
+    }
+
+    #[test]
+    fn tool_versions_stays_deprioritised() {
+        // Control for the change above: `.tool-versions` is skipped *while choosing* and only
+        // returned when nothing else qualifies. Excluding drop-ins outright must not turn that
+        // preference into an exclusion as well.
+        let files = set(&["/proj/.tool-versions", "/proj/mise.toml"]);
+        assert_eq!(
+            first_config_file(&files),
+            Some(&PathBuf::from("/proj/mise.toml"))
+        );
+
+        let only = set(&["/proj/.tool-versions"]);
+        assert_eq!(
+            first_config_file(&only),
+            Some(&PathBuf::from("/proj/.tool-versions"))
+        );
     }
 }

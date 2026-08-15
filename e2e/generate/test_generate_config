@@ -14,3 +14,11 @@ EOF
 assert "mise generate config -n --tool-versions .tool-versions" '[tools]
 node = "22"
 python = ["3.9", "3.10", "3.11"]'
+
+# The command as reported in discussion #11046, without -n. Every assertion above is a
+# dry-run, so the write itself had no coverage: `mise generate config --global` is often the
+# first thing to touch ~/.config/mise on a fresh install, and it did not create that
+# directory before writing into it.
+export MISE_GLOBAL_CONFIG_FILE="$PWD/fresh/mise/config.toml"
+assert_succeed "mise generate config --global"
+assert_contains "cat fresh/mise/config.toml" "mise config files are hierarchical"

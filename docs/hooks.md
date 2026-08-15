@@ -114,6 +114,11 @@ enter = ["echo 'entering project'", { task = "setup" }]
 
 Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
 
+Task references used as `preinstall` hooks do not automatically install missing project- or
+task-level tools. This keeps the hook ahead of the installation it is preparing. Commands needed
+by a preinstall task must already be available from the system or an existing installation. Other
+task-backed hook types retain normal task tool installation behavior.
+
 ## Watch files hook
 
 While using `mise activate` you can have mise watch files for changes and execute a script or task when a file changes.

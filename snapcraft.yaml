@@ -9,7 +9,7 @@
 
 name: mise
 title: mise-en-place
-version: "2026.8.5"
+version: "2026.8.6"
 summary: Dev tools, env vars, and tasks in one CLI
 description: |
   mise-en-place prepares your development environment before each command runs.
@@ -49,6 +49,7 @@ parts:
     rust-channel: stable
 
     build-packages:
+      - cmake
       - libssl-dev
     build-attributes:
       - enable-patchelf

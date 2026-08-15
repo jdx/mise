@@ -46,11 +46,12 @@ impl DepsProvider for BunDepsProvider {
             sources.push(lockfile);
         }
         sources.push(self.base.config_root().join("package.json"));
-        sources
+        self.base.sources(sources)
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.base.config_root().join("node_modules")]
+        self.base
+            .outputs(vec![self.base.config_root().join("node_modules")])
     }
 
     fn install_command(&self) -> Result<DepsCommand> {

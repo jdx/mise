@@ -16,6 +16,7 @@ use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
 use jiff::Timestamp;
+use path_absolutize::Absolutize;
 use std::path::PathBuf;
 
 /// Install a tool version
@@ -388,7 +389,9 @@ impl Install {
             Some(env::MISE_SYSTEM_INSTALLS_DIR.clone())
         } else {
             self.shared.clone()
-        };
+        }
+        .map(|path| path.absolutize().map(|path| path.into_owned()))
+        .transpose()?;
         Ok(InstallOptions {
             force: self.force,
             jobs: self.jobs,
@@ -397,6 +400,7 @@ impl Install {
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
+                resolve_rolling_channels: false,
                 prefer_exact_version: false,
                 before_date: self.get_before_date()?,
                 before_date_from_default: false,
