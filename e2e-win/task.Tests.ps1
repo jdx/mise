@@ -105,6 +105,33 @@ echo "from-bash"
         mise run shebangtask | Select -Last 1 | Should -Be 'from-bash'
     }
 
+    # File tasks cannot branch on platform -- `run_windows` is a TOML-task key and is rejected in a
+    # file-task header -- so writing the task twice, once per platform, is the only option. Both
+    # files reduce to the same task name, and mise used to keep both and run both.
+    #
+    # End to end because the unit tests can only check the preference in isolation: it is the chain
+    # of discovery (shebang admits the `.sh`), naming (the stem, so both become `platpair`) and
+    # preference that produces the collision.
+    It 'prefers the Windows script when a task exists in both forms' {
+        @"
+#!/usr/bin/env bash
+echo "from-posix"
+"@ | Out-File -FilePath "tasks\platpair.sh" -Encoding utf8NoBOM -NoNewline
+        "Write-Output 'from-windows'" | Out-File -FilePath "tasks\platpair.ps1" -Encoding utf8NoBOM -NoNewline
+
+        # One task, not two entries sharing a name.
+        (mise tasks --json | ConvertFrom-Json | Where-Object { $_.name -eq 'platpair' }).Count |
+            Should -Be 1
+
+        # And the POSIX half must not run. Asserting the absence as well as the presence: with both
+        # kept, this printed `from-posix` too and still ended on the Windows line.
+        $out = mise run platpair 2>&1 | Out-String
+        $out | Should -BeLike '*from-windows*'
+        $out | Should -Not -BeLike '*from-posix*'
+
+        Remove-Item "tasks\platpair.sh", "tasks\platpair.ps1" -ErrorAction Ignore
+    }
+
     It 'executes a task in pwsh' {
         $env:MISE_WINDOWS_EXECUTABLE_EXTENSIONS = "ps1"
         $env:MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS = "pwsh.exe"
