@@ -351,7 +351,15 @@ pub(crate) fn mise_bin_for_shims() -> PathBuf {
 }
 
 fn snap_mise_bin(mise_bin: &Path, snap: &Path) -> Option<PathBuf> {
-    let relative = mise_bin.strip_prefix(snap).ok()?;
+    let relative = mise_bin
+        .strip_prefix(snap)
+        .map(Path::to_path_buf)
+        .or_else(|_| {
+            let mise_bin = file::canonicalize_or_self(mise_bin);
+            let snap = file::canonicalize_or_self(snap);
+            mise_bin.strip_prefix(snap).map(Path::to_path_buf)
+        })
+        .ok()?;
     let snap_mount = snap.parent()?;
     Some(snap_mount.join("current").join(relative))
 }
@@ -963,6 +971,26 @@ mod tests {
                 Path::new("/snap/mise/189")
             ),
             None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snap_mise_bin_handles_symlinked_snap_mount() {
+        let temp = tempfile::tempdir().unwrap();
+        let canonical_mount = temp.path().join("var/lib/snapd/snap");
+        let canonical_snap = canonical_mount.join("mise/189");
+        let mise_bin = canonical_snap.join("bin/mise");
+        fs::create_dir_all(mise_bin.parent().unwrap()).unwrap();
+        fs::write(&mise_bin, "").unwrap();
+
+        let snap_mount = temp.path().join("snap");
+        std::os::unix::fs::symlink(&canonical_mount, &snap_mount).unwrap();
+        let snap = snap_mount.join("mise/189");
+
+        assert_eq!(
+            snap_mise_bin(&mise_bin, &snap),
+            Some(snap_mount.join("mise/current/bin/mise"))
         );
     }
 
