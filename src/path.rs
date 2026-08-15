@@ -3,19 +3,29 @@ pub use std::path::*;
 use crate::dirs;
 
 pub trait PathExt {
-    /// replaces $HOME with "~"
+    /// replaces $HOME with "~", and drops a Windows extended-length prefix
     fn display_user(&self) -> String;
     fn mount(&self, on: &Path) -> PathBuf;
     fn is_empty(&self) -> bool;
 }
 
 impl PathExt for Path {
+    /// The one place mise turns a path into text for a person to read, so the extended-length
+    /// prefix `std::fs::canonicalize` leaves on Windows is dropped here rather than at each
+    /// caller. mise refuses `\\?\` as *input* — see `toolset::tool_request::validate_path_string`,
+    /// which calls extended-length and device paths unsupported — so handing one back in a message
+    /// offers a path mise would not accept.
+    ///
+    /// `dunce::simplified` only strips the prefix when the result still names the same file:
+    /// verbatim UNC, device paths, reserved names and paths past `MAX_PATH` keep it, because those
+    /// genuinely do not resolve without it.
     fn display_user(&self) -> String {
+        let path = dunce::simplified(self);
         let home = dirs::HOME.to_string_lossy();
         let home_str: &str = home.as_ref();
-        match cfg!(unix) && self.starts_with(home_str) && home != "/" {
-            true => self.to_string_lossy().replacen(home_str, "~", 1),
-            false => self.to_string_lossy().to_string(),
+        match cfg!(unix) && path.starts_with(home_str) && home != "/" {
+            true => path.to_string_lossy().replacen(home_str, "~", 1),
+            false => path.to_string_lossy().to_string(),
         }
     }
 
@@ -657,6 +667,53 @@ mod tests {
     /// Cygwin default style (`/cygdrive/c/...`).
     fn cygwin(s: &str) -> String {
         windows_path_list_to_unix(s, "/cygdrive")
+    }
+
+    /// `canonicalize` hands back an extended-length path on Windows, and mise used to print it.
+    /// Only the drive form is simplified -- see the negative cases, which name shapes that do not
+    /// resolve without the prefix.
+    #[cfg(windows)]
+    #[test]
+    fn test_display_user_drops_the_extended_length_prefix() {
+        assert_eq!(
+            Path::new(r"\\?\C:\Users\me\proj").display_user(),
+            r"C:\Users\me\proj"
+        );
+        // An ordinary path is untouched.
+        assert_eq!(
+            Path::new(r"C:\Users\me\proj").display_user(),
+            r"C:\Users\me\proj"
+        );
+        // A real UNC path is not an extended-length one and must survive intact.
+        assert_eq!(
+            Path::new(r"\\server\share\proj").display_user(),
+            r"\\server\share\proj"
+        );
+        // Verbatim UNC and device paths have no plain equivalent, so they keep the prefix.
+        assert_eq!(
+            Path::new(r"\\?\UNC\server\share").display_user(),
+            r"\\?\UNC\server\share"
+        );
+        assert_eq!(Path::new(r"\\.\COM1").display_user(), r"\\.\COM1");
+        // A reserved name only resolves through the verbatim form.
+        assert_eq!(
+            Path::new(r"\\?\C:\proj\CON").display_user(),
+            r"\\?\C:\proj\CON"
+        );
+    }
+
+    /// The prefix cannot occur on unix (`\` is an ordinary filename character there), so nothing
+    /// is stripped and the `~` substitution keeps working.
+    #[cfg(not(windows))]
+    #[test]
+    fn test_display_user_leaves_unix_paths_alone() {
+        assert_eq!(Path::new("/usr/local/bin").display_user(), "/usr/local/bin");
+        assert_eq!(Path::new(r"weird\name").display_user(), r"weird\name");
+        // The substitution the refactor had to leave intact. `display_user` skips it when HOME is
+        // `/`, so the assertion does too rather than depending on the runner's environment.
+        if dirs::HOME.as_os_str() != "/" {
+            assert_eq!(dirs::HOME.join("proj").display_user(), "~/proj");
+        }
     }
 
     #[test]
