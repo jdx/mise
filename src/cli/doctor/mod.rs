@@ -788,7 +788,7 @@ impl Doctor {
     }
 
     async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) -> HashSet<String> {
-        let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
+        let mise_bin = shims::mise_bin_for_shims();
 
         if let Ok(diffs) = shims::get_shim_diffs(config, mise_bin, toolset).await {
             let cmd = style::nyellow("mise reshim");

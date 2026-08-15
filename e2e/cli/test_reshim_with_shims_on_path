@@ -42,3 +42,20 @@ fi
 
 # Doctor should not report missing shims
 assert_not_contains "mise doctor" "shims are missing"
+
+# Simulate Snap's revision-specific payload and refresh-stable `current` link. The public
+# /snap/bin/mise command is a snapd dispatcher and cannot be used as the target of another
+# argv[0]-based symlink shim.
+snap_mount="$(mktemp -d)/mise"
+snap_revision="$snap_mount/189"
+mkdir -p "$snap_revision/bin"
+ln -s "$mise_bin" "$snap_revision/bin/mise"
+ln -s 189 "$snap_mount/current"
+
+SNAP="$snap_revision" __MISE_BIN="$snap_revision/bin/mise" "$mise_bin" reshim --force
+
+# Shims should use the refresh-stable payload path, and doctor must agree with reshim.
+assert "readlink $shimdir/dummy" "$snap_mount/current/bin/mise"
+assert_not_contains \
+  "SNAP=$snap_revision __MISE_BIN=$snap_revision/bin/mise $mise_bin doctor" \
+  "shims are missing"
