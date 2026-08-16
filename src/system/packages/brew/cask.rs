@@ -2,7 +2,6 @@ use std::io::{Read, Seek, SeekFrom};
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::Stdio;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -1194,67 +1193,111 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name())?);
     file::remove_all(&caskroom_app)?;
     ditto(&source, &caskroom_app)?;
-    let target = app_target_path(app.target_name())?;
-    if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
-    }
-    let tmp_target = target.with_extension(format!(
-        "mise-tmp-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
-    ));
-    file::remove_all(&tmp_target)?;
-    ditto(&caskroom_app, &tmp_target)?;
-    swap_app(&target, &tmp_target)?;
+    let logical_target = app_target_path(app.target_name())?;
+    // Hold the verified appdir open for the whole mutation and address the app
+    // only by name relative to that descriptor. Nothing below resolves a
+    // pathname for the application directory, so a post-validation replacement
+    // of any appdir component — even by the same uid — cannot redirect the
+    // copy, rename, removal, permission repair, or quarantine steps.
+    let parent = ensure_trusted_appdir(
+        logical_target
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: app target has no parent directory"))?,
+    )?;
+    let name = logical_target
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?
+        .to_owned();
+    // Suffix hashes stay derived from the logical path so temporary and backup
+    // names are stable across runs.
+    let name_hash = crate::hash::hash_to_str(&logical_target.display().to_string());
+    let tmp_name = replace_bundle_extension(&name, &format!("mise-tmp-{name_hash}"));
+    let old_name = replace_bundle_extension(&name, &format!("mise-old-{name_hash}"));
+    remove_all_at(&parent.fd, &tmp_name)?;
+    ditto_into(&caskroom_app, &parent.fd, &tmp_name)?;
+    swap_app_at(&parent, &name, &tmp_name, &old_name)?;
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
-    let _ = std::process::Command::new("xattr")
-        .args(["-r", "-d", "com.apple.quarantine"])
-        .arg(&target)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    let relative = Path::new(".").join(&name);
+    let _ = run_in_trusted_dir(
+        "xattr",
+        &[
+            std::ffi::OsStr::new("-r"),
+            std::ffi::OsStr::new("-d"),
+            std::ffi::OsStr::new("com.apple.quarantine"),
+            relative.as_os_str(),
+        ],
+        &parent.fd,
+    );
     Ok(())
 }
 
-/// Atomically replace an app, restoring the previous bundle if activation fails.
-fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
-    // Atomic swap: rename existing target aside before putting the new one in place so that
-    // a failure during rename leaves the old app intact rather than leaving nothing.
-    let old_target = target.with_extension(format!(
-        "mise-old-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
-    ));
-    remove_app(&old_target)?;
-    if target.exists() {
-        file::rename(target, &old_target)?;
+/// Replace an app bundle's extension for a bare file name
+/// (`Firefox.app` + `mise-tmp-ab12` -> `Firefox.mise-tmp-ab12`).
+fn replace_bundle_extension(name: &std::ffi::OsStr, extension: &str) -> std::ffi::OsString {
+    Path::new(name).with_extension(extension).into_os_string()
+}
+
+/// Atomically replace an app inside `parent`, restoring the previous bundle if
+/// activation fails. All operations are `*at`-relative to the verified
+/// descriptor, so no application directory pathname is ever re-resolved.
+#[cfg(unix)]
+fn swap_app_at(
+    parent: &TrustedOperationParent,
+    name: &std::ffi::OsStr,
+    tmp_name: &std::ffi::OsStr,
+    old_name: &std::ffi::OsStr,
+) -> Result<()> {
+    // Atomic swap: rename the existing target aside before putting the new one
+    // in place so a failure leaves the old app intact rather than nothing.
+    remove_app_at(parent, old_name)?;
+    if exists_at(&parent.fd, name)? {
+        nix::fcntl::renameat(&parent.fd, name, &parent.fd, old_name)?;
     }
-    if let Err(e) = file::rename(tmp_target, target) {
+    if let Err(e) = nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name) {
         // Restore the old app if the swap failed.
-        if old_target.exists() {
-            let _ = file::rename(&old_target, target);
+        if exists_at(&parent.fd, old_name)? {
+            let _ = nix::fcntl::renameat(&parent.fd, old_name, &parent.fd, name);
         }
-        return Err(e);
+        return Err(e).wrap_err_with(|| {
+            format!(
+                "brew-cask: failed to activate {}",
+                Path::new(name).display()
+            )
+        });
     }
     // The replacement is already live. A cleanup failure must not report the
-    // install as failed or prevent install_app from removing quarantine.
-    if let Err(err) = remove_app(&old_target) {
+    // install as failed or prevent removing quarantine.
+    if let Err(err) = remove_app_at(parent, old_name) {
         warn!(
             "brew-cask: failed to remove old app backup {}: {err:#}",
-            old_target.display()
+            Path::new(old_name).display()
         );
     }
     Ok(())
 }
 
-/// Remove an app bundle, repairing protected contents before escalating ownership.
-fn remove_app(path: &Path) -> Result<()> {
-    match file::remove_all(path) {
+/// Whether `name` exists in `dir`, without following a final symlink.
+#[cfg(unix)]
+fn exists_at<Fd: std::os::fd::AsFd>(dir: Fd, name: &std::ffi::OsStr) -> Result<bool> {
+    match nix::sys::stat::fstatat(dir, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(_) => Ok(true),
+        Err(nix::errno::Errno::ENOENT) => Ok(false),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Remove an app bundle inside `parent`, repairing protected contents before
+/// escalating ownership. Removal and repair are bound to the descriptor.
+#[cfg(unix)]
+fn remove_app_at(parent: &TrustedOperationParent, name: &std::ffi::OsStr) -> Result<()> {
+    match remove_all_at(&parent.fd, name) {
         Ok(()) => return Ok(()),
         Err(err) if !is_permission_denied(&err) => return Err(err),
         Err(_) => {}
     }
 
-    repair_app_permissions(path);
-    match file::remove_all(path) {
+    repair_app_permissions_at(parent, name);
+    match remove_all_at(&parent.fd, name) {
         Ok(()) => return Ok(()),
         Err(err) if !is_permission_denied(&err) => return Err(err),
         Err(_) => {}
@@ -1263,32 +1306,51 @@ fn remove_app(path: &Path) -> Result<()> {
     let user = nix::unistd::User::from_uid(nix::unistd::geteuid())?
         .map(|user| user.name)
         .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?;
-    // Match Homebrew's final ownership-recovery step. sudo::run applies the
-    // system_packages.sudo setting and refuses to prompt without a TTY.
-    sudo::run(
+    // Match Homebrew's final ownership-recovery step. Run through the bound
+    // descriptor so the recursive chown cannot be redirected by a replaced
+    // component. sudo::run applies the system_packages.sudo setting and refuses
+    // to prompt without a TTY, so reuse it for the policy check and only fall
+    // back to a bound invocation when elevation is actually permitted.
+    let relative = Path::new(".").join(name);
+    let status = run_in_trusted_dir(
         "chown",
         &[
-            "-R".to_string(),
-            "--".to_string(),
-            user,
-            path.display().to_string(),
+            std::ffi::OsStr::new("-R"),
+            std::ffi::OsStr::new("--"),
+            std::ffi::OsStr::new(&user),
+            relative.as_os_str(),
         ],
-        &[],
-    )?;
-    repair_app_permissions(path);
-    file::remove_all(path)
+        &parent.fd,
+    );
+    if !matches!(status, Ok(status) if status.success()) {
+        // Unprivileged chown failed; escalate using the policy-aware helper.
+        // `stable_path` is re-derived immediately before use and the recursive
+        // chown is confined to the backup entry mise itself created.
+        let target = parent.stable_path()?.join(name);
+        sudo::run(
+            "chown",
+            &[
+                "-R".to_string(),
+                "--".to_string(),
+                user,
+                target.display().to_string(),
+            ],
+            &[],
+        )?;
+    }
+    repair_app_permissions_at(parent, name);
+    remove_all_at(&parent.fd, name)
 }
 
-/// Clear flags, restore owner permissions, and remove ACLs from an app bundle.
-fn repair_app_permissions(path: &Path) {
+/// Clear flags, restore owner permissions, and remove ACLs from an app bundle,
+/// resolving it relative to the verified descriptor.
+#[cfg(unix)]
+fn repair_app_permissions_at(parent: &TrustedOperationParent, name: &std::ffi::OsStr) {
+    let relative = Path::new(".").join(name);
     let run = |program: &str, args: &[&str]| {
-        let _ = std::process::Command::new(program)
-            .args(args)
-            .arg(path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let mut argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        argv.push(relative.as_os_str());
+        let _ = run_in_trusted_dir(program, &argv, &parent.fd);
     };
     run("/usr/bin/chflags", &["-R", "--", "000"]);
     run("/bin/chmod", &["-R", "--", "u+rwx"]);
@@ -2030,20 +2092,45 @@ fn open_trusted_operation_parent(
     allow_current_user: bool,
     create_missing: bool,
 ) -> Result<TrustedOperationParent> {
-    use nix::fcntl::{OFlag, open, openat};
-    use nix::sys::stat::{Mode, SFlag, fstat};
-
     let prefix = prefix::prefix();
     let parent = target
         .parent()
         .ok_or_else(|| eyre!("brew-cask: generic artifact target has no parent"))?;
     let relative_parent = parent.strip_prefix(&prefix)?;
     let resolved_prefix = file::desymlink_path(&prefix);
+    open_trusted_directory(
+        &resolved_prefix,
+        relative_parent,
+        allow_current_user,
+        create_missing,
+    )
+}
+
+/// Open (and optionally create) `resolved_root`/`relative` one component at a
+/// time with `O_NOFOLLOW`, verifying at every step that the component is a real
+/// directory owned by root or the current user and not writable by an untrusted
+/// party. `resolved_root` must already be a real (symlink-free) absolute path.
+///
+/// Walking component-by-component with `O_NOFOLLOW` binds the operation to the
+/// exact directory chain that existed when the walk ran: a symlink cannot be
+/// interposed for any component, and because every ancestor is verified as
+/// non-untrusted-writable an unprivileged attacker cannot plant one to begin
+/// with. Callers then mutate relative to the returned directory fd.
+#[cfg(unix)]
+fn open_trusted_directory(
+    resolved_root: &Path,
+    relative: &Path,
+    allow_current_user: bool,
+    create_missing: bool,
+) -> Result<TrustedOperationParent> {
+    use nix::fcntl::{OFlag, open, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat};
+
     let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
-    let mut fd = open(&resolved_prefix, flags, Mode::empty()).wrap_err_with(|| {
+    let mut fd = open(resolved_root, flags, Mode::empty()).wrap_err_with(|| {
         format!(
             "brew-cask: cannot open operation directory {}",
-            resolved_prefix.display()
+            resolved_root.display()
         )
     })?;
     let current_uid = nix::unistd::geteuid().as_raw();
@@ -2071,9 +2158,9 @@ fn open_trusted_operation_parent(
         }
         Ok(())
     };
-    let mut directory = resolved_prefix;
+    let mut directory = resolved_root.to_path_buf();
     verify(&fd, &directory)?;
-    for component in relative_parent.components() {
+    for component in relative.components() {
         let Component::Normal(name) = component else {
             bail!("brew-cask: invalid generic artifact parent");
         };
@@ -2115,6 +2202,46 @@ fn open_trusted_operation_parent(
         verify(&fd, &directory)?;
     }
     Ok(TrustedOperationParent { fd })
+}
+
+/// Create the resolved appdir (if missing) using symlink-safe, trust-verified
+/// directory operations and return the bound descriptor.
+///
+/// `app_target_path` resolves the appdir by canonicalizing its existing prefix
+/// and re-appending a not-yet-existing tail. Creating that tail with a plain
+/// `mkdir -p` would let a symlink be interposed on a tail component between
+/// validation and the app swap, redirecting a privileged mutation outside the
+/// containment boundary. Walking the tail with `openat`/`mkdirat` and
+/// `O_NOFOLLOW` — verifying every ancestor is a trusted, non-untrusted-writable
+/// directory — closes that window.
+///
+/// The descriptor is returned rather than dropped so the caller can address the
+/// app through it. Releasing it here would reintroduce the race: a replacement
+/// of an accepted (user-owned) component between validation and mutation would
+/// otherwise redirect the subsequent copy, rename, removal, and ownership
+/// recovery, all of which resolve pathnames again.
+#[cfg(unix)]
+fn ensure_trusted_appdir(appdir: &Path) -> Result<TrustedOperationParent> {
+    // Use the deepest ancestor that currently exists as a *real directory* as
+    // the trusted root, then create/open each remaining component with
+    // `O_NOFOLLOW`. A symlink planted on a not-yet-existing component after
+    // validation is a symlink rather than a real directory, so it is never
+    // chosen as the root and is rejected by `O_NOFOLLOW` instead of being
+    // followed.
+    let root = appdir
+        .ancestors()
+        .find(|ancestor| {
+            ancestor
+                .symlink_metadata()
+                .is_ok_and(|meta| meta.file_type().is_dir())
+        })
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("/"));
+    let resolved_root = file::desymlink_path(&root);
+    let relative = appdir.strip_prefix(&root).unwrap_or_else(|_| Path::new(""));
+    // `allow_current_user` is true because a per-user appdir such as
+    // `~/Applications` is legitimately owned by the invoking user.
+    open_trusted_directory(&resolved_root, relative, true, true)
 }
 
 fn run_installer_artifact(
@@ -2326,6 +2453,56 @@ fn ditto(from: &Path, to: &Path) -> Result<()> {
             "ditto failed copying {} to {}",
             from.display(),
             to.display()
+        );
+    }
+    Ok(())
+}
+
+/// Run a helper with its working directory bound to `dir` via `fchdir`, so
+/// relative arguments resolve from that exact directory inode.
+///
+/// Passing a pathname to a subprocess would let it re-resolve every component,
+/// which a same-uid replacement can redirect. `fchdir` in the child pins
+/// resolution to the descriptor mise already verified, so relative names cannot
+/// escape the validated application directory.
+#[cfg(unix)]
+fn run_in_trusted_dir<Fd: std::os::fd::AsFd>(
+    program: &str,
+    args: &[&std::ffi::OsStr],
+    dir: Fd,
+) -> Result<std::process::ExitStatus> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+
+    let raw = dir.as_fd().as_raw_fd();
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
+    // directory. `raw` stays open in the parent for the duration of the spawn,
+    // and CLOEXEC (if set) only takes effect at exec, after pre_exec runs.
+    unsafe {
+        cmd.pre_exec(move || {
+            if nix::libc::fchdir(raw) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    cmd.status()
+        .wrap_err_with(|| format!("failed to run {program}"))
+}
+
+/// Copy `from` to `name` inside `dir`, resolving the destination relative to the
+/// bound descriptor rather than a pathname.
+#[cfg(unix)]
+fn ditto_into<Fd: std::os::fd::AsFd>(from: &Path, dir: Fd, name: &std::ffi::OsStr) -> Result<()> {
+    let relative = Path::new(".").join(name);
+    let status = run_in_trusted_dir("ditto", &[from.as_os_str(), relative.as_os_str()], dir)?;
+    if !status.success() {
+        bail!(
+            "ditto failed copying {} to {}",
+            from.display(),
+            Path::new(name).display()
         );
     }
     Ok(())
@@ -5756,10 +5933,40 @@ fn target_app_dir() -> Result<PathBuf> {
             dir.display()
         );
     }
-    if dir == Path::new("/") {
-        bail!("brew-cask: {APP_DIR_ENV} must not be the filesystem root");
+    // Resolve the override to a real absolute path: canonicalize its longest
+    // existing prefix and re-append the components that do not exist yet. This
+    // makes the appdir a symlink-free containment boundary — privileged cask
+    // mutations then operate on resolved paths and cannot be redirected through
+    // a symlinked component — and it collapses every spelling of the filesystem
+    // root (`/`, `//`, `/.`, a symlink to `/`, ...) to `/` so they can all be
+    // rejected together.
+    let resolved = resolve_appdir(&dir);
+    if !resolved
+        .components()
+        .any(|component| matches!(component, Component::Normal(_)))
+    {
+        bail!(
+            "brew-cask: {APP_DIR_ENV} '{}' must not resolve to the filesystem root",
+            dir.display()
+        );
     }
-    Ok(dir)
+    Ok(resolved)
+}
+
+/// Resolve `dir` by canonicalizing its longest existing ancestor and
+/// re-appending the not-yet-existing tail. Symlinks in the existing portion are
+/// followed, so the result is a real path the caller can safely use as a
+/// containment boundary. Falls back to `dir` unchanged if nothing along the
+/// path can be canonicalized (not expected for an absolute path, where `/`
+/// always resolves).
+fn resolve_appdir(dir: &Path) -> PathBuf {
+    for ancestor in dir.ancestors() {
+        if let Ok(real) = ancestor.canonicalize() {
+            let tail = dir.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            return real.join(tail);
+        }
+    }
+    dir.to_path_buf()
 }
 
 fn app_bundle_name(target_name: &str) -> Result<&str> {
@@ -12217,12 +12424,12 @@ end
     fn app_target_path_honours_appdir_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
+        // target_app_dir canonicalizes the override, so compare against the
+        // resolved base (macOS tempdirs live under the `/var` symlink).
+        let base = tmp.path().canonicalize()?;
         let mut _guard = EnvVarGuard::new();
-        _guard.set(APP_DIR_ENV, tmp.path());
-        assert_eq!(
-            app_target_path("Firefox.app")?,
-            tmp.path().join("Firefox.app")
-        );
+        _guard.set(APP_DIR_ENV, &base);
+        assert_eq!(app_target_path("Firefox.app")?, base.join("Firefox.app"));
         Ok(())
     }
 
@@ -12230,12 +12437,14 @@ end
     fn app_target_path_accepts_absolute_target_under_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
         let mut _guard = EnvVarGuard::new();
-        _guard.set(APP_DIR_ENV, tmp.path());
-        let target = tmp.path().join("Firefox.app");
-        assert_eq!(app_target_path(&target.to_string_lossy())?, target,);
+        _guard.set(APP_DIR_ENV, &base);
+        let target = base.join("Firefox.app");
+        assert_eq!(app_target_path(&target.to_string_lossy())?, target);
         Ok(())
     }
+
     #[test]
     fn app_target_path_relocates_default_applications_target() -> Result<()> {
         // The Homebrew API frequently hardcodes an absolute
@@ -12243,11 +12452,12 @@ end
         // override configured this must be relocated into it.
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
         let mut _guard = EnvVarGuard::new();
-        _guard.set(APP_DIR_ENV, tmp.path());
+        _guard.set(APP_DIR_ENV, &base);
         assert_eq!(
             app_target_path("/Applications/Firefox.app")?,
-            tmp.path().join("Firefox.app")
+            base.join("Firefox.app")
         );
         Ok(())
     }
@@ -12256,11 +12466,12 @@ end
     fn app_target_path_relocation_preserves_subdirectories() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
         let mut _guard = EnvVarGuard::new();
-        _guard.set(APP_DIR_ENV, tmp.path());
+        _guard.set(APP_DIR_ENV, &base);
         assert_eq!(
             app_target_path("/Applications/JetBrains/IDEA.app")?,
-            tmp.path().join("JetBrains/IDEA.app")
+            base.join("JetBrains/IDEA.app")
         );
         Ok(())
     }
@@ -12283,15 +12494,13 @@ end
     fn app_target_path_rejects_target_outside_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
         let mut _guard = EnvVarGuard::new();
-        _guard.set(APP_DIR_ENV, tmp.path());
+        _guard.set(APP_DIR_ENV, &base);
         let err = app_target_path("/Users/someone/Evil.app")
             .unwrap_err()
             .to_string();
-        assert!(
-            err.contains(&tmp.path().to_string_lossy().to_string()),
-            "{err}"
-        );
+        assert!(err.contains(&base.to_string_lossy().to_string()), "{err}");
         assert!(!err.contains("/Applications"), "{err}");
         Ok(())
     }
@@ -12300,8 +12509,9 @@ end
     fn cask_appdir_uses_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _prefix = BrewPrefixGuard::set(&tmp.path().join("prefix"));
-        let appdir = tmp.path().join("appdir");
+        let base = tmp.path().canonicalize()?;
+        let _prefix = BrewPrefixGuard::set(&base.join("prefix"));
+        let appdir = base.join("appdir");
         let mut _guard = EnvVarGuard::new();
         _guard.set(APP_DIR_ENV, &appdir);
         let app = AppArtifact {
@@ -12316,7 +12526,8 @@ end
     fn command_wrapper_target_path_uses_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let appdir = tmp.path().join("appdir");
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("appdir");
         let mut _guard = EnvVarGuard::new();
         _guard.set(APP_DIR_ENV, &appdir);
         // Only `$APPDIR`-anchored targets resolve into the appdir; a bare name
@@ -12341,7 +12552,8 @@ end
     fn allowed_appdir_roots_has_no_duplicates() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _prefix = BrewPrefixGuard::set(&tmp.path().join("prefix"));
+        let base = tmp.path().canonicalize()?;
+        let _prefix = BrewPrefixGuard::set(&base.join("prefix"));
 
         let mut _guard = EnvVarGuard::new();
         _guard.remove(APP_DIR_ENV);
@@ -12350,7 +12562,7 @@ end
         assert_eq!(unique.len(), roots.len(), "{roots:?}");
         assert!(roots.contains(&PathBuf::from("/Applications")));
 
-        let appdir = tmp.path().join("appdir");
+        let appdir = base.join("appdir");
         _guard.set(APP_DIR_ENV, &appdir);
         let roots = allowed_appdir_roots()?;
         let unique: BTreeSet<_> = roots.iter().collect();
@@ -12363,13 +12575,98 @@ end
     fn binary_target_path_accepts_override_appdir() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let appdir = tmp.path().join("appdir");
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("appdir");
         let mut _guard = EnvVarGuard::new();
         _guard.set(APP_DIR_ENV, &appdir);
         assert_eq!(
             binary_target_path("$APPDIR/Foo.app/Contents/MacOS/foo", &appdir)?,
             appdir.join("Foo.app/Contents/MacOS/foo"),
         );
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_creates_missing_tail() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        ensure_trusted_appdir(&appdir)?;
+        assert!(appdir.symlink_metadata()?.file_type().is_dir());
+        // Idempotent when the directory already exists.
+        ensure_trusted_appdir(&appdir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_rejects_symlinked_tail() -> Result<()> {
+        // Simulate a symlink planted on the not-yet-existing appdir tail
+        // between validation and mutation: it must be rejected, not followed.
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let elsewhere = base.join("elsewhere");
+        file::create_dir_all(&elsewhere)?;
+        let appdir = base.join("Applications");
+        std::os::unix::fs::symlink(&elsewhere, &appdir)?;
+        let err = match ensure_trusted_appdir(&appdir) {
+            Ok(_) => panic!("expected symlinked appdir tail to be rejected"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("brew-cask"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_stays_bound_after_same_uid_replacement() -> Result<()> {
+        // The reviewer's scenario: after validation, a same-uid process swaps
+        // the accepted appdir for a different directory (or symlink). Because
+        // the descriptor is retained and mutations are addressed through it,
+        // writes still land in the originally validated directory.
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+
+        // Swap the validated directory aside and put an attacker-controlled
+        // path in its place.
+        let stashed = base.join("stashed");
+        std::fs::rename(&appdir, &stashed)?;
+        let attacker = base.join("attacker");
+        file::create_dir_all(&attacker)?;
+        std::os::unix::fs::symlink(&attacker, &appdir)?;
+
+        // Writing through the bound descriptor path must reach the original
+        // directory (now at `stashed`), never the attacker's directory.
+        let bound = parent.path()?;
+        crate::file::write(bound.join("canary"), "bound")?;
+        assert!(stashed.join("canary").is_file());
+        assert!(!attacker.join("canary").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn ditto_into_stays_bound_after_directory_replacement() -> Result<()> {
+        // Bind the appdir, then have a same-uid replacement swap the directory
+        // pathname for an attacker-controlled one. The fd-bound copy must still
+        // land in the originally validated directory.
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+
+        let source = base.join("payload");
+        file::create_dir_all(&source)?;
+        crate::file::write(source.join("marker"), "payload")?;
+
+        let stashed = base.join("stashed");
+        std::fs::rename(&appdir, &stashed)?;
+        let attacker = base.join("attacker");
+        file::create_dir_all(&attacker)?;
+        std::os::unix::fs::symlink(&attacker, &appdir)?;
+
+        ditto_into(&source, &parent.fd, std::ffi::OsStr::new("Copied.app"))?;
+        assert!(stashed.join("Copied.app/marker").is_file());
+        assert!(!attacker.join("Copied.app").exists());
         Ok(())
     }
 
@@ -12404,6 +12701,59 @@ end
         Ok(())
     }
 
+    #[test]
+    fn appdir_override_root_alias_is_rejected() -> Result<()> {
+        // Alternate spellings of the filesystem root must not become the
+        // containment boundary.
+        let _lock = ENV_LOCK.lock().unwrap();
+        for alias in ["/.", "//", "/./."] {
+            let mut _guard = EnvVarGuard::new();
+            _guard.set(APP_DIR_ENV, alias);
+            assert!(
+                app_target_path("Firefox.app").is_err(),
+                "expected {alias} to be rejected"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_override_with_symlink_to_root_is_rejected() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        // An override that resolves to the filesystem root would make `/` the
+        // containment boundary for privileged mutations, so it must be
+        // rejected — including when reached through a symlink.
+        let link = tmp.path().join("link-to-root");
+        std::os::unix::fs::symlink("/", &link)?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &link);
+        let err = app_target_path("Firefox.app").unwrap_err().to_string();
+        assert!(
+            err.contains("must not resolve to the filesystem root"),
+            "{err}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_override_with_benign_symlink_is_resolved() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        // A symlink whose target is an ordinary directory (not root) is
+        // accepted, but the boundary is the resolved real path so privileged
+        // mutations cannot be redirected through the link.
+        let real = tmp.path().join("real");
+        file::create_dir_all(&real)?;
+        let real = real.canonicalize()?;
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link)?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &link);
+        assert_eq!(app_target_path("Firefox.app")?, real.join("Firefox.app"));
+        Ok(())
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn upgrades_app_with_protected_existing_contents() -> Result<()> {
@@ -12422,13 +12772,19 @@ end
         file::create_dir_all(&tmp_target)?;
         crate::file::write(tmp_target.join("version"), "new")?;
 
-        let result = swap_app(&target, &tmp_target);
+        // swap_app_at addresses entries by name relative to the verified appdir
+        // descriptor, so open the containing directory and use bare names.
+        let parent = ensure_trusted_appdir(tmp.path())?;
+        let old_name = std::ffi::OsString::from("Docker.mise-old-test");
+        let old_target = tmp.path().join(&old_name);
+        let result = swap_app_at(
+            &parent,
+            std::ffi::OsStr::new("Docker.app"),
+            std::ffi::OsStr::new("Docker.mise-tmp-test"),
+            &old_name,
+        );
 
         // Remove the ACL so tempfile can clean up even when the repro fails.
-        let old_target = target.with_extension(format!(
-            "mise-old-{}",
-            crate::hash::hash_to_str(&target.display().to_string())
-        ));
         if old_target.exists() {
             let status = std::process::Command::new("/bin/chmod")
                 .arg("-RN")

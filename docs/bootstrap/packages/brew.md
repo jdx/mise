@@ -78,12 +78,15 @@ require elevation:
 MISE_BREW_CASK_OPT_APPDIR="$HOME/Applications" mise bootstrap packages apply brew-cask:firefox
 ```
 
-The value must be an absolute path and must not contain `..`. An empty value is
-ignored and falls back to `/Applications`. When the override is set, a cask that
-targets the default `/Applications` (as most do) is relocated into the override
-directory, preserving any subdirectories the cask requests; targets that a cask
-anchors under `$HOMEBREW_PREFIX/Applications` are left in the Homebrew prefix and
-are never relocated. This mirrors Homebrew's own `--appdir` install option.
+The value must be an absolute path, must not contain `..`, and must not resolve
+to the filesystem root. It is resolved to a real path (symlinks are followed)
+before use, so it acts as a fixed containment boundary for the app links mise
+creates. An empty value is ignored and falls back to `/Applications`. When the
+override is set, a cask that targets the default `/Applications` (as most do) is
+relocated into the override directory, preserving any subdirectories the cask
+requests; targets that a cask anchors under `$HOMEBREW_PREFIX/Applications` are
+left in the Homebrew prefix and are never relocated. This mirrors Homebrew's own
+`--appdir` install option.
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
