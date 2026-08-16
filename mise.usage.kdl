@@ -1484,9 +1484,12 @@ This is designed to be used in a project where contributors may not have mise in
         after_long_help #"""
 Examples:
 
-    $ mise generate bootstrap >./bin/mise
-    $ chmod +x ./bin/mise
-    $ ./bin/mise install – automatically downloads mise to .mise if not already installed
+    $ mise generate bootstrap --write ./bin/mise
+    $ ./bin/mise install                                    # downloads mise to .mise if not already installed
+
+    # add a launcher for contributors who clone the project on Windows
+    $ mise generate bootstrap --write ./bin/mise --windows  # also writes bin/mise.cmd
+    $ .\bin\mise.cmd install
 
 """#
         flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
@@ -1504,6 +1507,18 @@ This is necessary if users may use a different version of mise outside the proje
         }
         flag --localized-dir help="Directory to put localized data into" default=.mise {
             arg <LOCALIZED_DIR>
+        }
+        flag --windows help="Also write a Windows launcher, `<WRITE>.cmd`" {
+            long_help #"""
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `--write`, since stdout cannot
+carry two files.
+"""#
         }
     }
     cmd config help="Generate a mise.toml file" effect=write {
