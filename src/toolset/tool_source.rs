@@ -123,18 +123,24 @@ mod tests {
 
     use super::*;
 
+    /// `Display` goes through `display_path`, which settles separators on the host, so the
+    /// expectations take the host's spelling while the fixtures keep the unix one.
+    fn host(path: &str) -> String {
+        path.replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
+
     #[test]
     fn test_tool_source_display() {
         let path = PathBuf::from("/home/user/.test-tool-versions");
 
         let ts = ToolSource::ToolVersions(path);
-        assert_str_eq!(ts.to_string(), "/home/user/.test-tool-versions");
+        assert_str_eq!(ts.to_string(), host("/home/user/.test-tool-versions"));
 
         let ts = ToolSource::MiseToml(PathBuf::from("/home/user/.mise.toml"));
-        assert_str_eq!(ts.to_string(), "/home/user/.mise.toml");
+        assert_str_eq!(ts.to_string(), host("/home/user/.mise.toml"));
 
         let ts = ToolSource::IdiomaticVersionFile(PathBuf::from("/home/user/.node-version"));
-        assert_str_eq!(ts.to_string(), "/home/user/.node-version");
+        assert_str_eq!(ts.to_string(), host("/home/user/.node-version"));
 
         let ts = ToolSource::Argument;
         assert_str_eq!(ts.to_string(), "--runtime");

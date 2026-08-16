@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::config::Config;
 use crate::file;
+use crate::file::display_path;
 use crate::task::Task;
 use clap::ValueHint;
 use eyre::bail;
@@ -8,7 +9,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use xx::file::display_path;
 
 /// Generates shims to run mise tasks
 ///

@@ -2045,7 +2045,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable (`:` on Unix, `;` on Windows).",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable, `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).",
           "type": "array",
           "items": {
             "type": "string"
@@ -4118,6 +4118,20 @@
                         "type": "integer",
                         "minimum": 0,
                         "description": "write StartInterval in seconds"
+                      },
+                      "throttle_interval": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "write ThrottleInterval in seconds"
+                      },
+                      "queue_directories": {
+                        "type": "array",
+                        "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^(/|~$|~/)"
+                        }
                       },
                       "start_calendar_interval": {
                         "description": "write one or more StartCalendarInterval schedules",

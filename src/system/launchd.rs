@@ -25,7 +25,11 @@ pub struct LaunchdTomlConfig {
     #[serde(default)]
     pub start_interval: Option<u64>,
     #[serde(default)]
+    pub throttle_interval: Option<u64>,
+    #[serde(default)]
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
+    #[serde(default)]
+    pub queue_directories: Vec<String>,
     #[serde(default)]
     pub environment: IndexMap<String, String>,
     #[serde(default)]
@@ -68,7 +72,9 @@ pub struct LaunchdRequest {
     pub run_at_load: bool,
     pub keep_alive: bool,
     pub start_interval: Option<u64>,
+    pub throttle_interval: Option<u64>,
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
+    pub queue_directories: Vec<String>,
     pub environment: IndexMap<String, String>,
     pub working_directory: Option<String>,
     pub stdout_path: Option<String>,
@@ -106,6 +112,21 @@ impl LaunchdRequest {
         if let Some(interval) = &config.start_calendar_interval {
             interval.validate(&name)?;
         }
+        for dir in &config.queue_directories {
+            if dir.trim().is_empty() {
+                bail!("agent '{name}' `queue_directories` must not contain empty entries");
+            }
+            // checked against the raw string rather than `Path::is_absolute` on the
+            // expanded value: the plist is consumed by macOS launchd, so POSIX rules
+            // apply regardless of the platform parsing the config, and on Windows
+            // `Path::new("/var/spool").is_absolute()` is false (root, but no prefix)
+            if !is_absolute_launchd_path(dir) {
+                bail!(
+                    "agent '{name}' `queue_directories` entry '{dir}' must be an absolute path \
+                     (launchd requires absolute paths; `~` and `~/` are expanded)"
+                );
+            }
+        }
         Ok(Self {
             label: format!("dev.mise.{name}"),
             name,
@@ -114,7 +135,9 @@ impl LaunchdRequest {
             run_at_load: config.run_at_load,
             keep_alive: config.keep_alive,
             start_interval: config.start_interval,
+            throttle_interval: config.throttle_interval,
             start_calendar_interval: config.start_calendar_interval,
+            queue_directories: config.queue_directories,
             environment: config.environment,
             working_directory: config.working_directory,
             stdout_path: config.stdout_path,
@@ -315,10 +338,25 @@ fn plist_value(request: &LaunchdRequest) -> Value {
     if let Some(interval) = request.start_interval {
         dict.insert("StartInterval".into(), Value::Integer(interval.into()));
     }
+    if let Some(interval) = request.throttle_interval {
+        dict.insert("ThrottleInterval".into(), Value::Integer(interval.into()));
+    }
     if let Some(interval) = &request.start_calendar_interval {
         dict.insert(
             "StartCalendarInterval".into(),
             calendar_intervals_value(interval),
+        );
+    }
+    if !request.queue_directories.is_empty() {
+        dict.insert(
+            "QueueDirectories".into(),
+            Value::Array(
+                request
+                    .queue_directories
+                    .iter()
+                    .map(|path| Value::String(expand_path_string(path)))
+                    .collect(),
+            ),
         );
     }
     if !request.environment.is_empty() {
@@ -431,6 +469,14 @@ fn current_uid_from(euid: u32, sudo_uid: Option<&str>) -> u32 {
         return uid;
     }
     euid
+}
+
+/// Whether `path` expands to an absolute path in `expand_path_string`.
+///
+/// `~user/...` is deliberately excluded: `file::replace_path` only rewrites a
+/// `~/` prefix, so a tilde-username path would reach launchd verbatim.
+fn is_absolute_launchd_path(path: &str) -> bool {
+    path == "~" || path.starts_with("~/") || path.starts_with('/')
 }
 
 fn expand_path_string(path: &str) -> String {
@@ -570,6 +616,7 @@ mod tests {
             run_at_load: true,
             keep_alive: true,
             start_interval: Some(60),
+            throttle_interval: Some(300),
             start_calendar_interval: Some(LaunchdCalendarIntervals::Single(
                 LaunchdCalendarInterval {
                     hour: Some(2),
@@ -577,6 +624,7 @@ mod tests {
                     ..Default::default()
                 },
             )),
+            queue_directories: vec!["~/Library/Queues/sync".to_string()],
             environment,
             working_directory: Some("~".to_string()),
             stdout_path: Some("~/Library/Logs/sync.log".to_string()),
@@ -595,6 +643,21 @@ mod tests {
         assert_eq!(dict.get("RunAtLoad"), Some(&Value::Boolean(true)));
         assert_eq!(dict.get("KeepAlive"), Some(&Value::Boolean(true)));
         assert_eq!(dict.get("StartInterval"), Some(&Value::Integer(60.into())));
+        assert_eq!(
+            dict.get("ThrottleInterval"),
+            Some(&Value::Integer(300.into()))
+        );
+        assert_eq!(
+            dict.get("QueueDirectories"),
+            Some(&Value::Array(vec![Value::String(
+                crate::dirs::HOME
+                    .join("Library")
+                    .join("Queues")
+                    .join("sync")
+                    .to_string_lossy()
+                    .to_string()
+            )]))
+        );
         match dict.get("StartCalendarInterval") {
             Some(Value::Dictionary(interval)) => {
                 assert_eq!(interval.get("Hour"), Some(&Value::Integer(2.into())));
@@ -663,6 +726,7 @@ mod tests {
             run_at_load: false,
             keep_alive: false,
             start_interval: None,
+            throttle_interval: None,
             start_calendar_interval: Some(LaunchdCalendarIntervals::Multiple(vec![
                 LaunchdCalendarInterval {
                     hour: Some(3),
@@ -675,6 +739,7 @@ mod tests {
                     ..Default::default()
                 },
             ])),
+            queue_directories: vec![],
             environment: IndexMap::new(),
             working_directory: None,
             stdout_path: None,
@@ -706,6 +771,93 @@ mod tests {
             }
             value => panic!("expected StartCalendarInterval array, got {value:?}"),
         }
+        assert_eq!(dict.get("ThrottleInterval"), None);
+        assert_eq!(dict.get("QueueDirectories"), None);
+    }
+
+    #[test]
+    fn test_render_plist_throttle_and_queue_directories() {
+        let request = LaunchdRequest::from_toml(
+            "sync".to_string(),
+            LaunchdTomlConfig {
+                program: Some("/bin/echo".to_string()),
+                throttle_interval: Some(10),
+                queue_directories: vec![
+                    "~/Library/Queues/sync".to_string(),
+                    "/var/spool/sync".to_string(),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let plist = render_plist(&request).unwrap();
+        let dict = match Value::from_reader_xml(Cursor::new(plist.as_slice())).unwrap() {
+            Value::Dictionary(dict) => dict,
+            value => panic!("expected dictionary, got {value:?}"),
+        };
+        assert_eq!(
+            dict.get("ThrottleInterval"),
+            Some(&Value::Integer(10.into()))
+        );
+        assert_eq!(
+            dict.get("QueueDirectories"),
+            Some(&Value::Array(vec![
+                Value::String(
+                    crate::dirs::HOME
+                        .join("Library")
+                        .join("Queues")
+                        .join("sync")
+                        .to_string_lossy()
+                        .to_string()
+                ),
+                Value::String("/var/spool/sync".to_string()),
+            ]))
+        );
+        assert!(plist_matches(&plist, &request));
+    }
+
+    #[test]
+    fn test_launchd_queue_directories_validation() {
+        for queue_directories in [
+            vec!["".to_string()],
+            vec!["   ".to_string()],
+            vec!["/var/spool/sync".to_string(), "\t".to_string()],
+            vec!["queues/sync".to_string()],
+            vec!["./queues".to_string()],
+            vec!["../queues".to_string()],
+            // `~user` is not expanded by `file::replace_path`
+            vec!["~user/queues".to_string()],
+            vec!["/var/spool/sync".to_string(), "queues/sync".to_string()],
+        ] {
+            assert!(
+                LaunchdRequest::from_toml(
+                    "my-agent".to_string(),
+                    LaunchdTomlConfig {
+                        program: Some("/bin/echo".to_string()),
+                        queue_directories,
+                        ..Default::default()
+                    },
+                )
+                .is_err()
+            );
+        }
+        // `/` and `~`-rooted entries are accepted on every platform: the plist is
+        // consumed by macOS launchd, not by the host parsing the config
+        assert!(
+            LaunchdRequest::from_toml(
+                "my-agent".to_string(),
+                LaunchdTomlConfig {
+                    program: Some("/bin/echo".to_string()),
+                    queue_directories: vec![
+                        "/var/spool/sync".to_string(),
+                        "~/Library/Queues/sync".to_string(),
+                        "~".to_string(),
+                    ],
+                    ..Default::default()
+                },
+            )
+            .is_ok()
+        );
     }
 
     #[cfg(unix)]

@@ -53,6 +53,10 @@ sops encrypt -i --age "<public key>" .env.json
 The `-i` overwrites the file. The encrypted file is safe to commit. Set `SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` or `MISE_SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` to decrypt/edit with sops.
 ::::
 
+Age key files use the standard SOPS/age format: put one identity on each line.
+Blank lines and lines beginning with `#` are ignored, and all identities are
+tried when decrypting.
+
 4. Reference it in config:
 
 ```toml

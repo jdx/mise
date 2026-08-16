@@ -463,6 +463,20 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
 }
 
+/// The bytes of a UTF-8 byte-order mark, as [`decode_text`] matches them below.
+#[cfg(windows)]
+pub(crate) const UTF8_BOM_BYTES: [u8; 3] = [0xef, 0xbb, 0xbf];
+
+/// `s` without a leading UTF-8 byte-order mark.
+///
+/// Needed wherever mise matches on the *start* of a line it read from disk. `str::trim` does not
+/// help: U+FEFF does not carry the Unicode `White_Space` property, so a mark left in front of a
+/// `#!` or a `#MISE` defeats every prefix test silently. The writers that leave one there are
+/// ordinary on Windows -- see [`decode_text`], which names them.
+pub fn strip_utf8_bom(s: &str) -> &str {
+    s.strip_prefix('\u{feff}').unwrap_or(s)
+}
+
 /// Decode text that may begin with a byte-order mark.
 ///
 /// `std`'s UTF-8-only readers reject UTF-16 outright, which is how a checksum file sank an install
@@ -547,9 +561,13 @@ pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-/// replaces $HOME with "~"
+/// A path formatted for a person to read: `$HOME` becomes `~`, a Windows extended-length prefix
+/// is dropped, and separators settle on the host's.
+///
+/// The separator step lives here rather than in [`PathExt::display_user`] because that one also
+/// feeds strings mise *matches* rather than shows — see [`crate::path::settle_display_separators`].
 pub fn display_path<P: AsRef<Path>>(path: P) -> String {
-    path.as_ref().display_user()
+    crate::path::settle_display_separators(path.as_ref().display_user())
 }
 
 pub fn display_filename<P: AsRef<Path>>(path: P) -> String {
@@ -563,7 +581,10 @@ pub fn display_filename<P: AsRef<Path>>(path: P) -> String {
 pub fn display_rel_path<P: AsRef<Path>>(path: P) -> String {
     let path = path.as_ref();
     match path.strip_prefix(dirs::CWD.as_ref().unwrap()) {
-        Ok(rel) => format!("./{}", rel.display()),
+        // Both halves take the host's separator. Hardcoding `./` and printing the remainder raw
+        // produced `./mise-tasks\build` on Windows. Byte-identical off Windows, where
+        // `MAIN_SEPARATOR` is `/` and nothing is rewritten.
+        Ok(rel) => format!(".{}{}", std::path::MAIN_SEPARATOR, display_path(rel)),
         Err(_) => display_path(path),
     }
 }
@@ -976,16 +997,28 @@ pub fn has_known_executable_extension(path: &Path) -> bool {
     )
 }
 
-/// Check if a file starts with a shebang (#!).
-/// Only reads the first 2 bytes to minimize I/O during task discovery.
+/// Check if a file starts with a shebang (#!), allowing for a leading UTF-8 byte-order mark.
+///
+/// Reads only the first 5 bytes to minimize I/O during task discovery: two for the `#!`, plus
+/// three for a mark in front of it. Reading just the two saw `EF BB` and answered "no shebang",
+/// which on Windows is the whole of [`is_executable`] for an extensionless file -- so a task
+/// written by `Out-File -Encoding utf8` disappeared from `mise tasks` with no diagnostic, while
+/// the same file on unix was a task because there the execute bit decides.
+///
+/// A `read_exact` here would fail outright on a file shorter than the buffer, so read what is
+/// available instead. A UTF-16 mark is deliberately not accepted: no interpreter mise dispatches
+/// to can run a UTF-16 script, so treating one as a task would only trade silence for a
+/// confusing failure at exec time.
 #[cfg(windows)]
 pub fn has_shebang(path: &Path) -> bool {
     std::fs::File::open(path)
-        .and_then(|mut f| {
+        .and_then(|f| {
             use std::io::Read;
-            let mut buf = [0u8; 2];
-            f.read_exact(&mut buf)?;
-            Ok(buf == *b"#!")
+            let mut buf = Vec::with_capacity(UTF8_BOM_BYTES.len() + 2);
+            f.take((UTF8_BOM_BYTES.len() + 2) as u64)
+                .read_to_end(&mut buf)?;
+            let bytes = buf.strip_prefix(UTF8_BOM_BYTES.as_slice()).unwrap_or(&buf);
+            Ok(bytes.starts_with(b"#!"))
         })
         .unwrap_or(false)
 }
@@ -3771,5 +3804,89 @@ mod tests {
         // and it must offer what that branch actually accepts
         assert!(hint.contains("exe"), "{hint}");
         assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[test]
+    fn strip_utf8_bom_removes_only_a_leading_mark() {
+        assert_eq!(
+            strip_utf8_bom("\u{feff}#!/usr/bin/env bash"),
+            "#!/usr/bin/env bash"
+        );
+        assert_eq!(strip_utf8_bom("#!/usr/bin/env bash"), "#!/usr/bin/env bash");
+        assert_eq!(strip_utf8_bom(""), "");
+        // Only the first one, and only at the front: a mark elsewhere is content.
+        assert_eq!(strip_utf8_bom("\u{feff}\u{feff}x"), "\u{feff}x");
+        assert_eq!(strip_utf8_bom("x\u{feff}"), "x\u{feff}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn has_shebang_looks_past_a_utf8_bom() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = tmp.path().join(name);
+            fs::write(&path, bytes).unwrap();
+            path
+        };
+        const SCRIPT: &[u8] = b"#!/usr/bin/env bash\necho hi\n";
+        let mut marked = UTF8_BOM_BYTES.to_vec();
+        marked.extend_from_slice(SCRIPT);
+
+        // The regression: `Out-File -Encoding utf8` writes this, and reading two bytes saw `EF BB`.
+        let bom = write("bom", &marked);
+        assert!(has_shebang(&bom));
+        // On Windows a shebang is the whole of `is_executable` for a file with no known extension,
+        // so this is what decided whether the task existed at all.
+        assert!(is_executable(&bom));
+
+        // Controls: the unmarked twin, and files that genuinely have no shebang.
+        assert!(has_shebang(&write("plain", SCRIPT)));
+        assert!(!has_shebang(&write("no_shebang", b"echo hi\n")));
+        assert!(!is_executable(&write("no_shebang2", b"echo hi\n")));
+        // Shorter than the buffer: a `read_exact` would error here rather than answer.
+        assert!(!has_shebang(&write("bom_only", &UTF8_BOM_BYTES)));
+        assert!(!has_shebang(&write("empty", b"")));
+        assert!(!has_shebang(&write("one_byte", b"#")));
+        // A UTF-16 mark is deliberately not accepted.
+        assert!(!has_shebang(&write("utf16", b"\xff\xfe#\0!\0")));
+    }
+
+    /// `Path::join` appends a multi-segment literal verbatim, and some roots arrive
+    /// `/`-separated, so one printed path could switch form more than once.
+    #[cfg(windows)]
+    #[test]
+    fn display_path_settles_on_one_separator() {
+        assert_eq!(
+            display_path(r"C:/Users/me\proj\.git/hooks\pre-commit"),
+            r"C:\Users\me\proj\.git\hooks\pre-commit"
+        );
+        assert_eq!(display_path("C:/Users/me"), r"C:\Users\me");
+        // Already uniform, and a relative path: both unchanged.
+        assert_eq!(display_path(r"C:\Users\me"), r"C:\Users\me");
+        assert_eq!(display_path(r"a\b"), r"a\b");
+        assert_eq!(display_path("a/b"), r"a\b");
+        // Composes with the extended-length prefix being dropped.
+        assert_eq!(display_path(r"\\?\C:\a\b"), r"C:\a\b");
+        // Measured, not assumed: `/` is not a separator inside `\\?\`, so `a/b` reads as a single
+        // component there and `dunce` declines to simplify a name Windows could not hold. The
+        // separators still settle; the prefix stays. `canonicalize` never emits this shape.
+        assert_eq!(display_path(r"\\?\C:\a/b"), r"\\?\C:\a\b");
+        // A UNC path keeps its leading pair while its interior settles.
+        assert_eq!(display_path(r"\\server\share/dir"), r"\\server\share\dir");
+    }
+
+    /// Both halves of the string take the host's separator. Hardcoding `./` and printing the
+    /// remainder raw gave `./mise-tasks\build` on Windows.
+    #[test]
+    fn display_rel_path_uses_one_separator() {
+        let cwd = dirs::CWD.as_ref().expect("a cwd").clone();
+        let sep = std::path::MAIN_SEPARATOR;
+        assert_eq!(
+            display_rel_path(cwd.join("mise-tasks").join("build")),
+            format!(".{sep}mise-tasks{sep}build")
+        );
+        // A path outside the cwd falls through to `display_path`, which settles separators too.
+        let outside = display_rel_path(Path::new("relative-to-nothing"));
+        assert!(!outside.starts_with('.'), "{outside}");
     }
 }

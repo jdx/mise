@@ -51,6 +51,13 @@ Like --dry-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
 
+### `--include-task-tools`
+
+Also install tools required by tasks in the current scope
+
+This prepares task tools without running task commands or dependencies.
+Combine with --monorepo to include tasks from every configured root.
+
 ### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
 Only install versions released before this date or older than this duration
@@ -89,4 +96,5 @@ mise install node@20.0.0  # install specific node version
 mise install node@20      # install fuzzy node version
 mise install node         # install version specified in mise.toml
 mise install              # installs everything specified in mise.toml
+mise install --include-task-tools # also install tools required by tasks
 ```

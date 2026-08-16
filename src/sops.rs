@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::backend::configured_toolset_or_path_which;
@@ -12,6 +13,32 @@ use rops::cryptography::hasher::SHA512;
 use rops::file::RopsFile;
 use rops::file::state::EncryptedFile;
 use tokio::sync::Mutex;
+
+#[derive(Debug, PartialEq)]
+enum ResolvedAgeKey {
+    Direct(String),
+    File {
+        identities: Vec<String>,
+        path: PathBuf,
+    },
+}
+
+impl ResolvedAgeKey {
+    fn env_value(&self, use_rops: bool) -> String {
+        match self {
+            Self::Direct(key) => key.clone(),
+            Self::File { identities, .. } if use_rops => identities.join(","),
+            Self::File { identities, .. } => identities.join("\n"),
+        }
+    }
+
+    fn file_path(&self) -> Option<&Path> {
+        match self {
+            Self::Direct(_) => None,
+            Self::File { path, .. } => Some(path.as_path()),
+        }
+    }
+}
 
 pub async fn decrypt<PT, F>(
     config: &Arc<Config>,
@@ -33,7 +60,7 @@ where
         ));
     }
 
-    let (age, age_key_file) = resolve_age_key(exec_env, &mut parse_template);
+    let age = resolve_age_key(exec_env, &mut parse_template);
 
     if use_rops && age.is_none() && !Settings::get().sops.strict {
         debug!("age key not found, skipping decryption in non-strict mode");
@@ -46,7 +73,7 @@ where
     let prev_age_key_file = env::var("SOPS_AGE_KEY_FILE").ok();
 
     // Set SOPS_AGE_KEY_FILE with expanded path if we found one, so sops CLI can use it
-    if let Some(expanded_path) = &age_key_file {
+    if let Some(expanded_path) = age.as_ref().and_then(ResolvedAgeKey::file_path) {
         env::set_var(
             "SOPS_AGE_KEY_FILE",
             expanded_path.to_string_lossy().to_string(),
@@ -54,7 +81,7 @@ where
     }
 
     if let Some(age) = &age {
-        env::set_var(age_env_key, age.trim());
+        env::set_var(age_env_key, age.env_value(use_rops).trim());
     }
     let output = if use_rops {
         match input
@@ -162,10 +189,7 @@ where
     Ok(output.unwrap_or_default())
 }
 
-fn resolve_age_key<PT>(
-    env: &EnvMap,
-    parse_template: &mut PT,
-) -> (Option<String>, Option<std::path::PathBuf>)
+fn resolve_age_key<PT>(env: &EnvMap, parse_template: &mut PT) -> Option<ResolvedAgeKey>
 where
     PT: FnMut(String) -> result::Result<String>,
 {
@@ -173,74 +197,72 @@ where
     if let Some(age_key) = &Settings::get().sops.age_key
         && !age_key.is_empty()
     {
-        return (Some(age_key.clone()), None);
+        return Some(ResolvedAgeKey::Direct(age_key.clone()));
     }
 
     // 2. Check mise-specific MISE_SOPS_AGE_KEY_FILE setting
     if let Some(key_file) = &Settings::get().sops.age_key_file
-        && let Some((key, path)) = read_age_key_file(
+        && let Some(key) = read_age_key_file(
             key_file.to_string_lossy().to_string(),
             parse_template,
             "MISE_SOPS_AGE_KEY_FILE",
         )
     {
-        return (Some(key), Some(path));
+        return Some(key);
     }
 
     // 3. Check ordered env directives that have already been resolved
     if let Some(age_key) = env.get("MISE_SOPS_AGE_KEY").filter(|key| !key.is_empty()) {
-        return (Some(age_key.clone()), None);
+        return Some(ResolvedAgeKey::Direct(age_key.clone()));
     }
 
     if let Some(key_file) = env.get("MISE_SOPS_AGE_KEY_FILE")
-        && let Some((key, path)) =
+        && let Some(key) =
             read_age_key_file(key_file.clone(), parse_template, "MISE_SOPS_AGE_KEY_FILE")
     {
-        return (Some(key), Some(path));
+        return Some(key);
     }
 
     if let Some(key_file) = env.get("SOPS_AGE_KEY_FILE")
-        && let Some((key, path)) =
-            read_age_key_file(key_file.clone(), parse_template, "SOPS_AGE_KEY_FILE")
+        && let Some(key) = read_age_key_file(key_file.clone(), parse_template, "SOPS_AGE_KEY_FILE")
     {
-        return (Some(key), Some(path));
+        return Some(key);
     }
 
     // 4. Check standard SOPS environment variables
     if let Ok(key_file_path) = env::var("SOPS_AGE_KEY_FILE")
-        && let Some((key, path)) =
-            read_age_key_file(key_file_path, parse_template, "SOPS_AGE_KEY_FILE")
+        && let Some(key) = read_age_key_file(key_file_path, parse_template, "SOPS_AGE_KEY_FILE")
     {
-        return (Some(key), Some(path));
+        return Some(key);
     }
 
     if let Some(age_key) = env.get("SOPS_AGE_KEY").filter(|key| !key.trim().is_empty()) {
-        return (Some(age_key.trim().to_string()), None);
+        return Some(ResolvedAgeKey::Direct(age_key.trim().to_string()));
     }
 
     if let Ok(key) = env::var("SOPS_AGE_KEY")
         && !key.trim().is_empty()
     {
-        return (Some(key.trim().to_string()), None);
+        return Some(ResolvedAgeKey::Direct(key.trim().to_string()));
     }
 
     // 5. Fall back to default path ~/.config/mise/age.txt
-    if let Some((key, path)) = read_age_key_file(
+    if let Some(key) = read_age_key_file(
         dirs::CONFIG.join("age.txt").to_string_lossy().to_string(),
         parse_template,
         "default sops age key file",
     ) {
-        return (Some(key), Some(path));
+        return Some(key);
     }
 
-    (None, None)
+    None
 }
 
 fn read_age_key_file<PT>(
     key_file_path: String,
     parse_template: &mut PT,
     source: &str,
-) -> Option<(String, std::path::PathBuf)>
+) -> Option<ResolvedAgeKey>
 where
     PT: FnMut(String) -> result::Result<String>,
 {
@@ -254,14 +276,62 @@ where
     if p.exists()
         && let Ok(raw) = file::read_to_string(&p)
     {
-        let key = raw
-            .trim()
+        let identities = raw
             .lines()
-            .filter(|l| !l.starts_with('#'))
-            .collect::<String>();
-        if !key.trim().is_empty() {
-            return Some((key, p));
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty() && !trimmed.starts_with('#')
+            })
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if !identities.is_empty() {
+            return Some(ResolvedAgeKey::File {
+                identities,
+                path: p,
+            });
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn read_key_file(contents: &str) -> Option<ResolvedAgeKey> {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("keys.txt");
+        file::write(&path, contents).unwrap();
+        read_age_key_file(path.to_string_lossy().to_string(), &mut Ok, "test key file")
+    }
+
+    #[test]
+    fn reads_multiple_age_keys_in_order() {
+        let key =
+            read_key_file("# first key is unrelated\r\nKEY-1\r\n\r\n# matching key\r\nKEY-2\r\n")
+                .unwrap();
+        let ResolvedAgeKey::File { identities, .. } = &key else {
+            panic!("expected key file");
+        };
+        assert_eq!(identities, &["KEY-1", "KEY-2"]);
+        assert_eq!(key.env_value(true), "KEY-1,KEY-2");
+        assert_eq!(key.env_value(false), "KEY-1\nKEY-2");
+    }
+
+    #[test]
+    fn preserves_invalid_non_comment_lines() {
+        let key = read_key_file("not-an-age-key\n").unwrap();
+        let ResolvedAgeKey::File { identities, .. } = key else {
+            panic!("expected key file");
+        };
+        assert_eq!(identities, &["not-an-age-key"]);
+    }
+
+    #[test]
+    fn ignores_empty_and_comment_only_key_files() {
+        assert_eq!(
+            read_key_file("\n  \t\r\n# no identities\r\n  # indented comment\r\n"),
+            None
+        );
+    }
 }
