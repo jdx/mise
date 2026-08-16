@@ -7514,7 +7514,7 @@ mod tests {
 
     #[test]
     fn detects_any_foreign_homebrew_metadata_object() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let metadata = tmp.path().join("Caskroom/example/.metadata");
@@ -7590,7 +7590,7 @@ mod tests {
 
     #[test]
     fn completed_receipt_detects_app_bundle_drift() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("example", "1.0.0");
@@ -7677,7 +7677,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -7724,7 +7724,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn stages_command_wrapper_with_literal_content() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -7964,7 +7964,7 @@ mod tests {
     fn installer_script_is_made_executable_before_running() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("prefix");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -8030,7 +8030,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn installer_script_accepts_preflight_copied_root() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("prefix");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -8096,7 +8096,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn installer_mutations_are_included_in_durable_symlink_sources() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("prefix");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -8135,7 +8135,7 @@ mod tests {
 
     #[test]
     fn structured_copy_restores_external_target_without_status_tracking() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("prefix");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -8184,7 +8184,7 @@ mod tests {
 
     #[test]
     fn structured_copy_rollback_removes_target_with_created_parent() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("prefix");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -9629,7 +9629,7 @@ mod tests {
 
     #[test]
     fn structured_run_expands_paths_args_and_env() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -10221,7 +10221,7 @@ end
         // VLC: preflight writes `#{staged_path}/vlc.wrapper.sh` while preflight
         // staged_path is the extract stage, not the temp Caskroom. API binary
         // source is `$HOMEBREW_PREFIX/Caskroom/vlc/<ver>/vlc.wrapper.sh`.
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -10247,7 +10247,7 @@ end
 
     #[test]
     fn prefers_temp_caskroom_wrapper_over_extract_stage() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -10406,7 +10406,7 @@ end
 
     #[test]
     fn completion_target_paths_match_homebrew_names() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -10432,7 +10432,7 @@ end
 
     #[test]
     fn stages_and_links_declared_completion() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10469,7 +10469,7 @@ end
 
     #[test]
     fn declared_completion_source_maps_caskroom_path_to_temp_caskroom() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10495,7 +10495,7 @@ end
 
     #[test]
     fn declared_completion_source_maps_caskroom_path_to_extract_stage() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10522,7 +10522,7 @@ end
     #[cfg(unix)]
     #[test]
     fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("docker-desktop", "2.0.0");
@@ -10563,7 +10563,7 @@ end
     #[cfg(unix)]
     #[test]
     fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
@@ -10603,7 +10603,7 @@ end
     #[cfg(unix)]
     #[test]
     fn link_completion_rejects_target_owned_by_another_cask() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
@@ -10630,7 +10630,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_generated_completion_output() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10662,7 +10662,7 @@ end
 
     #[test]
     fn generated_completion_executable_expands_appdir() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10694,7 +10694,7 @@ end
 
     #[test]
     fn appdir_artifact_source_matches_app_case_insensitively() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let prefix_appdir = tmp.path().join("Applications");
@@ -10721,7 +10721,7 @@ end
 
     #[test]
     fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10748,7 +10748,7 @@ end
 
     #[test]
     fn rejects_ambiguous_generated_completion_bare_executable() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -10807,7 +10807,7 @@ end
 
     #[test]
     fn remove_obsolete_completions_removes_only_caskroom_symlinks() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
@@ -10852,7 +10852,7 @@ end
     #[cfg(unix)]
     #[test]
     fn remove_obsolete_completions_removes_dangling_symlinks_with_symlinked_prefix() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let real_prefix = tmp.path().join("homebrew-real");
         let prefix = tmp.path().join("homebrew");
@@ -10916,7 +10916,7 @@ end
 
     #[test]
     fn maps_generated_caskroom_binary_to_temp_caskroom() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -10937,7 +10937,7 @@ end
 
     #[test]
     fn rejects_generated_caskroom_binary_parent_dirs() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -10965,7 +10965,7 @@ end
 
     #[test]
     fn parses_and_installs_generic_artifact() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -11018,7 +11018,7 @@ end
     #[test]
     #[cfg(unix)]
     fn generic_artifact_rejects_extraction_source_symlink_escape() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -11050,7 +11050,7 @@ end
     #[test]
     #[cfg(unix)]
     fn generic_artifact_rejects_caskroom_source_symlink_escape() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -11085,7 +11085,7 @@ end
     #[test]
     #[cfg(unix)]
     fn rejects_generic_artifact_target_through_external_symlink() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let external = tmp.path().join("external");
@@ -11104,7 +11104,7 @@ end
     #[test]
     #[cfg(unix)]
     fn generic_copy_revalidates_target_after_symlink_swap() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let external = tmp.path().join("external");
@@ -11127,7 +11127,7 @@ end
     #[test]
     #[cfg(unix)]
     fn trusted_operation_parent_stays_bound_after_ancestor_swap() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let library = prefix.join("lib");
@@ -11162,7 +11162,7 @@ end
     #[test]
     #[cfg(unix)]
     fn trusted_operation_parent_accepts_symlinked_prefix() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let real_prefix = tmp.path().join("real-homebrew");
         file::create_dir_all(real_prefix.join("lib"))?;
@@ -11188,7 +11188,7 @@ end
     #[test]
     #[cfg(unix)]
     fn trusted_operation_parent_creates_missing_directories() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         file::create_dir_all(&prefix)?;
@@ -11244,7 +11244,7 @@ end
     #[test]
     #[cfg(unix)]
     fn unprivileged_generic_rollback_restores_backup_when_target_is_absent() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let target = prefix.join("include/example.h");
@@ -11264,7 +11264,7 @@ end
     #[test]
     #[cfg(unix)]
     fn trusted_generic_rename_rejects_swapped_prefix() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let library = prefix.join("lib");
@@ -11306,7 +11306,7 @@ end
     fn private_staging_cleanup_rejects_replaced_directory() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let library = prefix.join("lib");
@@ -11346,7 +11346,7 @@ end
     fn obsolete_generic_cleanup_skips_mutable_parent_directories() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let obsolete = tmp.path().join("lib/obsolete");
@@ -11384,7 +11384,7 @@ end
     fn obsolete_generic_cleanup_allows_owner_group_writable_prefix() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let library = prefix.join("lib");
@@ -11740,7 +11740,7 @@ end
 
     #[test]
     fn binary_targets_default_to_prefix_bin() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -11761,7 +11761,7 @@ end
 
     #[test]
     fn binary_targets_must_stay_under_an_allowed_root() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -11779,7 +11779,7 @@ end
 
     #[test]
     fn binary_targets_allow_absolute_usr_local() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -11801,7 +11801,7 @@ end
 
     #[test]
     fn appdir_binary_targets_are_contained() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         assert_eq!(
@@ -11829,7 +11829,7 @@ end
 
     #[test]
     fn caskroom_binary_paths_support_contained_appdir_targets() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let caskroom = tmp.path().join("Caskroom/surge/1.0.0");
@@ -11847,7 +11847,7 @@ end
 
     #[test]
     fn caskroom_binary_paths_preserve_prefix_relative_target() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let caskroom = tmp.path().join("Caskroom/example/1.0.0");
@@ -11865,7 +11865,7 @@ end
 
     #[test]
     fn caskroom_binary_paths_strip_usr_local_root() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let caskroom = tmp.path().join("Caskroom/docker-desktop/1.0.0");
@@ -11883,7 +11883,7 @@ end
 
     #[test]
     fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("app-only", "1.0.0");
@@ -11928,7 +11928,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_unknown_receipt_schema() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("future", "1.0.0");
@@ -11962,7 +11962,7 @@ end
 
     #[test]
     fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12004,7 +12004,7 @@ end
 
     #[test]
     fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12086,7 +12086,7 @@ end
 
     #[test]
     fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12128,7 +12128,7 @@ end
 
     #[test]
     fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12146,7 +12146,7 @@ end
 
     #[test]
     fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12164,7 +12164,7 @@ end
 
     #[test]
     fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12190,7 +12190,7 @@ end
     fn cask_prune_fails_closed_when_a_token_directory_is_unreadable() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -12273,7 +12273,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_binary_state_without_receipt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("binary-only", "1.0.0");
@@ -12313,7 +12313,7 @@ end
 
     #[test]
     fn installed_cask_version_does_not_invent_wrapper_from_current_api() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("firefox", "153.0.1");
@@ -12375,7 +12375,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_and_links_binary_artifact() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -12401,7 +12401,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_same_basename_binaries_without_collision() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -12440,7 +12440,7 @@ end
     #[cfg(unix)]
     #[test]
     fn binary_source_prefers_hook_generated_caskroom_file() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -12467,7 +12467,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -12501,7 +12501,7 @@ end
     #[cfg(unix)]
     #[test]
     fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -12534,7 +12534,7 @@ end
 
     #[test]
     fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let app = AppArtifact {
@@ -13143,7 +13143,7 @@ end
     #[cfg(unix)]
     #[test]
     fn remove_obsolete_binary_links_removes_only_caskroom_symlinks() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("binary-only", "2.0.0");
@@ -13173,7 +13173,7 @@ end
 
     #[test]
     fn installed_cask_version_does_not_invent_pkg_ids_from_current_api() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("pkg-only", "1.0.0");
@@ -13216,7 +13216,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_app_state_without_receipt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("actual-token", "1.0.0");
@@ -13253,7 +13253,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_completion_state_without_receipt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("completion-only", "1.0.0");
@@ -13279,7 +13279,7 @@ end
 
     #[test]
     fn installed_cask_version_uses_metadata_token() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("metadata-token", "2.0.0");
@@ -13341,7 +13341,7 @@ end
 
     #[test]
     fn installed_version_ignores_homebrew_metadata() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("actual-token");
@@ -13355,7 +13355,7 @@ end
 
     #[test]
     fn installed_versions_preserve_conflict_presence_with_multiple_versions() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("conflicting-cask");
@@ -13370,7 +13370,7 @@ end
     #[cfg(unix)]
     #[test]
     fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("completion-only", "1.0.0");
@@ -13406,7 +13406,7 @@ end
 
     #[test]
     fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("actual-token");
@@ -13429,7 +13429,7 @@ end
 
     #[test]
     fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
 
         // Create a local git repo to clone from

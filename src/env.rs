@@ -30,12 +30,38 @@ pub const NON_TOOL_VERSION_ENV_VARS: &[&str] =
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
-pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
-    var("MISE_SHELL")
-        .unwrap_or_else(|_| SHELL.clone())
-        .parse()
-        .ok()
-});
+pub static MISE_SHELL: Lazy<Option<ShellType>> =
+    Lazy::new(|| detect_shell(var("MISE_SHELL").ok(), var("SHELL").ok(), &SHELL));
+
+/// Which shell mise should speak, from the environment.
+///
+/// `SHELL` is consulted here but deliberately *not* through [`SHELL`], which on Windows reads
+/// `COMSPEC`. Git Bash, MSYS2 and Cygwin all set `SHELL` to a real shell there, and
+/// [`ShellType::from_str`] already understands the form they use, but nothing ever looked. Reading
+/// it through [`SHELL`] instead would be wrong: [`SHELL_COMMAND_FLAG`] is `/c` on Windows and
+/// `mise exec -c` and `mise en` pair the two, so `bash.exe /c …` is what that would run.
+///
+/// Split out from the `Lazy` because that is process-wide and reads the real environment, so the
+/// precedence below cannot be exercised from a test any other way.
+fn detect_shell(
+    mise_shell: Option<String>,
+    shell_var: Option<String>,
+    fallback: &str,
+) -> Option<ShellType> {
+    // What `mise activate` exports, so it decides on its own. Set but unparseable is an answer,
+    // not a reason to start guessing.
+    if let Some(s) = mise_shell {
+        return s.parse().ok();
+    }
+    // On unix `SHELL` *is* the fallback, so consulting it separately would be the same lookup
+    // twice. On Windows it is the one the fallback cannot reach.
+    if cfg!(windows)
+        && let Some(st) = shell_var.and_then(|s| s.parse().ok())
+    {
+        return Some(st);
+    }
+    fallback.parse().ok()
+}
 #[cfg(unix)]
 pub static SHELL_COMMAND_FLAG: &str = "-c";
 #[cfg(windows)]
@@ -1370,5 +1396,63 @@ mod tests {
         assert!(!is_mise_binary("MISE"));
         assert!(!is_mise_binary("Mise"));
         assert!(!is_mise_binary("MISE-DOCTOR"));
+    }
+
+    fn detect(mise_shell: Option<&str>, shell_var: Option<&str>, fallback: &str) -> String {
+        detect_shell(
+            mise_shell.map(str::to_string),
+            shell_var.map(str::to_string),
+            fallback,
+        )
+        .map(|st| st.to_string())
+        .unwrap_or_else(|| "(none)".to_string())
+    }
+
+    /// `mise activate` exports `MISE_SHELL`, so it decides on its own — including deciding that
+    /// the answer is nothing. Falling back after an unparseable value would start guessing at a
+    /// shell the session has already named.
+    #[test]
+    fn mise_shell_wins_and_an_unparseable_one_is_still_the_answer() {
+        assert_eq!(detect(Some("zsh"), Some("/bin/bash"), "/bin/bash"), "zsh");
+        assert_eq!(
+            detect(Some("nonsense"), Some("/bin/bash"), "/bin/bash"),
+            "(none)"
+        );
+    }
+
+    /// The fix: Git Bash, MSYS2 and Cygwin set `SHELL` on Windows, where the fallback reads
+    /// `COMSPEC` and so can never see it.
+    #[cfg(windows)]
+    #[test]
+    fn shell_is_consulted_on_windows() {
+        for shell_var in [
+            r"C:\Program Files\Git\bin\bash.exe",
+            "/bin/bash.exe",
+            r"C:\msys64\usr\bin\zsh.exe",
+        ] {
+            let expected = match shell_var.contains("zsh") {
+                true => "zsh",
+                false => "bash",
+            };
+            assert_eq!(
+                detect(None, Some(shell_var), r"C:\WINDOWS\system32\cmd.exe"),
+                expected,
+                "{shell_var}"
+            );
+        }
+        // Unchanged where there is nothing to find: cmd.exe is not a shell mise generates for.
+        assert_eq!(detect(None, None, r"C:\WINDOWS\system32\cmd.exe"), "(none)");
+    }
+
+    /// The control. On unix `SHELL` *is* the fallback, so the extra lookup must not exist —
+    /// otherwise this test would pass for the wrong reason on every platform.
+    #[cfg(unix)]
+    #[test]
+    fn the_fallback_is_the_only_second_source_on_unix() {
+        // A `SHELL` that disagrees with the fallback is ignored: unix passes the same value as
+        // both, so anything else would mean the Windows branch had leaked.
+        assert_eq!(detect(None, Some("/bin/zsh"), "/bin/bash"), "bash");
+        assert_eq!(detect(None, None, "/bin/zsh"), "zsh");
+        assert_eq!(detect(None, None, "sh"), "bash");
     }
 }

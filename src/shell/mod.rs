@@ -176,11 +176,10 @@ pub const EXAMPLE_SHELL: &str = "zsh";
 
 /// The shell mise should generate for, or an error saying how to name one.
 ///
-/// Detection is `MISE_SHELL`, falling back to [`env::SHELL`] — which on Windows reads `COMSPEC`,
-/// i.e. `cmd.exe`, a shell mise has no implementation for. So on Windows this resolves only when
-/// the session is already activated or the caller names the shell, which makes the error the
-/// ordinary answer there rather than an edge case. It used to be `.expect()`, so the ordinary
-/// answer was a panic.
+/// Detection is `MISE_SHELL`, then `SHELL`. PowerShell and cmd set neither, so on Windows this
+/// resolves only when the session is already activated, the caller names the shell, or the user is
+/// in a shell that sets `SHELL` (Git Bash, MSYS2, Cygwin) — which makes the error an ordinary
+/// answer there rather than an edge case. It used to be `.expect()`, so that answer was a panic.
 ///
 /// `how` is the caller's own instruction, because the commands differ: `mise activate` takes the
 /// shell as an argument, `mise hook-env` takes `--shell`, and `mise shell` takes neither.
@@ -193,10 +192,12 @@ pub fn require_shell(shell: Option<ShellType>, how: &str) -> eyre::Result<Box<dy
 /// from a test.
 fn no_shell_error(how: &str) -> String {
     // Windows is the only platform where this is reachable without the user having done something
-    // unusual, so it is the only one that needs to explain itself.
+    // unusual, so it is the only one that needs to explain itself. Naming the two variables is the
+    // useful part: a Git Bash user can see that mise would have taken `SHELL` and go look at why
+    // theirs is not set, rather than reading this as "Windows is unsupported".
     let why = match cfg!(windows) {
         true => {
-            "mise cannot detect the shell on Windows: the value it would read, COMSPEC, names cmd.exe.\n"
+            "mise reads MISE_SHELL, then SHELL; neither names a shell it supports. PowerShell and cmd set neither.\n"
         }
         false => "",
     };
@@ -339,10 +340,13 @@ mod tests {
     }
 
     /// On Windows the message is the ordinary answer rather than an edge case, so it also has to
-    /// say why detection cannot work there. Elsewhere that line would be noise.
+    /// say which variables were consulted. Elsewhere that line would be noise.
     #[test]
     fn only_windows_explains_why_detection_failed() {
         let msg = no_shell_error("Name the shell.");
-        assert_eq!(msg.contains("COMSPEC"), cfg!(windows), "{msg}");
+        // Both names, because naming only `MISE_SHELL` would read as "activate first" to someone
+        // in Git Bash, where setting `SHELL` is the actual answer.
+        assert_eq!(msg.contains("MISE_SHELL"), cfg!(windows), "{msg}");
+        assert_eq!(msg.contains("SHELL;"), cfg!(windows), "{msg}");
     }
 }
