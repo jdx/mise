@@ -5756,6 +5756,9 @@ fn target_app_dir() -> Result<PathBuf> {
             dir.display()
         );
     }
+    if dir == Path::new("/") {
+        bail!("brew-cask: {APP_DIR_ENV} must not be the filesystem root");
+    }
     Ok(dir)
 }
 
