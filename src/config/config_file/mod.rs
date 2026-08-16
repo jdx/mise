@@ -293,6 +293,23 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     Ok(cf)
 }
 
+/// Lock a config file for a read-modify-write operation, then read its latest contents.
+///
+/// Callers must keep the returned lock alive until after [`ConfigFile::save`]. Acquiring the
+/// lock before re-reading is what prevents two mise processes from both modifying the same stale
+/// snapshot and silently overwriting one another's changes.
+pub async fn lock_and_parse_or_init(
+    path: &Path,
+) -> eyre::Result<(fslock::LockFile, Arc<dyn ConfigFile>)> {
+    let lock = crate::lock_file::LockFile::new(path)
+        .with_callback(|path| {
+            debug!("waiting for config lock on {}", display_path(path));
+        })
+        .lock()?;
+    let cf = parse_or_init(path).await?;
+    Ok((lock, cf))
+}
+
 pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     if let Ok(settings) = Settings::try_get()
         && settings.paranoid
@@ -970,6 +987,41 @@ mod tests {
             .expect("goreleaser should be parsed from its nested idiomatic path");
 
         assert_eq!(versions[0].version(), "2");
+        Ok(())
+    }
+
+    #[test]
+    fn lock_and_parse_or_init_reads_after_acquiring_lock() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(backend::load_tools())?;
+
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("mise.toml");
+        file::write(&path, "[tools]\ndummy = \"1\"\n")?;
+
+        let lock = crate::lock_file::LockFile::new(&path).lock()?;
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let thread_path = path.clone();
+        let reader = std::thread::spawn(move || -> Result<String> {
+            started_tx.send(()).unwrap();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let (_lock, cf) = runtime.block_on(lock_and_parse_or_init(&thread_path))?;
+            cf.dump()
+        });
+
+        // The other read-modify-write transaction is now waiting for this lock. Change the file
+        // before releasing it; the waiter must parse this version, not the snapshot from before
+        // it tried to acquire the lock.
+        started_rx.recv().unwrap();
+        file::write_atomic(&path, "[tools]\ndummy = \"1\"\ntiny = \"2\"\n")?;
+        drop(lock);
+
+        let contents = reader.join().unwrap()?;
+        assert_eq!(contents, "[tools]\ndummy = \"1\"\ntiny = \"2\"\n");
         Ok(())
     }
 
