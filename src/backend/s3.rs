@@ -693,7 +693,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend,
             version: version.to_string(),
-            options,
+            options: options.into(),
             source: ToolSource::Argument,
         };
         ToolVersion::new(request, version.to_string())

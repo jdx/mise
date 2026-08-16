@@ -15,7 +15,7 @@ use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
+use crate::toolset::{ToolRequest, ToolSource, tool_request};
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
@@ -400,7 +400,6 @@ impl ToolVersion {
                 return Ok(Self::resolve_ref(
                     r.to_string(),
                     ref_type.to_string(),
-                    request.options(),
                     &request,
                 ));
             }
@@ -731,17 +730,12 @@ impl ToolVersion {
         Ok(Self::new(request, v.to_string()))
     }
 
-    fn resolve_ref(
-        ref_: String,
-        ref_type: String,
-        opts: ToolVersionOptions,
-        tr: &ToolRequest,
-    ) -> Self {
+    fn resolve_ref(ref_: String, ref_type: String, tr: &ToolRequest) -> Self {
         let request = ToolRequest::Ref {
             backend: tr.ba().clone(),
             ref_,
             ref_type,
-            options: opts.clone(),
+            options: tr.option_state(),
             source: tr.source().clone(),
         };
         let version = request.version();
@@ -754,7 +748,7 @@ impl ToolVersion {
             backend: tr.ba().clone(),
             path,
             source: tr.source().clone(),
-            options: tr.options().clone(),
+            options: tr.option_state(),
         };
         let version = request.version();
         Ok(Self::new(request, version))
@@ -994,7 +988,7 @@ impl Display for ResolveOptions {
 mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
-    use crate::toolset::CoreToolOptions;
+    use crate::toolset::{CoreToolOptions, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_name(prefix: &str) -> String {
@@ -1037,7 +1031,7 @@ mod tests {
                 backend: backend.clone(),
                 ref_: ref_.to_string(),
                 ref_type: ref_type.to_string(),
-                options: ToolVersionOptions::default(),
+                options: ToolVersionOptions::default().into(),
                 source: ToolSource::Argument,
             };
             let tv = ToolVersion::new(request, version.to_string());
@@ -1066,7 +1060,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend,
             version: "latest".to_string(),
-            options,
+            options: options.into(),
             source: ToolSource::Argument,
         };
         let lt = LockfileTool {
@@ -1095,6 +1089,23 @@ mod tests {
                 "https://registry.example.test".to_string()
             ))
         );
+    }
+
+    #[tokio::test]
+    async fn ref_resolution_preserves_request_option_overlay() {
+        crate::toolset::install_state::init().await.unwrap();
+        let backend = Arc::new(BackendArg::from("solidity"));
+        let mut options = ToolVersionOptions::default();
+        options
+            .opts
+            .insert("bin".to_string(), toml::Value::String("solc".to_string()));
+        let request =
+            ToolRequest::new_opts(backend, "latest", options.clone(), ToolSource::Argument)
+                .unwrap();
+
+        let resolved = ToolVersion::resolve_ref("main".to_string(), "ref".to_string(), &request);
+
+        assert_eq!(resolved.request.request_options(), Some(&options));
     }
 
     #[test]
@@ -1213,7 +1224,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "1.0".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.0.1".into());
@@ -1266,7 +1277,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "3".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "3.14.6".into());
@@ -1318,7 +1329,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "1.0.0".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.0.0".into());

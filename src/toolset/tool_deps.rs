@@ -134,13 +134,13 @@ mod tests {
             ToolRequest::Version {
                 backend: backend1,
                 version: "1.0.0".to_string(),
-                options: ToolVersionOptions::default(),
+                options: ToolVersionOptions::default().into(),
                 source: source.clone(),
             },
             ToolRequest::Version {
                 backend: backend2,
                 version: "1.0.0".to_string(),
-                options: ToolVersionOptions::default(),
+                options: ToolVersionOptions::default().into(),
                 source,
             },
         ];
@@ -204,13 +204,13 @@ mod tests {
             ToolRequest::Version {
                 backend: backend.clone(),
                 version: "1.0.0".to_string(),
-                options: first_options,
+                options: first_options.into(),
                 source: ToolSource::Argument,
             },
             ToolRequest::Version {
                 backend,
                 version: "1.0.0".to_string(),
-                options: second_options,
+                options: second_options.into(),
                 source: ToolSource::Argument,
             },
         ];

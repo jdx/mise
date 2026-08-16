@@ -909,7 +909,7 @@ mod tests {
         ToolRequest::Version {
             backend: ba,
             version: version.to_string(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         }
     }
@@ -1439,7 +1439,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.0.1".into());
@@ -1484,7 +1484,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.0.1".into());
@@ -1524,7 +1524,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let exact_install = temp_dir.path().join("install-into");
@@ -1567,7 +1567,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let explicit_install = temp_dir
@@ -1614,7 +1614,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let shared_install = temp_dir

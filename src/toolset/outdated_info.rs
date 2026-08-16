@@ -568,7 +568,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "1.25".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.25.10".into());
@@ -597,7 +597,7 @@ mod tests {
         let request = ToolRequest::Prefix {
             backend: Arc::new(backend),
             prefix: "1.25".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.25.10".into());
@@ -625,7 +625,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "1.25".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.25.10".into());
@@ -654,7 +654,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.25.10".into());
@@ -683,7 +683,7 @@ mod tests {
         let request = ToolRequest::Version {
             backend: Arc::new(backend),
             version: "latest".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "1.25.10".into());

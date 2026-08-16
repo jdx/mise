@@ -7,7 +7,9 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::toolset::tool_request_set::configured_options_for_runtime_request;
+use crate::toolset::tool_request_set::{
+    configured_options_for_runtime_request, layered_options_for_runtime_request,
+};
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
@@ -134,14 +136,15 @@ impl ToolsetBuilder {
                 .get(&args[0].ba)
                 .map(|tvl| tvl.requests.clone())
                 .unwrap_or_default();
-            let apply_arg_options = |mut tvr: ToolRequest, ba: &BackendArg| {
+            let apply_arg_options = |mut tvr: ToolRequest| {
                 let config_options = configured_options_for_runtime_request(&configured, &tvr);
-                tvr.set_options(ba.opts_with_config(config_options));
+                let options = layered_options_for_runtime_request(&tvr, config_options);
+                tvr.set_options(options);
                 tvr
             };
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    let tvr = apply_arg_options(tvr.clone(), arg.ba.as_ref());
+                    let tvr = apply_arg_options(tvr.clone());
                     arg_ts.add_version(tvr);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
@@ -162,12 +165,12 @@ impl ToolsetBuilder {
                             &current_active.version(),
                             ToolSource::Argument,
                         )?;
-                        let tvr = apply_arg_options(tvr, arg.ba.as_ref());
+                        let tvr = apply_arg_options(tvr);
                         arg_ts.add_version(tvr);
                     } else {
                         // no active version, so use "latest"
                         let tvr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
-                        let tvr = apply_arg_options(tvr, arg.ba.as_ref());
+                        let tvr = apply_arg_options(tvr);
                         arg_ts.add_version(tvr);
                     }
                 }
@@ -218,5 +221,43 @@ mod tests {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].version(), "2.0.0");
         assert_eq!(requests[0].options().get("selected"), Some("active"));
+    }
+
+    #[tokio::test]
+    async fn test_runtime_arg_preserves_request_options_with_matching_config() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_opts(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="config""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured);
+
+        let mut arg = "dummy[inline_only=inline]@1.0.0"
+            .parse::<ToolArg>()
+            .unwrap();
+        arg.tvr = Some(
+            ToolRequest::new_opts(
+                arg.ba.clone(),
+                "1.0.0",
+                parse_tool_options(r#"request_only="request""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        );
+        ToolsetBuilder::new()
+            .with_args(&[arg])
+            .load_runtime_args(&mut toolset)
+            .unwrap();
+
+        let requests = &toolset.versions.get(&ba).unwrap().requests;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].options().get("selected"), Some("config"));
+        assert_eq!(requests[0].options().get("request_only"), Some("request"));
+        assert_eq!(requests[0].options().get("inline_only"), Some("inline"));
     }
 }

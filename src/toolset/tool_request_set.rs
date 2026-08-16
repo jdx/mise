@@ -9,7 +9,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
-use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -297,9 +297,33 @@ fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolReques
         .get(tvr.ba())
         .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
     {
-        tvr.set_options(tvr.ba().opts_with_config(Some(config_options)));
+        let options = layered_options_for_runtime_request(&tvr, Some(config_options));
+        tvr.set_options(options);
     }
     tvr
+}
+
+/// Layer configuration onto a runtime request without discarding options that
+/// were attached independently through `ToolRequest::new_opts`.
+///
+/// Requests built with `ToolRequest::new` contain inherited backend options,
+/// while `ToolRequest::new_opts` records its options as an explicit request
+/// overlay. Keeping those layers distinct prevents inherited or previously
+/// layered values from being mistaken for request overrides. Explicit inline
+/// options remain the final, highest-precedence layer.
+pub(super) fn layered_options_for_runtime_request(
+    runtime: &ToolRequest,
+    config_options: Option<ToolVersionOptions>,
+) -> ToolVersionOptions {
+    let mut options = runtime.ba().opts_with_config(config_options);
+    if let Some(request_options) = runtime.request_options() {
+        options.apply_overrides(request_options);
+    }
+    if let Some(inline_options) = runtime.ba().explicit_opts() {
+        options.apply_overrides(inline_options);
+    }
+
+    options
 }
 
 /// Select configured options for an explicit runtime request without assuming
@@ -518,6 +542,50 @@ mod tests {
         assert_eq!(layered.options().get("bin"), Some("inline"));
         assert_eq!(layered.options().get("config_only"), Some("config"));
         assert_eq!(layered.options().get("inline_only"), Some("inline"));
+
+        let request_ba = Arc::new(BackendArg::from("solidity"));
+        let request = ToolRequest::new_opts(
+            request_ba,
+            "0.8.1",
+            parse_tool_options(
+                r#"bin="request",request_only="request",depends=["request-dependency"]"#,
+            ),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let mut layered = apply_config_options_to_runtime_arg(&trs, request);
+        assert_eq!(layered.options().get("bin"), Some("request"));
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+        assert_eq!(layered.options().get("request_only"), Some("request"));
+        assert_eq!(
+            layered.options().core.depends,
+            Some(vec!["request-dependency".to_string()])
+        );
+
+        let mut next = ToolRequestSet::new();
+        let next_config = ToolRequest::new_opts(
+            config_ba,
+            "0.8.0",
+            parse_tool_options(r#"bin="next-config",next_only="next""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        next.add_version(next_config, &ToolSource::Unknown);
+        layered = apply_config_options_to_runtime_arg(&next, layered);
+        assert_eq!(layered.options().get("bin"), Some("request"));
+        assert_eq!(layered.options().get("config_only"), None);
+        assert_eq!(layered.options().get("next_only"), Some("next"));
+        assert_eq!(layered.options().get("request_only"), Some("request"));
+
+        let collision = ToolRequest::new_opts(
+            Arc::new(BackendArg::from("solidity")),
+            "0.8.1",
+            parse_tool_options(r#"bin="solc""#),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let collision = apply_config_options_to_runtime_arg(&trs, collision);
+        assert_eq!(collision.options().get("bin"), Some("solc"));
     }
 
     #[tokio::test]
