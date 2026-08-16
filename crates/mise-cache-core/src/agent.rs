@@ -172,7 +172,7 @@ pub struct AgentStats {
     pub prefetch_runs: u64,
     /// Cumulative wall time of speculative task-manifest prefetch runs.
     pub prefetch_duration_ns: u64,
-    /// Cumulative time spent materializing and validating restored outputs.
+    /// Cumulative time spent staging or materializing and validating cached outputs.
     pub materialization_duration_ns: u64,
     /// Number of compiler output files restored from action hits.
     pub restored_output_files: u64,
@@ -905,7 +905,7 @@ impl CacheAgent {
                 self.record_action_hit(&action, restore)
             }
             AgentRequest::RecordActionVerification { matched, restore } => {
-                self.record_restore(restore);
+                self.record_materialization(restore);
                 self.stats.verifications.fetch_add(1, Ordering::Relaxed);
                 if !matched {
                     self.stats.divergences.fetch_add(1, Ordering::Relaxed);
@@ -1123,9 +1123,13 @@ impl CacheAgent {
     }
 
     fn record_restore(&self, restore: RestoreStats) {
-        atomic_saturating_add(&self.stats.materialization_duration_ns, restore.duration_ns);
+        self.record_materialization(restore);
         atomic_saturating_add(&self.stats.restored_output_files, restore.output_files);
         atomic_saturating_add(&self.stats.restored_output_bytes, restore.output_bytes);
+    }
+
+    fn record_materialization(&self, restore: RestoreStats) {
+        atomic_saturating_add(&self.stats.materialization_duration_ns, restore.duration_ns);
     }
 
     fn find_action_prediction(
@@ -1571,13 +1575,20 @@ mod tests {
             agent
                 .respond(AgentRequest::RecordActionVerification {
                     matched: false,
-                    restore: RestoreStats::default(),
+                    restore: RestoreStats {
+                        duration_ns: 7,
+                        output_files: 2,
+                        output_bytes: 11,
+                    },
                 })
                 .await,
             AgentResponse::ActionVerificationRecorded
         ));
         assert_eq!(agent.stats().verifications, 1);
         assert_eq!(agent.stats().divergences, 1);
+        assert_eq!(agent.stats().materialization_duration_ns, 7);
+        assert_eq!(agent.stats().restored_output_files, 0);
+        assert_eq!(agent.stats().restored_output_bytes, 0);
     }
 
     #[tokio::test]
