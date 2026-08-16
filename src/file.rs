@@ -921,6 +921,10 @@ pub fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
     let Some(target) = dir_link_target(link)? else {
         return Ok(false);
     };
+    target_path_is_within(&target, root)
+}
+
+fn target_path_is_within(target: &Path, root: &Path) -> Result<bool> {
     let target = target.absolutize()?;
     let root = root.absolutize()?;
     Ok(path_starts_with(&target, &root))
@@ -941,6 +945,7 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
     }
 
     let root_component_count = root.components().count();
+    let root = root.components().collect::<PathBuf>();
     let candidate = path
         .components()
         .take(root_component_count)
@@ -1177,6 +1182,130 @@ fn remove_open_link(file: File) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn open_link_target(file: &File) -> std::io::Result<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::MAXIMUM_REPARSE_DATA_BUFFER_SIZE;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::FSCTL_GET_REPARSE_POINT;
+    use windows_sys::Win32::System::SystemServices::{
+        IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+    };
+
+    let mut data = [0_u8; MAXIMUM_REPARSE_DATA_BUFFER_SIZE as usize];
+    let mut bytes_returned = 0;
+    let inspected = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle(),
+            FSCTL_GET_REPARSE_POINT,
+            std::ptr::null(),
+            0,
+            data.as_mut_ptr().cast(),
+            data.len() as u32,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if inspected == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    let data = data
+        .get(..bytes_returned as usize)
+        .ok_or_else(invalid_reparse_data)?;
+    let reparse_data_length = usize::from(read_reparse_u16(data, 4)?);
+    let data = data
+        .get(..8_usize.saturating_add(reparse_data_length))
+        .ok_or_else(invalid_reparse_data)?;
+    let path_buffer_offset = match read_reparse_u32(data, 0)? {
+        IO_REPARSE_TAG_MOUNT_POINT => 16,
+        IO_REPARSE_TAG_SYMLINK => 20,
+        _ => return Err(invalid_reparse_data()),
+    };
+    let target_offset = usize::from(read_reparse_u16(data, 8)?);
+    let target_length = usize::from(read_reparse_u16(data, 10)?);
+    if target_offset % 2 != 0 || target_length % 2 != 0 {
+        return Err(invalid_reparse_data());
+    }
+    let target_start = path_buffer_offset
+        .checked_add(target_offset)
+        .ok_or_else(invalid_reparse_data)?;
+    let target_end = target_start
+        .checked_add(target_length)
+        .ok_or_else(invalid_reparse_data)?;
+    let target = data
+        .get(target_start..target_end)
+        .ok_or_else(invalid_reparse_data)?
+        .chunks_exact(2)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .collect::<Vec<_>>();
+
+    const NT_PREFIX: &[u16] = &[b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16];
+    const NT_UNC_PREFIX: &[u16] = &[
+        b'\\' as u16,
+        b'?' as u16,
+        b'?' as u16,
+        b'\\' as u16,
+        b'U' as u16,
+        b'N' as u16,
+        b'C' as u16,
+        b'\\' as u16,
+    ];
+    let target = if let Some(target) = target.strip_prefix(NT_UNC_PREFIX) {
+        let mut normalized = vec![b'\\' as u16, b'\\' as u16];
+        normalized.extend_from_slice(target);
+        normalized
+    } else if let Some(target) = target.strip_prefix(NT_PREFIX) {
+        target.to_vec()
+    } else {
+        target
+    };
+    Ok(PathBuf::from(OsString::from_wide(&target)))
+}
+
+#[cfg(windows)]
+fn read_reparse_u16(data: &[u8], offset: usize) -> std::io::Result<u16> {
+    let bytes = data
+        .get(offset..offset.saturating_add(2))
+        .ok_or_else(invalid_reparse_data)?;
+    Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+#[cfg(windows)]
+fn read_reparse_u32(data: &[u8], offset: usize) -> std::io::Result<u32> {
+    let bytes = data
+        .get(offset..offset.saturating_add(4))
+        .ok_or_else(invalid_reparse_data)?;
+    Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+#[cfg(windows)]
+fn invalid_reparse_data() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "invalid directory link reparse data",
+    )
+}
+
+#[cfg(windows)]
+fn remove_open_link_with_target_prefix(
+    file: File,
+    link: &Path,
+    target_prefix: &Path,
+) -> Result<bool> {
+    let target = open_link_target(&file)
+        .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?;
+    let target = resolve_relative_link_target(link, target);
+    if !target_path_is_within(&target, target_prefix)? {
+        return Ok(false);
+    }
+    remove_open_link(file)
+        .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))?;
+    Ok(true)
+}
+
 pub fn remove_symlinks_with_target_prefix(
     symlink_dir: &Path,
     target_prefix: &Path,
@@ -1188,6 +1317,15 @@ pub fn remove_symlinks_with_target_prefix(
     for entry in symlink_dir.read_dir()? {
         let path = entry?.path();
         if is_symlink_target_within(&path, target_prefix)? {
+            #[cfg(windows)]
+            if !remove_open_link_with_target_prefix(
+                open_link_for_removal(&path)?,
+                &path,
+                target_prefix,
+            )? {
+                continue;
+            }
+            #[cfg(unix)]
             remove_symlink_or_junction(&path)?;
             removed.push(path);
         }
@@ -3077,6 +3215,28 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn test_remove_open_link_revalidates_replacement_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("provider");
+        let target = prefix.join("version");
+        let foreign = dir.path().join("foreign");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir(&foreign).unwrap();
+        junction::create(&target, &link).unwrap();
+        assert!(is_symlink_target_within(&link, &prefix).unwrap());
+
+        remove_symlink_or_junction(&link).unwrap();
+        junction::create(&foreign, &link).unwrap();
+        let link_handle = open_link_for_removal(&link).unwrap();
+
+        assert!(!remove_open_link_with_target_prefix(link_handle, &link, &prefix).unwrap());
+        assert!(is_symlink_or_junction(&link));
+        assert!(foreign.is_dir());
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_symlink_prefix_detection_rejects_escapes() {
         let dir = tempfile::tempdir().unwrap();
@@ -3088,6 +3248,14 @@ mod tests {
 
         std::os::unix::fs::symlink(prefix.join("..").join("foreign"), &escaped).unwrap();
         assert!(!is_symlink_target_within(&escaped, &prefix).unwrap());
+
+        let relative_inside = dir.path().join("relative-inside");
+        std::os::unix::fs::symlink("source/version", &relative_inside).unwrap();
+        assert!(is_symlink_target_within(&relative_inside, &prefix).unwrap());
+
+        let relative_escape = dir.path().join("relative-escape");
+        std::os::unix::fs::symlink("source/../foreign", &relative_escape).unwrap();
+        assert!(!is_symlink_target_within(&relative_escape, &prefix).unwrap());
     }
 
     #[test]
