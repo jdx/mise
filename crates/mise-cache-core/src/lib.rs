@@ -20,7 +20,7 @@ mod local;
 
 pub use agent::{
     AGENT_PROTOCOL_VERSION, ActionPrediction, AgentRemoteCache, AgentRequest, AgentResponse,
-    AgentStats, CacheAgent,
+    AgentStats, CacheAgent, RestoreStats,
 };
 pub use local::{LocalActionCache, LocalCas};
 

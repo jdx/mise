@@ -12,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const MAX_EXECUTABLE_IDENTITIES: usize = 64;
@@ -55,9 +56,11 @@ pub enum AgentRequest {
     },
     RecordActionHit {
         action: CacheDigest,
+        restore: RestoreStats,
     },
     RecordActionVerification {
         matched: bool,
+        restore: RestoreStats,
     },
     StoreActionResult {
         result: RemoteActionResult,
@@ -79,6 +82,18 @@ pub enum AgentRequest {
         environment: BTreeMap<String, Option<String>>,
         stdout: Vec<u8>,
     },
+}
+
+/// Local output restoration work performed by one action-cache adapter hit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestoreStats {
+    /// Cumulative time spent materializing and validating output files.
+    pub duration_ns: u64,
+    /// Number of compiler output files restored.
+    pub output_files: u64,
+    /// Declared size of compiler output files restored.
+    pub output_bytes: u64,
 }
 
 /// A response returned by the task-scoped cache agent.
@@ -119,6 +134,8 @@ pub enum AgentResponse {
 /// Aggregate cache activity for one task session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AgentStats {
+    /// End-to-end lifetime of the task-scoped cache session.
+    pub session_duration_ns: u64,
     /// Number of action-result lookups.
     pub lookups: u64,
     /// Number of lookups that found a valid local action result.
@@ -137,6 +154,30 @@ pub struct AgentStats {
     pub uploaded_bytes: u64,
     /// Complete actions staged before an adapter requested them.
     pub prefetched_actions: u64,
+    /// Number of task manifest requests made to the remote cache.
+    pub remote_manifest_lookups: u64,
+    /// Cumulative time spent requesting remote task manifests.
+    pub remote_manifest_lookup_duration_ns: u64,
+    /// Number of action-result requests made to the remote cache.
+    pub remote_action_lookups: u64,
+    /// Cumulative time spent requesting remote action results.
+    pub remote_action_lookup_duration_ns: u64,
+    /// Number of blob requests made to the remote cache.
+    pub remote_blob_requests: u64,
+    /// Cumulative time spent downloading and verifying remote blobs.
+    pub remote_blob_transfer_duration_ns: u64,
+    /// Cumulative time spent ingesting downloaded blobs into the local CAS.
+    pub local_cas_write_duration_ns: u64,
+    /// Number of speculative prefetch runs started for task manifests.
+    pub prefetch_runs: u64,
+    /// Cumulative wall time of speculative task-manifest prefetch runs.
+    pub prefetch_duration_ns: u64,
+    /// Cumulative time spent staging or materializing and validating cached outputs.
+    pub materialization_duration_ns: u64,
+    /// Number of compiler output files restored from action hits.
+    pub restored_output_files: u64,
+    /// Declared size of compiler output files restored from action hits.
+    pub restored_output_bytes: u64,
 }
 
 /// Adapter-owned data needed to reconstruct an action before fresh dependency
@@ -161,6 +202,48 @@ struct AtomicAgentStats {
     downloaded_bytes: AtomicU64,
     uploaded_bytes: AtomicU64,
     prefetched_actions: AtomicU64,
+    remote_manifest_lookups: AtomicU64,
+    remote_manifest_lookup_duration_ns: AtomicU64,
+    remote_action_lookups: AtomicU64,
+    remote_action_lookup_duration_ns: AtomicU64,
+    remote_blob_requests: AtomicU64,
+    remote_blob_transfer_duration_ns: AtomicU64,
+    local_cas_write_duration_ns: AtomicU64,
+    prefetch_runs: AtomicU64,
+    prefetch_duration_ns: AtomicU64,
+    materialization_duration_ns: AtomicU64,
+    restored_output_files: AtomicU64,
+    restored_output_bytes: AtomicU64,
+}
+
+struct AtomicDurationTimer<'a> {
+    started: Instant,
+    target: &'a AtomicU64,
+}
+
+impl<'a> AtomicDurationTimer<'a> {
+    fn start(target: &'a AtomicU64) -> Self {
+        Self {
+            started: Instant::now(),
+            target,
+        }
+    }
+}
+
+impl Drop for AtomicDurationTimer<'_> {
+    fn drop(&mut self) {
+        atomic_saturating_add(self.target, duration_ns(self.started));
+    }
+}
+
+fn duration_ns(started: Instant) -> u64 {
+    started.elapsed().as_nanos().try_into().unwrap_or(u64::MAX)
+}
+
+fn atomic_saturating_add(target: &AtomicU64, value: u64) {
+    let _ = target.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_add(value))
+    });
 }
 
 /// Shared state for an agent hosted by the top-level `mise run` process.
@@ -494,6 +577,10 @@ impl CacheAgent {
         };
         let (_, selector) = Self::task_manifest_selector(task)?;
         let _permit = self.remote_transfers.acquire().await?;
+        self.stats
+            .remote_manifest_lookups
+            .fetch_add(1, Ordering::Relaxed);
+        let _timer = AtomicDurationTimer::start(&self.stats.remote_manifest_lookup_duration_ns);
         let Some(remote_manifest) = remote.get_action_manifest(&selector).await? else {
             return Ok(None);
         };
@@ -538,6 +625,7 @@ impl CacheAgent {
     /// Return a snapshot of this session's cache activity.
     pub fn stats(&self) -> AgentStats {
         AgentStats {
+            session_duration_ns: 0,
             lookups: self.stats.lookups.load(Ordering::Relaxed),
             hits: self.stats.hits.load(Ordering::Relaxed),
             stores: self.stats.stores.load(Ordering::Relaxed),
@@ -547,6 +635,33 @@ impl CacheAgent {
             downloaded_bytes: self.stats.downloaded_bytes.load(Ordering::Relaxed),
             uploaded_bytes: self.stats.uploaded_bytes.load(Ordering::Relaxed),
             prefetched_actions: self.stats.prefetched_actions.load(Ordering::Relaxed),
+            remote_manifest_lookups: self.stats.remote_manifest_lookups.load(Ordering::Relaxed),
+            remote_manifest_lookup_duration_ns: self
+                .stats
+                .remote_manifest_lookup_duration_ns
+                .load(Ordering::Relaxed),
+            remote_action_lookups: self.stats.remote_action_lookups.load(Ordering::Relaxed),
+            remote_action_lookup_duration_ns: self
+                .stats
+                .remote_action_lookup_duration_ns
+                .load(Ordering::Relaxed),
+            remote_blob_requests: self.stats.remote_blob_requests.load(Ordering::Relaxed),
+            remote_blob_transfer_duration_ns: self
+                .stats
+                .remote_blob_transfer_duration_ns
+                .load(Ordering::Relaxed),
+            local_cas_write_duration_ns: self
+                .stats
+                .local_cas_write_duration_ns
+                .load(Ordering::Relaxed),
+            prefetch_runs: self.stats.prefetch_runs.load(Ordering::Relaxed),
+            prefetch_duration_ns: self.stats.prefetch_duration_ns.load(Ordering::Relaxed),
+            materialization_duration_ns: self
+                .stats
+                .materialization_duration_ns
+                .load(Ordering::Relaxed),
+            restored_output_files: self.stats.restored_output_files.load(Ordering::Relaxed),
+            restored_output_bytes: self.stats.restored_output_bytes.load(Ordering::Relaxed),
         }
     }
 
@@ -590,6 +705,8 @@ impl CacheAgent {
         if !self.remote_mode.reads() || self.remote.is_none() {
             return;
         }
+        self.stats.prefetch_runs.fetch_add(1, Ordering::Relaxed);
+        let _timer = AtomicDurationTimer::start(&self.stats.prefetch_duration_ns);
         let mut actions = BTreeMap::new();
         for prediction in predictions {
             actions
@@ -641,7 +758,7 @@ impl CacheAgent {
                 let _prefetch_permit = self.prefetch_transfers.acquire().await?;
                 let result = {
                     let _permit = self.remote_transfers.acquire().await?;
-                    remote.get_action_result(&action).await?
+                    self.get_remote_action_result(remote, &action).await?
                 };
                 let Some(result) = result else { return Ok(()) };
                 self.pending_remote_actions
@@ -754,9 +871,16 @@ impl CacheAgent {
             None => None,
         };
         let _permit = self.remote_transfers.acquire().await?;
+        self.stats
+            .remote_blob_requests
+            .fetch_add(1, Ordering::Relaxed);
+        let transfer_timer =
+            AtomicDurationTimer::start(&self.stats.remote_blob_transfer_duration_ns);
         let temporary = remote
             .get_blob_file(digest, self.remote_staging_dir.as_path())
             .await?;
+        drop(transfer_timer);
+        let _cas_timer = AtomicDurationTimer::start(&self.stats.local_cas_write_duration_ns);
         let path = self.cas.store_verified_file(digest, temporary.path())?;
         self.remember_verified_blob(digest, &path);
         self.stats.stores.fetch_add(1, Ordering::Relaxed);
@@ -777,8 +901,11 @@ impl CacheAgent {
                 self.stats.lookups.fetch_add(1, Ordering::Relaxed);
                 self.find_action_result(&action).await
             }
-            AgentRequest::RecordActionHit { action } => self.record_action_hit(&action),
-            AgentRequest::RecordActionVerification { matched } => {
+            AgentRequest::RecordActionHit { action, restore } => {
+                self.record_action_hit(&action, restore)
+            }
+            AgentRequest::RecordActionVerification { matched, restore } => {
+                self.record_materialization(restore);
                 self.stats.verifications.fetch_add(1, Ordering::Relaxed);
                 if !matched {
                     self.stats.divergences.fetch_add(1, Ordering::Relaxed);
@@ -928,7 +1055,7 @@ impl CacheAgent {
             });
         }
         let _permit = self.remote_transfers.acquire().await?;
-        match remote.get_action_result(action).await {
+        match self.get_remote_action_result(remote, action).await {
             Ok(Some(result)) => {
                 self.pending_remote_actions
                     .lock()
@@ -965,7 +1092,23 @@ impl CacheAgent {
         Ok(AgentResponse::ActionStored { path })
     }
 
-    fn record_action_hit(&self, action: &CacheDigest) -> Result<AgentResponse> {
+    async fn get_remote_action_result(
+        &self,
+        remote: &RemoteCacheClient,
+        action: &CacheDigest,
+    ) -> Result<Option<RemoteActionResult>> {
+        self.stats
+            .remote_action_lookups
+            .fetch_add(1, Ordering::Relaxed);
+        let _timer = AtomicDurationTimer::start(&self.stats.remote_action_lookup_duration_ns);
+        remote.get_action_result(action).await
+    }
+
+    fn record_action_hit(
+        &self,
+        action: &CacheDigest,
+        restore: RestoreStats,
+    ) -> Result<AgentResponse> {
         if self.actions.find(action)?.is_none() {
             let pending = self.pending_remote_actions.lock().unwrap().remove(action);
             if let Some(result) = pending {
@@ -974,8 +1117,19 @@ impl CacheAgent {
                 bail!("cannot record a hit for a missing action result");
             }
         }
+        self.record_restore(restore);
         self.stats.hits.fetch_add(1, Ordering::Relaxed);
         Ok(AgentResponse::ActionHitRecorded)
+    }
+
+    fn record_restore(&self, restore: RestoreStats) {
+        self.record_materialization(restore);
+        atomic_saturating_add(&self.stats.restored_output_files, restore.output_files);
+        atomic_saturating_add(&self.stats.restored_output_bytes, restore.output_bytes);
+    }
+
+    fn record_materialization(&self, restore: RestoreStats) {
+        atomic_saturating_add(&self.stats.materialization_duration_ns, restore.duration_ns);
     }
 
     fn find_action_prediction(
@@ -1362,7 +1516,12 @@ mod tests {
         assert!(matches!(
             agent
                 .respond(AgentRequest::RecordActionHit {
-                    action: action.clone()
+                    action: action.clone(),
+                    restore: RestoreStats {
+                        duration_ns: 7,
+                        output_files: 2,
+                        output_bytes: 11,
+                    },
                 })
                 .await,
             AgentResponse::ActionHitRecorded
@@ -1372,6 +1531,9 @@ mod tests {
             AgentStats {
                 lookups: 1,
                 hits: 1,
+                materialization_duration_ns: 7,
+                restored_output_files: 2,
+                restored_output_bytes: 11,
                 ..AgentStats::default()
             }
         );
@@ -1394,7 +1556,10 @@ mod tests {
         ));
         assert!(matches!(
             agent
-                .respond(AgentRequest::RecordActionHit { action })
+                .respond(AgentRequest::RecordActionHit {
+                    action,
+                    restore: RestoreStats::default(),
+                })
                 .await,
             AgentResponse::Error { .. }
         ));
@@ -1408,12 +1573,22 @@ mod tests {
 
         assert!(matches!(
             agent
-                .respond(AgentRequest::RecordActionVerification { matched: false })
+                .respond(AgentRequest::RecordActionVerification {
+                    matched: false,
+                    restore: RestoreStats {
+                        duration_ns: 7,
+                        output_files: 2,
+                        output_bytes: 11,
+                    },
+                })
                 .await,
             AgentResponse::ActionVerificationRecorded
         ));
         assert_eq!(agent.stats().verifications, 1);
         assert_eq!(agent.stats().divergences, 1);
+        assert_eq!(agent.stats().materialization_duration_ns, 7);
+        assert_eq!(agent.stats().restored_output_files, 0);
+        assert_eq!(agent.stats().restored_output_bytes, 0);
     }
 
     #[tokio::test]
@@ -1769,13 +1944,27 @@ mod tests {
         }
         assert!(matches!(
             reader
-                .respond(AgentRequest::RecordActionHit { action })
+                .respond(AgentRequest::RecordActionHit {
+                    action,
+                    restore: RestoreStats::default(),
+                })
                 .await,
             AgentResponse::ActionHitRecorded
         ));
         for mock in mocks {
             mock.assert_async().await;
         }
+        let stats = reader.stats();
+        assert_eq!(stats.prefetch_runs, 1);
+        assert_eq!(stats.prefetched_actions, 1);
+        assert!(stats.remote_manifest_lookups > 0);
+        assert!(stats.remote_action_lookups > 0);
+        assert!(stats.remote_blob_requests > 0);
+        assert!(stats.remote_manifest_lookup_duration_ns > 0);
+        assert!(stats.remote_action_lookup_duration_ns > 0);
+        assert!(stats.remote_blob_transfer_duration_ns > 0);
+        assert!(stats.local_cas_write_duration_ns > 0);
+        assert!(stats.prefetch_duration_ns > 0);
     }
 
     #[tokio::test]
