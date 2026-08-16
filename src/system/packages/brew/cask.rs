@@ -7036,6 +7036,8 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Mutex;
 
+    use crate::test::EnvVarGuard;
+
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct BrewPrefixGuard {
@@ -7055,41 +7057,6 @@ mod tests {
             match &self.previous {
                 Some(previous) => crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", previous),
                 None => crate::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
-            }
-        }
-    }
-
-    /// Sets or clears [`APP_DIR_ENV`] for the duration of a test. Callers must
-    /// hold `ENV_LOCK`, because the process environment is shared.
-    struct CaskAppDirGuard {
-        previous: Option<String>,
-    }
-
-    impl CaskAppDirGuard {
-        fn set(value: impl AsRef<std::ffi::OsStr>) -> Self {
-            let guard = Self::capture();
-            crate::env::set_var(APP_DIR_ENV, value);
-            guard
-        }
-
-        fn unset() -> Self {
-            let guard = Self::capture();
-            crate::env::remove_var(APP_DIR_ENV);
-            guard
-        }
-
-        fn capture() -> Self {
-            Self {
-                previous: crate::env::var(APP_DIR_ENV).ok(),
-            }
-        }
-    }
-
-    impl Drop for CaskAppDirGuard {
-        fn drop(&mut self) {
-            match &self.previous {
-                Some(previous) => crate::env::set_var(APP_DIR_ENV, previous),
-                None => crate::env::remove_var(APP_DIR_ENV),
             }
         }
     }
@@ -12200,7 +12167,8 @@ end
     #[test]
     fn app_target_path_defaults_to_applications() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::unset();
+        let mut _guard = EnvVarGuard::new();
+        _guard.remove(APP_DIR_ENV);
         assert_eq!(
             app_target_path("Firefox.app")?,
             PathBuf::from("/Applications/Firefox.app")
@@ -12213,7 +12181,8 @@ end
         // The Homebrew API commonly renders `app` targets as a bare bundle
         // name. Parsing must keep it verbatim and must not consult the override.
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::set("/tmp/should-not-be-used");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "/tmp/should-not-be-used");
         let value: Value =
             serde_json::json!({"app": ["Firefox.app", {"target": "Firefox Nightly.app"}]});
         assert_eq!(
@@ -12230,7 +12199,8 @@ end
         // A `$HOMEBREW_PREFIX`-anchored target must survive parsing so that
         // `cask_appdir`/`app_target_path` can route it into the prefix.
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::set("/tmp/should-not-be-used");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "/tmp/should-not-be-used");
         let value: Value = serde_json::json!({
             "app": ["Example.app", {"target": "$HOMEBREW_PREFIX/Applications/Example.app"}]
         });
@@ -12247,7 +12217,8 @@ end
     fn app_target_path_honours_appdir_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = CaskAppDirGuard::set(tmp.path());
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, tmp.path());
         assert_eq!(
             app_target_path("Firefox.app")?,
             tmp.path().join("Firefox.app")
@@ -12259,7 +12230,8 @@ end
     fn app_target_path_accepts_absolute_target_under_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = CaskAppDirGuard::set(tmp.path());
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, tmp.path());
         let target = tmp.path().join("Firefox.app");
         assert_eq!(app_target_path(&target.to_string_lossy())?, target,);
         Ok(())
@@ -12271,7 +12243,8 @@ end
         // override configured this must be relocated into it.
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = CaskAppDirGuard::set(tmp.path());
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, tmp.path());
         assert_eq!(
             app_target_path("/Applications/Firefox.app")?,
             tmp.path().join("Firefox.app")
@@ -12283,7 +12256,8 @@ end
     fn app_target_path_relocation_preserves_subdirectories() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = CaskAppDirGuard::set(tmp.path());
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, tmp.path());
         assert_eq!(
             app_target_path("/Applications/JetBrains/IDEA.app")?,
             tmp.path().join("JetBrains/IDEA.app")
@@ -12296,7 +12270,8 @@ end
         // Without an override, an absolute `/Applications` target is accepted
         // as-is (no relocation).
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::unset();
+        let mut _guard = EnvVarGuard::new();
+        _guard.remove(APP_DIR_ENV);
         assert_eq!(
             app_target_path("/Applications/Firefox.app")?,
             PathBuf::from("/Applications/Firefox.app")
@@ -12308,7 +12283,8 @@ end
     fn app_target_path_rejects_target_outside_override() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = CaskAppDirGuard::set(tmp.path());
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, tmp.path());
         let err = app_target_path("/Users/someone/Evil.app")
             .unwrap_err()
             .to_string();
@@ -12326,7 +12302,8 @@ end
         let tmp = tempfile::tempdir()?;
         let _prefix = BrewPrefixGuard::set(&tmp.path().join("prefix"));
         let appdir = tmp.path().join("appdir");
-        let _guard = CaskAppDirGuard::set(&appdir);
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &appdir);
         let app = AppArtifact {
             source: "Example.app".to_string(),
             target: None,
@@ -12340,7 +12317,8 @@ end
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let appdir = tmp.path().join("appdir");
-        let _guard = CaskAppDirGuard::set(&appdir);
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &appdir);
         // Only `$APPDIR`-anchored targets resolve into the appdir; a bare name
         // lands under the prefix's bin, so anchor the target to exercise the
         // override path.
@@ -12365,15 +12343,15 @@ end
         let tmp = tempfile::tempdir()?;
         let _prefix = BrewPrefixGuard::set(&tmp.path().join("prefix"));
 
-        let unset = CaskAppDirGuard::unset();
+        let mut _guard = EnvVarGuard::new();
+        _guard.remove(APP_DIR_ENV);
         let roots = allowed_appdir_roots()?;
-        drop(unset);
         let unique: BTreeSet<_> = roots.iter().collect();
         assert_eq!(unique.len(), roots.len(), "{roots:?}");
         assert!(roots.contains(&PathBuf::from("/Applications")));
 
         let appdir = tmp.path().join("appdir");
-        let _guard = CaskAppDirGuard::set(&appdir);
+        _guard.set(APP_DIR_ENV, &appdir);
         let roots = allowed_appdir_roots()?;
         let unique: BTreeSet<_> = roots.iter().collect();
         assert_eq!(unique.len(), roots.len(), "{roots:?}");
@@ -12386,7 +12364,8 @@ end
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
         let appdir = tmp.path().join("appdir");
-        let _guard = CaskAppDirGuard::set(&appdir);
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &appdir);
         assert_eq!(
             binary_target_path("$APPDIR/Foo.app/Contents/MacOS/foo", &appdir)?,
             appdir.join("Foo.app/Contents/MacOS/foo"),
@@ -12397,7 +12376,8 @@ end
     #[test]
     fn empty_appdir_override_falls_back_to_applications() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::set("");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "");
         assert_eq!(
             app_target_path("Firefox.app")?,
             PathBuf::from("/Applications/Firefox.app")
@@ -12409,7 +12389,8 @@ end
     #[test]
     fn relative_appdir_override_is_rejected() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::set("relative/apps");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "relative/apps");
         assert!(app_target_path("Firefox.app").is_err());
         Ok(())
     }
@@ -12417,7 +12398,8 @@ end
     #[test]
     fn appdir_override_with_parent_dir_is_rejected() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = CaskAppDirGuard::set("/Applications/../etc");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "/Applications/../etc");
         assert!(app_target_path("Firefox.app").is_err());
         Ok(())
     }
