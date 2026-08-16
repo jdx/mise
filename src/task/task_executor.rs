@@ -2370,14 +2370,28 @@ mod tests {
         // the machine's file association points at, where `wscript` writes to message boxes
         // instead of the pipes mise reads.
         //
-        // Iterating the list is the point. `shell_from_extension` cannot match against it
-        // directly because that function is not cfg(windows)-gated while the list is, so
-        // adding an entry there without a mapping here would otherwise go unnoticed.
-        for ext in crate::file::INTERPRETER_ONLY_EXTENSIONS {
+        // Derived from the setting rather than from a hand-kept list of interpreter-only
+        // extensions, so that adding one to the shipped default without a mapping here is caught
+        // too. `shell_from_extension` cannot do the check itself: it is not cfg(windows)-gated
+        // while `os_can_launch_extension` is.
+        let needs_interpreter: Vec<String> = Settings::get()
+            .windows_executable_extensions
+            .iter()
+            .filter(|ext| !crate::file::os_can_launch_extension(ext))
+            .cloned()
+            .collect();
+        // Guards the loop below against passing vacuously if the two lists ever stop overlapping.
+        assert!(
+            !needs_interpreter.is_empty(),
+            "expected the default windows_executable_extensions to include extensions the OS \
+             cannot launch (ps1, vbs)"
+        );
+        for ext in needs_interpreter {
             let path = PathBuf::from(format!("task.{ext}"));
             assert!(
                 shell_from_extension(&path).is_some(),
-                "{ext} is rejected as interpreter-only but has no interpreter mapping"
+                "{ext} is executable per settings but the OS cannot launch it, and it has no \
+                 interpreter mapping"
             );
         }
         // The console host specifically, and case-insensitively.
