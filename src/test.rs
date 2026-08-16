@@ -128,6 +128,17 @@ impl EnvVarGuard {
         env::set_var(&key, value);
         self
     }
+
+    /// Removes an environment variable for the duration of the guard,
+    /// restoring any previous value on drop. Useful for asserting default
+    /// behavior even when the variable happens to be set in the caller's
+    /// environment.
+    pub fn remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
+        let key = key.as_ref().to_os_string();
+        self.prev.push((key.clone(), env::var_os(&key)));
+        env::remove_var(&key);
+        self
+    }
 }
 
 #[cfg(unix)]
