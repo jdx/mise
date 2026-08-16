@@ -972,9 +972,9 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
         return false;
     }
 
-    match same_file::is_same_file(&candidate, root) {
+    match same_file::is_same_file(&candidate, &root) {
         Ok(same) => same,
-        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, root),
+        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, &root),
     }
 }
 
