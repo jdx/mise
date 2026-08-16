@@ -7,6 +7,7 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
+use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -996,8 +997,9 @@ impl Backend for AquaBackend {
                     // would be true and verify_provenance() would be skipped.
                     warn!(
                         "lock-time provenance verification failed for {}, \
-                         will be verified at install time: {e}",
-                        self.id
+                         will be verified at install time: {e}{}",
+                        self.id,
+                        Self::scratch_length_hint()
                     );
                     provenance = None;
                 }
@@ -1253,7 +1255,70 @@ impl AquaBackend {
         .await
     }
 
-    /// Verify provenance at lock time by downloading the artifact to a temp directory
+    /// A scratch directory for the lock-time artifact download, under
+    /// `MISE_CACHE_DIR/lock-provenance`.
+    ///
+    /// Deliberately not `TEMP`. A lockfile is a committed artifact, so its contents must not
+    /// depend on where a machine happens to point `TEMP` — and they did: on Windows a `TEMP`
+    /// deep enough to push this download past `MAX_PATH` made the download fail, which drops
+    /// `provenance` for the current platform from the generated lockfile.
+    ///
+    /// Deliberately not `MISE_DOWNLOADS_DIR` either, though that is where install puts the same
+    /// artifact. This copy is verified and thrown away, never reused, and `TempDir` cleanup is
+    /// best-effort: a crash or a failed delete strands a randomly named directory. At the root of
+    /// the persistent downloads directory nothing would ever collect it — not `mise cache clear`,
+    /// not the per-tool download cleanup. Under a named directory in the cache, ordinary cache
+    /// clearing sweeps it up.
+    fn lock_time_download_dir() -> Result<tempfile::TempDir> {
+        let scratch = dirs::CACHE.join("lock-provenance");
+        crate::file::create_dir_all(&scratch)?;
+        Ok(tempfile::tempdir_in(&scratch)?)
+    }
+
+    /// A note about the scratch directory's length, appended when lock-time verification fails.
+    ///
+    /// Moving the scratch out of `TEMP` removed one environment variable from the answer, not the
+    /// arithmetic: `MISE_CACHE_DIR` is configurable too, and past `MAX_PATH` the download comes back
+    /// as a bare `os error 3` while the lockfile quietly loses `provenance` for this platform.
+    /// Measured on 2026.8.6: with the cache at 200 characters `mise install` and `mise lock` both
+    /// still exit 0, so nothing else fails at that depth to suggest why.
+    ///
+    /// This deliberately annotates the *failure* rather than predicting it. Several files land in
+    /// that directory — the artifact and its `.mise-part.json` sidecar, a checksum file, a
+    /// provenance or signature file — with names taken from URLs, and a check on any one of them
+    /// passes while a later one is longer. Reporting after the fact covers all of them.
+    fn scratch_length_hint() -> String {
+        Self::scratch_length_hint_for(&dirs::CACHE.join("lock-provenance"))
+    }
+
+    /// Split out from [`Self::scratch_length_hint`] so it can be tested without depending on
+    /// wherever the machine running the tests happens to keep its cache.
+    fn scratch_length_hint_for(root: &Path) -> String {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+
+            // The scratch adds `\.tmpXXXXXX` and then a downloaded name; 64 is a modest allowance
+            // for both, so this fires while a real name could still have fitted. That is the right
+            // side to err on for a note that is only printed once something has already failed.
+            const ALLOWANCE: usize = 64;
+
+            let len = root.as_os_str().encode_wide().count();
+            if len + ALLOWANCE >= crate::file::MAX_PATH {
+                return format!(
+                    "\nthe download directory is {len} characters ({}) and Windows stops at {}, \
+                     which may be the reason — point MISE_CACHE_DIR at a shorter directory",
+                    crate::file::display_path(root),
+                    crate::file::MAX_PATH,
+                );
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = root;
+        String::new()
+    }
+
+    /// Verify provenance at lock time by downloading the artifact to a scratch directory
     /// and running the appropriate cryptographic verification. Only called for the
     /// current platform during `mise lock`.
     async fn verify_provenance_at_lock_time(
@@ -1264,7 +1329,7 @@ impl AquaBackend {
         detected: &ProvenanceType,
         expected_checksum: Option<&str>,
     ) -> Result<Option<ProvenanceType>> {
-        let tmp_dir = tempfile::tempdir()?;
+        let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
 
@@ -3432,6 +3497,41 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn an_ordinary_cache_path_gets_no_length_note() {
+        // The note is only worth printing when length is a plausible explanation, so on a normal
+        // machine it must stay out of the way. On unix it never appears at all.
+        let root = PathBuf::from(r"C:\Users\u\AppData\Local\Temp\mise\lock-provenance");
+        assert_eq!(AquaBackend::scratch_length_hint_for(&root), "");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_deep_cache_path_says_which_variable_to_change() {
+        // Measured: at a 200-character cache, `mise install` and `mise lock` both still exit 0, so
+        // a failure here comes with no other signal about why.
+        let root = PathBuf::from(format!(r"C:\{}", "d".repeat(200)));
+        let hint = AquaBackend::scratch_length_hint_for(&root);
+        assert!(hint.contains("MISE_CACHE_DIR"), "{hint}");
+        assert!(hint.contains("260"), "{hint}");
+    }
+
+    #[test]
+    fn the_lock_time_download_lands_in_a_sweepable_cache_directory() {
+        // Two things at once. A lockfile is a committed artifact, so what `mise lock` writes must
+        // not depend on where the machine points TEMP — and the scratch has to sit somewhere
+        // ordinary cache clearing reaches, because `TempDir` cleanup is best-effort and an orphan
+        // under the persistent downloads directory would never be collected.
+        let expected = dirs::CACHE.join("lock-provenance");
+        let dir = AquaBackend::lock_time_download_dir().unwrap();
+        assert!(
+            dir.path().starts_with(&expected),
+            "expected {} to be under {}",
+            dir.path().display(),
+            expected.display()
+        );
     }
 
     #[test]
