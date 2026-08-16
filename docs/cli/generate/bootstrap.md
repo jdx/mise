@@ -31,10 +31,24 @@ Directory to put localized data into
 
 **Default:** `.mise`
 
+### `--windows`
+
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `--write`, since stdout cannot
+carry two files.
+
 Examples:
 
 ```
-mise generate bootstrap >./bin/mise
-chmod +x ./bin/mise
-./bin/mise install – automatically downloads mise to .mise if not already installed
+$ mise generate bootstrap --write ./bin/mise
+$ ./bin/mise install                                    # downloads mise to .mise if not already installed
+
+# add a launcher for contributors who clone the project on Windows
+$ mise generate bootstrap --write ./bin/mise --windows  # also writes bin/mise.cmd
+$ .\bin\mise.cmd install
 ```
