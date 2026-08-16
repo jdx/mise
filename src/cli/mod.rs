@@ -588,6 +588,21 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
         if !in_task_args {
             // Looking for task name - skip any mise flags
             if arg.starts_with('-') {
+                // clap treats attached values for short options as positional
+                // values when the positional allows hyphens. Split them before
+                // parsing so `-j4`, `-Cdir`, and similar forms remain options.
+                let attached_short_value = arg
+                    .get(..2)
+                    .filter(|_| arg.len() > 2)
+                    .filter(|flag| flags_with_values.iter().any(|f| f == flag));
+
+                if let Some(flag) = attached_short_value {
+                    result.push(flag.to_string());
+                    result.push(arg[flag.len()..].to_string());
+                    i += 1;
+                    continue;
+                }
+
                 // It's a flag - keep it as-is for mise to parse
                 result.push(arg.clone());
 
@@ -1154,6 +1169,27 @@ mod tests {
         assert_eq!(
             unescape_task_args(&escaped[separator_idx + 1..]),
             vec!["--".to_string(), "--help".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_escape_task_args_splits_attached_short_option_values_before_task() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "-j1".to_string(),
+            "-Ctmp".to_string(),
+            "-oprefix".to_string(),
+            "atask".to_string(),
+        ];
+
+        assert_eq!(
+            escape_task_args(&cmd, &args),
+            [
+                "mise", "run", "-j", "1", "-C", "tmp", "-o", "prefix", "atask"
+            ]
+            .map(str::to_string)
         );
     }
 
