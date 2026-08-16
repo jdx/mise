@@ -107,14 +107,6 @@ description = "Use cosign to verify aqua tool signatures."
 env = "MISE_AQUA_COSIGN"
 type = "Bool"
 
-[aqua.cosign_extra_args]
-description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
-env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
-optional = true
-parse_env = "list_by_comma"
-rust_type = "Vec<String>"
-type = "ListString"
-
 [aqua.github_attestations]
 default = true
 description = "Enable GitHub Artifact Attestations verification for aqua tools."
