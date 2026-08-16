@@ -295,10 +295,57 @@ pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
     matcher.matched(path, false).is_whitelist()
 }
 
+/// Expands a trailing `**` to `**/*` so enumeration reaches files.
+///
+/// The `glob` crate matches a trailing `**` against directories only, while the
+/// `ignore`/`globset` matcher built from the same entry matches the files
+/// underneath it per gitignore semantics. Enumeration therefore never offers
+/// the files the matcher would have accepted, and because everything it does
+/// offer matches, nothing looks rejected and no diagnostic fires.
+///
+/// A `**` in the interior of a pattern (`src/**/foo.rs`) already spans
+/// directories correctly and is left alone.
+///
+/// Separators are tested with [`std::path::is_separator`], matching how `glob`
+/// itself decides whether a `**` forms its own path component. `\` is a
+/// separator on Windows, so `src\**` carries the same defect there, while on
+/// unix that string is an escape and `glob` rejects it outright.
+fn expand_trailing_globstar(pattern: &str) -> String {
+    let trailing_globstar = pattern == "**"
+        || pattern.strip_suffix("**").is_some_and(|head| {
+            head.chars()
+                .next_back()
+                .is_some_and(std::path::is_separator)
+        });
+    if trailing_globstar {
+        format!("{pattern}/*")
+    } else {
+        pattern.to_string()
+    }
+}
+
+/// Brace-expands `pattern` for file enumeration, expanding a trailing `**` in
+/// each alternative so enumeration reaches files.
+///
+/// Enumeration callers use this rather than [`expand_glob_braces`] directly,
+/// because the expansion has to happen per alternative: `{src/**,dist}` carries
+/// its `**` inside the braces, where a check on the whole pattern cannot see
+/// it. Matcher construction deliberately keeps calling [`expand_glob_braces`],
+/// since `globset` already matches the files under a trailing `**` and
+/// rewriting there would change what the matcher selects rather than what
+/// enumeration offers.
+pub(crate) fn expand_enumeration_patterns(pattern: &str) -> Result<Vec<String>> {
+    Ok(expand_glob_braces(pattern)?
+        .into_iter()
+        .map(|alternative| expand_trailing_globstar(&alternative))
+        .collect())
+}
+
 /// Returns the include-side glob patterns from `sources`, suitable for file
-/// enumeration via `glob`. `!`-prefixed entries are dropped (they only
-/// constrain matching, not enumeration); `\!`-prefixed entries have the
-/// escape removed so they can be globbed as literal `!`-prefixed paths.
+/// enumeration via [`expand_enumeration_patterns`]. `!`-prefixed entries are
+/// dropped (they only constrain matching, not enumeration); `\!`-prefixed
+/// entries have the escape removed so they can be globbed as literal
+/// `!`-prefixed paths.
 pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
     sources
         .iter()
@@ -660,7 +707,7 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
         // Warn if any explicitly declared output was not generated.
         for output in output_glob_patterns(&task.outputs.paths(task, &root)) {
             let output_exists = if is_glob_pattern(&output) {
-                expand_glob_braces(&output)
+                expand_enumeration_patterns(&output)
                     .map(|patterns| {
                         patterns.into_iter().any(|pattern| {
                             let pattern = resolve_task_path(&root, pattern);
@@ -877,7 +924,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
 
     for pattern_str in glob_pats {
         let mut glob_matched = false;
-        for expanded in expand_glob_braces(pattern_str)? {
+        for expanded in expand_enumeration_patterns(pattern_str)? {
             let full = resolve_task_path(root, expanded);
             for entry in glob(full.to_str().unwrap_or_default())? {
                 // Propagate glob resolution errors (OS errors during directory
@@ -938,7 +985,7 @@ fn get_file_metadatas(
 
     let mut metadatas = BTreeMap::new();
     for pattern in patterns {
-        for expanded in expand_glob_braces(pattern)? {
+        for expanded in expand_enumeration_patterns(pattern)? {
             let pattern = resolve_task_path(root, expanded);
             let files = glob(pattern.to_str().unwrap())?;
             for file in files.flatten() {
@@ -1102,7 +1149,7 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
         let is_glob = is_glob_pattern(&pattern);
         let candidates = if is_glob {
             let mut candidates = Vec::new();
-            for expanded in expand_glob_braces(&pattern)? {
+            for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
                 candidates.extend(
                     glob(expanded.to_str().unwrap_or_default())?.collect::<Result<Vec<_>, _>>()?,
@@ -1253,6 +1300,62 @@ mod tests {
             ]),
             ["dist", "!important"]
         );
+    }
+
+    /// A trailing `**` must enumerate files. The `glob` crate matches it against
+    /// directories only, so without the expansion `src/**` yields subdirectories
+    /// and no files at all — a `sources` entry that contributes nothing to
+    /// freshness and an `outputs` entry that archives nothing.
+    #[test]
+    fn trailing_globstar_expands_to_reach_files() {
+        assert_eq!(expand_trailing_globstar("src/**"), "src/**/*");
+        assert_eq!(expand_trailing_globstar("**"), "**/*");
+        assert_eq!(expand_enumeration_patterns("src/**").unwrap(), ["src/**/*"]);
+    }
+
+    /// The expansion runs on each brace alternative. `{src/**,dist/**}` ends in
+    /// `}`, so a check against the whole pattern never sees the `**` and every
+    /// alternative would go on enumerating directories only.
+    #[test]
+    fn trailing_globstar_expands_inside_brace_alternatives() {
+        assert_eq!(
+            expand_enumeration_patterns("{src,dist}/**").unwrap(),
+            ["src/**/*", "dist/**/*"]
+        );
+        assert_eq!(
+            expand_enumeration_patterns("{src/**,dist/**,docs/*.md}").unwrap(),
+            ["src/**/*", "dist/**/*", "docs/*.md"]
+        );
+    }
+
+    /// `\` is a path separator on Windows, so `src\**` is a trailing globstar
+    /// there and carries the same defect. On unix the same string is an escape
+    /// that `glob` rejects outright, so it must be left alone.
+    #[test]
+    fn trailing_globstar_follows_platform_separators() {
+        if cfg!(windows) {
+            assert_eq!(expand_trailing_globstar(r"src\**"), r"src\**/*");
+        } else {
+            assert_eq!(expand_trailing_globstar(r"src\**"), r"src\**");
+        }
+    }
+
+    /// Only a *trailing* `**` is wrong. In the interior it already spans
+    /// directories correctly, and rewriting it would change what the pattern
+    /// selects rather than fixing what it enumerates.
+    #[test]
+    fn interior_globstar_and_other_patterns_are_untouched() {
+        for pattern in [
+            "src/**/foo.rs",
+            "src/**/*.ts",
+            "src/*",
+            "dist",
+            "src/**/*",
+            "**/*",
+            "a**",
+        ] {
+            assert_eq!(expand_trailing_globstar(pattern), pattern);
+        }
     }
 
     #[test]

@@ -197,7 +197,7 @@ impl TaskScriptParser {
                     }
 
                     let expanded_patterns =
-                        crate::task::task_source_checker::expand_glob_braces(pattern);
+                        crate::task::task_source_checker::expand_enumeration_patterns(pattern);
                     match expanded_patterns {
                         Err(error) => {
                             warn!(
