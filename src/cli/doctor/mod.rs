@@ -497,12 +497,7 @@ impl Doctor {
                 Ok(statuses) => {
                     let missing = statuses
                         .iter()
-                        .filter(|s| {
-                            !matches!(
-                                s.state,
-                                crate::system::packages::PackageState::Installed { .. }
-                            ) && !s.state.is_unavailable()
-                        })
+                        .filter(|s| !s.state.is_installed() && !s.state.is_unavailable())
                         .count();
                     total_missing += missing;
                     map.insert(
@@ -728,12 +723,7 @@ impl Doctor {
                 Ok(statuses) => {
                     let missing = statuses
                         .iter()
-                        .filter(|s| {
-                            !matches!(
-                                s.state,
-                                crate::system::packages::PackageState::Installed { .. }
-                            ) && !s.state.is_unavailable()
-                        })
+                        .filter(|s| !s.state.is_installed() && !s.state.is_unavailable())
                         .count();
                     lines.push(format!(
                         "{name}: {} requested, {missing} missing",

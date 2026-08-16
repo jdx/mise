@@ -2788,8 +2788,10 @@ impl BootstrapStatus {
             let statuses = mp.manager.installed(&mp.requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
+                let auto_updates = s.state.auto_updates();
                 let (installed_version, state, reason, missing) = match &s.state {
-                    PackageState::Installed { version } => {
+                    PackageState::Installed { version }
+                    | PackageState::InstalledAutoUpdates { version } => {
                         (version.clone(), "installed", None::<&str>, false)
                     }
                     PackageState::Missing => ("".to_string(), "missing", None, true),
@@ -2808,8 +2810,14 @@ impl BootstrapStatus {
                     "packages",
                     format!("{name}:{}", s.request),
                     installed_version.clone(),
-                    reason
-                        .map_or_else(|| state.to_string(), |reason| format!("{state} ({reason})")),
+                    if auto_updates {
+                        format!("{state} (auto-updates)")
+                    } else {
+                        reason.map_or_else(
+                            || state.to_string(),
+                            |reason| format!("{state} ({reason})"),
+                        )
+                    },
                     missing,
                 );
                 let mut package = json!({
@@ -2820,6 +2828,9 @@ impl BootstrapStatus {
                 });
                 if let Some(reason) = reason {
                     package["reason"] = json!(reason);
+                }
+                if auto_updates {
+                    package["auto_updates"] = json!(true);
                 }
                 json_pkgs.push(package);
             }

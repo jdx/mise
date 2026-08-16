@@ -54,8 +54,10 @@ impl SystemStatus {
             let statuses = mp.manager.installed(&mp.requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
+                let auto_updates = s.state.auto_updates();
                 let (installed_version, state, reason) = match &s.state {
-                    PackageState::Installed { version } => {
+                    PackageState::Installed { version }
+                    | PackageState::InstalledAutoUpdates { version } => {
                         (version.clone(), "installed", None::<&str>)
                     }
                     PackageState::Missing => {
@@ -85,16 +87,23 @@ impl SystemStatus {
                     if let Some(reason) = reason {
                         package["reason"] = json!(reason);
                     }
+                    if auto_updates {
+                        package["auto_updates"] = json!(true);
+                    }
                     json_pkgs.push(package);
                 } else {
                     rows.push(vec![
                         name.to_string(),
                         s.request.to_string(),
                         installed_version,
-                        reason.map_or_else(
-                            || state.to_string(),
-                            |reason| format!("{state} ({reason})"),
-                        ),
+                        if auto_updates {
+                            format!("{state} (auto-updates)")
+                        } else {
+                            reason.map_or_else(
+                                || state.to_string(),
+                                |reason| format!("{state} ({reason})"),
+                            )
+                        },
                     ]);
                 }
             }

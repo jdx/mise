@@ -89,6 +89,44 @@ relocated into the override directory, preserving any subdirectories the cask
 requests; targets that a cask anchors under `$HOMEBREW_PREFIX/Applications` are
 left in the Homebrew prefix and are never relocated. This mirrors Homebrew's own
 `--appdir` install option.
+To adopt an app that is already installed at the cask's destination, use the
+table form with `adopt = true`:
+
+```toml
+[bootstrap.packages]
+"brew-cask:textmate" = { version = "latest", adopt = true }
+```
+
+To enable adoption for all configured casks, set the Homebrew bootstrap
+default. An individual cask can opt out with `adopt = false`:
+
+```toml
+[bootstrap.brew]
+adopt = true
+
+[bootstrap.packages]
+"brew-cask:textmate" = "latest"
+"brew-cask:replace-me" = { adopt = false }
+```
+
+As with Homebrew's `brew install --cask --adopt`, mise downloads and verifies
+the current cask artifact, then adopts the existing app only when its content
+is identical. A different existing app is left untouched and the install
+fails, except for casks declaring `auto_updates: true`: matching Homebrew,
+those adopt the existing app as-is because it may already have updated itself.
+Adopted apps are tracked by the mise receipt without keeping a duplicate app
+bundle in Caskroom.
+
+Casks declaring `auto_updates: true` in their Homebrew metadata are installed
+at the current version and then left to update themselves. mise does not expose
+an `auto_updates` override: the cask definition remains authoritative. These
+self-updating apps are also tracked by receipt without a duplicate Caskroom app
+bundle, and ordinary mise upgrades skip them.
+
+`mise bootstrap status` marks these entries as `installed (auto-updates)`.
+The `Current` column is the version recorded in the cask receipt; the live app
+may have updated itself to a different version. JSON status keeps the stable
+`"state": "installed"` value and adds `"auto_updates": true`.
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
@@ -237,7 +275,9 @@ This command is mise's declarative cleanup for bootstrap packages, similar to
 config model to direct cask artifacts, with a deliberately narrower ownership
 boundary. A cask is removed only when its install-time `.mise-cask.toml`
 receipt explicitly marks it safe to prune and every recorded target still has
-the exact content fingerprint mise recorded after installation. The command
+the exact content fingerprint mise recorded after installation. Self-updating
+apps are expected to change and are validated by their recorded destination
+instead. The command
 removes those targets and the cask's Caskroom entry; `--dry-run` previews the
 plan and `--yes` skips confirmation.
 

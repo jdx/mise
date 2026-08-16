@@ -113,9 +113,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         let mut targets: Vec<_> = statuses
             .iter()
             .filter(|s| match action {
-                Action::Install => {
-                    !matches!(s.state, PackageState::Installed { .. }) && !s.state.is_unavailable()
-                }
+                Action::Install => !s.state.is_installed() && !s.state.is_unavailable(),
                 // upgrade acts on whatever is present (the manager no-ops
                 // already-current packages); missing packages are skipped
                 // below with a pointer at `install`
@@ -153,7 +151,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         }
         let installed = statuses
             .iter()
-            .filter(|status| matches!(status.state, PackageState::Installed { .. }))
+            .filter(|status| status.state.is_installed())
             .count();
         if action == Action::Install && installed > 0 {
             info!("{name}: {installed} package(s) already installed");
@@ -175,7 +173,9 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         }
         match action {
             Action::Install => {
-                mp.manager.install(&targets, &opts).await?;
+                mp.manager
+                    .install_with_options(&targets, &opts, &mp.options)
+                    .await?;
                 if !d.dry_run {
                     info!("{name}: installed {}", list.join(", "));
                 }
@@ -187,6 +187,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                     .iter()
                     .filter_map(|s| match &s.state {
                         PackageState::Installed { version }
+                        | PackageState::InstalledAutoUpdates { version }
                         | PackageState::NeedsRepair { installed: version }
                         | PackageState::VersionMismatch { installed: version } => {
                             Some((s.request.name.clone(), version.clone()))
@@ -203,6 +204,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                         .iter()
                         .filter_map(|s| match &s.state {
                             PackageState::Installed { version }
+                            | PackageState::InstalledAutoUpdates { version }
                             | PackageState::NeedsRepair { installed: version }
                             | PackageState::VersionMismatch { installed: version } => {
                                 let old = prior.get(&s.request.name)?;

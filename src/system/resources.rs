@@ -647,7 +647,7 @@ fn package_resource_state(
 ) -> (String, ResourceAction) {
     let unsupported_pin = request.version.is_some() && !supports_version_pins;
     match state {
-        PackageState::Installed { version } => {
+        PackageState::Installed { version } | PackageState::InstalledAutoUpdates { version } => {
             (format!("installed ({version})"), ResourceAction::Noop)
         }
         PackageState::Missing if unsupported_pin => (

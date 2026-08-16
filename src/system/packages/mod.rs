@@ -8,6 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::result::Result;
+use crate::system::ManagerPackageOptions;
 
 pub mod apk;
 pub mod apt;
@@ -50,6 +51,12 @@ pub enum PackageState {
     Installed {
         version: String,
     },
+    /// Installed cask whose upstream definition declares `auto_updates`.
+    /// The version is the cask receipt version, not necessarily the live app
+    /// bundle version after it has updated itself.
+    InstalledAutoUpdates {
+        version: String,
+    },
     Missing,
     /// installed, but a manager-owned record needs local repair
     #[cfg_attr(windows, allow(dead_code))]
@@ -69,6 +76,17 @@ pub enum PackageState {
 }
 
 impl PackageState {
+    pub fn is_installed(&self) -> bool {
+        matches!(
+            self,
+            Self::Installed { .. } | Self::InstalledAutoUpdates { .. }
+        )
+    }
+
+    pub fn auto_updates(&self) -> bool {
+        matches!(self, Self::InstalledAutoUpdates { .. })
+    }
+
     #[cfg(unix)]
     pub fn unavailable(reason: impl Into<String>) -> Self {
         Self::Unavailable {
@@ -138,6 +156,17 @@ pub trait SystemPackageManager: Send + Sync {
 
     /// Install the given packages (already filtered to missing, mismatched, or repairable).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
+
+    /// Install with manager-specific declarative options. Managers without
+    /// additional package options use the ordinary install path unchanged.
+    async fn install_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.install(pkgs, opts).await
+    }
 
     /// Upgrade the given packages (already filtered to installed ones).
     /// Defaults to `install` — for brew that is exactly right (pouring a
