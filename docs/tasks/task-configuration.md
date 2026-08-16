@@ -1338,49 +1338,14 @@ mise run deploy secret123
 
 ## Vars
 
-Vars are values that can be shared between TOML tasks and other Tera-rendered config like tool
-versions/options. They are similar to environment variables, but they are not exported to task
-processes. Reference them with <span v-pre>`{{vars.NAME}}`</span>.
-
-```mise-toml
-[vars]
-e2e_args = '--headless'
-
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}}'
-```
-
-Vars can also use value-producing directive forms from `[env]`:
-
-```mise-toml
-[vars]
-e2e_args = { default = "--headless" }
-api_token = { required = "Set api_token in mise.local.toml" }
-secret_arg = { value = "--token=abc123", redact = true }
-_.file = ".env"
-```
-
-The `default` form reads from a process environment variable with the same name when it is set and
-non-empty; values from `[env]` are not used for this lookup. The `required` form must be satisfied by
-the process environment or by a later config file like `mise.local.toml`. Values marked with
-`redact = true` are hidden from task output. [Secrets](/environments/secrets/) are also supported as
-vars.
-
-Tasks can also define task-local vars that override config vars for that task:
+Top-level [configuration vars](/configuration/vars) are available when rendering TOML tasks. Tasks
+can also define task-local vars that override config vars for that task:
 
 ```mise-toml
 [tasks.test]
 vars = { e2e_args = "--headed" }
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
-
-Like most configuration in mise, vars can be defined across several files. So for example, you could
-put some vars in your global mise config `~/.config/mise/config.toml`, use them in a task at
-`~/src/work/myproject/mise.toml`. You can also override those vars in "later" config files such
-as `~/src/work/myproject/mise.local.toml` and they will be used inside tasks of any config file.
-
-As of this writing vars are only supported in TOML tasks. I want to add support for file tasks, but
-I don't want to turn all file tasks into tera templates just for this feature.
 
 ## `[task_config]` options
 
@@ -1657,7 +1622,7 @@ You can also specify these as a glob pattern, e.g.: `redactions = ["SECRETS_*"]`
 
 ## `[vars]` options
 
-See [Vars](#vars).
+See [Variables](/configuration/vars).
 
 ## Task Configuration Settings
 
