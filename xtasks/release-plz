@@ -374,16 +374,21 @@ if [[ $cur_version != "$latest_version" ]]; then
 		cargo publish --allow-dirty -p mise
 	fi
 
-	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
+	mise_tag="v$cur_version"
+	changelog="$(git cliff --tag "$mise_tag" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
-		git ls-remote --exit-code --tags origin "v$cur_version" >/dev/null 2>&1; then
-		echo "Tag v$cur_version already exists, skipping tag creation"
+	if git ls-remote --exit-code --tags origin "$mise_tag" >/dev/null 2>&1; then
+		echo "Tag $mise_tag already exists, skipping tag creation"
 	else
-		git tag "v$cur_version" -s -m "$changelog"
+		if ! git rev-parse -q --verify "refs/tags/$mise_tag" >/dev/null; then
+			git tag "$mise_tag" -s -m "$changelog"
+		fi
+		git push origin "refs/tags/$mise_tag"
 	fi
 
-	# Push all tags (mise + any subcrate tags)
+	# GitHub does not create push events when more than three tags are pushed at
+	# once. Push the mise tag separately so release and Docker workflows always
+	# receive the event, then publish any subcrate tags in bulk.
 	git push --tags
 	exit 0
 fi
