@@ -1274,6 +1274,37 @@ impl AquaBackend {
         Ok(tempfile::tempdir_in(&scratch)?)
     }
 
+    /// Refuse a scratch path Windows cannot hold, before downloading into it.
+    ///
+    /// Moving the scratch out of `TEMP` removed one environment variable from the answer, not the
+    /// arithmetic: `MISE_CACHE_DIR` is configurable too, and the longest path here is not the
+    /// artifact but the download's own sidecar, `.{filename}.mise-part.json`
+    /// ([`crate::http`]'s `PartialDownload`). Left to fail on its own it comes back as `os error 3`,
+    /// the lockfile quietly loses `provenance` for this platform, and — measured — nothing else in
+    /// mise fails at that depth to hint at why. Say it instead, and name the variable to change.
+    #[cfg(windows)]
+    fn ensure_scratch_path_fits(artifact_path: &Path, filename: &str) -> Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+
+        // Counts UTF-16 code units and includes the terminating NUL, so exactly MAX_PATH is already
+        // one too many. #12062 landed the same constant privately in `cli::self_update` and #12058
+        // moves it to `file`; whichever of that and this lands second should use the shared one.
+        const MAX_PATH: usize = 260;
+        // `.` + filename + `.mise-part` + `.json`, written alongside the artifact.
+        const SIDECAR_OVERHEAD: usize = 1 + ".mise-part".len() + ".json".len();
+
+        let sidecar = artifact_path.as_os_str().encode_wide().count() + SIDECAR_OVERHEAD;
+        if sidecar < MAX_PATH {
+            return Ok(());
+        }
+        bail!(
+            "cannot verify provenance for {filename}: the download needs {sidecar} characters under \
+             {}, past Windows' {MAX_PATH}-character limit. Point MISE_CACHE_DIR at a shorter \
+             directory.",
+            display_path(dirs::CACHE.join("lock-provenance")),
+        );
+    }
+
     /// Verify provenance at lock time by downloading the artifact to a scratch directory
     /// and running the appropriate cryptographic verification. Only called for the
     /// current platform during `mise lock`.
@@ -1288,6 +1319,8 @@ impl AquaBackend {
         let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
+        #[cfg(windows)]
+        Self::ensure_scratch_path_fits(&artifact_path, &filename)?;
 
         info!(
             "downloading artifact for lock-time provenance verification: {}",
@@ -3453,6 +3486,28 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_scratch_path_that_windows_can_hold_is_allowed() {
+        let path = PathBuf::from(r"C:\c\lock-provenance\.tmpAbCdEf\jq-windows-amd64.exe");
+        assert!(AquaBackend::ensure_scratch_path_fits(&path, "jq-windows-amd64.exe").is_ok());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn one_that_windows_cannot_says_which_variable_to_change() {
+        // The artifact itself fits; the sidecar the downloader writes beside it does not, which is
+        // the whole point — left alone this came back as a bare `os error 3` and the lockfile
+        // quietly lost `provenance` for this platform.
+        let artifact = format!(r"C:\{}\jq-windows-amd64.exe", "d".repeat(220));
+        let err =
+            AquaBackend::ensure_scratch_path_fits(Path::new(&artifact), "jq-windows-amd64.exe")
+                .expect_err("the sidecar is past MAX_PATH");
+        let msg = err.to_string();
+        assert!(msg.contains("MISE_CACHE_DIR"), "{msg}");
+        assert!(msg.contains("260"), "{msg}");
     }
 
     #[test]
