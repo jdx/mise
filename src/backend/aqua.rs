@@ -7,6 +7,7 @@ use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
+use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -1253,7 +1254,22 @@ impl AquaBackend {
         .await
     }
 
-    /// Verify provenance at lock time by downloading the artifact to a temp directory
+    /// A scratch directory for the lock-time artifact download, inside `MISE_DOWNLOADS_DIR`.
+    ///
+    /// Deliberately not `TEMP`. A lockfile is a committed artifact, so its contents must not
+    /// depend on where a machine happens to point `TEMP` — and they did: on Windows a `TEMP`
+    /// deep enough to push this download past `MAX_PATH` made the download fail, which drops
+    /// `provenance` for the current platform from the generated lockfile. `MISE_DOWNLOADS_DIR`
+    /// is also where the same artifact lands at install time, so this only makes the two
+    /// halves of the same job agree. The directory is still removed when the `TempDir` is
+    /// dropped: this changes where the scratch lives, not how long.
+    fn lock_time_download_dir() -> Result<tempfile::TempDir> {
+        let downloads = *dirs::DOWNLOADS;
+        crate::file::create_dir_all(downloads)?;
+        Ok(tempfile::tempdir_in(downloads)?)
+    }
+
+    /// Verify provenance at lock time by downloading the artifact to a scratch directory
     /// and running the appropriate cryptographic verification. Only called for the
     /// current platform during `mise lock`.
     async fn verify_provenance_at_lock_time(
@@ -1264,7 +1280,7 @@ impl AquaBackend {
         detected: &ProvenanceType,
         expected_checksum: Option<&str>,
     ) -> Result<Option<ProvenanceType>> {
-        let tmp_dir = tempfile::tempdir()?;
+        let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
 
@@ -3432,6 +3448,20 @@ mod tests {
             default: None,
             required,
         }
+    }
+
+    #[test]
+    fn the_lock_time_download_lands_under_the_downloads_dir() {
+        // A lockfile is a committed artifact, so what `mise lock` writes must not depend on
+        // where the machine points TEMP. Keeping the download under MISE_DOWNLOADS_DIR — the
+        // same place install puts it — is what makes that true.
+        let dir = AquaBackend::lock_time_download_dir().unwrap();
+        assert!(
+            dir.path().starts_with(*dirs::DOWNLOADS),
+            "expected {} to be under {}",
+            dir.path().display(),
+            dirs::DOWNLOADS.display()
+        );
     }
 
     #[test]
