@@ -92,6 +92,10 @@ fn tera_err(message: impl ToString) -> tera::Error {
     tera::Error::message(message)
 }
 
+fn posix_shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 fn use_tera_v1() -> bool {
     Settings::try_get().is_ok_and(|settings| settings.tera_v1)
 }
@@ -499,9 +503,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera.register_filter(
         "quote",
         move |s: &str, _: Kwargs, _: &State| -> TeraResult<Value> {
-            let result = format!("'{}'", s.replace("'", "\\'"));
-
-            Ok(Value::from(result))
+            Ok(Value::from(posix_shell_quote(s)))
         },
     );
     tera.register_filter("as_str", move |value: Value, _: Kwargs, _: &State| {
@@ -1085,10 +1087,7 @@ static TERA1: Lazy<tera1::Tera> = Lazy::new(|| {
     tera.register_filter(
         "quote",
         move |value: &JsonValue, _: &HashMap<String, JsonValue>| {
-            Ok(json!(format!(
-                "'{}'",
-                json_path(value)?.replace("'", "\\'")
-            )))
+            Ok(json!(posix_shell_quote(json_path(value)?)))
         },
     );
     tera.register_filter("kebabcase", tera1_string_filter(|s| s.to_kebab_case()));
@@ -1843,8 +1842,29 @@ mod tests {
     #[tokio::test]
     async fn test_quote() {
         let _config = Config::get().await.unwrap();
-        let s = render("{{ \"quoted'str\" | quote }}");
-        assert_eq!(s, "'quoted\\'str'");
+        let template = "{{ \"quoted'str\" | quote }}";
+        let expected = "'quoted'\\''str'";
+        assert_eq!(render_v2(template), expected);
+        assert_eq!(render_v1(template), expected);
+    }
+
+    #[test]
+    fn test_posix_shell_quote_round_trip() {
+        for value in [
+            "",
+            "plain",
+            "with spaces",
+            "quoted'str",
+            "$HOME",
+            r"a\\backslash",
+            "multiple\nlines",
+        ] {
+            let quoted = posix_shell_quote(value);
+            assert_eq!(shell_words::split(&quoted).unwrap(), [value]);
+        }
+
+        assert_eq!(posix_shell_quote("plain"), "'plain'");
+        assert_eq!(posix_shell_quote("quoted'str"), "'quoted'\\''str'");
     }
 
     #[tokio::test]
