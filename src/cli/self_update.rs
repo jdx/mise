@@ -9,6 +9,8 @@ use self_update::{Status, cargo_crate_version};
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
 use crate::env;
+#[cfg(windows)]
+use crate::file::MAX_PATH;
 use std::collections::BTreeMap;
 use std::fs;
 #[cfg(target_os = "macos")]
@@ -102,20 +104,15 @@ pub struct SelfUpdate {
     no_plugins: bool,
 }
 
-/// Windows refuses to *start* an executable whose path reaches this length: the limit counts
-/// UTF-16 code units and includes the terminating NUL, so a path of exactly MAX_PATH is
-/// already one too many. Unlike the file APIs, `CreateProcess` has no `\\?\` escape hatch.
-#[cfg(windows)]
-const MAX_PATH: usize = 260;
-
 /// Whether replacing the running binary would destroy the install with `TEMP` set to `tmp`.
 ///
 /// `self-replace` renames the running mise.exe out of its install directory *first*, then
 /// launches a copy of it from `TEMP` to finish the swap. When that copy's path exceeds
-/// MAX_PATH the launch fails, and nothing puts mise back: the install directory is left
-/// empty and the binary is stranded in `TEMP` under a generated name. The crate declares
-/// executable paths that long out of scope (self-replace-1.5.0/src/windows.rs, in
-/// `self_delete_on_init`), so the only place to stop this is before it starts.
+/// `MAX_PATH` the launch fails — `CreateProcess` has no `\\?\` escape hatch the way the file
+/// APIs do — and nothing puts mise back: the install directory is left empty and the binary is
+/// stranded in `TEMP` under a generated name. The crate declares executable paths that long out
+/// of scope (self-replace-1.5.0/src/windows.rs, in `self_delete_on_init`), so the only place to
+/// stop this is before it starts.
 #[cfg(windows)]
 fn temp_dir_breaks_self_replace(tmp: &std::path::Path, exe_stem: Option<&str>) -> bool {
     helper_path_len(tmp, exe_stem) >= MAX_PATH

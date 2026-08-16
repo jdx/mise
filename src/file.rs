@@ -62,6 +62,85 @@ pub fn append<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()
         .wrap_err_with(|| format!("failed append: {}", display_path(path)))
 }
 
+/// Windows' `MAX_PATH`. Not a limit mise imposes — the point below is that some paths hit it long
+/// before others do. It counts UTF-16 code units and includes the terminating NUL, so a path of
+/// exactly `MAX_PATH` is already one too many.
+///
+/// Shared with [`crate::cli::self_update`], which needs the same number for the opposite reason:
+/// the file APIs can be escaped past this with a `\\?\` prefix, which is why `std::fs` copes with
+/// long paths, but `CreateProcess` has no such escape hatch and simply will not start an
+/// executable whose path reaches it.
+#[cfg(windows)]
+pub(crate) const MAX_PATH: usize = 260;
+
+/// Why a Windows file operation on `path` probably failed, when the error says something a reader
+/// cannot act on.
+///
+/// `None` on unix, always: deleting a running binary succeeds there, and `MAX_PATH` does not
+/// exist. Splitting the remedy by platform rather than the wording follows
+/// [`make_executable_hint`], where `chmod +x` was not merely unavailable on Windows but the wrong
+/// instruction.
+///
+/// The error codes are the ones already spoken elsewhere in this file — see [`do_rename`] and
+/// `should_retry_atomic_persist`, which retry on the same pair. This answers a different question
+/// about them: not whether to try again, but what to tell the user when trying again will not help.
+#[cfg(windows)]
+fn windows_io_hint(path: &Path, err: &std::io::Error) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    // ERROR_ACCESS_DENIED (5) / ERROR_SHARING_VIOLATION (32). Unlike the transient locks that
+    // `do_rename` retries through, a file held open by a running process stays held, so this is a
+    // message rather than a retry.
+    let in_use = err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32));
+    if in_use {
+        return Some(
+            "A file under it is in use. A program started from this directory — the tool itself, \
+             an editor, or a shell sitting in it — is probably still running."
+                .to_string(),
+        );
+    }
+    // Only the errors Windows actually reports for an over-long path. Without this the branch
+    // fires on anything that happens to occur deep in a tree -- a genuinely missing directory
+    // would be answered with advice about path length.
+    //
+    // ERROR_PATH_NOT_FOUND (3) is what was measured; ERROR_INVALID_NAME (123) and
+    // ERROR_FILENAME_EXCED_RANGE (206) are the other two Windows uses for the same cause. `3` is
+    // ambiguous by nature -- a path can be both long and absent -- so the wording below suggests
+    // rather than asserts.
+    if !matches!(err.raw_os_error(), Some(3) | Some(123) | Some(206)) {
+        return None;
+    }
+    // UTF-16 code units, which is what the limit counts. `OsStr::len()` is WTF-8 bytes on Windows,
+    // so a path with any non-ASCII in it would measure long before Windows thought so.
+    let units = path.as_os_str().encode_wide().count();
+    if units < MAX_PATH - 16 {
+        return None;
+    }
+    // Measured: `std::fs` itself copes well past `MAX_PATH` -- create_dir_all, write and rename all
+    // succeeded at 490 units with long paths disabled -- so a "path not found" this close to the
+    // limit is more likely the length than the missing directory it appears to be.
+    Some(format!(
+        "The path is {units} characters, at or near Windows' {MAX_PATH}-character limit, which \
+         may be the real cause rather than a missing directory. mise writes through a temporary \
+         file whose name is longer than the final one, so it crosses the limit first. Try a \
+         shorter directory."
+    ))
+}
+
+#[cfg(not(windows))]
+fn windows_io_hint(_path: &Path, _err: &std::io::Error) -> Option<String> {
+    None
+}
+
+/// Attach [`windows_io_hint`] to `err`, if it has anything to say about this path.
+fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
+    match windows_io_hint(path, err) {
+        Some(hint) => format!("{msg}\n{hint}"),
+        None => msg,
+    }
+}
+
 pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {
@@ -70,8 +149,18 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         Ok(x) if x.is_dir() => {
             trace!("rm -rf {}", display_path(path));
-            fs::remove_dir_all(path)
-                .wrap_err_with(|| format!("failed rm -rf: {}", display_path(path)))?;
+            // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
+            // `wrap_err_with`'s closure is not given it.
+            fs::remove_dir_all(path).map_err(|e| {
+                let msg = with_io_hint(
+                    // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
+                    // command the reader does not have.
+                    format!("failed to remove: {}", display_path(path)),
+                    path,
+                    &e,
+                );
+                eyre::eyre!(e).wrap_err(msg)
+            })?;
         }
         _ => {}
     };
@@ -389,8 +478,20 @@ pub fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Res
     temporary.write_all(contents.as_ref())?;
 
     temporary.as_file_mut().sync_all()?;
-    persist_atomic(temporary, path)
-        .wrap_err_with(|| format!("failed atomic write: {}", display_path(path)))?;
+    // The hint matters most here. `tempfile`'s persist does not get the extended-length path
+    // handling `std::fs` applies, so this is the operation that fails first as a path approaches
+    // `MAX_PATH` -- measured breaking at a 253-character target while `fs::rename` on the same
+    // tree succeeded at 415.
+    persist_atomic(temporary, path).map_err(|e| {
+        let msg = format!("failed atomic write: {}", display_path(path));
+        // Resolve the hint before `wrap_err` takes `e` by value: `downcast_ref` borrows it, and
+        // doing both in one expression leaves the borrow alive across the move.
+        let msg = match e.downcast_ref::<std::io::Error>() {
+            Some(io) => with_io_hint(msg, path, io),
+            None => msg,
+        };
+        e.wrap_err(msg)
+    })?;
     sync_dir(parent)?;
     Ok(())
 }
@@ -4382,6 +4483,76 @@ mod tests {
         }
         for name in ["tool.ps1", "tool.PS1", "tool.vbs", "tool", r"C:\x\tool"] {
             assert!(!can_execute_directly(Path::new(name)), "{name}");
+        }
+    }
+
+    fn io(raw: i32) -> std::io::Error {
+        std::io::Error::from_raw_os_error(raw)
+    }
+
+    /// `mise uninstall` of a tool whose binary is still running reported only "Access is denied",
+    /// which on Windows is nearly always that and nothing else.
+    #[cfg(windows)]
+    #[test]
+    fn an_in_use_file_says_so() {
+        for raw in [5, 32] {
+            let hint = windows_io_hint(Path::new(r"C:\x\installs\jq\1.8.2"), &io(raw))
+                .unwrap_or_else(|| panic!("raw {raw} should be explained"));
+            assert!(hint.contains("in use"), "raw {raw}: {hint}");
+        }
+    }
+
+    /// Measured: the atomic write breaks at a 253-character target while `fs::rename` on the same
+    /// tree succeeds at 415, so "path not found" here is the length rather than a missing parent.
+    #[cfg(windows)]
+    #[test]
+    fn a_path_near_the_limit_says_so() {
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(300)));
+        let hint = windows_io_hint(&long, &io(3)).expect("a long path should be explained");
+        assert!(hint.contains("260"), "{hint}");
+    }
+
+    /// The controls, and the point of the whole thing: do not attach an explanation to an error
+    /// that already means what it says.
+    #[cfg(windows)]
+    #[test]
+    fn an_ordinary_error_is_left_alone() {
+        // A short path that is genuinely absent is not the `MAX_PATH` case.
+        assert!(windows_io_hint(Path::new(r"C:\x\gone"), &io(2)).is_none());
+        assert!(windows_io_hint(Path::new(r"C:\x\gone"), &io(3)).is_none());
+
+        // And neither is an unrelated failure that happens to occur deep in a tree. Length alone
+        // used to be enough to trigger the advice, which answered "disk full" with "shorten it".
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(300)));
+        for raw in [2, 39, 112] {
+            assert!(windows_io_hint(&long, &io(raw)).is_none(), "raw {raw}");
+        }
+    }
+
+    /// The limit counts UTF-16 code units; `OsStr::len()` is WTF-8 bytes on Windows. A path of
+    /// non-ASCII characters is under the limit while measuring well over it in bytes.
+    #[cfg(windows)]
+    #[test]
+    fn the_limit_is_measured_the_way_windows_measures_it() {
+        use std::os::windows::ffi::OsStrExt;
+
+        // 200 three-byte characters: 600 bytes, 200 UTF-16 units.
+        let path = PathBuf::from(format!(r"C:\{}", "あ".repeat(200)));
+        assert!(path.as_os_str().len() > MAX_PATH, "premise");
+        assert!(
+            path.as_os_str().encode_wide().count() < MAX_PATH - 16,
+            "premise"
+        );
+        assert!(windows_io_hint(&path, &io(3)).is_none());
+    }
+
+    /// unix has neither failure mode: a running binary can be unlinked, and there is no `MAX_PATH`.
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_is_never_annotated() {
+        let long = PathBuf::from(format!("/{}", "d".repeat(300)));
+        for (path, raw) in [(Path::new("/x/installs/jq/1.8.2"), 13), (long.as_path(), 2)] {
+            assert!(windows_io_hint(path, &io(raw)).is_none(), "{path:?}");
         }
     }
 }
