@@ -2,6 +2,7 @@ use std::env::join_paths;
 #[cfg(unix)]
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 
 use indoc::indoc;
 
@@ -154,6 +155,23 @@ impl Drop for EnvVarGuard {
     }
 }
 
+/// Take a test-only global lock, ignoring poisoning.
+///
+/// These locks are `Mutex<()>`: they guard no data, only the order in which tests reach
+/// process-wide state such as `Settings` or environment variables. Restoring that state is the
+/// job of each guard's `Drop`, and `Drop` runs while unwinding, so by the time a panicking test
+/// releases the lock the state is already back. The poison flag left behind therefore records
+/// nothing about correctness — all it does is fail every later test that wanted the same lock.
+///
+/// Measured once: a single failed assertion in `http::tests` was reported as **29** failures,
+/// 28 of them `PoisonError` from tests that had nothing to do with it. Triage cost more than the
+/// bug did.
+pub fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub fn replace_path(input: &str) -> String {
     let path = join_paths(&*env::PATH)
         .unwrap()
@@ -174,4 +192,31 @@ macro_rules! with_settings {
             (home.as_str(), "~"),
         ]}, {$body})
     }}
+}
+
+// Last in the file: `clippy::items_after_test_module` rejects anything declared after it.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_poisoned_lock_is_still_taken() {
+        static LOCK: Mutex<()> = Mutex::new(());
+
+        // Poison it for real first. Without this the call below would only show that an
+        // unpoisoned mutex can be locked, which is true of `.lock().unwrap()` as well and so
+        // proves nothing. The panic message says it is deliberate because it reaches the log.
+        let poisoner = std::thread::spawn(|| {
+            let _guard = LOCK.lock().unwrap();
+            panic!("deliberate panic: poisoning the lock for a_poisoned_lock_is_still_taken");
+        });
+        assert!(
+            poisoner.join().is_err(),
+            "the thread had to panic for the lock to be poisoned"
+        );
+        assert!(LOCK.lock().is_err(), "the lock should now be poisoned");
+
+        // The property: a later test still gets the lock rather than inheriting the failure.
+        let _guard = lock_ignoring_poison(&LOCK);
+    }
 }
