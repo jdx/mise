@@ -1,8 +1,44 @@
 use crate::config::{Config, Settings};
 use crate::task::Task;
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use eyre::{Result, bail};
-use std::sync::Arc;
+use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use dashmap::DashMap;
+use eyre::Result;
+use std::{
+    path::PathBuf,
+    sync::{Arc, LazyLock, Mutex},
+};
+use tokio::sync::OnceCell;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct RemoteTaskArtifactKey {
+    config_source: PathBuf,
+    task_name: String,
+    source: String,
+}
+
+type RemoteTaskArtifacts = DashMap<RemoteTaskArtifactKey, Arc<OnceCell<TaskFileArtifact>>>;
+static REMOTE_TASK_ARTIFACTS: LazyLock<RemoteTaskArtifacts> = LazyLock::new(DashMap::new);
+static REMOTE_TASK_ARTIFACT_SCOPES: Mutex<usize> = Mutex::new(0);
+
+/// Keeps no-cache remote task snapshots alive for one command or direct caller.
+pub(crate) struct RemoteTaskArtifactsGuard;
+
+impl RemoteTaskArtifactsGuard {
+    pub(crate) fn new() -> Self {
+        *REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap() += 1;
+        Self
+    }
+}
+
+impl Drop for RemoteTaskArtifactsGuard {
+    fn drop(&mut self) {
+        let mut scopes = REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap();
+        *scopes -= 1;
+        if *scopes == 0 {
+            REMOTE_TASK_ARTIFACTS.clear();
+        }
+    }
+}
 
 /// Handles fetching remote task files and converting them to local paths
 pub struct TaskFetcher {
@@ -30,14 +66,31 @@ impl TaskFetcher {
                     continue;
                 }
 
-                let provider = task_file_providers.get_provider(&source);
-
-                if provider.is_none() {
-                    bail!("No provider found for file: {}", source);
-                }
-
-                let local_path = provider.unwrap().get_local_path(&source).await?;
                 let original = t.clone();
+                let provider = task_file_providers
+                    .get_provider(&source)
+                    .ok_or_else(|| eyre::eyre!("No provider found for file: {}", source))?;
+                let artifact = if no_cache {
+                    // Reuse one snapshot when dependency resolution materializes
+                    // the same task again, while keeping separate task definitions
+                    // that happen to use the same URL independent.
+                    let key = RemoteTaskArtifactKey {
+                        config_source: original.config_source.clone(),
+                        task_name: original.name.clone(),
+                        source: source.clone(),
+                    };
+                    let artifact = REMOTE_TASK_ARTIFACTS
+                        .entry(key)
+                        .or_insert_with(|| Arc::new(OnceCell::new()))
+                        .clone();
+                    artifact
+                        .get_or_try_init(|| async { provider.get_local_artifact(&source).await })
+                        .await?
+                        .clone()
+                } else {
+                    provider.get_local_artifact(&source).await?
+                };
+                let local_path = artifact.path;
                 let config_root = original
                     .config_root
                     .clone()
@@ -95,8 +148,36 @@ mod tests {
     use crate::task::TaskToolValue;
     use std::path::PathBuf;
 
+    static REMOTE_TASK_ARTIFACT_TEST_LOCK: tokio::sync::Mutex<()> =
+        tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn nested_artifact_scopes_clear_only_after_the_last_scope() {
+        let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
+        assert_eq!(*REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap(), 0);
+        REMOTE_TASK_ARTIFACTS.clear();
+
+        let outer = RemoteTaskArtifactsGuard::new();
+        let inner = RemoteTaskArtifactsGuard::new();
+        REMOTE_TASK_ARTIFACTS.insert(
+            RemoteTaskArtifactKey {
+                config_source: PathBuf::from("scope-test.toml"),
+                task_name: "scope-test".into(),
+                source: "https://example.test/task".into(),
+            },
+            Arc::new(OnceCell::new()),
+        );
+        drop(inner);
+        assert_eq!(REMOTE_TASK_ARTIFACTS.len(), 1);
+
+        drop(outer);
+        assert!(REMOTE_TASK_ARTIFACTS.is_empty());
+    }
+
     #[tokio::test]
     async fn test_fetch_remote_task_parses_headers_and_applies_toml_overlay() {
+        let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
+        let _artifacts = RemoteTaskArtifactsGuard::new();
         let mut server = mockito::Server::new_async().await;
         let remote = server
             .mock("GET", "/task")
@@ -193,7 +274,51 @@ echo ok
     }
 
     #[tokio::test]
+    async fn test_no_cache_remote_task_reuses_logical_snapshot() {
+        let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
+        let _artifacts = RemoteTaskArtifactsGuard::new();
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/command-snapshot")
+            .with_status(200)
+            .with_body("#!/usr/bin/env bash\n#MISE env={REMOTE_REVISION=\"one\"}\necho snapshot\n")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let config = Config::get().await.unwrap();
+        let config_root = tempfile::tempdir().unwrap();
+        let source = format!("{}/command-snapshot", server.url());
+        let task = Task {
+            name: "remote-dependency".into(),
+            config_source: config_root.path().join("mise.toml"),
+            config_root: Some(config_root.path().to_path_buf()),
+            file: Some(PathBuf::from(&source)),
+            ..Default::default()
+        };
+
+        let mut first = vec![task.clone()];
+        TaskFetcher::new(true)
+            .fetch_tasks(&config, &mut first)
+            .await
+            .unwrap();
+        let config = Config::reset().await.unwrap();
+        let mut second = vec![task];
+        TaskFetcher::new(true)
+            .fetch_tasks(&config, &mut second)
+            .await
+            .unwrap();
+
+        remote.assert_async().await;
+        assert_eq!(first[0].file, second[0].file);
+        assert_eq!(first[0].env.0.len(), 1);
+        assert_eq!(second[0].env.0.len(), 1);
+    }
+
+    #[tokio::test]
     async fn test_remote_header_templates_use_original_runtime_context() {
+        let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
+        let _artifacts = RemoteTaskArtifactsGuard::new();
         let mut server = mockito::Server::new_async().await;
         let remote = server
             .mock("GET", "/templated-task")

@@ -751,6 +751,7 @@ impl Cli {
             version::show_latest().await;
             return Err(request_exit(0));
         }
+        let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();
         let cmd = cli.get_command().await?;
         measure!("run {cmd}", { cmd.run().await })
     }
