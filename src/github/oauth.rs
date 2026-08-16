@@ -664,7 +664,7 @@ mod tests {
 
     impl OAuthEnvGuard {
         fn new(auth_url: String, cache_path: PathBuf) -> Self {
-            let lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+            let lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
             let vars = vec![
                 (
                     "MISE_GITHUB_OAUTH_CLIENT_ID",

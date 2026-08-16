@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
 
-use super::TaskFileProvider;
+use super::{TaskFileArtifact, TaskFileProvider};
 
 #[derive(Debug)]
 pub struct RemoteTaskHttpBuilder {
@@ -53,6 +53,19 @@ impl RemoteTaskHttp {
         file::make_executable(destination)?;
         Ok(())
     }
+
+    async fn get_unique_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        let cache_key = self.get_cache_key(file);
+        file::create_dir_all(&self.storage_path)?;
+        let artifact_dir = tempfile::Builder::new()
+            .prefix(&format!("{cache_key}-"))
+            .tempdir_in(&self.storage_path)?
+            .keep();
+        let destination = artifact_dir.join("task");
+        let artifact = TaskFileArtifact::temporary(destination.clone(), artifact_dir);
+        self.download_file(file, &destination).await?;
+        Ok(artifact)
+    }
 }
 
 #[async_trait]
@@ -85,6 +98,15 @@ impl TaskFileProvider for RemoteTaskHttp {
 
         self.download_file(file, &destination).await?;
         Ok(destination)
+    }
+
+    async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        if self.is_cached {
+            return Ok(TaskFileArtifact::persistent(
+                self.get_local_path(file).await?,
+            ));
+        }
+        self.get_unique_artifact(file).await
     }
 }
 
@@ -132,12 +154,30 @@ mod tests {
             let request_url = format!("{}{}", server.url(), request_path);
             let cache_key = provider.get_cache_key(&request_url);
 
+            let mut local_paths = vec![];
             for _ in 0..2 {
-                let local_path = provider.get_local_path(&request_url).await.unwrap();
+                let artifact = provider.get_local_artifact(&request_url).await.unwrap();
+                let local_path = artifact.path.clone();
                 assert!(local_path.exists());
                 assert!(local_path.is_file());
-                assert!(local_path.ends_with(&cache_key));
+                assert!(
+                    local_path
+                        .parent()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(&cache_key)
+                );
+                local_paths.push((local_path, artifact));
             }
+            assert_ne!(local_paths[0].0, local_paths[1].0);
+            let retained_paths = local_paths
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>();
+            drop(local_paths);
+            assert!(retained_paths.iter().all(|path| !path.exists()));
 
             mocked_server.assert();
         }
@@ -174,5 +214,63 @@ mod tests {
 
             mocked_server.assert();
         }
+    }
+
+    #[tokio::test]
+    async fn test_no_cache_http_artifact_owns_download_directory_during_transfer() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        use std::time::{Duration, Instant};
+
+        let started = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let started_server = started.clone();
+        let release_server = release.clone();
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/cancelled-task")
+            .with_status(200)
+            .with_chunked_body(move |writer| {
+                writer.write_all(b"#!/usr/bin/env bash\n")?;
+                writer.flush()?;
+                started_server.store(true, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while !release_server.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                writer.write_all(b"echo late\n")
+            })
+            .create_async()
+            .await;
+
+        let storage = tempfile::tempdir().unwrap();
+        let provider = RemoteTaskHttp {
+            storage_path: storage.path().to_path_buf(),
+            is_cached: false,
+        };
+        let url = format!("{}/cancelled-task", server.url());
+        let fetch = tokio::spawn(async move { provider.get_local_artifact(&url).await });
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !started.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let entries = std::fs::read_dir(storage.path())
+            .unwrap()
+            .collect::<std::io::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].file_type().unwrap().is_dir());
+
+        fetch.abort();
+        assert!(fetch.await.unwrap_err().is_cancelled());
+        release.store(true, Ordering::SeqCst);
+        assert_eq!(std::fs::read_dir(storage.path()).unwrap().count(), 0);
+        remote.assert_async().await;
     }
 }

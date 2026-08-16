@@ -153,8 +153,21 @@ The generator will preserve existing configuration and merge new platforms into 
 - `--platform-url PLATFORM:URL` - Add platform-specific URL (can be used multiple times)
 - `--platform-url URL` - Add platform-specific URL with auto-detected platform from URL filename
 - `--platform-bin PLATFORM:PATH` - Set platform-specific binary path
+- `--checksum-algorithm ALGORITHM` - Generate `blake3` (default) or `sha256` checksums
 - `--skip-download` - Skip downloading for faster generation (no checksums or binary detection)
 - `--lock` - Resolve and embed lockfile data (pinned version + platform URLs/checksums) into an existing stub
+
+`--checksum-algorithm` cannot be combined with `--lock` or `--skip-download`, because those modes do not calculate checksums.
+
+For consumers such as Bazel that require SHA256 checksums, select it when generating the stub:
+
+```bash
+mise generate tool-stub ./bin/tool \
+  --url "https://example.com/tool.tar.gz" \
+  --checksum-algorithm sha256
+```
+
+The selected algorithm also applies to missing checksums populated by `--fetch`. Existing checksums are preserved.
 
 ### Supported Archive Formats
 
@@ -183,7 +196,7 @@ size = 12345678
 
 The generator automatically:
 
-- Calculates BLAKE3 checksums for integrity verification
+- Calculates BLAKE3 checksums by default, or SHA256 when requested
 - Detects file sizes
 - Identifies the correct binary path within archives
 - Uses the output filename as the tool name

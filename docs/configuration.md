@@ -218,6 +218,11 @@ root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-t
 
 See [environments](/environments/).
 
+### `[vars]` - Configuration Variables
+
+Define values that can be reused in Tera-rendered configuration without exporting them to child
+processes. See [Variables](/configuration/vars).
+
 ### `[tasks.*]` - Run files or shell scripts
 
 See [Tasks](/tasks/).

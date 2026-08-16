@@ -413,6 +413,30 @@ fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
+fn get_value_taking_short_flags(cmd: &clap::Command) -> Vec<(String, String)> {
+    cmd.get_arguments()
+        .filter(|arg| {
+            matches!(
+                arg.get_action(),
+                clap::ArgAction::Set | clap::ArgAction::Append
+            )
+        })
+        .filter_map(|arg| Some((arg.get_short()?, arg.get_long()?)))
+        .map(|(short, long)| (format!("-{short}"), format!("--{long}")))
+        .collect()
+}
+
+fn get_all_run_value_taking_short_flags(cmd: &clap::Command) -> Vec<(String, String)> {
+    let mut flags = get_value_taking_short_flags(cmd);
+    if let Some(run_cmd) = cmd
+        .get_subcommands()
+        .find(|subcommand| subcommand.get_name() == "run")
+    {
+        flags.extend(get_value_taking_short_flags(run_cmd));
+    }
+    flags
+}
+
 /// Prefix used to escape flags that should be passed to tasks, not mise
 const TASK_ARG_ESCAPE_PREFIX: &str = "\x00MISE_TASK_ARG\x00";
 
@@ -568,6 +592,7 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     }
 
     let (flags_with_values, _) = get_all_run_flags(cmd);
+    let short_flags_with_values = get_all_run_value_taking_short_flags(cmd);
 
     // Build result, escaping flags that appear after task names
     let mut result = args[..=run_pos].to_vec(); // Include up to and including "run"
@@ -588,6 +613,23 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
         if !in_task_args {
             // Looking for task name - skip any mise flags
             if arg.starts_with('-') {
+                // clap treats attached values for short options as positional
+                // values when the positional allows hyphens. Normalize them to
+                // unambiguous long options before parsing.
+                let attached_short_value =
+                    short_flags_with_values.iter().find_map(|(short, long)| {
+                        arg.strip_prefix(short)
+                            .filter(|value| !value.is_empty())
+                            .map(|value| (long, value))
+                    });
+
+                if let Some((long, value)) = attached_short_value {
+                    let value = value.strip_prefix('=').unwrap_or(value);
+                    result.push(format!("{long}={value}"));
+                    i += 1;
+                    continue;
+                }
+
                 // It's a flag - keep it as-is for mise to parse
                 result.push(arg.clone());
 
@@ -751,6 +793,7 @@ impl Cli {
             version::show_latest().await;
             return Err(request_exit(0));
         }
+        let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();
         let cmd = cli.get_command().await?;
         measure!("run {cmd}", { cmd.run().await })
     }
@@ -1155,6 +1198,71 @@ mod tests {
             unescape_task_args(&escaped[separator_idx + 1..]),
             vec!["--".to_string(), "--help".to_string()]
         );
+    }
+
+    #[test]
+    fn test_escape_task_args_splits_attached_short_option_values_before_task() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "-j1".to_string(),
+            "-Ctmp".to_string(),
+            "-oprefix".to_string(),
+            "atask".to_string(),
+        ];
+
+        assert_eq!(
+            escape_task_args(&cmd, &args),
+            [
+                "mise",
+                "run",
+                "--jobs=1",
+                "--cd=tmp",
+                "--output=prefix",
+                "atask",
+            ]
+            .map(str::to_string)
+        );
+    }
+
+    #[test]
+    fn test_escape_task_args_preserves_equals_attached_option_values() {
+        let cmd = Cli::command();
+        let args = ["mise", "run", "-C=/tmp", "-o=prefix", "atask"].map(str::to_string);
+        let processed = escape_task_args(&cmd, &args);
+
+        assert_eq!(
+            processed,
+            ["mise", "run", "--cd=/tmp", "--output=prefix", "atask"].map(str::to_string)
+        );
+        let matches = cmd.try_get_matches_from(processed).unwrap();
+        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        assert_eq!(cli.cd, Some(PathBuf::from("/tmp")));
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("atask"));
+    }
+
+    #[test]
+    fn test_escape_task_args_keeps_hyphen_prefixed_attached_value_bound_to_option() {
+        let cmd = Cli::command();
+        let args = ["mise", "run", "-C-dir", "atask"].map(str::to_string);
+        let processed = escape_task_args(&cmd, &args);
+
+        assert_eq!(
+            processed,
+            ["mise", "run", "--cd=-dir", "atask"].map(str::to_string)
+        );
+
+        let matches = cmd.try_get_matches_from(processed).unwrap();
+        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        assert_eq!(cli.cd, Some(PathBuf::from("-dir")));
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("atask"));
     }
 
     #[test]

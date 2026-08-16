@@ -418,7 +418,7 @@ mod tests {
             replacements: Option<indexmap::IndexMap<String, String>>,
             use_versions_host: Option<bool>,
         ) -> Self {
-            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
             let mut settings = crate::config::settings::SettingsPartial::empty();
             settings.url_replacements = replacements;
             settings.use_versions_host = use_versions_host;
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_resolve_token_wrapper_uses_env_var_with_default_url() {
-        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         mise_env::set_var("GITHUB_TOKEN", "ghp_wrapper_default");
 
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_resolve_token_wrapper_uses_env_var_with_explicit_api_url() {
-        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         mise_env::set_var("MISE_GITHUB_TOKEN", "ghp_explicit_api");
 
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn test_resolve_token_wrapper_respects_enterprise_api_url() {
-        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         mise_env::set_var("GITHUB_TOKEN", "ghp_public_only");
         mise_env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghp_enterprise_only");
@@ -545,7 +545,7 @@ mod tests {
         // non-env-var sources — here, the `github_tokens.toml` path (source #4). Without
         // this, a future regression could short-circuit on env vars and silently pass all
         // prior tests.
-        let _lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let _env = TokenEnvGuard::new();
         let _tokens_file = TokensFileOverrideGuard::set("github.com", "ghp_from_tokens_file");
 

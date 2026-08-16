@@ -20,6 +20,7 @@ use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
 use jdx_tar::{Archive, EntryType, UnpackOptions};
+use path_absolutize::Absolutize;
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock as Lazy;
 use walkdir::WalkDir;
@@ -861,8 +862,7 @@ fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     if let Err(err) = create_windows_dir_link(target, link) {
         if err.kind() == std::io::ErrorKind::AlreadyExists {
-            let _ = fs::remove_file(link);
-            let _ = fs::remove_dir(link);
+            remove_symlink_or_junction(link)?;
             create_windows_dir_link(target, link)
         } else {
             Err(err)
@@ -917,6 +917,270 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
+    let Some(target) = dir_link_target(link)? else {
+        return Ok(false);
+    };
+    let target = target.absolutize()?;
+    let root = root.absolutize()?;
+    Ok(path_starts_with(&target, &root))
+}
+
+#[cfg(unix)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    path.starts_with(root)
+}
+
+#[cfg(windows)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+
+    if path.starts_with(root) {
+        return true;
+    }
+
+    let root_component_count = root.components().count();
+    let root = root.components().collect::<PathBuf>();
+    let candidate = path
+        .components()
+        .take(root_component_count)
+        .collect::<PathBuf>();
+    if candidate.components().count() != root_component_count {
+        return false;
+    }
+
+    let candidate_wide = candidate.as_os_str().encode_wide().collect::<Vec<_>>();
+    let root_wide = root.as_os_str().encode_wide().collect::<Vec<_>>();
+    let Ok(candidate_len) = i32::try_from(candidate_wide.len()) else {
+        return false;
+    };
+    let Ok(root_len) = i32::try_from(root_wide.len()) else {
+        return false;
+    };
+    let equal_ignoring_case = unsafe {
+        CompareStringOrdinal(
+            candidate_wide.as_ptr(),
+            candidate_len,
+            root_wide.as_ptr(),
+            root_len,
+            1,
+        ) == CSTR_EQUAL
+    };
+
+    if !equal_ignoring_case {
+        return false;
+    }
+
+    match same_file::is_same_file(&candidate, &root) {
+        Ok(same) => same,
+        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, &root),
+    }
+}
+
+#[cfg(windows)]
+fn dangling_paths_share_case_insensitive_parent(path: &Path, root: &Path) -> bool {
+    let Some((path_parent, path_missing_components)) = nearest_existing_directory(path) else {
+        return false;
+    };
+    let Some((root_parent, root_missing_components)) = nearest_existing_directory(root) else {
+        return false;
+    };
+
+    path_missing_components == root_missing_components
+        && same_file::is_same_file(&path_parent, &root_parent).unwrap_or(false)
+        && directory_is_case_sensitive(&path_parent) == Some(false)
+}
+
+#[cfg(windows)]
+fn nearest_existing_directory(path: &Path) -> Option<(PathBuf, usize)> {
+    let mut path = path;
+    let mut missing_components = 0;
+    loop {
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.is_dir() => {
+                return Some((path.to_path_buf(), missing_components));
+            }
+            Ok(_) => return None,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                path = path.parent()?;
+                missing_components += 1;
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+#[cfg(windows)]
+fn directory_is_case_sensitive(path: &Path) -> Option<bool> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FileCaseSensitiveInfo,
+        GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut case_info = FILE_CASE_SENSITIVE_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            directory.as_raw_handle(),
+            FileCaseSensitiveInfo,
+            std::ptr::from_mut(&mut case_info).cast(),
+            std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+        )
+    };
+    (inspected != 0).then_some(case_info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR != 0)
+}
+
+#[cfg(unix)]
+fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
+    let metadata = match fs::symlink_metadata(link) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+        }
+    };
+    if !metadata.file_type().is_symlink() {
+        return Ok(None);
+    }
+    let target = fs::read_link(link)
+        .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?;
+    Ok(Some(resolve_relative_link_target(link, target)))
+}
+
+#[cfg(windows)]
+fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
+    const ERROR_NOT_A_REPARSE_POINT: i32 = 4390;
+
+    let metadata = match fs::symlink_metadata(link) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+        }
+    };
+    let target = if metadata.file_type().is_symlink() {
+        fs::read_link(link)
+            .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?
+    } else {
+        match junction::get_target(link) {
+            Ok(target) => target,
+            Err(err)
+                if err.kind() == std::io::ErrorKind::NotFound
+                    || err.raw_os_error() == Some(ERROR_NOT_A_REPARSE_POINT)
+                    || (err.kind() == std::io::ErrorKind::Other
+                        && err.raw_os_error().is_none()) =>
+            {
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(err).wrap_err_with(|| {
+                    format!("failed to inspect junction: {}", display_path(link))
+                });
+            }
+        }
+    };
+    Ok(Some(resolve_relative_link_target(link, target)))
+}
+
+fn resolve_relative_link_target(link: &Path, target: PathBuf) -> PathBuf {
+    if target.is_absolute() {
+        target
+    } else {
+        link.parent().unwrap_or(link).join(target)
+    }
+}
+
+#[cfg(unix)]
+pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    // POSIX has no standard unlink-by-handle operation, so a concurrent replacement can still
+    // occur between this check and remove_file. The latter cannot remove directories; callers
+    // must keep the parent directory protected from untrusted writers.
+    if dir_link_target(link)?.is_none() {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
+    fs::remove_file(link)
+        .wrap_err_with(|| format!("failed to remove symlink: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    let link_handle = open_link_for_removal(link)?;
+    remove_open_link(link_handle)
+        .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+fn open_link_for_removal(link: &Path) -> Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        DELETE, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FileAttributeTagInfo, GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::{
+        IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(link)
+        .wrap_err_with(|| format!("failed to open link: {}", display_path(link)))?;
+    let mut tag_info = FILE_ATTRIBUTE_TAG_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            std::ptr::from_mut(&mut tag_info).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if inspected == 0 {
+        return Err(std::io::Error::last_os_error())
+            .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+    }
+    if !matches!(
+        tag_info.ReparseTag,
+        IO_REPARSE_TAG_SYMLINK | IO_REPARSE_TAG_MOUNT_POINT
+    ) {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn remove_open_link(file: File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    let removed = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            std::ptr::from_ref(&disposition).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    };
+    if removed == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    drop(file);
+    Ok(())
+}
+
 pub fn remove_symlinks_with_target_prefix(
     symlink_dir: &Path,
     target_prefix: &Path,
@@ -926,14 +1190,10 @@ pub fn remove_symlinks_with_target_prefix(
     }
     let mut removed = vec![];
     for entry in symlink_dir.read_dir()? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_symlink() {
-            let target = path.read_link()?;
-            if target.starts_with(target_prefix) {
-                fs::remove_file(&path)?;
-                removed.push(path);
-            }
+        let path = entry?.path();
+        if is_symlink_target_within(&path, target_prefix)? {
+            remove_symlink_or_junction(&path)?;
+            removed.push(path);
         }
     }
     Ok(removed)
@@ -1023,20 +1283,39 @@ pub fn has_shebang(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Extensions that `windows_executable_extensions` lists but `CreateProcess` cannot
-/// launch: they need an interpreter (`pwsh -File`, `wscript`/`cscript`). `.bat` and
-/// `.cmd` are not here — std routes those through cmd.exe with escaped arguments.
+/// Extensions `std::process::Command` can start from a path alone on Windows: `exe` and `com`
+/// natively, `bat` and `cmd` because std routes those through cmd.exe with escaped arguments.
+/// Anything else needs an interpreter named for it — `pwsh -File` for a `.ps1`,
+/// `cscript` for a `.vbs`, whatever a shebang asks for.
 ///
-/// `pub(crate)` so `task::task_executor` can assert that its `shell_from_extension` names
-/// an interpreter for every entry. That function is not `cfg(windows)`-gated, so it cannot
-/// match against this list directly; the correspondence is enforced by a test instead.
+/// A fixed list on purpose. It describes what the OS can start, which
+/// `windows_executable_extensions` has no say over: that setting decides what mise *treats* as
+/// executable. Deriving it the other way round — subtracting known interpreter-only extensions
+/// from the setting — happened to be right for the default list and wrong for any other, since a
+/// user who added `sh` or `py` was then answered "yes, `CreateProcess` can start this" and the
+/// task died with "not a valid Win32 application" instead of using its shebang.
+///
+/// `pub(crate)` so `task::task_executor` can assert that `shell_from_extension` names an
+/// interpreter for every default extension this list excludes.
 #[cfg(windows)]
-pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
+pub(crate) const OS_LAUNCHABLE_EXTENSIONS: [&str; 4] = ["exe", "com", "bat", "cmd"];
+
+/// Whether the OS can start a file with this extension without an interpreter.
+///
+/// Compared case-insensitively, the way [`has_known_executable_extension`] does: Windows
+/// extensions are not case-sensitive, so `PIPX.PS1` is the same file as `pipx.ps1`.
+#[cfg(windows)]
+pub(crate) fn os_can_launch_extension(ext: &str) -> bool {
+    OS_LAUNCHABLE_EXTENSIONS
+        .iter()
+        .any(|known| ext.eq_ignore_ascii_case(known))
+}
 
 /// Check if a file can be executed directly by the OS without a shell wrapper.
 /// On Unix, this checks the executable permission bit.
-/// On Windows, this checks for a known executable extension (.bat, .cmd, .exe, ...)
-/// minus the ones that only an interpreter can run.
+/// On Windows, it takes both questions in turn: does mise treat this extension as executable
+/// (`windows_executable_extensions`, which a user may narrow), and can the OS actually start it
+/// ([`OS_LAUNCHABLE_EXTENSIONS`], which a user may not widen)?
 ///
 /// Distinct from [`is_executable`], which on Windows deliberately also accepts a
 /// shebang-only file. Callers that hand the path to `Command::new` need this one:
@@ -1050,20 +1329,11 @@ pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
 pub fn can_execute_directly(path: &Path) -> bool {
     #[cfg(windows)]
     {
-        // Compared case-insensitively, the way has_known_executable_extension does:
-        // Windows extensions are not case-sensitive, so PIPX.PS1 is the same file.
-        if path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                INTERPRETER_ONLY_EXTENSIONS
-                    .iter()
-                    .any(|only| ext.eq_ignore_ascii_case(only))
-            })
-        {
-            return false;
-        }
         has_known_executable_extension(path)
+            && path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(os_can_launch_extension)
     }
     #[cfg(not(windows))]
     {
@@ -2647,6 +2917,202 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_symlinks_with_target_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("provider");
+        let target = prefix.join("version");
+        let other = dir.path().join("other");
+        let link = dir.path().join("link");
+        let other_link = dir.path().join("other-link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        make_symlink(&target, &link).unwrap();
+        make_symlink(&other, &other_link).unwrap();
+
+        let removed = remove_symlinks_with_target_prefix(dir.path(), &prefix).unwrap();
+        assert_eq!(removed, vec![link.clone()]);
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert!(std::fs::symlink_metadata(&other_link).is_ok());
+        assert!(target.exists());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_symlink_prefix_detection_uses_filesystem_casing() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "Windows path containment should honor filesystem casing semantics"
+        );
+
+        fs::remove_dir_all(&prefix).unwrap();
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "dangling Windows targets should retain case-insensitive containment"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_dangling_symlink_prefix_detection_honors_case_sensitive_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let case_sensitive_parent = dir.path().join("case-sensitive");
+        fs::create_dir(&case_sensitive_parent).unwrap();
+        if enable_directory_case_sensitivity(&case_sensitive_parent).is_err() {
+            return;
+        }
+        assert_eq!(
+            directory_is_case_sensitive(&case_sensitive_parent),
+            Some(true)
+        );
+
+        let prefix = case_sensitive_parent.join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+        fs::remove_dir_all(&prefix).unwrap();
+
+        assert!(
+            !is_symlink_target_within(&link, &case_sensitive_parent.join("PROVIDER")).unwrap(),
+            "case-sensitive directories must not equate differently-cased dangling paths"
+        );
+    }
+
+    #[cfg(windows)]
+    fn enable_directory_case_sensitivity(path: &Path) -> std::io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            FileCaseSensitiveInfo, SetFileInformationByHandle,
+        };
+        use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+        let directory = fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        let case_info = FILE_CASE_SENSITIVE_INFO {
+            Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR,
+        };
+        let updated = unsafe {
+            SetFileInformationByHandle(
+                directory.as_raw_handle(),
+                FileCaseSensitiveInfo,
+                std::ptr::from_ref(&case_info).cast(),
+                std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+            )
+        };
+        if updated == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_prefix_detection_uses_the_immediate_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let cellar = dir.path().join("Cellar");
+        let target = cellar.join("node@22").join("22.0.0");
+        let opt = dir.path().join("opt");
+        let opt_entry = opt.join("node@22");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&opt).unwrap();
+        std::os::unix::fs::symlink(&target, &opt_entry).unwrap();
+        std::os::unix::fs::symlink(&opt_entry, &link).unwrap();
+
+        assert!(!is_symlink_target_within(&link, &cellar).unwrap());
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
+
+        fs::remove_file(&opt_entry).unwrap();
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
+    }
+
+    #[test]
+    fn test_remove_symlink_or_junction_rejects_non_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        let directory = dir.path().join("directory");
+        fs::write(&file, "contents").unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        assert!(remove_symlink_or_junction(&file).is_err());
+        assert!(remove_symlink_or_junction(&directory).is_err());
+        assert!(file.is_file());
+        assert!(directory.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_symlink_or_junction_removes_a_directory_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        fs::create_dir(&target).unwrap();
+        match std::os::windows::fs::symlink_dir(&target, &link) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("failed to create directory symlink: {err}"),
+        }
+
+        remove_symlink_or_junction(&link).unwrap();
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_open_link_preserves_path_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        let moved_link = dir.path().join("moved-link");
+        fs::create_dir(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        let link_handle = open_link_for_removal(&link).unwrap();
+        fs::rename(&link, &moved_link).unwrap();
+        fs::create_dir(&link).unwrap();
+        remove_open_link(link_handle).unwrap();
+
+        assert!(link.is_dir());
+        assert!(fs::symlink_metadata(&moved_link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_prefix_detection_rejects_escapes() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("source");
+        let foreign = dir.path().join("foreign");
+        let escaped = dir.path().join("escaped");
+        fs::create_dir_all(&prefix).unwrap();
+        fs::create_dir_all(&foreign).unwrap();
+
+        std::os::unix::fs::symlink(prefix.join("..").join("foreign"), &escaped).unwrap();
+        assert!(!is_symlink_target_within(&escaped, &prefix).unwrap());
+
+        let relative_inside = dir.path().join("relative-inside");
+        std::os::unix::fs::symlink("source/version", &relative_inside).unwrap();
+        assert!(is_symlink_target_within(&relative_inside, &prefix).unwrap());
+
+        let relative_escape = dir.path().join("relative-escape");
+        std::os::unix::fs::symlink("source/../foreign", &relative_escape).unwrap();
+        assert!(!is_symlink_target_within(&relative_escape, &prefix).unwrap());
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_copy_dir_all_preserve_symlinks_does_not_follow_loops() {
         let dir = tempfile::tempdir().unwrap();
@@ -3888,5 +4354,34 @@ mod tests {
         // A path outside the cwd falls through to `display_path`, which settles separators too.
         let outside = display_rel_path(Path::new("relative-to-nothing"));
         assert!(!outside.starts_with('.'), "{outside}");
+    }
+
+    /// The list answers only "can the OS start this", so it is fixed and does not consult
+    /// settings. Case-insensitive, since Windows extensions are.
+    #[cfg(windows)]
+    #[test]
+    fn os_can_launch_extension_names_only_what_the_os_starts() {
+        for ext in ["exe", "com", "bat", "cmd", "EXE", "Cmd"] {
+            assert!(os_can_launch_extension(ext), "{ext}");
+        }
+        // ps1 and vbs need an interpreter; the rest are extensions a user might add to
+        // `windows_executable_extensions`, which does not make CreateProcess able to start them.
+        for ext in ["ps1", "PS1", "vbs", "sh", "py", "js", ""] {
+            assert!(!os_can_launch_extension(ext), "{ext}");
+        }
+    }
+
+    /// Under the shipped default `windows_executable_extensions` the answers are exactly what
+    /// they were before the whitelist replaced the interpreter-only blacklist -- the two agree on
+    /// that list, which is why the old shape looked correct.
+    #[cfg(windows)]
+    #[test]
+    fn can_execute_directly_is_unchanged_for_the_default_extensions() {
+        for name in [r"C:\x\tool.exe", r"C:\x\tool.com", "tool.bat", "tool.CMD"] {
+            assert!(can_execute_directly(Path::new(name)), "{name}");
+        }
+        for name in ["tool.ps1", "tool.PS1", "tool.vbs", "tool", r"C:\x\tool"] {
+            assert!(!can_execute_directly(Path::new(name)), "{name}");
+        }
     }
 }

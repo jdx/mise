@@ -1302,9 +1302,7 @@ mod tests {
         configure_settings: impl FnOnce(&mut SettingsPartial),
         target: PlatformTarget,
     ) -> BTreeMap<String, String> {
-        let lock = TEST_SETTINGS_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
         Settings::reset(Some(settings));
@@ -1319,9 +1317,7 @@ mod tests {
         configure_settings: impl FnOnce(&mut SettingsPartial),
         f: impl FnOnce(&RubyPlugin) -> T,
     ) -> T {
-        let lock = TEST_SETTINGS_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = SettingsPartial::empty();
         configure_settings(&mut settings);
         Settings::reset(Some(settings));
@@ -1633,9 +1629,7 @@ mod tests {
 
     #[test]
     fn test_ruby_lock_info_url_uses_precompiled_overrides() {
-        let lock = TEST_SETTINGS_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = SettingsPartial::empty();
         settings.ruby.compile = Some(false);
         settings.ruby.precompiled_url =

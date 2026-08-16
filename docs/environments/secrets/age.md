@@ -75,6 +75,12 @@ mise looks for identities in this order:
 4. Default `~/.config/mise/age.txt` if it exists
 5. SSH identities from `settings.age.ssh_identity_files` and common defaults (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
 
+Paths configured in `settings.age.key_file`, `settings.age.identity_files`, and
+`settings.age.ssh_identity_files` are resolved relative to the config root of
+the file that declares them. They also support Tera templates, including
+<span v-pre>`{{ config_root }}`</span> and values from `env`. Absolute paths and paths beginning
+with `~` keep their existing meaning.
+
 Decrypted values are always marked as redacted.
 
 Age decryption is strict by default. If no identities are found, no available identity can decrypt the value, or the age payload is invalid, mise fails instead of continuing with a partially resolved environment.

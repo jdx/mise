@@ -264,8 +264,11 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
 zipsign-api = "0.2"
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
 windows-sys = { version = "0.61", features = [
+  "Win32_Globalization",
   "Win32_Security",
   "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_SystemServices",
   "Win32_System_Threading",
 ] }
 
