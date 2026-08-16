@@ -41,9 +41,12 @@ GRANDCHILD = "true"
         Remove-Item Env:MISE_CEILING_PATHS -ErrorAction Ignore
     }
 
+    # `-s bash` throughout: these assert *which config was loaded*, so they should not also be
+    # asserting which shell `mise env` picks when nothing is named. Left bare, they were pinning
+    # the Windows default as bash and broke when it changed.
     It 'finds all configs without ceiling paths' {
         Remove-Item Env:MISE_CEILING_PATHS -ErrorAction Ignore
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export GRANDCHILD=true"
         $output | Should -Match "export CHILD=true"
         $output | Should -Match "export PARENT=true"
@@ -51,7 +54,7 @@ GRANDCHILD = "true"
 
     It 'respects ceiling path at child directory' {
         $env:MISE_CEILING_PATHS = Join-Path $TestRoot "parent\child"
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export GRANDCHILD=true"
         $output | Should -Not -Match "export CHILD=true"
         $output | Should -Not -Match "export PARENT=true"
@@ -59,7 +62,7 @@ GRANDCHILD = "true"
 
     It 'respects ceiling path at grandchild directory' {
         $env:MISE_CEILING_PATHS = Join-Path $TestRoot "parent\child\grandchild"
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Not -Match "export GRANDCHILD=true"
         $output | Should -Not -Match "export CHILD=true"
         $output | Should -Not -Match "export PARENT=true"
@@ -69,7 +72,7 @@ GRANDCHILD = "true"
         $ChildPath = Join-Path $TestRoot "parent\child"
         $ParentPath = Join-Path $TestRoot "parent"
         $env:MISE_CEILING_PATHS = "$ChildPath;$ParentPath"
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export GRANDCHILD=true"
         $output | Should -Not -Match "export CHILD=true"
         $output | Should -Not -Match "export PARENT=true"
@@ -77,7 +80,7 @@ GRANDCHILD = "true"
 
     It 'handles nonexistent ceiling path' {
         $env:MISE_CEILING_PATHS = Join-Path $TestRoot "nonexistent"
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export GRANDCHILD=true"
         $output | Should -Match "export CHILD=true"
         $output | Should -Match "export PARENT=true"
