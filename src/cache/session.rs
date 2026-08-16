@@ -16,6 +16,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -134,6 +135,7 @@ fn task_action_identity(task: &Task) -> String {
 pub(crate) struct CacheSession {
     environment: CacheSessionEnvironment,
     agent: CacheAgent,
+    started: Instant,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
     server: Mutex<Option<JoinHandle<Result<()>>>>,
 }
@@ -158,6 +160,7 @@ impl CacheSession {
                 agent: agent.clone(),
             },
             agent,
+            started: Instant::now(),
             shutdown: Mutex::new(Some(shutdown_tx)),
             server: Mutex::new(Some(server)),
         })
@@ -176,7 +179,9 @@ impl CacheSession {
             server.await??;
         }
         self.agent.cancel_prefetches().await;
-        Ok(self.agent.stats())
+        let mut stats = self.agent.stats();
+        stats.session_duration_ns = duration_ns(self.started.elapsed());
+        Ok(stats)
     }
 }
 
@@ -229,7 +234,74 @@ impl Drop for CacheSession {
     }
 }
 
+#[derive(Serialize)]
+struct ActionCacheStatsReport {
+    version: u8,
+    session_duration_ns: u64,
+    lookups: u64,
+    hits: u64,
+    misses: u64,
+    compiler_invocations_avoided: u64,
+    verifications: u64,
+    divergences: u64,
+    prefetched_actions: u64,
+    prefetch_runs: u64,
+    downloaded_bytes: u64,
+    uploaded_bytes: u64,
+    stored_bytes: u64,
+    restored_output_files: u64,
+    restored_output_bytes: u64,
+    remote_manifest_lookups: u64,
+    remote_action_lookups: u64,
+    remote_blob_requests: u64,
+    remote_manifest_lookup_duration_ns: u64,
+    remote_action_lookup_duration_ns: u64,
+    remote_blob_transfer_duration_ns: u64,
+    local_cas_write_duration_ns: u64,
+    prefetch_duration_ns: u64,
+    materialization_duration_ns: u64,
+}
+
+impl From<&AgentStats> for ActionCacheStatsReport {
+    fn from(stats: &AgentStats) -> Self {
+        Self {
+            version: 1,
+            session_duration_ns: stats.session_duration_ns,
+            lookups: stats.lookups,
+            hits: stats.hits,
+            misses: cache_misses(stats),
+            compiler_invocations_avoided: stats.hits,
+            verifications: stats.verifications,
+            divergences: stats.divergences,
+            prefetched_actions: stats.prefetched_actions,
+            prefetch_runs: stats.prefetch_runs,
+            downloaded_bytes: stats.downloaded_bytes,
+            uploaded_bytes: stats.uploaded_bytes,
+            stored_bytes: stats.stored_bytes,
+            restored_output_files: stats.restored_output_files,
+            restored_output_bytes: stats.restored_output_bytes,
+            remote_manifest_lookups: stats.remote_manifest_lookups,
+            remote_action_lookups: stats.remote_action_lookups,
+            remote_blob_requests: stats.remote_blob_requests,
+            remote_manifest_lookup_duration_ns: stats.remote_manifest_lookup_duration_ns,
+            remote_action_lookup_duration_ns: stats.remote_action_lookup_duration_ns,
+            remote_blob_transfer_duration_ns: stats.remote_blob_transfer_duration_ns,
+            local_cas_write_duration_ns: stats.local_cas_write_duration_ns,
+            prefetch_duration_ns: stats.prefetch_duration_ns,
+            materialization_duration_ns: stats.materialization_duration_ns,
+        }
+    }
+}
+
 pub(crate) fn display_stats(stats: AgentStats) {
+    if let Some(path) = &Settings::get().task.cache.stats_report
+        && let Err(error) = write_stats_report(path, &stats)
+    {
+        warn!(
+            "action cache could not write its statistics report to {}: {error}",
+            path.display()
+        );
+    }
     if stats.lookups == 0
         && stats.stores == 0
         && stats.verifications == 0
@@ -247,6 +319,18 @@ pub(crate) fn display_stats(stats: AgentStats) {
         ByteSize::b(stats.uploaded_bytes).display().iec(),
         ByteSize::b(stats.stored_bytes).display().iec(),
     );
+    let remote_lookup_duration_ns = stats
+        .remote_manifest_lookup_duration_ns
+        .saturating_add(stats.remote_action_lookup_duration_ns);
+    safe_eprintln!(
+        "Action cache timing: {} session, {} prefetch; cumulative {} remote lookup, {} blob transfer, {} CAS write, {} materialization",
+        format_duration(stats.session_duration_ns),
+        format_duration(stats.prefetch_duration_ns),
+        format_duration(remote_lookup_duration_ns),
+        format_duration(stats.remote_blob_transfer_duration_ns),
+        format_duration(stats.local_cas_write_duration_ns),
+        format_duration(stats.materialization_duration_ns),
+    );
     if stats.verifications > 0 {
         safe_eprintln!(
             "Action cache qualification: {} verified, {} diverged",
@@ -254,6 +338,26 @@ pub(crate) fn display_stats(stats: AgentStats) {
             stats.divergences,
         );
     }
+}
+
+fn write_stats_report(path: &Path, stats: &AgentStats) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        crate::file::create_dir_all(parent)?;
+    }
+    let mut report = serde_json::to_vec_pretty(&ActionCacheStatsReport::from(stats))?;
+    report.push(b'\n');
+    crate::file::write_atomic(path, report)
+}
+
+fn duration_ns(duration: Duration) -> u64 {
+    duration.as_nanos().try_into().unwrap_or(u64::MAX)
+}
+
+fn format_duration(nanoseconds: u64) -> String {
+    crate::ui::time::format_duration(Duration::from_nanos(nanoseconds))
 }
 
 fn cache_misses(stats: &AgentStats) -> u64 {
@@ -771,5 +875,40 @@ mod tests {
             ..AgentStats::default()
         };
         assert_eq!(cache_misses(&stats), 1);
+    }
+
+    #[test]
+    fn writes_versioned_action_cache_stats_report() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("nested").join("stats.json");
+        let stats = AgentStats {
+            session_duration_ns: 42,
+            lookups: 5,
+            hits: 2,
+            verifications: 1,
+            prefetched_actions: 3,
+            downloaded_bytes: 1024,
+            restored_output_files: 7,
+            restored_output_bytes: 2048,
+            remote_blob_requests: 4,
+            materialization_duration_ns: 9,
+            ..AgentStats::default()
+        };
+
+        write_stats_report(&path, &stats).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+
+        assert_eq!(report["version"], 1);
+        assert_eq!(report["session_duration_ns"], 42);
+        assert_eq!(report["hits"], 2);
+        assert_eq!(report["misses"], 2);
+        assert_eq!(report["compiler_invocations_avoided"], 2);
+        assert_eq!(report["prefetched_actions"], 3);
+        assert_eq!(report["downloaded_bytes"], 1024);
+        assert_eq!(report["restored_output_files"], 7);
+        assert_eq!(report["restored_output_bytes"], 2048);
+        assert_eq!(report["remote_blob_requests"], 4);
+        assert_eq!(report["materialization_duration_ns"], 9);
     }
 }

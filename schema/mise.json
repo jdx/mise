@@ -1835,6 +1835,10 @@
                 "remote_url": {
                   "description": "[experimental] Base URL for the remote build-cache service.",
                   "type": "string"
+                },
+                "stats_report": {
+                  "description": "[experimental] File to write action-cache session statistics to.",
+                  "type": "string"
                 }
               }
             },
