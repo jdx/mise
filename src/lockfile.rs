@@ -3655,7 +3655,7 @@ mod tests {
                 crate::cli::args::BackendResolution::new(true),
             )),
             version: version.to_string(),
-            options: crate::toolset::ToolVersionOptions::default(),
+            options: crate::toolset::ToolVersionOptions::default().into(),
             source: ToolSource::Unknown,
         };
         ToolVersion::new(request, version.to_string())

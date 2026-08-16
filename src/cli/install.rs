@@ -485,7 +485,7 @@ impl Install {
                             let tvr = ToolRequest::Version {
                                 backend: ta.ba.clone(),
                                 version: "latest".into(),
-                                options: ta.ba.opts(),
+                                options: ta.ba.opts().into(),
                                 source: ToolSource::Argument,
                             };
                             requests.push(tvr);

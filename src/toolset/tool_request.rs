@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{Display, Formatter},
@@ -25,44 +27,102 @@ use crate::{
     config::{Config, Settings},
 };
 
+#[derive(Clone, Default)]
+pub(crate) struct ToolRequestOptions {
+    effective: ToolVersionOptions,
+    request_overlay: Option<ToolVersionOptions>,
+}
+
+impl std::fmt::Debug for ToolRequestOptions {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        self.effective.fmt(formatter)
+    }
+}
+
+impl ToolRequestOptions {
+    fn inherited(effective: ToolVersionOptions) -> Self {
+        Self {
+            effective,
+            request_overlay: None,
+        }
+    }
+
+    fn explicit(options: ToolVersionOptions) -> Self {
+        Self {
+            effective: options.clone(),
+            request_overlay: Some(options),
+        }
+    }
+}
+
+impl Deref for ToolRequestOptions {
+    type Target = ToolVersionOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.effective
+    }
+}
+
+// Request option provenance affects future layering, but the effective options
+// remain the request's equality and deduplication identity.
+impl PartialEq for ToolRequestOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.effective == other.effective
+    }
+}
+
+impl Eq for ToolRequestOptions {}
+
+impl Hash for ToolRequestOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.effective.hash(state);
+    }
+}
+
+impl From<ToolVersionOptions> for ToolRequestOptions {
+    fn from(options: ToolVersionOptions) -> Self {
+        Self::inherited(options)
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum ToolRequest {
     Version {
         backend: Arc<BackendArg>,
         version: String,
-        options: ToolVersionOptions,
+        options: ToolRequestOptions,
         source: ToolSource,
     },
     Prefix {
         backend: Arc<BackendArg>,
         prefix: String,
-        options: ToolVersionOptions,
+        options: ToolRequestOptions,
         source: ToolSource,
     },
     Ref {
         backend: Arc<BackendArg>,
         ref_: String,
         ref_type: String,
-        options: ToolVersionOptions,
+        options: ToolRequestOptions,
         source: ToolSource,
     },
     Sub {
         backend: Arc<BackendArg>,
         sub: String,
         orig_version: String,
-        options: ToolVersionOptions,
+        options: ToolRequestOptions,
         source: ToolSource,
     },
     Path {
         backend: Arc<BackendArg>,
         path: PathBuf,
-        options: ToolVersionOptions,
+        options: ToolRequestOptions,
         source: ToolSource,
     },
     System {
         backend: Arc<BackendArg>,
         source: ToolSource,
-        options: ToolVersionOptions,
+        options: ToolRequestOptions,
     },
 }
 
@@ -95,7 +155,7 @@ impl ToolRequest {
                 Self::Ref {
                     ref_: r.to_string(),
                     ref_type: ref_type.to_string(),
-                    options: backend.opts(),
+                    options: backend.opts().into(),
                     backend,
                     source,
                 }
@@ -104,7 +164,7 @@ impl ToolRequest {
                 validate_version_string(p)?;
                 Self::Prefix {
                     prefix: p.to_string(),
-                    options: backend.opts(),
+                    options: backend.opts().into(),
                     backend,
                     source,
                 }
@@ -115,7 +175,7 @@ impl ToolRequest {
                 let path = resolve_path(&p, &source);
                 Self::Path {
                     path,
-                    options: backend.opts(),
+                    options: backend.opts().into(),
                     backend,
                     source,
                 }
@@ -126,7 +186,7 @@ impl ToolRequest {
                 validate_version_string(v)?;
                 Self::Sub {
                     sub: sub.to_string(),
-                    options: backend.opts(),
+                    options: backend.opts().into(),
                     orig_version: v.to_string(),
                     backend,
                     source,
@@ -135,7 +195,7 @@ impl ToolRequest {
             None => {
                 if s == "system" {
                     Self::System {
-                        options: backend.opts(),
+                        options: backend.opts().into(),
                         backend,
                         source,
                     }
@@ -143,7 +203,7 @@ impl ToolRequest {
                     validate_version_string(&s)?;
                     Self::Version {
                         version: s,
-                        options: backend.opts(),
+                        options: backend.opts().into(),
                         backend,
                         source,
                     }
@@ -162,7 +222,7 @@ impl ToolRequest {
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => *o = options,
+            | Self::Ref { options: o, .. } => *o = ToolRequestOptions::explicit(options),
             _ => Default::default(),
         }
         Ok(tvr)
@@ -218,7 +278,7 @@ impl ToolRequest {
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => *o = options,
+            | Self::System { options: o, .. } => o.effective = options,
         }
         self
     }
@@ -244,7 +304,29 @@ impl ToolRequest {
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => o.clone(),
+            | Self::System { options: o, .. } => o.effective.clone(),
+        }
+    }
+
+    pub(super) fn request_options(&self) -> Option<&ToolVersionOptions> {
+        match self {
+            Self::Version { options, .. }
+            | Self::Prefix { options, .. }
+            | Self::Ref { options, .. }
+            | Self::Sub { options, .. }
+            | Self::Path { options, .. }
+            | Self::System { options, .. } => options.request_overlay.as_ref(),
+        }
+    }
+
+    pub(super) fn option_state(&self) -> ToolRequestOptions {
+        match self {
+            Self::Version { options, .. }
+            | Self::Prefix { options, .. }
+            | Self::Ref { options, .. }
+            | Self::Sub { options, .. }
+            | Self::Path { options, .. }
+            | Self::System { options, .. } => options.clone(),
         }
     }
 
@@ -758,7 +840,7 @@ mod tests {
         let prefix = ToolRequest::Prefix {
             backend: test_ba(),
             prefix: "0.8".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let (query, boundary) = prefix.lockfile_version_query();
@@ -771,7 +853,7 @@ mod tests {
         let version = ToolRequest::Version {
             backend: test_ba(),
             version: "0.8".into(),
-            options: ToolVersionOptions::default(),
+            options: ToolVersionOptions::default().into(),
             source: ToolSource::Argument,
         };
         let (query, boundary) = version.lockfile_version_query();

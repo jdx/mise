@@ -141,7 +141,10 @@ impl Toolset {
                         tr,
                     )
                 {
-                    let options = tr.ba().opts_with_config(Some(config_options));
+                    let options = super::tool_request_set::layered_options_for_runtime_request(
+                        tr,
+                        Some(config_options),
+                    );
                     if tr.options() != options {
                         tr.set_options(options);
                     }
@@ -850,5 +853,36 @@ mod tests {
         toolset.init_request_options(&mut requests);
 
         assert_eq!(requests, vec![inactive, active]);
+    }
+
+    #[tokio::test]
+    async fn test_init_request_options_preserves_matching_request_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy[inline_only=inline]"));
+        let configured = ToolRequest::new_opts(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="config""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured);
+        let mut requests = vec![
+            ToolRequest::new_opts(
+                ba,
+                "1.0.0",
+                parse_tool_options(r#"request_only="request""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+
+        toolset.init_request_options(&mut requests);
+
+        let options = requests[0].options();
+        assert_eq!(options.get("selected"), Some("config"));
+        assert_eq!(options.get("request_only"), Some("request"));
+        assert_eq!(options.get("inline_only"), Some("inline"));
     }
 }
