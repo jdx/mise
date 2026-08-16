@@ -2812,6 +2812,22 @@ env = "MISE_TASK_CACHE_REMOTE_URL"
 optional = true
 type = "Url"
 
+[task.cache.stats_report]
+description = "[experimental] File to write action-cache session statistics to."
+docs = """
+Write a versioned JSON report describing Rust action-cache activity, transfer volume, restored
+outputs, and phase timings. Timing values use nanoseconds. Concurrent phase timings are cumulative
+work time and can exceed the end-to-end `session_duration_ns`; `prefetch_duration_ns` is the sum of
+wall-clock durations for each task prefetch run.
+
+This is intended for CI qualification and benchmarking. Relative paths resolve against mise's
+working directory. The report is replaced atomically after each `mise run` invocation that creates
+an action-cache session.
+"""
+env = "MISE_TASK_CACHE_STATS_REPORT"
+optional = true
+type = "Path"
+
 [task.cache_dir]
 description = "[experimental] Directory for task output cache artifacts."
 docs = """
