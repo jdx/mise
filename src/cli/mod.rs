@@ -598,7 +598,8 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
 
                 if let Some(flag) = attached_short_value {
                     result.push(flag.to_string());
-                    result.push(arg[flag.len()..].to_string());
+                    let value = &arg[flag.len()..];
+                    result.push(value.strip_prefix('=').unwrap_or(value).to_string());
                     i += 1;
                     continue;
                 }
@@ -1180,7 +1181,7 @@ mod tests {
             "run".to_string(),
             "-j1".to_string(),
             "-Ctmp".to_string(),
-            "-oprefix".to_string(),
+            "-o=prefix".to_string(),
             "atask".to_string(),
         ];
 
@@ -1191,6 +1192,26 @@ mod tests {
             ]
             .map(str::to_string)
         );
+    }
+
+    #[test]
+    fn test_escape_task_args_keeps_hyphen_prefixed_attached_value_bound_to_option() {
+        let cmd = Cli::command();
+        let args = ["mise", "run", "-C-dir", "atask"].map(str::to_string);
+        let processed = escape_task_args(&cmd, &args);
+
+        assert_eq!(
+            processed,
+            ["mise", "run", "-C", "-dir", "atask"].map(str::to_string)
+        );
+
+        let matches = cmd.try_get_matches_from(processed).unwrap();
+        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        assert_eq!(cli.cd, Some(PathBuf::from("-dir")));
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("atask"));
     }
 
     #[test]
