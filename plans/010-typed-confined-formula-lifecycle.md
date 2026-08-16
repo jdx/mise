@@ -8,7 +8,7 @@ Depends on: 009
 Implementation start: #11915 `4989ac953`
 Implementation commits: `4989ac953`, `43cc1d8c1`, `57319487b`, `5bc0ba042`
 
-Acceptance extension (2026-08-16): direct resolution of all 31 essential-mac
+Acceptance extension (2026-08-16): direct resolution of all 31 downstream
 formula roots reaches current `python@3.14`, whose typed lifecycle requires
 `set_permissions` with `u+w` over guarded framework/lib glob paths. The prior
 closed enum rejected this mutation closure before side effects. Plan 010 is
@@ -160,7 +160,7 @@ Final prerequisite proof:
   `6.0.17` at `4dacfe77a24dead72de749c0876028b77b99cd04`;
   Linux intentionally records runtime `not-installed`.
 - Descendant combined head `7048be7c5b0f5bc62dc061cf32afd72a0dde9b61`
-  directly exercises the complete 31-formula essential-mac root set in
+  directly exercises the complete 31-formula downstream root set in
   [run 31921306723](https://github.com/jdx/mise/actions/runs/31921306723).
 
 ## Done criteria

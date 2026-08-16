@@ -37,7 +37,7 @@ repouring a valid keg or overwriting user configuration.
 
 ## Production regression
 
-`essential-mac` declares only `brew:kimi-code`. Mise poured its transitive
+The downstream operator profile declares only `brew:kimi-code`. Mise poured its transitive
 `ca-certificates` and `openssl@3` dependencies with receipts marked `(mise)`,
 but omitted `/opt/homebrew/etc/openssl@3` and post-install CA state. Node uses
 OpenSSL's default CA store; bundled-CA mode succeeds while default TLS and Kimi
@@ -102,7 +102,7 @@ not permission to mutate.
 9. Ensure real brew can upgrade/uninstall repaired mise state and mise can adopt
    real-brew state without rewriting it merely to add private provenance.
 
-## Essential-mac regression
+## Root-only downstream regression
 
 The test configuration contains only:
 
@@ -195,7 +195,7 @@ Completed proof:
 - The permission-health implementation is `4a58b73b7`; harness corrections are
   `2461c2305` and `55d10319b`. Descendant combined head
   `7048be7c5b0f5bc62dc061cf32afd72a0dde9b61` directly exercises all 31
-  essential-mac formula roots in
+  downstream formula roots in
   [run 31921306723](https://github.com/jdx/mise/actions/runs/31921306723).
 
 ```bash
