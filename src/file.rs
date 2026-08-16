@@ -1106,6 +1106,9 @@ fn resolve_relative_link_target(link: &Path, target: PathBuf) -> PathBuf {
 
 #[cfg(unix)]
 pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    // POSIX has no standard unlink-by-handle operation, so a concurrent replacement can still
+    // occur between this check and remove_file. The latter cannot remove directories; callers
+    // must keep the parent directory protected from untrusted writers.
     if dir_link_target(link)?.is_none() {
         bail!("refusing to remove non-link: {}", display_path(link));
     }
