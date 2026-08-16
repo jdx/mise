@@ -4,7 +4,7 @@ Describe 'shell detection' {
         # The workflow sets these for the whole job and Pester runs every suite in one process, so
         # put back what was there rather than dropping it.
         $script:originalEnv = @{}
-        foreach ($name in 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_SHELL') {
+        foreach ($name in 'MISE_TRUSTED_CONFIG_PATHS', 'MISE_SHELL', 'SHELL') {
             $script:originalEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
         }
 
@@ -14,8 +14,10 @@ Describe 'shell detection' {
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:testDir
 
         # The whole point is what happens with nothing to detect from. `MISE_SHELL` is what an
-        # activated session sets, so an inherited one would make every case below pass vacuously.
+        # activated session sets and `SHELL` is what Git Bash sets, so either one inherited from
+        # the runner would make the cases below pass vacuously.
         Remove-Item -Path Env:\MISE_SHELL -ErrorAction SilentlyContinue
+        Remove-Item -Path Env:\SHELL -ErrorAction SilentlyContinue
     }
 
     AfterAll {
@@ -55,5 +57,35 @@ Describe 'shell detection' {
         $out = & mise activate pwsh 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $out | Should -Match 'MISE_SHELL'
+    }
+
+    It 'detects the shell from SHELL, the way Git Bash sets it' {
+        # Git Bash, MSYS2 and Cygwin all export SHELL on Windows. mise read COMSPEC and never
+        # looked, so `mise activate` with no argument failed here even though the session had
+        # named its shell. Only the file name is parsed, so the path need not exist.
+        $env:SHELL = 'C:\Program Files\Git\bin\bash.exe'
+        try {
+            $out = & mise activate 2>&1 | Out-String
+            $LASTEXITCODE | Should -Be 0
+            # bash syntax specifically, not just "it printed something".
+            $out | Should -Match 'export MISE_SHELL=bash'
+        } finally {
+            Remove-Item -Path Env:\SHELL -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'prefers MISE_SHELL over SHELL' {
+        # An activated session names its own shell, and that has to win: re-detecting from SHELL
+        # would emit a script for a different shell than the one already activated.
+        $env:SHELL = 'C:\Program Files\Git\bin\bash.exe'
+        $env:MISE_SHELL = 'pwsh'
+        try {
+            $out = & mise activate 2>&1 | Out-String
+            $LASTEXITCODE | Should -Be 0
+            $out | Should -Match "MISE_SHELL = 'pwsh'"
+        } finally {
+            Remove-Item -Path Env:\SHELL -ErrorAction SilentlyContinue
+            Remove-Item -Path Env:\MISE_SHELL -ErrorAction SilentlyContinue
+        }
     }
 }
