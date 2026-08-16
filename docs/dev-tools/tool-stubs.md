@@ -308,6 +308,28 @@ chmod +x ./bin/my-tool
 ./bin/my-tool --version
 ```
 
+#### On Windows
+
+Windows cannot execute a shebang script, so `mise generate tool-stub` writes a `.cmd` launcher
+beside the stub. Run the stub by name and Windows picks it up through `PATHEXT`:
+
+```powershell
+.\bin\my-tool.cmd --version
+```
+
+The launcher is generated whenever the stub could run on Windows — either it lists a
+`[platforms.windows-*]` entry, or it names no platforms at all. A stub that ships only for, say,
+Linux and macOS does not get one, and neither does a stub whose own name already ends in `.cmd`,
+`.bat` or `.exe`. It is written on every platform, not just Windows, so a stub generated on Linux
+and committed to a repository still works for someone who clones it on Windows.
+
+If a stub later stops shipping for Windows, regenerating it removes the launcher, so it cannot keep
+running against platforms the stub no longer declares. Only a launcher mise generated is removed —
+one you wrote yourself is left alone.
+
+The extension-less stub is kept as well: Git Bash and Cygwin run it through the shebang, the same
+way [shims](/dev-tools/shims) place both an extension-less script and a native launcher on Windows.
+
 ### Via mise Command
 
 Execute using the [`mise tool-stub`](/cli/tool-stub) command—useful for testing if something isn't working right:

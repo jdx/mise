@@ -187,4 +187,45 @@ assert_contains "cat hello-stub" "size ="
 assert_contains "cat gh-test-stub" "checksum ="
 assert_contains "cat gh-test-stub" "size ="
 
+# Test 5: a Windows launcher is written beside stubs that could run on Windows.
+# Windows cannot execute the shebang stub itself, and the stub is usually authored on Unix and
+# committed, so the launcher has to be produced here rather than on the Windows machine.
+
+# No platforms named at all -> nothing was ruled out, so the launcher is written.
+# It derives the stub path from its own filename rather than naming it, so a stub name containing
+# `%` cannot be expanded by cmd.exe into the wrong path.
+assert_succeed "test -f hello-stub.cmd"
+assert_contains "cat hello-stub.cmd" 'mise tool-stub "%~dpn0" %*'
+
+# Explicitly cross-platform including windows -> written.
+assert_succeed "mise generate tool-stub cross-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz' \
+  --platform-url windows-x64:'https://example.com/tool-windows.zip'"
+assert_succeed "test -f cross-stub.cmd"
+
+# Ships for unix only -> no launcher. Without this the check above would pass even if the
+# launcher were written unconditionally.
+assert_succeed "mise generate tool-stub unix-only-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz' \
+  --platform-url macos-arm64:'https://example.com/tool-macos.tar.gz'"
+assert_fail "test -f unix-only-stub.cmd"
+
+# A stub that stops shipping for Windows loses the launcher, which would otherwise keep working and
+# contradict the platforms the stub now declares.
+cat <<'EOF' >cross-stub
+#!/usr/bin/env -S mise tool-stub
+
+[platforms.linux-x64]
+url = "https://example.com/tool-linux.tar.gz"
+EOF
+assert_succeed "mise generate tool-stub cross-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz'"
+assert_fail "test -f cross-stub.cmd"
+
+# ...but a launcher mise did not write is left where it is.
+echo 'echo mine' >unix-only-stub.cmd
+assert_succeed "mise generate tool-stub unix-only-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz'"
+assert_contains "cat unix-only-stub.cmd" "echo mine"
+
 echo "All slow tool-stub generation tests passed!"

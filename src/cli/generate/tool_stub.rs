@@ -20,7 +20,10 @@ use color_eyre::eyre::bail;
 use indexmap::IndexMap;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::ErrorKind;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use toml_edit::DocumentMut;
 
 /// Generate a tool stub for HTTP-based tools
@@ -154,17 +157,80 @@ impl ToolStub {
             self.generate_stub().await?
         };
 
+        // Before the stub is written, so a launcher that is not ours stops the run rather than
+        // leaving a regenerated stub whose launcher was silently skipped. Same ordering, and the
+        // same reason, as `task-stubs`.
+        self.validate_windows_launcher(&stub_content)?;
+
         if let Some(parent) = self.output.parent() {
             file::create_dir_all(parent)?;
         }
 
         file::write(&self.output, &stub_content)?;
         file::make_executable(&self.output)?;
+        self.write_windows_launcher(&stub_content)?;
 
         if self.fetch || self.lock {
             miseprintln!("Updated tool stub: {}", display_path(&self.output));
         } else {
             miseprintln!("Generated tool stub: {}", display_path(&self.output));
+        }
+        Ok(())
+    }
+
+    /// Write the `.cmd` next to a stub that could run on Windows.
+    ///
+    /// Windows cannot execute the stub itself: it is a shebang script, and `CreateProcess` will not
+    /// run one. The stub's own machinery works there — `mise tool-stub <file>` does the right thing
+    /// — so all that is missing is something Windows will launch.
+    ///
+    /// Written on every host, not just Windows, because the case worth fixing is a stub authored on
+    /// Linux and committed: the Windows user who runs it is not its author and has no way to
+    /// regenerate it (they do not have the original `--url`/`--version`). A host-OS check would
+    /// never fire for them.
+    fn write_windows_launcher(&self, stub_content: &str) -> Result<()> {
+        let Some(launcher) = super::windows_launcher_path(&self.output) else {
+            return Ok(());
+        };
+        if wants_windows_launcher(stub_content) {
+            file::write(&launcher, &*WINDOWS_LAUNCHER)?;
+        } else if file::read_to_string(&launcher).is_ok_and(|c| super::is_generated_launcher(&c)) {
+            // A stub that used to ship for Windows and no longer does would otherwise keep a
+            // launcher that still runs, contradicting the platforms it now declares. Recognised by
+            // the marker rather than by comparing text, so a launcher written by an older mise --
+            // whose body differed -- is still cleaned up; a launcher the user wrote is left alone.
+            file::remove_file(&launcher)?;
+        }
+        Ok(())
+    }
+
+    /// Refuse to replace a `.cmd` beside the stub that mise did not write.
+    ///
+    /// `--output` is the user's choice, so `<stub>.cmd` is a name a project may already be using
+    /// for a script of its own, and nothing about that name says mise owns it. The stub itself is
+    /// different: the user named it, so overwriting it is what they asked for.
+    fn validate_windows_launcher(&self, stub_content: &str) -> Result<()> {
+        if !wants_windows_launcher(stub_content) {
+            return Ok(());
+        }
+        let Some(launcher) = super::windows_launcher_path(&self.output) else {
+            return Ok(());
+        };
+        match fs::symlink_metadata(&launcher) {
+            Ok(metadata) if metadata.file_type().is_file() => {
+                if !super::is_generated_launcher(&file::read_to_string(&launcher)?) {
+                    bail!(
+                        "cannot write Windows launcher because {} is not a generated launcher",
+                        display_path(&launcher)
+                    );
+                }
+            }
+            Ok(_) => bail!(
+                "cannot write Windows launcher because {} is not a regular file",
+                display_path(&launcher)
+            ),
+            Err(err) if matches!(err.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {}
+            Err(err) => return Err(err.into()),
         }
         Ok(())
     }
@@ -887,6 +953,53 @@ fn extract_toml_from_stub(content: &str) -> String {
     }
 }
 
+/// The Windows launcher written beside an eligible stub.
+///
+/// `%~dpn0` is the launcher's own drive+path+name with the extension dropped, which is exactly the
+/// stub sitting next to it — so the stub's name never has to be interpolated in. That matters
+/// beyond tidiness: a name containing `%` would otherwise be expanded by `cmd.exe` as an
+/// environment variable and hand `mise tool-stub` the wrong path.
+///
+/// `%*` forwards the argument text with quoting intact, and cmd returns the last command's exit
+/// code when the script ends. `mise` comes off PATH, the same assumption the shebang already makes.
+///
+/// Being one fixed string also makes it safe to clean up: an existing `.cmd` is only removed when
+/// it matches this exactly, so a hand-written launcher is never deleted.
+static WINDOWS_LAUNCHER: LazyLock<String> =
+    LazyLock::new(|| super::windows_launcher_body("mise tool-stub \"%~dpn0\""));
+
+/// Whether a stub warrants a Windows `.cmd` launcher.
+///
+/// Judged from the stub itself rather than the host OS — see [`ToolStub::write_windows_launcher`]
+/// for why. A stub earns one unless its author ruled Windows out:
+///
+/// - lists a `[platforms.*]` table with a windows entry → yes
+/// - lists `[platforms.*]` tables but none for windows → no, this tool does not ship for Windows
+/// - lists no platforms at all (`tool = "python"`, or a bare `url`) → yes, nothing was ruled out
+///
+/// The stub's *name* is judged separately, by [`super::windows_launcher_path`].
+fn wants_windows_launcher(stub_content: &str) -> bool {
+    // Via the same extractor the rest of this file uses, so a --bootstrap stub (TOML embedded in a
+    // bash wrapper) is read correctly rather than failing to parse and falling through.
+    let Ok(doc) = extract_toml_from_stub(stub_content).parse::<DocumentMut>() else {
+        // Unparseable stubs are the generator's problem, not this function's; err towards the
+        // launcher so a Windows user is not silently left without one.
+        return true;
+    };
+    let Some(platforms) = doc.get("platforms").and_then(|p| p.as_table_like()) else {
+        return true;
+    };
+    if platforms.is_empty() {
+        return true;
+    }
+    // Parsed rather than prefix-matched: `windows-arm64` counts, and a future qualifier such as
+    // `windows-x64-msvc` keeps counting.
+    platforms
+        .iter()
+        .filter_map(|(key, _)| Platform::parse(key).ok())
+        .any(|p| p.os == "windows")
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -958,4 +1071,56 @@ mod tests {
             "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
     }
+}
+
+#[cfg(test)]
+mod windows_launcher_tests {
+    use super::*;
+
+    #[test]
+    fn a_stub_that_ships_for_windows_gets_a_launcher() {
+        let stub = r#"
+[platforms.linux-x64]
+url = "https://example.com/tool-linux.tar.gz"
+
+[platforms.windows-x64]
+url = "https://example.com/tool-windows.zip"
+bin = "tool.exe"
+"#;
+        assert!(wants_windows_launcher(stub));
+
+        // arm64-only windows counts too — this is why the check parses the platform instead of
+        // looking for the string "windows-x64"
+        let arm_only = r#"
+[platforms.windows-arm64]
+url = "https://example.com/tool-windows-arm64.zip"
+"#;
+        assert!(wants_windows_launcher(arm_only));
+    }
+
+    #[test]
+    fn a_stub_with_no_windows_platform_does_not() {
+        let stub = r#"
+[platforms.linux-x64]
+url = "https://example.com/tool-linux.tar.gz"
+
+[platforms.macos-arm64]
+url = "https://example.com/tool-macos.tar.gz"
+"#;
+        assert!(!wants_windows_launcher(stub));
+    }
+
+    #[test]
+    fn a_stub_that_names_no_platforms_gets_one() {
+        // nothing was ruled out, and these run anywhere mise does
+        assert!(wants_windows_launcher(
+            "version = \"1.0.0\"\ntool = \"python\"\n"
+        ));
+        assert!(wants_windows_launcher(
+            "url = \"https://example.com/thing.tar.gz\"\n"
+        ));
+    }
+
+    // The executable-extension guard lives in `super::windows_launcher_path` now, and is tested
+    // there — both stub kinds share it.
 }
