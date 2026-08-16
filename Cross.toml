@@ -32,8 +32,8 @@ pre-build = [
   "ln -s ~/.cargo/bin/bindgen /usr/local/bin/bindgen",
 ]
 
-[target.armv7-unknown-linux-gnueabi]
-image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:0.2.5"
+[target.armv7-unknown-linux-gnueabihf]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:0.2.5"
 pre-build = [
   "dpkg --add-architecture armhf",
   "apt-get update && apt-get install -y libclang-dev clang llvm-dev pkg-config",
