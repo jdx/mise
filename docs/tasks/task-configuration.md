@@ -930,7 +930,8 @@ through cache configuration. Use `pass_through_env` for variables that a task ne
 which must not affect its cache key, such as short-lived credentials. The scoped
 `task_config.global_pass_through_env` equivalent applies to every task. In mise's default,
 non-sandboxed environment mode, ambient variables already pass through; these options matter when
-`deny_env`, `deny_all`, or the corresponding CLI option is active.
+environment sandboxing is active through `allow_env`, `deny_env`, `deny_all`, or a corresponding
+CLI option.
 
 ```mise-toml
 [task_config]
@@ -1153,10 +1154,11 @@ Entries support `*` wildcards, such as `MYAPP_*`.
 
 Preserve the listed ambient environment variables when environment inheritance is denied without
 including their values in the task cache key. Entries support `*` wildcards. This property does not
-enable environment sandboxing by itself and has no effect unless `deny_env`, `deny_all`, or an
-equivalent CLI or global sandbox option is active.
+enable environment sandboxing by itself and has no effect unless environment sandboxing is active,
+including through `allow_env`, `deny_env`, `deny_all`, or an equivalent CLI or global sandbox option.
 
-Use `pass_through_env` for values such as short-lived credentials that must not affect cached output.
+Use `pass_through_env` for values such as short-lived credentials that must not affect the cache key.
+Do not use it for values that affect generated outputs or logs.
 Use `cache.env` instead when changes to a variable should invalidate the task cache.
 
 ### `quiet`
