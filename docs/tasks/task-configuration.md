@@ -1060,7 +1060,10 @@ timeout = "10m"
 ```
 
 This limits the individual task. Use [`mise run --timeout`](/cli/run.html) or the
-[`task_timeout`](/configuration/settings.html#task-timeout) setting to limit the entire task run.
+[`task.timeout`](/configuration/settings.html#task-timeout) setting to limit the entire task run.
+When both a global timeout and a per-task timeout are set, the shorter of the two wins: a per-task
+timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides the global
+setting.
 
 ### `deny_all`
 
