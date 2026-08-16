@@ -49,6 +49,23 @@ run = "cargo build"
 run_windows = "cargo build --features windows"
 ```
 
+### `file`
+
+- **Type**: `string`
+
+Execute an external script instead of an inline `run` command. Relative paths are resolved from the
+directory containing the task's config file. The path supports Tera templates.
+
+```mise-toml
+[tasks.release]
+description = "Cut a new release"
+file = "scripts/release.sh"
+```
+
+`file` also accepts HTTP(S) URLs and `git::` sources. See [Using a file or remote
+script](/tasks/toml-tasks.html#using-a-file-or-remote-script) for the supported formats and security
+considerations.
+
 ### `description`
 
 - **Type**: `string`
@@ -254,6 +271,24 @@ run = [
 ]
 ```
 
+### `vars` {#task-vars}
+
+- **Type**: `{ [key]: string | int | bool | directive }`
+
+Variables specific to this task. Task-local vars override config vars while rendering the task, but
+are not exported to the task process as environment variables.
+
+```mise-toml
+[vars]
+mode = "headless"
+
+[tasks.test]
+vars = { mode = "headed" }
+run = "./scripts/test-e2e.sh --{{ vars.mode }}"
+```
+
+See [Vars](#vars) for supported value-producing directives, precedence, and redaction.
+
 ### `tools`
 
 - **Type**: `{ [key]: string }`
@@ -417,24 +452,6 @@ has changed since the last build.
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
 
-#### Watching VCS-ignored sources
-
-By default, `mise watch` respects VCS ignore files such as `.gitignore`, even when an ignored path is
-listed in `sources`. Set `watch.no_vcs_ignore` for tasks that need to watch generated or intermediary
-files which are intentionally excluded from version control:
-
-```mise-toml
-[tasks.generate]
-run = "process generated/output.json"
-sources = ["generated/output.json"]
-watch = { no_vcs_ignore = true }
-```
-
-This is equivalent to passing `--no-vcs-ignore` to watchexec. Because watchexec applies ignore options
-to the entire watch process, watching multiple tasks together disables VCS ignores for all of them if
-any selected task enables this option. Keep `sources` narrowly scoped: disabling VCS ignores for broad
-build, distribution, or dependency directories may substantially increase filesystem scanning.
-
 #### Excluding sources
 
 Entries in `sources` prefixed with `!` are excluded, matching the convention
@@ -521,6 +538,29 @@ changes, both are skipped.
 
 Note that dependencies **without** `sources` (which always run) do not trigger this invalidation —
 otherwise `sources` on the dependent task would be effectively useless.
+
+### `watch`
+
+- **Type**: `{ no_vcs_ignore = bool }`
+- **Default**: `{ no_vcs_ignore = false }`
+
+Options used when the task runs through [`mise watch`](/cli/watch.html). By default, `mise watch`
+respects VCS ignore files such as `.gitignore`, even when an ignored path is listed in `sources`. Set
+`watch.no_vcs_ignore` for tasks that need to watch generated or intermediary files which are
+intentionally excluded from version control:
+
+```mise-toml
+[tasks.generate]
+run = "process generated/output.json"
+sources = ["generated/output.json"]
+watch = { no_vcs_ignore = true }
+```
+
+This is equivalent to passing `--no-vcs-ignore` to watchexec. Because watchexec applies ignore
+options to the entire watch process, watching multiple tasks together disables VCS ignores for all
+of them if any selected task enables this option. Keep `sources` narrowly scoped: disabling VCS
+ignores for broad build, distribution, or dependency directories may substantially increase
+filesystem scanning.
 
 ### `outputs`
 
@@ -1003,6 +1043,121 @@ run = '''
 console.log('hello world')
 '''
 ```
+
+### `timeout`
+
+- **Type**: `string`
+- **Default**: unset
+
+Maximum execution time for this task. The value accepts durations such as `30s`, `5m`, or `1h` and
+supports Tera templates. The task fails if it does not complete within the configured duration.
+
+```mise-toml
+[tasks.integration-test]
+run = "./scripts/integration-test.sh"
+timeout = "10m"
+```
+
+This limits the individual task. Use [`mise run --timeout`](/cli/run.html) or the
+[`task_timeout`](/configuration/settings.html#task-timeout) setting to limit the entire task run.
+
+### `deny_all`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block filesystem reads, filesystem writes, network access, and environment inheritance for this
+task. Specific `allow_*` properties can add exceptions.
+
+```mise-toml
+[tasks.lint]
+run = "eslint ."
+deny_all = true
+allow_read = ["."]
+allow_write = ["./node_modules/.cache"]
+allow_env = ["NODE_*"]
+```
+
+Sandbox support and implicit system access vary by platform. See [Sandboxing](/sandboxing.html) for
+the complete behavior and limitations.
+
+### `deny_read`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block filesystem reads except for the system and mise paths required to execute the task. Use
+`allow_read` to add task-specific exceptions.
+
+### `deny_write`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block filesystem writes except for implicitly writable system paths such as the temporary
+directory. Use `allow_write` to add task-specific exceptions.
+
+### `deny_net`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block network access for this task. Use `allow_net` for host-specific exceptions on platforms that
+support them.
+
+### `deny_env`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block inherited environment variables except for essential variables such as `PATH`, `HOME`,
+`USER`, `SHELL`, `TERM`, and `LANG`. Use `allow_env` or `pass_through_env` to preserve additional
+variables.
+
+### `allow_read`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow reads from the listed paths and block other filesystem reads. Relative paths are resolved
+from the task's effective working directory.
+
+### `allow_write`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow writes to the listed paths and block other filesystem writes. Allowed write paths are also
+readable. Relative paths are resolved from the task's effective working directory.
+
+### `allow_net`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow network access to the listed hosts and block other network access. Per-host network filtering
+is platform-dependent; see [Platform Support](/sandboxing.html#platform-support).
+
+### `allow_env`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow the listed environment variable names and block other inherited environment variables.
+Entries support `*` wildcards, such as `MYAPP_*`.
+
+### `pass_through_env` <Badge type="warning" text="experimental" />
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Preserve the listed ambient environment variables when environment inheritance is denied without
+including their values in the task cache key. Entries support `*` wildcards. This property does not
+enable environment sandboxing by itself and has no effect unless `deny_env`, `deny_all`, or an
+equivalent CLI or global sandbox option is active.
+
+Use `pass_through_env` for values such as short-lived credentials that must not affect cached output.
+Use `cache.env` instead when changes to a variable should invalidate the task cache.
 
 ### `quiet`
 
