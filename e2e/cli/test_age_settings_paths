@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+mkdir -p project/keys project/subdir
+cat >project/keys/age.txt <<'EOF'
+# public key: age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l
+AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8
+EOF
+cat >project/mise.toml <<'EOF'
+[settings.age]
+key_file = "keys/age.txt"
+identity_files = ["{{ config_root }}/keys/identity.txt"]
+ssh_identity_files = ["keys/id_ed25519"]
+
+[env]
+SECRET = { age = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBXS2Jlb0xuZFc5M3BKRGZlWm95MGMyNTM2MHRlbGJ5Y2FsQkdISVRkRFZFCkt5bEFHMFl5ZzMvWWExNVZmeFFEeFcySURFemlrOUhXdmVjY2pyNnArSFUKLT4gXGRBRT4tZ3JlYXNlClk1NS9LNXJSSStOTEF6VlVEYWFwNkwycUlPcGdkdm03Ci0tLSBOVTdVOVA4MElaVG1keGZmM0VsZXpuMHZxQmJaeklOT3lDRkdlS2pHd04wCsEaIzUkHH6t/xRB9eiREl9SlNjBpxtLX3TQGb+zBagRaE4tt143+Wna6va5nLcE9Ydg" }
+EOF
+
+project_root="$PWD/project"
+cd project/subdir
+
+assert "mise settings get age.key_file" "$project_root/keys/age.txt"
+assert "mise settings get age.identity_files" "[\"$project_root/keys/identity.txt\"]"
+assert "mise settings get age.ssh_identity_files" "[\"$project_root/keys/id_ed25519\"]"
+assert_contains "mise env" "SECRET=relative-key-works"
+
+# Environment settings have no declaring config file and retain their existing
+# process-relative behavior.
+MISE_AGE_KEY_FILE=env-key.txt assert "mise settings get age.key_file" "env-key.txt"
