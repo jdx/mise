@@ -29,6 +29,8 @@ use crate::ui::{style, time};
 use duct::IntoExecutablePath;
 use eyre::{Context, Report, Result, ensure, eyre};
 use indexmap::IndexMap;
+#[cfg(windows)]
+use indoc::formatdoc;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
@@ -173,6 +175,41 @@ enum InlineArgsStyle {
     PosixCommandText,
     CmdCommandText,
     SeparateArgv,
+}
+
+/// Whether the shell mise is about to spawn cannot use `dir` as its working directory.
+///
+/// cmd.exe refuses a UNC working directory. It says so on stderr, starts in `C:\Windows` instead,
+/// and carries on — so the task runs somewhere the user never asked for while mise reports success.
+/// Reuses [`crate::path::is_cmd_shell_program`] and [`crate::file::is_unc_path`]; both already know
+/// the shapes involved, including `cmd`/`cmd.exe`/`CMD.EXE` and the verbatim `\\?\UNC\` form.
+#[cfg(windows)]
+fn cmd_shell_cannot_use_dir(program: &str, dir: &Path) -> bool {
+    crate::path::is_cmd_shell_program(Path::new(program)) && crate::file::is_unc_path(dir)
+}
+
+/// What to say when it cannot. Names both ways out, because neither setting is guessable.
+#[cfg(windows)]
+fn unc_working_dir_error(dir: &Path) -> String {
+    formatdoc! {r#"
+        cmd.exe cannot use a UNC path as a working directory
+
+          working directory: {dir}
+
+        It would start in C:\Windows instead and run the command there, so mise stops rather
+        than running it somewhere you did not ask for.
+
+        Use a shell that accepts UNC paths, either for this task:
+
+          shell = "pwsh -c"
+
+        or for every task:
+
+          mise settings windows_default_inline_shell_args="pwsh -c"
+
+        A file task takes its shell from windows_default_file_shell_args instead."#,
+        dir = display_path(dir),
+    }
 }
 
 fn inline_args_style(program: &str, shell_args: &[String]) -> InlineArgsStyle {
@@ -1308,6 +1345,16 @@ impl TaskExecutor {
             }
             let (program, args, cmd_verbatim) =
                 self.get_cmd_program_and_args(command, task, &[])?;
+            // The same refusal as in `exec_program`, and it matters more here: these commands feed
+            // the cache key, so running them from C:\Windows would hash the wrong directory's
+            // answer. Measured on 2026.8.6 with the project on a UNC share — a `command_inputs`
+            // entry reading a file that exists in the project fails, while the same config on a
+            // local path succeeds. `--dry-run` does not reach here (see the cache branch in
+            // `run_task`), so there is nothing to exempt.
+            #[cfg(windows)]
+            if cmd_shell_cannot_use_dir(&program, &root) {
+                eyre::bail!("{}", unc_working_dir_error(&root));
+            }
             #[cfg(not(windows))]
             let _ = cmd_verbatim;
             let program = program.to_executable();
@@ -1423,6 +1470,12 @@ impl TaskExecutor {
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;
+        // `program` is shadowed several times below — `to_executable`, POSIX-shell resolution,
+        // audit wrapping — so keep the shell mise was asked to spawn for the working-directory
+        // check further down. `cmd_verbatim` is not a substitute: it is only set for inline
+        // scripts, and a file task can reach cmd.exe through windows_default_file_shell_args.
+        #[cfg(windows)]
+        let requested_program = program.to_string();
         let config = Config::get().await?;
         let program = program.to_executable();
         let redactions = config.redactions();
@@ -1671,6 +1724,12 @@ impl TaskExecutor {
                     display_path(&dir)
                 ),
             );
+        }
+        // Not under `--dry-run`: nothing is spawned there, so a preview of what *would* run has no
+        // reason to fail on where it would have run.
+        #[cfg(windows)]
+        if !self.dry_run && cmd_shell_cannot_use_dir(&requested_program, &dir) {
+            eyre::bail!("{}", unc_working_dir_error(&dir));
         }
         cmd = cmd.current_dir(dir);
         if self.dry_run {
@@ -2692,5 +2751,47 @@ mod tests {
         let env = env_with_path("/usr/bin:/bin");
         let out = maybe_convert_env_for_msys_shell(Path::new("bash"), &env);
         assert_eq!(out.get(&*crate::env::PATH_KEY).unwrap(), "/usr/bin:/bin");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn cmd_will_not_take_a_unc_working_directory() {
+        // Measured on 2026.8.6 against \\wsl.localhost\<distro>\...: `cmd /c cd` printed
+        // C:\Windows and the task still reported success, so the spawn has to be refused.
+        assert!(cmd_shell_cannot_use_dir(
+            "cmd.exe",
+            Path::new(r"\\server\share\proj")
+        ));
+        // The verbatim form std hands back from canonicalize names the same directory.
+        assert!(cmd_shell_cannot_use_dir(
+            "cmd.exe",
+            Path::new(r"\\?\UNC\server\share\proj")
+        ));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn another_shell_on_the_same_unc_directory_is_left_alone() {
+        // Control: pwsh runs in that directory correctly, so the shell is half of the decision.
+        assert!(!cmd_shell_cannot_use_dir(
+            "pwsh",
+            Path::new(r"\\server\share\proj")
+        ));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn cmd_on_an_ordinary_directory_is_left_alone() {
+        // Control: the UNC shape is the other half. cmd is fine everywhere else.
+        assert!(!cmd_shell_cannot_use_dir("cmd.exe", Path::new(r"C:\proj")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn the_error_names_the_directory_and_a_way_out() {
+        let msg = unc_working_dir_error(Path::new(r"\\server\share\proj"));
+        assert!(msg.contains(r"\\server\share\proj"), "{msg}");
+        assert!(msg.contains("pwsh -c"), "{msg}");
+        assert!(msg.contains("windows_default_inline_shell_args"), "{msg}");
     }
 }
