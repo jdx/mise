@@ -822,7 +822,7 @@ pub fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn is_unc_path(path: &Path) -> bool {
+pub(crate) fn is_unc_path(path: &Path) -> bool {
     matches!(
         path.components().next(),
         Some(std::path::Component::Prefix(prefix))

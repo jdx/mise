@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Cover the additional repeated-source combinations without making the normal
+# PR regression test exceed the e2e runner's 20-second threshold.
+
+SHIMS_DIR="$MISE_DATA_DIR/shims"
+mkdir -p "$SHIMS_DIR"
+
+MISE_BIN=$(command -v mise)
+BASH_BIN=$(command -v bash)
+EXE_DIR="$(dirname "$MISE_BIN")"
+
+check_repeated_source() {
+  local shell_type="$1"
+  local shell_bin="$2"
+  local initial_path="$3"
+  local expected_count="$4"
+  local result count first
+
+  result="$(env PATH="$initial_path" "$shell_bin" \
+    "$TEST_DIR/shims_repeated_source.sh" "$MISE_BIN" "$shell_type")"
+
+  first="${result%%:*}"
+  if [[ $first != "$SHIMS_DIR" ]]; then
+    echo "FAIL: expected shims first after repeated $shell_type activation"
+    echo "PATH: $result"
+    exit 1
+  fi
+
+  count=0
+  while IFS= read -r entry; do
+    [[ $entry == "$SHIMS_DIR" ]] && count=$((count + 1))
+  done < <(printf '%s' "$result" | tr ':' '\n')
+  if [[ $count != "$expected_count" ]]; then
+    echo "FAIL: expected $expected_count shims entries after repeated $shell_type activation, got $count"
+    echo "PATH: $result"
+    exit 1
+  fi
+}
+
+# Missing shims are added once and remain stable on re-source.
+check_repeated_source bash "$BASH_BIN" "$EXE_DIR:/some/other/bin:/usr/bin" 1
+
+if ZSH_BIN=$(command -v zsh); then
+  check_repeated_source zsh "$ZSH_BIN" "$EXE_DIR:/some/other/bin:/usr/bin" 1
+  check_repeated_source zsh "$ZSH_BIN" "$EXE_DIR:/some/other/bin:$SHIMS_DIR:/usr/bin" 2
+fi
+
+# If activation must add the mise executable directory before shims, shims are
+# prepended again so they remain first. The result is still stable on re-source.
+check_repeated_source bash "$BASH_BIN" "$SHIMS_DIR:/some/other/bin:/usr/bin" 2
