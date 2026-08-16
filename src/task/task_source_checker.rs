@@ -312,9 +312,11 @@ pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
 /// unix that string is an escape and `glob` rejects it outright.
 fn expand_trailing_globstar(pattern: &str) -> String {
     let trailing_globstar = pattern == "**"
-        || pattern
-            .strip_suffix("**")
-            .is_some_and(|head| head.chars().next_back().is_some_and(std::path::is_separator));
+        || pattern.strip_suffix("**").is_some_and(|head| {
+            head.chars()
+                .next_back()
+                .is_some_and(std::path::is_separator)
+        });
     if trailing_globstar {
         format!("{pattern}/*")
     } else {
