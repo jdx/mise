@@ -1,6 +1,6 @@
 # Plan 010: Compile formula lifecycle once, preflight it, and confine it
 
-Status: IN PROGRESS — essential-mac closure extension
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11915 `b94b6b1c1`
@@ -148,8 +148,20 @@ rtk mise run test:e2e e2e/cli/test_system_install_brew_formula_lifecycle_macos_s
 rtk mise run lint
 ```
 
-The canonical oracle may remain red for missing finalization/repair until plans
-011–012. Its completion marker from plan 009 must still prove execution.
+Final prerequisite proof:
+
+- Formula implementation and permission-health completion are contained in
+  `4a58b73b7`; oracle-shell corrections are `2461c2305` and `55d10319b`.
+- Exact prerequisite head `55d10319b26a27ac84477109c7ebf6fa0470af9f`
+  passed [run 31915639703](https://github.com/jdx/mise/actions/runs/31915639703),
+  including the canonical macOS lifecycle oracle with five positive fixtures
+  and the Linux formula/source oracles with one positive fixture each.
+- Every marker binds that exact mise SHA to Homebrew reference/runtime
+  `6.0.17` at `4dacfe77a24dead72de749c0876028b77b99cd04`;
+  Linux intentionally records runtime `not-installed`.
+- Descendant combined head `7048be7c5b0f5bc62dc061cf32afd72a0dde9b61`
+  directly exercises the complete 31-formula essential-mac root set in
+  [run 31921306723](https://github.com/jdx/mise/actions/runs/31921306723).
 
 ## Done criteria
 

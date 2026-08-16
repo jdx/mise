@@ -1,6 +1,6 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: IN PROGRESS — permission health/repair extension
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
@@ -185,6 +185,18 @@ Completed proof:
   canonical marker records fixture count `4`, exact mise head, prefix
   `/opt/homebrew`, and matching Homebrew reference/runtime `6.0.17` at
   `4dacfe77a24dead72de749c0876028b77b99cd04`.
+- Final prerequisite head `55d10319b26a27ac84477109c7ebf6fa0470af9f`
+  passed [run 31915639703](https://github.com/jdx/mise/actions/runs/31915639703).
+  Its macOS marker records five positive fixtures and proves the root-only
+  `brew:kimi-code` dependency closure, shared OpenSSL/CA state, default Node
+  TLS, legacy lifecycle diagnosis/repair, and ambiguous-state refusal against
+  exact Homebrew `6.0.17` source
+  `4dacfe77a24dead72de749c0876028b77b99cd04`.
+- The permission-health implementation is `4a58b73b7`; harness corrections are
+  `2461c2305` and `55d10319b`. Descendant combined head
+  `7048be7c5b0f5bc62dc061cf32afd72a0dde9b61` directly exercises all 31
+  essential-mac formula roots in
+  [run 31921306723](https://github.com/jdx/mise/actions/runs/31921306723).
 
 ```bash
 rtk cargo test --bin mise system::packages::brew
