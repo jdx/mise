@@ -8,7 +8,7 @@
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
-use eyre::{WrapErr, bail};
+use eyre::bail;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -125,6 +125,8 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
 ) -> Result<()> {
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
+
+    use eyre::WrapErr;
 
     let argv = argv_with_env(program, args, &[]);
     let manual_cmd = std::iter::once("sudo".to_string())

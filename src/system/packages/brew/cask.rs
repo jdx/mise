@@ -7333,6 +7333,22 @@ mod tests {
         }
     }
 
+    /// A temporary directory whose ancestors pass `ensure_trusted_appdir`'s
+    /// trust checks.
+    ///
+    /// The system temp directory is unusable for these tests on Linux because
+    /// `/tmp` is world-writable (mode 1777) and the trusted walk correctly
+    /// refuses to operate through it. Real application directories
+    /// (`/Applications`, `~/Applications`) are never world-writable, so anchor
+    /// the fixture under the test home instead.
+    fn trusted_tempdir() -> Result<tempfile::TempDir> {
+        let base = &*crate::env::HOME;
+        file::create_dir_all(base)?;
+        Ok(tempfile::Builder::new()
+            .prefix(".mise-cask-appdir-")
+            .tempdir_in(base)?)
+    }
+
     fn run_cask_shim(
         ruby: &Path,
         shim: &Path,
@@ -12652,8 +12668,28 @@ end
     }
 
     #[test]
+    fn ensure_trusted_appdir_refuses_world_writable_ancestor() -> Result<()> {
+        // Regression guard for the CI failure: a world-writable ancestor (as
+        // `/tmp` is, mode 1777) must be refused, because any local user could
+        // substitute components beneath it. Real application directories are
+        // never world-writable.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let shared = base.join("shared");
+        file::create_dir_all(&shared)?;
+        let mode = std::fs::Permissions::from_mode(0o1777);
+        std::fs::set_permissions(&shared, mode)?;
+        let err = match ensure_trusted_appdir(&shared.join("Applications")) {
+            Ok(_) => panic!("expected world-writable ancestor to be refused"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("untrusted directory"), "{err}");
+        Ok(())
+    }
+
+    #[test]
     fn ensure_trusted_appdir_creates_missing_tail() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let appdir = base.join("Applications");
         ensure_trusted_appdir(&appdir)?;
@@ -12667,7 +12703,7 @@ end
     fn ensure_trusted_appdir_rejects_symlinked_tail() -> Result<()> {
         // Simulate a symlink planted on the not-yet-existing appdir tail
         // between validation and mutation: it must be rejected, not followed.
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let elsewhere = base.join("elsewhere");
         file::create_dir_all(&elsewhere)?;
@@ -12677,7 +12713,10 @@ end
             Ok(_) => panic!("expected symlinked appdir tail to be rejected"),
             Err(err) => err.to_string(),
         };
-        assert!(err.contains("brew-cask"), "{err}");
+        // Must fail because the tail is a symlink, not because an ancestor was
+        // untrusted (which is a different guard).
+        assert!(err.contains("cannot open operation directory"), "{err}");
+        assert!(!err.contains("untrusted directory"), "{err}");
         Ok(())
     }
 
@@ -12687,7 +12726,7 @@ end
         // the accepted appdir for a different directory (or symlink). Because
         // the descriptor is retained and mutations are addressed through it,
         // writes still land in the originally validated directory.
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let appdir = base.join("Applications");
         let parent = ensure_trusted_appdir(&appdir)?;
@@ -12709,12 +12748,15 @@ end
         Ok(())
     }
 
+    // `ditto` only exists on macOS, and app artifacts are macOS-only in
+    // practice (Linux cask support is font-only).
+    #[cfg(target_os = "macos")]
     #[test]
     fn ditto_into_stays_bound_after_directory_replacement() -> Result<()> {
         // Bind the appdir, then have a same-uid replacement swap the directory
         // pathname for an attacker-controlled one. The fd-bound copy must still
         // land in the originally validated directory.
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let appdir = base.join("Applications");
         let parent = ensure_trusted_appdir(&appdir)?;
@@ -12742,7 +12784,7 @@ end
         // Swapping an intermediate component for another same-uid-owned real
         // directory before the call therefore cannot be reached through a
         // previously-resolved root, and a symlink swap is rejected outright.
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let middle = base.join("middle");
         file::create_dir_all(&middle)?;
@@ -12768,7 +12810,7 @@ end
         // A same-uid process creates the predictable temporary name as a
         // symlink before the copy. The copy must fail closed rather than follow
         // it, so nothing is written outside the verified directory.
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let appdir = base.join("Applications");
         let parent = ensure_trusted_appdir(&appdir)?;
@@ -12782,7 +12824,13 @@ end
         let tmp_name = std::ffi::OsStr::new("Foo.mise-tmp-abc");
         std::os::unix::fs::symlink(&attacker, appdir.join(tmp_name))?;
 
-        assert!(ditto_into(&source, &parent.fd, tmp_name).is_err());
+        // Fails at `mkdirat` (EEXIST) before `ditto` is ever spawned, so this
+        // holds on platforms without `ditto` too.
+        let err = match ditto_into(&source, &parent.fd, tmp_name) {
+            Ok(()) => panic!("expected pre-planted symlink destination to be refused"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("cannot create staging directory"), "{err}");
         assert!(!attacker.join("marker").exists());
         Ok(())
     }
@@ -12793,7 +12841,7 @@ end
         // A cask bundle may contain a symlink pointing outside the application
         // directory. The recursive flag/permission repair must not follow it and
         // change the referent.
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         let base = tmp.path().canonicalize()?;
         let appdir = base.join("Applications");
         let parent = ensure_trusted_appdir(&appdir)?;
@@ -12919,7 +12967,7 @@ end
     #[cfg(target_os = "macos")]
     #[test]
     fn upgrades_app_with_protected_existing_contents() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
+        let tmp = trusted_tempdir()?;
         // ensure_trusted_appdir walks the appdir with O_NOFOLLOW, so use a
         // canonical base (macOS tempdirs sit under the `/var` symlink).
         let base = tmp.path().canonicalize()?;
