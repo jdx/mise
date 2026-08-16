@@ -1,5 +1,7 @@
 use crate::env;
 use crate::hook_env;
+use clap::ValueEnum;
+use indoc::formatdoc;
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -163,6 +165,49 @@ pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
     shell.or(*env::MISE_SHELL).map(|st| st.as_shell())
 }
 
+/// A shell to name in an example, chosen so the suggestion is one the reader could actually run.
+///
+/// The old messages said `zsh` on every platform, which on Windows points at something the reader
+/// almost certainly does not have.
+#[cfg(windows)]
+pub const EXAMPLE_SHELL: &str = "pwsh";
+#[cfg(not(windows))]
+pub const EXAMPLE_SHELL: &str = "zsh";
+
+/// The shell mise should generate for, or an error saying how to name one.
+///
+/// Detection is `MISE_SHELL`, falling back to [`env::SHELL`] — which on Windows reads `COMSPEC`,
+/// i.e. `cmd.exe`, a shell mise has no implementation for. So on Windows this resolves only when
+/// the session is already activated or the caller names the shell, which makes the error the
+/// ordinary answer there rather than an edge case. It used to be `.expect()`, so the ordinary
+/// answer was a panic.
+///
+/// `how` is the caller's own instruction, because the commands differ: `mise activate` takes the
+/// shell as an argument, `mise hook-env` takes `--shell`, and `mise shell` takes neither.
+pub fn require_shell(shell: Option<ShellType>, how: &str) -> eyre::Result<Box<dyn Shell>> {
+    get_shell(shell).ok_or_else(|| eyre::eyre!(no_shell_error(how)))
+}
+
+/// Split out from [`require_shell`] so it can be tested: the detection it fails on reads
+/// `MISE_SHELL`, which is a process-wide `Lazy`, so the failing path itself cannot be constructed
+/// from a test.
+fn no_shell_error(how: &str) -> String {
+    // Windows is the only platform where this is reachable without the user having done something
+    // unusual, so it is the only one that needs to explain itself.
+    let why = match cfg!(windows) {
+        true => {
+            "mise cannot detect the shell on Windows: the value it would read, COMSPEC, names cmd.exe.\n"
+        }
+        false => "",
+    };
+    let supported = ShellType::value_variants().iter().join(", ");
+    formatdoc! {r#"
+        mise could not tell which shell to generate for.
+        {why}{how}
+        Supported shells: {supported}"#
+    }
+}
+
 /// Deliberately not `#[cfg(unix)]`: this is string handling, and Windows is the platform whose
 /// paths were not being parsed.
 #[cfg(test)]
@@ -275,5 +320,29 @@ mod tests {
             listed,
             ["bash", "elvish", "fish", "nu", "xonsh", "zsh", "pwsh"]
         );
+    }
+
+    /// The message replaced a `.expect()`, so it is the only thing the user gets. It has to carry
+    /// the caller's instruction and every shell that would have been accepted — the list is built
+    /// from `value_variants()` so that adding a shell cannot leave it stale.
+    #[test]
+    fn the_no_shell_message_says_what_to_do_and_what_is_accepted() {
+        let msg = no_shell_error("Name the shell: `mise activate zsh`.");
+
+        assert!(
+            msg.contains("Name the shell: `mise activate zsh`."),
+            "{msg}"
+        );
+        for shell in ShellType::value_variants() {
+            assert!(msg.contains(&shell.to_string()), "{shell} missing:\n{msg}");
+        }
+    }
+
+    /// On Windows the message is the ordinary answer rather than an edge case, so it also has to
+    /// say why detection cannot work there. Elsewhere that line would be noise.
+    #[test]
+    fn only_windows_explains_why_detection_failed() {
+        let msg = no_shell_error("Name the shell.");
+        assert_eq!(msg.contains("COMSPEC"), cfg!(windows), "{msg}");
     }
 }

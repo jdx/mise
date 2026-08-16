@@ -5,7 +5,7 @@ use indoc::formatdoc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::env;
-use crate::shell::get_shell;
+use crate::shell::{EXAMPLE_SHELL, require_shell};
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name};
 
 /// Sets a tool version for the current session.
@@ -44,7 +44,10 @@ impl Shell {
             err_inactive()?;
         }
 
-        let shell = get_shell(None).expect("no shell detected");
+        let shell = require_shell(
+            None,
+            &format!("Re-run `mise activate {EXAMPLE_SHELL}` in your shell rc file."),
+        )?;
 
         if self.unset {
             for ta in &self.tool {

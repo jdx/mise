@@ -2080,6 +2080,13 @@ impl TaskExecutor {
             "MISE_TASK_NAME",
             task.name.clone(),
         );
+        let task_color = self.output_handler.task_prefix_color(task);
+        Self::insert_env_excluded_from_nested_mise_diff(
+            &mut env,
+            &mut nested_mise_diff_exclude_keys,
+            "MISE_TASK_COLOR",
+            task_color,
+        );
         let task_file = task
             .file_path(config)
             .await?
