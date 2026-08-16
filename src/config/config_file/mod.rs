@@ -301,10 +301,24 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
 pub async fn lock_and_parse_or_init(
     path: &Path,
 ) -> eyre::Result<(fslock::LockFile, Arc<dyn ConfigFile>)> {
-    let lock = crate::lock_file::LockFile::new(path)
-        .with_callback(|path| {
-            debug!("waiting for config lock on {}", display_path(path));
-        })
+    lock_and_parse_or_init_with_callback(path, |path| {
+        debug!("waiting for config lock on {}", display_path(path));
+    })
+    .await
+}
+
+async fn lock_and_parse_or_init_with_callback<F>(
+    path: &Path,
+    on_locked: F,
+) -> eyre::Result<(fslock::LockFile, Arc<dyn ConfigFile>)>
+where
+    F: Fn(&Path) + 'static,
+{
+    // Use the same target as the atomic writer so a symlink and its real path cannot produce
+    // independent lock identities for the same config file.
+    let target = file::atomic_write_target(path)?;
+    let lock = crate::lock_file::LockFile::new(&target)
+        .with_callback(on_locked)
         .lock()?;
     let cf = parse_or_init(path).await?;
     Ok((lock, cf))
@@ -992,6 +1006,10 @@ mod tests {
 
     #[test]
     fn lock_and_parse_or_init_reads_after_acquiring_lock() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -1000,26 +1018,37 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("mise.toml");
         file::write(&path, "[tools]\ndummy = \"1\"\n")?;
+        let alias = dir.path().join("linked.toml");
+        symlink(&path, &alias)?;
 
-        let lock = crate::lock_file::LockFile::new(&path).lock()?;
-        let (started_tx, started_rx) = std::sync::mpsc::channel();
-        let thread_path = path.clone();
+        let target = file::atomic_write_target(&path)?;
+        let lock = crate::lock_file::LockFile::new(&target).lock()?;
+        let (waiting_tx, waiting_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
         let reader = std::thread::spawn(move || -> Result<String> {
-            started_tx.send(()).unwrap();
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
-            let (_lock, cf) = runtime.block_on(lock_and_parse_or_init(&thread_path))?;
+            let (_lock, cf) = runtime
+                .block_on(lock_and_parse_or_init_with_callback(&alias, move |_| {
+                    waiting_tx.send(()).unwrap()
+                }))?;
+            acquired_tx.send(()).unwrap();
             cf.dump()
         });
 
-        // The other read-modify-write transaction is now waiting for this lock. Change the file
-        // before releasing it; the waiter must parse this version, not the snapshot from before
-        // it tried to acquire the lock.
-        started_rx.recv().unwrap();
+        // The callback proves that the symlink spelling reached the contended lock for the real
+        // path. Change the file while the waiter is blocked; it must parse this version only after
+        // acquiring the lock.
+        waiting_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            acquired_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
         file::write_atomic(&path, "[tools]\ndummy = \"1\"\ntiny = \"2\"\n")?;
         drop(lock);
 
+        acquired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let contents = reader.join().unwrap()?;
         assert_eq!(contents, "[tools]\ndummy = \"1\"\ntiny = \"2\"\n");
         Ok(())
