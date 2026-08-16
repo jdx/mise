@@ -3916,6 +3916,10 @@
                         "minItems": 1
                       }
                     ]
+                  },
+                  "adopt": {
+                    "type": "boolean",
+                    "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
                   }
                 },
                 "additionalProperties": false
@@ -4557,6 +4561,10 @@
           "type": "object",
           "description": "Homebrew-specific bootstrap package config",
           "properties": {
+            "adopt": {
+              "type": "boolean",
+              "description": "adopt existing app artifacts by default for configured brew-cask packages"
+            },
             "taps": {
               "type": "object",
               "description": "Homebrew tap names mapped to custom git URLs",

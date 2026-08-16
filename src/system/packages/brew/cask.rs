@@ -6592,20 +6592,25 @@ fn write_receipt_with_flight_targets(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let prune_blocker = cask_prune_blocker(cask, artifacts);
+    let metadata_only_apps = if cask.auto_updates {
+        artifacts
+            .apps
+            .iter()
+            .map(|app| app_target_path(app.target_name()))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        metadata_only_apps.to_vec()
+    };
+    let prune_blocker = cask_prune_blocker(cask, artifacts).or_else(|| {
+        (!metadata_only_apps.is_empty()).then(|| {
+            "metadata-only app ownership cannot be proven safely during pruning".to_string()
+        })
+    });
     let receipt = CaskReceipt {
         schema_version: 3,
         version: cask.version.clone(),
         auto_updates: cask.auto_updates,
-        metadata_only_apps: if cask.auto_updates {
-            artifacts
-                .apps
-                .iter()
-                .map(|app| app_target_path(app.target_name()))
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            metadata_only_apps.to_vec()
-        },
+        metadata_only_apps,
         apps: artifacts
             .apps
             .iter()
@@ -7135,6 +7140,9 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     if receipt.schema_version != 3 || !receipt.prune_safe || !receipt.pkg_ids.is_empty() {
         bail!("receipt is not marked safe for direct-artifact pruning");
     }
+    if !receipt.metadata_only_apps.is_empty() {
+        bail!("metadata-only app ownership cannot be proven safely during pruning");
+    }
     let records = receipt
         .targets
         .iter()
@@ -7237,14 +7245,7 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
         }
     }
     for record in &receipt.targets {
-        if receipt.auto_updates && receipt.apps.contains(&record.path) {
-            if !record.path.is_dir() {
-                bail!(
-                    "self-updating app target is missing: {}",
-                    record.path.display()
-                );
-            }
-        } else if !cask_target_record_matches(record)? {
+        if !cask_target_record_matches(record)? {
             bail!("artifact target has changed: {}", record.path.display());
         }
     }
@@ -7791,8 +7792,35 @@ mod tests {
             installed_cask_version(&cask, &artifacts)?,
             Some("1.0.0".to_string())
         );
-        assert!(read_receipt(&caskroom)?.unwrap().auto_updates);
+        let receipt = read_receipt(&caskroom)?.unwrap();
+        assert!(receipt.auto_updates);
+        assert!(!receipt.prune_safe);
+        assert!(
+            receipt
+                .prune_blocker
+                .as_deref()
+                .is_some_and(|reason| reason.contains("metadata-only app ownership"))
+        );
         assert!(!caskroom.join("Example.app").exists());
+
+        // Fail closed for schema-3 receipts written before metadata-only apps
+        // were marked non-prunable. A replacement bundle at the same path
+        // must never become removable merely because it is a directory.
+        let mut legacy_receipt = receipt;
+        legacy_receipt.prune_safe = true;
+        legacy_receipt.prune_blocker = None;
+        file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&legacy_receipt)?,
+        )?;
+        let plan = cask_prune_plan_from_tokens(
+            &BTreeSet::new(),
+            &prefix::prefix().join(".mise-test-state"),
+        )?;
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "self-updating" && skip.reason.contains("metadata-only app ownership")
+        }));
         Ok(())
     }
 
@@ -7800,11 +7828,12 @@ mod tests {
     fn adopts_only_an_identical_existing_app() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = BrewPrefixGuard::set(tmp.path());
-        let stage = tmp.path().join("stage");
-        let caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let root = tmp.path().canonicalize()?;
+        let _guard = BrewPrefixGuard::set(&root);
+        let stage = root.join("stage");
+        let caskroom = root.join("Caskroom/example/1.0.0");
         let source = stage.join("Example.app/Contents");
-        let target = tmp.path().join("Applications/Example.app/Contents");
+        let target = root.join("Applications/Example.app/Contents");
         file::create_dir_all(&source)?;
         file::create_dir_all(&target)?;
         crate::file::write(source.join("app"), "identical")?;
@@ -7827,11 +7856,12 @@ mod tests {
     fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
         let _lock = ENV_LOCK.lock().unwrap();
         let tmp = tempfile::tempdir()?;
-        let _guard = BrewPrefixGuard::set(tmp.path());
-        let stage = tmp.path().join("stage");
-        let caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let root = tmp.path().canonicalize()?;
+        let _guard = BrewPrefixGuard::set(&root);
+        let stage = root.join("stage");
+        let caskroom = root.join("Caskroom/example/1.0.0");
         let source = stage.join("Example.app/Contents");
-        let target = tmp.path().join("Applications/Example.app/Contents");
+        let target = root.join("Applications/Example.app/Contents");
         file::create_dir_all(&source)?;
         file::create_dir_all(&target)?;
         crate::file::write(source.join("app"), "downloaded version")?;

@@ -275,11 +275,12 @@ This command is mise's declarative cleanup for bootstrap packages, similar to
 config model to direct cask artifacts, with a deliberately narrower ownership
 boundary. A cask is removed only when its install-time `.mise-cask.toml`
 receipt explicitly marks it safe to prune and every recorded target still has
-the exact content fingerprint mise recorded after installation. Self-updating
-apps are expected to change and are validated by their recorded destination
-instead. The command
+the exact content fingerprint mise recorded after installation. The command
 removes those targets and the cask's Caskroom entry; `--dry-run` previews the
-plan and `--yes` skips confirmation.
+plan and `--yes` skips confirmation. Adopted and self-updating apps are tracked
+without a duplicate Caskroom bundle, so mise cannot prove that a later bundle
+at the same destination is still the one it owns. These metadata-only apps are
+therefore never removed by prune.
 
 Casks installed before their receipt included prune metadata are skipped until
 a later upgrade or reinstall refreshes the receipt. Casks with pkg or command
