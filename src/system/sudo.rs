@@ -8,7 +8,7 @@
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
-use eyre::bail;
+use eyre::{WrapErr, bail};
 
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -103,6 +103,58 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     // inherited stdio: sudo password prompts and apt progress go straight to
     // the user's terminal
     cmd.raw(true).execute()
+}
+
+/// Run `program args...` elevated, with the child's working directory bound to
+/// `dir` via `fchdir` so relative arguments resolve from that exact directory
+/// inode.
+///
+/// Elevation policy is identical to [`run`]. The difference is that callers can
+/// pass *relative* names which cannot be redirected: a pathname handed to an
+/// elevated recursive operation would be re-resolved by the child, so a
+/// same-uid replacement of a component between validation and execution could
+/// point it somewhere else. Binding the child's cwd to a descriptor the caller
+/// already verified removes that window.
+///
+/// stdio is inherited so a sudo password prompt still reaches the terminal.
+#[cfg(unix)]
+pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
+    program: &str,
+    args: &[String],
+    dir: Fd,
+) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+
+    let argv = argv_with_env(program, args, &[]);
+    let manual_cmd = std::iter::once("sudo".to_string())
+        .chain(std::iter::once(program.to_string()))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    ensure_elevation_available(&manual_cmd)?;
+    info!("$ {}", argv.join(" "));
+    let raw = dir.as_fd().as_raw_fd();
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]);
+    // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
+    // directory. `raw` stays open in the parent across the spawn, and CLOEXEC
+    // (if set) only takes effect at exec, after pre_exec has run.
+    unsafe {
+        cmd.pre_exec(move || {
+            if nix::libc::fchdir(raw) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let status = cmd
+        .status()
+        .wrap_err_with(|| format!("failed to run {}", argv.join(" ")))?;
+    if !status.success() {
+        bail!("{} failed", argv.join(" "));
+    }
+    Ok(())
 }
 
 /// Run an elevated command and capture its output.
