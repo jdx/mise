@@ -674,7 +674,7 @@ produce no audit report, so use `mise run --force <task>` when checking an exist
 
 Console warnings are limited to the first 20 paths per task, which is not enough to classify a task
 that reads thousands of undeclared files. Set
-[`task.cache.audit_report`](/configuration/settings.html#task-cache-audit-report) to also write every
+[`task.cache.audit_report`](/configuration/settings.html#task.cache.audit_report) to also write every
 undeclared path as JSON Lines, one `{"task", "kind", "path"}` object per entry. Truncation happens
 once per `mise` invocation: the first audited task in each invocation truncates the file and later
 audited tasks in that invocation append to it, so one file holds that run's report for every audited
@@ -962,7 +962,7 @@ persisted as cache metadata, but a task can still expose them by writing them to
 or logs.
 
 Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Set the experimental
-[`task.cache_dir`](/configuration/settings.html#task-cache-dir) setting or
+[`task.cache_dir`](/configuration/settings.html#task.cache_dir) setting or
 `MISE_TASK_CACHE_DIR` to choose a different parent directory; mise keeps the artifact format in its
 `v2` child directory. Default and custom locations are included in `mise cache clear` and
 manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
@@ -980,8 +980,8 @@ Temporary archive and manifest files are removed when a write fails normally. On
 mise also removes partial files abandoned by an interrupted process after acquiring the associated
 cache-key lock, so it never deletes files that an active writer is still publishing.
 
-Set [`task.cache_max_size`](/configuration/settings.html#task-cache-max-size) to bound the total
-artifact cache size, or [`task.cache_max_age`](/configuration/settings.html#task-cache-max-age) to
+Set [`task.cache_max_size`](/configuration/settings.html#task.cache_max_size) to bound the total
+artifact cache size, or [`task.cache_max_age`](/configuration/settings.html#task.cache_max_age) to
 expire entries based on their last access. Both limits are optional and apply after successful cache
 writes. When a size limit is exceeded, mise removes least-recently-accessed entries first.
 
@@ -1038,7 +1038,7 @@ that inherited default.
 ### `shell`
 
 - **Type**: `string`
-- **Default**: [`task_config.shell`](#task-config-shell) when set (config-scoped); otherwise
+- **Default**: [`task_config.shell`](#task_config.shell) when set (config-scoped); otherwise
   [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)/[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args) (global-only).
 - **Note**: Only applies to toml-tasks.
 
@@ -1075,7 +1075,7 @@ timeout = "10m"
 ```
 
 This limits the individual task. Use [`mise run --timeout`](/cli/run.html) or the
-[`task.timeout`](/configuration/settings.html#task-timeout) setting to limit the entire task run.
+[`task.timeout`](/configuration/settings.html#task.timeout) setting to limit the entire task run.
 When both a global timeout and a per-task timeout are set, the shorter of the two wins: a per-task
 timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides the global
 setting.
@@ -1202,7 +1202,7 @@ Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that
 ### `output`
 
 - **Type**: `string`
-- **Default**: unset (inherits the global [`task.output`](/configuration/settings.html#task-output) setting)
+- **Default**: unset (inherits the global [`task.output`](/configuration/settings.html#task.output) setting)
 
 Output _style_ for this task: `prefix`, `interleave`, `keep-order`, `replacing`, `timed`, `quiet`, or
 `silent`. This is the per-task equivalent of the global `task.output` setting and is orthogonal to the
@@ -1378,7 +1378,7 @@ Change the default directory tasks are run from.
 dir = "{{cwd}}"
 ```
 
-### `task_config.shell` {#task-config-shell}
+### `task_config.shell` {#task_config.shell}
 
 Set the default shell for tasks in this config scope. A task's explicit `shell` setting takes
 precedence, including a `shell` inherited from a task template. With `task_config.cascade = true`,
@@ -1460,7 +1460,7 @@ lockfiles = ["Cargo.lock", "pnpm-lock.yaml"]
 rust = ["Cargo.toml", "src/**/*.rs", "@group:lockfiles"]
 ```
 
-### `task_config.includes` {#task-config-includes}
+### `task_config.includes` {#task_config.includes}
 
 Set the toml files and file-task directories mise should search when looking for tasks.
 
@@ -1587,7 +1587,7 @@ Optional fields:
 
 When `path` points at a directory, mise loads both executable file tasks and any `.toml` task files inside that directory. When `path` points at a single `.toml` file, only that file is loaded.
 
-Included `.toml` files use the [task toml file format](#task-config-includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
+Included `.toml` files use the [task toml file format](#task_config.includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
 ## Monorepo Support
 
