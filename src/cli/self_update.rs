@@ -138,12 +138,42 @@ fn helper_path_len(tmp: &std::path::Path, exe_stem: Option<&str>) -> usize {
 /// `mise.exe` and longer whenever the binary has been renamed, so it cannot be a constant.
 #[cfg(windows)]
 fn helper_name_len(exe_stem: Option<&str>) -> usize {
-    const RANDOM_LEN: usize = 32;
-    const SUFFIX_LEN: usize = ".__selfdelete__.exe".len();
+    let suffix_len = env::SELF_REPLACE_SUFFIXES[0].len();
 
     // The stem is followed by a second `.`, and dropped entirely when it is not UTF-8.
     let stem = exe_stem.map_or(0, |s| s.encode_utf16().count() + 1);
-    1 + stem + RANDOM_LEN + SUFFIX_LEN
+    1 + stem + env::SELF_REPLACE_RANDOM_LEN + suffix_len
+}
+
+/// Delete the copies of mise that earlier updates left in `TEMP`.
+///
+/// `self-replace` moves the running binary aside and spawns a copy of it to delete the leftovers.
+/// When that copy does not recognise itself — measured with `TEMP` at 199 and 201 characters, just
+/// under the length #12062 refuses outright — the deletion never happens and a **full copy of
+/// mise.exe** stays in `TEMP` for good. Nothing else collects them: they are not under the cache, so
+/// `mise cache clear` does not reach them, and their names mean nothing to anyone else.
+///
+/// Best effort by design. A copy another mise is still using cannot be deleted on Windows, which is
+/// the outcome we want, so failures are ignored rather than warned about.
+#[cfg(windows)]
+fn sweep_helper_orphans() {
+    let Some(stem) = current_exe_stem() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !env::is_self_replace_helper(name, &stem) {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => debug!("removed stale self-update copy: {name}"),
+            Err(e) => trace!("could not remove {name}: {e}"),
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -173,6 +203,10 @@ impl SelfUpdate {
         }
         #[cfg(windows)]
         Self::ensure_temp_dir_can_replace_binary()?;
+        // Before the update, not after: this run is about to create a copy of its own, and that one
+        // is in use rather than stale.
+        #[cfg(windows)]
+        sweep_helper_orphans();
         let status = self.do_update()?;
 
         if status.updated() {
