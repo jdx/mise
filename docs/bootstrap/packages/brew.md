@@ -59,7 +59,9 @@ Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
 the Homebrew cask API (or from tap API metadata), downloads the artifact,
 verifies its sha256 when the cask provides one, extracts the archive, and
 installs app bundles into `/Applications` while recording the version under
-`<prefix>/Caskroom`.
+`<prefix>/Caskroom`. Like Homebrew, mise moves each app bundle into
+`/Applications` and leaves a symlink at its versioned Caskroom path instead of
+retaining a second copy of the application.
 
 ```toml
 [bootstrap.packages]

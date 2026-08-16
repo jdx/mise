@@ -1215,7 +1215,14 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
     let old_name = replace_bundle_extension(&name, &format!("mise-old-{name_hash}"));
     remove_all_at(&parent.fd, &tmp_name)?;
     ditto_into(&caskroom_app, &parent.fd, &tmp_name)?;
-    swap_app_at(&parent, &name, &tmp_name, &old_name)?;
+    activate_app_at(
+        &parent,
+        &name,
+        &tmp_name,
+        &old_name,
+        &caskroom_app,
+        &logical_target,
+    )?;
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let relative = Path::new(".").join(&name);
     let _ = run_in_trusted_dir(
@@ -1235,6 +1242,45 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
 /// (`Firefox.app` + `mise-tmp-ab12` -> `Firefox.mise-tmp-ab12`).
 fn replace_bundle_extension(name: &std::ffi::OsStr, extension: &str) -> std::ffi::OsString {
     Path::new(name).with_extension(extension).into_os_string()
+}
+
+/// Activate the staged app before replacing its Caskroom copy with a symlink.
+/// A failed app swap therefore leaves the durable staged copy available for
+/// recovery instead of exposing a symlink to the previous app installation.
+#[cfg(unix)]
+fn activate_app_at(
+    parent: &TrustedOperationParent,
+    name: &std::ffi::OsStr,
+    tmp_name: &std::ffi::OsStr,
+    old_name: &std::ffi::OsStr,
+    caskroom_app: &Path,
+    logical_target: &Path,
+) -> Result<()> {
+    swap_app_at(parent, name, tmp_name, old_name)?;
+    replace_caskroom_app_with_symlink(caskroom_app, logical_target)
+}
+
+#[cfg(unix)]
+fn replace_caskroom_app_with_symlink(caskroom_app: &Path, target: &Path) -> Result<()> {
+    let suffix = crate::hash::hash_to_str(&caskroom_app.display().to_string());
+    let staged_link = caskroom_app.with_extension(format!("mise-link-{suffix}"));
+    let staged_copy = caskroom_app.with_extension(format!("mise-copy-{suffix}"));
+    file::remove_all(&staged_link)?;
+    file::remove_all(&staged_copy)?;
+    file::make_symlink(target, &staged_link)?;
+    file::rename(caskroom_app, &staged_copy)?;
+    if let Err(err) = file::rename(&staged_link, caskroom_app) {
+        let _ = file::rename(&staged_copy, caskroom_app);
+        let _ = file::remove_all(&staged_link);
+        return Err(err).wrap_err("failed to replace Caskroom app copy with symlink");
+    }
+    if let Err(err) = file::remove_all(&staged_copy) {
+        warn!(
+            "brew-cask: failed to remove staged app copy {}: {err:#}",
+            staged_copy.display()
+        );
+    }
+    Ok(())
 }
 
 /// Atomically replace an app inside `parent`, restoring the previous bundle if
@@ -7004,7 +7050,7 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
                 .iter()
                 .any(|root| path_is_below(path, root))
             || !path.file_name().is_some_and(|name| {
-                staged_target_matches(record, &candidate.version_dir.join(name))
+                staged_app_matches_target(record, &candidate.version_dir.join(name))
             })
         {
             bail!(
@@ -7084,6 +7130,20 @@ fn path_is_below(path: &Path, root: &Path) -> bool {
 
 fn staged_target_matches(record: &CaskTargetRecord, staged: &Path) -> bool {
     cask_target_fingerprint(staged).is_ok_and(|fingerprint| fingerprint == record.fingerprint)
+}
+
+fn staged_app_matches_target(record: &CaskTargetRecord, staged: &Path) -> bool {
+    let Ok(metadata) = staged.symlink_metadata() else {
+        return false;
+    };
+    if !metadata.file_type().is_symlink() {
+        // Preserve pruning support for casks installed before app artifacts
+        // switched from retained copies to Homebrew-compatible symlinks.
+        return staged_target_matches(record, staged);
+    }
+    std::fs::read_link(staged)
+        .map(|target| resolve_symlink_target(staged, target) == record.path)
+        .unwrap_or(false)
 }
 
 fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
@@ -7497,6 +7557,34 @@ mod tests {
         file::create_dir_all(root.join("Contents/Resources"))?;
         crate::file::write(root.join("Contents/app"), "replacement")?;
         assert_ne!(original, cask_target_fingerprint(&root)?);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn staged_app_accepts_target_symlink_and_legacy_copy() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("Applications/Example.app");
+        file::create_dir_all(target.join("Contents"))?;
+        file::write(target.join("Contents/app"), "content")?;
+        let record = CaskTargetRecord {
+            path: target.clone(),
+            fingerprint: cask_target_fingerprint(&target)?,
+            uninstall: None,
+        };
+
+        let staged_link = tmp.path().join("Caskroom/example/1.0.0/Example.app");
+        file::create_dir_all(staged_link.parent().unwrap())?;
+        file::make_symlink(&target, &staged_link)?;
+        assert!(staged_app_matches_target(&record, &staged_link));
+
+        file::remove_file(&staged_link)?;
+        file::copy_dir_all_preserve_symlinks(&target, &staged_link)?;
+        assert!(staged_app_matches_target(&record, &staged_link));
+
+        file::remove_all(&staged_link)?;
+        file::make_symlink(&tmp.path().join("Applications/Other.app"), &staged_link)?;
+        assert!(!staged_app_matches_target(&record, &staged_link));
         Ok(())
     }
 
@@ -12967,6 +13055,40 @@ end
         let mut _guard = EnvVarGuard::new();
         _guard.set(APP_DIR_ENV, &link);
         assert_eq!(app_target_path("Firefox.app")?, real.join("Firefox.app"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+        let target = appdir.join("Example.app");
+        file::create_dir_all(&target)?;
+        file::write(target.join("version"), "old")?;
+
+        let caskroom_app = base.join("Caskroom/example/2.0.0/Example.app");
+        file::create_dir_all(&caskroom_app)?;
+        file::write(caskroom_app.join("version"), "staged")?;
+
+        let result = activate_app_at(
+            &parent,
+            std::ffi::OsStr::new("Example.app"),
+            std::ffi::OsStr::new("missing.mise-tmp"),
+            std::ffi::OsStr::new("Example.mise-old-test"),
+            &caskroom_app,
+            &target,
+        );
+
+        assert!(result.is_err());
+        assert!(!caskroom_app.symlink_metadata()?.file_type().is_symlink());
+        assert_eq!(
+            file::read_to_string(caskroom_app.join("version"))?,
+            "staged"
+        );
+        assert_eq!(file::read_to_string(target.join("version"))?, "old");
         Ok(())
     }
 

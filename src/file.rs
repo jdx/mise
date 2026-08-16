@@ -395,7 +395,7 @@ pub fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Res
     Ok(())
 }
 
-fn atomic_write_target(path: &Path) -> Result<PathBuf> {
+pub(crate) fn atomic_write_target(path: &Path) -> Result<PathBuf> {
     const MAX_SYMLINKS: usize = 40;
 
     let mut target = path.to_path_buf();
