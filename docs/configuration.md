@@ -10,9 +10,10 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `mise.toml`
 - `mise/config.toml`
 - `.mise/config.toml`
+- `.mise/conf.d/*.toml` - all non-hidden TOML files in this directory will be loaded in alphabetical order
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
-- `.config/mise/conf.d/*.toml` - all files in this directory will be loaded in alphabetical order
+- `.config/mise/conf.d/*.toml` - all non-hidden TOML files in this directory will be loaded in alphabetical order
 
 ::: tip
 Run [`mise cfg`](/cli/config.html) to figure out what order mise is loading files on your particular setup. This is often
@@ -64,6 +65,9 @@ When mise needs configuration, it follows this process:
         └── myproject/
             ├── mise.local.toml       # Local overrides (git-ignored)
             ├── mise.toml             # Project config
+            ├── .mise/
+            │   ├── config.toml       # Project config grouped under .mise
+            │   └── conf.d/*.toml     # Project fragments, loaded alphabetically
             ├── mise.<env>.toml       # Env-specific project config
             ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/

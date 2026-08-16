@@ -1388,8 +1388,7 @@ fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<d
         .flat_map(|f| {
             if f.contains('*') {
                 // Handle glob patterns by matching against actual config file paths
-                glob(dir, f)
-                    .unwrap_or_default()
+                config_glob(dir, f)
                     .into_iter()
                     .rev()
                     .filter_map(|path| config_files.get(&path))
@@ -1581,6 +1580,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise/config.toml",
             ".config/mise/mise.toml",
             ".config/mise.toml",
+            ".mise/conf.d/*.toml",
             ".mise/config.toml",
             "mise/config.toml",
             ".rtx.toml",
@@ -1694,10 +1694,25 @@ pub fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
+fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    // Match global/system conf.d discovery: editor backups and other hidden
+    // files are not configuration fragments.
+    glob(dir, pattern)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|path| {
+            !is_conf_d_file(path)
+                || !path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with('.'))
+        })
+        .collect()
+}
+
 pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
     DEFAULT_CONFIG_FILENAMES
         .iter()
-        .flat_map(|f| glob(dir, f).unwrap_or_default())
+        .flat_map(|f| config_glob(dir, f))
         .collect()
 }
 
@@ -1711,7 +1726,7 @@ fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<P
         .rev()
         .flat_map(|f| {
             if f.contains('*') {
-                glob(dir, f).unwrap_or_default().into_iter().rev().collect()
+                config_glob(dir, f).into_iter().rev().collect()
             } else {
                 let path = dir.join(f);
                 if path.exists() { vec![path] } else { vec![] }
@@ -1779,7 +1794,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
     }
     filenames
         .iter()
-        .flat_map(|f| glob(dir, f).unwrap_or_default())
+        .flat_map(|f| config_glob(dir, f))
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
         .collect()
@@ -2135,7 +2150,7 @@ pub async fn load_config_hierarchy_from_dir(
                 config_filenames
                     .iter()
                     .rev()
-                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                    .flat_map(|f| config_glob(dir, f).into_iter().rev())
                     .collect()
             }
         })
@@ -3569,14 +3584,19 @@ fn expand_config_roots_inner(
 }
 
 fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
+    has_config_file_with_filenames(dir, filenames)
+        || dir.join(".mise/tasks").is_dir()
+        || dir.join("mise-tasks").is_dir()
+}
+
+fn has_config_file_with_filenames(dir: &Path, filenames: &[String]) -> bool {
     filenames.iter().any(|f| {
         if f.contains('*') {
-            !glob(dir, f).unwrap_or_default().is_empty()
+            !config_glob(dir, f).is_empty()
         } else {
             dir.join(f).exists()
         }
-    }) || dir.join(".mise/tasks").is_dir()
-        || dir.join("mise-tasks").is_dir()
+    })
 }
 
 fn discover_monorepo_subdirs(
@@ -3651,9 +3671,7 @@ fn discover_monorepo_subdirs(
                 }
 
                 // Check if this directory has a mise config file
-                let has_config = DEFAULT_CONFIG_FILENAMES
-                    .iter()
-                    .any(|f| dir.join(f).exists());
+                let has_config = has_config_file_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES);
                 let has_task_includes = has_task_includes(dir);
                 if has_config || has_task_includes {
                     // Apply context filtering if provided
@@ -3688,9 +3706,7 @@ fn discover_monorepo_subdirs(
             if entry.file_type().is_dir() {
                 let dir = entry.path();
                 // Check if this directory has a mise config file
-                let has_config = DEFAULT_CONFIG_FILENAMES
-                    .iter()
-                    .any(|f| dir.join(f).exists());
+                let has_config = has_config_file_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES);
                 let has_task_includes = has_task_includes(dir);
                 if has_config || has_task_includes {
                     // Apply context filtering if provided
@@ -5085,14 +5101,53 @@ mod tests {
     #[test]
     fn test_has_mise_config_with_glob_filenames() -> Result<()> {
         let tmp = TempDir::new()?;
-        let confd = tmp.path().join(".config/mise/conf.d");
-        fs::create_dir_all(&confd)?;
-        fs::write(confd.join("tools.toml"), "[tools]\n")?;
+        for pattern in [".config/mise/conf.d/*.toml", ".mise/conf.d/*.toml"] {
+            let confd = tmp.path().join(pattern.trim_end_matches("/*.toml"));
+            fs::create_dir_all(&confd)?;
+            fs::write(confd.join("tools.toml"), "[tools]\n")?;
 
-        assert!(has_mise_config_with_filenames(
-            tmp.path(),
-            &[".config/mise/conf.d/*.toml".to_string()]
-        ));
+            assert!(has_mise_config_with_filenames(
+                tmp.path(),
+                &[pattern.to_string()]
+            ));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_project_mise_conf_d_precedence() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("01-base.toml"), "[env]\nORDER = 'base'\n")?;
+        fs::write(
+            confd.join("02-override.toml"),
+            "[env]\nORDER = 'override'\n",
+        )?;
+        fs::write(confd.join(".hidden.toml"), "[env]\nORDER = 'hidden'\n")?;
+        fs::write(
+            tmp.path().join(".mise/config.toml"),
+            "[env]\nORDER = 'config'\n",
+        )?;
+
+        let filenames = vec![
+            ".mise/conf.d/*.toml".to_string(),
+            ".mise/config.toml".to_string(),
+        ];
+        let paths = config_paths_in_dir_with_filenames(tmp.path(), &filenames);
+        let relative = paths
+            .iter()
+            .map(|path| path.strip_prefix(tmp.path()).unwrap())
+            .collect_vec();
+        assert_eq!(
+            relative,
+            vec![
+                Path::new(".mise/config.toml"),
+                Path::new(".mise/conf.d/02-override.toml"),
+                Path::new(".mise/conf.d/01-base.toml"),
+            ]
+        );
 
         Ok(())
     }
