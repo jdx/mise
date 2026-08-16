@@ -18,6 +18,7 @@ use bytesize::ByteSize;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
 use indexmap::IndexMap;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
@@ -59,6 +60,19 @@ pub struct ToolStub {
     /// Use this to pin to a specific version (e.g., "2025.1.0").
     #[clap(long, verbatim_doc_comment, requires = "bootstrap")]
     pub bootstrap_version: Option<String>,
+
+    /// Checksum algorithm to use when downloading artifacts
+    ///
+    /// Accepts `blake3` or `sha256` and defaults to `blake3`.
+    /// Cannot be used with `--lock` or `--skip-download` because those modes do not
+    /// calculate checksums.
+    #[clap(
+        long,
+        value_enum,
+        default_value = "blake3",
+        conflicts_with_all = &["lock", "skip_download"]
+    )]
+    pub checksum_algorithm: ChecksumAlgorithm,
 
     /// Fetch checksums and sizes for an existing tool stub file
     ///
@@ -109,6 +123,25 @@ pub struct ToolStub {
     /// Version of the tool
     #[clap(long, default_value = "latest")]
     pub version: String,
+}
+
+#[derive(Debug, Default, Clone, Copy, clap::ValueEnum)]
+pub enum ChecksumAlgorithm {
+    #[default]
+    Blake3,
+    Sha256,
+}
+
+impl ChecksumAlgorithm {
+    fn checksum(self, bytes: &[u8]) -> String {
+        match self {
+            Self::Blake3 => format!("blake3:{}", blake3::hash(bytes).to_hex()),
+            Self::Sha256 => {
+                let hash = Sha256::digest(bytes);
+                format!("sha256:{}", hex::encode(hash))
+            }
+        }
+    }
 }
 
 impl ToolStub {
@@ -468,7 +501,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         // Read the file to calculate checksum and size
         let bytes = file::read(&archive_path)?;
         let size = bytes.len() as u64;
-        let checksum = format!("blake3:{}", blake3::hash(&bytes).to_hex());
+        let checksum = self.checksum_algorithm.checksum(&bytes);
 
         // Detect binary path if this is an archive
         let bin_path = if ExtractionFormat::from_file_name(&filename).is_archive() {
@@ -905,3 +938,24 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     # Resolves the latest node 22.x, pins it, and updates platform URLs/checksums
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::ChecksumAlgorithm;
+
+    #[test]
+    fn checksum_algorithm_formats_blake3() {
+        assert_eq!(
+            ChecksumAlgorithm::Blake3.checksum(b""),
+            "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
+    }
+
+    #[test]
+    fn checksum_algorithm_formats_sha256() {
+        assert_eq!(
+            ChecksumAlgorithm::Sha256.checksum(b""),
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+}

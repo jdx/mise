@@ -45,6 +45,19 @@ Specify mise version for the bootstrap script
 By default, uses the latest version from the install script.
 Use this to pin to a specific version (e.g., "2025.1.0").
 
+### `--checksum-algorithm <CHECKSUM_ALGORITHM>`
+
+Checksum algorithm to use when downloading artifacts
+
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lock` or `--skip-download` because those modes do not calculate checksums.
+
+**Choices:**
+
+- `blake3`
+- `sha256`
+
+**Default:** `blake3`
+
 ### `--fetch`
 
 Fetch checksums and sizes for an existing tool stub file
