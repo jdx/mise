@@ -30,8 +30,7 @@ run = "echo task-ran-without-trust"
 EOF
 
 # loads without prompting and without creating a trust marker
-MISE_YES=0 mise install tiny
-assert_contains "MISE_YES=0 mise ls tiny" "3.1.0"
+assert_contains "MISE_YES=0 mise ls" "3.1.0"
 assert_no_trust_marker "safe config should not be silently trusted"
 
 # safe config tool pins still prompt before installing non-registry plugin URLs
@@ -46,9 +45,13 @@ set -e
 [[ $status -ne 0 ]] || fail "expected community plugin install to abort without confirmation"
 echo "$output" | grep -q "community-developed plugin" || fail "expected community plugin prompt, got: $output"
 echo "$output" | grep -q "github.com/attacker/evil" || fail "expected attacker plugin URL, got: $output"
-assert_no_trust_marker "community plugin prompt should not trust config"
+# `mise install` trusts the active config independently of the later plugin
+# confirmation. Remove that trust so the remaining checks start untrusted.
+assert_contains "mise trust --show" "trusted"
+mise untrust
+assert_no_trust_marker "mise untrust should remove install's implicit trust"
 
-# config tasks only execute on explicit `mise run`, so they don't need trust
+# config tasks execute on explicit `mise run`, which now trusts active config
 cat <<'EOF' >mise.toml
 min_version = "2024.1.1"
 
@@ -59,8 +62,11 @@ tiny = "3.1.0"
 run = "echo task-ran-without-trust"
 EOF
 assert_contains "MISE_YES=0 mise run hi" "task-ran-without-trust"
+assert_contains "mise trust --show" "trusted"
+mise untrust
 
-# template-free file tasks are inert at load time and runnable without trust
+# template-free file tasks are inert at load time; explicit `mise run` trusts
+# the active config before running them
 mkdir -p mise-tasks
 cat <<'EOF' >mise-tasks/filetask
 #!/usr/bin/env bash
@@ -69,7 +75,9 @@ echo file-task-ran-without-trust
 EOF
 chmod +x mise-tasks/filetask
 assert_contains "MISE_YES=0 mise run filetask" "file-task-ran-without-trust"
-assert_no_trust_marker "file task should not require or create trust"
+assert_contains "mise trust --show" "trusted"
+mise untrust
+assert_no_trust_marker "mise untrust should remove run's implicit trust"
 
 # a template in a file task header renders at load time, so it requires trust
 cat <<'EOF' >mise-tasks/evil

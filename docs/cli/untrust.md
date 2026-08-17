@@ -5,7 +5,7 @@
 - **Effect**: modifies state
 - **Source code**: [`src/cli/untrust.rs`](https://github.com/jdx/mise/blob/main/src/cli/untrust.rs)
 
-No longer trust a config, will prompt in the future
+Remove explicit trust for a config
 
 ## Arguments
 

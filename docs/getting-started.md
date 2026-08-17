@@ -312,7 +312,7 @@ See [Backends](/dev-tools/backends/) for more ecosystems and details.
 
 ## Trusting config files {#trust}
 
-When you or a teammate adds a `mise.toml` to a project, mise will prompt you to trust it before it runs any env directives or hooks:
+When you or a teammate adds a `mise.toml` to a project, mise may prompt you to trust it before it runs env directives or hooks:
 
 ```
 mise ~/my-project/mise.toml is not trusted. Trust it? [y/n]
@@ -324,9 +324,12 @@ This is a security measure — config files can execute arbitrary code via `[env
 mise trust
 ```
 
-This only needs to be done once per file. See [`mise trust`](/cli/trust) for more details.
+In normal mode, `mise run`, naked task invocations such as `mise <TASK>`, `mise install`,
+`mise exec`, and `mise watch` automatically trust the active config because those commands
+explicitly execute project-defined behavior. Paranoid mode requires `mise trust` for all
+non-global configs, including configs that are safe in normal mode.
 
-To disable trust prompts entirely, trust the root path:
+To disable trust prompts for a path, configure:
 
 ```sh
 mise settings trusted_config_paths=["/"]
@@ -335,8 +338,10 @@ mise settings trusted_config_paths=["/"]
 Or set the environment variable `MISE_TRUSTED_CONFIG_PATHS=/`.
 
 ::: tip
-`mise use` automatically trusts the file it creates, so you'll only see this prompt when pulling a config someone else wrote or when editing `mise.toml` by hand.
+`mise use` automatically trusts the file it creates.
 :::
+
+See [`mise trust`](/cli/trust) for more details.
 
 ## 5. Setting environment variables {#environment-variables}
 

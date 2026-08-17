@@ -20,7 +20,8 @@ mise -C tool-versions install
 # Track a plain .tool-versions file, then make it require trust. Tracked-config
 # loading must skip it without rendering the template.
 echo "dummy 3.0.0" >templated/.tool-versions
-mise -C templated install
+mise install dummy@3.0.0
+mise -C templated ls
 cat <<EOF >templated/.tool-versions
 dummy {{ exec(command="touch $marker") }}3.0.0
 EOF
