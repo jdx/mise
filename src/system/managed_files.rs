@@ -1589,7 +1589,13 @@ fn set_directory_metadata(
         .map(nix::unistd::Gid::from_raw);
     nix::unistd::fchown(directory, uid, gid)?;
     // chown may clear setuid/setgid bits, so apply the requested mode last.
-    nix::sys::stat::fchmod(directory, nix::sys::stat::Mode::from_bits_truncate(mode))?;
+    let platform_mode = mode
+        .try_into()
+        .map_err(|_| eyre!("mode {mode:o} does not fit the platform mode type"))?;
+    nix::sys::stat::fchmod(
+        directory,
+        nix::sys::stat::Mode::from_bits_truncate(platform_mode),
+    )?;
     Ok(())
 }
 
