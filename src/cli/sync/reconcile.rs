@@ -30,7 +30,7 @@ impl<'a> LinkOwnership<'a> {
 
     fn owns(&self, link: &Path) -> Result<bool> {
         if let Some(root) = self.direct_root
-            && file::is_symlink_target_directly_within(link, root)?
+            && file::is_symlink_target_within(link, root)?
         {
             return Ok(true);
         }
