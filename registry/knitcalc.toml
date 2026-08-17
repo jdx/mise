@@ -1,0 +1,23 @@
+description = "Knitting calculator: gauge conversion, stitch counts, yarn estimation"
+version_order = "semver"
+
+bins = ["knitcalc"]
+test = { cmd = "knitcalc --version", expected = "knitcalc {{version}}" }
+
+[[backends]]
+full = "github:dmezhnov/knitcalc"
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "knitcalc-linux-x64-*.tar.gz"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "knitcalc-windows-x64-*.zip"
+
+# The macOS asset is an .app bundle, so the binary sits inside it.
+[backends.options.platforms.macos-arm64]
+asset_pattern = "knitcalc-macos-*.zip"
+bin_path = "knitcalc.app/Contents/MacOS"
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "knitcalc-macos-*.zip"
+bin_path = "knitcalc.app/Contents/MacOS"
