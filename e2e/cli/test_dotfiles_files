@@ -27,6 +27,13 @@ EOF
 assert_contains "mise bootstrap dotfiles status" "missing"
 assert_contains "MISE_EXPERIMENTAL=0 mise dotfiles status" "missing"
 assert_fail "mise dotfiles status --missing"
+assert_succeed "mise dotfiles status --json | jq -e '.files[] | select(.target == \"~/.gitconfig\") | .origin.config == \"$PWD/mise.toml\" and .origin.config_root == \"$PWD\" and .origin.source == \"$PWD/dotfiles/gitconfig\"'"
+
+cat <<EOF >mise.dev.toml
+[dotfiles]
+"~/.dev-origin" = { content = "dev" }
+EOF
+assert_succeed "MISE_ENV=dev mise dotfiles status --json | jq -e '.files[] | select(.target == \"~/.dev-origin\") | .origin.environment == [\"dev\"]'"
 
 # system commands do not manage dotfiles
 assert_succeed "mise bootstrap packages apply --yes"

@@ -11,7 +11,7 @@ use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
+use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ManagedFileTomlConfig {
@@ -63,6 +63,7 @@ pub struct ManagedFileRequest {
     pub state: ManagedState,
     pub replace: bool,
     pub notify: Vec<String>,
+    pub origin: ResourceOrigin,
     inspection: Option<PathInspection>,
 }
 
@@ -76,6 +77,7 @@ pub struct ManagedDirectoryRequest {
     pub recursive: bool,
     pub replace: bool,
     pub notify: Vec<String>,
+    pub origin: ResourceOrigin,
     inspection: Option<PathInspection>,
 }
 
@@ -200,9 +202,16 @@ pub fn status_requests_from_config(
         .iter()
         .map(|directory| (directory.path.as_path(), directory.state))
         .collect::<std::collections::HashMap<_, _>>();
-    for (path, (file, base)) in merged_files_from_config(config)? {
+    for (path, (file, base, origin)) in merged_files_from_config(config)? {
         let state = file.state;
-        match ManagedFileRequest::from_toml(config, path.clone(), file, &base, secrets) {
+        match ManagedFileRequest::from_toml(
+            config,
+            path.clone(),
+            file,
+            &base,
+            origin.clone(),
+            secrets,
+        ) {
             Ok(file) => files.push(file),
             Err(error) if super::secrets::is_unavailable(&error) => {
                 if directory_states.contains_key(path.as_path()) {
@@ -212,12 +221,15 @@ pub fn status_requests_from_config(
                     );
                 }
                 validate_present_ancestors(&path, state, &directory_states)?;
-                unavailable.push(ResourcePlan::new(
-                    ResourceId::new("file", path.to_string_lossy().into_owned()),
-                    "not inspected: required secret unavailable",
-                    "template rendered",
-                    ResourceAction::Unknown,
-                ));
+                unavailable.push(
+                    ResourcePlan::new(
+                        ResourceId::new("file", path.to_string_lossy().into_owned()),
+                        "not inspected: required secret unavailable",
+                        "template rendered",
+                        ResourceAction::Unknown,
+                    )
+                    .with_origin(origin),
+                );
             }
             Err(error) => return Err(error),
         }
@@ -322,16 +334,17 @@ fn files_from_config(
 ) -> Result<Vec<ManagedFileRequest>> {
     merged_files_from_config(config)?
         .into_iter()
-        .map(|(path, (file, base))| {
-            ManagedFileRequest::from_toml(config, path, file, &base, secrets)
+        .map(|(path, (file, base, origin))| {
+            ManagedFileRequest::from_toml(config, path, file, &base, origin, secrets)
         })
         .collect()
 }
 
 fn merged_files_from_config(
     config: &Config,
-) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf)>> {
-    let mut merged: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf)> = IndexMap::new();
+) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)>> {
+    let mut merged: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)> =
+        IndexMap::new();
     // Config files are ordered from highest to lowest precedence. Preserve the
     // first declaration of a target so a parent or global layer cannot replace
     // the nearer project declaration.
@@ -343,6 +356,12 @@ fn merged_files_from_config(
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
                 .to_path_buf();
+            let origin = ResourceOrigin {
+                config: cf.get_path().to_path_buf(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(cf.get_path()),
+                source: None,
+            };
             for (path, file) in bootstrap.files {
                 let target = absolute_target(&path)?;
                 if let Some(previous) = layer_paths.insert(target.clone(), path.clone()) {
@@ -351,7 +370,9 @@ fn merged_files_from_config(
                         target.display()
                     );
                 }
-                merged.entry(target).or_insert_with(|| (file, base.clone()));
+                merged
+                    .entry(target)
+                    .or_insert_with(|| (file, base.clone(), origin.clone()));
             }
         }
     }
@@ -359,9 +380,16 @@ fn merged_files_from_config(
 }
 
 fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryRequest>> {
-    let mut merged: IndexMap<PathBuf, ManagedDirectoryTomlConfig> = IndexMap::new();
+    let mut merged: IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)> =
+        IndexMap::new();
     for cf in config.config_files.values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: cf.get_path().to_path_buf(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(cf.get_path()),
+                source: None,
+            };
             let mut layer_paths = IndexMap::new();
             for (path, directory) in bootstrap.directories {
                 let target = absolute_target(&path)?;
@@ -371,13 +399,15 @@ fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryReques
                         target.display()
                     );
                 }
-                merged.entry(target).or_insert(directory);
+                merged
+                    .entry(target)
+                    .or_insert_with(|| (directory, origin.clone()));
             }
         }
     }
     merged
         .into_iter()
-        .map(|(path, config)| ManagedDirectoryRequest::from_toml(path, config))
+        .map(|(path, (config, origin))| ManagedDirectoryRequest::from_toml(path, config, origin))
         .collect()
 }
 
@@ -432,6 +462,7 @@ impl ManagedFileRequest {
         path: PathBuf,
         config: ManagedFileTomlConfig,
         base: &Path,
+        mut origin: ResourceOrigin,
         secrets: &super::secrets::SecretValues,
     ) -> Result<Self> {
         let owner = nonempty("owner", config.owner)?;
@@ -451,6 +482,7 @@ impl ManagedFileRequest {
                 } else {
                     base.join(source)
                 };
+                origin.source = Some(source.clone());
                 Some(fs::read_to_string(&source).wrap_err_with(|| {
                     format!(
                         "[bootstrap.files].\"{}\": failed to read source {}",
@@ -492,12 +524,13 @@ impl ManagedFileRequest {
             state: config.state,
             replace: config.replace,
             notify: config.notify,
+            origin,
             inspection: None,
         })
     }
 
     pub fn plan(&self) -> Result<ResourcePlan> {
-        plan_file(self)
+        plan_file(self).map(|plan| plan.with_origin(self.origin.clone()))
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
@@ -530,7 +563,11 @@ impl ManagedFileRequest {
 }
 
 impl ManagedDirectoryRequest {
-    fn from_toml(path: PathBuf, config: ManagedDirectoryTomlConfig) -> Result<Self> {
+    fn from_toml(
+        path: PathBuf,
+        config: ManagedDirectoryTomlConfig,
+        origin: ResourceOrigin,
+    ) -> Result<Self> {
         if config.state == ManagedState::Present && config.recursive {
             bail!(
                 "[bootstrap.directories].\"{}\": recursive is only valid with state = \"absent\"",
@@ -546,12 +583,13 @@ impl ManagedDirectoryRequest {
             recursive: config.recursive,
             replace: config.replace,
             notify: config.notify,
+            origin,
             inspection: None,
         })
     }
 
     pub fn plan(&self) -> Result<ResourcePlan> {
-        plan_directory(self)
+        plan_directory(self).map(|plan| plan.with_origin(self.origin.clone()))
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
@@ -1452,6 +1490,12 @@ mod tests {
             state,
             replace: false,
             notify: vec![],
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: None,
+            },
             inspection: None,
         }
     }
@@ -1466,6 +1510,12 @@ mod tests {
             recursive: false,
             replace: false,
             notify: vec![],
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: None,
+            },
             inspection: None,
         }
     }

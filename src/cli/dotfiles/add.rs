@@ -392,6 +392,12 @@ impl PlannedAdd {
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .to_path_buf(),
+            origin: crate::system::resources::ResourceOrigin {
+                config: config_path.to_path_buf(),
+                config_root: crate::config::config_file::config_root::config_root(config_path),
+                environment: crate::config::environments_for_config_path(config_path),
+                source: Some(self.source.clone()),
+            },
         }
     }
 }

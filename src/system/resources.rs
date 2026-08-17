@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
+use std::path::PathBuf;
 
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
@@ -13,6 +14,15 @@ use crate::system::packages::{PackageRequest, PackageState};
 pub struct ResourceId {
     pub kind: String,
     pub name: String,
+}
+
+/// Where a declarative resource came from.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ResourceOrigin {
+    pub config: PathBuf,
+    pub config_root: PathBuf,
+    pub environment: Vec<String>,
+    pub source: Option<PathBuf>,
 }
 
 impl ResourceId {
@@ -60,6 +70,8 @@ pub struct ResourcePlan {
     pub current: String,
     pub desired: String,
     pub action: ResourceAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ResourceOrigin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<ResourceId>,
 }
@@ -76,8 +88,14 @@ impl ResourcePlan {
             current: current.into(),
             desired: desired.into(),
             action,
+            origin: None,
             depends_on: vec![],
         }
+    }
+
+    pub fn with_origin(mut self, origin: ResourceOrigin) -> Self {
+        self.origin = Some(origin);
+        self
     }
 }
 
