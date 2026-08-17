@@ -147,13 +147,27 @@ mod tests {
 
     #[test]
     fn parses_azure_devops_git_ssh_sources() {
-        let source = RemoteSource::parse_git(
-            "git::ssh://git@dev.azure/myorg/myproj/_git/example//terraform/myfile?ref=master",
-        )
-        .unwrap();
-        assert_eq!(source.url, "ssh://git@dev.azure/myorg/myproj/_git/example");
-        assert_eq!(source.path, "terraform/myfile");
-        assert_eq!(source.git_ref, Some("master".to_string()));
+        let test_cases: Vec<(&str, &str, &str, Option<String>)> = vec![
+            (
+                "git::ssh://git@dev.azure/myorg/myproj/_git/example//terraform/myfile?ref=master",
+                "ssh://git@dev.azure/myorg/myproj/_git/example",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+            (
+                "git::git@ssh.dev.azure.com:v3/myorg/myproj/example//terraform/myfile?ref=master",
+                "git@ssh.dev.azure.com:v3/myorg/myproj/example",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+        ];
+
+        for (url, expected_url, expected_path, expected_git_ref) in test_cases {
+            let source = RemoteSource::parse_git(url).unwrap();
+            assert_eq!(source.url, expected_url);
+            assert_eq!(source.path, expected_path);
+            assert_eq!(source.git_ref, expected_git_ref);
+        }
     }
 
     #[test]
@@ -198,6 +212,10 @@ mod tests {
         );
         assert!(
             RemoteSource::parse_git("git::ssh://user@dev.azure/myorg/myproj/_git/example")
+                .is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::git@dev.azure.com:v3/myorg/myproj/example")
                 .is_none()
         );
     }
