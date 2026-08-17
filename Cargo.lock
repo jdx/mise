@@ -6294,7 +6294,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.8.7"
+version = "2026.8.8"
 dependencies = [
  "age 0.12.1",
  "aho-corasick",

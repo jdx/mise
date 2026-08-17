@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026.8.8](https://github.com/jdx/mise/compare/v2026.8.7..v2026.8.8) - 2026-08-17
+
+### 🐛 Bug Fixes
+
+- **(release)** install newer libclang for armv7 builds by @jdx in [#12088](https://github.com/jdx/mise/pull/12088)
+
 ## [2026.8.7](https://github.com/jdx/mise/compare/v2026.8.6..v2026.8.7) - 2026-08-17
 
 ### 🚀 Features
