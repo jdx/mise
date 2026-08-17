@@ -30,7 +30,7 @@ impl DotfilesStatus {
         let config = Config::get().await?;
         let mut any_missing = false;
 
-        let all_files = system::files::files_from_config(&config);
+        let all_files = system::files::files_from_config(&config)?;
         let files = all_files
             .iter()
             .filter(|req| {
@@ -81,7 +81,7 @@ impl DotfilesStatus {
             }
         }
 
-        let all_edits = system::edits::edits_from_config(&config);
+        let all_edits = system::edits::edits_from_config(&config)?;
         let edits = all_edits
             .iter()
             .filter(|req| system::edits::matches_target(req, &self.targets))

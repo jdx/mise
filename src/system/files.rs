@@ -152,8 +152,38 @@ pub enum FileState {
 /// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
 /// Keys union global -> local; a more local config overrides an entry for the
 /// same target. Malformed entries and unknown modes warn and are skipped.
-pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
-    files_from_config_files(&config.config_files)
+pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+    let mut composed: IndexMap<PathBuf, FileRequest> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for request in files_from_config_files(config_files) {
+            if let Some(existing) = composed.get(&request.target) {
+                if file_requests_match(existing, &request) {
+                    continue;
+                }
+                bail!(
+                    "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    request.target.display(),
+                    existing.origin.conflict_description(),
+                    request.origin.conflict_description(),
+                );
+            }
+            composed.insert(request.target.clone(), request);
+        }
+    }
+    Ok(composed.into_values().collect())
+}
+
+fn file_requests_match(first: &FileRequest, second: &FileRequest) -> bool {
+    first.target == second.target
+        && first.source == second.source
+        && first.content == second.content
+        && first.mode == second.mode
+        && first
+            .exclude
+            .iter()
+            .map(glob::Pattern::as_str)
+            .eq(second.exclude.iter().map(glob::Pattern::as_str))
+        && (first.mode != FileMode::Template || first.base == second.base)
 }
 
 /// Aggregate `[dotfiles]` across a specific set of config files. This is

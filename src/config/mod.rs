@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -71,6 +71,7 @@ pub(crate) struct MonorepoUnion {
 
 pub struct Config {
     pub config_files: ConfigMap,
+    bootstrap_config_maps: Vec<ConfigMap>,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
@@ -169,6 +170,7 @@ impl Config {
         Arc::new(Self {
             tera_ctx: self.tera_ctx.clone(),
             config_files,
+            bootstrap_config_maps: self.bootstrap_config_maps.clone(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: self.shorthands.clone(),
@@ -245,6 +247,7 @@ impl Config {
         let mut config = Self {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files,
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -265,6 +268,7 @@ impl Config {
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
             config_files: config.config_files.clone(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: config.shorthands.clone(),
@@ -305,6 +309,7 @@ impl Config {
         measure!("config::load validate", {
             config.validate()?;
         });
+        config.bootstrap_config_maps = load_bootstrap_config_maps(&config.config_files).await?;
 
         config.all_aliases = measure!("config::load all_aliases", { config.load_all_aliases() });
 
@@ -364,6 +369,14 @@ impl Config {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect()
         })
+    }
+
+    pub(crate) fn bootstrap_config_maps(&self) -> impl Iterator<Item = &ConfigMap> {
+        if self.bootstrap_config_maps.is_empty() {
+            Either::Left(std::iter::once(&self.config_files))
+        } else {
+            Either::Right(self.bootstrap_config_maps.iter())
+        }
     }
     pub async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
@@ -1438,6 +1451,41 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>
     config_files
         .values()
         .find(|cf| cf.monorepo_root() == Some(true))
+}
+
+async fn load_bootstrap_config_maps(config_files: &ConfigMap) -> Result<Vec<ConfigMap>> {
+    let Some((declaring_config, patterns)) = config_files.iter().find_map(|(path, cf)| {
+        cf.bootstrap_config()
+            .and_then(|bootstrap| bootstrap.config_roots.map(|patterns| (path, patterns)))
+    }) else {
+        return Ok(vec![]);
+    };
+    if patterns.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let declaring_root = config_files
+        .get(declaring_config)
+        .expect("declaring bootstrap config is loaded")
+        .config_root();
+    let mut roots = expand_bootstrap_config_roots(&declaring_root, &patterns)?;
+    roots.sort();
+    roots.dedup();
+    if roots.is_empty() {
+        bail!("[bootstrap].config_roots did not match any config roots");
+    }
+
+    let mut base = config_files.clone();
+    base.retain(|path, _| {
+        is_global_config(path) || !roots.iter().any(|root| path.starts_with(root))
+    });
+    let mut maps = vec![base];
+    let idiomatic_filenames = BTreeMap::new();
+    for root in roots {
+        let paths = config_paths_in_dir_with_filenames(&root, &DEFAULT_CONFIG_FILENAMES);
+        maps.push(load_config_files_from_paths(&paths, &idiomatic_filenames).await?);
+    }
+    Ok(maps)
 }
 
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
@@ -3502,13 +3550,33 @@ fn expand_config_roots_inner(
     ctx: Option<&crate::task::TaskLoadContext>,
     filenames: Option<&[String]>,
 ) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner_for("monorepo", root, patterns, ctx, filenames)
+}
+
+fn expand_bootstrap_config_roots(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner_for(
+        "bootstrap",
+        root,
+        patterns,
+        None,
+        Some(&DEFAULT_CONFIG_FILENAMES),
+    )
+}
+
+fn expand_config_roots_inner_for(
+    section: &str,
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+    filenames: Option<&[String]>,
+) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
 
     for pattern in patterns {
         // Reject absolute paths and parent directory escapes
         if pattern.starts_with('/') || pattern.starts_with("..") || pattern.contains("/../") {
             warn!(
-                "[monorepo] config_roots: '{}' must be a relative path within the monorepo",
+                "[{section}].config_roots: '{}' must be a relative path within the config root",
                 pattern
             );
             continue;
@@ -3517,7 +3585,7 @@ fn expand_config_roots_inner(
         // Reject recursive glob patterns (**)
         if pattern.contains("**") {
             warn!(
-                "[monorepo] config_roots: recursive glob '**' not supported in '{}', use single-level '*' instead",
+                "[{section}].config_roots: recursive glob '**' not supported in '{}', use single-level '*' instead",
                 pattern
             );
             continue;
@@ -3534,7 +3602,7 @@ fn expand_config_roots_inner(
                                 // Verify path is within monorepo root
                                 if path.strip_prefix(root).is_err() {
                                     warn!(
-                                        "[monorepo] config_roots: glob matched path outside monorepo root: {}",
+                                        "[{section}].config_roots: glob matched path outside config root: {}",
                                         path.display()
                                     );
                                     continue;
@@ -3548,13 +3616,13 @@ fn expand_config_roots_inner(
                                 }
                             }
                             Err(e) => {
-                                warn!("[monorepo] config_roots glob error: {e}");
+                                warn!("[{section}].config_roots glob error: {e}");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    warn!("[monorepo] config_roots invalid glob pattern '{pattern}': {e}");
+                    warn!("[{section}].config_roots invalid glob pattern '{pattern}': {e}");
                 }
             }
         } else {
@@ -3566,7 +3634,7 @@ fn expand_config_roots_inner(
                 && !canonical.starts_with(&canonical_root)
             {
                 warn!(
-                    "[monorepo] config_roots: '{}' resolves outside monorepo root",
+                    "[{section}].config_roots: '{}' resolves outside config root",
                     pattern
                 );
                 continue;
@@ -3578,12 +3646,12 @@ fn expand_config_roots_inner(
                     subdirs.push(path);
                 } else {
                     warn!(
-                        "[monorepo] config_roots: '{}' has no mise config file",
+                        "[{section}].config_roots: '{}' has no mise config file",
                         pattern
                     );
                 }
             } else {
-                warn!("[monorepo] config_roots: '{}' does not exist", pattern);
+                warn!("[{section}].config_roots: '{}' does not exist", pattern);
             }
         }
     }
@@ -5628,6 +5696,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5706,6 +5775,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5788,6 +5858,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5872,6 +5943,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5931,6 +6003,7 @@ mod tests {
             let config = Config {
                 tera_ctx: BASE_CONTEXT.clone(),
                 config_files: Default::default(),
+                bootstrap_config_maps: vec![],
                 env: OnceCell::new(),
                 env_with_sources: OnceCell::new(),
                 shorthands: get_shorthands(&Settings::get()),
@@ -6015,6 +6088,7 @@ config_roots = ["apps/api", "apps/web"]
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files,
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -6187,6 +6261,7 @@ config_roots = ["apps/api", "apps/web"]
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),

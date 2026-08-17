@@ -73,14 +73,14 @@ pub struct EditTomlTable {
 }
 
 /// where a block's content comes from
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BlockSource {
     Inline(String),
     /// absolute path, resolved against the declaring config file
     File(PathBuf),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum EditOp {
     Block {
         source: BlockSource,
@@ -147,8 +147,34 @@ pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 /// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
-pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
-    edits_from_config_files(&config.config_files)
+pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
+    let mut composed: IndexMap<String, EditRequest> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for request in edits_from_config_files(config_files) {
+            let key = format!("{}\u{0}{}", request.path.display(), request.id);
+            if let Some(existing) = composed.get(&key) {
+                if edit_requests_match(existing, &request) {
+                    continue;
+                }
+                bail!(
+                    "conflicting dotfile edit declarations for {}/{}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    request.path.display(),
+                    request.id,
+                    existing.origin.conflict_description(),
+                    request.origin.conflict_description(),
+                );
+            }
+            composed.insert(key, request);
+        }
+    }
+    Ok(composed.into_values().collect())
+}
+
+fn edit_requests_match(first: &EditRequest, second: &EditRequest) -> bool {
+    first.path == second.path
+        && first.id == second.id
+        && first.op == second.op
+        && (!matches!(first.op, EditOp::Block { template: true, .. }) || first.base == second.base)
 }
 
 pub fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditRequest> {

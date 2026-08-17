@@ -1373,7 +1373,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
-            let files = system::files::files_from_config(&config);
+            let files = system::files::files_from_config(&config)?;
             if files.is_empty() {
                 debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
             } else {
@@ -1390,7 +1390,7 @@ impl Bootstrap {
                 }
             }
 
-            let edits = system::edits::edits_from_config(&config);
+            let edits = system::edits::edits_from_config(&config)?;
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             } else {
@@ -2883,7 +2883,7 @@ impl BootstrapStatus {
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let mut json_files = vec![];
-        for req in system::files::files_from_config(config) {
+        for req in system::files::files_from_config(config)? {
             let state = match system::files::check(config, &req) {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
@@ -2919,7 +2919,7 @@ impl BootstrapStatus {
         }
 
         let mut json_edits = vec![];
-        for req in system::edits::edits_from_config(config) {
+        for req in system::edits::edits_from_config(config)? {
             let state = match system::edits::check(config, &req) {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),

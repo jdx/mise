@@ -10,10 +10,10 @@ use indexmap::IndexMap;
 use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ManagedFileTomlConfig {
     pub source: Option<String>,
     pub content: Option<String>,
@@ -30,7 +30,7 @@ pub struct ManagedFileTomlConfig {
     pub notify: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ManagedDirectoryTomlConfig {
     pub owner: Option<String>,
     pub group: Option<String>,
@@ -343,12 +343,44 @@ fn files_from_config(
 fn merged_files_from_config(
     config: &Config,
 ) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)>> {
-    let mut merged: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)> =
+    let mut composed: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)> =
         IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (path, declaration) in merged_files_from_config_files(config_files)? {
+            if let Some(existing) = composed.get(&path) {
+                if managed_file_declarations_match(existing, &declaration) {
+                    continue;
+                }
+                bail!(
+                    "conflicting managed file declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    path.display(),
+                    existing.2.conflict_description(),
+                    declaration.2.conflict_description(),
+                );
+            }
+            composed.insert(path, declaration);
+        }
+    }
+    Ok(composed)
+}
+
+fn managed_file_declarations_match(
+    first: &(ManagedFileTomlConfig, PathBuf, ResourceOrigin),
+    second: &(ManagedFileTomlConfig, PathBuf, ResourceOrigin),
+) -> bool {
+    first.0 == second.0
+        && first.2.source == second.2.source
+        && (!first.0.template || first.1 == second.1)
+}
+
+fn merged_files_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)>> {
+    let mut merged = IndexMap::new();
     // Config files are ordered from highest to lowest precedence. Preserve the
     // first declaration of a target so a parent or global layer cannot replace
     // the nearer project declaration.
-    for cf in config.config_files.values() {
+    for cf in config_files.values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             let mut layer_paths = IndexMap::new();
             let base = cf
@@ -385,9 +417,35 @@ fn merged_files_from_config(
 }
 
 fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryRequest>> {
-    let mut merged: IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)> =
+    let mut composed: IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)> =
         IndexMap::new();
-    for cf in config.config_files.values() {
+    for config_files in config.bootstrap_config_maps() {
+        for (path, declaration) in directories_from_config_files(config_files)? {
+            if let Some(existing) = composed.get(&path) {
+                if existing.0 == declaration.0 {
+                    continue;
+                }
+                bail!(
+                    "conflicting managed directory declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    path.display(),
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
+                );
+            }
+            composed.insert(path, declaration);
+        }
+    }
+    composed
+        .into_iter()
+        .map(|(path, (config, origin))| ManagedDirectoryRequest::from_toml(path, config, origin))
+        .collect()
+}
+
+fn directories_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)>> {
+    let mut merged = IndexMap::new();
+    for cf in config_files.values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             let origin = ResourceOrigin {
                 config: cf.get_path().to_path_buf(),
@@ -410,10 +468,7 @@ fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryReques
             }
         }
     }
-    merged
-        .into_iter()
-        .map(|(path, (config, origin))| ManagedDirectoryRequest::from_toml(path, config, origin))
-        .collect()
+    Ok(merged)
 }
 
 fn validate_requests(
