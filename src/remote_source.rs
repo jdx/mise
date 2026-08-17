@@ -215,7 +215,7 @@ mod tests {
                 .is_none()
         );
         assert!(
-            RemoteSource::parse_git("git::git@dev.azure.com:v3/myorg/myproj/example").is_none()
+            RemoteSource::parse_git("git::git@ssh.dev.azure.com:v3/myorg/myproj/example").is_none()
         );
     }
 
