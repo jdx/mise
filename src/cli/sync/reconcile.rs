@@ -102,19 +102,11 @@ pub(super) fn reconcile(
             continue;
         }
 
-        if entry_exists {
-            file::make_symlink(target, &link)?;
-            if target.exists() {
-                install_state::clear_incomplete_marker(&tool.short, &version)?;
-            }
-            changed.insert(version);
-        } else {
-            file::make_symlink(target, &link)?;
-            if target.exists() {
-                install_state::clear_incomplete_marker(&tool.short, &version)?;
-            }
-            changed.insert(version);
+        file::make_symlink(target, &link)?;
+        if target.exists() {
+            install_state::clear_incomplete_marker(&tool.short, &version)?;
         }
+        changed.insert(version);
     }
     Ok(changed)
 }
