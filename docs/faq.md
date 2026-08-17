@@ -246,8 +246,9 @@ mise upgrade --bump node
 ## My config file is being ignored / `mise trust` issues
 
 mise requires you to trust config files that were not created by you. Safe config files —
-those that only contain `min_version`, plain `[tools]` entries, and `[tasks]` without
-templates or tool options — load without trust. In normal mode, `mise run`, `mise install`,
+those that only contain `min_version`, `[tools]` entries whose values are plain version
+strings or arrays of strings, and `[tasks]` without templates — load without trust. Tool-option
+tables and other top-level settings require trust. In normal mode, `mise run`, `mise install`,
 `mise exec`, and `mise watch` automatically trust the active config because they explicitly
 execute project-defined behavior. Other unsafe config requires trust. Common issues:
 
@@ -259,9 +260,10 @@ execute project-defined behavior. Other unsafe config requires trust. Common iss
   symlink target path. Try `mise trust` pointing to the actual file path.
 - **CI**: In detected CI, mise assumes configs are trusted unless paranoid mode is enabled.
 - **Non-interactive mode**: In a non-interactive shell, such as an IDE extension or script without
-  a TTY, mise cannot prompt you to trust a config. Commands that directly load an untrusted
-  `mise.toml` can fail with an untrusted-config error. Commands that discover previously tracked
-  configs may skip untrusted entries instead. Either run `mise trust` beforehand or set
+  a TTY, mise cannot prompt you to trust a config. Outside normal-mode `mise run`, `mise install`,
+  `mise exec`, and `mise watch`, commands that directly load an untrusted `mise.toml` can fail with
+  an untrusted-config error. Commands that discover previously tracked configs may skip untrusted
+  entries instead. Either run `mise trust` beforehand or set
   [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings
   for configs you trust.
 - **Global config** (`~/.config/mise/config.toml`) should be auto-trusted. If it's not, run

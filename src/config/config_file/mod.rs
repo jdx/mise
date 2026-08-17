@@ -396,6 +396,9 @@ pub fn trust_active_config() -> Result<()> {
             continue;
         }
         let config_root = config_trust_root(&path);
+        if is_ignored(&config_root) || is_ignored(&path) {
+            continue;
+        }
         if !is_trusted(&config_root) {
             trust(&config_root)?;
         }
@@ -416,6 +419,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // so unsafe config can load before the command starts; safe config is
     // persisted by `trust_active_config` after settings initialization.
     if IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed)
+        && !ci_info::is_ci()
         && Settings::try_get().is_ok_and(|settings| !settings.paranoid)
     {
         let config_root = config_trust_root(path);
