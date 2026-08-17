@@ -57,6 +57,9 @@ impl Which {
                 Ok(())
             }
             None => {
+                if let Some(msg) = self.uninstalled_tool_message(&config, &ts) {
+                    bail!(msg);
+                }
                 if let Some(msg) =
                     crate::shims::unavailable_configured_tool_message(&config, &ts, &bin_name)
                 {
@@ -95,6 +98,30 @@ impl Which {
         }
         let ts = tsb.build(config).await?;
         Ok(ts)
+    }
+    /// `--tool` replaces whatever the config requested, so a version that isn't
+    /// installed leaves nothing for [`Toolset::which`] to search. Saying the bin
+    /// "is not currently active" would blame the config instead of the flag.
+    fn uninstalled_tool_message(&self, config: &Arc<Config>, ts: &Toolset) -> Option<String> {
+        let tool = self.tool.as_ref()?;
+        let tv = ts
+            .list_current_versions()
+            .into_iter()
+            .find(|(b, tv)| {
+                tv.ba() == tool.ba.as_ref() && !b.is_version_installed(config, tv, true)
+            })
+            .map(|(_, tv)| tv)?;
+        let requested = tool.version.clone().unwrap_or_else(|| tv.version.clone());
+        let resolved = if requested == tv.version {
+            String::new()
+        } else {
+            format!(" (resolved to {})", tv.version)
+        };
+        Some(format!(
+            "{}@{requested} is not installed{resolved}\n\
+             hint: run `mise install {}@{requested}`, or `mise ls {}` to see installed versions",
+            tool.short, tool.short, tool.short
+        ))
     }
     fn has_shim(&self, shim: &str) -> bool {
         SHIMS.join(shim).exists()
