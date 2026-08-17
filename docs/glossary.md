@@ -5,7 +5,7 @@ This glossary defines key terms and concepts used throughout the mise documentat
 ## Core Concepts
 
 **Activation**
-: The process of loading mise's context (tools, environment variables, PATH modifications) into your shell session. Typically done via `eval "$(mise activate bash)"` in your shell rc file. See [Installing mise](/installing-mise) for setup instructions.
+: The process of loading mise's context (tools, environment variables, PATH modifications) into your shell session. Typically done via `eval "$(mise activate bash)"` in your shell rc file. See [Installing mise](/installing-mise.html) for setup instructions.
 
 **Backend**
 : A package manager or ecosystem that mise uses to install and manage tools. Each backend knows how to fetch, install, and manage tools from its respective source. See [Backends](#backends) below and [Backend Architecture](/dev-tools/backend_architecture) for details.
