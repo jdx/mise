@@ -32,6 +32,7 @@ pub struct ResourceOrigin {
 }
 
 impl ResourceOrigin {
+    /// Formats the declaration and source paths for a sibling-resource conflict.
     pub fn conflict_description(&self) -> String {
         let mut description = format!("config: {}", self.config.display());
         if let Some(source) = &self.source {

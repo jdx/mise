@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
@@ -69,9 +69,16 @@ pub(crate) struct MonorepoUnion {
     pub repo_urls: HashMap<String, String>,
 }
 
+/// One independently composed bootstrap hierarchy and its scoped template context.
+#[derive(Clone)]
+struct BootstrapConfigMap {
+    config_files: ConfigMap,
+    tera_ctx: tera::Context,
+}
+
 pub struct Config {
     pub config_files: ConfigMap,
-    bootstrap_config_maps: Vec<ConfigMap>,
+    bootstrap_config_maps: Vec<BootstrapConfigMap>,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
@@ -309,7 +316,7 @@ impl Config {
         measure!("config::load validate", {
             config.validate()?;
         });
-        config.bootstrap_config_maps = load_bootstrap_config_maps(&config.config_files).await?;
+        config.bootstrap_config_maps = load_bootstrap_config_maps(&config).await?;
 
         config.all_aliases = measure!("config::load all_aliases", { config.load_all_aliases() });
 
@@ -371,12 +378,26 @@ impl Config {
         })
     }
 
+    /// Returns the independent config hierarchies that contribute bootstrap resources.
     pub(crate) fn bootstrap_config_maps(&self) -> impl Iterator<Item = &ConfigMap> {
         if self.bootstrap_config_maps.is_empty() {
             Either::Left(std::iter::once(&self.config_files))
         } else {
-            Either::Right(self.bootstrap_config_maps.iter())
+            Either::Right(
+                self.bootstrap_config_maps
+                    .iter()
+                    .map(|config| &config.config_files),
+            )
         }
+    }
+
+    /// Returns the root-scoped template context for a bootstrap resource declaration.
+    pub(crate) fn bootstrap_tera_ctx(&self, config_path: &Path) -> &tera::Context {
+        self.bootstrap_config_maps
+            .iter()
+            .find(|config| config.config_files.contains_key(config_path))
+            .map(|config| &config.tera_ctx)
+            .unwrap_or(&self.tera_ctx)
     }
     pub async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
@@ -1453,8 +1474,9 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>
         .find(|cf| cf.monorepo_root() == Some(true))
 }
 
-async fn load_bootstrap_config_maps(config_files: &ConfigMap) -> Result<Vec<ConfigMap>> {
-    let Some((declaring_config, patterns)) = config_files.iter().find_map(|(path, cf)| {
+/// Loads each selected bootstrap root as an independent hierarchy with scoped variables.
+async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConfigMap>> {
+    let Some((declaring_config, patterns)) = config.config_files.iter().find_map(|(path, cf)| {
         cf.bootstrap_config()
             .and_then(|bootstrap| bootstrap.config_roots.map(|patterns| (path, patterns)))
     }) else {
@@ -1464,7 +1486,8 @@ async fn load_bootstrap_config_maps(config_files: &ConfigMap) -> Result<Vec<Conf
         return Ok(vec![]);
     }
 
-    let declaring_root = config_files
+    let declaring_root = config
+        .config_files
         .get(declaring_config)
         .expect("declaring bootstrap config is loaded")
         .config_root();
@@ -1475,15 +1498,33 @@ async fn load_bootstrap_config_maps(config_files: &ConfigMap) -> Result<Vec<Conf
         bail!("[bootstrap].config_roots did not match any config roots");
     }
 
-    let mut base = config_files.clone();
+    let mut base = config.config_files.clone();
     base.retain(|path, _| {
         is_global_config(path) || !roots.iter().any(|root| path.starts_with(root))
     });
-    let mut maps = vec![base];
+    let mut maps = vec![BootstrapConfigMap {
+        config_files: base,
+        tera_ctx: config.tera_ctx.clone(),
+    }];
     let idiomatic_filenames = BTreeMap::new();
     for root in roots {
         let paths = config_paths_in_dir_with_filenames(&root, &DEFAULT_CONFIG_FILENAMES);
-        maps.push(load_config_files_from_paths(&paths, &idiomatic_filenames).await?);
+        let config_files = load_config_files_from_paths(&paths, &idiomatic_filenames).await?;
+        let vars_config = config.with_config_files(config_files.clone());
+        let vars_results = load_vars(&vars_config).await?;
+        let mut vars = config.vars.clone();
+        vars.extend(
+            vars_results
+                .vars
+                .iter()
+                .map(|(key, (value, _))| (key.clone(), value.clone())),
+        );
+        let mut tera_ctx = config.tera_ctx.clone();
+        tera_ctx.insert("vars", &vars);
+        maps.push(BootstrapConfigMap {
+            config_files,
+            tera_ctx,
+        });
     }
     Ok(maps)
 }
@@ -3553,6 +3594,7 @@ fn expand_config_roots_inner(
     expand_config_roots_inner_for("monorepo", root, patterns, ctx, filenames)
 }
 
+/// Expands bootstrap root patterns using the normal mise config filenames.
 fn expand_bootstrap_config_roots(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
     expand_config_roots_inner_for(
         "bootstrap",
@@ -3563,6 +3605,7 @@ fn expand_bootstrap_config_roots(root: &Path, patterns: &[String]) -> Result<Vec
     )
 }
 
+/// Expands safe, single-level config-root patterns for a named config section.
 fn expand_config_roots_inner_for(
     section: &str,
     root: &Path,
@@ -3573,8 +3616,13 @@ fn expand_config_roots_inner_for(
     let mut subdirs = Vec::new();
 
     for pattern in patterns {
-        // Reject absolute paths and parent directory escapes
-        if pattern.starts_with('/') || pattern.starts_with("..") || pattern.contains("/../") {
+        // Reject absolute paths and parent directory escapes.
+        if Path::new(pattern).components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        }) {
             warn!(
                 "[{section}].config_roots: '{}' must be a relative path within the config root",
                 pattern
@@ -3594,25 +3642,44 @@ fn expand_config_roots_inner_for(
         if pattern.contains('*') {
             // Single-level glob expansion
             let full_pattern = root.join(pattern);
+            let canonical_root = match root.canonicalize() {
+                Ok(root) => root,
+                Err(err) => {
+                    warn!(
+                        "[{section}].config_roots: failed to resolve config root {}: {err}",
+                        root.display()
+                    );
+                    continue;
+                }
+            };
             match glob::glob(&full_pattern.to_string_lossy()) {
                 Ok(entries) => {
                     for entry in entries {
                         match entry {
                             Ok(path) => {
-                                // Verify path is within monorepo root
-                                if path.strip_prefix(root).is_err() {
+                                let canonical = match path.canonicalize() {
+                                    Ok(path) => path,
+                                    Err(err) => {
+                                        warn!(
+                                            "[{section}].config_roots: failed to resolve glob match {}: {err}",
+                                            path.display()
+                                        );
+                                        continue;
+                                    }
+                                };
+                                if !canonical.starts_with(&canonical_root) {
                                     warn!(
                                         "[{section}].config_roots: glob matched path outside config root: {}",
                                         path.display()
                                     );
                                     continue;
                                 }
-                                if path.is_dir()
+                                if canonical.is_dir()
                                     && filenames.is_none_or(|filenames| {
-                                        has_mise_config_with_filenames(&path, filenames)
+                                        has_mise_config_with_filenames(&canonical, filenames)
                                     })
                                 {
-                                    subdirs.push(path);
+                                    subdirs.push(canonical);
                                 }
                             }
                             Err(e) => {

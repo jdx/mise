@@ -157,7 +157,7 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     for config_files in config.bootstrap_config_maps() {
         for request in files_from_config_files(config_files) {
             if let Some(existing) = composed.get(&request.target) {
-                if file_requests_match(existing, &request) {
+                if file_requests_match(config, existing, &request) {
                     continue;
                 }
                 bail!(
@@ -173,7 +173,8 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     Ok(composed.into_values().collect())
 }
 
-fn file_requests_match(first: &FileRequest, second: &FileRequest) -> bool {
+/// Returns whether sibling declarations produce the same whole-file resource.
+fn file_requests_match(config: &Config, first: &FileRequest, second: &FileRequest) -> bool {
     first.target == second.target
         && first.source == second.source
         && first.content == second.content
@@ -183,7 +184,10 @@ fn file_requests_match(first: &FileRequest, second: &FileRequest) -> bool {
             .iter()
             .map(glob::Pattern::as_str)
             .eq(second.exclude.iter().map(glob::Pattern::as_str))
-        && (first.mode != FileMode::Template || first.base == second.base)
+        && (first.mode != FileMode::Template
+            || first.base == second.base
+                && config.bootstrap_tera_ctx(&first.origin.config)
+                    == config.bootstrap_tera_ctx(&second.origin.config))
 }
 
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
@@ -848,7 +852,12 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
 pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
     let mut tera = crate::tera::get_tera(Some(&req.base));
-    let rendered = crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
+    let rendered = crate::tera::render_str(
+        &mut tera,
+        &raw,
+        config.bootstrap_tera_ctx(&req.origin.config),
+    )
+    .map_err(|err| {
         eyre::eyre!(
             "[dotfiles].\"{}\": failed to render template {}: {err}",
             req.target_raw,

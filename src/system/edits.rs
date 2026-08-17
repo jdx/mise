@@ -153,7 +153,7 @@ pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
         for request in edits_from_config_files(config_files) {
             let key = format!("{}\u{0}{}", request.path.display(), request.id);
             if let Some(existing) = composed.get(&key) {
-                if edit_requests_match(existing, &request) {
+                if edit_requests_match(config, existing, &request) {
                     continue;
                 }
                 bail!(
@@ -170,11 +170,15 @@ pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
     Ok(composed.into_values().collect())
 }
 
-fn edit_requests_match(first: &EditRequest, second: &EditRequest) -> bool {
+/// Returns whether sibling declarations produce the same file edit.
+fn edit_requests_match(config: &Config, first: &EditRequest, second: &EditRequest) -> bool {
     first.path == second.path
         && first.id == second.id
         && first.op == second.op
-        && (!matches!(first.op, EditOp::Block { template: true, .. }) || first.base == second.base)
+        && (!matches!(first.op, EditOp::Block { template: true, .. })
+            || first.base == second.base
+                && config.bootstrap_tera_ctx(&first.origin.config)
+                    == config.bootstrap_tera_ctx(&second.origin.config))
 }
 
 pub fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditRequest> {
@@ -433,7 +437,12 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     };
     let content = if *template {
         let mut tera = crate::tera::get_tera(Some(&req.base));
-        crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
+        crate::tera::render_str(
+            &mut tera,
+            &raw,
+            config.bootstrap_tera_ctx(&req.origin.config),
+        )
+        .map_err(|err| {
             eyre::eyre!(
                 "[dotfiles].\"{}/{}\": failed to render template: {err}",
                 req.path_raw,

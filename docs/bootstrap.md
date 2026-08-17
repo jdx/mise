@@ -29,7 +29,9 @@ config_roots = ["bundles/*"]
 Entries are relative to the declaring config root and may use single-level `*`
 globs. Each matched directory is loaded with the normal active configuration
 environments. Relative resource sources and template `config_root` values remain
-relative to the config that declared them.
+relative to the config that declared them. Variables declared by a selected root
+are available to that root's dotfile templates without leaking into sibling
+roots.
 
 Composition includes `[dotfiles]`, `[bootstrap.files]`, and
 `[bootstrap.directories]`. Equivalent declarations are deduplicated. Different

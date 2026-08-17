@@ -5,15 +5,24 @@ root_b="$PWD/roots/b"
 target_a="$PWD/a.conf"
 target_b="$PWD/b.conf"
 target_env="$PWD/env.conf"
+target_vars="$PWD/vars.conf"
 shared_target="$PWD/shared.conf"
 managed_file="$PWD/managed.conf"
 managed_dir="$PWD/managed-dir"
 leaked_repo="$PWD/not-collected-repo"
+outside_root="$PWD/../outside-root"
 
-mkdir -p "$root_a" "$root_b"
+mkdir -p "$root_a" "$root_b" "$outside_root"
 echo a >"$root_a/a.txt"
 echo b >"$root_b/b.txt"
 echo env >"$root_a/env.txt"
+echo '{{ vars.root_value }}' >"$root_a/vars.tmpl"
+
+cat <<EOF >"$outside_root/mise.toml"
+[dotfiles]
+"$PWD/escaped.conf" = { content = "escaped" }
+EOF
+ln -s "$outside_root" "$PWD/roots/escaped"
 
 cat <<EOF >mise.toml
 [bootstrap]
@@ -21,8 +30,12 @@ config_roots = ["roots/*"]
 EOF
 
 cat <<EOF >"$root_a/mise.toml"
+[vars]
+root_value = "from-root-a"
+
 [dotfiles]
 "$target_a" = { source = "a.txt", mode = "copy" }
+"$target_vars" = { source = "vars.tmpl", mode = "template" }
 "$shared_target" = { content = "shared" }
 
 [bootstrap.files."$managed_file"]
@@ -55,14 +68,16 @@ content = "managed"
 mode = "0755"
 EOF
 
-assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files | length == 4'"
+assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files | length == 5'"
 assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files[] | select(.target == \"$target_a\") | .origin.config == \"$root_a/mise.toml\" and .origin.config_root == \"$root_a\"'"
 assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files[] | select(.target == \"$target_env\") | .origin.config == \"$root_a/mise.dev.toml\" and .origin.environment == [\"dev\"]'"
 assert_succeed "MISE_ENV=dev mise bootstrap dotfiles apply --yes"
 assert "cat $target_a" "a"
 assert "cat $target_b" "b"
 assert "cat $target_env" "env"
+assert "cat $target_vars" "from-root-a"
 assert "cat $shared_target" "shared"
+assert_fail "test -e $PWD/escaped.conf"
 
 assert_succeed "mise bootstrap files status --json | jq -e 'length == 2'"
 assert_succeed "mise bootstrap files status --json | jq -e '.[] | select(.id.name == \"$managed_file\") | .origin.config == \"$root_a/mise.toml\"'"
