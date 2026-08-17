@@ -364,6 +364,7 @@ fn merged_files_from_config(
     Ok(composed)
 }
 
+/// Returns whether sibling declarations produce the same managed file.
 fn managed_file_declarations_match(
     first: &(ManagedFileTomlConfig, PathBuf, ResourceOrigin),
     second: &(ManagedFileTomlConfig, PathBuf, ResourceOrigin),
@@ -373,6 +374,7 @@ fn managed_file_declarations_match(
         && (!first.0.template || first.1 == second.1)
 }
 
+/// Merges managed files within one config hierarchy using normal precedence.
 fn merged_files_from_config_files(
     config_files: &ConfigMap,
 ) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)>> {
@@ -441,6 +443,7 @@ fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryReques
         .collect()
 }
 
+/// Merges managed directories within one config hierarchy using normal precedence.
 fn directories_from_config_files(
     config_files: &ConfigMap,
 ) -> Result<IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)>> {

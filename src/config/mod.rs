@@ -1500,7 +1500,10 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
 
     let mut base = config.config_files.clone();
     base.retain(|path, _| {
-        is_global_config(path) || !roots.iter().any(|root| path.starts_with(root))
+        is_global_config(path)
+            || !path
+                .canonicalize()
+                .is_ok_and(|path| roots.iter().any(|root| path.starts_with(root)))
     });
     let mut maps = vec![BootstrapConfigMap {
         config_files: base,
@@ -1521,6 +1524,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         );
         let mut tera_ctx = config.tera_ctx.clone();
         tera_ctx.insert("vars", &vars);
+        tera_ctx.insert("config_root", &root);
         maps.push(BootstrapConfigMap {
             config_files,
             tera_ctx,
@@ -3614,6 +3618,16 @@ fn expand_config_roots_inner_for(
     filenames: Option<&[String]>,
 ) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
+    let canonical_root = match root.canonicalize() {
+        Ok(root) => root,
+        Err(err) => {
+            warn!(
+                "[{section}].config_roots: failed to resolve config root {}: {err}",
+                root.display()
+            );
+            return Ok(subdirs);
+        }
+    };
 
     for pattern in patterns {
         // Reject absolute paths and parent directory escapes.
@@ -3641,17 +3655,7 @@ fn expand_config_roots_inner_for(
 
         if pattern.contains('*') {
             // Single-level glob expansion
-            let full_pattern = root.join(pattern);
-            let canonical_root = match root.canonicalize() {
-                Ok(root) => root,
-                Err(err) => {
-                    warn!(
-                        "[{section}].config_roots: failed to resolve config root {}: {err}",
-                        root.display()
-                    );
-                    continue;
-                }
-            };
+            let full_pattern = canonical_root.join(pattern);
             match glob::glob(&full_pattern.to_string_lossy()) {
                 Ok(entries) => {
                     for entry in entries {
@@ -3694,23 +3698,26 @@ fn expand_config_roots_inner_for(
             }
         } else {
             // Explicit path
-            let path = root.join(pattern);
-            // Verify path is within monorepo root after resolution
-            if let Ok(canonical) = path.canonicalize()
-                && let Ok(canonical_root) = root.canonicalize()
-                && !canonical.starts_with(&canonical_root)
-            {
+            let path = canonical_root.join(pattern);
+            let canonical = match path.canonicalize() {
+                Ok(path) => path,
+                Err(_) => {
+                    warn!("[{section}].config_roots: '{}' does not exist", pattern);
+                    continue;
+                }
+            };
+            if !canonical.starts_with(&canonical_root) {
                 warn!(
                     "[{section}].config_roots: '{}' resolves outside config root",
                     pattern
                 );
                 continue;
             }
-            if path.is_dir() {
+            if canonical.is_dir() {
                 if filenames
-                    .is_none_or(|filenames| has_mise_config_with_filenames(&path, filenames))
+                    .is_none_or(|filenames| has_mise_config_with_filenames(&canonical, filenames))
                 {
-                    subdirs.push(path);
+                    subdirs.push(canonical);
                 } else {
                     warn!(
                         "[{section}].config_roots: '{}' has no mise config file",
@@ -3718,7 +3725,7 @@ fn expand_config_roots_inner_for(
                     );
                 }
             } else {
-                warn!("[{section}].config_roots: '{}' does not exist", pattern);
+                warn!("[{section}].config_roots: '{}' is not a directory", pattern);
             }
         }
     }
@@ -3727,11 +3734,11 @@ fn expand_config_roots_inner_for(
     if let Some(ctx) = ctx {
         subdirs.retain(|dir| {
             let rel_path = dir
-                .strip_prefix(root)
+                .strip_prefix(&canonical_root)
                 .ok()
                 .and_then(|p| p.to_str())
                 .unwrap_or("");
-            ctx.should_load_subdir(rel_path, root.to_str().unwrap_or(""))
+            ctx.should_load_subdir(rel_path, canonical_root.to_str().unwrap_or(""))
         });
     }
 

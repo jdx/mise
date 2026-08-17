@@ -12,21 +12,22 @@ managed_dir="$PWD/managed-dir"
 leaked_repo="$PWD/not-collected-repo"
 outside_root="$PWD/../outside-root"
 
-mkdir -p "$root_a" "$root_b" "$outside_root"
+mkdir -p "$root_a" "$root_b" "$outside_root" "$PWD/aliases"
 echo a >"$root_a/a.txt"
 echo b >"$root_b/b.txt"
 echo env >"$root_a/env.txt"
-echo '{{ vars.root_value }}' >"$root_a/vars.tmpl"
+echo '{{ vars.root_value }}|{{ config_root }}' >"$root_a/vars.tmpl"
 
 cat <<EOF >"$outside_root/mise.toml"
 [dotfiles]
 "$PWD/escaped.conf" = { content = "escaped" }
 EOF
 ln -s "$outside_root" "$PWD/roots/escaped"
+ln -s "$root_a" "$PWD/aliases/a"
 
 cat <<EOF >mise.toml
 [bootstrap]
-config_roots = ["roots/*"]
+config_roots = ["roots/*", "aliases/a"]
 EOF
 
 cat <<EOF >"$root_a/mise.toml"
@@ -75,7 +76,7 @@ assert_succeed "MISE_ENV=dev mise bootstrap dotfiles apply --yes"
 assert "cat $target_a" "a"
 assert "cat $target_b" "b"
 assert "cat $target_env" "env"
-assert "cat $target_vars" "from-root-a"
+assert "cat $target_vars" "from-root-a|$root_a"
 assert "cat $shared_target" "shared"
 assert_fail "test -e $PWD/escaped.conf"
 
