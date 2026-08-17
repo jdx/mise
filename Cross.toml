@@ -36,7 +36,19 @@ pre-build = [
 image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:0.2.5"
 pre-build = [
   "dpkg --add-architecture armhf",
-  "apt-get update && apt-get install -y libclang-dev clang llvm-dev pkg-config",
+  "apt-get update && apt-get install -y apt-transport-https ca-certificates gnupg pkg-config wget",
+  "wget -qO /tmp/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key",
+  "gpg --batch --no-default-keyring --keyring /tmp/apt.llvm.org.gpg --import /tmp/apt.llvm.org.asc",
+  "test \"$(gpg --batch --no-default-keyring --keyring /tmp/apt.llvm.org.gpg --with-colons --fingerprint | awk -F: '$1 == \"fpr\" { print $10; exit }')\" = \"6084F3CF814B57C1CF12EFD515CF4D18AF4F7421\"",
+  "install -m 0644 /tmp/apt.llvm.org.gpg /usr/share/keyrings/apt.llvm.org.gpg",
+  "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main' > /etc/apt/sources.list.d/llvm.list",
+  "apt-get update && apt-get install -y libclang-6.0-dev",
+]
+
+[target.armv7-unknown-linux-gnueabihf.env]
+passthrough = [
+  "BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabihf",
+  "LIBCLANG_PATH",
 ]
 
 
