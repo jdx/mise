@@ -499,7 +499,6 @@ impl Backend for AquaBackend {
                 existing_platform // Trust lockfile URL in locked mode or for non-release types
             } else {
                 let cached_filename = get_filename_from_url(url);
-                let cached_filename_lower = cached_filename.to_lowercase();
                 // Check assets for both version variants (with and without v prefix)
                 let version_variants: Vec<&str> = match &v_prefixed {
                     Some(vp) => vec![v.as_str(), vp.as_str()],
@@ -510,14 +509,11 @@ impl Backend for AquaBackend {
                         .unwrap_or_default()
                         .iter()
                         .any(|expected| {
-                            // Case-insensitive match to align with github_release_asset behavior
-                            cached_filename == *expected
-                                || cached_filename_lower == expected.to_lowercase()
-                                || is_libc_variant_of_expected_asset(
-                                    &asset_name_tokens(&cached_filename),
-                                    &asset_name_tokens(expected),
-                                    libc_asset_preference(&PlatformTarget::from_current()),
-                                )
+                            asset_name_matches_expected(
+                                &cached_filename,
+                                expected,
+                                libc_asset_preference(&PlatformTarget::from_current()),
+                            )
                         })
                 });
                 if matches {
@@ -3032,12 +3028,20 @@ impl AquaBackend {
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[AquaFileLink]) -> Result<()> {
         let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
-        file::create_dir_all(&symlink_dir)?;
+        Self::create_symlink_bin_dir_at(&symlink_dir, srcs)
+    }
+
+    fn create_symlink_bin_dir_at(symlink_dir: &Path, srcs: &[AquaFileLink]) -> Result<()> {
+        let srcs = srcs.iter().filter(|link| link.dst.exists()).collect_vec();
+        if srcs.is_empty() {
+            return Ok(());
+        }
+        file::create_dir_all(symlink_dir)?;
 
         for link in srcs {
             if let Some(bin_name) = link.dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
-                if link.dst.exists() && !symlink_path.exists() {
+                if !symlink_path.exists() {
                     file::make_symlink_or_copy(&link.dst, &symlink_path)?;
                 }
             }
@@ -3549,6 +3553,26 @@ mod tests {
         // machine it must stay out of the way. On unix it never appears at all.
         let root = PathBuf::from(r"C:\Users\u\AppData\Local\Temp\mise\lock-provenance");
         assert_eq!(AquaBackend::scratch_length_hint_for(&root), "");
+    }
+
+    #[test]
+    fn symlink_bin_dir_is_not_created_without_existing_bins() {
+        let temp = tempfile::tempdir().unwrap();
+        let symlink_dir = temp.path().join(MISE_BINS_DIR);
+        let bin = temp.path().join("missing-bin");
+        let srcs = [AquaFileLink {
+            src: bin.clone(),
+            dst: bin.clone(),
+            hard: false,
+            explicit_link: false,
+        }];
+
+        AquaBackend::create_symlink_bin_dir_at(&symlink_dir, &srcs).unwrap();
+        assert!(!symlink_dir.exists());
+
+        fs::write(&bin, b"binary").unwrap();
+        AquaBackend::create_symlink_bin_dir_at(&symlink_dir, &srcs).unwrap();
+        assert!(symlink_dir.join("missing-bin").exists());
     }
 
     #[test]
@@ -4772,8 +4796,9 @@ fn is_platform_supported(supported_envs: &[String], os: &str, arch: &str) -> boo
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LibcAssetPreference {
     Exact,
-    Glibc,
-    Musl,
+    GlibcWithFallback,
+    GlibcStrict,
+    MuslStrict,
 }
 
 fn libc_asset_preference(target: &PlatformTarget) -> LibcAssetPreference {
@@ -4781,8 +4806,9 @@ fn libc_asset_preference(target: &PlatformTarget) -> LibcAssetPreference {
         return LibcAssetPreference::Exact;
     }
     match AquaBackend::target_libc(target).as_deref() {
-        Some("musl") => LibcAssetPreference::Musl,
-        _ => LibcAssetPreference::Glibc,
+        Some("gnu") => LibcAssetPreference::GlibcStrict,
+        Some("musl") => LibcAssetPreference::MuslStrict,
+        _ => LibcAssetPreference::GlibcWithFallback,
     }
 }
 
@@ -4821,8 +4847,33 @@ fn select_github_release_asset<'a>(
             return Some(preferred_asset);
         }
 
-        exact
+        exact.filter(|_| exact_asset_matches_libc_preference(&expected_tokens, libc_preference))
     })
+}
+
+fn exact_asset_matches_libc_preference(
+    asset_tokens: &[String],
+    preference: LibcAssetPreference,
+) -> bool {
+    match preference {
+        LibcAssetPreference::Exact | LibcAssetPreference::GlibcWithFallback => true,
+        LibcAssetPreference::GlibcStrict => !asset_tokens.iter().any(|token| token == "musl"),
+        LibcAssetPreference::MuslStrict => !asset_tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
+    }
+}
+
+fn asset_name_matches_expected(
+    actual: &str,
+    expected: &str,
+    preference: LibcAssetPreference,
+) -> bool {
+    let actual_tokens = asset_name_tokens(actual);
+    let expected_tokens = asset_name_tokens(expected);
+    ((actual == expected || actual.eq_ignore_ascii_case(expected))
+        && exact_asset_matches_libc_preference(&actual_tokens, preference))
+        || is_libc_variant_of_expected_asset(&actual_tokens, &expected_tokens, preference)
 }
 
 fn is_libc_variant_of_expected_asset(
@@ -4832,16 +4883,18 @@ fn is_libc_variant_of_expected_asset(
 ) -> bool {
     let asset_matches = match preference {
         LibcAssetPreference::Exact => false,
-        LibcAssetPreference::Glibc => asset_tokens
+        LibcAssetPreference::GlibcWithFallback | LibcAssetPreference::GlibcStrict => asset_tokens
             .iter()
             .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
-        LibcAssetPreference::Musl => asset_tokens.iter().any(|token| token == "musl"),
+        LibcAssetPreference::MuslStrict => asset_tokens.iter().any(|token| token == "musl"),
     };
     asset_matches
         && !expected_tokens.iter().any(|token| match preference {
             LibcAssetPreference::Exact => false,
-            LibcAssetPreference::Glibc => matches!(token.as_str(), "gnu" | "glibc"),
-            LibcAssetPreference::Musl => token == "musl",
+            LibcAssetPreference::GlibcWithFallback | LibcAssetPreference::GlibcStrict => {
+                matches!(token.as_str(), "gnu" | "glibc")
+            }
+            LibcAssetPreference::MuslStrict => token == "musl",
         })
         && itertools::equal(
             asset_tokens
@@ -5323,7 +5376,8 @@ version_overrides:
         let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
 
         let selected =
-            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::Musl).unwrap();
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
     }
@@ -5348,7 +5402,8 @@ version_overrides:
         let asset_strs = IndexSet::from(["tool-1.0.0-linux-amd64.tar.gz".to_string()]);
 
         let selected =
-            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::Musl).unwrap();
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-linux-amd64-musl.tar.gz");
     }
@@ -5361,7 +5416,7 @@ version_overrides:
         assert!(!is_libc_variant_of_expected_asset(
             &asset_tokens,
             &expected_tokens,
-            LibcAssetPreference::Musl,
+            LibcAssetPreference::MuslStrict,
         ));
     }
 
@@ -5374,13 +5429,20 @@ version_overrides:
         let asset_strs =
             IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-musl.tar.gz".to_string()]);
 
-        let selected =
-            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::Glibc).unwrap();
+        let selected = select_github_release_asset(
+            &assets,
+            &asset_strs,
+            LibcAssetPreference::GlibcWithFallback,
+        )
+        .unwrap();
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz");
 
-        let selected =
-            select_github_release_asset(&assets[..1], &asset_strs, LibcAssetPreference::Glibc)
-                .unwrap();
+        let selected = select_github_release_asset(
+            &assets[..1],
+            &asset_strs,
+            LibcAssetPreference::GlibcWithFallback,
+        )
+        .unwrap();
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
     }
 
@@ -5390,8 +5452,47 @@ version_overrides:
         let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
 
         assert!(
-            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::Glibc).is_none()
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::GlibcStrict)
+                .is_none()
         );
+    }
+
+    #[test]
+    fn test_select_github_release_asset_keeps_explicit_musl_strict() {
+        let assets = vec![asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz")];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        assert!(
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_lock_asset_validation_preserves_explicit_libc() {
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+
+        assert!(!asset_name_matches_expected(
+            musl,
+            musl,
+            LibcAssetPreference::GlibcStrict,
+        ));
+        assert!(!asset_name_matches_expected(
+            gnu,
+            gnu,
+            LibcAssetPreference::MuslStrict,
+        ));
+        assert!(asset_name_matches_expected(
+            gnu,
+            musl,
+            LibcAssetPreference::GlibcWithFallback,
+        ));
+        assert!(asset_name_matches_expected(
+            musl,
+            musl,
+            LibcAssetPreference::GlibcWithFallback,
+        ));
     }
 
     #[test]
