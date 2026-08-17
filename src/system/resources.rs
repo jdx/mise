@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::config::Config;
 use crate::system::packages::{PackageRequest, PackageState};
@@ -19,10 +19,32 @@ pub struct ResourceId {
 /// Where a declarative resource came from.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ResourceOrigin {
+    #[serde(serialize_with = "serialize_path_lossy")]
     pub config: PathBuf,
+    #[serde(serialize_with = "serialize_path_lossy")]
     pub config_root: PathBuf,
     pub environment: Vec<String>,
+    #[serde(serialize_with = "serialize_optional_path_lossy")]
     pub source: Option<PathBuf>,
+}
+
+fn serialize_path_lossy<S>(path: &PathBuf, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&path.to_string_lossy())
+}
+
+fn serialize_optional_path_lossy<S>(
+    path: &Option<PathBuf>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    path.as_deref()
+        .map(|path| path.to_string_lossy())
+        .serialize(serializer)
 }
 
 impl ResourceId {
@@ -623,6 +645,27 @@ fn package_resource_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn resource_origin_serializes_non_utf8_paths_lossily() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let invalid_path = PathBuf::from(OsString::from_vec(b"/tmp/invalid-\xff".to_vec()));
+        let origin = ResourceOrigin {
+            config: invalid_path.clone(),
+            config_root: invalid_path.clone(),
+            environment: vec![],
+            source: Some(invalid_path.clone()),
+        };
+
+        let value = serde_json::to_value(origin).unwrap();
+        let expected = invalid_path.to_string_lossy();
+        assert_eq!(value["config"], expected.as_ref());
+        assert_eq!(value["config_root"], expected.as_ref());
+        assert_eq!(value["source"], expected.as_ref());
+    }
 
     fn resource(name: &str) -> ResourcePlan {
         ResourcePlan::new(

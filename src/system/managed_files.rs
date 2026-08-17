@@ -370,9 +370,14 @@ fn merged_files_from_config(
                         target.display()
                     );
                 }
+                let mut file_origin = origin.clone();
+                file_origin.source = file
+                    .source
+                    .as_deref()
+                    .map(|source| resolve_source_path(&base, source));
                 merged
                     .entry(target)
-                    .or_insert_with(|| (file, base.clone(), origin.clone()));
+                    .or_insert_with(|| (file, base.clone(), file_origin));
             }
         }
     }
@@ -462,7 +467,7 @@ impl ManagedFileRequest {
         path: PathBuf,
         config: ManagedFileTomlConfig,
         base: &Path,
-        mut origin: ResourceOrigin,
+        origin: ResourceOrigin,
         secrets: &super::secrets::SecretValues,
     ) -> Result<Self> {
         let owner = nonempty("owner", config.owner)?;
@@ -476,13 +481,7 @@ impl ManagedFileRequest {
                 )
             }
             (Some(source), None, ManagedState::Present) => {
-                let source = Path::new(&source);
-                let source = if source.is_absolute() {
-                    source.to_path_buf()
-                } else {
-                    base.join(source)
-                };
-                origin.source = Some(source.clone());
+                let source = resolve_source_path(base, &source);
                 Some(fs::read_to_string(&source).wrap_err_with(|| {
                     format!(
                         "[bootstrap.files].\"{}\": failed to read source {}",
@@ -559,6 +558,15 @@ impl ManagedFileRequest {
                 path: self.path.clone(),
             },
         }))
+    }
+}
+
+fn resolve_source_path(base: &Path, source: &str) -> PathBuf {
+    let source = Path::new(source);
+    if source.is_absolute() {
+        source.to_path_buf()
+    } else {
+        base.join(source)
     }
 }
 
