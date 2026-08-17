@@ -92,15 +92,13 @@ pub fn build_system_packages_layer(
     file::create_dir_all(&rootfs)?;
     unpack_base_layers(layout, base_layers, &rootfs)?;
 
-    let before = snapshot(&rootfs)?;
+    let before = prepare_and_snapshot(manager, &rootfs)?;
     match manager {
         OciPackageManager::Apk => {
-            prepare_apk_install(&rootfs)?;
             apk_install_into_rootfs(&rootfs, &requests, architecture)?;
             clean_apk_transients(&rootfs)?;
         }
         OciPackageManager::Apt => {
-            prepare_apt_install(&rootfs)?;
             apt_install_into_rootfs(&rootfs, &requests, architecture)?;
             clean_apt_transients(&rootfs)?;
         }
@@ -159,6 +157,17 @@ fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn prepare_and_snapshot(
+    manager: OciPackageManager,
+    rootfs: &Path,
+) -> Result<BTreeMap<PathBuf, FsEntry>> {
+    match manager {
+        OciPackageManager::Apk => prepare_apk_install(rootfs)?,
+        OciPackageManager::Apt => prepare_apt_install(rootfs)?,
+    }
+    snapshot(rootfs)
 }
 
 fn collect_package_requests(
@@ -858,6 +867,31 @@ mod tests {
             fs::read_to_string(rootfs.join("usr/bin/jq")).unwrap(),
             "ELF-payload"
         );
+    }
+
+    #[test]
+    fn apt_preparation_is_excluded_from_package_diff() {
+        let td = TempDir::with_prefix("mise-oci-apt-snapshot-test-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        let sources = rootfs.join("etc/apt/sources.list");
+        write_file(
+            &sources,
+            "deb [signed-by=/usr/share/keyrings/test.gpg] https://example.invalid stable main\n",
+        );
+
+        let before = prepare_and_snapshot(OciPackageManager::Apt, &rootfs).unwrap();
+        assert!(
+            fs::read_to_string(&sources)
+                .unwrap()
+                .contains(&rootfs.display().to_string())
+        );
+
+        write_file(&rootfs.join("usr/bin/example"), "package-payload");
+        let diff = td.path().join("diff");
+        materialize_diff(&rootfs, &before, &diff).unwrap();
+
+        assert!(diff.join("usr/bin/example").is_file());
+        assert!(!diff.join("etc/apt/sources.list").exists());
     }
 
     #[test]
