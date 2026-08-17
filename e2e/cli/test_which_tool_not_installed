@@ -6,9 +6,8 @@
 
 assert "mise use dummy@1.0.0"
 
-assert_fail_contains "mise which dummy --tool=dummy@2.0.0" "dummy@2.0.0 is not installed"
-assert_fail_contains "mise which dummy --tool=dummy@2.0.0" "mise install dummy@2.0.0"
+assert_fail_matches "mise which dummy --tool=dummy@2.0.0" 'dummy@2\.0\.0 is not installed[[:space:]]+.*mise install dummy@2\.0\.0.*mise ls dummy'
 
-# A fuzzy request names the version it resolved to, so the reason the lookup
-# missed is visible.
-assert_fail_contains "mise which dummy --tool=dummy@2" "resolved to 2.0.0"
+# A fuzzy request keeps the version the user asked for and names what it
+# resolved to, so the reason the lookup missed is visible.
+assert_fail_matches "mise which dummy --tool=dummy@2" 'dummy@2 is not installed \(resolved to 2\.0\.0\)'
