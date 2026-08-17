@@ -181,7 +181,16 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
-        hooks::run_one_hook(config, self, Hooks::Preinstall, None, opts.dry_run).await;
+        hooks::run_one_hook_with_context(
+            config,
+            self,
+            Hooks::Preinstall,
+            None,
+            None,
+            opts.dry_run,
+            opts.global_hooks_only,
+        )
+        .await;
 
         show_python_install_hint(&versions);
 
@@ -286,6 +295,7 @@ impl Toolset {
                 None,
                 None,
                 opts.dry_run,
+                opts.global_hooks_only,
             )
             .await;
         } else {
@@ -302,6 +312,7 @@ impl Toolset {
                 None,
                 Some(&installed_tools),
                 opts.dry_run,
+                opts.global_hooks_only,
             )
             .await;
         }

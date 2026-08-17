@@ -12,18 +12,37 @@ enter = 'echo GLOBAL-ENTER'
 leave = 'echo GLOBAL-LEAVE'
 cd = 'echo GLOBAL-CD'
 preinstall = 'echo GLOBAL-PREINSTALL'
-postinstall = 'echo GLOBAL-POSTINSTALL'
+postinstall = 'echo GLOBAL-POSTINSTALL PROJECT_ROOT=\$MISE_PROJECT_ROOT CONFIG_ROOT=\$MISE_CONFIG_ROOT'
 EOF
 
 # Set up a project config with tools
 cat <<EOF >mise.toml
 [tools]
 dummy = 'latest'
+[hooks]
+preinstall = 'echo PROJECT-PREINSTALL'
+postinstall = 'echo PROJECT-POSTINSTALL'
 EOF
 
 # Global preinstall/postinstall hooks should fire during install
 assert_contains "mise i 2>&1" "GLOBAL-PREINSTALL"
 assert_contains "mise i dummy@1 2>&1" "GLOBAL-POSTINSTALL"
+
+# A global use from inside a project only runs global install hooks (#7183, #8795).
+# The global hook's config root remains global while its project root reflects
+# the scope of the install.
+mkdir -p subdir
+project_root="$PWD"
+output="$(cd subdir && mise use --global dummy@2 2>&1)"
+assert_contains_text "$output" "GLOBAL-POSTINSTALL PROJECT_ROOT=$HOME CONFIG_ROOT=$HOME"
+assert_not_contains_text "$output" "PROJECT-PREINSTALL"
+assert_not_contains_text "$output" "PROJECT-POSTINSTALL"
+
+# For a project install, global hooks receive the active project root while
+# retaining the global config root.
+output="$(cd subdir && mise install dummy@3 2>&1)"
+assert_contains_text "$output" "GLOBAL-POSTINSTALL PROJECT_ROOT=$project_root CONFIG_ROOT=$HOME"
+assert_contains_text "$output" "PROJECT-POSTINSTALL"
 
 # Initialize hook-env session
 eval "$(mise hook-env)"
@@ -39,7 +58,6 @@ assert_contains "mise hook-env 2>&1" "GLOBAL-CD"
 eval "$(mise hook-env)"
 
 # cd within workdir should still trigger global cd hook
-mkdir -p subdir
 cd ~/workdir/subdir || exit 1
 assert_contains "mise hook-env 2>&1" "GLOBAL-CD"
 eval "$(mise hook-env)"

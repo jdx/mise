@@ -583,6 +583,7 @@ impl Install {
                     None,
                     Some(&[]),
                     self.is_dry_run(),
+                    false,
                 )
                 .await;
                 (vec![], Ok(()))
