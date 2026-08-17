@@ -456,6 +456,13 @@ impl EnvResults {
         };
         let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
         let safe_mode = Settings::safe_mode();
+        if input.iter().any(|(directive, _)| {
+            directive.options().parser.is_some() && !matches!(directive, EnvDirective::File(..))
+        }) {
+            return Err(eyre!(
+                "`parser` is only supported for env._.file directives"
+            ));
+        }
         // In safe mode, environment directives from project (non-global) config are
         // ignored — they would otherwise be applied to the host environment and to
         // subprocesses mise spawns during resolution (e.g. `go list`, vfox hooks),

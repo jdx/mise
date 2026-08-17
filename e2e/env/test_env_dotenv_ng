@@ -17,16 +17,23 @@ assert "mise env --json | jq -r .PASSWORD" 'foo:$2a$10$TWoviNHS27HJMw1PKe4tBeIMl
 cat >mise.toml <<'EOF'
 [env]
 PREFIX = 'before'
-_.file = { path = '.env', parser = 'dotenv-ng', expand = true }
+_.file = [
+  { path = '.env', parser = 'dotenv-ng', expand = true },
+  { path = '.env.second', parser = 'dotenv-ng', expand = true },
+]
 EOF
 cat >.env <<'EOF'
 BASE=hello
 SAME_FILE=$BASE
 CROSS_FILE=${PREFIX}/after
 EOF
+cat >.env.second <<'EOF'
+FROM_PREVIOUS=${BASE}/second
+EOF
 
 assert "mise env --json | jq -r .SAME_FILE" 'hello'
 assert "mise env --json | jq -r .CROSS_FILE" 'before/after'
+assert "mise env --json | jq -r .FROM_PREVIOUS" 'hello/second'
 
 # Omitting parser retains dotenvy's existing same-file substitution behavior.
 cat >mise.toml <<'EOF'
@@ -34,3 +41,9 @@ cat >mise.toml <<'EOF'
 _.file = '.env'
 EOF
 assert "mise env --json | jq -r .SAME_FILE" 'hello'
+
+cat >mise.toml <<'EOF'
+[env]
+_.path = { path = 'bin', parser = 'dotenv-ng' }
+EOF
+assert_fail_contains "mise env" '`parser` is only supported for env._.file directives'

@@ -375,9 +375,8 @@ _.file = '.env'
 ```
 
 ::: info
-Only dotenv-format files use [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have
-problems with dotenv parsing, you will likely need to post an issue there, not to mise since there is
-not much mise can do about the way that crate works. JSON, YAML, and TOML files use separate parsers.
+Dotenv-format files use [dotenvy](https://crates.io/crates/dotenvy) by default. JSON, YAML, and TOML
+files use separate parsers.
 :::
 
 The `env._.file` directive supports:
@@ -418,10 +417,11 @@ The `env_shell_expand` setting remains the global switch and can disable expansi
 sets `expand = true`. Dotenv files retain dotenvy's normal same-file expansion behavior regardless;
 for dotenv files, `expand = true` additionally enables references to previously loaded values.
 
-Dotenv files use `dotenvy` by default for compatibility. Set `parser = "dotenv-ng"` to opt in to
-the [`dotenv-ng`](https://crates.io/crates/dotenv-ng) parser. Its syntax preserves dollar signs
-literally by default, which is useful for values such as password hashes. With this parser,
-`expand = true` explicitly enables same-file and cross-file variable substitution.
+The `parser` option applies only to dotenv files; mise rejects it for JSON, YAML, and TOML files.
+Dotenv files use `dotenvy` by default for compatibility. Set `parser = "dotenv-ng"` to opt in to the
+[`dotenv-ng`](https://crates.io/crates/dotenv-ng) parser. Its syntax preserves dollar signs literally
+by default, which is useful for values such as password hashes. With this parser, `expand = true`
+explicitly enables same-file and cross-file variable substitution.
 
 ```toml
 [env]

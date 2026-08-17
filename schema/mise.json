@@ -203,9 +203,6 @@
         "expand": {
           "$ref": "#/$defs/env_file_expand"
         },
-        "parser": {
-          "$ref": "#/$defs/env_file_parser"
-        },
         "redact": {
           "$ref": "#/$defs/env_redact"
         },
@@ -231,6 +228,21 @@
             }
           },
           "required": ["paths"]
+        }
+      ]
+    },
+    "env_file_directive": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/env_directive"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parser": {
+              "$ref": "#/$defs/env_file_parser"
+            }
+          }
         }
       ]
     },
@@ -353,7 +365,7 @@
             "file": {
               "oneOf": [
                 {
-                  "$ref": "#/$defs/env_directive"
+                  "$ref": "#/$defs/env_file_directive"
                 },
                 {
                   "description": "environment file to load (dotenv, json, yaml, or toml)",
@@ -369,7 +381,7 @@
                         "type": "string"
                       },
                       {
-                        "$ref": "#/$defs/env_directive"
+                        "$ref": "#/$defs/env_file_directive"
                       }
                     ]
                   }
