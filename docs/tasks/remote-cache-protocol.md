@@ -109,13 +109,15 @@ the JSON representation, and `size` is an unsigned decimal integer.
   },
   "features": {
     "batch": true,
+    "blob_packs": true,
     "resumable_uploads": true,
     "delegated_transfers": true
   },
   "limits": {
     "max_batch_items": 1000,
     "max_inline_blob_bytes": 1048576,
-    "max_blob_bytes": 107374182400
+    "max_blob_bytes": 107374182400,
+    "max_pack_bytes": 107374182400
   }
 }
 ```
@@ -293,6 +295,30 @@ the cache service's `Authorization` header to the delegated host.
 Clients verify the complete uncompressed digest before using downloaded content. A mismatch is a
 cache miss, emits a visible integrity warning, and must be reported to server telemetry when the
 reporting capability is enabled.
+
+### Read a blob pack
+
+Servers advertising `features.blob_packs` accept `POST /v1/blobs:pack` with the same
+`application/vnd.mise.cache-digests.v1+json` body as `blobs:missing`. The aggregate declared size
+must not exceed `limits.max_pack_bytes`, and the number of digests must not exceed
+`limits.max_batch_items`.
+
+A successful response uses `application/vnd.mise.cache-blob-pack.v1` and begins with the eight-byte
+ASCII magic `MISEPK01`. The remainder is a stream of frames in request order:
+
+| Field     | Encoding                                    |
+| --------- | ------------------------------------------- |
+| Algorithm | one byte: `1` for BLAKE3 or `2` for SHA-256 |
+| Hash      | raw 32-byte digest                          |
+| Size      | unsigned big-endian 64-bit byte length      |
+| Content   | exactly `size` bytes                        |
+
+The server omits missing and unauthorized blobs and emits duplicate requests once. Clients reject
+unrequested or duplicate frames, stream each frame to bounded temporary storage, verify its full
+digest, and only then admit it to local CAS. Clients fall back to ordinary single-blob reads when
+the capability is absent, a digest exceeds the advertised pack limit, or an expected blob is
+omitted. A pack is a transfer optimization only; its framing does not change CAS identity or action
+semantics.
 
 ### Upload blobs
 
