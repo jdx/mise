@@ -1412,18 +1412,31 @@ fn create_directory(
     replace: bool,
 ) -> Result<()> {
     match fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(path)?,
-        Err(error) => return Err(error.into()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            fs::create_dir_all(path)
+                .wrap_err_with(|| format!("failed to create directory {}", path.display()))?
+        }
+        Err(error) => {
+            return Err(error)
+                .wrap_err_with(|| format!("failed to inspect directory {}", path.display()));
+        }
         Ok(metadata) if metadata.file_type().is_dir() => {}
         Ok(_) if !replace => {
             bail!("refusing to replace non-directory path: {}", path.display())
         }
         Ok(_) => {
             fs::remove_file(path)?;
-            fs::create_dir(path)?;
+            fs::create_dir_all(path)
+                .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
         }
     }
     set_metadata(path, owner, group, mode)
+        .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
 }
 
 fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
@@ -1707,7 +1720,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn replaces_wrong_types_without_creating_undeclared_parents() {
+    fn replaces_wrong_types_and_creates_missing_parents() {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("file");
         fs::create_dir(&file_path).unwrap();
@@ -1723,8 +1736,24 @@ mod tests {
 
         let undeclared_parent = temp.path().join("undeclared");
         let nested = undeclared_parent.join("nested");
-        assert!(create_directory(&nested, None, None, 0o755, false).is_err());
-        assert!(!undeclared_parent.exists());
+        create_directory(&nested, None, None, 0o700, false).unwrap();
+        assert!(undeclared_parent.is_dir());
+        assert!(nested.is_dir());
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(nested).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let blocking_file = temp.path().join("blocking-file");
+        fs::write(&blocking_file, "content").unwrap();
+        let blocked = blocking_file.join("nested");
+        let error = create_directory(&blocked, None, None, 0o755, false).unwrap_err();
+        assert!(
+            format!("{error:#}")
+                .contains(&format!("failed to create directory {}", blocked.display())),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]
