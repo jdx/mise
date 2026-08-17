@@ -84,7 +84,7 @@ pub struct Config {
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
-    hooks: OnceCell<Vec<(PathBuf, Hook)>>,
+    hooks: OnceCell<Vec<(PathBuf, Option<PathBuf>, Hook)>>,
     tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     /// Lenient graph shared across task-loading and strict inspection contexts.
     /// Provider errors remain on the graph so strict consumers can reject it.
@@ -1256,26 +1256,27 @@ impl Config {
         Ok(env_results)
     }
 
-    pub async fn hooks(&self) -> Result<&Vec<(PathBuf, Hook)>> {
+    pub async fn hooks(&self) -> Result<&Vec<(PathBuf, Option<PathBuf>, Hook)>> {
         self.hooks
             .get_or_try_init(|| async {
                 self.config_files
                     .values()
                     .map(|cf| {
-                        let is_global = cf.project_root().is_none();
-                        let root = cf.project_root().unwrap_or_else(|| cf.config_root());
+                        let project_root = cf.project_root();
+                        let is_global = project_root.is_none();
+                        let config_root = cf.config_root();
                         let mut hooks = cf.hooks()?;
                         if is_global {
                             for h in &mut hooks {
                                 h.global = true;
                             }
                         }
-                        Ok((root, hooks))
+                        Ok((config_root, project_root, hooks))
                     })
-                    .map_ok(|(root, hooks)| {
+                    .map_ok(|(config_root, project_root, hooks)| {
                         hooks
                             .into_iter()
-                            .map(|h| (root.clone(), h))
+                            .map(|h| (config_root.clone(), project_root.clone(), h))
                             .collect::<Vec<_>>()
                     })
                     .flatten_ok()

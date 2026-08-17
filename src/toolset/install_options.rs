@@ -16,6 +16,8 @@ pub struct InstallOptions {
     pub auto_install_disable_tools: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
     pub dry_run: bool,
+    /// Only run hooks defined in global config files.
+    pub global_hooks_only: bool,
     /// require lockfile URLs to be present; fail if not
     pub locked: bool,
     /// Override the install directory (e.g. for --system or --shared)
@@ -37,6 +39,7 @@ impl Default for InstallOptions {
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
             dry_run: false,
+            global_hooks_only: false,
             locked: Settings::get().locked,
             install_dir: None,
             yes: Settings::get().yes,

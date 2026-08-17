@@ -161,8 +161,13 @@ Hooks are executed with the following environment variables set:
 
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
 - `MISE_PROJECT_ROOT`: The root directory of the project.
+- `MISE_CONFIG_ROOT`: The root directory of the config that defines the hook.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
 - `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
+
+Global hooks use the active project's root for `MISE_PROJECT_ROOT` and the global config root for
+`MISE_CONFIG_ROOT`. For global-only operations such as `mise use --global`, both variables use the
+global config root and project hooks do not run.
 
 Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
 (`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.
