@@ -34,6 +34,7 @@ use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
+use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
 /// one `[dotfiles]` edit entry as written in mise.toml. Operations stay loosely typed so configs using operations
@@ -107,6 +108,7 @@ pub struct EditRequest {
     pub base: PathBuf,
     /// config file that declared this edit
     pub config_path: PathBuf,
+    pub origin: ResourceOrigin,
 }
 
 impl EditRequest {
@@ -228,6 +230,12 @@ fn resolve_entry(
             "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
         );
     }
+    let mut origin = ResourceOrigin {
+        config: config_path.to_path_buf(),
+        config_root: crate::config::config_file::config_root::config_root(config_path),
+        environment: crate::config::environments_for_config_path(config_path),
+        source: None,
+    };
     let entry = match entry {
         EditTomlEntry::Block(inline) => EditTomlTable {
             block: Some(inline),
@@ -260,11 +268,13 @@ fn resolve_entry(
                 (Some(inline), None) => BlockSource::Inline(inline),
                 (None, Some(src)) => {
                     let src = file::replace_path(&src);
-                    BlockSource::File(if src.is_relative() {
+                    let src = if src.is_relative() {
                         base.join(src)
                     } else {
                         src
-                    })
+                    };
+                    origin.source = Some(src.clone());
+                    BlockSource::File(src)
                 }
                 (None, None) => unreachable!("is_block"),
             };
@@ -305,6 +315,7 @@ fn resolve_entry(
         op,
         base: base.to_path_buf(),
         config_path: config_path.to_path_buf(),
+        origin,
     })
 }
 

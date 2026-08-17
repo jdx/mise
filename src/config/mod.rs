@@ -1721,6 +1721,25 @@ pub(crate) fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
 }
 
+/// Return the active configuration environment encoded in a loaded config
+/// filename. A vector matches the ordered MISE_ENV model and leaves room for
+/// future config forms that represent more than one environment.
+pub(crate) fn environments_for_config_path(path: &Path) -> Vec<String> {
+    let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+        return vec![];
+    };
+    env::MISE_ENV_WITH_AUTO
+        .iter()
+        .filter(|environment| {
+            ["config", "mise", ".mise"].into_iter().any(|prefix| {
+                filename == format!("{prefix}.{environment}.toml")
+                    || filename == format!("{prefix}.{environment}.local.toml")
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
     let config_paths: Vec<PathBuf> = filenames
         .iter()

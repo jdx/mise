@@ -1939,13 +1939,21 @@ impl BootstrapPlan {
         } else if output.resources.is_empty() {
             info!("nothing configured for bootstrap planning");
         } else {
-            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
             for resource in &output.resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
                     resource.current.clone(),
                     resource.desired.clone(),
+                    resource
+                        .origin
+                        .as_ref()
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
                 ]);
             }
             table.print()?;
@@ -2138,13 +2146,20 @@ impl BootstrapFilesStatus {
         } else if resources.is_empty() {
             info!("no system files or directories configured");
         } else {
-            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
             for resource in resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
                     resource.current,
                     resource.desired,
+                    resource
+                        .origin
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
                 ]);
             }
             table.print()?;

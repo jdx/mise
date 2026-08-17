@@ -51,6 +51,8 @@ assert "cat $managed_file" "first"
 assert "stat -c %a $managed_nested" "750"
 assert_succeed "mise bootstrap files status --missing"
 assert_succeed "mise bootstrap files status --json | jq -e . >/dev/null"
+assert_succeed "mise bootstrap files status --json | jq -e '.[] | select(.id.kind == \"file\") | .origin.config == \"$PWD/mise.toml\" and .origin.config_root == \"$PWD\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.kind == \"file\") | .origin.config == \"$PWD/mise.toml\" and .origin.config_root == \"$PWD\"'"
 assert_contains "mise bootstrap status --json" '"files"'
 
 # Applying the same declarations again is a no-op.

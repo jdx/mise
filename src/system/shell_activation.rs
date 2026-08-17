@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::file;
 use crate::system::edits::{BlockSource, EditOp, EditRequest};
+use crate::system::resources::ResourceOrigin;
 
 #[derive(Debug, Clone)]
 pub struct ShellActivationRequest {
@@ -33,6 +34,12 @@ impl ShellActivationRequest {
                 },
                 base: PathBuf::from("."),
                 config_path: PathBuf::from("[bootstrap.mise_shell_activate]"),
+                origin: ResourceOrigin {
+                    config: PathBuf::from("[bootstrap.mise_shell_activate]"),
+                    config_root: PathBuf::from("."),
+                    environment: vec![],
+                    source: None,
+                },
             },
         }
     }

@@ -58,6 +58,7 @@ impl DotfilesStatus {
                     "source": (req.mode != system::files::FileMode::Content)
                         .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
+                    "origin": &req.origin,
                     "state": match &state {
                         FileState::Applied => "applied",
                         FileState::Missing => "missing",
@@ -74,6 +75,7 @@ impl DotfilesStatus {
                     } else {
                         req.source.display_user()
                     },
+                    req.origin.config.display_user(),
                     state_str,
                 ]);
             }
@@ -113,6 +115,7 @@ impl DotfilesStatus {
                 json_edits.push(json!({
                     "path": req.path_raw,
                     "edit": req.describe_op(),
+                    "origin": &req.origin,
                     "state": match &state {
                         FileState::Applied => "applied",
                         FileState::Missing => "missing",
@@ -121,7 +124,12 @@ impl DotfilesStatus {
                     },
                 }));
             } else {
-                edit_rows.push(vec![req.path_raw.clone(), req.describe_op(), state_str]);
+                edit_rows.push(vec![
+                    req.path_raw.clone(),
+                    req.describe_op(),
+                    req.origin.config.display_user(),
+                    state_str,
+                ]);
             }
         }
 
@@ -143,14 +151,15 @@ impl DotfilesStatus {
                 info!("nothing configured in [dotfiles]");
             }
             if !file_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["Target", "Mode", "Source", "State"]);
+                let mut table =
+                    MiseTable::new(false, &["Target", "Mode", "Source", "Config", "State"]);
                 for row in file_rows {
                     table.add_row(row);
                 }
                 table.print()?;
             }
             if !edit_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["File", "Edit", "State"]);
+                let mut table = MiseTable::new(false, &["File", "Edit", "Config", "State"]);
                 for row in edit_rows {
                     table.add_row(row);
                 }

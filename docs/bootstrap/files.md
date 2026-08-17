@@ -97,3 +97,11 @@ change.
 `mise bootstrap plan` includes these resources and automatically orders a
 managed file after its managed parent directory. Removal reverses that
 dependency so children are removed before their parent.
+
+The JSON output from `mise bootstrap plan`, `mise bootstrap status`, and
+`mise bootstrap files status` includes an `origin` object for managed files
+and directories. It identifies the declaring config, that config's
+`config_root`, any configuration environment encoded by its filename, and a
+resolved source path when the file uses `source`.
+Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
+non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.
