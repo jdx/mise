@@ -169,8 +169,23 @@ impl Shell for Pwsh {
                             # `mise` when the user typed `premise`, while matching only
                             # the first token would miss `... | some-missing-tool`
                             if ($lastCommand -and (($lastCommand -split '\s+') -contains $Name)) {{
-                                if (& '{exe}' hook-not-found -s pwsh -- $Name){{
-                                    _mise_hook
+                                # `hook-not-found` answers with an exit code and writes nothing to
+                                # stdout, and `if (& ...)` in PowerShell tests the *output* rather
+                                # than the code: it was false even when a tool had been installed,
+                                # and would have been true for a failure that happened to print.
+                                # bash, zsh and fish put the command straight into the condition
+                                # and get its status; this is the same thing spelled for pwsh.
+                                & '{exe}' hook-not-found -s pwsh -- $Name | Out-Null
+                                if ($LASTEXITCODE -eq 0){{
+                                    # `--no-hook-env` omits the `_mise_hook` definition but still
+                                    # emits this block, and an unresolved name inside a
+                                    # CommandNotFoundAction throws out of the handler instead of
+                                    # continuing: the handoff below would never run, so the tool
+                                    # just installed would still not start. The `mise` wrapper and
+                                    # the prompt function guard the call for the same reason.
+                                    if (Test-Path -Path Function:\_mise_hook){{
+                                        _mise_hook
+                                    }}
                                     if (Get-Command $Name -ErrorAction SilentlyContinue){{
                                         $EventArgs.Command = Get-Command $Name
                                         $EventArgs.StopSearch = $true
