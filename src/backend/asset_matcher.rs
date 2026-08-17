@@ -170,6 +170,9 @@ static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
     ]
 });
 
+static BARE_ARM_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:\b|_)arm(?:\b|_)").unwrap());
+
 static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
     vec![
         (
@@ -526,10 +529,11 @@ impl AssetPicker {
                     5
                 } else if *arch == AssetArch::Arm
                     && AssetArch::Arm64.matches_target(&self.target_arch)
+                    && BARE_ARM_PATTERN.is_match(asset)
                 {
-                    // Some projects use "arm" for their 64-bit ARM artifacts.
-                    // Keep this below a real arm64/aarch64 match so correctly
-                    // named assets win when both are present.
+                    // Modern projects often use bare "arm" for their 64-bit ARM
+                    // artifacts. Keep this below a real arm64/aarch64 match, and
+                    // do not apply it to explicitly 32-bit armv0-armv7 assets.
                     5
                 } else {
                     // Architecture mismatch should be disqualifying - don't silently
@@ -2763,6 +2767,12 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert_eq!(
             linux_picker.pick_best_asset(&explicit_assets).as_deref(),
             Some("tool-linux-arm64.gz")
+        );
+
+        assert!(
+            linux_picker
+                .pick_best_asset(&["tool-linux-armv7.gz".to_string()])
+                .is_none()
         );
     }
 
