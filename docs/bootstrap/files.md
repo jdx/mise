@@ -102,3 +102,5 @@ The JSON output from `mise bootstrap plan`, `mise bootstrap status`, and
 and directories. It identifies the declaring config, that config's
 `config_root`, any configuration environment encoded by its filename, and a
 resolved source path when the file uses `source`.
+Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
+non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.

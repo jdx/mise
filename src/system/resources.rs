@@ -1,7 +1,10 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use base64::Engine;
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer};
@@ -19,32 +22,58 @@ pub struct ResourceId {
 /// Where a declarative resource came from.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ResourceOrigin {
-    #[serde(serialize_with = "serialize_path_lossy")]
+    #[serde(serialize_with = "serialize_path")]
     pub config: PathBuf,
-    #[serde(serialize_with = "serialize_path_lossy")]
+    #[serde(serialize_with = "serialize_path")]
     pub config_root: PathBuf,
     pub environment: Vec<String>,
-    #[serde(serialize_with = "serialize_optional_path_lossy")]
+    #[serde(serialize_with = "serialize_optional_path")]
     pub source: Option<PathBuf>,
 }
 
-fn serialize_path_lossy<S>(path: &PathBuf, serializer: S) -> Result<S::Ok, S::Error>
+const ENCODED_PATH_PREFIX: &str = "mise:path-";
+
+fn serialize_path<S>(path: &PathBuf, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&path.to_string_lossy())
+    serializer.serialize_str(&path_json_string(path))
 }
 
-fn serialize_optional_path_lossy<S>(
-    path: &Option<PathBuf>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+fn serialize_optional_path<S>(path: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    path.as_deref()
-        .map(|path| path.to_string_lossy())
-        .serialize(serializer)
+    path.as_deref().map(path_json_string).serialize(serializer)
+}
+
+fn path_json_string(path: &Path) -> Cow<'_, str> {
+    if let Some(path) = path.to_str()
+        && !path.starts_with(ENCODED_PATH_PREFIX)
+    {
+        return Cow::Borrowed(path);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        let encoded = BASE64_URL_SAFE_NO_PAD.encode(path.as_os_str().as_bytes());
+        Cow::Owned(format!("{ENCODED_PATH_PREFIX}bytes:{encoded}"))
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        let bytes = path
+            .as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let encoded = BASE64_URL_SAFE_NO_PAD.encode(bytes);
+        Cow::Owned(format!("{ENCODED_PATH_PREFIX}utf16:{encoded}"))
+    }
 }
 
 impl ResourceId {
@@ -648,11 +677,12 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resource_origin_serializes_non_utf8_paths_lossily() {
+    fn resource_origin_serializes_non_utf8_paths_losslessly() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
 
         let invalid_path = PathBuf::from(OsString::from_vec(b"/tmp/invalid-\xff".to_vec()));
+        let other_invalid_path = PathBuf::from(OsString::from_vec(b"/tmp/invalid-\xfe".to_vec()));
         let origin = ResourceOrigin {
             config: invalid_path.clone(),
             config_root: invalid_path.clone(),
@@ -661,10 +691,11 @@ mod tests {
         };
 
         let value = serde_json::to_value(origin).unwrap();
-        let expected = invalid_path.to_string_lossy();
-        assert_eq!(value["config"], expected.as_ref());
-        assert_eq!(value["config_root"], expected.as_ref());
-        assert_eq!(value["source"], expected.as_ref());
+        let encoded = value["config"].as_str().unwrap();
+        assert!(encoded.starts_with("mise:path-bytes:"));
+        assert_eq!(value["config_root"], encoded);
+        assert_eq!(value["source"], encoded);
+        assert_ne!(encoded, path_json_string(&other_invalid_path));
     }
 
     fn resource(name: &str) -> ResourcePlan {

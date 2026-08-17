@@ -62,6 +62,8 @@ the repo.
 `mise bootstrap dotfiles status --json` includes an `origin` object for every
 entry. It reports the declaring config, its `config_root`, any configuration
 environment encoded by that config filename, and the resolved source path.
+Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
+non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.
 This makes layered dotfile declarations inspectable without reconstructing
 their precedence by hand.
 
