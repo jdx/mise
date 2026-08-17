@@ -266,6 +266,22 @@ fn queue_prefetch_digest(
     pending.insert(digest, ());
 }
 
+fn queue_prefetch_directory(
+    seen: &BTreeMap<CacheDigest, ()>,
+    pending: &mut BTreeMap<CacheDigest, ()>,
+    digest: CacheDigest,
+    limit: usize,
+) -> bool {
+    if seen.contains_key(&digest) || pending.contains_key(&digest) {
+        return true;
+    }
+    if seen.len().saturating_add(pending.len()) >= limit {
+        return false;
+    }
+    pending.insert(digest, ());
+    true
+}
+
 /// Shared state for an agent hosted by the top-level `mise run` process.
 ///
 /// Transport listeners deliberately live in mise so the task-run lifecycle owns
@@ -895,6 +911,7 @@ impl CacheAgent {
             let mut following = BTreeMap::new();
             let mut directory_limit_exceeded = false;
             for digest in pending_directories.into_keys() {
+                following.remove(&digest);
                 if seen_directories.insert(digest.clone(), ()).is_some() {
                     continue;
                 }
@@ -917,11 +934,12 @@ impl CacheAgent {
                             }
                         }
                         for child in &directory.directories {
-                            if !seen_directories.contains_key(&child.digest)
-                                && !following.contains_key(&child.digest)
-                                && seen_directories.len().saturating_add(following.len())
-                                    >= MAX_PREFETCH_DIRECTORY_OBJECTS
-                            {
+                            if !queue_prefetch_directory(
+                                &seen_directories,
+                                &mut following,
+                                child.digest.clone(),
+                                MAX_PREFETCH_DIRECTORY_OBJECTS,
+                            ) {
                                 warn!("remote action output tree is too large to prefetch");
                                 directory_limit_exceeded = true;
                                 break;
@@ -931,7 +949,6 @@ impl CacheAgent {
                                 self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
                                     .await;
                             }
-                            following.insert(child.digest.clone(), ());
                         }
                         parsed_directories.insert(digest, directory);
                     }
@@ -1811,6 +1828,29 @@ mod tests {
     use super::*;
     use crate::ACTION_RESULT_MEDIA_TYPE;
     use std::time::Duration;
+
+    #[test]
+    fn directory_queue_counts_only_unique_unseen_nodes() {
+        let shared = CacheDigest::blake3(b"shared");
+        let first = CacheDigest::blake3(b"first");
+        let second = CacheDigest::blake3(b"second");
+        let overflow = CacheDigest::blake3(b"overflow");
+        let seen = BTreeMap::from([(shared.clone(), ())]);
+        let mut pending = BTreeMap::new();
+
+        assert!(queue_prefetch_directory(&seen, &mut pending, shared, 3));
+        assert!(pending.is_empty());
+        assert!(queue_prefetch_directory(
+            &seen,
+            &mut pending,
+            first.clone(),
+            3
+        ));
+        assert!(queue_prefetch_directory(&seen, &mut pending, first, 3));
+        assert!(queue_prefetch_directory(&seen, &mut pending, second, 3));
+        assert!(!queue_prefetch_directory(&seen, &mut pending, overflow, 3));
+        assert_eq!(pending.len(), 2);
+    }
 
     async fn handshake(stream: &mut (impl AsyncRead + AsyncWrite + Unpin), version: &str) {
         let request = AgentRequest::Hello {
