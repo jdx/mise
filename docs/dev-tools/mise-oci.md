@@ -69,8 +69,8 @@ jq = "1.8.1"
 3. **One layer per tool**, each rooted at
    `/mise/installs/<plugin>/<version>/`. Annotated with
    `dev.mise.tool.short` and `dev.mise.tool.version`.
-4. **Configured apt `[bootstrap.packages]`**, if any, installed into the base
-   rootfs and emitted as one package layer.
+4. **Configured apt or apk `[bootstrap.packages]`**, if any, installed into the
+   base rootfs and emitted as one package layer.
 5. **Configured `[dotfiles]`**, if any, baked as image files.
 6. **Synthesized `/etc/mise/config.toml`** referencing `/mise` as the data
    directory.
@@ -309,11 +309,19 @@ Pass `--include-global` to also include `[bootstrap.packages]` and
 "~/.config/app/config.toml" = { source = "config.toml", mode = "template" }
 ```
 
-For packages, OCI builds currently support `apt:` entries with a Debian/Ubuntu
-base image. mise unpacks the base image into a temporary rootfs, calls the
-host `apt-get` to install into that rootfs, then emits the filesystem changes
-as one OCI layer annotated with `dev.mise.system.packages=apt`. Other system
-package managers are rejected for OCI builds for now.
+For packages, OCI builds support `apt:` entries with a Debian/Ubuntu base image
+and `apk:` entries with an Alpine/Wolfi base image. mise unpacks the base image
+into a temporary rootfs, calls the matching host package manager to install into
+that rootfs, then emits the filesystem changes as one OCI layer annotated with
+`dev.mise.system.packages=apt` or `dev.mise.system.packages=apk`. A build may
+use only the package manager matching its base image; mixing `apt:` and `apk:`
+entries is rejected.
+
+The host must provide `apt-get` and `dpkg` for apt layers, or `apk` for apk
+layers. Apk package scripts execute inside a chroot, so apk layers currently
+require a Linux host running mise as root. `--no-cache` is passed to apk and
+transient package-manager cache and log files are removed before the layer is
+created.
 
 For image builds, `symlink` and `symlink-each` entries are copied as file
 content. Host symlinks would usually point back to the checkout path and be

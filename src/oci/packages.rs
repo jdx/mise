@@ -1,9 +1,9 @@
 //! Native `[bootstrap.packages]` support for OCI builds.
 //!
-//! This intentionally does not use a container engine. For apt-based base
-//! images, mise unpacks the pulled base image into a temporary rootfs, asks
-//! host `apt-get`/`dpkg` to install into that rootfs, then emits the filesystem
-//! changes as one OCI layer.
+//! This intentionally does not use a container engine. mise unpacks the pulled
+//! base image into a temporary rootfs, asks the matching host package manager
+//! to install into that rootfs, then emits the filesystem changes as one OCI
+//! layer.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -40,71 +40,140 @@ enum FsEntryKind {
     Other,
 }
 
+pub struct SystemPackagesLayer {
+    pub blob: LayerBlob,
+    pub manager: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OciPackageManager {
+    Apk,
+    Apt,
+}
+
+impl OciPackageManager {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Apk => "apk",
+            Self::Apt => "apt",
+        }
+    }
+}
+
 pub fn build_system_packages_layer(
     layout: &ImageLayout,
     base_layers: &[Descriptor],
     managers: &[ManagerPackages],
     architecture: &str,
-) -> Result<Option<LayerBlob>> {
-    let apt_requests = collect_apt_requests(managers)?;
-    if apt_requests.is_empty() {
+) -> Result<Option<SystemPackagesLayer>> {
+    let Some((manager, requests)) = collect_package_requests(managers)? else {
         return Ok(None);
-    }
+    };
     if base_layers.is_empty() {
         bail!(
-            "mise oci requires an apt-based base image when [bootstrap.packages] is configured; \
-             `scratch` has no apt metadata"
+            "mise oci requires an {}-based base image when [bootstrap.packages] contains {} \
+             entries; `scratch` has no {} metadata",
+            manager.name(),
+            manager.name(),
+            manager.name(),
         );
     }
-    if file::which("apt-get").is_none() {
-        bail!("mise oci needs `apt-get` on PATH to install apt system packages into the image");
-    }
-    if file::which("dpkg").is_none() {
-        bail!("mise oci needs `dpkg` on PATH to install apt system packages into the image");
-    }
+    validate_host_requirements(manager)?;
 
-    let td = TempDir::with_prefix("mise-oci-apt-rootfs-")
-        .wrap_err("creating temp rootfs for apt system packages")?;
+    let td = TempDir::with_prefix(&format!("mise-oci-{}-rootfs-", manager.name())).wrap_err_with(
+        || {
+            format!(
+                "creating temp rootfs for {} system packages",
+                manager.name()
+            )
+        },
+    )?;
     let rootfs = td.path().join("rootfs");
     file::create_dir_all(&rootfs)?;
     unpack_base_layers(layout, base_layers, &rootfs)?;
-    if !rootfs.join("etc/apt").is_dir() {
-        bail!(
-            "mise oci found apt packages in [bootstrap.packages], but the base image does not \
-             contain /etc/apt. Use a Debian/Ubuntu base image or remove the apt entries."
-        );
-    }
-    prepare_apt_rootfs(&rootfs)?;
 
     let before = snapshot(&rootfs)?;
-    apt_install_into_rootfs(&rootfs, &apt_requests, architecture)?;
-    clean_apt_transients(&rootfs)?;
+    match manager {
+        OciPackageManager::Apk => {
+            prepare_apk_install(&rootfs)?;
+            apk_install_into_rootfs(&rootfs, &requests, architecture)?;
+            clean_apk_transients(&rootfs)?;
+        }
+        OciPackageManager::Apt => {
+            prepare_apt_install(&rootfs)?;
+            apt_install_into_rootfs(&rootfs, &requests, architecture)?;
+            clean_apt_transients(&rootfs)?;
+        }
+    }
     let diff_dir = td.path().join("diff");
     materialize_diff(&rootfs, &before, &diff_dir)?;
     if WalkDir::new(&diff_dir).into_iter().count() <= 1 {
-        info!("oci: apt system packages produced no filesystem changes");
+        info!(
+            "oci: {} system packages produced no filesystem changes",
+            manager.name()
+        );
         return Ok(None);
     }
     info!(
-        "oci: adding apt system packages: {}",
-        apt_requests
+        "oci: adding {} system packages: {}",
+        manager.name(),
+        requests
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(", ")
     );
-    layer::build_layer_from_dir_preserve_metadata(&diff_dir, "").map(Some)
+    Ok(Some(SystemPackagesLayer {
+        blob: layer::build_layer_from_dir_preserve_metadata(&diff_dir, "")?,
+        manager: manager.name(),
+    }))
 }
 
-fn collect_apt_requests(managers: &[ManagerPackages]) -> Result<Vec<PackageRequest>> {
-    let mut out = vec![];
+fn validate_host_requirements(manager: OciPackageManager) -> Result<()> {
+    match manager {
+        OciPackageManager::Apk => {
+            if std::env::consts::OS != "linux" {
+                bail!("mise oci needs a Linux host to install apk system packages into an image");
+            }
+            if file::which("apk").is_none() {
+                bail!("mise oci needs `apk` on PATH to install apk system packages into the image");
+            }
+            if !crate::system::sudo::is_root() {
+                bail!(
+                    "mise oci needs to run as root to install apk system packages because apk \
+                     executes package scripts in a chroot"
+                );
+            }
+        }
+        OciPackageManager::Apt => {
+            if file::which("apt-get").is_none() {
+                bail!(
+                    "mise oci needs `apt-get` on PATH to install apt system packages into the image"
+                );
+            }
+            if file::which("dpkg").is_none() {
+                bail!(
+                    "mise oci needs `dpkg` on PATH to install apt system packages into the image"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_package_requests(
+    managers: &[ManagerPackages],
+) -> Result<Option<(OciPackageManager, Vec<PackageRequest>)>> {
+    let mut apk = vec![];
+    let mut apt = vec![];
     let mut unsupported = vec![];
     for mgr in managers {
         if mgr.disabled || mgr.requests.is_empty() {
             continue;
         }
         match mgr.manager.name() {
-            "apt" => out.extend(mgr.requests.clone()),
+            "apk" => apk.extend(mgr.requests.clone()),
+            "apt" => apt.extend(mgr.requests.clone()),
             other => unsupported.push(other.to_string()),
         }
     }
@@ -112,12 +181,24 @@ fn collect_apt_requests(managers: &[ManagerPackages]) -> Result<Vec<PackageReque
         unsupported.sort();
         unsupported.dedup();
         bail!(
-            "mise oci currently supports only apt entries in [bootstrap.packages]; unsupported \
-             manager(s): {}",
+            "mise oci currently supports only apt and apk entries in [bootstrap.packages]; \
+             unsupported manager(s): {}",
             unsupported.join(", ")
         );
     }
-    Ok(out)
+    if !apk.is_empty() && !apt.is_empty() {
+        bail!(
+            "mise oci cannot mix apk and apt entries in [bootstrap.packages]; use the package \
+             manager matching the selected base image"
+        );
+    }
+    if !apk.is_empty() {
+        Ok(Some((OciPackageManager::Apk, apk)))
+    } else if !apt.is_empty() {
+        Ok(Some((OciPackageManager::Apt, apt)))
+    } else {
+        Ok(None)
+    }
 }
 
 fn unpack_base_layers(layout: &ImageLayout, layers: &[Descriptor], rootfs: &Path) -> Result<()> {
@@ -235,6 +316,59 @@ fn remove_path(path: &Path) -> Result<()> {
         Err(e) => {
             return Err(e).wrap_err_with(|| format!("reading metadata for {}", path.display()));
         }
+    }
+    Ok(())
+}
+
+fn prepare_apt_install(rootfs: &Path) -> Result<()> {
+    if !rootfs.join("etc/apt").is_dir() {
+        bail!(
+            "mise oci found apt packages in [bootstrap.packages], but the base image does not \
+             contain /etc/apt. Use a Debian/Ubuntu base image or remove the apt entries."
+        );
+    }
+    prepare_apt_rootfs(rootfs)
+}
+
+fn prepare_apk_install(rootfs: &Path) -> Result<()> {
+    if !rootfs.join("etc/apk").is_dir() || !rootfs.join("lib/apk/db").is_dir() {
+        bail!(
+            "mise oci found apk packages in [bootstrap.packages], but the base image does not \
+             contain an apk database. Use an Alpine/Wolfi base image or remove the apk entries."
+        );
+    }
+    Ok(())
+}
+
+fn apk_install_into_rootfs(
+    rootfs: &Path,
+    requests: &[PackageRequest],
+    architecture: &str,
+) -> Result<()> {
+    let mut args = vec![
+        "--root".to_string(),
+        rootfs.display().to_string(),
+        "--arch".to_string(),
+        apk_architecture(architecture)?.to_string(),
+        "--no-cache".to_string(),
+        "add".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(requests.iter().map(|request| match &request.version {
+        Some(version) => format!("{}={version}", request.name),
+        None => request.name.clone(),
+    }));
+    info!("apk {}", args.join(" "));
+    let output = Command::new("apk")
+        .args(&args)
+        .output()
+        .wrap_err("running apk for OCI system packages")?;
+    if !output.status.success() {
+        bail!(
+            "apk failed while installing OCI system packages: {}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
     Ok(())
 }
@@ -392,6 +526,11 @@ fn clean_apt_transients(rootfs: &Path) -> Result<()> {
     Ok(())
 }
 
+fn clean_apk_transients(rootfs: &Path) -> Result<()> {
+    remove_dir_children(&rootfs.join("var/cache/apk"))?;
+    remove_path(&rootfs.join("var/log/apk.log"))
+}
+
 /// Remove every regular file under `dir` (recursively), leaving the directory
 /// structure and any symlinks intact. A missing `dir` is a no-op.
 fn remove_files_recursively(dir: &Path) -> Result<()> {
@@ -442,6 +581,14 @@ fn apt_architecture(oci_arch: &str) -> Result<&'static str> {
         "amd64" | "x86_64" => Ok("amd64"),
         "arm64" | "aarch64" => Ok("arm64"),
         other => bail!("apt system packages are not supported for OCI architecture {other:?}"),
+    }
+}
+
+fn apk_architecture(oci_arch: &str) -> Result<&'static str> {
+    match oci_arch {
+        "amd64" | "x86_64" => Ok("x86_64"),
+        "arm64" | "aarch64" => Ok("aarch64"),
+        other => bail!("apk system packages are not supported for OCI architecture {other:?}"),
     }
 }
 
@@ -590,7 +737,7 @@ fn copy_entry(rootfs: &Path, diff_dir: &Path, rel: &Path, entry: &FsEntry) -> Re
             #[cfg(not(unix))]
             {
                 let _ = target;
-                bail!("OCI apt package layers with symlinks require a unix host");
+                bail!("OCI system package layers with symlinks require a unix host");
             }
         }
         FsEntryKind::Other => {
@@ -615,11 +762,102 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::system::packages::{
+        SystemPackageManager, apk::ApkManager, apt::AptManager, dnf::DnfManager,
+    };
+
+    fn request(name: &str, version: Option<&str>) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: version.map(str::to_string),
+            tap_url: None,
+        }
+    }
+
+    fn manager_packages(
+        manager: Arc<dyn SystemPackageManager>,
+        requests: Vec<PackageRequest>,
+    ) -> ManagerPackages {
+        ManagerPackages {
+            manager,
+            requests,
+            disabled: false,
+        }
+    }
 
     fn write_file(path: &Path, contents: &str) {
         file::create_dir_all(path.parent().unwrap()).unwrap();
         file::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn collect_package_requests_accepts_apk() {
+        let managers = [manager_packages(
+            Arc::new(ApkManager::new()),
+            vec![request("jq", Some("1.8.2-r1"))],
+        )];
+        let (manager, requests) = collect_package_requests(&managers).unwrap().unwrap();
+        assert_eq!(manager, OciPackageManager::Apk);
+        assert_eq!(requests, vec![request("jq", Some("1.8.2-r1"))]);
+    }
+
+    #[test]
+    fn collect_package_requests_accepts_apt() {
+        let managers = [manager_packages(
+            Arc::new(AptManager::new()),
+            vec![request("curl", None)],
+        )];
+        let (manager, requests) = collect_package_requests(&managers).unwrap().unwrap();
+        assert_eq!(manager, OciPackageManager::Apt);
+        assert_eq!(requests, vec![request("curl", None)]);
+    }
+
+    #[test]
+    fn collect_package_requests_rejects_mixed_managers() {
+        let managers = [
+            manager_packages(Arc::new(ApkManager::new()), vec![request("jq", None)]),
+            manager_packages(Arc::new(AptManager::new()), vec![request("curl", None)]),
+        ];
+        let err = collect_package_requests(&managers).unwrap_err();
+        assert!(err.to_string().contains("cannot mix apk and apt"));
+    }
+
+    #[test]
+    fn collect_package_requests_rejects_unsupported_managers() {
+        let managers = [manager_packages(
+            Arc::new(DnfManager::new()),
+            vec![request("jq", None)],
+        )];
+        let err = collect_package_requests(&managers).unwrap_err();
+        assert!(err.to_string().contains("unsupported manager(s): dnf"));
+    }
+
+    #[test]
+    fn apk_architecture_uses_apk_names() {
+        assert_eq!(apk_architecture("amd64").unwrap(), "x86_64");
+        assert_eq!(apk_architecture("arm64").unwrap(), "aarch64");
+        assert!(apk_architecture("riscv64").is_err());
+    }
+
+    #[test]
+    fn clean_apk_transients_removes_cache_and_log() {
+        let td = TempDir::with_prefix("mise-oci-apk-clean-test-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        write_file(&rootfs.join("var/cache/apk/APKINDEX.tar.gz"), "index");
+        write_file(&rootfs.join("var/log/apk.log"), "install jq\n");
+        write_file(&rootfs.join("usr/bin/jq"), "ELF-payload");
+
+        clean_apk_transients(&rootfs).unwrap();
+
+        assert!(!rootfs.join("var/cache/apk/APKINDEX.tar.gz").exists());
+        assert!(!rootfs.join("var/log/apk.log").exists());
+        assert_eq!(
+            fs::read_to_string(rootfs.join("usr/bin/jq")).unwrap(),
+            "ELF-payload"
+        );
     }
 
     #[test]
