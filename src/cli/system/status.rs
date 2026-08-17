@@ -56,8 +56,11 @@ impl SystemStatus {
             for s in statuses {
                 let auto_updates = s.state.auto_updates();
                 let (installed_version, state, reason) = match &s.state {
-                    PackageState::Installed { version }
-                    | PackageState::InstalledAutoUpdates { version } => {
+                    PackageState::Installed { version } => {
+                        (version.clone(), "installed", None::<&str>)
+                    }
+                    #[cfg(unix)]
+                    PackageState::InstalledAutoUpdates { version } => {
                         (version.clone(), "installed", None::<&str>)
                     }
                     PackageState::Missing => {

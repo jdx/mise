@@ -187,9 +187,12 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                     .iter()
                     .filter_map(|s| match &s.state {
                         PackageState::Installed { version }
-                        | PackageState::InstalledAutoUpdates { version }
                         | PackageState::NeedsRepair { installed: version }
                         | PackageState::VersionMismatch { installed: version } => {
+                            Some((s.request.name.clone(), version.clone()))
+                        }
+                        #[cfg(unix)]
+                        PackageState::InstalledAutoUpdates { version } => {
                             Some((s.request.name.clone(), version.clone()))
                         }
                         PackageState::Missing => None,
@@ -204,9 +207,14 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                         .iter()
                         .filter_map(|s| match &s.state {
                             PackageState::Installed { version }
-                            | PackageState::InstalledAutoUpdates { version }
                             | PackageState::NeedsRepair { installed: version }
                             | PackageState::VersionMismatch { installed: version } => {
+                                let old = prior.get(&s.request.name)?;
+                                (old != version)
+                                    .then(|| format!("{} {old} -> {version}", s.request.name))
+                            }
+                            #[cfg(unix)]
+                            PackageState::InstalledAutoUpdates { version } => {
                                 let old = prior.get(&s.request.name)?;
                                 (old != version)
                                     .then(|| format!("{} {old} -> {version}", s.request.name))

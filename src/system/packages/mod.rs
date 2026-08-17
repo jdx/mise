@@ -54,6 +54,7 @@ pub enum PackageState {
     /// Installed cask whose upstream definition declares `auto_updates`.
     /// The version is the cask receipt version, not necessarily the live app
     /// bundle version after it has updated itself.
+    #[cfg(unix)]
     InstalledAutoUpdates {
         version: String,
     },
@@ -77,14 +78,20 @@ pub enum PackageState {
 
 impl PackageState {
     pub fn is_installed(&self) -> bool {
-        matches!(
-            self,
-            Self::Installed { .. } | Self::InstalledAutoUpdates { .. }
-        )
+        match self {
+            Self::Installed { .. } => true,
+            #[cfg(unix)]
+            Self::InstalledAutoUpdates { .. } => true,
+            _ => false,
+        }
     }
 
     pub fn auto_updates(&self) -> bool {
-        matches!(self, Self::InstalledAutoUpdates { .. })
+        match self {
+            #[cfg(unix)]
+            Self::InstalledAutoUpdates { .. } => true,
+            _ => false,
+        }
     }
 
     #[cfg(unix)]

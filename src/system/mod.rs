@@ -18,6 +18,7 @@
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
+#[cfg(unix)]
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -332,12 +333,12 @@ pub struct ManagerPackages {
 pub enum ManagerPackageOptions {
     #[default]
     None,
-    BrewCask {
-        adopt: BTreeSet<String>,
-    },
+    #[cfg(unix)]
+    BrewCask { adopt: BTreeSet<String> },
 }
 
 impl ManagerPackageOptions {
+    #[cfg(unix)]
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
         matches!(self, Self::BrewCask { adopt } if adopt.contains(name))
     }
@@ -582,7 +583,9 @@ fn package_requests_from_config_files(
 ) {
     let merged = package_configs_from_config_files(config_files);
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    #[cfg(unix)]
     let brew_adopt = brew_adopt_from_config_files(config_files);
+    #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
     for (spec, package) in merged {
         if !package.is_os_supported() {
@@ -608,6 +611,7 @@ fn package_requests_from_config_files(
                         "[bootstrap.packages]: adopt is only supported for brew-cask entries; ignoring it for '{spec}'"
                     );
                 }
+                #[cfg(unix)]
                 if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
                     cask_adopt.insert(name.clone());
                 }
@@ -621,6 +625,7 @@ fn package_requests_from_config_files(
         }
     }
     let mut options = IndexMap::new();
+    #[cfg(unix)]
     if !cask_adopt.is_empty() {
         options.insert(
             "brew-cask".to_string(),

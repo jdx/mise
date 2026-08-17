@@ -7826,8 +7826,8 @@ mod tests {
 
     #[test]
     fn adopts_only_an_identical_existing_app() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
-        let tmp = tempfile::tempdir()?;
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = trusted_tempdir()?;
         let root = tmp.path().canonicalize()?;
         let _guard = BrewPrefixGuard::set(&root);
         let stage = root.join("stage");
@@ -7854,8 +7854,8 @@ mod tests {
 
     #[test]
     fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
-        let tmp = tempfile::tempdir()?;
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = trusted_tempdir()?;
         let root = tmp.path().canonicalize()?;
         let _guard = BrewPrefixGuard::set(&root);
         let stage = root.join("stage");

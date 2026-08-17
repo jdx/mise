@@ -793,6 +793,7 @@ mod tests {
         ManagerPackages {
             manager,
             requests,
+            options: Default::default(),
             disabled: false,
         }
     }
