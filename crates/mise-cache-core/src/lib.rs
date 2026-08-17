@@ -41,6 +41,8 @@ const DIGEST_LIST_MEDIA_TYPE: &str = "application/vnd.mise.cache-digests.v1+json
 const BLOB_PACK_MAGIC: &[u8; 8] = b"MISEPK01";
 const MAX_STAGED_BLOB_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_STAGED_BLOB_PACK_ITEMS: usize = 2 * 1024;
+const BLOB_PACK_TIMEOUT_BYTES_PER_UNIT: u64 = MAX_STAGED_BLOB_PACK_BYTES / 4;
+const BLOB_PACK_TIMEOUT_ITEMS_PER_UNIT: usize = MAX_STAGED_BLOB_PACK_ITEMS / 4;
 
 /// Serialize a protocol object using the JSON Canonicalization Scheme.
 ///
@@ -522,7 +524,8 @@ impl RemoteCacheClient {
     ) -> Result<Option<DownloadedBlobPack>> {
         let url = self.blob_pack_endpoint()?;
         let body = serde_json::to_vec(&DigestList { digests })?;
-        retry_async("POST", &url, self.retries, || async {
+        let download_timeout = blob_pack_download_timeout(self.download_timeout, digests);
+        let download = retry_async("POST", &url, self.retries, || async {
             let response = self
                 .request(reqwest::Method::POST, url.clone(), BLOB_PACK_MEDIA_TYPE)
                 .await?
@@ -551,8 +554,10 @@ impl RemoteCacheClient {
             Ok(Some(
                 decode_blob_pack(response, digests, staging_dir).await?,
             ))
-        })
-        .await
+        });
+        tokio::time::timeout(download_timeout, download)
+            .await
+            .map_err(|_| eyre!("remote cache blob pack download timed out for {url}"))?
     }
 
     pub async fn get_action_result(
@@ -778,6 +783,17 @@ fn blob_pack_chunk(digests: &[CacheDigest], limits: BlobPackLimits) -> Result<Ve
         chunk.push(digest.clone());
     }
     Ok(chunk)
+}
+
+fn blob_pack_download_timeout(base: Duration, digests: &[CacheDigest]) -> Duration {
+    let bytes = digests
+        .iter()
+        .fold(0_u64, |total, digest| total.saturating_add(digest.size));
+    let byte_units = bytes.div_ceil(BLOB_PACK_TIMEOUT_BYTES_PER_UNIT);
+    let item_units = digests.len().div_ceil(BLOB_PACK_TIMEOUT_ITEMS_PER_UNIT);
+    let item_units = u64::try_from(item_units).unwrap_or(u64::MAX);
+    let multiplier = byte_units.max(item_units).max(1);
+    base.saturating_mul(u32::try_from(multiplier).unwrap_or(u32::MAX))
 }
 
 async fn decode_blob_pack(
@@ -1550,6 +1566,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(chunk.len(), 1);
+    }
+
+    #[test]
+    fn blob_pack_timeout_scales_with_declared_work() {
+        let base = Duration::from_secs(10);
+        let small = CacheDigest::blake3(b"small");
+        assert_eq!(blob_pack_download_timeout(base, &[small]), base);
+
+        let large = CacheDigest {
+            algorithm: "blake3".into(),
+            hash: "0".repeat(64),
+            size: MAX_STAGED_BLOB_PACK_BYTES,
+        };
+        assert_eq!(
+            blob_pack_download_timeout(base, &[large]),
+            base.saturating_mul(4)
+        );
+
+        let many = (0..=BLOB_PACK_TIMEOUT_ITEMS_PER_UNIT)
+            .map(|index| CacheDigest::blake3(index.to_string().as_bytes()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            blob_pack_download_timeout(base, &many),
+            base.saturating_mul(2)
+        );
     }
 
     #[test]

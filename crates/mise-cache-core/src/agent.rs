@@ -259,15 +259,11 @@ fn queue_prefetch_digest(
     verified: &BTreeMap<CacheDigest, PathBuf>,
     pending: &mut BTreeMap<CacheDigest, ()>,
     digest: CacheDigest,
-) -> bool {
+) {
     if verified.contains_key(&digest) || pending.contains_key(&digest) {
-        return true;
-    }
-    if verified.len().saturating_add(pending.len()) >= MAX_PREFETCH_OBJECTS_PER_WAVE {
-        return false;
+        return;
     }
     pending.insert(digest, ());
-    true
 }
 
 /// Shared state for an agent hosted by the top-level `mise run` process.
@@ -879,11 +875,8 @@ impl CacheAgent {
                     .and_then(|path| Self::parse_rustc_metadata(path))
                 {
                     Ok(metadata) => {
-                        if !queue_prefetch_digest(&verified, &mut next, metadata.stdout.clone())
-                            || !queue_prefetch_digest(&verified, &mut next, metadata.stderr.clone())
-                        {
-                            warn!("remote action prefetch wave contains too many objects");
-                        }
+                        queue_prefetch_digest(&verified, &mut next, metadata.stdout.clone());
+                        queue_prefetch_digest(&verified, &mut next, metadata.stderr.clone());
                         rustc_metadata.insert(metadata_digest.clone(), metadata);
                     }
                     Err(error) => warn!(
@@ -900,6 +893,7 @@ impl CacheAgent {
         let mut seen_directories = BTreeMap::new();
         loop {
             let mut following = BTreeMap::new();
+            let mut directory_limit_exceeded = false;
             for digest in pending_directories.into_keys() {
                 if seen_directories.insert(digest.clone(), ()).is_some() {
                     continue;
@@ -916,15 +910,26 @@ impl CacheAgent {
                 {
                     Ok(directory) => {
                         for file in &directory.files {
-                            if !queue_prefetch_digest(&verified, &mut next, file.digest.clone()) {
-                                warn!("remote action prefetch wave contains too many objects");
-                                break;
+                            queue_prefetch_digest(&verified, &mut next, file.digest.clone());
+                            if next.len() >= MAX_PREFETCH_OBJECTS_PER_WAVE {
+                                self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
+                                    .await;
                             }
                         }
                         for child in &directory.directories {
-                            if !queue_prefetch_digest(&verified, &mut next, child.digest.clone()) {
-                                warn!("remote action prefetch wave contains too many objects");
+                            if !seen_directories.contains_key(&child.digest)
+                                && !following.contains_key(&child.digest)
+                                && seen_directories.len().saturating_add(following.len())
+                                    >= MAX_PREFETCH_DIRECTORY_OBJECTS
+                            {
+                                warn!("remote action output tree is too large to prefetch");
+                                directory_limit_exceeded = true;
                                 break;
+                            }
+                            queue_prefetch_digest(&verified, &mut next, child.digest.clone());
+                            if next.len() >= MAX_PREFETCH_OBJECTS_PER_WAVE {
+                                self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
+                                    .await;
                             }
                             following.insert(child.digest.clone(), ());
                         }
@@ -935,15 +940,13 @@ impl CacheAgent {
                         digest.hash
                     ),
                 }
+                if directory_limit_exceeded {
+                    following.clear();
+                    break;
+                }
             }
-            if next.is_empty() {
-                break;
-            }
-            verified.extend(
-                self.prefetch_remote_blobs(remote, next.into_keys().collect())
-                    .await,
-            );
-            next = BTreeMap::new();
+            self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
+                .await;
             if following.is_empty() {
                 break;
             }
@@ -979,6 +982,19 @@ impl CacheAgent {
                 ),
             }
         }
+    }
+
+    async fn flush_prefetch_digest_batch(
+        &self,
+        remote: &RemoteCacheClient,
+        verified: &mut BTreeMap<CacheDigest, PathBuf>,
+        pending: &mut BTreeMap<CacheDigest, ()>,
+    ) {
+        if pending.is_empty() {
+            return;
+        }
+        let digests = std::mem::take(pending).into_keys().collect();
+        verified.extend(self.prefetch_remote_blobs(remote, digests).await);
     }
 
     async fn prefetch_remote_blobs(
