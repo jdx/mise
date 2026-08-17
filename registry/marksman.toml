@@ -2,3 +2,4 @@ backends = ["aqua:artempyanykh/marksman"]
 bins = ["marksman"]
 description = "Write Markdown with code assist and intelligence in the comfort of your favourite editor"
 test = { cmd = "marksman --version", expected = "" }
+version_order = "source"

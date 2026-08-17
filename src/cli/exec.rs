@@ -46,6 +46,7 @@ pub struct Exec {
     pub c: Option<String>,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
@@ -324,6 +325,12 @@ where
     }
     let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
     let program = program.to_executable();
+    // Captured before `program` is shadowed by the resolved path, so a failed
+    // exec can still name what the user asked for.
+    let program_name = program.to_string_lossy().into_owned();
+    // Set when PATH resolution failed and we fell back to the bare name. The
+    // exec below is then expected to fail, and discussion #4407's hint applies.
+    let mut resolution_failed = false;
     let program = if program.to_string_lossy().contains('/') {
         // Already a path, no need to resolve
         program
@@ -355,7 +362,6 @@ where
                 .collect();
             std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
         });
-        let program_name = program.to_string_lossy().into_owned();
         let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
         match which::which_in_all(&program, lookup_path, cwd) {
             Ok(mut candidates) => {
@@ -367,14 +373,22 @@ where
                     None if is_shim_dispatch => {
                         return Err(crate::shims::err_shim_not_found(&program_name).await);
                     }
-                    None => program, // Fall back to original if resolution fails
+                    None => {
+                        // Fall back to original if resolution fails
+                        resolution_failed = true;
+                        program
+                    }
                 }
             }
             Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
                 return Err(crate::shims::err_shim_not_found(&program_name).await);
             }
             Err(err) if is_shim_dispatch => return Err(err.into()),
-            Err(_) => program, // Fall back to original if resolution fails
+            Err(_) => {
+                // Fall back to original if resolution fails
+                resolution_failed = true;
+                program
+            }
         }
     };
     if crate::file::is_active_mise_shim(std::path::Path::new(&program)) {
@@ -398,7 +412,29 @@ where
     }
 
     let err = exec::Command::new(program.clone()).args(&args).exec();
-    bail!("{:?} {err}", program.to_string_lossy())
+    let mut msg = format!("{:?} {err}", program.to_string_lossy());
+    // The bin never resolved on PATH. If an installed-but-unconfigured tool
+    // would have provided it, say so instead of leaving the user with a bare
+    // ENOENT (discussion #4407).
+    if resolution_failed && let Some(hint) = crate::shims::exec_resolution_hint(&program_name).await
+    {
+        msg.push_str("\n\n");
+        msg.push_str(&hint);
+    }
+    bail!("{msg}")
+}
+
+/// The opaque `cannot find binary path`, plus an explanation when an
+/// installed-but-unconfigured tool would have provided the bin. `mise install`
+/// writes to no config file, so its tool dirs never join the PATH `mise exec`
+/// builds (discussion #4407).
+#[cfg(all(windows, not(test)))]
+async fn err_cannot_find_binary_path(program_name: &str) -> eyre::Report {
+    let base: eyre::Report = which::Error::CannotFindBinaryPath.into();
+    match crate::shims::exec_resolution_hint(program_name).await {
+        Some(hint) => eyre!("{base}\n\n{hint}"),
+        None => base,
+    }
 }
 
 #[cfg(all(windows, not(test)))]
@@ -470,6 +506,9 @@ where
         Err(which::Error::CannotFindBinaryPath) if is_shim_dispatch => {
             return Err(crate::shims::err_shim_not_found(&program_name).await);
         }
+        Err(which::Error::CannotFindBinaryPath) => {
+            return Err(err_cannot_find_binary_path(&program_name).await);
+        }
         Err(err) => return Err(err.into()),
     };
     let program = match resolved {
@@ -480,7 +519,7 @@ where
         None if is_shim_dispatch => {
             return Err(crate::shims::err_shim_not_found(&program_name).await);
         }
-        None => return Err(which::Error::CannotFindBinaryPath.into()),
+        None => return Err(err_cannot_find_binary_path(&program_name).await),
     };
     env::remove_var(env::MISE_SHIM_PATH_ENV);
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();

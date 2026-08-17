@@ -2,3 +2,4 @@ backends = ["pipx:conan", "asdf:mise-plugins/mise-pyapp"]
 bins = ["conan"]
 description = "Decentralized, open-source (MIT), C/C++ package manager"
 test = { cmd = "conan --version", expected = "Conan version {{version}}" }
+version_order = "semver"

@@ -6,31 +6,34 @@ license = "MIT"
 description = "Action cache protocol, CAS, authentication, and transport primitives for mise"
 homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
-publish = false
 
 [dependencies]
 base64 = "0.23"
 blake3 = "1"
 eyre = "0.6"
+fslock = "0.2"
+futures-util = "0.3"
 hex = "0.4"
 log = "0.4"
 rand = "0.10"
+reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "stream",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_json_canonicalizer = "0.3"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3"
-tokio = { version = "1", features = ["fs", "io-util", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["io"] }
 url = "2"
 
 [dev-dependencies]
 mockito = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 
 [features]
 default = ["rustls"]

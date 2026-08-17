@@ -22,7 +22,7 @@ with asdf `.tool-versions` files as well as [idiomatic version files](/configura
 `.ruby-version`. See [configuration](/configuration) for more details.
 
 When specifying tool versions and tool options, you can also refer to environment variables or
-[`vars`](/tasks/task-configuration.html#vars) defined in your config hierarchy, including values
+[`vars`](/configuration/vars) defined in your config hierarchy, including values
 produced by directives like `_.source`, `_.file`, or env modules. These are resolved before tool
 version and option templates are rendered.
 
@@ -151,6 +151,34 @@ port = 6379
 ```
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
+
+### Version ordering
+
+Backends normally preserve the order returned by their version source. Aqua,
+GitHub, GitLab, Forgejo, and HTTP tools can opt into semantic version precedence
+when an upstream publishes backports after newer release lines:
+
+```toml
+[tools]
+"github:owner/tool" = { version = "latest", version_order = "semver" }
+```
+
+For `latest`, an authoritative result from the backend still wins—for example,
+the release marked **Latest** on GitHub or Forgejo. If that release does not
+match the requested package, or the backend has no authoritative latest result,
+mise falls back to the version list and applies `version_order` there. This is
+important for repositories containing multiple products: their repository-wide
+Latest release may not contain an asset for every package.
+
+With `version_order = "semver"`, mise orders valid semantic versions by
+precedence when resolving that fallback list or a version prefix. Opaque versions
+retain their source order before semantic versions, so exact requests such as
+`nightly` continue to work. Build metadata does not affect precedence. Registry
+entries may set this option for tools known to follow semantic versioning; users
+can set `version_order = "source"` to restore the backend's default ordering.
+
+The option affects version resolution only. `mise ls-remote` continues to show
+the canonical order returned by the backend.
 
 ### Tool postinstall commands
 
@@ -346,6 +374,11 @@ There are many ways it can be used:
 - `mise install node` - install whatever version of node currently specified in `mise.toml` (or other
   config files)
 - `mise install` - install all plugins and tools specified in the config files
+- `mise install --include-task-tools` - also install every tool required by tasks in the current
+  scope without running those tasks
+
+The last form is useful for warming CI, container, or offline caches before running any task. Add
+`--monorepo` to include task tools from every configured monorepo root.
 
 ### [`mise exec`|`mise x`](/cli/exec)
 
@@ -400,7 +433,7 @@ If you type a command in your shell (e.g., `node`) and it is not found, mise can
 - **When it triggers:** When a command is not found in the shell and the handler is enabled.
 - **How to control:**
   - Setting: [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) (default: true)
-- **Limitation:** Only works for tools that already have at least one version installed, since mise cannot know which tool provides a binary otherwise.
+- **Limitation:** mise identifies the provider from the registry's bin metadata, so this covers configured tools even if they have never been installed — but not tools configured by a raw backend spec (e.g. `cargo:some-crate`), which carry no such metadata. Install those explicitly with `mise install`, or `mise x` to install and run in one step. See [troubleshooting](/troubleshooting.html#auto-install-on-command-not-found-does-not-trigger).
 
 ::: tip
 Disable auto_install for specific tools by setting [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools) to a list of tool names.

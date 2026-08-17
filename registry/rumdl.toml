@@ -2,3 +2,4 @@ backends = ["aqua:rvben/rumdl", "github:rvben/rumdl"]
 bins = ["rumdl"]
 description = "Markdown Linter and Formatter written in Rust"
 test = { cmd = "rumdl --version", expected = "rumdl {{version}}" }
+version_order = "semver"

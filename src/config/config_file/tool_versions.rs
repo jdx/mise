@@ -182,7 +182,7 @@ impl ConfigFile for ToolVersions {
 
     fn save(&self) -> Result<()> {
         let s = self.dump()?;
-        file::write(&self.path, s)
+        file::write_atomic(&self.path, s)
     }
 
     fn dump(&self) -> eyre::Result<String> {

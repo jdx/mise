@@ -10,3 +10,4 @@ bins = [
 ]
 description = "Bash scripts that integrate bat with various command line tools"
 test = { cmd = "batman --version", expected = "batman {{version}}" }
+version_order = "source"

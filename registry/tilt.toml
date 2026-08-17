@@ -1,3 +1,4 @@
 backends = ["aqua:tilt-dev/tilt", "asdf:eaceaser/asdf-tilt"]
 bins = ["tilt"]
 description = "Define your dev environment as code. For microservice apps on Kubernetes"
+version_order = "semver"

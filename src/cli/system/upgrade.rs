@@ -48,6 +48,7 @@ impl SystemUpgrade {
         let opts = DriverOpts {
             manager: self.manager,
             explicit: !self.packages.is_empty(),
+            allow_unavailable_manager: false,
             dry_run: self.dry_run,
             // upgrades refresh metadata themselves (stale lists would make
             // them silent no-ops), so no separate --update flag

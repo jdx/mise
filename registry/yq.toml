@@ -6,3 +6,4 @@ backends = [
 bins = ["yq"]
 description = "yq is a portable command-line YAML processor"
 test = { cmd = "yq --version", expected = "version v{{version}}" }
+version_order = "source"

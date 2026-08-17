@@ -1,4 +1,5 @@
 description = "command line management for Google Workspace"
+version_order = "source"
 # test = { cmd = "gam version", expected = "GAM {{version}}" }
 
 bins = ["gam"]

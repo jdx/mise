@@ -1,3 +1,4 @@
 backends = ["aqua:uutils/coreutils"]
 bins = ["coreutils"]
 description = "Cross-platform Rust rewrite of the GNU coreutils"
+version_order = "semver"

@@ -77,7 +77,11 @@ impl FromLua for ParseLegacyFileResponse {
             Value::Table(table) => Ok(ParseLegacyFileResponse {
                 version: table.get::<Option<String>>("version")?,
             }),
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ParseLegacyFileResponse".to_string(),
+                message: Some("Expected table".to_string()),
+            }),
         }
     }
 }
@@ -86,6 +90,13 @@ impl FromLua for ParseLegacyFileResponse {
 mod tests {
     use super::*;
     use crate::Vfox;
+
+    #[test]
+    fn test_parse_legacy_file_response_rejects_non_table() {
+        let lua = Lua::new();
+        let result = ParseLegacyFileResponse::from_lua(Value::Boolean(true), &lua);
+        assert!(result.is_err(), "a non-table response must not panic");
+    }
 
     #[tokio::test]
     async fn test_parse_legacy_file_test_nodejs() {

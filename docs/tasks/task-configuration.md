@@ -49,6 +49,23 @@ run = "cargo build"
 run_windows = "cargo build --features windows"
 ```
 
+### `file`
+
+- **Type**: `string`
+
+Execute an external script instead of an inline `run` command. Relative paths are resolved from the
+directory containing the task's config file. The path supports Tera templates.
+
+```mise-toml
+[tasks.release]
+description = "Cut a new release"
+file = "scripts/release.sh"
+```
+
+`file` also accepts HTTP(S) URLs and `git::` sources. See [Using a file or remote
+script](/tasks/toml-tasks.html#using-a-file-or-remote-script) for the supported formats and security
+considerations.
+
 ### `description`
 
 - **Type**: `string`
@@ -254,6 +271,24 @@ run = [
 ]
 ```
 
+### `vars` {#task-vars}
+
+- **Type**: `{ [key]: string | int | bool | directive }`
+
+Variables specific to this task. Task-local vars override config vars while rendering the task, but
+are not exported to the task process as environment variables.
+
+```mise-toml
+[vars]
+mode = "headless"
+
+[tasks.test]
+vars = { mode = "headed" }
+run = "./scripts/test-e2e.sh --{{ vars.mode }}"
+```
+
+See [Vars](#vars) for supported value-producing directives, precedence, and redaction.
+
 ### `tools`
 
 - **Type**: `{ [key]: string }`
@@ -266,6 +301,14 @@ installed or a tool with a different version. It will only be used for that task
 tools.rust = "1.50.0"
 run = "cargo build"
 ```
+
+Run [`mise lock`](/dev-tools/mise-lock.html) to resolve task-specific tools into the owning
+config's lockfile before running the task. This reads the task definition without executing the
+task or installing its tools.
+
+Run `mise install --include-task-tools` to install tools for every task in the current scope without
+executing task commands or dependencies. This is useful for preparing CI caches or container images;
+combine it with `--monorepo` to include every configured monorepo root.
 
 ### `dir`
 
@@ -390,9 +433,9 @@ cause the task to be run.
 
 This is also used in `mise watch` to know which files/directories to watch.
 
-This can be specified with relative paths to the config file and/or with glob patterns, e.g.:
-`src/**/*.rs`. Brace alternatives such as `src/**/*.{js,ts}` are supported by freshness checks,
-`mise watch`, and `task_source_files()`.
+This can be specified with relative paths and/or with glob patterns, e.g.: `src/**/*.rs`. Brace
+alternatives such as `src/**/*.{js,ts}` are supported by freshness checks, `mise watch`, and
+`task_source_files()`.
 Ensure you don't go crazy with adding a ton of files in a glob though—mise has to scan each and every one to check
 the timestamp.
 
@@ -406,26 +449,20 @@ outputs = ["target/debug/mycli"]
 Running the above will only execute `cargo build` if `mise.toml`, `Cargo.toml`, or any ".rs" file in the `src` directory
 has changed since the last build.
 
-The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
-`sources` within its template context.
-
-#### Watching VCS-ignored sources
-
-By default, `mise watch` respects VCS ignore files such as `.gitignore`, even when an ignored path is
-listed in `sources`. Set `watch.no_vcs_ignore` for tasks that need to watch generated or intermediary
-files which are intentionally excluded from version control:
+Relative entries are resolved from the task directory (the task's `dir`, or the project root when it
+has none) and may use `..` to reach files above it, such as a `node_modules` directory shared at the
+root of a monorepo:
 
 ```mise-toml
-[tasks.generate]
-run = "process generated/output.json"
-sources = ["generated/output.json"]
-watch = { no_vcs_ignore = true }
+[tasks.build]
+dir = "packages/web"
+run = "npm run build"
+sources = ["src/**/*.ts", "../../node_modules/**"]
+outputs = ["dist"]
 ```
 
-This is equivalent to passing `--no-vcs-ignore` to watchexec. Because watchexec applies ignore options
-to the entire watch process, watching multiple tasks together disables VCS ignores for all of them if
-any selected task enables this option. Keep `sources` narrowly scoped: disabling VCS ignores for broad
-build, distribution, or dependency directories may substantially increase filesystem scanning.
+The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
+`sources` within its template context.
 
 #### Excluding sources
 
@@ -513,6 +550,29 @@ changes, both are skipped.
 
 Note that dependencies **without** `sources` (which always run) do not trigger this invalidation —
 otherwise `sources` on the dependent task would be effectively useless.
+
+### `watch`
+
+- **Type**: `{ no_vcs_ignore = bool }`
+- **Default**: `{ no_vcs_ignore = false }`
+
+Options used when the task runs through [`mise watch`](/cli/watch.html). By default, `mise watch`
+respects VCS ignore files such as `.gitignore`, even when an ignored path is listed in `sources`. Set
+`watch.no_vcs_ignore` for tasks that need to watch generated or intermediary files which are
+intentionally excluded from version control:
+
+```mise-toml
+[tasks.generate]
+run = "process generated/output.json"
+sources = ["generated/output.json"]
+watch = { no_vcs_ignore = true }
+```
+
+This is equivalent to passing `--no-vcs-ignore` to watchexec. Because watchexec applies ignore
+options to the entire watch process, watching multiple tasks together disables VCS ignores for all
+of them if any selected task enables this option. Keep `sources` narrowly scoped: disabling VCS
+ignores for broad build, distribution, or dependency directories may substantially increase
+filesystem scanning.
 
 ### `outputs`
 
@@ -605,9 +665,24 @@ task or prevent a successful result from being cached. Access outside those root
 metadata reads are ignored to keep system libraries, executables, and path traversal out of the
 report.
 
+Reported paths are always relative to the task directory, using `..` for the paths above it that a
+read may legitimately touch. A reported read can be added to `sources` exactly as it was printed.
+
 Audit mode requires `strace` on `PATH`. Mise warns and runs the task normally when tracing is not
 available; other platforms are not currently supported. Cached tasks are not executed and therefore
 produce no audit report, so use `mise run --force <task>` when checking an existing cache entry.
+
+Console warnings are limited to the first 20 paths per task, which is not enough to classify a task
+that reads thousands of undeclared files. Set
+[`task.cache.audit_report`](/configuration/settings.html#task.cache.audit_report) to also write every
+undeclared path as JSON Lines, one `{"task", "kind", "path"}` object per entry. Truncation happens
+once per `mise` invocation: the first audited task in each invocation truncates the file and later
+audited tasks in that invocation append to it, so one file holds that run's report for every audited
+task and a later run replaces it rather than adding to it.
+
+```shell
+MISE_TASK_CACHE_AUDIT_REPORT=audit.jsonl mise run --force build
+```
 
 ```mise-toml
 [tasks.build]
@@ -870,7 +945,8 @@ through cache configuration. Use `pass_through_env` for variables that a task ne
 which must not affect its cache key, such as short-lived credentials. The scoped
 `task_config.global_pass_through_env` equivalent applies to every task. In mise's default,
 non-sandboxed environment mode, ambient variables already pass through; these options matter when
-`deny_env`, `deny_all`, or the corresponding CLI option is active.
+environment sandboxing is active through `allow_env`, `deny_env`, `deny_all`, or a corresponding
+CLI option.
 
 ```mise-toml
 [task_config]
@@ -886,7 +962,7 @@ persisted as cache metadata, but a task can still expose them by writing them to
 or logs.
 
 Cache entries are stored under `MISE_CACHE_DIR/task-artifacts/v2` by default. Set the experimental
-[`task.cache_dir`](/configuration/settings.html#task-cache-dir) setting or
+[`task.cache_dir`](/configuration/settings.html#task.cache_dir) setting or
 `MISE_TASK_CACHE_DIR` to choose a different parent directory; mise keeps the artifact format in its
 `v2` child directory. Default and custom locations are included in `mise cache clear` and
 manual and automatic cache pruning. Only successful task runs are cached. Cache read/write failures
@@ -904,8 +980,8 @@ Temporary archive and manifest files are removed when a write fails normally. On
 mise also removes partial files abandoned by an interrupted process after acquiring the associated
 cache-key lock, so it never deletes files that an active writer is still publishing.
 
-Set [`task.cache_max_size`](/configuration/settings.html#task-cache-max-size) to bound the total
-artifact cache size, or [`task.cache_max_age`](/configuration/settings.html#task-cache-max-age) to
+Set [`task.cache_max_size`](/configuration/settings.html#task.cache_max_size) to bound the total
+artifact cache size, or [`task.cache_max_age`](/configuration/settings.html#task.cache_max_age) to
 expire entries based on their last access. Both limits are optional and apply after successful cache
 writes. When a size limit is exceeded, mise removes least-recently-accessed entries first.
 
@@ -938,6 +1014,11 @@ run = "cargo build"
 rust_cache = true
 ```
 
+Set `rust_cache = { verify = true }` while qualifying the cache for a project or compiler upgrade.
+On a would-be hit, mise restores the cached result into a staging build, runs rustc anyway, compares
+diagnostics, output contents, and file modes, reports any divergence, and always returns rustc's live
+result. Verification hits are never served and are reported separately in the session statistics.
+
 mise injects compiler integration only into the task's child environment. Shell activation, bare
 `cargo build`, editor processes, and release builds are not intercepted. A top-level
 `mise run` owns the cache session, flushes pending uploads, and reports hits, misses, and transferred
@@ -957,7 +1038,8 @@ that inherited default.
 ### `shell`
 
 - **Type**: `string`
-- **Default**: [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+- **Default**: [`task_config.shell`](#task_config.shell) when set (config-scoped); otherwise
+  [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args)/[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args) (global-only).
 - **Note**: Only applies to toml-tasks.
 
 The shell to use to run the task. This is useful if you want to run a task with a different shell than
@@ -977,6 +1059,125 @@ run = '''
 console.log('hello world')
 '''
 ```
+
+### `timeout`
+
+- **Type**: `string`
+- **Default**: unset
+
+Maximum execution time for this task. The value accepts durations such as `30s`, `5m`, or `1h` and
+supports Tera templates. The task fails if it does not complete within the configured duration.
+
+```mise-toml
+[tasks.integration-test]
+run = "./scripts/integration-test.sh"
+timeout = "10m"
+```
+
+This limits the individual task. Use [`mise run --timeout`](/cli/run.html) or the
+[`task.timeout`](/configuration/settings.html#task.timeout) setting to limit the entire task run.
+When both a global timeout and a per-task timeout are set, the shorter of the two wins: a per-task
+timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides the global
+setting.
+
+### `deny_all`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block filesystem reads, filesystem writes, network access, and environment inheritance for this
+task. Specific `allow_*` properties can add exceptions.
+
+```mise-toml
+[tasks.lint]
+run = "eslint ."
+deny_all = true
+allow_read = ["."]
+allow_write = ["./node_modules/.cache"]
+allow_env = ["NODE_*"]
+```
+
+Sandbox support and implicit system access vary by platform. See [Sandboxing](/sandboxing.html) for
+the complete behavior and limitations.
+
+### `deny_read`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block filesystem reads except for the system and mise paths required to execute the task. Use
+`allow_read` to add task-specific exceptions.
+
+### `deny_write`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block filesystem writes except for implicitly writable system paths such as the temporary
+directory. Use `allow_write` to add task-specific exceptions.
+
+### `deny_net`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block network access for this task. Use `allow_net` for host-specific exceptions on platforms that
+support them.
+
+### `deny_env`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Block inherited environment variables except for essential variables such as `PATH`, `HOME`,
+`USER`, `SHELL`, `TERM`, and `LANG`. Use `allow_env` or `pass_through_env` to preserve additional
+variables.
+
+### `allow_read`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow reads from the listed paths and block other filesystem reads. Relative paths are resolved
+from the task's effective working directory.
+
+### `allow_write`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow writes to the listed paths and block other filesystem writes. Allowed write paths are also
+readable. Relative paths are resolved from the task's effective working directory.
+
+### `allow_net`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow network access to the listed hosts and block other network access. Per-host network filtering
+is platform-dependent; see [Platform Support](/sandboxing.html#platform-support).
+
+### `allow_env`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Allow the listed environment variable names and block other inherited environment variables.
+Entries support `*` wildcards, such as `MYAPP_*`.
+
+### `pass_through_env` <Badge type="warning" text="experimental" />
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Preserve the listed ambient environment variables when environment inheritance is denied without
+including their values in the task cache key. Entries support `*` wildcards. This property does not
+enable environment sandboxing by itself and has no effect unless environment sandboxing is active,
+including through `allow_env`, `deny_env`, `deny_all`, or an equivalent CLI or global sandbox option.
+
+Use `pass_through_env` for values such as short-lived credentials that must not affect the cache key.
+Do not use it for values that affect generated outputs or logs.
+Use `cache.env` instead when changes to a variable should invalidate the task cache.
 
 ### `quiet`
 
@@ -1001,7 +1202,7 @@ Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that
 ### `output`
 
 - **Type**: `string`
-- **Default**: unset (inherits the global [`task.output`](/configuration/settings.html#task-output) setting)
+- **Default**: unset (inherits the global [`task.output`](/configuration/settings.html#task.output) setting)
 
 Output _style_ for this task: `prefix`, `interleave`, `keep-order`, `replacing`, `timed`, `quiet`, or
 `silent`. This is the per-task equivalent of the global `task.output` setting and is orthogonal to the
@@ -1137,49 +1338,14 @@ mise run deploy secret123
 
 ## Vars
 
-Vars are values that can be shared between TOML tasks and other Tera-rendered config like tool
-versions/options. They are similar to environment variables, but they are not exported to task
-processes. Reference them with <span v-pre>`{{vars.NAME}}`</span>.
-
-```mise-toml
-[vars]
-e2e_args = '--headless'
-
-[tasks.test]
-run = './scripts/test-e2e.sh {{vars.e2e_args}}'
-```
-
-Vars can also use value-producing directive forms from `[env]`:
-
-```mise-toml
-[vars]
-e2e_args = { default = "--headless" }
-api_token = { required = "Set api_token in mise.local.toml" }
-secret_arg = { value = "--token=abc123", redact = true }
-_.file = ".env"
-```
-
-The `default` form reads from a process environment variable with the same name when it is set and
-non-empty; values from `[env]` are not used for this lookup. The `required` form must be satisfied by
-the process environment or by a later config file like `mise.local.toml`. Values marked with
-`redact = true` are hidden from task output. [Secrets](/environments/secrets/) are also supported as
-vars.
-
-Tasks can also define task-local vars that override config vars for that task:
+Top-level [configuration vars](/configuration/vars) are available when rendering TOML tasks. Tasks
+can also define task-local vars that override config vars for that task:
 
 ```mise-toml
 [tasks.test]
 vars = { e2e_args = "--headed" }
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
-
-Like most configuration in mise, vars can be defined across several files. So for example, you could
-put some vars in your global mise config `~/.config/mise/config.toml`, use them in a task at
-`~/src/work/myproject/mise.toml`. You can also override those vars in "later" config files such
-as `~/src/work/myproject/mise.local.toml` and they will be used inside tasks of any config file.
-
-As of this writing vars are only supported in TOML tasks. I want to add support for file tasks, but
-I don't want to turn all file tasks into tera templates just for this feature.
 
 ## `[task_config]` options
 
@@ -1212,7 +1378,7 @@ Change the default directory tasks are run from.
 dir = "{{cwd}}"
 ```
 
-### `task_config.shell`
+### `task_config.shell` {#task_config.shell}
 
 Set the default shell for tasks in this config scope. A task's explicit `shell` setting takes
 precedence, including a `shell` inherited from a task template. With `task_config.cascade = true`,
@@ -1294,7 +1460,7 @@ lockfiles = ["Cargo.lock", "pnpm-lock.yaml"]
 rust = ["Cargo.toml", "src/**/*.rs", "@group:lockfiles"]
 ```
 
-### `task_config.includes` {#task-config-includes}
+### `task_config.includes` {#task_config.includes}
 
 Set the toml files and file-task directories mise should search when looking for tasks.
 
@@ -1421,7 +1587,7 @@ Optional fields:
 
 When `path` points at a directory, mise loads both executable file tasks and any `.toml` task files inside that directory. When `path` points at a single `.toml` file, only that file is loaded.
 
-Included `.toml` files use the [task toml file format](#task-config-includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
+Included `.toml` files use the [task toml file format](#task_config.includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
 ## Monorepo Support
 
@@ -1456,7 +1622,7 @@ You can also specify these as a glob pattern, e.g.: `redactions = ["SECRETS_*"]`
 
 ## `[vars]` options
 
-See [Vars](#vars).
+See [Variables](/configuration/vars).
 
 ## Task Configuration Settings
 

@@ -6,6 +6,21 @@ variables for the home directories and falls back to their standard location (`~
 not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like
 to isolate mise's rustup/cargo from your other rustup/cargo installations.
 
+These variables can also be set in mise configuration. They are applied to Rust operations in the same mise invocation:
+
+```toml
+[env]
+MISE_RUSTUP_HOME = "{{env.HOME}}/.local/share/rustup"
+MISE_CARGO_HOME = "{{env.HOME}}/.local/share/cargo"
+```
+
+Explicit `RUSTUP_HOME` and `CARGO_HOME` values in `[env]` take precedence over their corresponding `MISE_` variables.
+
+When the standard Rust homes have not been initialized and no home override is configured, mise can also reuse a
+package-manager installation of rustup. The original `PATH` must contain a directory with the `rustup`, `cargo`, and
+`rustc` proxies, as provided by package managers such as Homebrew, APT, and pacman. An explicit Rust or Cargo home
+continues to use mise's managed rustup initialization instead of an external proxy directory.
+
 Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
 mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
 version, and asks rustup to install any configured components or targets when you run `mise install`.
@@ -25,6 +40,26 @@ Use the latest beta version of rust:
 mise use -g rust@beta
 cargo build
 ```
+
+Use the rolling nightly channel:
+
+```sh
+mise use -g rust@nightly
+cargo build
+```
+
+The configuration remains `nightly`, while mise resolves the current Rust channel manifest to a concrete
+`nightly-YYYY-MM-DD` toolchain for installation and lockfiles. This keeps the configured channel rolling while making
+locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to advance the locked nightly.
+
+To keep a specific nightly instead, configure its date explicitly:
+
+```sh
+mise use -g rust@nightly-2026-08-13
+```
+
+An explicitly dated nightly is an exact pin. Commands using `--bump`, such as `mise upgrade --bump rust`, can replace
+that pin with the current nightly.
 
 Use a specific version of rust:
 

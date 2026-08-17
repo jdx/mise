@@ -1,5 +1,6 @@
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
 test = { cmd = "zprint --version", expected = "zprint-{{version}}" }
+version_order = "semver"
 
 bins = ["zprint"]
 [[backends]]

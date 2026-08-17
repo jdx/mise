@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
@@ -315,14 +315,89 @@ impl Drop for RunningPidGuard {
 }
 
 /// Env var set on every spawned child when this mise process is managing
-/// process groups (calling setpgid + killpg). A nested mise that sees this
+/// process groups (calling setpgid/setsid + killpg). A nested mise that sees this
 /// var skips its own setpgid so descendants stay in the outer pgid — that
 /// way the outer mise's killpg actually reaches the leaves.
 #[cfg(unix)]
 const TASK_PGID_MANAGED_ENV: &str = "MISE_TASK_PGID_MANAGED";
 
-/// True when this mise should `setpgid` spawned children and `killpg` them
-/// for cleanup.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChildProcessIsolation {
+    Inherit,
+    ProcessGroup,
+    Session,
+}
+
+#[cfg(unix)]
+fn child_process_isolation(
+    child_stdin_is_terminal: bool,
+    parent_has_terminal: bool,
+    is_macos: bool,
+) -> ChildProcessIsolation {
+    if child_stdin_is_terminal {
+        ChildProcessIsolation::Inherit
+    } else if is_macos && parent_has_terminal {
+        ChildProcessIsolation::Session
+    } else {
+        ChildProcessIsolation::ProcessGroup
+    }
+}
+
+#[cfg(unix)]
+fn parent_has_terminal() -> bool {
+    use std::io::IsTerminal;
+
+    std::io::stdin().is_terminal()
+        || std::io::stdout().is_terminal()
+        || std::io::stderr().is_terminal()
+}
+
+/// Put an ordinary non-raw command in the process tree managed by mise.
+///
+/// On macOS, a non-interactive zsh child in its own process group can be
+/// stopped by job control when it uses process substitution under a
+/// controlling terminal (for example, inside tmux). A separate session keeps
+/// the child detached from that terminal while preserving the invariant that
+/// its PID is also its process group ID for killpg-based cleanup.
+#[cfg(unix)]
+fn prepare_execute_child(cmd: &mut std::process::Command) {
+    if !should_use_pgroup() {
+        return;
+    }
+
+    cmd.env(TASK_PGID_MANAGED_ENV, "1");
+    let parent_has_terminal = parent_has_terminal();
+    unsafe {
+        cmd.pre_exec(move || {
+            // Use BorrowedFd::borrow_raw rather than std::io::stdin() —
+            // pre_exec runs post-fork where OnceLock/malloc are not
+            // async-signal-safe.
+            let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+            let child_stdin_is_terminal = std::io::IsTerminal::is_terminal(&stdin);
+            match child_process_isolation(
+                child_stdin_is_terminal,
+                parent_has_terminal,
+                cfg!(target_os = "macos"),
+            ) {
+                ChildProcessIsolation::Inherit => Ok(()),
+                ChildProcessIsolation::ProcessGroup => {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                    Ok(())
+                }
+                ChildProcessIsolation::Session => {
+                    nix::unistd::setsid().map(|_| ()).map_err(Into::into)
+                }
+            }
+        });
+    }
+}
+
+/// True when this mise should isolate spawned children into process groups and
+/// `killpg` them for cleanup.
 ///
 /// We skip pgroup management in two cases:
 ///
@@ -340,12 +415,12 @@ const TASK_PGID_MANAGED_ENV: &str = "MISE_TASK_PGID_MANAGED";
 /// In both cases we share whatever pgid we landed in, so the ancestor
 /// that owns it can clean us up.
 ///
-/// Cached on first access: `execute()` decides whether to `setpgid` at
-/// spawn time, and `kill_all()` decides whether to `killpg` at signal
-/// time. They must agree — a child placed in its own pgid by `execute()`
-/// must be killed via `killpg`, or only the direct PID gets the signal
-/// and grandchildren leak. Computing this once removes any chance of the
-/// two callers disagreeing if the env later mutates.
+/// Cached on first access: `execute()` decides whether to create a managed
+/// process group or session at spawn time, and `kill_all()` decides whether to
+/// `killpg` at signal time. They must agree — a child placed in its own pgid by
+/// `execute()` must be killed via `killpg`, or only the direct PID gets the
+/// signal and grandchildren leak. Computing this once removes any chance of
+/// the two callers disagreeing if the env later mutates.
 #[cfg(unix)]
 fn should_use_pgroup() -> bool {
     static CACHED: Lazy<bool> = Lazy::new(|| {
@@ -390,6 +465,56 @@ pub(crate) fn prepare_noninteractive_child(_cmd: &mut std::process::Command) {
 /// deadline we abandon the readers — any tail output is dropped.
 const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Maximum amount of stdout retained for commands whose output is hidden
+/// behind a progress indicator. The tail is replayed if the command fails.
+const FAILURE_OUTPUT_TAIL_BYTES: usize = 64 * 1024;
+const FAILURE_OUTPUT_TRUNCATED_NOTICE: &str = "[output truncated; showing last 64 KiB]";
+
+#[derive(Default)]
+struct FailureOutputTail {
+    lines: VecDeque<String>,
+    bytes: usize,
+    truncated: bool,
+}
+
+impl FailureOutputTail {
+    fn push(&mut self, mut line: String) {
+        let max_line_bytes = FAILURE_OUTPUT_TAIL_BYTES.saturating_sub(1);
+        if line.len() > max_line_bytes {
+            let mut start = line.len() - max_line_bytes;
+            while !line.is_char_boundary(start) {
+                start += 1;
+            }
+            line = line[start..].to_string();
+            self.lines.clear();
+            self.bytes = 0;
+            self.truncated = true;
+        }
+
+        self.bytes = self.bytes.saturating_add(line.len().saturating_add(1));
+        self.lines.push_back(line);
+        while self.bytes > FAILURE_OUTPUT_TAIL_BYTES {
+            if let Some(line) = self.lines.pop_front() {
+                self.bytes = self.bytes.saturating_sub(line.len().saturating_add(1));
+                self.truncated = true;
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn into_output(mut self) -> Vec<(String, OutputSource)> {
+        if self.truncated {
+            self.lines
+                .push_front(FAILURE_OUTPUT_TRUNCATED_NOTICE.to_string());
+        }
+        self.lines
+            .into_iter()
+            .map(|line| (line, OutputSource::Stdout))
+            .collect()
+    }
+}
+
 enum HashedProcessOutput {
     Stdout(Vec<u8>),
     Stderr(Vec<u8>),
@@ -397,6 +522,14 @@ enum HashedProcessOutput {
 }
 
 impl<'a> CmdLineRunner<'a> {
+    fn failure_output_tail(&self) -> Option<FailureOutputTail> {
+        if self.on_stdout.is_none() && (self.pr.is_some() || self.pr_arc.is_some()) {
+            Some(FailureOutputTail::default())
+        } else {
+            None
+        }
+    }
+
     pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
         let mut cmd = Command::new(program);
         cmd.stdin(Stdio::null());
@@ -681,29 +814,7 @@ impl<'a> CmdLineRunner<'a> {
             return self.execute_raw();
         }
         #[cfg(unix)]
-        if should_use_pgroup() {
-            // Mark descendants so a nested mise inherits this var and skips
-            // its own setpgid — keeping the whole tree in our pgid.
-            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
-            unsafe {
-                self.cmd.as_std_mut().pre_exec(|| {
-                    // Skip setpgid when stdin is a TTY: interactive tools
-                    // (e.g. Tilt) need to stay in the terminal's foreground
-                    // pgid or they hang on SIGTTIN when reading stdin.
-                    // Use BorrowedFd::borrow_raw rather than std::io::stdin()
-                    // — pre_exec runs post-fork where OnceLock/malloc are
-                    // not async-signal-safe.
-                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
-                    if !std::io::IsTerminal::is_terminal(&stdin) {
-                        let _ = nix::unistd::setpgid(
-                            nix::unistd::Pid::from_raw(0),
-                            nix::unistd::Pid::from_raw(0),
-                        );
-                    }
-                    Ok(())
-                });
-            }
-        }
+        prepare_execute_child(self.cmd.as_std_mut());
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
@@ -774,7 +885,7 @@ impl<'a> CmdLineRunner<'a> {
 
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
 
-        let mut combined_output = vec![];
+        let mut failure_output = self.failure_output_tail();
         let mut status = None;
         // Once ExitStatus arrives we set a deadline and switch to recv_timeout
         // so a grandchild that inherited the pipes can't hang us forever
@@ -805,13 +916,16 @@ impl<'a> CmdLineRunner<'a> {
             match msg {
                 ChildProcessOutput::Stdout(line) => {
                     let line = self.redactor.redact(&line);
-                    self.on_stdout(line.clone());
-                    combined_output.push((line, OutputSource::Stdout));
+                    if let Some(output) = &mut failure_output {
+                        self.on_stdout(line.clone());
+                        output.push(line);
+                    } else {
+                        self.on_stdout(line);
+                    }
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
-                    self.on_stderr(line.clone());
-                    combined_output.push((line, OutputSource::Stderr));
+                    self.on_stderr(line);
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
@@ -853,7 +967,10 @@ impl<'a> CmdLineRunner<'a> {
             if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
                 bail!("timed out after {duration:?}");
             }
-            self.on_error(combined_output, status)?;
+            self.on_error(
+                failure_output.map_or_else(Vec::new, FailureOutputTail::into_output),
+                status,
+            )?;
         }
 
         Ok(())
@@ -880,21 +997,7 @@ impl<'a> CmdLineRunner<'a> {
             return self.execute_raw_async_with_cancel_check(is_cancelled).await;
         }
         #[cfg(unix)]
-        if should_use_pgroup() {
-            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
-            unsafe {
-                self.cmd.as_std_mut().pre_exec(|| {
-                    let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
-                    if !std::io::IsTerminal::is_terminal(&stdin) {
-                        let _ = nix::unistd::setpgid(
-                            nix::unistd::Pid::from_raw(0),
-                            nix::unistd::Pid::from_raw(0),
-                        );
-                    }
-                    Ok(())
-                });
-            }
-        }
+        prepare_execute_child(self.cmd.as_std_mut());
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
@@ -971,7 +1074,7 @@ impl<'a> CmdLineRunner<'a> {
         drop(tx);
 
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
-        let mut combined_output = vec![];
+        let mut failure_output = self.failure_output_tail();
         let mut status = None;
         let mut wait = Box::pin(cp.wait());
         loop {
@@ -998,13 +1101,16 @@ impl<'a> CmdLineRunner<'a> {
                     match msg {
                         ChildProcessOutput::Stdout(line) => {
                             let line = self.redactor.redact(&line);
-                            self.on_stdout(line.clone());
-                            combined_output.push((line, OutputSource::Stdout));
+                            if let Some(output) = &mut failure_output {
+                                self.on_stdout(line.clone());
+                                output.push(line);
+                            } else {
+                                self.on_stdout(line);
+                            }
                         }
                         ChildProcessOutput::Stderr(line) => {
                             let line = self.redactor.redact(&line);
-                            self.on_stderr(line.clone());
-                            combined_output.push((line, OutputSource::Stderr));
+                            self.on_stderr(line);
                         }
                         ChildProcessOutput::ExitStatus(_) => {}
                         #[cfg(not(any(test, windows)))]
@@ -1043,13 +1149,16 @@ impl<'a> CmdLineRunner<'a> {
             match msg {
                 ChildProcessOutput::Stdout(line) => {
                     let line = self.redactor.redact(&line);
-                    self.on_stdout(line.clone());
-                    combined_output.push((line, OutputSource::Stdout));
+                    if let Some(output) = &mut failure_output {
+                        self.on_stdout(line.clone());
+                        output.push(line);
+                    } else {
+                        self.on_stdout(line);
+                    }
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
-                    self.on_stderr(line.clone());
-                    combined_output.push((line, OutputSource::Stderr));
+                    self.on_stderr(line);
                 }
                 ChildProcessOutput::ExitStatus(_) => {}
                 #[cfg(not(any(test, windows)))]
@@ -1066,7 +1175,10 @@ impl<'a> CmdLineRunner<'a> {
             if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
                 bail!("timed out after {duration:?}");
             }
-            self.on_error(combined_output, status)?;
+            self.on_error(
+                failure_output.map_or_else(Vec::new, FailureOutputTail::into_output),
+                status,
+            )?;
         }
 
         Ok(())
@@ -1790,6 +1902,137 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::config::Config;
+    use crate::ui::progress_report::SingleReport;
+
+    #[derive(Debug, Default)]
+    struct RecordingReport {
+        lines: Mutex<Vec<String>>,
+    }
+
+    impl SingleReport for RecordingReport {
+        fn println(&self, message: String) {
+            self.lines.lock().unwrap().push(message);
+        }
+    }
+
+    #[test]
+    fn test_failure_output_tail_preserves_output_within_limit() {
+        let mut output = super::FailureOutputTail::default();
+        output.push("first".to_string());
+        output.push("second".to_string());
+
+        let lines = output
+            .into_output()
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>();
+        assert_eq!(lines, ["first", "second"]);
+    }
+
+    #[test]
+    fn test_failure_output_tail_discards_oldest_output() {
+        let mut output = super::FailureOutputTail::default();
+        for i in 0..=super::FAILURE_OUTPUT_TAIL_BYTES / 8 {
+            output.push(format!("{i:07}"));
+        }
+
+        assert!(output.bytes <= super::FAILURE_OUTPUT_TAIL_BYTES);
+        let lines = output
+            .into_output()
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            lines.first().unwrap(),
+            super::FAILURE_OUTPUT_TRUNCATED_NOTICE
+        );
+        assert!(!lines.contains(&"0000000".to_string()));
+        assert_eq!(lines.last().unwrap(), "0008192");
+    }
+
+    #[test]
+    fn test_failure_output_tail_truncates_large_unicode_line() {
+        let mut output = super::FailureOutputTail::default();
+        output.push("あ".repeat(super::FAILURE_OUTPUT_TAIL_BYTES));
+
+        assert!(output.bytes <= super::FAILURE_OUTPUT_TAIL_BYTES);
+        let lines = output
+            .into_output()
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            lines.first().unwrap(),
+            super::FAILURE_OUTPUT_TRUNCATED_NOTICE
+        );
+        assert!(
+            lines
+                .last()
+                .unwrap()
+                .is_char_boundary(lines.last().unwrap().len())
+        );
+        assert!(lines.last().unwrap().len() < super::FAILURE_OUTPUT_TAIL_BYTES);
+    }
+
+    #[test]
+    fn test_failure_output_tail_only_enabled_for_hidden_stdout() {
+        let report = RecordingReport::default();
+        assert!(
+            super::CmdLineRunner::new("true")
+                .with_pr(&report)
+                .failure_output_tail()
+                .is_some()
+        );
+        assert!(
+            super::CmdLineRunner::new("true")
+                .with_pr(&report)
+                .with_on_stdout(|_| {})
+                .failure_output_tail()
+                .is_none()
+        );
+        assert!(
+            super::CmdLineRunner::new("true")
+                .failure_output_tail()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_failure_output_tail_replayed_on_async_failure() {
+        let report = RecordingReport::default();
+        let err = super::CmdLineRunner::new("sh")
+            .args([
+                "-c",
+                "i=0; while [ $i -lt 10000 ]; do printf '%07d\\n' $i; i=$((i + 1)); done; exit 1",
+            ])
+            .with_pr(&report)
+            .execute_async()
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("exited with non-zero status"));
+        let lines = report.lines.lock().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].starts_with(super::FAILURE_OUTPUT_TRUNCATED_NOTICE));
+        assert!(!lines[0].contains("0000000"));
+        assert!(lines[0].ends_with("0009999"));
+    }
+
+    #[test]
+    fn test_child_process_isolation() {
+        use super::ChildProcessIsolation::{Inherit, ProcessGroup, Session};
+
+        assert_eq!(super::child_process_isolation(true, true, true), Inherit);
+        assert_eq!(super::child_process_isolation(false, true, true), Session);
+        assert_eq!(
+            super::child_process_isolation(false, false, true),
+            ProcessGroup
+        );
+        assert_eq!(
+            super::child_process_isolation(false, true, false),
+            ProcessGroup
+        );
+    }
 
     #[tokio::test]
     async fn test_cmd() {

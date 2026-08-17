@@ -2,3 +2,4 @@ backends = ["aqua:tamasfe/taplo", "cargo:taplo-cli"]
 bins = ["taplo"]
 description = "A TOML toolkit written in Rust"
 test = { cmd = "taplo --version", expected = "taplo {{version}}" }
+version_order = "source"

@@ -116,6 +116,11 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn tool_config(&self) -> &ToolConfig {
+        static DEFAULT_TOOL_CONFIG: Lazy<ToolConfig> = Lazy::new(ToolConfig::default);
+        &DEFAULT_TOOL_CONFIG
+    }
+
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
         Ok(self.task_config().includes.clone())
     }
@@ -145,8 +150,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         Ok(Default::default())
     }
 
-    fn deps_config(&self) -> Option<DepsConfig> {
-        None
+    fn deps_config(&self) -> Result<Option<DepsConfig>> {
+        Ok(None)
     }
 
     fn oci_config(&self) -> Option<crate::oci::OciConfig> {
@@ -286,6 +291,37 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
         false => init(&path).await,
     };
     Ok(cf)
+}
+
+/// Lock a config file for a read-modify-write operation, then read its latest contents.
+///
+/// Callers must keep the returned lock alive until after [`ConfigFile::save`]. Acquiring the
+/// lock before re-reading is what prevents two mise processes from both modifying the same stale
+/// snapshot and silently overwriting one another's changes.
+pub async fn lock_and_parse_or_init(
+    path: &Path,
+) -> eyre::Result<(fslock::LockFile, Arc<dyn ConfigFile>)> {
+    lock_and_parse_or_init_with_callback(path, |path| {
+        debug!("waiting for config lock on {}", display_path(path));
+    })
+    .await
+}
+
+async fn lock_and_parse_or_init_with_callback<F>(
+    path: &Path,
+    on_locked: F,
+) -> eyre::Result<(fslock::LockFile, Arc<dyn ConfigFile>)>
+where
+    F: Fn(&Path) + 'static,
+{
+    // Use the same target as the atomic writer so a symlink and its real path cannot produce
+    // independent lock identities for the same config file.
+    let target = file::atomic_write_target(path)?;
+    let lock = crate::lock_file::LockFile::new(&target)
+        .with_callback(on_locked)
+        .lock()?;
+    let cf = parse_or_init(path).await?;
+    Ok((lock, cf))
 }
 
 pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
@@ -504,21 +540,39 @@ pub fn is_trusted_via_config_paths(path: &Path) -> bool {
     }
 }
 
+/// Whether `path` sits under one of `ignored`.
+///
+/// Compared twice: as written, then with both sides canonicalized.
+///
+/// `Path::starts_with` is component-wise, so the as-written pass already handles
+/// separator and case conventions for ordinary input — it is what the
+/// directory-level checks in `config` do. The canonical pass is what lets a
+/// plainly-written setting value match a candidate that arrives canonicalized:
+/// on Windows `canonicalize` yields a `\\?\` verbatim path that no plain prefix
+/// matches, and on unix it resolves symlinks. `Settings::trusted_config_paths`
+/// canonicalizes its own entries for the same reason.
+fn path_is_under_any(path: &Path, ignored: &[PathBuf]) -> bool {
+    if ignored.iter().any(|p| path.starts_with(p)) {
+        return true;
+    }
+    let Some(canonical) = file::canonicalize_cached(path) else {
+        // Nothing on disk to resolve — the as-written pass above was the only
+        // chance to match.
+        return false;
+    };
+    ignored
+        .iter()
+        .filter_map(|p| file::canonicalize_cached(p))
+        .any(|p| canonical.starts_with(p))
+}
+
 /// Whether `path` is under an explicitly-configured `ignored_config_paths`
 /// (`MISE_IGNORED_CONFIG_PATHS`) entry.
 ///
 /// This is an explicit "never load this config" instruction and is a hard
 /// block: it takes precedence over `trusted_config_paths`.
 pub fn is_ignored_via_setting(path: &Path) -> bool {
-    match path.canonicalize() {
-        Ok(path) => env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| path.starts_with(p)),
-        Err(_) => {
-            debug!("is_ignored_via_setting: path canonicalize failed");
-            false
-        }
-    }
+    path_is_under_any(path, &env::MISE_IGNORED_CONFIG_PATHS)
 }
 
 /// Whether `path` is in the persisted ignore list.
@@ -792,6 +846,103 @@ pub struct TaskConfig {
     pub input_groups: IndexMap<String, Vec<String>>,
 }
 
+/// Policy applied to tools declared by configs sharing this config's root.
+///
+/// Unlike `[settings]`, this is intentionally config-root-owned rather than
+/// an invocation-wide merged value.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ToolConfig {
+    pub locked: bool,
+}
+
+/// Deliberately not `#[cfg(unix)]` like the module below: the bug these cover is
+/// one that only shows up once `canonicalize` rewrites the path, which is the
+/// normal case on Windows.
+#[cfg(test)]
+mod ignored_config_path_tests {
+    use super::*;
+
+    /// The setting is written as an ordinary path while the candidate can arrive
+    /// canonicalized — `is_trusted` passes one straight in. On Windows that is a
+    /// `\\?\` verbatim path; on macOS a tempdir under `/var` resolves to
+    /// `/private/var`. Neither matches a plainly-written prefix, so the two sides
+    /// have to be resolved together.
+    #[test]
+    fn plain_entry_matches_canonicalized_candidate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ignored_dir = tmp.path().join("cfgdir");
+        std::fs::create_dir_all(&ignored_dir).unwrap();
+        let cfg = ignored_dir.join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+
+        let ignored = vec![ignored_dir];
+        assert!(path_is_under_any(&cfg, &ignored));
+        assert!(path_is_under_any(&cfg.canonicalize().unwrap(), &ignored));
+    }
+
+    #[test]
+    fn sibling_directory_is_not_ignored() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ignored_dir = tmp.path().join("cfgdir");
+        let other_dir = tmp.path().join("other");
+        std::fs::create_dir_all(&ignored_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let cfg = other_dir.join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+
+        let ignored = vec![ignored_dir];
+        assert!(!path_is_under_any(&cfg, &ignored));
+        assert!(!path_is_under_any(&cfg.canonicalize().unwrap(), &ignored));
+    }
+
+    /// The same defect without leaving unix: an entry that reaches its directory
+    /// through a symlink never matches a candidate expressed by its real path.
+    ///
+    /// This is the case that fails on an ordinary Linux runner. The test above
+    /// only bites where the platform rewrites the path on its own — a `\\?\`
+    /// prefix on Windows, `/var` → `/private/var` on macOS — so on Linux it
+    /// passes with or without the fix.
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_entry_matches_real_candidate() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let target_dir = tmp.path().join("target");
+        let ignored_link = tmp.path().join("ignored-link");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        symlink(&target_dir, &ignored_link).unwrap();
+
+        let cfg = target_dir.join("config.toml");
+        std::fs::write(&cfg, "").unwrap();
+
+        let ignored = vec![ignored_link];
+        // The as-written pass cannot see through the link...
+        assert!(!cfg.starts_with(&ignored[0]));
+        // ...so only resolving both sides finds the match.
+        assert!(path_is_under_any(&cfg, &ignored));
+    }
+
+    /// A path that does not exist cannot be canonicalized, so the as-written
+    /// comparison is the only one that can match it.
+    #[test]
+    fn missing_path_still_matches_as_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ignored_dir = tmp.path().join("cfgdir");
+
+        let ignored = vec![ignored_dir.clone()];
+        assert!(path_is_under_any(
+            &ignored_dir.join("config.toml"),
+            &ignored
+        ));
+        assert!(!path_is_under_any(
+            &tmp.path().join("other").join("config.toml"),
+            &ignored
+        ));
+    }
+}
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
@@ -850,6 +1001,56 @@ mod tests {
             .expect("goreleaser should be parsed from its nested idiomatic path");
 
         assert_eq!(versions[0].version(), "2");
+        Ok(())
+    }
+
+    #[test]
+    fn lock_and_parse_or_init_reads_after_acquiring_lock() -> Result<()> {
+        use std::os::unix::fs::symlink;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(backend::load_tools())?;
+
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("mise.toml");
+        file::write(&path, "[tools]\ndummy = \"1\"\n")?;
+        let alias = dir.path().join("linked.toml");
+        symlink(&path, &alias)?;
+
+        let target = file::atomic_write_target(&path)?;
+        let lock = crate::lock_file::LockFile::new(&target).lock()?;
+        let (waiting_tx, waiting_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let reader = std::thread::spawn(move || -> Result<String> {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let (_lock, cf) = runtime
+                .block_on(lock_and_parse_or_init_with_callback(&alias, move |_| {
+                    waiting_tx.send(()).unwrap()
+                }))?;
+            acquired_tx.send(()).unwrap();
+            cf.dump()
+        });
+
+        // The callback proves that the symlink spelling reached the contended lock for the real
+        // path. Change the file while the waiter is blocked; it must parse this version only after
+        // acquiring the lock.
+        waiting_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            acquired_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        file::write_atomic(&path, "[tools]\ndummy = \"1\"\ntiny = \"2\"\n")?;
+        drop(lock);
+
+        acquired_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let contents = reader.join().unwrap()?;
+        assert_eq!(contents, "[tools]\ndummy = \"1\"\ntiny = \"2\"\n");
         Ok(())
     }
 

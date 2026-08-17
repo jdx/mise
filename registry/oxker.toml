@@ -2,3 +2,4 @@ backends = ["aqua:mrjackwills/oxker", "cargo:oxker"]
 bins = ["oxker"]
 description = "A simple tui to view & control docker containers"
 test = { cmd = "oxker --version", expected = "oxker {{version}}" }
+version_order = "semver"

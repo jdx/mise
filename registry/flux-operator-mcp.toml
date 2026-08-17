@@ -2,3 +2,4 @@ backends = ["aqua:controlplaneio-fluxcd/flux-operator/flux-operator-mcp"]
 bins = ["flux-operator-mcp"]
 description = "GitOps on Autopilot Mode - MCP"
 test = { cmd = "flux-operator-mcp --version", expected = "flux-operator-mcp version {{version}}" }
+version_order = "semver"

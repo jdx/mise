@@ -25,7 +25,7 @@ Set the environment for loading `mise.<ENV>.toml`
 
 ### `-j --jobs <JOBS>`
 
-How many jobs to run in parallel [default: 8]
+How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
 
 ### `-q --quiet`
 
@@ -177,7 +177,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise generate bootstrap [FLAGS]`](/cli/generate/bootstrap.md)
 - [`mise generate config [FLAGS] [PATH]`](/cli/generate/config.md)
 - [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.md)
-- [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
+- [`mise generate git-pre-commit [FLAGS] [-- MISE_ARG]…`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`](/cli/generate/task-stubs.md)

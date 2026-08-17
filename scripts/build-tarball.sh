@@ -75,6 +75,13 @@ if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi
 
+if [[ $RUST_TRIPLE == "armv7-unknown-linux-gnueabihf" ]]; then
+	# cross 0.2.5 uses Ubuntu 16.04 for this target, whose libclang 3.8 is
+	# too old for aws-lc-sys bindgen. Cross.toml installs libclang 6 here.
+	export LIBCLANG_PATH=/usr/lib/llvm-6.0/lib
+	export BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabihf="--sysroot=/usr/arm-linux-gnueabihf -isystem /usr/lib/llvm-6.0/lib/clang/6.0.1/include"
+fi
+
 if [[ $os == "macos" ]]; then
 	# Targeting macOS 12+ makes ld emit chained fixups (LC_DYLD_CHAINED_FIXUPS),
 	# which dyld applies lazily per page instead of eagerly interpreting ~170k

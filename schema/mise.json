@@ -575,13 +575,6 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
-            "cosign_extra_args": {
-              "description": "Extra arguments to pass to cosign when verifying aqua tool signatures.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "github_attestations": {
               "default": true,
               "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
@@ -1161,7 +1154,7 @@
         },
         "jobs": {
           "default": 8,
-          "description": "How many jobs to run concurrently such as tool installs.",
+          "description": "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.",
           "type": "integer"
         },
         "legacy_version_file": {
@@ -1249,6 +1242,10 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "apply_patches": {
+              "description": "A list of patch files or URLs to apply to node source.",
+              "type": "string"
+            },
             "cflags": {
               "description": "Additional CFLAGS options (e.g., to override -O3).",
               "type": "string"
@@ -1576,8 +1573,12 @@
               "description": "URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },
+            "ruby_build_cli_opts": {
+              "description": "CLI options passed directly to ruby-build before the version and install prefix.",
+              "type": "string"
+            },
             "ruby_build_opts": {
-              "description": "Options to pass to ruby-build.",
+              "description": "Configure arguments passed through ruby-build after `--`.",
               "type": "string"
             },
             "ruby_build_repo": {
@@ -1805,6 +1806,10 @@
               "type": "object",
               "unevaluatedProperties": false,
               "properties": {
+                "audit_report": {
+                  "description": "[experimental] File to write the complete task cache audit report to.",
+                  "type": "string"
+                },
                 "remote_mode": {
                   "default": "read-write",
                   "description": "[experimental] Remote task and action cache access mode.",
@@ -1829,6 +1834,10 @@
                 },
                 "remote_url": {
                   "description": "[experimental] Base URL for the remote build-cache service.",
+                  "type": "string"
+                },
+                "stats_report": {
+                  "description": "[experimental] File to write action-cache session statistics to.",
                   "type": "string"
                 }
               }
@@ -2033,7 +2042,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable (`:` on Unix, `;` on Windows).",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable, `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).",
           "type": "array",
           "items": {
             "type": "string"
@@ -2048,6 +2057,17 @@
           "default": "sh -c -o errexit",
           "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
           "type": "string"
+        },
+        "upgrade": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "auto_prune": {
+              "default": true,
+              "description": "Uninstall the version `mise upgrade` replaced once the new one has installed.",
+              "type": "boolean"
+            }
+          }
         },
         "url_replacements": {
           "description": "Map of URL patterns to replacement URLs applied to all requests.",
@@ -2461,6 +2481,18 @@
             "type": "string"
           },
           "type": "array"
+        }
+      }
+    },
+    "tool_config": {
+      "description": "policy for tools declared by configs sharing the containing config root",
+      "type": "object",
+      "unevaluatedProperties": false,
+      "properties": {
+        "locked": {
+          "default": false,
+          "description": "require tools declared by this config root to resolve and install from their lockfiles",
+          "type": "boolean"
         }
       }
     },
@@ -3857,8 +3889,38 @@
             "pattern": "^[A-Za-z0-9_-]+:.+$"
           },
           "additionalProperties": {
-            "type": "string",
-            "description": "version pin in the manager's native format, or \"latest\""
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "version pin in the manager's native format, or \"latest\""
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "default": "latest",
+                    "description": "version pin in the manager's native format, or \"latest\""
+                  },
+                  "os": {
+                    "description": "operating system or OS/architecture selectors",
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/os_filter_item"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/os_filter_item"
+                        },
+                        "minItems": 1
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "repos": {
@@ -4053,6 +4115,20 @@
                         "type": "integer",
                         "minimum": 0,
                         "description": "write StartInterval in seconds"
+                      },
+                      "throttle_interval": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "write ThrottleInterval in seconds"
+                      },
+                      "queue_directories": {
+                        "type": "array",
+                        "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^(/|~$|~/)"
+                        }
                       },
                       "start_calendar_interval": {
                         "description": "write one or more StartCalendarInterval schedules",
@@ -4608,6 +4684,10 @@
     "task_config": {
       "description": "configuration for task execution and management",
       "$ref": "#/$defs/task_config"
+    },
+    "tool_config": {
+      "description": "policy for tools declared by this config root",
+      "$ref": "#/$defs/tool_config"
     },
     "tasks": {
       "additionalProperties": {

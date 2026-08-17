@@ -2,3 +2,4 @@ backends = ["aqua:dagu-org/dagu"]
 bins = ["dagu"]
 description = "Yet another cron alternative with a Web UI, but with much more capabilities. It aims to solve greater problems"
 test = { cmd = "dagu version", expected = "{{version}}" }
+version_order = "semver"

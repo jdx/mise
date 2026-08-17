@@ -23,7 +23,7 @@ use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder
 use crate::ui::{ctrlc, info, style};
 use bytesize::ByteSize;
 use clap::{CommandFactory, ValueHint};
-use eyre::{Result, bail, eyre};
+use eyre::{Context, Result, bail, eyre};
 use futures_util::FutureExt;
 use itertools::Itertools;
 use serde::Serialize;
@@ -61,12 +61,9 @@ pub struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-    #[clap(
-        allow_hyphen_values = true,
-        verbatim_doc_comment,
-        default_value = "default"
-    )]
-    pub task: String,
+    /// Defaults to `default` when omitted
+    #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
+    pub task: Option<String>,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
     #[clap(allow_hyphen_values = true)]
@@ -108,6 +105,10 @@ pub struct Run {
     )]
     pub affected_json: bool,
 
+    /// Open the interactive selector with all tasks from the entire monorepo
+    #[clap(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
+    pub all: bool,
+
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', verbatim_doc_comment)]
     pub continue_on_error: bool,
@@ -121,6 +122,7 @@ pub struct Run {
     pub force: bool,
 
     /// Number of tasks to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
@@ -394,7 +396,7 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only).await?;
+    let mut tasks = get_task_lists(config, &args, true, only, false).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -557,14 +559,16 @@ fn display_affected_text(text: &str) -> String {
 impl Run {
     pub async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
-        if self.task == "-h" {
+        if self.task.as_deref() == Some("-h") {
             self.get_clap_command().print_help()?;
             return Ok(());
         }
-        if self.task == "--help" {
+        if self.task.as_deref() == Some("--help") {
             self.get_clap_command().print_long_help()?;
             return Ok(());
         }
+
+        let task = self.task.clone().unwrap_or_else(|| "default".to_string());
 
         Settings::ensure_not_safe("running tasks")?;
 
@@ -588,7 +592,7 @@ impl Run {
         // Handle task help early to avoid unnecessary toolset/deps work
         if has_help_in_task_args {
             // Build args list to get the task (filter out --help/-h for task lookup)
-            let args = once(self.task.clone())
+            let args = once(task.clone())
                 .chain(
                     self.args
                         .iter()
@@ -597,7 +601,7 @@ impl Run {
                 )
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false, false).await?;
+            let task_list = get_task_lists(&config, &args, false, false, false).await?;
 
             if let Some(task) = task_list.first() {
                 // raw_args tasks act as proxies for tools that handle their
@@ -632,9 +636,11 @@ impl Run {
         self.tmpdir = tmpdir.path().to_path_buf();
 
         // Build args list - don't include args_last yet, they'll be added after task resolution
-        let args = once(self.task.clone())
-            .chain(self.args.clone())
-            .collect_vec();
+        let args = if self.all {
+            vec![]
+        } else {
+            once(task).chain(self.args.clone()).collect_vec()
+        };
 
         let mut task_list = if self.affected {
             get_affected_task_list(
@@ -648,7 +654,7 @@ impl Run {
             )
             .await?
         } else {
-            get_task_lists(&config, &args, true, self.skip_deps).await?
+            get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
         };
         if self.affected_json {
             return Ok(());
@@ -871,6 +877,24 @@ impl Run {
 
         // Step 5: Create TaskExecutor after tool installation
         self.setup_executor()?;
+
+        // Validate every scheduled invocation before starting the scheduler so
+        // an invalid parent or dependency cannot run any task commands first.
+        let executor = self.executor.as_ref().expect("task executor initialized");
+        for task in tasks.all() {
+            if let Err(err) = executor
+                .preflight_task_usage(&config, task)
+                .await
+                .wrap_err_with(|| format!("failed to validate task {}", task.name))
+            {
+                if let Some(session) = &self.cache_session
+                    && let Err(finish_err) = session.finish().await
+                {
+                    warn!("failed to finish action cache session: {finish_err:#}");
+                }
+                return Err(err);
+            }
+        }
 
         // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
         ctrlc::exit_on_ctrl_c(false);
@@ -1245,6 +1269,10 @@ impl Run {
         if !enabled {
             return Ok(());
         }
+        if crate::cache::release_cache_context() {
+            warn!("Rust action caching is disabled for release CI contexts");
+            return Ok(());
+        }
         self.cache_session = Some(
             crate::cache::session::CacheSession::start(
                 &self.tmpdir,
@@ -1348,11 +1376,23 @@ impl Run {
             && !file::is_executable(path)
         {
             let dp = crate::file::display_path(path);
+            // Only offer the fix where accepting it can change the answer. `make_executable` is a
+            // no-op on Windows, so the prompt would take a "yes" and then fail anyway; the same
+            // reasoning already keeps `make_task_executable` from running there.
+            if cfg!(windows) {
+                bail!(
+                    "`{dp}` is not executable. {}",
+                    file::make_executable_hint(path)
+                )
+            }
             let msg = format!("Script `{dp}` is not executable. Make it executable?");
             if ui::confirm(msg)? {
                 file::make_executable(path)?;
             } else {
-                bail!("`{dp}` is not executable")
+                bail!(
+                    "`{dp}` is not executable. {}",
+                    file::make_executable_hint(path)
+                )
             }
         }
         Ok(())

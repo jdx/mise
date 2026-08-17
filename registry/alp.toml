@@ -2,3 +2,4 @@ backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
 bins = ["alp"]
 description = "Access Log Profiler"
 test = { cmd = "alp --version", expected = "{{version}}" }
+version_order = "semver"

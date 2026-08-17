@@ -1,3 +1,4 @@
 backends = ["github:unisonweb/unison", "asdf:susurri/asdf-unison"]
 bins = ["ucm"]
 description = "A friendly programming language from the future"
+version_order = "source"

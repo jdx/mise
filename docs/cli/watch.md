@@ -20,6 +20,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+Defaults to `default`
 
 ### `[ARGS]…`
 

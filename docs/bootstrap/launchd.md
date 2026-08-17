@@ -32,16 +32,19 @@ numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
 | `run_at_load`             | `RunAtLoad`               |
 | `keep_alive`              | `KeepAlive`               |
 | `start_interval`          | `StartInterval`           |
+| `throttle_interval`       | `ThrottleInterval`        |
 | `start_calendar_interval` | `StartCalendarInterval`   |
+| `queue_directories`       | `QueueDirectories`        |
 | `environment`             | `EnvironmentVariables`    |
 | `working_directory`       | `WorkingDirectory`        |
 | `stdout_path`             | `StandardOutPath`         |
 | `stderr_path`             | `StandardErrorPath`       |
 | `kickstart`               | run `launchctl kickstart` |
 
-`program`, `working_directory`, `stdout_path`, and `stderr_path` expand bare
-`~` and `~/` to the current user's home directory before writing the plist.
-`args` are passed through exactly as written.
+`program`, `working_directory`, `stdout_path`, `stderr_path`, and each entry in
+`queue_directories` expand bare `~` and `~/` to the current user's home
+directory before writing the plist. `args` are passed through exactly as
+written.
 `start_calendar_interval` accepts `minute` (0-59), `hour` (0-23), `day`
 (1-31), `weekday` (0-7), and `month` (1-12), and writes the corresponding
 launchd calendar keys. For multiple independent calendar schedules, use an
@@ -53,6 +56,14 @@ start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
 
 `start_interval` and `start_calendar_interval` are independent launchd
 triggers. If both are set, launchd can start the agent from either schedule.
+
+`throttle_interval` is the minimum number of seconds launchd waits between
+runs of the agent (launchd's default is 10).
+
+`queue_directories` starts the agent whenever any of the listed directories is
+non-empty; launchd expects the agent to drain them. launchd requires absolute
+paths here, so each entry must start with `/`, or be `~` or a `~/` path that
+expands to one.
 
 ## Semantics
 

@@ -1,5 +1,6 @@
 description = "Podman: A tool for managing OCI containers and pods"
 test = { cmd = "podman-remote --version", expected = "podman-remote version {{version}}" }
+version_order = "source"
 
 bins = ["podman", "podman-remote"]
 [[backends]]

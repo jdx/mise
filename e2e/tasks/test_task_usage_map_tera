@@ -51,6 +51,33 @@ tag_count=2
 tag=foo
 tag=bar"
 
+# Variadic args backed by an environment variable remain arrays in the usage map
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-env]
+description = "Test variadic args from env in usage map"
+usage = '''
+arg "<nodenames>" var=#true env="NODENAMES"
+'''
+run = '''
+echo "node_count={{ usage.nodenames | length }}"
+echo "nodes={{ usage.nodenames | join(sep='::') }}"
+{% for node in usage.nodenames %}
+echo "node={{ node }}"
+{% endfor %}
+'''
+EOF
+
+assert "NODENAMES='foo bar baz' mise run usage-tera-var-env" "\
+node_count=1
+nodes=foo bar baz
+node=foo bar baz"
+
+assert "NODENAMES='from env' mise run usage-tera-var-env one two" "\
+node_count=2
+nodes=one::two
+node=one
+node=two"
+
 # Hyphenated flag names become snake_case keys on the usage map (e.g. --foo-bar -> usage.foo_bar)
 cat <<'EOF' >mise.toml
 [tasks.usage-tera-hyphen]

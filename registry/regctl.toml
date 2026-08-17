@@ -1,3 +1,4 @@
 backends = ["aqua:regclient/regclient/regctl", "asdf:ORCID/asdf-regctl"]
 bins = ["regctl"]
 description = "Docker and OCI Registry Client in Go and tooling using those libraries"
+version_order = "semver"

@@ -155,6 +155,12 @@ cat >mise.toml <<EOF
 EOF
 assert_fail "mise oci build -o ./out-system-packages --from scratch" "requires an apt-based base image"
 
+cat >mise.toml <<EOF
+[bootstrap.packages]
+"apk:curl" = "latest"
+EOF
+assert_fail "mise oci build -o ./out-system-packages --from scratch" "requires an apk-based base image"
+
 # --- 12. No project config + no --include-global → clear error ---
 # Error message is shared between build/run/push, so it must NOT name a
 # specific subcommand (just "mise oci").

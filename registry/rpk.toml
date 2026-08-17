@@ -2,3 +2,4 @@ backends = ["aqua:redpanda-data/redpanda"]
 bins = ["rpk"]
 description = "Redpanda CLI and toolbox"
 test = { cmd = "rpk --version", expected = "rpk version (Redpanda CLI): v{{version}}" }
+version_order = "semver"

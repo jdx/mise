@@ -3,3 +3,4 @@ bins = ["idle3", "pip", "pip3", "pydoc3", "python", "python3", "python3-config"]
 description = "python language"
 detect = ["pyproject.toml", ".python-version", "setup.py", "requirements.txt"]
 idiomatic_files = [".python-version", ".python-versions"]
+version_order = "source"

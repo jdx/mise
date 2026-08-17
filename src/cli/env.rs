@@ -180,7 +180,7 @@ impl Env {
         ts: Toolset,
         redacted_keys: &Option<IndexSet<String>>,
     ) -> Result<()> {
-        let default_shell = get_shell(Some(ShellType::Bash)).unwrap();
+        let default_shell = get_shell(Some(fallback_shell())).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
         let mut env = ts.env_with_path(config).await?;
 
@@ -238,6 +238,27 @@ impl Env {
     }
 }
 
+/// The shell to emit for when there is nothing to detect from.
+///
+/// Detection is `MISE_SHELL`, then `SHELL`. On unix that always resolves — an unset `SHELL` falls
+/// back to `sh` — so this is reached only on Windows, where PowerShell and cmd set neither and the
+/// value mise would otherwise read, `COMSPEC`, names cmd.exe. mise has no cmd implementation, so
+/// bash was being printed into a PowerShell session:
+///
+/// ```console
+/// PS> mise env
+/// export MY_PATH='C:\Users\me'
+/// ```
+///
+/// pwsh is the only shell mise can emit for that a Windows user is likely to be in. It is not
+/// right for a cmd user, but neither was bash, and there is no third answer available.
+fn fallback_shell() -> ShellType {
+    match cfg!(windows) {
+        true => ShellType::Pwsh,
+        false => ShellType::Bash,
+    }
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -247,3 +268,23 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>execx($(mise env -s xonsh))</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Asserted on the output rather than on the enum, which would only restate the `cfg!` above.
+    /// What matters is that the syntax is one the platform's shell can run.
+    #[test]
+    fn the_fallback_emits_syntax_this_platform_can_run() {
+        let line = fallback_shell().as_shell().set_env("K", "V");
+
+        if cfg!(windows) {
+            // `export K=V` is what a PowerShell session used to be handed.
+            assert!(!line.starts_with("export "), "{line}");
+            assert!(line.contains("${Env:K}"), "{line}");
+        } else {
+            assert!(line.starts_with("export "), "{line}");
+        }
+    }
+}

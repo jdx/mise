@@ -1,6 +1,6 @@
 use crate::cmd::cmd;
 use crate::config::Config;
-use crate::toolset::{ResolveOptions, ToolsetBuilder};
+use crate::toolset::{ConfigScope, ResolveOptions, ToolsetBuilder};
 use clap::ValueEnum;
 use clap::builder::PossibleValue;
 use eyre::Result;
@@ -53,16 +53,33 @@ impl Completion {
     }
 
     async fn call_usage(&self, shell: Shell) -> Result<String> {
-        let config = Config::get().await?;
-        // Completion generation only needs enough of the local tool environment to find `usage`;
-        // offline resolution avoids shell-startup network fetches.
+        let args = self.usage_args(shell);
+
+        // Prefer an explicitly available usage binary without loading any mise configuration.
+        // This is both the cheapest path and avoids project trust prompts during lazy completion.
+        match cmd("usage", &args).read() {
+            Ok(output) => return Ok(output),
+            Err(err) => debug!("usage command from PATH failed: {err:?}"),
+        }
+
+        // A globally managed usage binary is still useful, but project configuration must not be
+        // consulted while the shell is bootstrapping completion. Offline resolution also prevents
+        // shell startup from fetching versions.
+        let config = Config::load_global().await?;
         let toolset = ToolsetBuilder::new()
+            .with_scope(ConfigScope::GlobalOnly)
             .with_resolve_options(ResolveOptions {
                 offline: true,
                 ..Default::default()
             })
             .build(&config)
             .await?;
+        Ok(cmd("usage", args)
+            .full_env(toolset.full_env(&config).await?)
+            .read()?)
+    }
+
+    fn usage_args(&self, shell: Shell) -> Vec<String> {
         let mut args = vec![
             "generate".into(),
             "completion".into(),
@@ -76,10 +93,7 @@ impl Completion {
         if self.include_bash_completion_lib {
             args.push("--include-bash-completion-lib".into());
         }
-        let output = cmd("usage", args)
-            .full_env(toolset.full_env(&config).await?)
-            .read()?;
-        Ok(output)
+        args
     }
 
     fn prerendered(&self, shell: Shell) -> String {
@@ -118,6 +132,72 @@ impl ValueEnum for Shell {
         &[Self::Bash, Self::Fish, Self::Powershell, Self::Zsh]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
-        Some(PossibleValue::new(self.to_string()))
+        let value = PossibleValue::new(self.to_string());
+        Some(match self {
+            // `mise activate` names this shell `pwsh`, and the two commands are run one after the
+            // other during setup, so whichever name a user learns first is rejected by the other.
+            // The names differ only because the two lists come from different places, not because
+            // they mean different shells.
+            //
+            // `mise usage` renders aliases, so this shows up in the generated CLI docs as a
+            // choice alongside `powershell` rather than being hidden.
+            Self::Powershell => value.alias("pwsh"),
+            _ => value,
+        })
+    }
+}
+
+#[cfg(test)]
+mod shell_name_tests {
+    use super::*;
+
+    #[test]
+    fn pwsh_is_accepted_as_powershell() {
+        assert!(matches!(
+            <Shell as ValueEnum>::from_str("pwsh", true),
+            Ok(Shell::Powershell)
+        ));
+        assert!(matches!(
+            <Shell as ValueEnum>::from_str("powershell", true),
+            Ok(Shell::Powershell)
+        ));
+    }
+
+    #[test]
+    fn the_primary_names_are_unchanged() {
+        // Only the *names* -- the alias is rendered into the CLI docs, so asserting it absent
+        // here would state something false. This pins that adding it renamed nothing.
+        let listed: Vec<String> = Shell::value_variants()
+            .iter()
+            .filter_map(|v| v.to_possible_value())
+            .map(|pv| pv.get_name().to_string())
+            .collect();
+        assert_eq!(listed, ["bash", "fish", "powershell", "zsh"]);
+    }
+
+    #[test]
+    fn usage_arguments_preserve_completion_options() {
+        let completion = Completion {
+            shell: None,
+            shell_type: None,
+            include_bash_completion_lib: true,
+            usage: false,
+        };
+        let args = completion.usage_args(Shell::Bash);
+
+        assert_eq!(
+            args,
+            [
+                "generate",
+                "completion",
+                "bash",
+                "mise",
+                "--usage-cmd",
+                "mise usage",
+                "--cache-key",
+                env!("CARGO_PKG_VERSION"),
+                "--include-bash-completion-lib",
+            ]
+        );
     }
 }

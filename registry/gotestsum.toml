@@ -1,3 +1,4 @@
 backends = ["aqua:gotestyourself/gotestsum", "asdf:pmalek/mise-gotestsum"]
 bins = ["gotestsum"]
 description = "'go test' runner with output optimized for humans, JUnit XML for CI integration, and a summary of the test results"
+version_order = "semver"

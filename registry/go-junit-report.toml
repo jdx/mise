@@ -5,3 +5,4 @@ backends = [
 bins = ["go-junit-report"]
 description = "Convert Go test output to JUnit XML"
 test = { cmd = "go-junit-report --version", expected = "{{version}}" }
+version_order = "semver"

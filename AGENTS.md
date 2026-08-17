@@ -199,17 +199,42 @@ All commit messages and PR titles MUST follow conventional commit format:
 3. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
 4. Never run e2e tests by executing them directly - always use the mise task
 
+### hk Agent Workflow
+
+- Prefer the hk MCP server for effect-aware plans, checks, fixes, logs, and captured diffs.
+- When invoking hk directly, use `hk run check --safe --format json` for a complete machine-readable result or `--format jsonl` for streaming lifecycle events.
+- Scope checks to changed files. For an exact file list, pass NUL-delimited paths with `--files0-from`; use `--cd` to target another project directory.
+- Never run a command classified as unknown or destructive without explicit user approval. Review the resulting diff after fixes.
+
+### Dependency Updates
+
+- Use the lowest-specificity dependency requirement that expresses compatibility in `Cargo.toml` (for example, prefer `"1"` over `"1.2.3"`, and `"0.12"` over `"0.12.1"` for a pre-1.0 crate).
+- Routine dependency updates should only change `Cargo.lock`. If the existing `Cargo.toml` requirement accepts the target version, do not change it merely to force or record the update; use `cargo update -p <crate> --precise <version>` instead.
+- Keep lockfile updates focused on the requested dependency and its required transitive changes. Remove unrelated resolver churn before committing.
+
+#### Updating embedded aube
+
+- Update `aube` and `aube-registry` together and refresh all aube workspace crates in `Cargo.lock`.
+- Review the upstream changes for embedder API or behavior changes and make any required mise integration changes.
+- Do not update the standalone `aube` tool entry in `mise.lock` unless the development tool is also intentionally being updated.
+- Run these focused checks:
+  - `cargo check --locked`
+  - `cargo test --locked --bin mise aube`
+  - `cargo test --locked --bin mise task::workspace::node::tests`
+  - `mise run test:e2e e2e/backend/test_npm_aube`
+
 ## Deprecation Policy
 
-When deprecating a feature or backend:
+When deprecating a feature, backend, or implicit behavior:
 
-1. **Immediately**: Mark as deprecated in docs (add warning banner)
-2. **6 months later** (`warn_at`): Display deprecation warning in CLI using `deprecated_at!` macro from `src/output.rs`
-3. **12 months after warn** (`remove_at`): `debug_assert!` in `deprecated_at!` fires, signaling the code should be removed
+1. **Immediately**: Mark it as deprecated in docs (add a warning banner) and display a CLI warning using the `deprecated_at!` macro from `src/output.rs` (`warn_at` is the current version).
+2. **12 months after warn** (`remove_at`): `debug_assert!` in `deprecated_at!` fires, signaling the deprecated code or behavior should be removed.
+
+Delay the CLI warning for up to 6 months only when migration requires a new setting, syntax, or replacement that older supported mise versions would reject or fail to parse. This compatibility window lets users adopt a configuration that works across old and new clients before warnings begin. Do not delay warnings for a behavior change that requires no new configuration, or when the replacement already works in older clients.
 
 Use mise version format for dates (e.g., `deprecated_at!("2026.10.0", "2027.10.0", "id", "message")`).
 
-If the replacement has been available for a long time, the CLI warning can start immediately (set `warn_at` to the current version).
+If a compatibility window is required, removal remains 12 months after `warn_at`, not 12 months after the initial documentation notice.
 
 ## Important Implementation Notes
 

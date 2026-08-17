@@ -1,3 +1,4 @@
 backends = ["aqua:apache/maven-mvnd", "asdf:joschi/asdf-mvnd"]
 bins = ["mvnd", "mvnd.sh"]
 description = "Apache Maven Daemon"
+version_order = "source"

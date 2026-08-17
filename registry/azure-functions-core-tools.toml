@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["func"]
 description = "Command line tools for Azure Functions"
+version_order = "semver"

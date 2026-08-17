@@ -1,11 +1,14 @@
+use crate::config::Settings;
 use crate::task::Task;
 #[cfg(test)]
 use crate::task::TaskRustCacheConfig;
 use bytesize::ByteSize;
 use eyre::{Context, Result, bail};
 use mise_cache_core::{
-    AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent,
+    AGENT_PROTOCOL_VERSION, AgentRemoteCache, AgentRequest, AgentResponse, AgentStats, CacheAgent,
+    CacheDigest, RemoteCacheClient, RemoteCacheConfig, canonical_json,
 };
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 #[cfg(unix)]
@@ -13,42 +16,126 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
+pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
+pub(super) const TASK_ENV: &str = "MISE_CACHE_TASK";
+pub(super) const VERIFY_ENV: &str = "MISE_CACHE_RUST_VERIFY";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct CacheSessionEnvironment {
     socket: String,
     rustc_shim: String,
+    staging: String,
+    agent: CacheAgent,
 }
 
 impl CacheSessionEnvironment {
-    pub(crate) fn apply(&self, task: &Task, environment: &mut BTreeMap<String, String>) {
+    pub(crate) async fn apply(
+        &self,
+        task: &Task,
+        environment: &mut BTreeMap<String, String>,
+    ) -> Option<TaskActionRun> {
         if !task.rust_cache.as_ref().is_some_and(|cache| cache.enabled) {
-            return;
+            return None;
         }
+        let task_identity = task_action_identity(task);
+        let (protocol_task, action_run) = match self.agent.begin_task(&task_identity).await {
+            Ok(run) => (
+                run.clone(),
+                Some(TaskActionRun {
+                    run,
+                    agent: self.agent.clone(),
+                }),
+            ),
+            Err(error) => {
+                warn!("task {} action manifest was not loaded: {error}", task.name);
+                (task_identity, None)
+            }
+        };
         environment.insert(SOCKET_ENV.into(), self.socket.clone());
+        environment.insert(STAGING_ENV.into(), self.staging.clone());
+        environment.insert(TASK_ENV.into(), protocol_task);
+        if task.rust_cache.as_ref().is_some_and(|cache| cache.verify) {
+            environment.insert(VERIFY_ENV.into(), "1".into());
+        } else {
+            environment.remove(VERIFY_ENV);
+        }
         if let Some(previous) = environment.insert("RUSTC_WRAPPER".into(), self.rustc_shim.clone())
             && previous != self.rustc_shim
         {
             environment.insert(PREVIOUS_RUSTC_WRAPPER_ENV.into(), previous);
         }
         environment.insert("CARGO_INCREMENTAL".into(), "0".into());
+        action_run
     }
 
-    pub(crate) fn sandbox_paths(&self) -> [PathBuf; 2] {
-        [PathBuf::from(&self.rustc_shim), PathBuf::from(&self.socket)]
+    pub(crate) fn sandbox_paths(&self) -> [PathBuf; 3] {
+        [
+            PathBuf::from(&self.rustc_shim),
+            PathBuf::from(&self.socket),
+            PathBuf::from(&self.staging),
+        ]
     }
+}
+
+pub(crate) struct TaskActionRun {
+    run: String,
+    agent: CacheAgent,
+}
+
+impl TaskActionRun {
+    pub(crate) async fn commit(self) -> Result<()> {
+        self.agent.commit_task(&self.run).await
+    }
+}
+
+#[derive(Serialize)]
+struct TaskActionIdentity<'a> {
+    version: u8,
+    name: &'a str,
+    phase: crate::task::TaskRunPhase,
+    run: &'a [crate::task::RunEntry],
+    args: &'a [String],
+    shell: &'a Option<String>,
+    dir: &'a Option<String>,
+    source: String,
+}
+
+fn task_action_identity(task: &Task) -> String {
+    let source = task
+        .config_root
+        .as_deref()
+        .and_then(|root| task.config_source.strip_prefix(root).ok())
+        .map(Path::to_path_buf)
+        .or_else(|| task.config_source.file_name().map(PathBuf::from))
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let material = TaskActionIdentity {
+        version: 1,
+        name: &task.name,
+        phase: task.run_phase,
+        run: task.run(),
+        args: &task.args,
+        shell: &task.shell,
+        dir: &task.dir,
+        source,
+    };
+    let bytes = canonical_json(&material).expect("task action identity must serialize");
+    CacheDigest::blake3(&bytes).hash
 }
 
 pub(crate) struct CacheSession {
     environment: CacheSessionEnvironment,
     agent: CacheAgent,
+    started: Instant,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
     server: Mutex<Option<JoinHandle<Result<()>>>>,
 }
@@ -56,15 +143,24 @@ pub(crate) struct CacheSession {
 impl CacheSession {
     pub(crate) async fn start(session_dir: &Path, cache_dir: PathBuf) -> Result<Self> {
         let shim = install_session_shim(session_dir)?;
-        let agent = CacheAgent::new(cache_dir, VERSION);
+        let staging = session_dir.join("staging");
+        std::fs::create_dir(&staging)?;
+        let agent = if let Some(remote) = action_remote_cache(&cache_dir)? {
+            CacheAgent::new_remote(cache_dir, VERSION, remote)
+        } else {
+            CacheAgent::new(cache_dir, VERSION)
+        };
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (socket, server) = spawn_server(session_dir, agent.clone(), shutdown_rx).await?;
         Ok(Self {
             environment: CacheSessionEnvironment {
                 socket,
                 rustc_shim: shim.to_string_lossy().into_owned(),
+                staging: staging.to_string_lossy().into_owned(),
+                agent: agent.clone(),
             },
             agent,
+            started: Instant::now(),
             shutdown: Mutex::new(Some(shutdown_tx)),
             server: Mutex::new(Some(server)),
         })
@@ -82,8 +178,49 @@ impl CacheSession {
         if let Some(server) = server {
             server.await??;
         }
-        Ok(self.agent.stats())
+        self.agent.cancel_prefetches().await;
+        let mut stats = self.agent.stats();
+        stats.session_duration_ns = duration_ns(self.started.elapsed());
+        Ok(stats)
     }
+}
+
+fn action_remote_cache(cache_dir: &Path) -> Result<Option<AgentRemoteCache>> {
+    let settings = Settings::get();
+    let Some(base_url) = settings.task.cache.remote_url.clone() else {
+        return Ok(None);
+    };
+    let namespace = settings
+        .task
+        .cache
+        .remote_namespace
+        .as_deref()
+        .map(str::trim)
+        .filter(|namespace| !namespace.is_empty())
+        .ok_or_else(|| {
+            eyre::eyre!("task.cache.remote_namespace is required when task.cache.remote_url is set")
+        })?
+        .to_string();
+    let client = RemoteCacheClient::new(RemoteCacheConfig {
+        base_url: base_url.parse().wrap_err("invalid task.cache.remote_url")?,
+        namespace,
+        token: settings.task.cache.remote_token.clone(),
+        token_file: settings.task.cache.remote_token_file.clone(),
+        oidc_audience: settings.task.cache.remote_oidc_audience.clone(),
+        connect_timeout: settings.http_timeout(),
+        read_timeout: settings.http_timeout(),
+        download_timeout: settings.http_download_timeout(),
+        retries: settings.http_retries(),
+    })?;
+    let Some(mode) = crate::cache::effective_remote_cache_mode(settings.task.cache.remote_mode)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(AgentRemoteCache {
+        client,
+        mode,
+        staging_dir: cache_dir.join("remote"),
+    }))
 }
 
 impl Drop for CacheSession {
@@ -97,17 +234,137 @@ impl Drop for CacheSession {
     }
 }
 
+#[derive(Serialize)]
+struct ActionCacheStatsReport {
+    version: u8,
+    session_duration_ns: u64,
+    lookups: u64,
+    hits: u64,
+    misses: u64,
+    compiler_invocations_avoided: u64,
+    verifications: u64,
+    divergences: u64,
+    prefetched_actions: u64,
+    prefetch_runs: u64,
+    downloaded_bytes: u64,
+    uploaded_bytes: u64,
+    stored_bytes: u64,
+    restored_output_files: u64,
+    restored_output_bytes: u64,
+    remote_manifest_lookups: u64,
+    remote_action_lookups: u64,
+    remote_blob_requests: u64,
+    remote_manifest_lookup_duration_ns: u64,
+    remote_action_lookup_duration_ns: u64,
+    remote_blob_transfer_duration_ns: u64,
+    local_cas_write_duration_ns: u64,
+    prefetch_duration_ns: u64,
+    materialization_duration_ns: u64,
+}
+
+impl From<&AgentStats> for ActionCacheStatsReport {
+    fn from(stats: &AgentStats) -> Self {
+        Self {
+            version: 1,
+            session_duration_ns: stats.session_duration_ns,
+            lookups: stats.lookups,
+            hits: stats.hits,
+            misses: cache_misses(stats),
+            compiler_invocations_avoided: stats.hits,
+            verifications: stats.verifications,
+            divergences: stats.divergences,
+            prefetched_actions: stats.prefetched_actions,
+            prefetch_runs: stats.prefetch_runs,
+            downloaded_bytes: stats.downloaded_bytes,
+            uploaded_bytes: stats.uploaded_bytes,
+            stored_bytes: stats.stored_bytes,
+            restored_output_files: stats.restored_output_files,
+            restored_output_bytes: stats.restored_output_bytes,
+            remote_manifest_lookups: stats.remote_manifest_lookups,
+            remote_action_lookups: stats.remote_action_lookups,
+            remote_blob_requests: stats.remote_blob_requests,
+            remote_manifest_lookup_duration_ns: stats.remote_manifest_lookup_duration_ns,
+            remote_action_lookup_duration_ns: stats.remote_action_lookup_duration_ns,
+            remote_blob_transfer_duration_ns: stats.remote_blob_transfer_duration_ns,
+            local_cas_write_duration_ns: stats.local_cas_write_duration_ns,
+            prefetch_duration_ns: stats.prefetch_duration_ns,
+            materialization_duration_ns: stats.materialization_duration_ns,
+        }
+    }
+}
+
 pub(crate) fn display_stats(stats: AgentStats) {
-    if stats.lookups == 0 && stats.stores == 0 {
+    if let Some(path) = &Settings::get().task.cache.stats_report
+        && let Err(error) = write_stats_report(path, &stats)
+    {
+        warn!(
+            "action cache could not write its statistics report to {}: {error}",
+            path.display()
+        );
+    }
+    if stats.lookups == 0
+        && stats.stores == 0
+        && stats.verifications == 0
+        && stats.downloaded_bytes == 0
+        && stats.uploaded_bytes == 0
+    {
         return;
     }
     safe_eprintln!(
-        "Action cache: {}/{} hits, {} stored ({})",
+        "Action cache: {} hits, {} misses, {} prefetched; {} downloaded, {} uploaded, {} stored locally",
         stats.hits,
-        stats.lookups,
-        stats.stores,
+        cache_misses(&stats),
+        stats.prefetched_actions,
+        ByteSize::b(stats.downloaded_bytes).display().iec(),
+        ByteSize::b(stats.uploaded_bytes).display().iec(),
         ByteSize::b(stats.stored_bytes).display().iec(),
     );
+    let remote_lookup_duration_ns = stats
+        .remote_manifest_lookup_duration_ns
+        .saturating_add(stats.remote_action_lookup_duration_ns);
+    safe_eprintln!(
+        "Action cache timing: {} session, {} prefetch; cumulative {} remote lookup, {} blob transfer, {} CAS write, {} materialization",
+        format_duration(stats.session_duration_ns),
+        format_duration(stats.prefetch_duration_ns),
+        format_duration(remote_lookup_duration_ns),
+        format_duration(stats.remote_blob_transfer_duration_ns),
+        format_duration(stats.local_cas_write_duration_ns),
+        format_duration(stats.materialization_duration_ns),
+    );
+    if stats.verifications > 0 {
+        safe_eprintln!(
+            "Action cache qualification: {} verified, {} diverged",
+            stats.verifications,
+            stats.divergences,
+        );
+    }
+}
+
+fn write_stats_report(path: &Path, stats: &AgentStats) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        crate::file::create_dir_all(parent)?;
+    }
+    let mut report = serde_json::to_vec_pretty(&ActionCacheStatsReport::from(stats))?;
+    report.push(b'\n');
+    crate::file::write_atomic(path, report)
+}
+
+fn duration_ns(duration: Duration) -> u64 {
+    duration.as_nanos().try_into().unwrap_or(u64::MAX)
+}
+
+fn format_duration(nanoseconds: u64) -> String {
+    crate::ui::time::format_duration(Duration::from_nanos(nanoseconds))
+}
+
+fn cache_misses(stats: &AgentStats) -> u64 {
+    stats
+        .lookups
+        .saturating_sub(stats.hits)
+        .saturating_sub(stats.verifications)
 }
 
 fn install_session_shim(session_dir: &Path) -> Result<PathBuf> {
@@ -391,25 +648,35 @@ pub(crate) fn is_rustc_shim() -> bool {
 /// Ultra-early argv0 path used by Cargo's `RUSTC_WRAPPER` integration.
 ///
 /// This runs before mise creates a Tokio runtime, installs logging, or discovers
-/// configuration. The Rust adapter will replace the transparent compiler call;
-/// until then this establishes and benchmarks the final process/session shape.
+/// configuration. Cacheable invocations restore from or publish through the
+/// task-scoped agent; unsupported invocations remain transparent compiler calls.
 pub(crate) fn run_rustc_shim() -> ExitCode {
-    if let Err(_error) = handshake_from_environment() {
-        #[cfg(debug_assertions)]
-        eprintln!("mise action-cache shim is running uncached: {_error}");
-    }
-
     let mut arguments = std::env::args_os().skip(1);
     let Some(rustc) = arguments.next() else {
         eprintln!("mise action-cache shim expected the rustc executable as its first argument");
         return ExitCode::from(1);
     };
+    let arguments = arguments.collect::<Vec<_>>();
+    if std::env::var_os(PREVIOUS_RUSTC_WRAPPER_ENV).is_none() {
+        match crate::cache::rustc::compile(&rustc, &arguments) {
+            Ok(exit_code) => return exit_code,
+            Err(_error) => {
+                #[cfg(debug_assertions)]
+                eprintln!("mise rustc cache bypassed: {_error:#}");
+            }
+        }
+    }
+
+    run_transparent_rustc(rustc, arguments)
+}
+
+fn run_transparent_rustc(rustc: OsString, arguments: Vec<OsString>) -> ExitCode {
     let mut command = if let Some(wrapper) = std::env::var_os(PREVIOUS_RUSTC_WRAPPER_ENV) {
         let mut command = Command::new(wrapper);
-        command.arg(rustc);
+        command.arg(&rustc);
         command
     } else {
-        Command::new(rustc)
+        Command::new(&rustc)
     };
     command.args(arguments);
     command.env_remove(PREVIOUS_RUSTC_WRAPPER_ENV);
@@ -452,21 +719,25 @@ pub(crate) fn run_rustc_shim() -> ExitCode {
     }
 }
 
-fn handshake_from_environment() -> Result<()> {
+pub(super) fn request_agent(requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
     let socket =
         std::env::var_os(SOCKET_ENV).ok_or_else(|| eyre::eyre!("{SOCKET_ENV} is not set"))?;
-    handshake(&socket)
+    request_agent_at(&socket, requests)
 }
 
 #[cfg(unix)]
-fn handshake(socket: &OsString) -> Result<()> {
-    let stream = std::os::unix::net::UnixStream::connect(Path::new(socket))
+fn request_agent_at(socket: &OsString, requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
+    let mut stream = std::os::unix::net::UnixStream::connect(Path::new(socket))
         .wrap_err("failed to connect to the action-cache session")?;
-    sync_handshake(stream)
+    sync_handshake(&mut stream)?;
+    requests
+        .iter()
+        .map(|request| sync_request(&mut stream, request))
+        .collect()
 }
 
 #[cfg(windows)]
-fn handshake(socket: &OsString) -> Result<()> {
+fn request_agent_at(socket: &OsString, requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
     let endpoint = socket.to_string_lossy().into_owned();
     tokio::runtime::Builder::new_current_thread()
         .enable_io()
@@ -485,25 +756,51 @@ fn handshake(socket: &OsString) -> Result<()> {
             stream.write_all(&encoded).await?;
             stream.flush().await?;
             let mut response = String::new();
-            tokio::io::BufReader::new(stream)
+            tokio::io::BufReader::new(&mut stream)
                 .read_line(&mut response)
                 .await?;
-            validate_handshake_response(&response)
+            validate_handshake_response(&response)?;
+            let mut responses = Vec::with_capacity(requests.len());
+            for request in requests {
+                let mut encoded = serde_json::to_vec(request)?;
+                encoded.push(b'\n');
+                stream.write_all(&encoded).await?;
+                stream.flush().await?;
+                let mut response = String::new();
+                tokio::io::BufReader::new(&mut stream)
+                    .read_line(&mut response)
+                    .await?;
+                responses.push(serde_json::from_str(&response)?);
+            }
+            Ok(responses)
         })
 }
 
 #[cfg(unix)]
-fn sync_handshake(mut stream: impl std::io::Read + Write) -> Result<()> {
+fn sync_handshake(stream: &mut (impl std::io::Read + Write)) -> Result<()> {
     let request = AgentRequest::Hello {
         protocol: AGENT_PROTOCOL_VERSION,
         client_version: VERSION.into(),
     };
-    serde_json::to_writer(&mut stream, &request)?;
+    serde_json::to_writer(&mut *stream, &request)?;
     stream.write_all(b"\n")?;
     stream.flush()?;
     let mut response = String::new();
-    BufReader::new(stream).read_line(&mut response)?;
+    BufReader::new(&mut *stream).read_line(&mut response)?;
     validate_handshake_response(&response)
+}
+
+#[cfg(unix)]
+fn sync_request(
+    stream: &mut (impl std::io::Read + Write),
+    request: &AgentRequest,
+) -> Result<AgentResponse> {
+    serde_json::to_writer(&mut *stream, request)?;
+    stream.write_all(b"\n")?;
+    stream.flush()?;
+    let mut response = String::new();
+    BufReader::new(&mut *stream).read_line(&mut response)?;
+    Ok(serde_json::from_str(&response)?)
 }
 
 fn validate_handshake_response(response: &str) -> Result<()> {
@@ -521,27 +818,42 @@ fn validate_handshake_response(response: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn session_environment_is_scoped_to_selected_adapters() {
+    #[tokio::test]
+    async fn session_environment_is_scoped_to_selected_adapters() {
+        let cache = tempfile::tempdir().unwrap();
         let environment = CacheSessionEnvironment {
             socket: "socket".into(),
             rustc_shim: "shim".into(),
+            staging: "staging".into(),
+            agent: CacheAgent::new(cache.path(), VERSION),
         };
         let mut task = Task::default();
         let mut values = BTreeMap::from([("RUSTC_WRAPPER".into(), "existing".into())]);
-        environment.apply(&task, &mut values);
+        let run = environment.apply(&task, &mut values).await;
+        assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
-        task.rust_cache = Some(TaskRustCacheConfig { enabled: false });
-        environment.apply(&task, &mut values);
+        task.rust_cache = Some(TaskRustCacheConfig {
+            enabled: false,
+            ..TaskRustCacheConfig::default()
+        });
+        let run = environment.apply(&task, &mut values).await;
+        assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
-        task.rust_cache = Some(TaskRustCacheConfig { enabled: true });
-        environment.apply(&task, &mut values);
+        task.rust_cache = Some(TaskRustCacheConfig {
+            verify: true,
+            ..TaskRustCacheConfig::default()
+        });
+        let run = environment.apply(&task, &mut values).await;
+        assert!(run.is_some());
         assert_eq!(values.get(SOCKET_ENV).unwrap(), "socket");
+        assert_eq!(values.get(STAGING_ENV).unwrap(), "staging");
+        assert_eq!(values.get(TASK_ENV).unwrap().len(), 64);
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "shim");
         assert_eq!(values.get(PREVIOUS_RUSTC_WRAPPER_ENV).unwrap(), "existing");
         assert_eq!(values.get("CARGO_INCREMENTAL").unwrap(), "0");
+        assert_eq!(values.get(VERIFY_ENV).unwrap(), "1");
     }
 
     #[test]
@@ -552,5 +864,51 @@ mod tests {
         })
         .unwrap();
         assert!(validate_handshake_response(&response).is_err());
+    }
+
+    #[test]
+    fn qualification_results_are_not_reported_as_misses() {
+        let stats = AgentStats {
+            lookups: 5,
+            hits: 2,
+            verifications: 2,
+            ..AgentStats::default()
+        };
+        assert_eq!(cache_misses(&stats), 1);
+    }
+
+    #[test]
+    fn writes_versioned_action_cache_stats_report() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("nested").join("stats.json");
+        let stats = AgentStats {
+            session_duration_ns: 42,
+            lookups: 5,
+            hits: 2,
+            verifications: 1,
+            prefetched_actions: 3,
+            downloaded_bytes: 1024,
+            restored_output_files: 7,
+            restored_output_bytes: 2048,
+            remote_blob_requests: 4,
+            materialization_duration_ns: 9,
+            ..AgentStats::default()
+        };
+
+        write_stats_report(&path, &stats).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+
+        assert_eq!(report["version"], 1);
+        assert_eq!(report["session_duration_ns"], 42);
+        assert_eq!(report["hits"], 2);
+        assert_eq!(report["misses"], 2);
+        assert_eq!(report["compiler_invocations_avoided"], 2);
+        assert_eq!(report["prefetched_actions"], 3);
+        assert_eq!(report["downloaded_bytes"], 1024);
+        assert_eq!(report["restored_output_files"], 7);
+        assert_eq!(report["restored_output_bytes"], 2048);
+        assert_eq!(report["remote_blob_requests"], 4);
+        assert_eq!(report["materialization_duration_ns"], 9);
     }
 }

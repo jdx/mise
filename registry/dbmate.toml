@@ -1,3 +1,4 @@
 backends = ["aqua:amacneil/dbmate", "asdf:juusujanar/asdf-dbmate"]
 bins = ["dbmate"]
 description = "A lightweight, framework-agnostic database migration tool"
+version_order = "semver"

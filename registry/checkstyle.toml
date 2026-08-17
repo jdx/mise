@@ -4,3 +4,4 @@ description = "Checks Java source code against a coding standard"
 test = { cmd = 'java -jar "$(command -v checkstyle)" --version', expected = "Checkstyle version: {{version}}", tools = [
   "java",
 ] }
+version_order = "source"

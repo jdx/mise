@@ -44,6 +44,13 @@ pub struct ToolVersion {
     resolved_from_lockfile: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
+    /// The HTTP backend should treat `install_path` as the final destination
+    /// rather than a `<tool>/<version>` path. Used by install-into.
+    pub(crate) install_path_is_exact: bool,
+    /// The HTTP backend should place files directly in `install_path` instead
+    /// of linking to its shared extraction cache. Set for system, shared, and
+    /// install-into destinations.
+    pub(crate) install_path_is_explicit: bool,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
     /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
@@ -78,6 +85,8 @@ impl ToolVersion {
             resolved_from_lockfile: false,
             lock_platforms: Default::default(),
             install_path: None,
+            install_path_is_exact: false,
+            install_path_is_explicit: false,
             conda_packages: Default::default(),
             pkgx_packages: Default::default(),
             install_satisfied: None,
@@ -282,6 +291,8 @@ impl ToolVersion {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
+            resolve_rolling_channels: false,
+            prefer_exact_version: false,
             before_date: base_opts.before_date,
             before_date_from_default: base_opts.before_date_from_default,
             filter_installed_versions_by_release_date: base_opts
@@ -365,14 +376,20 @@ impl ToolVersion {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
         let settings = Settings::get();
-        if settings.locked
+        let tool_config_locked = config.tool_config_locked(request.source());
+        if (settings.locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
             && !has_linked_version(request.ba())
             && request.source().path().is_some()
         {
+            let hint = if tool_config_locked && !settings.locked {
+                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
+            } else {
+                "Run `mise install` without --locked to update the lockfile"
+            };
             bail!(
-                "{}@{} is not in the lockfile\nhint: Run `mise install` without --locked to update the lockfile",
+                "{}@{} is not in the lockfile\nhint: {hint}",
                 request.ba().short,
                 request.version()
             );
@@ -402,10 +419,11 @@ impl ToolVersion {
 
         let build = |v| Ok(Self::new(request.clone(), v));
 
-        if let Some(plugin) = backend.plugin()
-            && !plugin.is_installed()
-        {
-            return build(v);
+        if v.matches('.').count() >= 2 {
+            // Fully-qualified requests can return through several offline and
+            // backend-specific shortcuts, so validate backend-gated options
+            // before any of those paths bypass version listing.
+            backend.version_order(&request.options())?;
         }
 
         let settings = Settings::get();
@@ -417,6 +435,58 @@ impl ToolVersion {
             && !opts.before_date_from_default
             && !is_offline
             && !prefer_offline;
+        // Rolling release channels (e.g. zig's "master") are moving pointers that
+        // mise must resolve before the plugin-installed shortcut can preserve their
+        // symbolic name as an install identity.
+        if backend.is_rolling_channel(&v) {
+            if !opts.latest_versions
+                && !opts.resolve_rolling_channels
+                && !should_filter_installed_versions
+                && let Some(installed) = backend.latest_installed_channel_version(&v)
+            {
+                return build(installed);
+            }
+            if !is_offline {
+                match backend.resolve_channel_version(config, &v).await {
+                    Ok(Some(concrete)) => return build(concrete),
+                    Ok(None) => {}
+                    Err(source) if backend.requires_concrete_channel_version(&v) => {
+                        return Err(source.wrap_err(
+                            crate::errors::Error::RequiredChannelResolution {
+                                backend: Box::new(backend.ba().as_ref().clone()),
+                                version: v.clone(),
+                            },
+                        ));
+                    }
+                    Err(source) => {
+                        debug!(
+                            "{backend}: failed to resolve optional rolling channel {v}: {source:#}"
+                        );
+                    }
+                }
+            }
+            if opts.offline {
+                return build(v);
+            }
+            if is_offline && backend.requires_concrete_channel_version(&v) {
+                let err = crate::errors::Error::RequiredChannelResolution {
+                    backend: Box::new(backend.ba().as_ref().clone()),
+                    version: v.clone(),
+                };
+                return Err(eyre::Report::new(err).wrap_err(format!(
+                    "cannot resolve rolling channel {backend}@{v} while offline; create a lockfile or install a concrete channel version first"
+                )));
+            }
+            // Backends whose channel resolver is best-effort can still fall through
+            // to their legacy symbolic-channel resolution.
+        }
+
+        if let Some(plugin) = backend.plugin()
+            && !plugin.is_installed()
+        {
+            return build(v);
+        }
+
         if v == "latest" {
             if !opts.latest_versions
                 && !should_filter_installed_versions
@@ -455,44 +525,37 @@ impl ToolVersion {
             }
             return Err(Self::no_versions_found(&backend, opts.before_date));
         }
-        // Rolling release channels (e.g. zig's "master") are moving pointers that
-        // mise must re-resolve to a concrete version -- like "latest" -- so they are
-        // not pinned forever. Mirror the "latest" fast paths: prefer an installed
-        // concrete version when not explicitly resolving latest (keeps hook-env /
-        // exec network-free), otherwise re-resolve the channel. (#10251)
-        if backend.is_rolling_channel(&v) {
-            // Reuse an installed build of THIS channel (e.g. a -dev nightly for
-            // zig@master), never an unrelated installed release, so we don't
-            // short-circuit zig@master to a stable version that happens to be
-            // installed.
-            if !opts.latest_versions
-                && !should_filter_installed_versions
-                && let Some(installed) = backend.latest_installed_channel_version(&v)
-            {
-                return build(installed);
-            }
-            if !is_offline
-                && let Some(concrete) = backend.resolve_channel_version(config, &v).await?
-            {
-                return build(concrete);
-            }
-            if opts.offline {
-                return build(v);
-            }
-            // Online but the channel did not resolve to a concrete version --
-            // either the index lacked the channel key, or the fetch failed
-            // transiently (resolve_channel_version maps both to Ok(None)). Fall
-            // through to normal resolution, which still matches the literal
-            // channel name in the backend's version list as before.
+        let installed_matches =
+            (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
+        if installed_matches
+            .as_ref()
+            .is_some_and(|matches| matches.contains(&v))
+        {
+            return build(v);
         }
-        if !opts.latest_versions {
-            let matches = backend.list_installed_versions_matching(&v);
+
+        let mut pin_remote_matches = None;
+        if opts.prefer_exact_version && !is_offline && !crate::semver::is_npm_semver_range_query(&v)
+        {
+            // Pinning must prove that the exact release exists before it
+            // bypasses an installed fuzzy match. Some backend exact resolvers
+            // only validate syntax and defer existence checks to installation.
+            let matches = backend
+                .list_versions_matching_with_opts(config, &v, None, opts.refresh_remote_versions)
+                .await?;
             if matches.contains(&v) {
                 return build(v);
             }
-            if !should_filter_installed_versions && let Some(v) = matches.last() {
-                return build(v.clone());
+            if opts.before_date.is_none() {
+                pin_remote_matches = Some(matches);
             }
+        }
+        if !should_filter_installed_versions
+            && let Some(v) = installed_matches
+                .as_ref()
+                .and_then(|matches| matches.last())
+        {
+            return build(v.clone());
         }
         if matches!(
             request.source(),
@@ -553,20 +616,25 @@ impl ToolVersion {
         // filtering. If the backend returns None, fall through to normal
         // prefix resolution so requests like "1.2.3" can still resolve to
         // "1.2.3.4" when that is the latest matching version.
-        if v.matches('.').count() >= 2
+        if (v.matches('.').count() >= 2 || backend.is_exact_version(&v))
             && let Some(v) = backend.resolve_exact_version(config, &v).await?
         {
             return build(v);
         }
         // First try with date filter (common case)
-        let matches = backend
-            .list_versions_matching_with_opts(
-                config,
-                &v,
-                opts.before_date,
-                opts.refresh_remote_versions,
-            )
-            .await?;
+        let matches = match pin_remote_matches {
+            Some(matches) => matches,
+            None => {
+                backend
+                    .list_versions_matching_with_opts(
+                        config,
+                        &v,
+                        opts.before_date,
+                        opts.refresh_remote_versions,
+                    )
+                    .await?
+            }
+        };
         if matches.contains(&v) {
             return build(v);
         }
@@ -612,19 +680,15 @@ impl ToolVersion {
             let version = request.version();
             return Ok(Self::new(request, version));
         }
-        let v = match v {
-            "latest" => backend
-                .latest_version_with_refresh(
-                    config,
-                    None,
-                    opts.before_date,
-                    opts.refresh_remote_versions,
-                )
-                .await?
-                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
-            _ => config.resolve_alias(&backend, v).await?,
-        };
-        let v = tool_request::version_sub(&v, sub);
+        let v = resolve_sub_base(
+            config,
+            &backend,
+            sub,
+            v,
+            opts.before_date,
+            opts.refresh_remote_versions,
+        )
+        .await?;
         Box::pin(Self::resolve_version(config, request, &v, opts)).await
     }
 
@@ -697,6 +761,39 @@ impl ToolVersion {
     }
 }
 
+/// Resolve the base of a `sub-N:<base>` request and subtract from it.
+///
+/// `base` may be `latest` or an alias such as `lts`, neither of which
+/// `tool_request::version_sub` can subtract from — it needs a concrete version. Every
+/// command that accepts `sub-N:` must go through here; skipping this step is what made
+/// `mise ls-remote <tool>@sub-2:lts` panic.
+pub(crate) async fn resolve_sub_base(
+    config: &Arc<Config>,
+    backend: &ABackend,
+    sub: &str,
+    base: &str,
+    before_date: Option<Timestamp>,
+    refresh_remote_versions: bool,
+) -> Result<String> {
+    // An alias can point at `latest`, so the alias is resolved first and the result is
+    // then treated exactly like a literal `latest` — otherwise the string `latest`
+    // reaches the subtraction, which cannot do anything with it.
+    let base = if base == "latest" {
+        base.to_string()
+    } else {
+        config.resolve_alias(backend, base).await?
+    };
+    let v = if base == "latest" {
+        backend
+            .latest_version_with_refresh(config, None, before_date, refresh_remote_versions)
+            .await?
+            .ok_or_else(|| ToolVersion::no_versions_found(backend, before_date))?
+    } else {
+        base
+    };
+    tool_request::version_sub(&v, sub)
+}
+
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}@{}", self.ba().full(), self.version)
@@ -737,6 +834,11 @@ impl Hash for ToolVersion {
 pub struct ResolveOptions {
     pub latest_versions: bool,
     pub use_locked_version: bool,
+    /// Resolve rolling channels to their current concrete version even when
+    /// ordinary version requests may reuse installed versions.
+    pub resolve_rolling_channels: bool,
+    /// Prefer an exact remote release over a fuzzy installed match.
+    pub prefer_exact_version: bool,
     /// Only consider versions released before this timestamp
     pub before_date: Option<Timestamp>,
     /// `before_date` came from the built-in default release age rather than
@@ -763,6 +865,8 @@ impl Default for ResolveOptions {
         Self {
             latest_versions: false,
             use_locked_version: true,
+            resolve_rolling_channels: false,
+            prefer_exact_version: false,
             before_date: None,
             before_date_from_default: false,
             filter_installed_versions_by_release_date: false,
@@ -862,6 +966,12 @@ impl Display for ResolveOptions {
         }
         if self.use_locked_version {
             opts.push("use_locked_version".to_string());
+        }
+        if self.resolve_rolling_channels {
+            opts.push("resolve_rolling_channels".to_string());
+        }
+        if self.prefer_exact_version {
+            opts.push("prefer_exact_version".to_string());
         }
         if let Some(ts) = &self.before_date {
             if self.before_date_from_default {

@@ -2,3 +2,4 @@ backends = ["aqua:cocogitto/cocogitto"]
 bins = ["cog"]
 description = "The Conventional Commits toolbox"
 test = { cmd = "cog --version", expected = "cog {{version}}" }
+version_order = "semver"

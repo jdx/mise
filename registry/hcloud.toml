@@ -1,3 +1,4 @@
 backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
 bins = ["hcloud"]
 description = "A command-line interface for Hetzner Cloud"
+version_order = "semver"

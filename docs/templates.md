@@ -182,6 +182,7 @@ These variables offer key information about the current environment:
 
 - `env: HashMap<String, String>` – Accesses current environment variables as
   a key-value map.
+- `vars: HashMap<String, String>` – Accesses user-defined [configuration variables](/configuration/vars).
 - `cwd: PathBuf` – Points to the current working directory.
 - `config_root: PathBuf` – Locates the directory containing your `mise.toml` file, or in the case of something like `~/src/myproj/.config/mise.toml`, it will point to `~/src/myproj`.
 - `mise_bin: String` - Points to the path to the current mise executable
@@ -452,13 +453,22 @@ PROJECT_CONFIG = "{{ [config_root, 'bar.txt'] | join_path }}"
 
 #### String Manipulation
 
-- `str | quote -> String` – Quotes a string. Converts `'` to `\'` and
-  then quotes str, e.g `'it\'s str'`.
+- `str | quote -> String` – Quotes a string for a POSIX shell. Embedded single
+  quotes use the POSIX-safe `'\''` form, e.g. `'it'\''s str'`. This filter does
+  not adapt its output for PowerShell, cmd, or other non-POSIX shells.
 - `str | kebabcase -> String` – Converts a string to kebab-case
 - `str | lowercamelcase -> String` – Converts a string to lowerCamelCase
 - `str | uppercamelcase -> String` – Converts a string to UpperCamelCase
 - `str | snakecase -> String` – Converts a string to snake_case
 - `str | shoutysnakecase -> String` – Converts a string to SHOUTY_SNAKE_CASE
+
+Use `quote` when inserting a template value into a POSIX shell command. Quoted
+and unquoted segments can be concatenated into the same argument:
+
+```toml
+[tasks.create-config]
+run = "touch {{ config_root | quote }}/generated.toml"
+```
 
 ### Tests
 

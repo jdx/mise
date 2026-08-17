@@ -1,3 +1,4 @@
 backends = ["pipx:meson", "asdf:mise-plugins/mise-meson"]
 bins = ["meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
+version_order = "semver"

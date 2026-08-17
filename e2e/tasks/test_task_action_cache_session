@@ -22,14 +22,45 @@ rust_cache = true
 deny_env = true
 run = '''
 test -n "$MISE_CACHE_SOCKET"
+test -n "$MISE_CACHE_STAGING_DIR"
+test -n "$MISE_CACHE_TASK"
 test "$CARGO_INCREMENTAL" = 0
 "$RUSTC_WRAPPER" true
 '''
+
+# No deny_write here: it needs Landlock, and the CI runners do not have it —
+# `landlock: NotEnabled` in RestrictionStatus — so mise correctly refuses to run a task
+# it cannot sandbox and this task failed on every run. The write sandbox is not what
+# this test is asserting; `stored` and the action-results file below are. `sandboxed`
+# above still covers rust_cache under a sandbox, via deny_env, which needs no Landlock.
+[tasks.compile]
+rust_cache = true
+run = '''
+cargo build
+test -f target/debug/libcache_e2e.rlib
+'''
+EOF
+
+cat <<'EOF' >Cargo.toml
+[package]
+name = "cache-e2e"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "lib.rs"
+EOF
+
+cat <<'EOF' >lib.rs
+pub fn cached_library() -> usize { 42 }
 EOF
 
 mise run disabled
 RUSTC_WRAPPER=/usr/bin/env mise run rust
 RUSTC_WRAPPER=/usr/bin/env mise run sandboxed
+assert_contains "mise run compile 2>&1" "stored"
+assert_not_empty \
+  "find \"$(mise cache path)/task-artifacts/v2/actions/action-results\" -type f -name '*.json' -print -quit"
 
 assert_fail_contains \
   "MISE_EXPERIMENTAL=0 mise run rust" \

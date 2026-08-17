@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
+
+mkdir -p .mise/tasks
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+
+[task_config]
+includes = ["tasks.toml", ".mise/tasks"]
+
+[hooks]
+preinstall = "printf 'pre\n' >> hooks.log"
+postinstall = '''
+printf 'post:%s\n' "$MISE_INSTALLED_TOOLS" >> hooks.log
+if [ -d "$MISE_DATA_DIR/installs/dummy/1.0.0" ]; then
+  command -v dummy >postinstall-task-tool-path
+fi
+'''
+
+[task_templates.with-tools]
+tools.tiny = "3.1.0"
+
+[tasks.inline]
+hide = true
+tools.tiny = "2.1.0"
+run = "touch inline-ran"
+
+[tasks.from-template]
+extends = "with-tools"
+run = "touch template-ran"
+EOF
+
+cat >tasks.toml <<'EOF'
+[included]
+tools.dummy = "1.0.0"
+run = "touch included-ran"
+EOF
+
+cat >.mise/tasks/file-task <<'EOF'
+#!/usr/bin/env bash
+#MISE tools.tiny="1.1.0"
+touch file-task-ran
+EOF
+chmod +x .mise/tasks/file-task
+
+# The existing bare install behavior remains limited to configured tools.
+mise install
+assert "test -d '$MISE_DATA_DIR/installs/tiny/1.0.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/1.1.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/2.1.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/3.1.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+# Preview every inline, inherited, included, file, and hidden task tool without
+# executing a task or changing the install tree.
+rm -f hooks.log
+output=$(mise install --include-task-tools --dry-run 2>&1)
+grep -Fq "tiny@1.1.0" <<<"$output"
+grep -Fq "tiny@2.1.0" <<<"$output"
+grep -Fq "tiny@3.1.0" <<<"$output"
+grep -Fq "dummy@1.0.0" <<<"$output"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/1.1.0'"
+assert_fail "test -e inline-ran"
+assert_fail "test -e template-ran"
+assert_fail "test -e included-ran"
+assert_fail "test -e file-task-ran"
+assert_fail "mise install --include-task-tools --dry-run-code"
+
+mise install --include-task-tools
+assert "test -d '$MISE_DATA_DIR/installs/tiny/1.1.0'"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/2.1.0'"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/3.1.0'"
+assert "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert "test \"$(grep -c '^pre$' hooks.log)\" -eq 1"
+assert "test \"$(grep -c '^post:' hooks.log)\" -eq 1"
+assert_contains "cat postinstall-task-tool-path" "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_fail "test -e inline-ran"
+assert_fail "test -e template-ran"
+assert_fail "test -e included-ran"
+assert_fail "test -e file-task-ran"
+
+# The no-op install path uses the same union for postinstall PATH construction.
+rm postinstall-task-tool-path
+mise install --include-task-tools
+assert_contains "cat postinstall-task-tool-path" "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Explicit tools form a union with task tools rather than filtering them.
+rm -rf "$MISE_DATA_DIR/installs/dummy" "$MISE_DATA_DIR/installs/tiny/2.1.0"
+mise install dummy@2.0.0 --include-task-tools
+assert "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+assert "test -d '$MISE_DATA_DIR/installs/tiny/2.1.0'"
+
+# Force applies to the complete union.
+touch "$MISE_DATA_DIR/installs/tiny/1.0.0/force-marker"
+touch "$MISE_DATA_DIR/installs/tiny/2.1.0/force-marker"
+mise install --force --include-task-tools
+assert_fail "test -e '$MISE_DATA_DIR/installs/tiny/1.0.0/force-marker'"
+assert_fail "test -e '$MISE_DATA_DIR/installs/tiny/2.1.0/force-marker'"
+
+# Conflicting task/config options fail before [plugins] mutates plugin state.
+mkdir conflict-plugin
+rm -rf "$MISE_DATA_DIR/plugins/conflict-plugin"
+cat >mise.toml <<EOF
+[plugins]
+conflict-plugin = "$PWD/conflict-plugin"
+
+[tools]
+conflict-plugin = { version = "1.0.0", flavor = "config" }
+
+[tasks.conflict]
+tools.conflict-plugin = { version = "1.0.0", flavor = "task" }
+run = "touch conflict-task-ran"
+EOF
+
+assert_fail "mise install --include-task-tools"
+assert_fail "test -e '$MISE_DATA_DIR/plugins/conflict-plugin'"
+assert_fail "test -e conflict-task-ran"

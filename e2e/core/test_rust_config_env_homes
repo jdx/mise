@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+unset MISE_CARGO_HOME MISE_RUSTUP_HOME
+export MISE_OFFLINE=1
+
+CONFIG_CARGO_HOME="$PWD/config-cargo"
+CONFIG_RUSTUP_HOME="$PWD/config-rustup"
+mkdir -p "$CONFIG_CARGO_HOME/bin" "$CONFIG_RUSTUP_HOME"
+touch "$CONFIG_RUSTUP_HOME/settings.toml"
+
+cat >"$CONFIG_CARGO_HOME/bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo cargo
+EOF
+
+cat >"$CONFIG_CARGO_HOME/bin/rustc" <<'EOF'
+#!/usr/bin/env bash
+echo "rustc ${RUSTUP_TOOLCHAIN:-unknown}"
+EOF
+
+cat >"$CONFIG_CARGO_HOME/bin/rustup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "$*" >>"$CARGO_HOME/rustup.log"
+
+case "$1 $2" in
+	"component list")
+		echo rustfmt
+		;;
+	"toolchain install")
+		mkdir -p "$RUSTUP_HOME/toolchains/$3"
+		;;
+	"toolchain uninstall")
+		;;
+	*)
+		echo "unexpected rustup args: $*" >&2
+		exit 1
+		;;
+esac
+EOF
+
+chmod +x "$CONFIG_CARGO_HOME/bin/cargo" "$CONFIG_CARGO_HOME/bin/rustc" "$CONFIG_CARGO_HOME/bin/rustup"
+
+cat >mise.toml <<EOF
+[env]
+MISE_CARGO_HOME = "$CONFIG_CARGO_HOME"
+MISE_RUSTUP_HOME = "$CONFIG_RUSTUP_HOME"
+
+[tools]
+rust = { version = "1.81.0", components = ["rustfmt"] }
+EOF
+
+mise install
+assert_contains "cat '$CONFIG_CARGO_HOME/rustup.log'" "toolchain install 1.81.0"
+assert "mise exec -- rustc -V" "rustc 1.81.0"
+
+assert_contains "mise env --dotenv" "CARGO_HOME=$CONFIG_CARGO_HOME"
+assert_contains "mise env --dotenv" "RUSTUP_HOME=$CONFIG_RUSTUP_HOME"
+assert_contains "mise env --dotenv" "MISE_CARGO_HOME=$CONFIG_CARGO_HOME"
+assert_contains "mise env --dotenv" "MISE_RUSTUP_HOME=$CONFIG_RUSTUP_HOME"
+
+INSTALL_PATH=$(mise where rust@1.81.0)
+assert "readlink '$INSTALL_PATH'" "$CONFIG_CARGO_HOME/bin"
+
+mise install
+assert "grep -c '^toolchain install' '$CONFIG_CARGO_HOME/rustup.log'" "1"
+
+DIRECT_CARGO_HOME="$PWD/direct-cargo"
+DIRECT_RUSTUP_HOME="$PWD/direct-rustup"
+mkdir -p "$DIRECT_CARGO_HOME/bin" "$DIRECT_RUSTUP_HOME"
+cp "$CONFIG_CARGO_HOME/bin/cargo" "$CONFIG_CARGO_HOME/bin/rustc" "$CONFIG_CARGO_HOME/bin/rustup" "$DIRECT_CARGO_HOME/bin/"
+touch "$DIRECT_RUSTUP_HOME/settings.toml"
+
+cat >mise.toml <<EOF
+[env]
+MISE_CARGO_HOME = "$CONFIG_CARGO_HOME"
+MISE_RUSTUP_HOME = "$CONFIG_RUSTUP_HOME"
+CARGO_HOME = "$DIRECT_CARGO_HOME"
+RUSTUP_HOME = "$DIRECT_RUSTUP_HOME"
+
+[tools]
+rust = { version = "1.81.0", components = ["rustfmt"] }
+EOF
+
+mise install
+assert_contains "cat '$DIRECT_CARGO_HOME/rustup.log'" "toolchain install 1.81.0"
+INSTALL_PATH=$(mise where rust@1.81.0)
+assert "readlink '$INSTALL_PATH'" "$DIRECT_CARGO_HOME/bin"
+assert "mise exec -- rustc -V" "rustc 1.81.0"
+assert_contains "mise env --dotenv" "CARGO_HOME=$DIRECT_CARGO_HOME"
+assert_contains "mise env --dotenv" "RUSTUP_HOME=$DIRECT_RUSTUP_HOME"
+
+mise uninstall --yes rust@1.81.0
+assert_contains "cat '$DIRECT_CARGO_HOME/rustup.log'" "toolchain uninstall 1.81.0"

@@ -68,7 +68,7 @@ impl Link {
             );
         }
         let target = self.tool.ba.installs_path.join(&version_pathname);
-        if file::paths_eq(&path, &target) {
+        if !file::is_symlink_to(&target, &path) && file::same_file(&path, &target) {
             bail!("cannot link {} to its own install path", self.tool.style());
         }
         {

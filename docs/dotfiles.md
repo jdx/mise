@@ -19,6 +19,7 @@ dotfiles.default_mode = "symlink"
 "~/.gitconfig" = "dotfiles/gitconfig"                                # explicit source
 "~/.config/alacritty.toml" = { mode = "copy" }                       # ~/.dotfiles/.config/alacritty.toml
 "~/.config/starship.toml" = { source = "dotfiles/starship.toml", mode = "copy" }
+"~/.config/tool.conf" = { content = "enabled = true\n" }                # inline whole-file content
 "~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
 "~/.config/nvim" = "dotfiles/nvim"                                   # symlink the directory itself
 "~/.local/bin" = { source = "dotfiles/bin", mode = "symlink-each" }  # symlink each file within
@@ -39,8 +40,8 @@ Whole-file entries are keyed by the target path — absolute or starting with
 `~/` — and may point at a source file or directory. If `source` is omitted,
 mise mirrors the home-relative target path under `dotfiles.root`: `~/.zshrc`
 uses `~/.dotfiles/.zshrc`, and `~/.config/foo.toml` uses
-`~/.dotfiles/.config/foo.toml`. Targets outside `$HOME` must specify
-`source`.
+`~/.dotfiles/.config/foo.toml`. Targets outside `$HOME` must specify `source`
+or inline `content`.
 
 String entries are shorthand for an explicit source with
 `dotfiles.default_mode`. `mise bootstrap dotfiles add` omits an implied source
@@ -57,6 +58,23 @@ Relative explicit sources resolve against the directory of the config file
 that declares the entry, so a global `~/.config/mise/config.toml` can manage
 dotfiles kept next to it, and a project config can ship machine setup from
 the repo.
+
+`mise bootstrap dotfiles status --json` includes an `origin` object for every
+entry. It reports the declaring config, its `config_root`, any configuration
+environment encoded by that config filename, and the resolved source path.
+Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
+non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.
+This makes layered dotfile declarations inspectable without reconstructing
+their precedence by hand.
+
+Use `content` to declare a literal whole file inline instead of keeping a
+separate source file. Inline content is written as a private regular file
+(`0600` on Unix) and cannot be combined with `source`, `mode`, or `exclude`:
+
+```toml
+[dotfiles]
+"~/.config/example.conf" = { content = "enabled = true\n" }
+```
 
 Source paths may contain glob wildcards like `*`, `**`, `?`, or `[ab]`.
 When a wildcard source matches multiple paths, the target path must contain
@@ -289,5 +307,11 @@ fails with an ordinary permission error.
 
 ## Windows
 
-File symlinks require elevation on Windows, so `symlink` and `symlink-each`
-fall back to copying for files there; directory symlinks use junctions.
+`symlink` creates a real file symlink on Windows when it can. Windows allows that
+without elevation once Developer Mode is on — the same privilege
+[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode) relies on for
+its `symlink` option — and mise falls back to copying the file when the privilege
+is not available, so entries keep applying either way.
+`mise bootstrap dotfiles status` reads whichever form is on disk.
+
+`symlink-each` still copies files on Windows. Directory symlinks use junctions.

@@ -5,7 +5,7 @@ use indoc::formatdoc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::env;
-use crate::shell::get_shell;
+use crate::shell::{EXAMPLE_SHELL, require_shell};
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name};
 
 /// Sets a tool version for the current session.
@@ -22,6 +22,7 @@ pub struct Shell {
     tool: Vec<ToolArg>,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
@@ -43,7 +44,10 @@ impl Shell {
             err_inactive()?;
         }
 
-        let shell = get_shell(None).expect("no shell detected");
+        let shell = require_shell(
+            None,
+            &format!("Re-run `mise activate {EXAMPLE_SHELL}` in your shell rc file."),
+        )?;
 
         if self.unset {
             for ta in &self.tool {

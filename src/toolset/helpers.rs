@@ -153,6 +153,7 @@ async fn preflight_system_deps_inner(
     let driver_opts = crate::cli::system::driver::DriverOpts {
         manager: None,
         explicit: false,
+        allow_unavailable_manager: false,
         dry_run: opts.dry_run,
         update: false,
         yes: matches!(mode, SystemDepsMode::Auto) || opts.yes,

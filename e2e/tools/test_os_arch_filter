@@ -21,6 +21,18 @@ case "$_os" in
   *) _inactive_os="linux" ;;
 esac
 
+# Commands that report active versions should omit OS-inactive requests.
+mise install dummy@3.0.0
+cat >mise.toml <<EOF
+[tools]
+dummy = { version = "3.0.0", os = ["$_inactive_os"] }
+EOF
+assert "mise current" ""
+assert "mise current dummy" ""
+assert "mise tool dummy --active" ""
+assert "mise tool dummy --json | jq -c .active_versions" "[]"
+assert_fail "mise where dummy" "dummy does not have an active version"
+
 # Unknown tools scoped away from the current OS should be skipped before
 # registry resolution.
 cat >mise.toml <<EOF

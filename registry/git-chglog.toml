@@ -1,3 +1,4 @@
 backends = ["aqua:git-chglog/git-chglog", "asdf:GoodwayGroup/asdf-git-chglog"]
 bins = ["git-chglog"]
 description = "CHANGELOG generator implemented in Go (Golang)"
+version_order = "semver"

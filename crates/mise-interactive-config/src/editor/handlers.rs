@@ -262,11 +262,11 @@ impl InteractiveConfig {
                         self.mode = Mode::Navigate;
                     }
                 }
-                Key::ArrowUp | Key::Char('k') => {
+                Key::ArrowUp => {
                     picker.move_up();
                     self.mode = Mode::Picker(kind, Box::new(picker));
                 }
-                Key::ArrowDown | Key::Char('j') => {
+                Key::ArrowDown => {
                     picker.move_down();
                     self.mode = Mode::Picker(kind, Box::new(picker));
                 }

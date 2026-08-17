@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
@@ -200,10 +200,10 @@ pub(crate) fn expand_glob_braces(pattern: &str) -> Result<Vec<String>> {
 ///
 /// `match_root` is the directory the [`Override`] is anchored at (the workspace
 /// root in workspace setups, otherwise the task CWD). `task_cwd` is the
-/// directory the task actually runs from. When they differ — a subproject task
-/// inside a workspace — relative patterns are prefixed with the
-/// `task_cwd`-relative-to-`match_root` path so they remain correctly anchored.
-/// Absolute patterns are stripped of the `match_root` prefix as before.
+/// directory the task actually runs from. Relative patterns are resolved
+/// against `task_cwd` and absolute ones taken as-is; either way the result is
+/// re-expressed relative to `match_root` so every pattern lives in the same
+/// namespace as the paths the matcher is asked about.
 ///
 /// Patterns use gitignore syntax with `!` inverted (the [`Override`] convention):
 /// a non-negated entry marks a file as a *source*, `!`-prefixed excludes it,
@@ -238,15 +238,105 @@ pub(crate) fn build_source_matcher(
     })
 }
 
+/// Resolve `.` and `..` in `path` without consulting the filesystem.
+///
+/// Being lexical, this disagrees with `canonicalize` whenever a symlink is
+/// involved: `dir/link/..` becomes `dir`, not the parent of the link's target.
+/// Source matching is lexical too — gitignore globs never resolve symlinks —
+/// so both sides of a comparison must be normalized the same way to stay
+/// consistent with each other.
+///
+/// A `..` with nothing to collapse is kept in a relative path (`../x` has no
+/// representation without it) and dropped in an absolute one, where `/..` is
+/// `/`.
+///
+/// Only for paths and patterns that are *matched*. A directory the task will
+/// actually run in must keep its `..` for the OS to resolve at `chdir` time, so
+/// [`normalize_task_cwd`] collapses `.` alone.
+pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
+    let absolute = path.is_absolute();
+    let mut normalized = PathBuf::new();
+    let mut depth = 0usize;
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth > 0 {
+                    normalized.pop();
+                    depth -= 1;
+                } else if !absolute {
+                    normalized.push("..");
+                }
+            }
+            Component::Normal(part) => {
+                normalized.push(part);
+                depth += 1;
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
+/// Returns true when resolving `..` in `pattern` would collapse a component
+/// holding a glob metacharacter.
+///
+/// `**/../x` has no well-defined expansion — the `..` would have to apply to
+/// whatever each match of `**` resolved to — so callers leave such a pattern
+/// exactly as written rather than inventing a meaning for it.
+fn parent_dir_pops_glob(pattern: &Path) -> bool {
+    let mut stack: Vec<bool> = Vec::new();
+    for component in pattern.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if stack.pop() == Some(true) {
+                    return true;
+                }
+            }
+            Component::Normal(part) => {
+                stack.push(part.to_string_lossy().contains(['*', '?', '[', '{']));
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Render a relative path as a gitignore pattern body.
+///
+/// Gitignore patterns are always `/`-separated, but `Path` renders the platform
+/// separator, so on Windows a pattern rebuilt from a `PathBuf` arrives as
+/// `dist\**\*.map`. `globset` reads `\` as an escape rather than a separator,
+/// which silently turns the pattern into one that matches something else
+/// entirely — a negated entry then stops excluding and the matcher widens.
+/// Joining the components explicitly keeps the separator independent of the
+/// platform the path was built on.
+fn pattern_from_path(path: &Path) -> Option<String> {
+    let mut pattern = String::new();
+    for component in path.components() {
+        let part = component.as_os_str().to_str()?;
+        if !pattern.is_empty() {
+            pattern.push('/');
+        }
+        pattern.push_str(part);
+    }
+    Some(pattern)
+}
+
 /// Normalise `pattern` so it is always expressed relative to `match_root`.
 ///
-/// - **Absolute** body under `match_root`: strip the prefix.
-/// - **Relative** body when `task_cwd` is a subdirectory of `match_root`:
-///   prefix with `task_cwd`-relative-to-`match_root` so the pattern is
-///   anchored at the workspace root rather than the subproject CWD.
-///   E.g. `match_root=/ws`, `task_cwd=/ws/lib/worker`, `src/**/*.go`
-///   → `lib/worker/src/**/*.go`.
-/// - Everything else: returned unchanged.
+/// A relative body is resolved against `task_cwd` and an absolute one taken as
+/// written; the result is then lexically normalized and stripped back to a
+/// `match_root`-relative path. Relative entries therefore stay anchored at the
+/// task directory while `..` climbs out of it: `match_root=/ws`,
+/// `task_cwd=/ws/lib/worker`, `src/**/*.go` → `lib/worker/src/**/*.go` and
+/// `../shared/*.go` → `lib/shared/*.go`.
+///
+/// A pattern resolving outside `match_root` is returned unchanged, as is one
+/// whose `..` would collapse a glob component. Gitignore syntax cannot express
+/// a path above the matcher's root; [`is_source`] passes such absolute paths
+/// through without consulting the matcher instead.
 fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> String {
     let (prefix, body) = if pattern.starts_with("\\!") {
         return pattern.to_string();
@@ -256,32 +346,42 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
         ("", pattern)
     };
     let body_path = Path::new(body);
-    if body_path.is_absolute() {
-        if let Ok(rel) = body_path.strip_prefix(match_root)
-            && let Some(rel_str) = rel.to_str()
-        {
-            let rel_str = if rel_str.starts_with('!') {
-                format!("\\{rel_str}")
-            } else {
-                rel_str.to_string()
-            };
-            return format!("{prefix}{rel_str}");
-        }
+    // Inspect the pattern as written: `task_cwd` may legitimately contain a
+    // glob metacharacter as a literal directory name, and folding it in would
+    // make an ordinary `../` entry look like a `..` popping a glob.
+    if parent_dir_pops_glob(body_path) {
         return pattern.to_string();
     }
-    // Relative pattern: anchor it at match_root by prepending the subproject path.
-    if let Ok(cwd_rel) = task_cwd.strip_prefix(match_root)
-        && let Some(cwd_rel_str) = cwd_rel.to_str()
-        && !cwd_rel_str.is_empty()
-    {
-        return format!("{prefix}{cwd_rel_str}/{body}");
+    let body_abs = if body_path.is_absolute() {
+        body_path.to_path_buf()
+    } else {
+        task_cwd.join(body_path)
+    };
+    let body_abs = lexical_normalize(&body_abs);
+    let Ok(rel) = body_abs.strip_prefix(match_root) else {
+        return pattern.to_string();
+    };
+    let Some(rel_str) = pattern_from_path(rel) else {
+        return pattern.to_string();
+    };
+    if rel_str.is_empty() {
+        return pattern.to_string();
     }
-    pattern.to_string()
+    let rel_str = if rel_str.starts_with('!') {
+        format!("\\{rel_str}")
+    } else {
+        rel_str.to_string()
+    };
+    format!("{prefix}{rel_str}")
 }
 
 /// Returns true iff `path` is selected as a source by `matcher`. With
 /// [`Override`]'s inverted semantics, a non-negated user pattern produces
 /// `Match::Whitelist` for matching paths.
+///
+/// `path` is lexically normalized first: `glob` builds the paths it returns
+/// from the raw pattern, so an enumerated file still carries the `..` that
+/// [`normalize_pattern`] has already resolved out of the matcher's copy.
 ///
 /// Absolute paths that don't fall under the matcher's root are out of
 /// gitignore's domain — `Override::matched` would return `Match::None` and,
@@ -289,16 +389,64 @@ fn normalize_pattern(match_root: &Path, task_cwd: &Path, pattern: &str) -> Strin
 /// silently dropping a file the glob legitimately included. Trust the glob
 /// in that case.
 pub(crate) fn is_source(matcher: &Override, path: &Path) -> bool {
+    let path = lexical_normalize(path);
     if path.is_absolute() && !path.starts_with(matcher.path()) {
         return true;
     }
-    matcher.matched(path, false).is_whitelist()
+    matcher.matched(&path, false).is_whitelist()
+}
+
+/// Expands a trailing `**` to `**/*` so enumeration reaches files.
+///
+/// The `glob` crate matches a trailing `**` against directories only, while the
+/// `ignore`/`globset` matcher built from the same entry matches the files
+/// underneath it per gitignore semantics. Enumeration therefore never offers
+/// the files the matcher would have accepted, and because everything it does
+/// offer matches, nothing looks rejected and no diagnostic fires.
+///
+/// A `**` in the interior of a pattern (`src/**/foo.rs`) already spans
+/// directories correctly and is left alone.
+///
+/// Separators are tested with [`std::path::is_separator`], matching how `glob`
+/// itself decides whether a `**` forms its own path component. `\` is a
+/// separator on Windows, so `src\**` carries the same defect there, while on
+/// unix that string is an escape and `glob` rejects it outright.
+fn expand_trailing_globstar(pattern: &str) -> String {
+    let trailing_globstar = pattern == "**"
+        || pattern.strip_suffix("**").is_some_and(|head| {
+            head.chars()
+                .next_back()
+                .is_some_and(std::path::is_separator)
+        });
+    if trailing_globstar {
+        format!("{pattern}/*")
+    } else {
+        pattern.to_string()
+    }
+}
+
+/// Brace-expands `pattern` for file enumeration, expanding a trailing `**` in
+/// each alternative so enumeration reaches files.
+///
+/// Enumeration callers use this rather than [`expand_glob_braces`] directly,
+/// because the expansion has to happen per alternative: `{src/**,dist}` carries
+/// its `**` inside the braces, where a check on the whole pattern cannot see
+/// it. Matcher construction deliberately keeps calling [`expand_glob_braces`],
+/// since `globset` already matches the files under a trailing `**` and
+/// rewriting there would change what the matcher selects rather than what
+/// enumeration offers.
+pub(crate) fn expand_enumeration_patterns(pattern: &str) -> Result<Vec<String>> {
+    Ok(expand_glob_braces(pattern)?
+        .into_iter()
+        .map(|alternative| expand_trailing_globstar(&alternative))
+        .collect())
 }
 
 /// Returns the include-side glob patterns from `sources`, suitable for file
-/// enumeration via `glob`. `!`-prefixed entries are dropped (they only
-/// constrain matching, not enumeration); `\!`-prefixed entries have the
-/// escape removed so they can be globbed as literal `!`-prefixed paths.
+/// enumeration via [`expand_enumeration_patterns`]. `!`-prefixed entries are
+/// dropped (they only constrain matching, not enumeration); `\!`-prefixed
+/// entries have the escape removed so they can be globbed as literal
+/// `!`-prefixed paths.
 pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
     sources
         .iter()
@@ -349,11 +497,17 @@ pub(crate) fn output_glob_patterns(outputs: &[String]) -> Vec<String> {
 }
 
 /// Returns true when an output path is selected by the ordered matcher.
+///
+/// `path` is lexically normalized to stay in step with [`normalize_pattern`],
+/// which resolves `..` out of the matcher's patterns. Output enumeration
+/// resolves candidates from the raw pattern, so `outputs = ["dist/../x"]`
+/// reaches here still carrying the `..` the matcher no longer holds.
 pub(crate) fn is_output(matcher: &Override, path: &Path, is_dir: bool) -> bool {
+    let path = lexical_normalize(path);
     if path.is_absolute() && !path.starts_with(matcher.path()) {
         return true;
     }
-    matcher.matched(path, is_dir).is_whitelist()
+    matcher.matched(&path, is_dir).is_whitelist()
 }
 
 fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
@@ -365,10 +519,21 @@ fn resolve_task_path(root: &Path, path: impl AsRef<Path>) -> PathBuf {
     }
 }
 
+fn normalize_task_cwd(path: PathBuf) -> PathBuf {
+    let mut normalized: PathBuf = path
+        .components()
+        .filter(|component| !matches!(component, Component::CurDir))
+        .collect();
+    if normalized.as_os_str().is_empty() && !path.as_os_str().is_empty() {
+        normalized.push(".");
+    }
+    normalized
+}
+
 /// Get the working directory for a task
 pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
     if let Some(d) = task.dir(config).await? {
-        Ok(d)
+        Ok(normalize_task_cwd(d))
     } else {
         Ok(config
             .project_root
@@ -649,7 +814,7 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
         // Warn if any explicitly declared output was not generated.
         for output in output_glob_patterns(&task.outputs.paths(task, &root)) {
             let output_exists = if is_glob_pattern(&output) {
-                expand_glob_braces(&output)
+                expand_enumeration_patterns(&output)
                     .map(|patterns| {
                         patterns.into_iter().any(|pattern| {
                             let pattern = resolve_task_path(&root, pattern);
@@ -866,7 +1031,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
 
     for pattern_str in glob_pats {
         let mut glob_matched = false;
-        for expanded in expand_glob_braces(pattern_str)? {
+        for expanded in expand_enumeration_patterns(pattern_str)? {
             let full = resolve_task_path(root, expanded);
             for entry in glob(full.to_str().unwrap_or_default())? {
                 // Propagate glob resolution errors (OS errors during directory
@@ -927,7 +1092,7 @@ fn get_file_metadatas(
 
     let mut metadatas = BTreeMap::new();
     for pattern in patterns {
-        for expanded in expand_glob_braces(pattern)? {
+        for expanded in expand_enumeration_patterns(pattern)? {
             let pattern = resolve_task_path(root, expanded);
             let files = glob(pattern.to_str().unwrap())?;
             for file in files.flatten() {
@@ -1088,9 +1253,10 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
     let mut file_modified = Vec::new();
     let mut directory_modified = Vec::new();
     for pattern in output_glob_patterns(patterns_or_paths) {
-        let candidates = if is_glob_pattern(&pattern) {
+        let is_glob = is_glob_pattern(&pattern);
+        let candidates = if is_glob {
             let mut candidates = Vec::new();
-            for expanded in expand_glob_braces(&pattern)? {
+            for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
                 candidates.extend(
                     glob(expanded.to_str().unwrap_or_default())?.collect::<Result<Vec<_>, _>>()?,
@@ -1100,10 +1266,12 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
         } else {
             vec![resolve_task_path(root, &pattern)]
         };
+        let mut found_candidate = false;
         for candidate in candidates {
             if fs::symlink_metadata(&candidate).is_err() {
                 continue;
             }
+            found_candidate = true;
             for entry in WalkDir::new(candidate).follow_links(true) {
                 let entry = entry?;
                 let metadata = entry.metadata()?;
@@ -1115,6 +1283,17 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
                     }
                 }
             }
+        }
+        // Every positive output pattern represents a required artifact root.
+        // Excluded static paths are the exception; the ordered matcher makes
+        // those optional even though they remain in the enumeration list.
+        if !found_candidate
+            && (is_glob || {
+                let path = resolve_task_path(root, &pattern);
+                is_output(&matcher, &path, false) || is_output(&matcher, &path, true)
+            })
+        {
+            return Ok(None);
         }
     }
     let last_mod = file_modified.into_iter().chain(directory_modified).max();
@@ -1135,6 +1314,22 @@ mod tests {
         let root = Path::new(".");
         let matcher = build_source_matcher(root, root, &sources);
         is_source(&matcher, Path::new(path))
+    }
+
+    /// Gitignore patterns are `/`-separated on every platform, but `Path`
+    /// renders `\` on Windows and `globset` reads that as an escape. A pattern
+    /// rebuilt from a `PathBuf` there stops meaning what it says: a negated
+    /// entry no longer excludes, so the matcher widens instead of narrowing.
+    /// This only bites on Windows, so it is asserted rather than left to the
+    /// platform-specific tests that happen to cover it.
+    #[test]
+    fn patterns_stay_slash_separated_on_every_platform() {
+        let joined = Path::new("dist").join("**").join("*.map");
+        assert_eq!(pattern_from_path(&joined).unwrap(), "dist/**/*.map");
+
+        let root = Path::new("/project");
+        let normalized = normalize_pattern(root, root, "!dist/**/*.map");
+        assert_eq!(normalized, "!dist/**/*.map");
     }
 
     #[test]
@@ -1161,6 +1356,32 @@ mod tests {
         let matcher = build_output_matcher(root.path(), &patterns).unwrap();
 
         assert!(is_output(&matcher, &output, false));
+    }
+
+    /// Output enumeration resolves candidates from the raw pattern, so the
+    /// `..` the matcher resolved away is still present in the path it is asked
+    /// about. Both sides must normalize or the output never matches and the
+    /// task stays permanently stale.
+    ///
+    /// The pattern has to contain a slash to pin this down: a slashless
+    /// gitignore pattern matches at any depth, so an un-normalized path would
+    /// match on its basename alone and hide the difference.
+    #[test]
+    fn output_matcher_normalizes_parent_traversal() {
+        let root = tempfile::tempdir().unwrap();
+        let patterns = vec!["dist/../out/result.txt".to_string()];
+        let matcher = build_output_matcher(root.path(), &patterns).unwrap();
+
+        assert!(is_output(
+            &matcher,
+            &root.path().join("dist/../out/result.txt"),
+            false
+        ));
+        assert!(is_output(
+            &matcher,
+            &root.path().join("out/result.txt"),
+            false
+        ));
     }
 
     #[test]
@@ -1228,6 +1449,62 @@ mod tests {
             ]),
             ["dist", "!important"]
         );
+    }
+
+    /// A trailing `**` must enumerate files. The `glob` crate matches it against
+    /// directories only, so without the expansion `src/**` yields subdirectories
+    /// and no files at all — a `sources` entry that contributes nothing to
+    /// freshness and an `outputs` entry that archives nothing.
+    #[test]
+    fn trailing_globstar_expands_to_reach_files() {
+        assert_eq!(expand_trailing_globstar("src/**"), "src/**/*");
+        assert_eq!(expand_trailing_globstar("**"), "**/*");
+        assert_eq!(expand_enumeration_patterns("src/**").unwrap(), ["src/**/*"]);
+    }
+
+    /// The expansion runs on each brace alternative. `{src/**,dist/**}` ends in
+    /// `}`, so a check against the whole pattern never sees the `**` and every
+    /// alternative would go on enumerating directories only.
+    #[test]
+    fn trailing_globstar_expands_inside_brace_alternatives() {
+        assert_eq!(
+            expand_enumeration_patterns("{src,dist}/**").unwrap(),
+            ["src/**/*", "dist/**/*"]
+        );
+        assert_eq!(
+            expand_enumeration_patterns("{src/**,dist/**,docs/*.md}").unwrap(),
+            ["src/**/*", "dist/**/*", "docs/*.md"]
+        );
+    }
+
+    /// `\` is a path separator on Windows, so `src\**` is a trailing globstar
+    /// there and carries the same defect. On unix the same string is an escape
+    /// that `glob` rejects outright, so it must be left alone.
+    #[test]
+    fn trailing_globstar_follows_platform_separators() {
+        if cfg!(windows) {
+            assert_eq!(expand_trailing_globstar(r"src\**"), r"src\**/*");
+        } else {
+            assert_eq!(expand_trailing_globstar(r"src\**"), r"src\**");
+        }
+    }
+
+    /// Only a *trailing* `**` is wrong. In the interior it already spans
+    /// directories correctly, and rewriting it would change what the pattern
+    /// selects rather than fixing what it enumerates.
+    #[test]
+    fn interior_globstar_and_other_patterns_are_untouched() {
+        for pattern in [
+            "src/**/foo.rs",
+            "src/**/*.ts",
+            "src/*",
+            "dist",
+            "src/**/*",
+            "**/*",
+            "a**",
+        ] {
+            assert_eq!(expand_trailing_globstar(pattern), pattern);
+        }
     }
 
     #[test]
@@ -1343,6 +1620,82 @@ mod tests {
             .unwrap();
 
         assert_eq!(modified, SystemTime::from(directory_mtime));
+    }
+
+    #[test]
+    fn output_mtime_requires_all_selected_static_paths() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &["present.txt".to_string(), "missing.txt".to_string()],
+        )
+        .unwrap();
+
+        assert!(modified.is_none());
+    }
+
+    #[test]
+    fn output_mtime_requires_each_positive_glob_to_match() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &["present.txt".to_string(), "*.generated".to_string()],
+        )
+        .unwrap();
+
+        assert!(modified.is_none());
+    }
+
+    #[test]
+    fn output_mtime_allows_missing_excluded_static_paths() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &[
+                "present.txt".to_string(),
+                "missing.txt".to_string(),
+                "!missing.txt".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(modified.is_some());
+    }
+
+    #[test]
+    fn output_mtime_brace_alternatives_require_any_match() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("a.out"), "a").unwrap();
+
+        let modified = get_last_modified(root.path(), &["{a,b}.out".to_string()]).unwrap();
+
+        assert!(modified.is_some());
+    }
+
+    #[test]
+    fn output_mtime_allows_glob_matches_that_are_all_excluded() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("present.txt"), "present").unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/vendor.js"), "vendor").unwrap();
+
+        let modified = get_last_modified(
+            root.path(),
+            &[
+                "present.txt".to_string(),
+                "dist/*.js".to_string(),
+                "!dist/vendor.js".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert!(modified.is_some());
     }
 
     #[test]
@@ -1575,6 +1928,119 @@ mod tests {
             Path::new("/workspace/lib/worker/src/main.go")
         ));
         assert!(!is_source(&matcher, Path::new("/workspace/src/other.go")));
+    }
+
+    /// `..` in a relative pattern climbs out of the task CWD while the pattern
+    /// stays anchored inside the workspace root.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_subproject_parent_relative_pattern() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/lib/worker");
+        let sources = vec!["../shared/**/*.go".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(
+            &matcher,
+            Path::new("/workspace/lib/shared/util.go")
+        ));
+        assert!(!is_source(&matcher, Path::new("/workspace/other.go")));
+    }
+
+    /// `glob` builds its results from the raw pattern, so a `../` source
+    /// enumerates paths that still contain `..`. They must survive the matcher
+    /// that no longer holds one.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_accepts_enumerated_paths_containing_parent_dirs() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/lib/worker");
+        let sources = vec!["../shared/**/*.go".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(
+            &matcher,
+            Path::new("/workspace/lib/worker/../shared/util.go")
+        ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn matcher_parent_pattern_above_match_root_passes_through() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/lib");
+        let sources = vec!["../../outside/**".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(&matcher, Path::new("/outside/x")));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn matcher_leaves_parent_dirs_that_would_collapse_a_glob() {
+        let root = Path::new("/workspace");
+        let sources = vec!["**/../x".to_string()];
+        let matcher = build_source_matcher(root, root, &sources);
+        assert!(!is_source(&matcher, Path::new("/workspace/x")));
+    }
+
+    /// The glob guard inspects the pattern as written. A task directory may
+    /// contain a glob metacharacter as a literal name, and folding it into the
+    /// inspected path would make this ordinary `../` entry look like a `..`
+    /// popping a glob, silently leaving the pattern unanchored.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_parent_relative_pattern_from_a_task_dir_containing_a_glob_char() {
+        let match_root = Path::new("/workspace");
+        let task_cwd = Path::new("/workspace/pkg*");
+        let sources = vec!["../shared/**".to_string()];
+        let matcher = build_source_matcher(match_root, task_cwd, &sources);
+        assert!(is_source(&matcher, Path::new("/workspace/shared/util.go")));
+    }
+
+    /// `[task_config.input_groups]` anchors a group entry by joining it onto
+    /// the defining config's root without normalizing, so absolute patterns
+    /// reach the matcher with `..` still in them.
+    #[test]
+    #[cfg(unix)]
+    fn matcher_normalizes_absolute_pattern_with_parent_dirs() {
+        let root = Path::new("/workspace");
+        let sources = vec!["/workspace/lib/../shared/x".to_string()];
+        let matcher = build_source_matcher(root, root, &sources);
+        assert!(is_source(&matcher, Path::new("/workspace/shared/x")));
+    }
+
+    #[test]
+    fn lexical_normalize_resolves_dot_segments() {
+        assert_eq!(lexical_normalize(Path::new("../x")), PathBuf::from("../x"));
+        assert_eq!(
+            lexical_normalize(Path::new("a/b/../c")),
+            PathBuf::from("a/c")
+        );
+        assert_eq!(lexical_normalize(Path::new("./a")), PathBuf::from("a"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn lexical_normalize_stops_climbing_at_the_root() {
+        assert_eq!(lexical_normalize(Path::new("/a/../..")), PathBuf::from("/"));
+    }
+
+    #[test]
+    fn relative_sources_match_when_task_dir_starts_with_dot() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let workspace = temp.path();
+        let task_cwd = normalize_task_cwd(workspace.join("./sub"));
+        let source = workspace.join("sub/input.txt");
+        fs::create_dir_all(source.parent().unwrap())?;
+        fs::write(&source, "source")?;
+
+        let sources = vec!["input.txt".to_string()];
+        let matcher = build_source_matcher(workspace, &task_cwd, &sources);
+        let metadatas = get_file_metadatas(&task_cwd, &sources, &matcher)?;
+
+        assert_eq!(
+            metadatas.into_iter().map(|(path, _)| path).collect_vec(),
+            [source]
+        );
+        Ok(())
     }
 
     #[test]

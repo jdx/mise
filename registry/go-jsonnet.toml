@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["jsonnet", "jsonnet-deps", "jsonnet-lint", "jsonnetfmt"]
 description = "This an implementation of Jsonnet in pure Go"
+version_order = "semver"

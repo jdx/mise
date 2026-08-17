@@ -8,5 +8,8 @@
   "MD033": false,
   "MD040": false,
   "MD041": false,
+  "MD051": {
+    "ignored_pattern": "^task_config\\."
+  },
   "MD060": false
 }

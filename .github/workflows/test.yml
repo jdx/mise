@@ -132,7 +132,7 @@ jobs:
   unit:
     name: unit-macos
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
@@ -160,14 +160,20 @@ jobs:
             echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
           } >> "$GITHUB_ENV"
           sccache --zero-stats
-      - name: Install fd
-        run: brew install fd
+      - name: Install test tools
+        run: brew install fd tmux
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
+      # `cargo test` above resolves to the root package, so the workspace members are built as
+      # dependencies but never tested. Run them separately rather than adding --workspace to the
+      # line above, which would extend --all-features to members whose features are exclusive.
+      - name: cargo test (workspace members)
+        run: cargo test --workspace --exclude mise
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+      - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       - run: sccache --show-stats
         if: always()
 
@@ -208,7 +214,7 @@ jobs:
 
   lint:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
-    timeout-minutes: 20
+    timeout-minutes: 80
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -266,9 +272,11 @@ jobs:
             env:
               HK_SKIP_STEPS: cargo-check
           # MSRV uses a separate target directory so its older compiler cannot
-          # invalidate stable's build artifacts.
+          # invalidate stable's build artifacts. Some AWS crates declare a newer
+          # rust-version than their code requires; rustc still rejects genuinely
+          # incompatible syntax and APIs when the metadata check is ignored.
           - name: Verify MSRV
-            run: cargo msrv verify
+            run: cargo msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
           - name: Run Clippy
@@ -285,54 +293,53 @@ jobs:
     if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     needs: [build-ubuntu, classify-changes]
-    timeout-minutes: 65
+    timeout-minutes: 125
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      # Preserve the matrix's separate rate-limit tokens while sharing the
-      # expensive runner setup below.
-      - parallel:
-          - name: Fetch token 0
-            id: token_0
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 1
-            id: token_1
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 2
-            id: token_2
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 3
-            id: token_3
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 4
-            id: token_4
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 5
-            id: token_5
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 6
-            id: token_6
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-          - name: Fetch token 7
-            id: token_7
-            uses: ./.github/actions/fetch-token
-            with:
-              api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      # Fetch sequentially so the pool can rotate its cursor between requests.
+      # Each token is also rejected by the action when its core budget is empty.
+      - name: Fetch token 0
+        id: token_0
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 1
+        id: token_1
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 2
+        id: token_2
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 3
+        id: token_3
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 4
+        id: token_4
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 5
+        id: token_5
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 6
+        id: token_6
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Fetch token 7
+        id: token_7
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
@@ -362,8 +369,10 @@ jobs:
               retry_wait_seconds: 30
               max_attempts: 2
               command: |
-                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests
-                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests
+                e2e_status=0
+                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests || e2e_status=$?
+                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests || e2e_status=$?
+                exit "$e2e_status"
           - name: Test tranches 1 and 5
             uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
             env:
@@ -441,9 +450,13 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: cargo test
+      # Windows is where the members rot fastest: their tests assume POSIX paths and shells
+      # unless something runs them here.
+      - name: cargo test (workspace members)
+        run: cargo test --workspace --exclude mise
   windows-e2e:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 100
     needs: [build-windows, classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:

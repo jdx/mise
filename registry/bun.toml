@@ -4,3 +4,4 @@ description = "Bun is a fast JavaScript all-in-one toolkit"
 detect = ["bun.lock", "bun.lockb", "bunfig.toml"]
 idiomatic_files = [".bun-version", "package.json"]
 test = { cmd = "bun --version", expected = "{{version}}" }
+version_order = "semver"

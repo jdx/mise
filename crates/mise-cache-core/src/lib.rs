@@ -3,7 +3,7 @@ use eyre::{Result, bail, eyre};
 use log::warn;
 use reqwest::StatusCode;
 use reqwest::header::{
-    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue, IF_NONE_MATCH,
+    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, ETAG, HeaderValue, IF_MATCH, IF_NONE_MATCH,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
@@ -18,8 +18,11 @@ use url::{Host, Url};
 mod agent;
 mod local;
 
-pub use agent::{AGENT_PROTOCOL_VERSION, AgentRequest, AgentResponse, AgentStats, CacheAgent};
-pub use local::LocalCas;
+pub use agent::{
+    AGENT_PROTOCOL_VERSION, ActionPrediction, AgentRemoteCache, AgentRequest, AgentResponse,
+    AgentStats, CacheAgent, RestoreStats,
+};
+pub use local::{LocalActionCache, LocalCas};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 const PROTOCOL_HEADER: &str = "mise-cache-protocol";
@@ -27,7 +30,17 @@ const NAMESPACE_HEADER: &str = "mise-cache-namespace";
 pub const ACTION_RESULT_MEDIA_TYPE: &str = "application/vnd.mise.cache-action-result.v1+json";
 pub const DIRECTORY_MEDIA_TYPE: &str = "application/vnd.mise.cache-directory.v1+json";
 pub const CLIENT_METADATA_MEDIA_TYPE: &str = "application/vnd.mise.cache-client-metadata.v1+json";
+pub const TASK_ACTION_MANIFEST_MEDIA_TYPE: &str =
+    "application/vnd.mise.cache-task-action-manifest.v1+json";
 pub const BLOB_MEDIA_TYPE: &str = "application/octet-stream";
+
+/// Serialize a protocol object using the JSON Canonicalization Scheme.
+///
+/// Action digests are computed from these bytes, so callers must not use
+/// serde's struct field order as part of the wire contract.
+pub fn canonical_json(value: &impl Serialize) -> Result<Vec<u8>> {
+    Ok(serde_json_canonicalizer::to_vec(value)?)
+}
 
 #[derive(
     Debug,
@@ -88,6 +101,16 @@ impl CacheDigest {
         }
     }
 
+    /// Hash a file while counting the bytes read in the same streaming pass.
+    pub fn blake3_file(path: &Path) -> Result<Self> {
+        let (hash, size) = hash_file_blake3(path)?;
+        Ok(Self {
+            algorithm: "blake3".into(),
+            hash,
+            size,
+        })
+    }
+
     pub fn validate(&self) -> Result<()> {
         if self.algorithm != "blake3" && self.algorithm != "sha256" {
             bail!("unsupported remote cache digest algorithm");
@@ -118,47 +141,50 @@ impl CacheDigest {
 
     pub fn matches_file(&self, path: &Path) -> Result<bool> {
         self.validate()?;
-        if self.size != fs::metadata(path)?.len() {
-            return Ok(false);
-        }
-        let hash = match self.algorithm.as_str() {
+        let (hash, size) = match self.algorithm.as_str() {
             "blake3" => hash_file_blake3(path)?,
             "sha256" => hash_file_sha256(path)?,
             _ => unreachable!("digest algorithm was validated"),
         };
-        Ok(self.hash == hash)
+        Ok(self.size == size && self.hash == hash)
     }
 }
 
-fn hash_file_blake3(path: &Path) -> Result<String> {
+fn hash_file_blake3(path: &Path) -> Result<(String, u64)> {
     let mut file = File::open(path)?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = [0; 64 * 1024];
+    let mut size = 0;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
+        size += count as u64;
     }
-    Ok(hasher.finalize().to_hex().to_string())
+    Ok((hasher.finalize().to_hex().to_string(), size))
 }
 
-fn hash_file_sha256(path: &Path) -> Result<String> {
+fn hash_file_sha256(path: &Path) -> Result<(String, u64)> {
     let mut file = File::open(path)?;
     let mut hasher = sha2::Sha256::new();
     let mut buffer = [0; 64 * 1024];
+    let mut size = 0;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
+        size += count as u64;
     }
-    Ok(hex::encode(hasher.finalize()))
+    Ok((hex::encode(hasher.finalize()), size))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// A canonical action-result record referencing objects in the CAS.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RemoteActionResult {
     pub action: CacheDigest,
     #[serde(default)]
@@ -168,14 +194,74 @@ pub struct RemoteActionResult {
     pub version: u8,
 }
 
+/// A canonical directory object stored in the CAS.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheDirectory {
+    pub directories: Vec<CacheDirectoryNode>,
+    pub files: Vec<CacheFileNode>,
+    pub symlinks: Vec<CacheSymlinkNode>,
+    pub version: u8,
+}
+
+/// A child directory entry in a canonical cache directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheDirectoryNode {
+    pub digest: CacheDigest,
+    pub mode: u32,
+    pub name: String,
+}
+
+/// A file entry in a canonical cache directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheFileNode {
+    pub digest: CacheDigest,
+    pub executable: bool,
+    pub mode: u32,
+    pub name: String,
+}
+
+/// A symbolic-link entry in a canonical cache directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheSymlinkNode {
+    pub mode: u32,
+    pub name: String,
+    pub target: String,
+}
+
+/// Rust-specific action metadata stored alongside compiled outputs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RustcMetadata {
+    pub version: u8,
+    pub kind: String,
+    pub stdout: CacheDigest,
+    pub stderr: CacheDigest,
+}
+
 pub enum BlobSource {
     Bytes(Vec<u8>),
     File(tempfile::NamedTempFile),
+    Path(PathBuf),
 }
 
 pub struct BlobUpload {
     pub digest: CacheDigest,
     pub source: BlobSource,
+}
+
+pub struct RemoteActionManifest {
+    pub bytes: Vec<u8>,
+    pub etag: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestPutOutcome {
+    Stored,
+    PreconditionFailed,
 }
 
 pub struct RemoteCacheClient {
@@ -231,6 +317,17 @@ impl RemoteCacheClient {
         Ok(self.base_url.join(&format!(
             "v{PROTOCOL_VERSION}/blobs/{}/{}/{}",
             digest.algorithm, digest.hash, digest.size
+        ))?)
+    }
+
+    fn action_manifest_endpoint(&self, key: &CacheDigest) -> Result<Url> {
+        key.validate()?;
+        if key.algorithm != "blake3" {
+            bail!("remote action manifest keys must use blake3");
+        }
+        Ok(self.base_url.join(&format!(
+            "v{PROTOCOL_VERSION}/action-manifests/{}/{}/{}",
+            key.algorithm, key.hash, key.size
         ))?)
     }
 
@@ -303,6 +400,69 @@ impl RemoteCacheClient {
         .await
     }
 
+    pub async fn get_action_manifest(
+        &self,
+        key: &CacheDigest,
+    ) -> Result<Option<RemoteActionManifest>> {
+        let url = self.action_manifest_endpoint(key)?;
+        retry_async("GET", &url, self.retries, || async {
+            let response = self
+                .request(
+                    reqwest::Method::GET,
+                    url.clone(),
+                    TASK_ACTION_MANIFEST_MEDIA_TYPE,
+                )
+                .await?
+                .send()
+                .await?;
+            if response.status() == StatusCode::NOT_FOUND {
+                return Ok(None);
+            }
+            let response = response.error_for_status()?;
+            let etag = parse_strong_etag(response.headers().get(ETAG))?;
+            let bytes = response.bytes().await?.to_vec();
+            if blake3::hash(&bytes).to_hex().as_str() != etag {
+                bail!("remote action manifest ETag does not match its body");
+            }
+            Ok(Some(RemoteActionManifest { bytes, etag }))
+        })
+        .await
+    }
+
+    pub async fn put_action_manifest(
+        &self,
+        key: &CacheDigest,
+        bytes: &[u8],
+        expected_etag: Option<&str>,
+    ) -> Result<ManifestPutOutcome> {
+        let url = self.action_manifest_endpoint(key)?;
+        let body = bytes.to_vec();
+        let expected_etag = expected_etag.map(quoted_etag).transpose()?;
+        retry_async("PUT", &url, self.retries, || async {
+            let mut request = self
+                .request(
+                    reqwest::Method::PUT,
+                    url.clone(),
+                    TASK_ACTION_MANIFEST_MEDIA_TYPE,
+                )
+                .await?
+                .header(CONTENT_TYPE, TASK_ACTION_MANIFEST_MEDIA_TYPE)
+                .body(body.clone());
+            request = if let Some(etag) = &expected_etag {
+                request.header(IF_MATCH, etag)
+            } else {
+                request.header(IF_NONE_MATCH, "*")
+            };
+            let response = request.send().await?;
+            if response.status() == StatusCode::PRECONDITION_FAILED {
+                return Ok(ManifestPutOutcome::PreconditionFailed);
+            }
+            response.error_for_status()?;
+            Ok(ManifestPutOutcome::Stored)
+        })
+        .await
+    }
+
     pub async fn get_blob(
         &self,
         digest: &CacheDigest,
@@ -370,6 +530,12 @@ impl RemoteCacheClient {
                     let stream = tokio_util::io::ReaderStream::new(file);
                     (length, reqwest::Body::wrap_stream(stream))
                 }
+                BlobSource::Path(path) => {
+                    let file = tokio::fs::File::open(path).await?;
+                    let length = file.metadata().await?.len();
+                    let stream = tokio_util::io::ReaderStream::new(file);
+                    (length, reqwest::Body::wrap_stream(stream))
+                }
             };
             let response = self
                 .request(reqwest::Method::PUT, url.clone(), BLOB_MEDIA_TYPE)
@@ -387,6 +553,32 @@ impl RemoteCacheClient {
         })
         .await
     }
+}
+
+fn parse_strong_etag(value: Option<&HeaderValue>) -> Result<String> {
+    let value = value
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| eyre!("remote action manifest response is missing an ETag"))?;
+    let etag = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .filter(|value| is_lower_hex_digest(value))
+        .ok_or_else(|| eyre!("remote action manifest response has an invalid ETag"))?;
+    Ok(etag.to_owned())
+}
+
+fn quoted_etag(etag: &str) -> Result<HeaderValue> {
+    if !is_lower_hex_digest(etag) {
+        bail!("invalid remote action manifest ETag");
+    }
+    Ok(HeaderValue::from_str(&format!("\"{etag}\""))?)
+}
+
+fn is_lower_hex_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Clone)]
@@ -710,6 +902,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn protocol_json_uses_jcs_key_and_number_encoding() {
+        let value = serde_json::json!({"z": 1.0e30, "a": {"d": true, "c": null}});
+        assert_eq!(
+            canonical_json(&value).unwrap(),
+            br#"{"a":{"c":null,"d":true},"z":1e+30}"#
+        );
+    }
+
+    #[test]
     fn dns_errors_are_not_transient() {
         #[derive(Debug)]
         struct DnsError;
@@ -741,6 +942,16 @@ mod tests {
         let file = tempfile::NamedTempFile::new().unwrap();
         fs::write(file.path(), bytes).unwrap();
         assert!(sha256.matches_file(file.path()).unwrap());
+        assert_eq!(
+            CacheDigest::blake3_file(file.path()).unwrap().size,
+            bytes.len() as u64
+        );
+        assert!(
+            CacheDigest::blake3_file(file.path())
+                .unwrap()
+                .matches_bytes(bytes)
+                .unwrap()
+        );
     }
 
     #[test]

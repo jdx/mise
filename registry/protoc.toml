@@ -5,3 +5,4 @@ backends = [
 ]
 bins = ["protoc"]
 description = "Protocol Buffers Compiler - Google's data interchange format"
+version_order = "source"

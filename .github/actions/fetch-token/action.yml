@@ -35,9 +35,17 @@ runs:
           echo "Invalid or missing token in response, skipping"
           exit 0
         fi
-        # Validate the token works by calling GitHub API
-        if ! curl -sf -H "Authorization: Bearer $token" "https://api.github.com/rate_limit" > /dev/null; then
+        # Validate both the token and its usable core budget. GitHub returns 200
+        # from /rate_limit even when the token is already exhausted.
+        rate_limit=$(curl -sf -H "Authorization: Bearer $token" \
+          "https://api.github.com/rate_limit" || true)
+        if [ -z "$rate_limit" ]; then
           echo "Token failed GitHub API validation, skipping"
+          exit 0
+        fi
+        remaining=$(echo "$rate_limit" | jq -r '.resources.core.remaining // 0')
+        if ! [[ "$remaining" =~ ^[0-9]+$ ]] || [ "$remaining" -le 1 ]; then
+          echo "Token has no usable GitHub core rate limit remaining, skipping"
           exit 0
         fi
         echo "token=$token" >> "$GITHUB_OUTPUT"

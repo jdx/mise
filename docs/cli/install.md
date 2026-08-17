@@ -27,10 +27,12 @@ Tool(s) to install e.g.: node@20
 ### `-f --force`
 
 Force reinstall even if already installed
+With no tools specified, reinstall all configured tools
 
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 
 ### `-n --dry-run`
@@ -48,6 +50,13 @@ This argument will print backend output such as download, configuration, and com
 Like --dry-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
+
+### `--include-task-tools`
+
+Also install tools required by tasks in the current scope
+
+This prepares task tools without running task commands or dependencies.
+Combine with --monorepo to include tasks from every configured root.
 
 ### `--minimum-release-age <MINIMUM_RELEASE_AGE>`
 
@@ -87,4 +96,5 @@ mise install node@20.0.0  # install specific node version
 mise install node@20      # install fuzzy node version
 mise install node         # install version specified in mise.toml
 mise install              # installs everything specified in mise.toml
+mise install --include-task-tools # also install tools required by tasks
 ```

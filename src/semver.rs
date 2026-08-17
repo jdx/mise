@@ -74,6 +74,14 @@ pub fn is_npm_semver_range_query(query: &str) -> bool {
     if query.is_empty() || query.eq_ignore_ascii_case("latest") {
         return false;
     }
+    // A real npm range never contains a control character, but `split_whitespace` below counts
+    // tabs and newlines as separators, so a string that was mangled before it got here looks like
+    // a multi-part range. TOML reading `\t` as a tab in `path = "C:\tools\node"` is how that
+    // happens in practice. Calling such a value a semver range points the reader at versions when
+    // the problem is the value itself; the validation that follows already names the real cause.
+    if query.chars().any(|c| c.is_control()) {
+        return false;
+    }
     if query == "*" || query.eq_ignore_ascii_case("x") {
         return true;
     }
@@ -118,8 +126,8 @@ pub fn semver_is_at_least(version: &str, minimum: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        chunkify_version, npm_semver_range_filter, semver_cmp, semver_is_at_least,
-        semver_is_older_than, semver_triplet, split_version_prefix,
+        chunkify_version, is_npm_semver_range_query, npm_semver_range_filter, semver_cmp,
+        semver_is_at_least, semver_is_older_than, semver_triplet, split_version_prefix,
     };
     use std::cmp::Ordering;
 
@@ -239,6 +247,45 @@ mod tests {
             npm_semver_range_filter(&["1.0.0".to_string()], "1.0.0"),
             None
         );
+    }
+
+    #[test]
+    fn test_npm_semver_range_query_ignores_mangled_values() {
+        // A value broken before it reached here is not a range. TOML reads `\t` in
+        // `path = "C:\tools\node"` as a tab and `\n` as a newline, which `split_whitespace`
+        // counts as separators -- so it used to be reported as a multi-part semver range, with
+        // no mention of the path that was actually wrong.
+        assert!(!is_npm_semver_range_query("path:C:\tools\node"));
+        assert!(!is_npm_semver_range_query("1.0\t2.0"));
+        assert!(!is_npm_semver_range_query("1.0\n2.0"));
+    }
+
+    #[test]
+    fn test_npm_semver_range_query_still_detects_real_ranges() {
+        // The control for the test above: skipping control characters must not stop any range
+        // from being detected. None of these contain one.
+        for q in [
+            "^1.2.3",
+            ">=1.0 <2.0",
+            "1.x",
+            "*",
+            "1.2 - 1.5",
+            "1.0 || 2.0",
+        ] {
+            assert!(is_npm_semver_range_query(q), "expected {q:?} to be a range");
+        }
+        // Ordinary values stay non-ranges, including a well-formed `path:`.
+        for q in [
+            "1.0.0",
+            "latest",
+            "path:C:/tools/node",
+            "path:/opt/homebrew/opt/node@20",
+        ] {
+            assert!(
+                !is_npm_semver_range_query(q),
+                "expected {q:?} not to be a range"
+            );
+        }
     }
 
     #[test]

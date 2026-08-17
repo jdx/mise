@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::cli::args::BackendArg;
 use crate::cli::exec::Exec;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -234,7 +235,7 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         })
         .lock();
 
-    let mise_bin = file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone());
+    let mise_bin = mise_bin_for_shims();
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
     #[cfg(windows)]
@@ -333,6 +334,34 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
         .collect::<Result<Vec<_>>>()?;
 
     Ok(())
+}
+
+/// Resolve the mise executable that Unix symlink shims should target.
+///
+/// Snap exposes applications through `/snap/bin`, where each command is a symlink to the
+/// `snap` dispatcher. That dispatcher identifies the application from argv[0], so invoking it
+/// through a mise shim named `node`, `python`, etc. runs the snap CLI instead of mise. Point Snap
+/// shims at the payload beneath its refresh-stable `current` symlink instead. For other package
+/// managers, retain the PATH-visible executable so their stable launcher survives upgrades.
+pub(crate) fn mise_bin_for_shims() -> PathBuf {
+    env::var_path("SNAP")
+        .as_deref()
+        .and_then(|snap| snap_mise_bin(&env::MISE_BIN, snap))
+        .unwrap_or_else(|| file::which_no_shims("mise").unwrap_or(env::MISE_BIN.clone()))
+}
+
+fn snap_mise_bin(mise_bin: &Path, snap: &Path) -> Option<PathBuf> {
+    let relative = mise_bin
+        .strip_prefix(snap)
+        .map(Path::to_path_buf)
+        .or_else(|_| {
+            let mise_bin = file::canonicalize_or_self(mise_bin);
+            let snap = file::canonicalize_or_self(snap);
+            mise_bin.strip_prefix(snap).map(Path::to_path_buf)
+        })
+        .ok()?;
+    let snap_mount = snap.parent()?;
+    Some(snap_mount.join("current").join(relative))
 }
 
 /// Remove all shim files from a directory individually, skipping dotfiles like
@@ -843,11 +872,127 @@ pub(crate) fn unavailable_configured_tool_message(
     Some(msg.trim().to_string())
 }
 
+/// `mise install <tool>` deliberately writes to no config file, so the tool's
+/// bin dir never joins the PATH `mise exec` builds and resolution fails with an
+/// opaque error (`cannot find binary path` on Windows, `couldn't exec process`
+/// on unix). When an installed-but-unconfigured tool would have supplied the
+/// bin, name it and say how to activate it. See discussion #4407.
+///
+/// Returns `None` when a configured tool already matches the bin: that failure
+/// has a different cause, and `err_no_version_set` /
+/// `unavailable_configured_tool_message` already explain it.
+///
+/// Matching is by tool name, so a bin that shares no name with the tool
+/// providing it (`npm` from `node`) is not recognized. Those callers fall back
+/// to the existing message rather than getting a wrong one.
+pub(crate) fn inactive_installed_tool_message(
+    ts: &Toolset,
+    installed_shorts: &[String],
+    bin_name: &str,
+) -> Option<String> {
+    // Every tool declared in config is a key here, even one that failed version
+    // resolution, is unsupported on this OS, or whose backend could not be
+    // built. `list_current_versions()` drops all three, which would let a
+    // configured tool be reported as "not in any config file".
+    if ts.versions.keys().any(|ba| ba.matches_bin_name(bin_name)) {
+        return None;
+    }
+    let shorts = installed_shorts
+        .iter()
+        .filter(|short| BackendArg::from(short.as_str()).matches_bin_name(bin_name))
+        .collect_vec();
+    if shorts.is_empty() {
+        return None;
+    }
+    let mut msg =
+        format!("{bin_name} is installed but not activated — it is not in any config file.\n");
+    msg.push_str("To activate it, run:\n");
+    for short in &shorts {
+        msg.push_str(&format!("  mise use {short}\n"));
+    }
+    msg.push_str("To run it without changing any config file, run:\n");
+    for short in &shorts {
+        msg.push_str(&format!("  mise exec {short} -- {bin_name}\n"));
+    }
+    Some(msg.trim().to_string())
+}
+
+/// Gather what [`inactive_installed_tool_message`] needs. Only called once a
+/// binary has definitively failed to resolve, so the config/toolset load lands
+/// on a path that is about to abort anyway.
+#[cfg(not(test))]
+pub async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
+    // Windows invokes binaries as `<tool>.exe`; name `<tool>` in the message.
+    let bin_stem = bin_name
+        .strip_suffix(std::env::consts::EXE_SUFFIX)
+        .unwrap_or(bin_name);
+    let config = Config::get().await.ok()?;
+    let ts = ToolsetBuilder::new().build(&config).await.ok()?;
+    // A disabled tool is skipped by `Toolset::add_version`, so it never reaches
+    // the configured-tool check above. Suggesting `mise use` for one would be
+    // wrong twice over: it may well be in a config file, and mise has been told
+    // not to manage it.
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    // try_list_tools rather than list_tools: an error path must not panic
+    // because install state was never initialized.
+    let installed_shorts = crate::toolset::install_state::try_list_tools()?
+        .values()
+        .filter(|t| !t.versions.is_empty())
+        .map(|t| t.short.clone())
+        .filter(|short| crate::registry::tool_enabled(enable_tools.as_ref(), &disable_tools, short))
+        .collect_vec();
+    inactive_installed_tool_message(&ts, &installed_shorts, bin_stem)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn snap_mise_bin_uses_refresh_stable_current_path() {
+        assert_eq!(
+            snap_mise_bin(
+                Path::new("/snap/mise/189/bin/mise"),
+                Path::new("/snap/mise/189")
+            ),
+            Some(PathBuf::from("/snap/mise/current/bin/mise"))
+        );
+    }
+
+    #[test]
+    fn snap_mise_bin_rejects_unrelated_executable() {
+        assert_eq!(
+            snap_mise_bin(
+                Path::new("/home/user/.local/bin/mise"),
+                Path::new("/snap/mise/189")
+            ),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snap_mise_bin_handles_symlinked_snap_mount() {
+        let temp = tempfile::tempdir().unwrap();
+        let canonical_mount = temp.path().join("var/lib/snapd/snap");
+        let canonical_snap = canonical_mount.join("mise/189");
+        let mise_bin = canonical_snap.join("bin/mise");
+        fs::create_dir_all(mise_bin.parent().unwrap()).unwrap();
+        fs::write(&mise_bin, "").unwrap();
+
+        let snap_mount = temp.path().join("snap");
+        std::os::unix::fs::symlink(&canonical_mount, &snap_mount).unwrap();
+        let snap = snap_mount.join("mise/189");
+
+        assert_eq!(
+            snap_mise_bin(&mise_bin, &snap),
+            Some(snap_mount.join("mise/current/bin/mise"))
+        );
+    }
 
     #[tokio::test]
     async fn unavailable_tool_message_prefers_matching_configured_tool() {
@@ -872,6 +1017,61 @@ mod tests {
         let msg = unavailable_configured_tool_message(&config, &ts, "codex").unwrap();
         assert!(msg.contains("mise install --force codex@1.0.0"));
         assert!(!msg.contains("node@1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn inactive_tool_message_names_the_installed_tool() {
+        let _config = Config::get().await.unwrap();
+        let ts = Toolset::new(ToolSource::Argument);
+
+        let msg = inactive_installed_tool_message(&ts, &["gh".to_string()], "gh").unwrap();
+        assert!(msg.contains("installed but not activated"));
+        assert!(msg.contains("mise use gh"));
+        assert!(msg.contains("mise exec gh -- gh"));
+    }
+
+    #[tokio::test]
+    async fn inactive_tool_message_is_none_for_configured_tool() {
+        let _config = Config::get().await.unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+        let ba = Arc::new(BackendArg::from("gh"));
+        let request = ToolRequest::new(ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request.clone(), "1.0.0".into());
+        let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
+        tvl.requests.push(request);
+        tvl.versions.push(tv);
+        ts.versions.insert(ba, tvl);
+
+        // A configured tool that still fails to resolve has a different cause;
+        // err_no_version_set/unavailable_configured_tool_message own that case.
+        assert!(inactive_installed_tool_message(&ts, &["gh".to_string()], "gh").is_none());
+    }
+
+    /// A tool can be declared in config and still be absent from
+    /// `list_current_versions()` -- version resolution failed, the OS is not
+    /// supported, or its backend could not be built. It must not then be
+    /// reported as "not in any config file".
+    #[tokio::test]
+    async fn inactive_tool_message_is_none_for_a_configured_tool_with_no_resolved_versions() {
+        let _config = Config::get().await.unwrap();
+        let mut ts = Toolset::new(ToolSource::Argument);
+        let ba = Arc::new(BackendArg::from("gh"));
+        ts.versions.insert(
+            ba.clone(),
+            ToolVersionList::new(ba, ToolSource::Argument), // no versions resolved
+        );
+
+        assert!(inactive_installed_tool_message(&ts, &["gh".to_string()], "gh").is_none());
+    }
+
+    #[tokio::test]
+    async fn inactive_tool_message_is_none_when_bin_does_not_name_the_tool() {
+        let _config = Config::get().await.unwrap();
+        let ts = Toolset::new(ToolSource::Argument);
+
+        // Matching is by tool name, so a bin like npm (provided by node) is not
+        // recognized and the caller keeps its existing message.
+        assert!(inactive_installed_tool_message(&ts, &["node".to_string()], "npm").is_none());
     }
 
     #[cfg(windows)]

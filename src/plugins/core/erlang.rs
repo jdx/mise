@@ -9,7 +9,7 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 #[cfg(unix)]
 use crate::file::ExtractOptions;
 use crate::file::display_path;
@@ -94,7 +94,7 @@ impl ErlangPlugin {
 
     fn precompiled_unavailable(&self, reason: impl Into<String>) -> Result<Option<ToolVersion>> {
         let reason = reason.into();
-        if Settings::get().erlang.compile == Some(false) {
+        if Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(false) {
             bail!("precompiled erlang is not available: {reason}");
         }
         debug!("{reason}");
@@ -163,7 +163,7 @@ impl ErlangPlugin {
         format!("otp-source-{}.tar.gz", crate::hash::hash_sha256_to_str(url))
     }
 
-    fn linux_precompiled_url(version: &str, target: &PlatformTarget) -> Result<String> {
+    fn linux_precompiled_base_url(target: &PlatformTarget) -> Result<String> {
         if target.libc() == Some("musl") {
             bail!("precompiled erlang is not supported on musl linux");
         }
@@ -173,10 +173,24 @@ impl ErlangPlugin {
             other => bail!("unsupported architecture: {other}"),
         };
         let os_ver = Self::linux_precompiled_os_version()?;
-        Ok(format!(
-            "https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{}.tar.gz",
-            Self::release_tag(version)
-        ))
+        Ok(format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}"))
+    }
+
+    async fn linux_precompiled_lock_info(
+        version: &str,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let base_url = Self::linux_precompiled_base_url(target)?;
+        let release_tag = Self::release_tag(version);
+        let builds = HTTP_FETCH
+            .get_text_cached(format!("{base_url}/builds.txt"))
+            .await?;
+        let checksum = parse_hex_build_checksum(&builds, &release_tag)?;
+        Ok(PlatformInfo {
+            url: Some(format!("{base_url}/{release_tag}.tar.gz")),
+            checksum: Some(checksum),
+            ..Default::default()
+        })
     }
 
     #[cfg(linux)]
@@ -298,14 +312,22 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             return Ok(None);
         }
-        let url = if let Some(url) = self.lockfile_url(ctx.locked, &tv) {
-            url
+        let (url, checksum) = if let Some(url) = self.lockfile_url(ctx.locked, &tv) {
+            let checksum = require_locked_precompiled_checksum(
+                &tv.version,
+                tv.lock_platforms
+                    .get(&self.get_platform_key())
+                    .and_then(|info| info.checksum.as_deref()),
+            )?;
+            (url, checksum)
         } else {
-            match Self::linux_precompiled_url(&tv.version, &PlatformTarget::from_current()) {
-                Ok(url) => url,
+            match Self::linux_precompiled_lock_info(&tv.version, &PlatformTarget::from_current())
+                .await
+            {
+                Ok(info) => (info.url.unwrap(), info.checksum.unwrap()),
                 Err(e) => {
                     return self.precompiled_unavailable(e.to_string());
                 }
@@ -322,7 +344,8 @@ impl ErlangPlugin {
             HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
-        self.set_lockfile_info(&mut tv, None, &url, None, None);
+        self.set_lockfile_info(&mut tv, None, &url, Some(checksum), None);
+        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {filename}"));
         file::untar(
             &tarball_path,
@@ -372,7 +395,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             return Ok(None);
         }
         let release_tag = Self::release_tag(&tv.version);
@@ -429,7 +452,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             return Ok(None);
         }
         let release_tag = Self::release_tag(&tv.version);
@@ -479,7 +502,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         _tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if !ctx.locked && Settings::get().erlang.compile == Some(true) {
+        if !ctx.locked && Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(true) {
             Ok(None)
         } else {
             self.precompiled_unavailable("precompiled erlang is not supported on this platform")
@@ -571,7 +594,7 @@ impl Backend for ErlangPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = if Settings::get().erlang.compile == Some(false) {
+        let versions = if Settings::get().erlang_compile(CompilePurpose::Inspect) == Some(false) {
             github::list_releases("erlef/otp_builds")
                 .await?
                 .into_iter()
@@ -615,11 +638,17 @@ impl Backend for ErlangPlugin {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let platform_key = self.get_platform_key();
+        let settings = Settings::get();
+        let erlang_compile = if ctx.locked {
+            settings.erlang_compile(CompilePurpose::Inspect)
+        } else {
+            settings.erlang_compile(CompilePurpose::Install)
+        };
         if should_install_from_source(
             ctx.locked,
             &tv.lock_platforms,
             &platform_key,
-            Settings::get().erlang.compile,
+            erlang_compile,
         ) {
             return self.install_via_kerl(ctx, tv).await;
         }
@@ -637,7 +666,7 @@ impl Backend for ErlangPlugin {
         let mut opts = BTreeMap::new();
         let settings = Settings::get();
 
-        match settings.erlang.compile {
+        match settings.erlang_compile(CompilePurpose::Inspect) {
             Some(true) => {
                 opts.insert("compile".to_string(), "true".to_string());
             }
@@ -662,18 +691,15 @@ impl Backend for ErlangPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        let compile = Settings::get().erlang.compile;
+        let compile = Settings::get().erlang_compile(CompilePurpose::Inspect);
         if compile == Some(true) {
             return self.resolve_source_lock_info(&tv.version).await;
         }
 
         let release_tag = Self::release_tag(&tv.version);
         match target.os_name() {
-            "linux" => match Self::linux_precompiled_url(&tv.version, target) {
-                Ok(url) => Ok(PlatformInfo {
-                    url: Some(url),
-                    ..Default::default()
-                }),
+            "linux" => match Self::linux_precompiled_lock_info(&tv.version, target).await {
+                Ok(info) => Ok(info),
                 Err(err) if compile == Some(false) => Err(err),
                 Err(_) => self.resolve_source_lock_info(&tv.version).await,
             },
@@ -766,9 +792,94 @@ fn should_install_from_source(
     }
 }
 
+fn parse_hex_build_checksum(builds: &str, release_tag: &str) -> Result<String> {
+    let matching = builds
+        .lines()
+        .filter_map(|line| {
+            let parts = line.split_whitespace().collect::<Vec<_>>();
+            (parts.first() == Some(&release_tag)).then_some(parts)
+        })
+        .collect::<Vec<_>>();
+
+    if matching.len() != 1 {
+        bail!(
+            "expected exactly one Hex OTP build record for {release_tag}, found {}",
+            matching.len()
+        );
+    }
+
+    let checksum = matching[0]
+        .get(3)
+        .ok_or_else(|| eyre::eyre!("Hex OTP build record for {release_tag} has no checksum"))?;
+    if !regex!(r"^[0-9a-f]{64}$").is_match(checksum) {
+        bail!("invalid Hex OTP checksum for {release_tag}: {checksum}");
+    }
+
+    Ok(format!("sha256:{checksum}"))
+}
+
+#[cfg(any(linux, test))]
+fn require_locked_precompiled_checksum(version: &str, checksum: Option<&str>) -> Result<String> {
+    let checksum = checksum.ok_or_else(|| {
+        eyre::eyre!(
+            "No lockfile checksum found for precompiled Erlang/OTP {version}; regenerate mise.lock with `mise lock`"
+        )
+    })?;
+    if !regex!(r"^sha256:[0-9a-f]{64}$").is_match(checksum) {
+        bail!(
+            "Invalid lockfile checksum for precompiled Erlang/OTP {version}; regenerate mise.lock with `mise lock`"
+        );
+    }
+
+    Ok(checksum.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_hex_build_checksum_requires_exact_publisher_record() {
+        let builds = "OTP-28.5.0.4 abc 2026-07-27T13:55:40Z 34498e6287e1fbc31250d36dd88bcdb1d286cedbdd9b1a66bbc4284738d2d2eb\n\
+                      OTP-28.5.0.5 def 2026-08-04T10:35:03Z e3476633cae6fef8e1bb53576832b15823f715e70e3d4d1e66a6be908804f967\n";
+
+        assert_eq!(
+            parse_hex_build_checksum(builds, "OTP-28.5.0.5").unwrap(),
+            "sha256:e3476633cae6fef8e1bb53576832b15823f715e70e3d4d1e66a6be908804f967"
+        );
+        assert!(parse_hex_build_checksum(builds, "OTP-28.5.0.6").is_err());
+    }
+
+    #[test]
+    fn test_parse_hex_build_checksum_rejects_missing_malformed_and_duplicate_evidence() {
+        let missing = "OTP-28.5.0.5 def 2026-08-04T10:35:03Z\n";
+        let malformed = "OTP-28.5.0.5 def 2026-08-04T10:35:03Z abc123\n";
+        let duplicate = "OTP-28.5.0.5 def 2026-08-04T10:35:03Z e3476633cae6fef8e1bb53576832b15823f715e70e3d4d1e66a6be908804f967\n\
+                         OTP-28.5.0.5 def 2026-08-04T10:35:03Z e3476633cae6fef8e1bb53576832b15823f715e70e3d4d1e66a6be908804f967\n";
+
+        assert!(parse_hex_build_checksum(missing, "OTP-28.5.0.5").is_err());
+        assert!(parse_hex_build_checksum(malformed, "OTP-28.5.0.5").is_err());
+        assert!(parse_hex_build_checksum(duplicate, "OTP-28.5.0.5").is_err());
+    }
+
+    #[test]
+    fn test_locked_precompiled_checksum_is_mandatory_and_well_formed() {
+        let valid = "sha256:e3476633cae6fef8e1bb53576832b15823f715e70e3d4d1e66a6be908804f967";
+
+        assert_eq!(
+            require_locked_precompiled_checksum("28.5.0.5", Some(valid)).unwrap(),
+            valid
+        );
+        assert!(require_locked_precompiled_checksum("28.5.0.5", None).is_err());
+        assert!(require_locked_precompiled_checksum("28.5.0.5", Some("sha256:abc123")).is_err());
+        assert!(
+            require_locked_precompiled_checksum(
+                "28.5.0.5",
+                Some("sha512:e3476633cae6fef8e1bb53576832b15823f715e70e3d4d1e66a6be908804f967")
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn test_source_build_kerl_env_pins_staged_archive() {

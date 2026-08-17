@@ -6,3 +6,4 @@ backends = [
 bins = ["delta"]
 description = "A syntax-highlighting pager for git, diff, and grep output"
 test = { cmd = "delta --version", expected = "delta {{version}}" }
+version_order = "semver"

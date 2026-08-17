@@ -2,3 +2,4 @@ backends = ["npm:svgo"]
 bins = ["svgo"]
 description = "command-line application for optimizing vector images"
 test = { cmd = "svgo --version", expected = "{{version}}" }
+version_order = "semver"

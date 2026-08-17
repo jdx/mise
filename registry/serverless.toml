@@ -1,4 +1,5 @@
 description = "Serverless Framework"
+version_order = "semver"
 
 bins = ["serverless", "sls"]
 [[backends]]

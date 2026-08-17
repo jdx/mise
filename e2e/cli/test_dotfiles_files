@@ -20,12 +20,20 @@ cat <<EOF >mise.toml
 "~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
 "~/.config/nvim" = "dotfiles/nvim"
 "~/.local/mybin" = { source = "dotfiles/bin", mode = "symlink-each" }
+"~/.config/inline.conf" = { content = "inline content\n" }
 EOF
 
 # everything is missing before applying
 assert_contains "mise bootstrap dotfiles status" "missing"
 assert_contains "MISE_EXPERIMENTAL=0 mise dotfiles status" "missing"
 assert_fail "mise dotfiles status --missing"
+assert_succeed "mise dotfiles status --json | jq -e '.files[] | select(.target == \"~/.gitconfig\") | .origin.config == \"$PWD/mise.toml\" and .origin.config_root == \"$PWD\" and .origin.source == \"$PWD/dotfiles/gitconfig\"'"
+
+cat <<EOF >mise.dev.toml
+[dotfiles]
+"~/.dev-origin" = { content = "dev" }
+EOF
+assert_succeed "MISE_ENV=dev mise dotfiles status --json | jq -e '.files[] | select(.target == \"~/.dev-origin\") | .origin.environment == [\"dev\"]'"
 
 # system commands do not manage dotfiles
 assert_succeed "mise bootstrap packages apply --yes"
@@ -42,6 +50,32 @@ assert "cat ~/.ssh/config" "sum = 2"
 assert "readlink ~/.config/nvim" "$PWD/dotfiles/nvim"
 assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
 assert "readlink ~/.local/mybin/two" "$PWD/dotfiles/bin/two"
+assert "cat ~/.config/inline.conf" "inline content"
+
+# Inline content is a whole-file entry and overwrites content drift.
+assert_contains "mise dotfiles status ~/.config/inline.conf --json" '"source": null'
+echo "drifted" >~/.config/inline.conf
+assert_contains "mise dotfiles status ~/.config/inline.conf" "content differs"
+assert_succeed "mise dotfiles apply ~/.config/inline.conf --yes"
+assert "cat ~/.config/inline.conf" "inline content"
+
+# A matching symlink was not created by inline content mode and must not be
+# removed without --force.
+echo "linked inline" >linked-inline-source
+ln -s "$PWD/linked-inline-source" ~/.config/linked-inline.conf
+cat <<EOF >>mise.toml
+"~/.config/linked-inline.conf" = { content = "linked inline\n" }
+EOF
+assert_fail "mise dotfiles unapply ~/.config/linked-inline.conf --yes" "target differs from the managed content"
+assert "readlink ~/.config/linked-inline.conf" "$PWD/linked-inline-source"
+
+# Inline content can target any path writable by the current user.
+inline_absolute="$PWD/inline-absolute.conf"
+cat <<EOF >>mise.toml
+"$inline_absolute" = { content = "absolute inline\n" }
+EOF
+assert_succeed "mise dotfiles apply '$inline_absolute' --yes"
+assert "cat '$inline_absolute'" "absolute inline"
 
 # a table containing only source is a whole-file dotfile entry, not an edit
 echo "source-only table" >dotfiles/source-only
@@ -51,6 +85,13 @@ EOF
 assert_contains "mise dotfiles status ~/.source-only" "symlink"
 assert_succeed "mise dotfiles apply ~/.source-only --yes"
 assert "readlink ~/.source-only" "$PWD/dotfiles/source-only"
+
+# Inline content cannot be combined with source-oriented options.
+cat <<EOF >invalid-inline.toml
+[dotfiles]
+"~/.invalid-inline" = { content = "nope", source = "dotfiles/source-only" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/invalid-inline.toml mise dotfiles status ~/.invalid-inline" "source and content are mutually exclusive"
 
 # wildcard sources expand to concrete target paths using matching target wildcards
 mkdir -p dotfiles/config dotfiles/question dotfiles/classes dotfiles/tree/nested

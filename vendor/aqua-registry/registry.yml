@@ -6333,6 +6333,29 @@ packages:
         format: raw
         complete_windows_ext: false
   - type: github_release
+    repo_owner: OpenRouterLabs
+    repo_name: ori-releases
+    description: Ori CLI release repo
+    version_prefix: cli-
+    files:
+      - name: ori
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["cli-0.0.0-02e9757", "cli-0.0.0-1b829d5", "cli-0.0.0-1c71b5b", "cli-0.0.0-1f610f5", "cli-0.0.0-2f0a249", "cli-0.0.0-34641b1", "cli-0.0.0-3d9c01d", "cli-0.0.0-47f0103", "cli-0.0.0-50b0d25", "cli-0.0.0-5302a93", "cli-0.0.0-592965f", "cli-0.0.0-944fc7a", "cli-0.0.0-9645986", "cli-0.0.0-b5fd984", "cli-0.0.0-b98cd74", "cli-0.0.0-cebea8b", "cli-0.0.0-d68ced1", "cli-0.0.0-d9bbd76", "cli-0.0.0-e701796", "cli-0.0.0-faa36d3"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: ori-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
     repo_owner: Orange-OpenSource
     repo_name: hurl
     description: Hurl, run and test HTTP requests with plain text
@@ -13804,7 +13827,7 @@ packages:
     version_overrides:
       - version_constraint: Version == "v2.1.88"
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.1.117") or Version == "v2.1.126"
         format: raw
         url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}/claude
         files:
@@ -13824,6 +13847,31 @@ packages:
         supported_envs:
           - darwin
           - linux
+      - version_constraint: "true"
+        type: github_release
+        asset: claude-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: claude-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
+          - goos: windows
+            format: zip
+        files:
+          - name: claude
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: SHASUMS256.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: antonmedv
     repo_name: fx
@@ -14498,14 +14546,12 @@ packages:
     repo_owner: apstndb
     repo_name: execspansql
     description: Yet another gcloud spanner databases execute-sql replacement for better composability
-    version_source: github_tag
   - name: apstndb/spannerplanviz/rendertree
     type: go_install
     repo_owner: apstndb
     repo_name: spannerplanviz
     path: github.com/apstndb/spannerplanviz/cmd/rendertree
     description: This tool render YAML or JSON representation of Cloud Spanner query plan as ascii format
-    version_source: github_tag
   - type: github_release
     repo_owner: aptly-dev
     repo_name: aptly
@@ -28633,8 +28679,10 @@ packages:
       - darwin
       - amd64
     rosetta2: true
-    # TODO checksum: support sha1
-    # https://github.com/aquaproj/aqua/issues/1216
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha1"
+      algorithm: sha1
     files:
       - name: fly
   - name: connectrpc/connect-go/protoc-gen-connect-go
@@ -53292,17 +53340,17 @@ packages:
         windows_arm_emulation: true
         replacements:
           darwin: macOS
+        files:
+          - name: pandoc
+            src: "pandoc-{{.Version}}/bin/pandoc"
+          - name: pandoc-lua
+            src: "pandoc-{{.Version}}/bin/pandoc-lua"
+          - name: pandoc-server
+            src: "pandoc-{{.Version}}/bin/pandoc-server"
         overrides:
-          - goos: linux
-            files:
-              - name: pandoc
-                src: "pandoc-{{.Version}}/bin/pandoc"
           - goos: darwin
             format: zip
             asset: pandoc-{{.Version}}-{{.OS}}.{{.Format}}
-            files:
-              - name: pandoc
-                src: "pandoc-{{.Version}}/bin/pandoc"
           - goos: windows
             format: zip
             files:
@@ -53323,6 +53371,10 @@ packages:
             files:
               - name: pandoc
                 src: "pandoc-{{.Version}}/bin/pandoc"
+              - name: pandoc-lua
+                src: "pandoc-{{.Version}}/bin/pandoc-lua"
+              - name: pandoc-server
+                src: "pandoc-{{.Version}}/bin/pandoc-server"
             replacements:
               amd64: amd64
           - goos: darwin
@@ -53330,6 +53382,10 @@ packages:
             files:
               - name: pandoc
                 src: "pandoc-{{.Version}}-{{.Arch}}/bin/pandoc"
+              - name: pandoc-lua
+                src: "pandoc-{{.Version}}-{{.Arch}}/bin/pandoc-lua"
+              - name: pandoc-server
+                src: "pandoc-{{.Version}}-{{.Arch}}/bin/pandoc-server"
           - goos: windows
             files:
               - name: pandoc
@@ -61229,7 +61285,6 @@ packages:
       - name: kunobi-ninja/kunobi-releases
     description: Kubernetes IDE for managing clusters, resources, and workloads
     link: https://kunobi.ninja
-    version_source: github_tag
     url: https://r2.kunobi.ninja/v{{.Version}}/Kunobi_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
     format: tar.gz
     replacements:
@@ -64117,6 +64172,14 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: Version == "v4.3.0"
+        asset: github-nippou_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: github-nippou_{{.Version}}_checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: github-nippou_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: zip
@@ -64125,6 +64188,8 @@ packages:
           type: github_release
           asset: github-nippou_{{.Version}}_checksums.txt
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: masutaka/github-nippou/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: mathew-fleisch
     repo_name: bashbot
@@ -64232,6 +64297,19 @@ packages:
     description: Explain any lockfile change before you merge it — bumps, breaking jumps, new vulns, release ages & deprecations across 30 lockfile formats + SBOMs. CLI, GitHub Action, browser playground, and MCP server so AI assistants can vet PRs too
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.4.4")
+        asset: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        files:
+          - name: lockvet
+            src: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}/lockvet
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: lockvet_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -64245,6 +64323,8 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: matteo-sung/lockvet/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: mattermost
     repo_name: mmctl
@@ -64685,6 +64765,40 @@ packages:
       type: github_release
       asset: checksums.txt
       algorithm: sha256
+  - type: github_release
+    repo_owner: mekedron
+    repo_name: wolt-cli
+    description: "Free & Open Source CLI for Wolt: discover venues, inspect menus and options, manage carts, and preview checkout from the terminal"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.4.0")
+        asset: wolt_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: wolt
+          - name: wolt-mcp
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: wolt_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: wolt
+          - name: wolt-mcp
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+        github_artifact_attestations:
+          signer_workflow: mekedron/wolt-cli/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: mercari
     repo_name: hcledit
@@ -65726,6 +65840,29 @@ packages:
               - https://github.com/mikefarah/yq/.github/workflows/release.yml@refs/tags/{{.Version}}
               - --certificate-oidc-issuer
               - https://token.actions.githubusercontent.com
+  - type: github_release
+    repo_owner: mikevalstar
+    repo_name: okq
+    description: Fast, deterministic CLI to search and navigate Open Knowledge Format (OKF), or Obsidian style doc bundles — for humans and AI agents. Find by frontmatter, traverse the link graph, surface orphans/deadlinks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: okq-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: okq-{{.Arch}}-{{.OS}}.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: miku
     repo_name: zek
@@ -66770,6 +66907,17 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
+      - version_constraint: semver("<= 0.12.0-beta.1")
+        asset: hunkdiff-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: hunk
+            src: "{{.AssetWithoutExt}}/hunk"
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: hunkdiff-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -66781,6 +66929,7 @@ packages:
         supported_envs:
           - linux
           - darwin
+          - windows/amd64
   - type: github_release
     repo_owner: momaek
     repo_name: authy
@@ -87910,6 +88059,23 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+      - version_constraint: semver("<= 0.29.0")
+        asset: timoni_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: timoni_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: timoni_{{trimV .Version}}_provenance.intoto.jsonl
       - version_constraint: "true"
         asset: timoni_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -87927,6 +88093,8 @@ packages:
         slsa_provenance:
           type: github_release
           asset: timoni_{{trimV .Version}}_provenance.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: stefanprodan/timoni/\.github/workflows/release\.yaml
   - type: github_release
     repo_owner: stepchowfun
     repo_name: docuum
@@ -97622,6 +97790,43 @@ packages:
         files:
           - name: coreutils
             src: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}/coreutils
+  - type: github_release
+    repo_owner: uutils
+    repo_name: sed
+    description: Rewrite of sed in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "latest-commit"
+        error_message: The version 'latest-commit' is not supported
+      - version_constraint: Version == "0.1.1"
+        asset: sed-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        files:
+          - name: sed
+            src: "{{.AssetWithoutExt}}/sed"
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+            files:
+              - name: sed
   - type: github_release
     repo_owner: uw-labs
     repo_name: strongbox

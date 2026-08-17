@@ -5,7 +5,7 @@ use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::file::{canonicalize_cached, display_path, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
-use crate::shell::{ShellType, get_shell};
+use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::ui::style;
 use crate::{env, hook_env, hooks, watch_files};
@@ -52,7 +52,10 @@ pub struct HookEnv {
 
 impl HookEnv {
     pub async fn run(self) -> Result<()> {
-        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
+        let shell = require_shell(
+            self.shell,
+            &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
+        )?;
         let config = match Config::get().await {
             Ok(config) => config,
             Err(err) => {
@@ -272,7 +275,7 @@ impl HookEnv {
             }
         }
         ts.notify_if_versions_missing(config).await;
-        crate::deps::notify_if_stale(config);
+        crate::deps::notify_if_stale(config, cur_env);
         Ok(())
     }
 

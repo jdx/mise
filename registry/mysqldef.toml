@@ -1,3 +1,4 @@
 backends = ["aqua:sqldef/sqldef/mysqldef"]
 bins = ["mysqldef"]
 description = "Idempotent schema management for MySQL and more"
+version_order = "semver"

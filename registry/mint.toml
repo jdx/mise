@@ -1,3 +1,4 @@
 backends = ["github:mint-lang/mint", "asdf:mint-lang/asdf-mint"]
 bins = ["mint"]
 description = "🍃 A refreshing programming language for the front-end web"
+version_order = "semver"

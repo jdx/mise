@@ -1,16 +1,20 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use eyre::{Report, Result, WrapErr, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{
+    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, DATE, ETAG, HeaderMap,
+    HeaderValue, IF_RANGE, LAST_MODIFIED, RANGE,
+};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
@@ -76,6 +80,7 @@ struct SendOnceOptions {
     use_netrc: bool,
     retry_github_oauth_401: bool,
     error_for_status: bool,
+    allow_range_not_satisfiable: bool,
     retry_state: Option<RetryStateHandle>,
 }
 
@@ -85,6 +90,7 @@ impl SendOnceOptions {
             use_netrc,
             retry_github_oauth_401: true,
             error_for_status: true,
+            allow_range_not_satisfiable: false,
             retry_state,
         }
     }
@@ -94,14 +100,359 @@ impl SendOnceOptions {
         self
     }
 
+    fn allow_range_not_satisfiable(mut self) -> Self {
+        self.allow_range_not_satisfiable = true;
+        self
+    }
+
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
             retry_github_oauth_401: false,
             error_for_status: self.error_for_status,
+            allow_range_not_satisfiable: self.allow_range_not_satisfiable,
             retry_state: self.retry_state.clone(),
         }
     }
+}
+
+const PARTIAL_DOWNLOAD_STATE_VERSION: u8 = 3;
+const PARTIAL_DOWNLOAD_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+enum DownloadValidator {
+    Etag(String),
+    LastModified {
+        value: String,
+        response_date: String,
+    },
+}
+
+impl DownloadValidator {
+    fn as_header_value(&self) -> &str {
+        match self {
+            Self::Etag(value) | Self::LastModified { value, .. } => value,
+        }
+    }
+
+    fn matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Etag(a), Self::Etag(b)) => a == b,
+            (Self::LastModified { value: a, .. }, Self::LastModified { value: b, .. }) => a == b,
+            _ => false,
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        match self {
+            Self::Etag(value) => !value.is_empty() && !value.starts_with("W/"),
+            Self::LastModified {
+                value,
+                response_date,
+            } => is_strong_last_modified(value, response_date),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DownloadSizeMismatch {
+    expected: u64,
+    actual: u64,
+}
+
+impl std::fmt::Display for DownloadSizeMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "downloaded file size mismatch: expected {} bytes, got {}",
+            self.expected, self.actual
+        )
+    }
+}
+
+impl std::error::Error for DownloadSizeMismatch {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PartialDownloadState {
+    version: u8,
+    request_hash: String,
+    validator: DownloadValidator,
+    total_size: Option<u64>,
+    effective_filename: Option<String>,
+}
+
+/// Safe response metadata exposed to download callers.
+///
+/// This intentionally contains only the final URL's decoded path basename.
+/// Query strings, fragments, credentials, and the complete URL are never
+/// persisted in resumable download state.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DownloadFileMetadata {
+    pub(crate) effective_filename: Option<String>,
+}
+
+fn download_filename_hint(url: &Url) -> Option<String> {
+    let segment = url.path_segments()?.next_back()?;
+    let filename = urlencoding::decode(segment).ok()?.into_owned();
+    if filename.is_empty()
+        || filename == "."
+        || filename == ".."
+        || filename.ends_with([' ', '.'])
+        || filename.chars().any(|c| {
+            c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+    {
+        None
+    } else {
+        Some(filename)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PartialDownload {
+    path: PathBuf,
+    state_path: PathBuf,
+    request_hash: String,
+}
+
+impl PartialDownload {
+    fn new(destination: &Path, request_hash: String) -> Result<Self> {
+        let parent = destination.parent().ok_or_else(|| {
+            eyre!(
+                "download destination has no parent: {}",
+                destination.display()
+            )
+        })?;
+        let filename = destination
+            .file_name()
+            .ok_or_else(|| {
+                eyre!(
+                    "download destination has no filename: {}",
+                    destination.display()
+                )
+            })?
+            .to_string_lossy();
+        let partial_name = format!(".{filename}.mise-part");
+        Ok(Self {
+            path: parent.join(&partial_name),
+            state_path: parent.join(format!("{partial_name}.json")),
+            request_hash,
+        })
+    }
+
+    fn load(&self) -> Result<Option<(PartialDownloadState, u64)>> {
+        let state_bytes = match std::fs::read(&self.state_path) {
+            Ok(bytes) => bytes,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                self.remove_partial_if_exists()?;
+                return Ok(None);
+            }
+            Err(err) => return Err(err.into()),
+        };
+        let state: PartialDownloadState = match serde_json::from_slice(&state_bytes) {
+            Ok(state) => state,
+            Err(_) => {
+                self.clear()?;
+                return Ok(None);
+            }
+        };
+        let partial_size = match std::fs::metadata(&self.path) {
+            Ok(metadata) => metadata.len(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                self.remove_state_if_exists()?;
+                return Ok(None);
+            }
+            Err(err) => return Err(err.into()),
+        };
+        if state.version != PARTIAL_DOWNLOAD_STATE_VERSION
+            || state.request_hash != self.request_hash
+            || !state.validator.is_valid()
+            || partial_size == 0
+            || state.total_size.is_some_and(|total| partial_size > total)
+        {
+            self.clear()?;
+            return Ok(None);
+        }
+        Ok(Some((state, partial_size)))
+    }
+
+    fn write_state(&self, state: &PartialDownloadState) -> Result<()> {
+        let parent = self.state_path.parent().unwrap();
+        let mut temp = tempfile::NamedTempFile::with_prefix_in(".mise-download-state.", parent)?;
+        serde_json::to_writer(&mut temp, state)?;
+        temp.as_file_mut().sync_all()?;
+        temp.persist(&self.state_path).map_err(|err| err.error)?;
+        Ok(())
+    }
+
+    fn clear(&self) -> Result<()> {
+        self.remove_partial_if_exists()?;
+        self.remove_state_if_exists()?;
+        Ok(())
+    }
+
+    fn remove_partial_if_exists(&self) -> Result<()> {
+        remove_file_if_exists(&self.path)
+    }
+
+    fn remove_state_if_exists(&self) -> Result<()> {
+        remove_file_if_exists(&self.state_path)
+    }
+
+    fn persist(&self, destination: &Path) -> Result<()> {
+        let temp_path = tempfile::TempPath::try_from_path(&self.path)?;
+        if let Err(err) = temp_path.persist(destination) {
+            let error = err.error;
+            let _ = err.path.keep();
+            return Err(error.into());
+        }
+        self.remove_state_if_exists()?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParsedContentRange {
+    Bytes { start: u64, end: u64, total: u64 },
+    Unsatisfied { total: u64 },
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Removes completed download artifacts while retaining partial download pairs
+/// for validation by a later invocation. Explicit backend purges still remove
+/// the entire downloads directory.
+pub(crate) fn cleanup_download_dir(path: &Path) -> Result<()> {
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let pair_path = name
+            .strip_suffix(".mise-part.json")
+            .map(|stem| path.join(format!("{stem}.mise-part")))
+            .or_else(|| {
+                name.strip_suffix(".mise-part")
+                    .map(|_| path.join(format!("{name}.json")))
+            });
+        if name.starts_with('.')
+            && pair_path.is_some_and(|pair_path| {
+                pair_path.is_file()
+                    && partial_file_is_recent(&entry.path())
+                    && partial_file_is_recent(&pair_path)
+            })
+        {
+            continue;
+        }
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            file::remove_all(&path)?;
+        } else {
+            remove_file_if_exists(&path)?;
+        }
+    }
+    if std::fs::read_dir(path)?.next().is_none() {
+        std::fs::remove_dir(path)?;
+    }
+    Ok(())
+}
+
+fn partial_file_is_recent(path: &Path) -> bool {
+    let Ok(modified) = std::fs::metadata(path).and_then(|metadata| metadata.modified()) else {
+        return false;
+    };
+    SystemTime::now()
+        .duration_since(modified)
+        .map_or(true, |age| age <= PARTIAL_DOWNLOAD_MAX_AGE)
+}
+
+fn update_download_hash(hasher: &mut blake3::Hasher, value: &[u8]) {
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value);
+}
+
+fn download_request_hash(url: &Url, headers: &HeaderMap) -> String {
+    let mut hasher = blake3::Hasher::new();
+    update_download_hash(&mut hasher, url.as_str().as_bytes());
+
+    let mut header_values = headers
+        .keys()
+        .flat_map(|name| {
+            headers
+                .get_all(name)
+                .iter()
+                .map(move |value| (name.as_str().as_bytes(), value.as_bytes()))
+        })
+        .collect::<Vec<_>>();
+    header_values.sort_unstable();
+    for (name, value) in header_values {
+        update_download_hash(&mut hasher, name);
+        update_download_hash(&mut hasher, value);
+    }
+
+    if let Some(replacements) = &Settings::get().url_replacements {
+        for (pattern, replacement) in replacements {
+            update_download_hash(&mut hasher, pattern.as_bytes());
+            update_download_hash(&mut hasher, replacement.as_bytes());
+        }
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn response_validator(headers: &HeaderMap) -> Option<DownloadValidator> {
+    headers
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty() && !value.starts_with("W/"))
+        .map(|value| DownloadValidator::Etag(value.to_string()))
+        .or_else(|| {
+            let value = headers
+                .get(LAST_MODIFIED)
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| !value.is_empty())?;
+            let response_date = headers.get(DATE)?.to_str().ok()?;
+            is_strong_last_modified(value, response_date).then(|| DownloadValidator::LastModified {
+                value: value.to_string(),
+                response_date: response_date.to_string(),
+            })
+        })
+}
+
+fn is_strong_last_modified(value: &str, response_date: &str) -> bool {
+    let Ok(last_modified) = chrono::DateTime::parse_from_rfc2822(value) else {
+        return false;
+    };
+    let Ok(response_date) = chrono::DateTime::parse_from_rfc2822(response_date) else {
+        return false;
+    };
+    response_date.signed_duration_since(last_modified) >= chrono::Duration::seconds(60)
+}
+
+fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
+    let value = value.strip_prefix("bytes ")?;
+    let (range, total) = value.split_once('/')?;
+    let total = total.parse::<u64>().ok()?;
+    if range == "*" {
+        return Some(ParsedContentRange::Unsatisfied { total });
+    }
+    let (start, end) = range.split_once('-')?;
+    let start = start.parse::<u64>().ok()?;
+    let end = end.parse::<u64>().ok()?;
+    if start > end || end >= total {
+        return None;
+    }
+    Some(ParsedContentRange::Bytes { start, end, total })
 }
 
 #[derive(Debug)]
@@ -399,9 +750,20 @@ impl Client {
         path: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        self.download_file_with_metadata(url, path, pr)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn download_file_with_metadata<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
-        self.download_file_with_headers(url, path, &headers, pr)
+        self.download_file_with_headers_metadata(url, path, &headers, pr)
             .await
     }
 
@@ -412,6 +774,18 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        self.download_file_with_headers_metadata(url, path, headers, pr)
+            .await
+            .map(|_| ())
+    }
+
+    async fn download_file_with_headers_metadata<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
         self.download_file_with_headers_timeout(
             url,
             path,
@@ -429,45 +803,231 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
-    ) -> Result<()> {
+    ) -> Result<DownloadFileMetadata> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let parent = path.parent().unwrap();
         file::create_dir_all(parent)?;
+        let partial = PartialDownload::new(path, download_request_hash(&url, headers))?;
+        // Backends may already hold a lock for the destination while they
+        // download it (for example rustup-init). Lock the downloader-owned
+        // partial path instead so concurrent transfers are serialized without
+        // recursively acquiring the caller's destination lock.
+        let lock_path = partial.path.clone();
+        let _download_lock =
+            tokio::task::spawn_blocking(move || crate::lock_file::LockFile::new(&lock_path).lock())
+                .await??;
         let attempt = Arc::new(AtomicUsize::new(0));
         let bytes_received = Arc::new(AtomicU64::new(0));
 
-        // Retry the whole download so a mid-stream chunk failure restarts from
-        // byte 0 instead of failing the install. send_once_with_https_fallback
-        // (not send_with_https_fallback) is used inside to avoid retry-on-retry.
+        // Retry the whole transfer, resuming a validated partial response when
+        // possible. send_once_with_https_fallback_allow_416 (not
+        // send_with_https_fallback) is used inside to avoid retry-on-retry.
         let download = retry_async("GET", &url, || {
             let attempt = attempt.clone();
             let bytes_received = bytes_received.clone();
             let request_url = url.clone();
+            let partial = partial.clone();
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
                 bytes_received.store(0, Ordering::Relaxed);
-                let mut resp = self
-                    .send_once_with_https_fallback(Method::GET, request_url, headers, "GET")
-                    .await?;
-                if let Some(pr) = pr {
-                    if let Some(length) = resp.content_length() {
-                        pr.set_length(length);
-                    }
-                    pr.set_position(0);
+                self.download_file_attempt(request_url, headers, &partial, pr, &bytes_received)
+                    .await
+            }
+        });
+
+        let metadata = match tokio::time::timeout(total_timeout, download).await {
+            Ok(result) => result?,
+            Err(_) => {
+                // A timeout cancels the transfer future before its normal cleanup
+                // runs. Loading the sidecar removes an unvalidated partial while
+                // preserving a resumable one.
+                if let Err(err) = partial.load() {
+                    debug!("failed to validate partial download after timeout: {err:#}");
                 }
-                let (temp_file, file) = {
-                    let path = path.to_path_buf();
-                    let parent = parent.to_path_buf();
-                    tokio::task::spawn_blocking(move || {
-                        let temp_file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
-                        let file = temp_file.reopen()?;
-                        Ok::<_, std::io::Error>((temp_file, file))
-                    })
-                    .await??
+                bail!(
+                    "HTTP download timed out after {} for {} (attempt {}, {} bytes received; change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
+                    format_duration(total_timeout),
+                    url,
+                    attempt.load(Ordering::Relaxed),
+                    bytes_received.load(Ordering::Relaxed),
+                )
+            }
+        };
+
+        // Complete the atomic rename after the cancellable transfer budget. A
+        // blocking task cannot be cancelled once it starts, so keeping it out
+        // of `timeout` prevents us from returning an error while it can still
+        // install the destination in the background.
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || partial.persist(&path)).await??;
+        Ok(metadata)
+    }
+
+    async fn download_file_attempt(
+        &self,
+        url: Url,
+        headers: &HeaderMap,
+        partial: &PartialDownload,
+        pr: Option<&dyn SingleReport>,
+        bytes_received: &AtomicU64,
+    ) -> Result<DownloadFileMetadata> {
+        let mut restarted_without_resume = false;
+        loop {
+            let resume = if restarted_without_resume {
+                None
+            } else {
+                partial.load()?
+            };
+            if let Some((state, partial_size)) = &resume
+                && state.total_size == Some(*partial_size)
+            {
+                if let Some(pr) = pr {
+                    pr.set_length(*partial_size);
+                    pr.set_position(*partial_size);
+                }
+                return Ok(DownloadFileMetadata {
+                    effective_filename: state.effective_filename.clone(),
+                });
+            }
+
+            let offset = resume.as_ref().map(|(_, size)| *size).unwrap_or(0);
+            let mut request_headers = headers.clone();
+            request_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+            if let Some((state, _)) = &resume {
+                request_headers.insert(RANGE, HeaderValue::from_str(&format!("bytes={offset}-"))?);
+                request_headers.insert(
+                    IF_RANGE,
+                    HeaderValue::from_str(state.validator.as_header_value())?,
+                );
+            }
+
+            let mut resp = self
+                .send_once_with_https_fallback_allow_416(
+                    Method::GET,
+                    url.clone(),
+                    &request_headers,
+                    "GET",
+                )
+                .await?;
+            let response_filename = download_filename_hint(resp.url());
+
+            if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
+                if let Some(ParsedContentRange::Unsatisfied { total }) = resp
+                    .headers()
+                    .get(CONTENT_RANGE)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(parse_content_range)
+                {
+                    debug!("range request at offset {offset} was unsatisfied for {total} bytes");
+                }
+                partial.clear()?;
+                if offset > 0 && !restarted_without_resume {
+                    restarted_without_resume = true;
+                    continue;
+                }
+                resp.error_for_status_ref()?;
+            }
+
+            let (write_offset, total_size, validator, resumable, effective_filename) =
+                if resp.status() == StatusCode::PARTIAL_CONTENT {
+                    let Some((state, _)) = resume else {
+                        partial.clear()?;
+                        if !restarted_without_resume {
+                            restarted_without_resume = true;
+                            continue;
+                        }
+                        bail!("server returned partial content without a resumable request");
+                    };
+                    let content_range = resp
+                        .headers()
+                        .get(CONTENT_RANGE)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(parse_content_range);
+                    let Some(ParsedContentRange::Bytes { start, end, total }) = content_range
+                    else {
+                        partial.clear()?;
+                        if restarted_without_resume {
+                            bail!("server returned an invalid Content-Range response");
+                        }
+                        restarted_without_resume = true;
+                        continue;
+                    };
+                    let validator = response_validator(resp.headers());
+                    let response_length_matches = resp
+                        .content_length()
+                        .is_none_or(|length| length == end - start + 1);
+                    if start != offset
+                        || end + 1 != total
+                        || !response_length_matches
+                        || state.total_size.is_some_and(|expected| expected != total)
+                        || validator
+                            .as_ref()
+                            .is_some_and(|value| !value.matches(&state.validator))
+                    {
+                        partial.clear()?;
+                        if restarted_without_resume {
+                            bail!("server returned inconsistent partial content");
+                        }
+                        restarted_without_resume = true;
+                        continue;
+                    }
+                    // Keep the filename associated with the bytes already on disk.
+                    // A redirect target may change between requests even when the
+                    // server accepts the validator and Range header. Replacing the
+                    // stored hint could make the completed bytes use a different
+                    // archive format than the response that started the partial.
+                    let effective_filename = state.effective_filename;
+                    let validator = validator.unwrap_or(state.validator);
+                    (
+                        offset,
+                        Some(total),
+                        Some(validator),
+                        true,
+                        effective_filename,
+                    )
+                } else {
+                    partial.clear()?;
+                    let total_size = resp.content_length();
+                    let validator = response_validator(resp.headers());
+                    let resumable = total_size.is_some() && validator.is_some();
+                    (
+                        0,
+                        total_size,
+                        validator.filter(|_| resumable),
+                        resumable,
+                        response_filename,
+                    )
                 };
-                let mut file = tokio::fs::File::from_std(file);
+
+            let state = validator.map(|validator| PartialDownloadState {
+                version: PARTIAL_DOWNLOAD_STATE_VERSION,
+                request_hash: partial.request_hash.clone(),
+                validator,
+                total_size,
+                effective_filename: effective_filename.clone(),
+            });
+            if let Some(state) = &state {
+                partial.write_state(state)?;
+            } else {
+                partial.remove_state_if_exists()?;
+            }
+
+            if let Some(pr) = pr {
+                if let Some(total_size) = total_size {
+                    pr.set_length(total_size);
+                }
+                pr.set_position(write_offset);
+            }
+            let mut file = tokio::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(write_offset > 0)
+                .truncate(write_offset == 0)
+                .open(&partial.path)
+                .await?;
+            let transfer = async {
                 while let Some(chunk) = resp.chunk().await? {
                     if crate::ui::ctrlc::is_cancelled() {
                         bail!("download cancelled by user");
@@ -479,29 +1039,30 @@ impl Client {
                     }
                 }
                 file.shutdown().await?;
-                drop(file);
-                Ok(temp_file)
+                file.sync_all().await?;
+                Ok::<_, Report>(())
             }
-        });
+            .await;
+            if transfer.is_err()
+                && !resumable
+                && let Err(err) = partial.clear()
+            {
+                debug!("failed to remove unvalidated partial download: {err:#}");
+            }
+            transfer?;
 
-        let temp_file = match tokio::time::timeout(total_timeout, download).await {
-            Ok(result) => result?,
-            Err(_) => bail!(
-                "HTTP download timed out after {} for {} (attempt {}, {} bytes received; change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
-                format_duration(total_timeout),
-                url,
-                attempt.load(Ordering::Relaxed),
-                bytes_received.load(Ordering::Relaxed),
-            ),
-        };
-
-        // Complete the atomic rename after the cancellable transfer budget. A
-        // blocking task cannot be cancelled once it starts, so keeping it out
-        // of `timeout` prevents us from returning an error while it can still
-        // install the destination in the background.
-        let path = path.to_path_buf();
-        tokio::task::spawn_blocking(move || temp_file.persist(path)).await??;
-        Ok(())
+            if let Some(total_size) = total_size {
+                let actual_size = tokio::fs::metadata(&partial.path).await?.len();
+                if actual_size != total_size {
+                    return Err(DownloadSizeMismatch {
+                        expected: total_size,
+                        actual: actual_size,
+                    }
+                    .into());
+                }
+            }
+            return Ok(DownloadFileMetadata { effective_filename });
+        }
     }
 
     async fn send_with_https_fallback(
@@ -583,7 +1144,7 @@ impl Client {
     /// The fallback only fires on connection-level errors (corporate proxy
     /// blocking plain http), not on HTTP status errors — falling back to https
     /// after the server already returned a 4xx/5xx makes no sense.
-    async fn send_once_with_https_fallback(
+    async fn send_once_with_https_fallback_allow_416(
         &self,
         method: Method,
         url: Url,
@@ -595,7 +1156,7 @@ impl Client {
             url,
             headers,
             verb_label,
-            SendOnceOptions::new(None, true),
+            SendOnceOptions::new(None, true).allow_range_not_satisfiable(),
         )
         .await
     }
@@ -838,7 +1399,10 @@ impl Client {
                 &body,
             ));
         }
-        if options.error_for_status {
+        if options.error_for_status
+            && !(options.allow_range_not_satisfiable
+                && resp.status() == StatusCode::RANGE_NOT_SATISFIABLE)
+        {
             resp.error_for_status_ref()?;
         }
         Ok(resp)
@@ -1318,11 +1882,25 @@ pub(crate) fn is_transient(err: &Report) -> bool {
         return false;
     }
     err.chain().any(|e| {
+        if e.downcast_ref::<DownloadSizeMismatch>().is_some() {
+            return true;
+        }
         let Some(reqwest_err) = e.downcast_ref::<reqwest::Error>() else {
             return false;
         };
         // Network-layer failures: connect refused, timeout, mid-stream body drop.
         if reqwest_err.is_timeout() || reqwest_err.is_connect() || reqwest_err.is_body() {
+            return true;
+        }
+        // Send failures that never produced a response: the connection was
+        // established but the request did not complete, so no application logic
+        // ran and a retry is safe. This covers HTTP/2 stream errors such as
+        // REFUSED_STREAM (which RFC 9113 §8.7 defines as "the request was not
+        // processed", i.e. safely retryable) and connections closed before the
+        // response started. These are not is_connect(), because connecting
+        // succeeded, and they carry no status, so without this they fall through
+        // and fail on the first attempt regardless of `http_retries`.
+        if reqwest_err.is_request() && reqwest_err.status().is_none() {
             return true;
         }
         // Status errors: 5xx server errors plus 408 (Request Timeout) and
@@ -1403,8 +1981,13 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        // Lock to prevent parallel tests from interfering with global settings
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        // `SettingsGuard` holds the lock and calls `Settings::reset(None)` in `Drop`, which runs
+        // while unwinding. Resetting after `test_fn` instead would leave the replacements behind
+        // for the next test whenever this one panics -- previously the lock's poison flag hid
+        // that by failing every later test outright.
+        let _guard = SettingsGuard {
+            _lock: crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK),
+        };
 
         // Create settings with custom URL replacements
         let mut settings = crate::config::settings::SettingsPartial::empty();
@@ -1413,13 +1996,7 @@ mod tests {
         // Set settings for this test
         crate::config::Settings::reset(Some(settings));
 
-        // Run test
-        let result = test_fn();
-
-        // Clean up after test
-        crate::config::Settings::reset(None);
-
-        result
+        test_fn()
     }
 
     #[test]
@@ -1484,6 +2061,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_download_metadata_uses_redirected_filename() {
+        let mut server = mockito::Server::new_async().await;
+        let location = format!("{}/releases/tool.tar.gz", server.url());
+        let redirect = server
+            .mock("GET", "/download")
+            .with_status(302)
+            .with_header("location", &location)
+            .expect(1)
+            .create_async()
+            .await;
+        let artifact = server
+            .mock("GET", "/releases/tool.tar.gz")
+            .with_status(200)
+            .with_header("content-length", "2")
+            .with_body("OK")
+            .expect(1)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("download");
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+
+        let metadata = client
+            .download_file_with_metadata(format!("{}/download", server.url()), &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(metadata.effective_filename.as_deref(), Some("tool.tar.gz"));
+        assert_eq!(std::fs::read(&destination).unwrap(), b"OK");
+        redirect.assert();
+        artifact.assert();
+    }
+
+    #[test]
+    fn test_download_filename_hint_excludes_unsafe_or_private_url_parts() {
+        let url: Url =
+            "https://user:pass@example.com/releases/tool%20name.tar.gz?token=secret#fragment"
+                .parse()
+                .unwrap();
+        assert_eq!(
+            download_filename_hint(&url).as_deref(),
+            Some("tool name.tar.gz")
+        );
+
+        let unsafe_url: Url = "https://example.com/releases/%2E%2E%2Fsecret.tar.gz"
+            .parse()
+            .unwrap();
+        assert_eq!(download_filename_hint(&unsafe_url), None);
+
+        for encoded_name in [
+            "tool%3Aname.tar.gz",
+            "tool%2Aname.tar.gz",
+            "tool%00name.tar.gz",
+        ] {
+            let url: Url = format!("https://example.com/releases/{encoded_name}")
+                .parse()
+                .unwrap();
+            assert_eq!(download_filename_hint(&url), None, "{encoded_name}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_get_html_rejects_non_html_content_type() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
@@ -1517,14 +2156,14 @@ mod tests {
         }
     }
     fn set_test_http_retries(retries: i64) -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.http_retries = Some(retries);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
     }
     fn set_test_prefer_offline(http_retries: i64) -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.prefer_offline = Some(true);
         settings.http_retries = Some(http_retries);
@@ -1532,7 +2171,7 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
     fn set_test_offline() -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
@@ -1600,8 +2239,8 @@ mod tests {
     }
 
     fn set_test_github_oauth(server_url: &str, cache_path: PathBuf) -> GithubOauthSettingsGuard {
-        let settings_lock = TEST_SETTINGS_LOCK.lock().unwrap();
-        let github_env_lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let settings_lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let github_env_lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let vars = vec![
             ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
             (
@@ -1734,6 +2373,117 @@ mod tests {
 
     fn ok_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+    }
+    fn truncated_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Length: 10\r\n",
+            "ETag: \"artifact-v1\"\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "hello"
+        )
+    }
+    fn redirect_to_tar_gz_response() -> &'static str {
+        "HTTP/1.1 302 Found\r\nLocation: /tool.tar.gz\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+    fn redirect_to_zip_response() -> &'static str {
+        "HTTP/1.1 302 Found\r\nLocation: /tool.zip\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+    fn resumed_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 206 Partial Content\r\n",
+            "Content-Length: 5\r\n",
+            "Content-Range: bytes 5-9/10\r\n",
+            "ETag: \"artifact-v1\"\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "world"
+        )
+    }
+    fn truncated_last_modified_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Length: 10\r\n",
+            "Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n",
+            "Date: Wed, 21 Oct 2015 07:29:00 GMT\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "hello"
+        )
+    }
+    fn resumed_last_modified_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 206 Partial Content\r\n",
+            "Content-Length: 5\r\n",
+            "Content-Range: bytes 5-9/10\r\n",
+            "Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n",
+            "Date: Wed, 21 Oct 2015 07:30:00 GMT\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "world"
+        )
+    }
+    fn invalid_resumed_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 206 Partial Content\r\n",
+            "Content-Length: 6\r\n",
+            "Content-Range: bytes 4-9/10\r\n",
+            "ETag: \"artifact-v1\"\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "oworld"
+        )
+    }
+    fn changed_validator_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 206 Partial Content\r\n",
+            "Content-Length: 5\r\n",
+            "Content-Range: bytes 5-9/10\r\n",
+            "ETag: \"artifact-v2\"\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "world"
+        )
+    }
+    fn full_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Length: 10\r\n",
+            "ETag: \"artifact-v1\"\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "helloworld"
+        )
+    }
+    fn truncated_download_without_validator_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Length: 10\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "hello"
+        )
+    }
+    fn truncated_encoded_download_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 200 OK\r\n",
+            "Content-Length: 10\r\n",
+            "Content-Encoding: gzip\r\n",
+            "ETag: \"artifact-v1\"\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            "hello"
+        )
+    }
+    fn range_not_satisfiable_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 416 Range Not Satisfiable\r\n",
+            "Content-Range: bytes */4\r\n",
+            "Content-Length: 0\r\n",
+            "Connection: close\r\n",
+            "\r\n"
+        )
     }
     fn bad_gateway_response() -> &'static str {
         "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -2169,6 +2919,26 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn test_retry_rescues_send_failure_with_no_response() {
+        // A connection that is accepted and then closed without a response fails
+        // with a reqwest "request" error: connecting succeeded, so it is not
+        // is_connect(), and no response arrived, so there is no status. HTTP/2
+        // REFUSED_STREAM lands in the same class. Before these were classified as
+        // transient, such failures exited on the first attempt even with retries
+        // enabled.
+        let _guard = set_test_http_retries(1);
+        let (port, count) = spawn_canned_server(vec!["", ok_response()]).await;
+        let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let resp = client.get_async(url).await.unwrap();
+
+        assert!(resp.status().is_success());
+        // Two connections: the aborted one, then the retry that succeeded.
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn test_retry_succeeds_after_two_502s() {
         // 2 retries is enough to verify the rescue path (2 failures + 1 success)
         // without paying the third backoff (~12.5s).
@@ -2269,6 +3039,20 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
     }
 
+    #[test]
+    fn test_only_download_size_mismatches_are_transient_eof_errors() {
+        let mismatch: Report = DownloadSizeMismatch {
+            expected: 10,
+            actual: 5,
+        }
+        .into();
+        assert!(is_transient(&mismatch));
+
+        let unrelated: Report =
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "local file truncated").into();
+        assert!(!is_transient(&unrelated));
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn test_circuit_broken_http_origin_falls_back_to_https() {
         let _settings_guard = set_test_prefer_offline(3);
@@ -2330,6 +3114,533 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 
         assert!(resp.status().is_success());
         assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingReport {
+        positions: Mutex<Vec<u64>>,
+        lengths: Mutex<Vec<u64>>,
+    }
+
+    impl SingleReport for RecordingReport {
+        fn set_position(&self, position: u64) {
+            self.positions.lock().unwrap().push(position);
+        }
+
+        fn set_length(&self, length: u64) {
+            self.lengths.lock().unwrap().push(length);
+        }
+    }
+
+    #[test]
+    fn test_parse_content_range() {
+        assert_eq!(
+            parse_content_range("bytes 5-9/10"),
+            Some(ParsedContentRange::Bytes {
+                start: 5,
+                end: 9,
+                total: 10
+            })
+        );
+        assert_eq!(
+            parse_content_range("bytes */10"),
+            Some(ParsedContentRange::Unsatisfied { total: 10 })
+        );
+        assert_eq!(parse_content_range("bytes 5-10/10"), None);
+        assert_eq!(parse_content_range("items 5-9/10"), None);
+    }
+
+    #[test]
+    fn test_response_validator_requires_strong_etag_or_last_modified() {
+        let mut headers = HeaderMap::new();
+        headers.insert(ETAG, HeaderValue::from_static("W/\"weak\""));
+        assert_eq!(response_validator(&headers), None);
+
+        headers.insert(
+            LAST_MODIFIED,
+            HeaderValue::from_static("Wed, 21 Oct 2015 07:28:00 GMT"),
+        );
+        assert_eq!(response_validator(&headers), None);
+
+        headers.insert(
+            DATE,
+            HeaderValue::from_static("Wed, 21 Oct 2015 07:28:59 GMT"),
+        );
+        assert_eq!(response_validator(&headers), None);
+
+        headers.insert(
+            DATE,
+            HeaderValue::from_static("Wed, 21 Oct 2015 07:29:00 GMT"),
+        );
+        assert_eq!(
+            response_validator(&headers),
+            Some(DownloadValidator::LastModified {
+                value: "Wed, 21 Oct 2015 07:28:00 GMT".to_string(),
+                response_date: "Wed, 21 Oct 2015 07:29:00 GMT".to_string(),
+            })
+        );
+
+        headers.insert(ETAG, HeaderValue::from_static("\"strong\""));
+        assert_eq!(
+            response_validator(&headers),
+            Some(DownloadValidator::Etag("\"strong\"".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_cleanup_download_dir_preserves_only_partial_pairs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("artifact.tar.gz"), b"complete").unwrap();
+        std::fs::write(dir.path().join(".artifact.tar.gz.mise-part"), b"partial").unwrap();
+        std::fs::write(
+            dir.path().join(".artifact.tar.gz.mise-part.json"),
+            b"metadata",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join(".orphan.mise-part"), b"orphan").unwrap();
+        let expired_partial = dir.path().join(".expired.mise-part");
+        let expired_state = dir.path().join(".expired.mise-part.json");
+        std::fs::write(&expired_partial, b"expired partial").unwrap();
+        std::fs::write(&expired_state, b"expired metadata").unwrap();
+        let expired_time = filetime::FileTime::from_system_time(
+            SystemTime::now() - PARTIAL_DOWNLOAD_MAX_AGE - Duration::from_secs(1),
+        );
+        filetime::set_file_mtime(&expired_partial, expired_time).unwrap();
+        filetime::set_file_mtime(&expired_state, expired_time).unwrap();
+        std::fs::create_dir(dir.path().join("extracted")).unwrap();
+
+        cleanup_download_dir(dir.path()).unwrap();
+
+        assert!(!dir.path().join("artifact.tar.gz").exists());
+        assert!(!dir.path().join("extracted").exists());
+        assert!(dir.path().join(".artifact.tar.gz.mise-part").exists());
+        assert!(dir.path().join(".artifact.tar.gz.mise-part.json").exists());
+        assert!(!dir.path().join(".orphan.mise-part").exists());
+        assert!(!expired_partial.exists());
+        assert!(!expired_state.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_retry_resumes_validated_partial() {
+        let _guard = set_test_http_retries(1);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            resumed_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let report = RecordingReport::default();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        client
+            .download_file_with_headers(&url, &destination, &HeaderMap::new(), Some(&report))
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        let requests = requests.lock().unwrap();
+        let resumed = requests[1].to_ascii_lowercase();
+        assert!(resumed.contains("range: bytes=5-"));
+        assert!(resumed.contains("if-range: \"artifact-v1\""));
+        assert!(resumed.contains("accept-encoding: identity"));
+        assert!(report.positions.lock().unwrap().contains(&5));
+        assert!(
+            report
+                .lengths
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|length| *length == 10)
+        );
+
+        let partial = PartialDownload::new(
+            &destination,
+            download_request_hash(&url.parse().unwrap(), &HeaderMap::new()),
+        )
+        .unwrap();
+        assert!(!partial.path.exists());
+        assert!(!partial.state_path.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_does_not_reacquire_destination_lock() {
+        let (port, count) = spawn_canned_server(vec![ok_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let _destination_lock = crate::lock_file::LockFile::new(&destination)
+            .lock()
+            .unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            client.download_file(&url, &destination, None),
+        )
+        .await
+        .expect("download deadlocked on a lock already held by its caller")
+        .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"OK");
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_retry_resumes_with_last_modified_validator() {
+        let _guard = set_test_http_retries(1);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_last_modified_download_response(),
+            resumed_last_modified_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        let resumed = requests.lock().unwrap()[1].to_ascii_lowercase();
+        assert!(resumed.contains("range: bytes=5-"));
+        assert!(resumed.contains("if-range: wed, 21 oct 2015 07:28:00 gmt"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_resumes_across_calls_without_storing_secrets() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            resumed_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/private/artifact.tar.gz?token=url-secret");
+        let parsed_url: Url = url.parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer header-secret"),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        std::fs::write(&destination, b"existing destination").unwrap();
+        let partial =
+            PartialDownload::new(&destination, download_request_hash(&parsed_url, &headers))
+                .unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _err = client
+            .download_file_with_headers_metadata(&url, &destination, &headers, None)
+            .await
+            .unwrap_err();
+        assert_eq!(std::fs::read(&partial.path).unwrap(), b"hello");
+        let state = std::fs::read_to_string(&partial.state_path).unwrap();
+        assert!(!state.contains("url-secret"));
+        assert!(!state.contains("header-secret"));
+        assert!(state.contains("artifact.tar.gz"));
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"existing destination"
+        );
+
+        let metadata = client
+            .download_file_with_headers_metadata(&url, &destination, &headers, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            metadata.effective_filename.as_deref(),
+            Some("artifact.tar.gz")
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert!(
+            requests.lock().unwrap()[1]
+                .to_ascii_lowercase()
+                .contains("range: bytes=5-")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_resume_preserves_stored_filename_after_redirect_changes() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            redirect_to_tar_gz_response(),
+            truncated_download_response(),
+            redirect_to_zip_response(),
+            resumed_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/download");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _ = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap_err();
+
+        let metadata = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(metadata.effective_filename.as_deref(), Some("tool.tar.gz"));
+        assert_eq!(count.load(Ordering::SeqCst), 4);
+        assert!(
+            requests.lock().unwrap()[3]
+                .to_ascii_lowercase()
+                .contains("range: bytes=5-")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_resume_does_not_adopt_filename_when_initial_hint_missing() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            redirect_to_zip_response(),
+            resumed_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _ = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap_err();
+
+        let metadata = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(metadata.effective_filename, None);
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        assert!(
+            requests.lock().unwrap()[2]
+                .to_ascii_lowercase()
+                .contains("range: bytes=5-")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_without_validator_restarts_from_zero() {
+        let _guard = set_test_http_retries(1);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_without_validator_response(),
+            full_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert!(
+            !requests.lock().unwrap()[1]
+                .to_ascii_lowercase()
+                .contains("range:")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_does_not_resume_automatically_decoded_response() {
+        let _guard = set_test_http_retries(0);
+        let (port, count) = spawn_canned_server(vec![truncated_encoded_download_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let partial = PartialDownload::new(
+            &destination,
+            download_request_hash(&url.parse().unwrap(), &HeaderMap::new()),
+        )
+        .unwrap();
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _err = client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap_err();
+
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert!(!partial.path.exists());
+        assert!(!partial.state_path.exists());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_restarts_when_server_ignores_range() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            full_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _err = client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap_err();
+        client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert!(
+            requests.lock().unwrap()[1]
+                .to_ascii_lowercase()
+                .contains("range: bytes=5-")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_restarts_after_invalid_content_range() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            invalid_resumed_download_response(),
+            full_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _err = client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap_err();
+        client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        let requests = requests.lock().unwrap();
+        assert!(requests[1].to_ascii_lowercase().contains("range: bytes=5-"));
+        assert!(!requests[2].to_ascii_lowercase().contains("range:"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_restarts_when_validator_changes() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            changed_validator_download_response(),
+            full_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _err = client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap_err();
+        client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        let requests = requests.lock().unwrap();
+        assert!(requests[1].to_ascii_lowercase().contains("range: bytes=5-"));
+        assert!(!requests[2].to_ascii_lowercase().contains("range:"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_discards_partial_when_request_headers_change() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            full_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let mut original_headers = HeaderMap::new();
+        original_headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer old"));
+        let mut changed_headers = HeaderMap::new();
+        changed_headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer new"));
+
+        let _err = client
+            .download_file_with_headers(&url, &destination, &original_headers, None)
+            .await
+            .unwrap_err();
+        client
+            .download_file_with_headers(&url, &destination, &changed_headers, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert!(
+            !requests.lock().unwrap()[1]
+                .to_ascii_lowercase()
+                .contains("range:")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_recovers_from_unsatisfied_range() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            range_not_satisfiable_response(),
+            full_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _err = client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap_err();
+        client
+            .download_file(&url, &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        let requests = requests.lock().unwrap();
+        assert!(requests[1].to_ascii_lowercase().contains("range: bytes=5-"));
+        assert!(!requests[2].to_ascii_lowercase().contains("range:"));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2601,7 +3912,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     #[test]
     fn test_no_settings_configured() {
         // Test the real apply_url_replacements function with no settings override
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         crate::config::Settings::reset(None);
 
         let mut url = Url::parse("https://github.com/owner/repo").unwrap();

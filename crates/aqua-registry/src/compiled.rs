@@ -236,6 +236,7 @@ fn fnv1a64(value: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AquaPackageType;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -319,6 +320,29 @@ packages:
         let package = registry.package("example/named-tool").unwrap();
 
         assert_eq!(package.name.as_deref(), Some("example/named-tool"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn compiled_registry_preserves_omitted_and_explicit_package_types() {
+        let root = temp_cache_dir("compiled-aqua-registry-package-types");
+        let source = r#"
+packages:
+  - name: example/default-type
+  - name: example/explicit-type
+    type: github_release
+"#;
+
+        compile_registry(source, &root);
+        let registry = CompiledRegistry::load(&root).unwrap();
+        let default_type = registry.package("example/default-type").unwrap();
+        let explicit_type = registry.package("example/explicit-type").unwrap();
+
+        assert_eq!(default_type.r#type, None);
+        assert_eq!(default_type.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(explicit_type.r#type, Some(AquaPackageType::GithubRelease));
+        assert_eq!(explicit_type.package_type(), AquaPackageType::GithubRelease);
 
         fs::remove_dir_all(root).unwrap();
     }

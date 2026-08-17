@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/vfox-tool-options"
+PRE_MARKER="$MISE_DATA_DIR/vfox-tool-options-pre"
+POST_MARKER="$MISE_DATA_DIR/vfox-tool-options-post"
+OS_MARKER="$MISE_DATA_DIR/vfox-tool-options-os-execute"
+UNINSTALL_MARKER="$MISE_DATA_DIR/vfox-tool-options-uninstall"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "tool-options"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com/tool-options"
+PLUGIN.license = "MIT"
+PLUGIN.description = "tool option environment test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<LUA
+function PLUGIN:PreInstall(ctx)
+	local marker = io.open([[$PRE_MARKER]], "w")
+	marker:write(table.concat({
+		os.getenv("MISE_TOOL_OPTS__EXTENSIONS") or "missing",
+		os.getenv("RTX_TOOL_OPTS__EXTENSIONS") or "missing",
+		os.getenv("MISE_TOOL_OPTS__CONFIG_OVERRIDE") or "missing",
+		os.getenv("RTX_TOOL_OPTS__CONFIG_OVERRIDE") or "missing",
+		os.getenv("MISE_TOOL_OPTS__INSTALL_OVERRIDE") or "missing",
+		os.getenv("RTX_TOOL_OPTS__INSTALL_OVERRIDE") or "missing",
+		os.getenv("MISE_TOOL_OPTS__RETRIES") or "missing",
+	}, "|"))
+	marker:close()
+	return { version = ctx.version }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
+function PLUGIN:PostInstall(ctx)
+	local cmd = require("cmd")
+	local cmd_value = cmd.exec("printf '%s' \"\$MISE_TOOL_OPTS__EXTENSIONS\"")
+	os.execute("printf '%s' \"\$RTX_TOOL_OPTS__EXTENSIONS\" > \"\$MISE_TEST_OPTION_OS_MARKER\"")
+
+	local marker = io.open([[$POST_MARKER]], "w")
+	marker:write(table.concat({
+		cmd_value,
+		os.getenv("RTX_TOOL_OPTS__EXTENSIONS") or "missing",
+		os.getenv("MISE_TOOL_OPTS__CONFIG_OVERRIDE") or "missing",
+		os.getenv("RTX_TOOL_OPTS__CONFIG_OVERRIDE") or "missing",
+		os.getenv("MISE_TOOL_OPTS__INSTALL_OVERRIDE") or "missing",
+		os.getenv("RTX_TOOL_OPTS__INSTALL_OVERRIDE") or "missing",
+	}, "|"))
+	marker:close()
+
+	os.execute("mkdir -p \"" .. ctx.rootPath .. "/bin\"")
+	local bin = io.open(ctx.rootPath .. "/bin/tool-options", "w")
+	bin:write("#!/bin/sh\necho tool-options\n")
+	bin:close()
+	os.execute("chmod +x \"" .. ctx.rootPath .. "/bin/tool-options\"")
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {
+		{ key = "PATH", value = ctx.path .. "/bin" },
+		{ key = "VFOX_TOOL_OPTION", value = os.getenv("MISE_TOOL_OPTS__EXTENSIONS") },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_uninstall.lua" <<LUA
+function PLUGIN:PreUninstall(ctx)
+	local marker = io.open([[$UNINSTALL_MARKER]], "w")
+	marker:write(table.concat({
+		os.getenv("MISE_TOOL_OPTS__EXTENSIONS") or "missing",
+		os.getenv("RTX_TOOL_OPTS__EXTENSIONS") or "missing",
+	}, "|"))
+	marker:close()
+end
+LUA
+
+git -C "$PLUGIN_DIR" init -q
+git -C "$PLUGIN_DIR" add .
+git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -qm "test(e2e): initialize plugin fixture"
+
+cat >mise.toml <<EOF
+[env]
+MISE_TOOL_OPTS__CONFIG_OVERRIDE = "from-config"
+RTX_TOOL_OPTS__CONFIG_OVERRIDE = "from-config"
+MISE_TEST_OPTION_OS_MARKER = "$OS_MARKER"
+
+[tools]
+"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", extensions = "opentelemetry,swoole", config_override = "from-option", install_override = "from-option", retries = 2, install_env = { MISE_TOOL_OPTS__INSTALL_OVERRIDE = "from-install-env", RTX_TOOL_OPTS__INSTALL_OVERRIDE = "from-install-env" } }
+EOF
+
+export MISE_LOCKFILE=1
+detect_platform
+
+MISE_TOOL_OPTS__EXTENSIONS=ambient RTX_TOOL_OPTS__EXTENSIONS=ambient mise lock --platform "$MISE_PLATFORM"
+assert \
+  "cat '$PRE_MARKER'" \
+  "opentelemetry,swoole|opentelemetry,swoole|from-config|from-config|from-option|from-option|2"
+
+MISE_TOOL_OPTS__EXTENSIONS=ambient RTX_TOOL_OPTS__EXTENSIONS=ambient mise install
+assert \
+  "cat '$PRE_MARKER'" \
+  "opentelemetry,swoole|opentelemetry,swoole|from-config|from-config|from-option|from-option|2"
+assert \
+  "cat '$POST_MARKER'" \
+  "opentelemetry,swoole|opentelemetry,swoole|from-config|from-config|from-install-env|from-install-env"
+assert "cat '$OS_MARKER'" "opentelemetry,swoole"
+assert "mise exec -- tool-options" "tool-options"
+assert_contains "mise env" "VFOX_TOOL_OPTION=opentelemetry,swoole"
+assert_not_contains "mise env" "MISE_TOOL_OPTS__EXTENSIONS"
+
+mise uninstall "vfox:file://$PLUGIN_DIR@1.0.0"
+assert \
+  "cat '$UNINSTALL_MARKER'" \
+  "opentelemetry,swoole|opentelemetry,swoole"

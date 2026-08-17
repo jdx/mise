@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::VersionOrder;
 use crate::backend::{ABackend, unalias_backend};
 use crate::config::Config;
 use crate::plugins::PluginType;
@@ -539,6 +540,13 @@ impl BackendArg {
             .get(self.short.as_str())
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default()
+    }
+
+    pub(crate) fn registry_version_order(&self) -> Option<VersionOrder> {
+        let full = self.full_without_opts();
+        REGISTRY
+            .get(self.short.as_str())
+            .and_then(|tool| tool.version_order(&full))
     }
 
     pub fn opts_with_config(&self, config_opts: Option<ToolVersionOptions>) -> ToolVersionOptions {

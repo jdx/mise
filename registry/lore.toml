@@ -2,3 +2,4 @@ backends = ["aqua:EpicGames/lore"]
 bins = ["lore"]
 description = "A next-generation open source version control system from Epic Games"
 test = { cmd = "lore --version", expected = "{{version}}" }
+version_order = "semver"

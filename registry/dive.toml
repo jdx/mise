@@ -2,3 +2,4 @@ backends = ["aqua:wagoodman/dive", "asdf:looztra/asdf-dive"]
 bins = ["dive"]
 description = "A tool for exploring each layer in a docker image"
 test = { cmd = "dive --version", expected = "dive {{version}}" }
+version_order = "semver"

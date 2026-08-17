@@ -6,7 +6,7 @@ use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -34,6 +34,27 @@ const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_PY
     or add `python.github_attestations = false` under [settings] in mise.toml";
 const PBS_RELEASE_DOWNLOAD_URL: &str =
     "https://github.com/astral-sh/python-build-standalone/releases/download/";
+/// PyPy's own release index. python-build-standalone ships CPython only, so this is where the
+/// precompiled path has to look for a `pypy*` version.
+const PYPY_VERSIONS_URL: &str = "https://downloads.python.org/pypy/versions.json";
+
+/// One entry of PyPy's `versions.json`. Only the fields mise uses are modeled.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PypyRelease {
+    pypy_version: String,
+    python_version: String,
+    #[serde(default)]
+    date: Option<String>,
+    files: Vec<PypyFile>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PypyFile {
+    filename: String,
+    arch: String,
+    platform: String,
+    download_url: String,
+}
 
 #[derive(Debug)]
 pub struct PythonPlugin {
@@ -329,11 +350,152 @@ impl PythonPlugin {
             .await
     }
 
+    async fn fetch_pypy_releases(&self) -> eyre::Result<&Vec<PypyRelease>> {
+        static PYPY_CACHE: Lazy<CacheManager<Vec<PypyRelease>>> = Lazy::new(|| {
+            CacheManagerBuilder::new(dirs::CACHE.join("python").join("pypy.msgpack.z"))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                .build()
+        });
+        PYPY_CACHE
+            .get_or_try_init_async(async || Ok(HTTP_FETCH.json(PYPY_VERSIONS_URL).await?))
+            .await
+    }
+
+    /// Resolve the archive a `pypy*` version would install on `target`, for `mise lock`.
+    ///
+    /// The URL is always recorded when one exists; the checksum stays unset because PyPy publishes
+    /// none in machine-readable form, and `verify_checksum` fills it in on first install. An
+    /// unresolvable target (no build published, or a version outside the index) records nothing
+    /// rather than failing the lock of the other platforms.
+    async fn resolve_pypy_lock_info(
+        &self,
+        version: &str,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Same split as fetch_precompiled_for_target: settings win for the platform we are on,
+        // the target's own values describe every other one.
+        let settings = Settings::get();
+        let (os, arch) = if target.is_current() {
+            // settings.os(), not std::env::consts::OS: `is_current` compares against
+            // Platform::current(), which is built from settings.os(). Reading the host OS here
+            // would let `MISE_OS=linux` on a windows host take this branch and then record a
+            // win64 archive under the linux platform key.
+            (settings.os(), settings.arch())
+        } else {
+            (target.os_name(), target.arch_name())
+        };
+        let Some((platform, arch)) = pypy_platform_arch(os, arch) else {
+            return Ok(PlatformInfo::default());
+        };
+        let releases = self.fetch_pypy_releases().await?;
+        let url = releases
+            .iter()
+            .find(|r| pypy_version_str(r).as_deref() == Some(version))
+            .and_then(|r| pypy_file_for(r, platform, arch))
+            .map(|f| f.download_url.clone());
+        Ok(PlatformInfo {
+            url,
+            ..Default::default()
+        })
+    }
+
+    /// Install a `pypy*` version from PyPy's own downloads.
+    ///
+    /// python-build-standalone publishes CPython only, so the precompiled path cannot serve these.
+    /// PyPy publishes no checksums next to its archives — they live on an HTML page — so integrity
+    /// rests on `verify_checksum`, which locks the digest on first install and enforces it after,
+    /// the same treatment every backend gives a source without upstream checksums. There is no
+    /// provenance step for the same reason: PyPy publishes no attestations.
+    async fn install_pypy(&self, ctx: &InstallContext, tv: &mut ToolVersion) -> eyre::Result<()> {
+        let platform_key = self.get_platform_key();
+        let url = if let Some(url) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.url.clone())
+        {
+            debug!("using lockfile URL for platform {platform_key}: {url}");
+            url
+        } else {
+            let settings = Settings::get();
+            let os = settings.os();
+            let (platform, arch) = pypy_platform_arch(os, settings.arch())
+                .ok_or_else(|| eyre!("pypy publishes no build for {os}-{}", settings.arch()))?;
+            let releases = self.fetch_pypy_releases().await?;
+            let release = releases
+                .iter()
+                .find(|r| pypy_version_str(r).as_deref() == Some(tv.version.as_str()))
+                .ok_or_else(|| eyre!("no pypy release found for {tv}"))?;
+            let file = pypy_file_for(release, platform, arch).ok_or_else(|| {
+                eyre!(
+                    "pypy {} publishes no {platform}/{arch} build",
+                    release.pypy_version
+                )
+            })?;
+            file.download_url.clone()
+        };
+        let filename = url.split('/').next_back().unwrap();
+
+        let tarball_path = tv.download_path().join(filename);
+        ctx.pr.set_message(format!("download {filename}"));
+        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+            .await?;
+        tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
+        self.verify_checksum(ctx, tv, &tarball_path)?;
+
+        let install = tv.install_path();
+        file::remove_all(&install)?;
+        file::extract_archive(
+            &tarball_path,
+            &install,
+            ExtractionFormat::from_file_name(filename),
+            &ExtractOptions {
+                strip_components: 1,
+                pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
+            },
+        )?;
+
+        // The archives already carry the interpreter entrypoints — `bin/python` on unix,
+        // `python.exe`/`python3.exe` at the root on windows — but no pip. python-build ran
+        // `ensurepip` on its pypy definitions for exactly that reason; the wheel ships inside the
+        // archive, so this needs no network. It lands `bin/pip*` on unix and `Scripts\pip.exe` on
+        // windows, both of which `list_bin_paths` already exposes.
+        ctx.pr.set_message("ensurepip".into());
+        CmdLineRunner::new(python_path(tv))
+            .with_pr(ctx.pr.as_ref())
+            .args(["-m", "ensurepip", "--upgrade", "--default-pip"])
+            .env("PIP_REQUIRE_VIRTUALENV", "false")
+            .execute()?;
+
+        // Belt and braces: current releases ship `bin/python` as a symlink already.
+        if !install.join("bin").join("python").exists() {
+            #[cfg(unix)]
+            file::make_symlink(&install.join("bin/python3"), &install.join("bin/python"))?;
+        }
+        Ok(())
+    }
+
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
     ) -> eyre::Result<()> {
+        // Only where the precompiled list is actually the source of truth. With `compile` unset on
+        // unix this function is still entered, but a `pypy*` version falls through to python-build
+        // below and installs fine today — no reason to change that here.
+        if tv.version.starts_with("pypy") {
+            if cfg!(windows)
+                || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false)
+            {
+                return self.install_pypy(ctx, tv).await;
+            }
+            // With `compile` unset on unix this function is still entered, but python-build owns
+            // pypy there and installs it fine today. Hand over directly rather than falling
+            // through: the CPython path below would pick up a pypy URL recorded in the lockfile
+            // and then verify it against python-build-standalone's attestations, which it is not
+            // from. It would also warn about a missing precompiled build that was never expected.
+            return self.install_compiled(ctx, tv).await;
+        }
         let platform_key = self.get_platform_key();
         let url = if let Some(url) = tv
             .lock_platforms
@@ -351,7 +513,9 @@ impl PythonPlugin {
             let (tag, filename) = match precompile_info {
                 Some((_, tag, filename)) => (tag, filename),
                 None => {
-                    if cfg!(windows) || Settings::get().python.compile == Some(false) {
+                    if cfg!(windows)
+                        || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false)
+                    {
                         if !cfg!(windows) {
                             hint!(
                                 "python_compile",
@@ -681,7 +845,8 @@ impl PythonPlugin {
     fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
         // Provenance only applies to precompiled binaries, not compiled-from-source.
         // On Windows, precompiled is always used regardless of compile setting.
-        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
+        let uses_precompiled =
+            cfg!(windows) || Settings::get().python_compile(CompilePurpose::Inspect) != Some(true);
         if !uses_precompiled || !Self::github_attestations_enabled() {
             return None;
         }
@@ -811,8 +976,27 @@ impl Backend for PythonPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        if cfg!(windows) || Settings::get().python.compile == Some(false) {
-            Ok(self
+        if cfg!(windows) || Settings::get().python_compile(CompilePurpose::Inspect) == Some(false) {
+            // python-build-standalone is CPython only, so pypy comes from its own index — and only
+            // the releases that publish an archive for this platform, the way the CPython list is
+            // already filtered. Offering the rest would list versions that cannot install: macOS
+            // arm64 is the sharp case, with builds for 43 of the 94 indexed releases.
+            let mut versions = vec![];
+            let settings = Settings::get();
+            if let Some((platform, arch)) = pypy_platform_arch(settings.os(), settings.arch()) {
+                // A failure here must not take the CPython list down with it.
+                match self.fetch_pypy_releases().await {
+                    Ok(releases) => versions = pypy_version_infos(releases, platform, arch),
+                    // warn, not debug: this list gets cached for the whole
+                    // fetch_remote_versions_cache window, so a user would see `ls-remote` lose
+                    // every pypy entry with nothing to explain it. The cpython branch below uses
+                    // `?`, so only this half can cache a partial answer.
+                    Err(err) => {
+                        warn!("failed to fetch pypy versions, listing cpython only: {err:#}")
+                    }
+                }
+            }
+            let cpython = self
                 .fetch_precompiled_remote_versions()
                 .await?
                 .iter()
@@ -821,7 +1005,8 @@ impl Backend for PythonPlugin {
                     created_at: python_precompiled_created_at(date),
                     ..Default::default()
                 })
-                .collect())
+                .collect();
+            Ok(merge_pypy_and_cpython(versions, cpython))
         } else {
             self.install_or_update_python_build(None)?;
             let python_build_bin = self.python_build_bin();
@@ -890,7 +1075,7 @@ impl Backend for PythonPlugin {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let settings = Settings::get();
-        if cfg!(windows) || settings.python.compile != Some(true) {
+        if cfg!(windows) || settings.python_compile(CompilePurpose::Install) != Some(true) {
             validate_python_precompiled_settings(&settings)?;
             self.install_precompiled(ctx, &mut tv).await?;
         } else {
@@ -958,7 +1143,10 @@ impl Backend for PythonPlugin {
                         self.ba().cache_path.join("remote_versions.msgpack.z"),
                     )
                     .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .with_cache_key((Settings::get().python.compile == Some(false)).to_string())
+                    .with_cache_key(
+                        (Settings::get().python_compile(CompilePurpose::Inspect) == Some(false))
+                            .to_string(),
+                    )
                     .build(),
                 ))
             })
@@ -976,7 +1164,9 @@ impl Backend for PythonPlugin {
 
         // Only include compile option if true (non-default)
         let compile = if is_current_platform {
-            settings.python.compile.unwrap_or(false)
+            settings
+                .python_compile(CompilePurpose::Inspect)
+                .unwrap_or(false)
         } else {
             false
         };
@@ -1009,6 +1199,9 @@ impl Backend for PythonPlugin {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         let version = &tv.version;
+        if version.starts_with("pypy") {
+            return self.resolve_pypy_lock_info(version, target).await;
+        }
         let locked_filename = tv
             .lock_platforms
             .get(&target.to_key())
@@ -1271,6 +1464,93 @@ fn python_arch_for_target(target: &PlatformTarget) -> &'static str {
     }
 }
 
+/// Spell a PyPy release the way python-build's definitions do, e.g. `pypy3.10-7.3.17`, so the
+/// same version string resolves whichever install path is taken.
+///
+/// `None` for the `nightly` entries: they point at rolling `pypy-c-jit-latest-*` artifacts on
+/// buildbot, so the same version string would name different bytes on every install and the
+/// recorded checksum would go stale immediately. python-build ships no nightly definitions either.
+fn pypy_version_str(release: &PypyRelease) -> Option<String> {
+    if !release
+        .pypy_version
+        .starts_with(|c: char| c.is_ascii_digit())
+    {
+        return None;
+    }
+    let mut parts = release.python_version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    if major.is_empty() || minor.is_empty() {
+        return None;
+    }
+    Some(format!("pypy{major}.{minor}-{}", release.pypy_version))
+}
+
+/// Put the two halves of the python list together: pypy first, CPython after.
+///
+/// `python@latest` takes the tail, so CPython has to end up there. Concatenation rather than a
+/// sort: each half keeps the order its own source published, and nothing here compares a pypy
+/// version string against a CPython one — the two sources make no promise those are comparable.
+fn merge_pypy_and_cpython(pypy: Vec<VersionInfo>, cpython: Vec<VersionInfo>) -> Vec<VersionInfo> {
+    pypy.into_iter().chain(cpython).collect()
+}
+
+/// The `(platform, arch)` pair `versions.json` uses for the host, or `None` where PyPy publishes
+/// no build — notably Windows on arm64.
+fn pypy_platform_arch(os: &str, arch: &str) -> Option<(&'static str, &'static str)> {
+    match (os, arch) {
+        ("linux", "x64" | "x86_64") => Some(("linux", "x64")),
+        ("linux", "arm64" | "aarch64") => Some(("linux", "aarch64")),
+        ("macos", "x64" | "x86_64") => Some(("darwin", "x64")),
+        ("macos", "arm64" | "aarch64") => Some(("darwin", "arm64")),
+        ("windows", "x64" | "x86_64") => Some(("win64", "x64")),
+        _ => None,
+    }
+}
+
+/// Turn the PyPy index into version entries for `ls-remote` on `platform`/`arch`.
+///
+/// Releases with no archive for that pair are dropped: PyPy's platform coverage is uneven — 3.6 and
+/// 3.7 have no macOS arm64 build at all — and listing one would let a bare `pypy3.7` resolve to a
+/// version that then fails at download.
+///
+/// The order is PyPy's own: `versions.json` is newest-first, so reversing it gives oldest-first,
+/// and a bare `pypy3.10` — which takes the last prefix match — lands on whatever upstream lists
+/// as its most recent 3.10 build. Nothing here parses or compares the version strings; PyPy's
+/// `7.3.4rc2` and friends are exactly the shapes a semver comparator gets wrong.
+fn pypy_version_infos(releases: &[PypyRelease], platform: &str, arch: &str) -> Vec<VersionInfo> {
+    releases
+        .iter()
+        .rev()
+        .filter(|r| pypy_file_for(r, platform, arch).is_some())
+        .filter_map(|r| {
+            Some(VersionInfo {
+                version: pypy_version_str(r)?,
+                created_at: pypy_created_at(r.date.as_deref()),
+                ..Default::default()
+            })
+        })
+        // versions.json repeats a few releases verbatim
+        .unique_by(|v| v.version.clone())
+        .collect()
+}
+
+/// `versions.json` dates are plain `YYYY-MM-DD`; `created_at` wants a timestamp.
+fn pypy_created_at(date: Option<&str>) -> Option<String> {
+    let date = date?;
+    if date.len() != 10 {
+        return None;
+    }
+    Some(format!("{date}T00:00:00Z"))
+}
+
+fn pypy_file_for<'a>(release: &'a PypyRelease, platform: &str, arch: &str) -> Option<&'a PypyFile> {
+    release
+        .files
+        .iter()
+        .find(|f| f.platform == platform && f.arch == arch)
+}
+
 fn ensure_not_windows() -> eyre::Result<()> {
     if cfg!(windows) {
         bail!(
@@ -1296,6 +1576,211 @@ mod tests {
         let mut opts = ToolVersionOptions::default();
         opts.opts.insert(key.to_string(), value);
         opts
+    }
+
+    /// Two entries in the shape `https://downloads.python.org/pypy/versions.json` publishes.
+    const PYPY_VERSIONS_FIXTURE: &str = r#"[
+      {
+        "pypy_version": "7.3.17",
+        "python_version": "3.10.14",
+        "stable": true,
+        "date": "2024-08-28",
+        "files": [
+          {"filename": "pypy3.10-v7.3.17-linux64.tar.bz2", "arch": "x64", "platform": "linux",
+           "download_url": "https://downloads.python.org/pypy/pypy3.10-v7.3.17-linux64.tar.bz2"},
+          {"filename": "pypy3.10-v7.3.17-aarch64.tar.bz2", "arch": "aarch64", "platform": "linux",
+           "download_url": "https://downloads.python.org/pypy/pypy3.10-v7.3.17-aarch64.tar.bz2"},
+          {"filename": "pypy3.10-v7.3.17-macos_arm64.tar.bz2", "arch": "arm64", "platform": "darwin",
+           "download_url": "https://downloads.python.org/pypy/pypy3.10-v7.3.17-macos_arm64.tar.bz2"},
+          {"filename": "pypy3.10-v7.3.17-win64.zip", "arch": "x64", "platform": "win64",
+           "download_url": "https://downloads.python.org/pypy/pypy3.10-v7.3.17-win64.zip"}
+        ]
+      },
+      {
+        "pypy_version": "7.3.23",
+        "python_version": "2.7.18",
+        "stable": true,
+        "date": "2026-05-01",
+        "files": [
+          {"filename": "pypy2.7-v7.3.23-linux64.tar.bz2", "arch": "x64", "platform": "linux",
+           "download_url": "https://downloads.python.org/pypy/pypy2.7-v7.3.23-linux64.tar.bz2"}
+        ]
+      },
+      {
+        "pypy_version": "nightly",
+        "python_version": "3.10",
+        "files": [
+          {"filename": "pypy-c-jit-latest-linux64.tar.bz2", "arch": "x64", "platform": "linux",
+           "download_url": "https://buildbot.pypy.org/nightly/py3.10/pypy-c-jit-latest-linux64.tar.bz2"}
+        ]
+      }
+    ]"#;
+
+    fn pypy_fixture() -> Vec<PypyRelease> {
+        serde_json::from_str(PYPY_VERSIONS_FIXTURE).unwrap()
+    }
+
+    /// The nightly entry is dropped: its `download_url` is a rolling `pypy-c-jit-latest-*`
+    /// artifact, so a pinned version + recorded checksum could never stay true.
+    #[test]
+    fn pypy_versions_are_spelled_like_python_build_definitions() {
+        let releases = pypy_fixture();
+        assert_eq!(releases.len(), 3);
+        assert_eq!(
+            releases.iter().filter_map(pypy_version_str).collect_vec(),
+            vec!["pypy3.10-7.3.17", "pypy2.7-7.3.23"]
+        );
+    }
+
+    #[test]
+    fn pypy_platform_arch_covers_what_pypy_publishes() {
+        assert_eq!(pypy_platform_arch("linux", "x64"), Some(("linux", "x64")));
+        assert_eq!(
+            pypy_platform_arch("linux", "arm64"),
+            Some(("linux", "aarch64"))
+        );
+        assert_eq!(pypy_platform_arch("macos", "x64"), Some(("darwin", "x64")));
+        assert_eq!(
+            pypy_platform_arch("macos", "arm64"),
+            Some(("darwin", "arm64"))
+        );
+        assert_eq!(pypy_platform_arch("windows", "x64"), Some(("win64", "x64")));
+        // pypy ships no windows arm64 build
+        assert_eq!(pypy_platform_arch("windows", "arm64"), None);
+    }
+
+    #[test]
+    fn pypy_file_lookup_picks_the_host_archive() {
+        let releases = pypy_fixture();
+        let release = &releases[0];
+        assert_eq!(
+            pypy_file_for(release, "win64", "x64").map(|f| f.filename.as_str()),
+            Some("pypy3.10-v7.3.17-win64.zip")
+        );
+        assert_eq!(
+            pypy_file_for(release, "darwin", "arm64").map(|f| f.filename.as_str()),
+            Some("pypy3.10-v7.3.17-macos_arm64.tar.bz2")
+        );
+        assert!(pypy_file_for(release, "win64", "aarch64").is_none());
+        // the 2.7 release publishes linux only
+        assert!(pypy_file_for(&releases[1], "win64", "x64").is_none());
+    }
+
+    #[test]
+    fn pypy_created_at_becomes_a_timestamp() {
+        assert_eq!(
+            pypy_created_at(Some("2024-08-28")).as_deref(),
+            Some("2024-08-28T00:00:00Z")
+        );
+        assert_eq!(pypy_created_at(None), None);
+        assert_eq!(pypy_created_at(Some("2024-08")), None);
+    }
+
+    /// `versions.json` repeats a handful of releases verbatim (`7.3.6rc1` appears twice for each
+    /// of 2.7/3.7/3.8), which would otherwise show up twice in `ls-remote`.
+    #[test]
+    fn pypy_version_infos_dedupes_and_dates() {
+        let mut releases = pypy_fixture();
+        let dupe = releases[0].clone();
+        releases.push(dupe);
+        let infos = pypy_version_infos(&releases, "linux", "x64");
+        // the fixture is index order, so the list is that reversed: the 3.10 release is last in
+        // the input (as the duplicate) and therefore first here
+        assert_eq!(
+            infos.iter().map(|v| v.version.as_str()).collect_vec(),
+            vec!["pypy3.10-7.3.17", "pypy2.7-7.3.23"]
+        );
+        assert_eq!(infos[0].created_at.as_deref(), Some("2024-08-28T00:00:00Z"));
+    }
+
+    /// The list is upstream's own order reversed, with nothing parsing the version strings.
+    /// `versions.json` is newest-first, and a bare `pypy3.10` takes the last prefix match, so the
+    /// newest 3.10 has to end up last among the 3.10 entries.
+    #[test]
+    fn pypy_version_infos_follow_the_index_order_reversed() {
+        let json = r#"[
+          {"pypy_version": "7.3.19", "python_version": "3.10.16", "date": "2025-02-26",
+           "files": [{"filename": "a", "arch": "x64", "platform": "linux", "download_url": "u"}]},
+          {"pypy_version": "7.3.17", "python_version": "3.10.14", "date": "2024-08-28",
+           "files": [{"filename": "b", "arch": "x64", "platform": "linux", "download_url": "u"}]},
+          {"pypy_version": "7.3.4rc2", "python_version": "2.7.18", "date": "2021-04-01",
+           "files": [{"filename": "c", "arch": "x64", "platform": "linux", "download_url": "u"}]},
+          {"pypy_version": "7.3.4", "python_version": "2.7.18", "date": "2021-04-04",
+           "files": [{"filename": "d", "arch": "x64", "platform": "linux", "download_url": "u"}]}
+        ]"#;
+        let releases: Vec<PypyRelease> = serde_json::from_str(json).unwrap();
+        let listed = pypy_version_infos(&releases, "linux", "x64")
+            .into_iter()
+            .map(|v| v.version)
+            .collect_vec();
+
+        // exactly the input read backwards — note 7.3.4 sits *before* 7.3.4rc2 upstream, and that
+        // is preserved rather than "corrected" by comparing the strings
+        assert_eq!(
+            listed,
+            vec![
+                "pypy2.7-7.3.4",
+                "pypy2.7-7.3.4rc2",
+                "pypy3.10-7.3.17",
+                "pypy3.10-7.3.19"
+            ]
+        );
+        // a bare `pypy3.10` takes the last prefix match
+        assert_eq!(
+            listed.iter().rfind(|v| v.starts_with("pypy3.10-")).unwrap(),
+            "pypy3.10-7.3.19"
+        );
+    }
+
+    /// PyPy's platform coverage is uneven, so a version listed on one host may have no archive on
+    /// another. Listing it there would let a bare `pypy2.7` resolve to something uninstallable.
+    #[test]
+    fn pypy_version_infos_drops_releases_with_no_archive_for_the_platform() {
+        let releases = pypy_fixture();
+        let listed = |platform, arch| {
+            pypy_version_infos(&releases, platform, arch)
+                .into_iter()
+                .map(|v| v.version)
+                .collect_vec()
+        };
+        // the 2.7 fixture release publishes linux/x64 only
+        assert_eq!(listed("win64", "x64"), vec!["pypy3.10-7.3.17"]);
+        assert_eq!(listed("linux", "aarch64"), vec!["pypy3.10-7.3.17"]);
+        assert_eq!(
+            listed("linux", "x64"),
+            vec!["pypy2.7-7.3.23", "pypy3.10-7.3.17"]
+        );
+        // neither fixture release publishes darwin/x64
+        assert!(listed("darwin", "x64").is_empty());
+        // and the order is the fixture's, reversed — 2.7 sits after 3.10 in the input
+        assert_eq!(
+            pypy_fixture()
+                .iter()
+                .filter_map(pypy_version_str)
+                .collect_vec(),
+            vec!["pypy3.10-7.3.17", "pypy2.7-7.3.23"]
+        );
+    }
+
+    /// `python@latest` resolves against the end of the list, so the merged list puts pypy first
+    /// and CPython after — by concatenation, without comparing any two version strings.
+    #[test]
+    fn merged_list_keeps_cpython_last() {
+        let vi = |v: &str| VersionInfo {
+            version: v.to_string(),
+            ..Default::default()
+        };
+        let pypy = vec![vi("pypy2.7-7.3.23"), vi("pypy3.10-7.3.17")];
+        let cpython = vec![vi("3.12.0"), vi("3.13.1")];
+
+        let merged = merge_pypy_and_cpython(pypy.clone(), cpython)
+            .into_iter()
+            .map(|v| v.version)
+            .collect_vec();
+
+        assert_eq!(merged.last().unwrap(), "3.13.1");
+        assert!(merged[..pypy.len()].iter().all(|v| v.starts_with("pypy")));
+        assert!(merged[pypy.len()..].iter().all(|v| !v.starts_with("pypy")));
     }
 
     #[test]

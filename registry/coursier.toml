@@ -1,4 +1,5 @@
 description = "Pure Scala Artifact Fetching"
+version_order = "semver"
 # test = { cmd = "cs --help", expected = "Coursier is the Scala application" }
 
 bins = ["cs"]

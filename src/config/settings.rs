@@ -6,9 +6,10 @@ use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Layer};
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use serde::Serialize;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer, Serializer};
@@ -45,6 +46,12 @@ pub enum SettingsType {
     BoolOrString,
 }
 
+#[derive(Clone, Copy)]
+pub enum CompilePurpose {
+    Install,
+    Inspect,
+}
+
 pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
@@ -54,6 +61,8 @@ pub struct SettingsMeta {
     pub deprecated_warn_at: Option<&'static str>,
     pub deprecated_remove_at: Option<&'static str>,
     pub global_only: bool,
+    /// Consumed before config files are read, so a value in one can never apply.
+    pub env_only: bool,
 }
 
 #[derive(
@@ -242,14 +251,50 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+// TODO(2027.8.0): Remove the per-tool warning accessors once the NixOS
+// `all_compile` deprecation process is complete.
+
+fn default_all_compile(linux_distro: Option<&str>) -> bool {
+    matches!(linux_distro, Some("alpine" | "nixos"))
+}
+
+fn compile_inherits_nixos_all_compile_default(
+    linux_distro: Option<&str>,
+    explicit_all_compile: Option<bool>,
+    compile: Option<bool>,
+) -> bool {
+    linux_distro == Some("nixos") && explicit_all_compile.is_none() && compile.is_none()
+}
+
+fn effective_compile_setting(all_compile: bool, compile: Option<bool>) -> Option<bool> {
+    compile.or_else(|| all_compile.then_some(true))
+}
+
+fn warn_nixos_all_compile_default_deprecated(
+    tool: &str,
+    id: &'static str,
+    all_compile: Option<bool>,
+    compile: Option<bool>,
+) {
+    if !cfg!(test)
+        && compile_inherits_nixos_all_compile_default(
+            env::LINUX_DISTRO.as_deref(),
+            all_compile,
+            compile,
+        )
+    {
+        deprecated_at!(
+            "2026.8.0",
+            "2027.8.0",
+            id,
+            "The automatic all_compile=true default on NixOS caused {tool} to compile from source. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
+        );
+    }
+}
+
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str())
-        && !cfg!(test)
-    {
-        s.all_compile = Some(true);
-    }
     s
 });
 
@@ -463,6 +508,23 @@ fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global:
     }
 }
 
+/// Drop settings the config loader consumes *before* any config file is read — the config
+/// filenames and paths. A value written here can never take effect, and leaving it in the
+/// partial makes `mise settings get` report it as if it were live, which is what
+/// <https://github.com/jdx/mise/discussions/5791> ran into. Unlike the global-only strip this
+/// applies to every config, global included: the ordering problem is the same either way.
+fn strip_env_only_settings(settings: &mut toml::Table, path: &Path) {
+    for (key, meta) in SETTINGS_META.iter().filter(|(_, meta)| meta.env_only) {
+        if remove_nested_toml_value(settings, key).is_some() {
+            warn!(
+                "{key} in {} is ignored: mise reads it before config files load. Set {} instead.",
+                file::display_path(path),
+                meta.env.unwrap_or("the matching MISE_* variable")
+            );
+        }
+    }
+}
+
 fn remove_nested_toml_value(table: &mut toml::Table, key: &str) -> Option<toml::Value> {
     let mut parts = key.split('.').collect_vec();
     let last = parts.pop()?;
@@ -475,6 +537,123 @@ fn remove_nested_toml_value(table: &mut toml::Table, key: &str) -> Option<toml::
 
 fn should_warn_ignored_global_only_value(value: &toml::Value) -> bool {
     !matches!(value, toml::Value::String(s) if s.is_empty())
+}
+
+/// `aqua.registries` entries must be URLs — `github_repo_slug` requires a
+/// parseable `https` URL, and anything else fails later with `relative URL
+/// without a base`. A value that is not a URL is therefore dead today, so
+/// reading it as a path relative to the config file that declared it is a pure
+/// widening: it lets a registry committed alongside the project be referenced
+/// portably, without changing any config that works now. See discussion #4306.
+///
+/// Returns `None` when the value should be left as written.
+fn resolve_registry_source(value: &str, config_root: &Path) -> Option<String> {
+    let looks_like_path = match Url::parse(value) {
+        Err(_) => true,
+        // A Windows path such as `C:\registry.yaml` parses as a URL whose scheme
+        // is the drive letter. No real URL scheme is a single character.
+        Ok(url) => url.scheme().len() == 1,
+    };
+    if !looks_like_path {
+        return None;
+    }
+    // Joining an absolute path returns it unchanged, so absolute entries are
+    // normalized rather than rebased onto the config root.
+    let joined = config_root.join(value);
+    let absolute = joined
+        .absolutize()
+        .map(|p| p.into_owned())
+        .unwrap_or(joined);
+    // Leave the value alone if it cannot be expressed as a file URL rather than
+    // substituting something the user did not write.
+    Url::from_file_path(&absolute).ok().map(String::from)
+}
+
+/// Rewrite relative `aqua.registries` entries so they resolve against the config
+/// root of the file that declared them. Both `aqua.registries = [..]` under
+/// `[settings]` and `[settings.aqua]` + `registries = [..]` parse to the same
+/// nested table, so navigating the table covers either spelling.
+fn resolve_aqua_registry_paths(settings: &mut toml::Table, path: &Path) {
+    let Some(registries) = settings
+        .get_mut("aqua")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|aqua| aqua.get_mut("registries"))
+        .and_then(toml::Value::as_array_mut)
+    else {
+        return;
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    for entry in registries.iter_mut() {
+        if let Some(value) = entry.as_str()
+            && let Some(resolved) = resolve_registry_source(value, &config_root)
+        {
+            *entry = toml::Value::String(resolved);
+        }
+    }
+}
+
+/// Resolve age identity paths while the settings file that declared them is
+/// still known. Once settings layers are merged, a relative `PathBuf` no
+/// longer carries enough information to distinguish two config roots.
+fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
+    let Some(age) = settings.get_mut("age").and_then(toml::Value::as_table_mut) else {
+        return Ok(());
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut tera = crate::tera::get_miserc_tera();
+    let mut context = tera::Context::new();
+    context.insert("env", &*env::PRISTINE_ENV);
+    context.insert("config_root", &config_root);
+    if let Ok(cwd) = std::env::current_dir() {
+        context.insert("cwd", &cwd);
+    }
+    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
+    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
+    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
+    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+
+    let mut resolve = |setting: &str, target: &mut toml::Value| -> Result<()> {
+        let Some(value) = target.as_str() else {
+            return Ok(());
+        };
+        let rendered = if crate::tera::contains_template_syntax(value) {
+            crate::tera::render_str(&mut tera, value, &context).map_err(|err| {
+                eyre!(
+                    "failed to render settings.age.{setting} in {}: {err}",
+                    file::display_path(path)
+                )
+            })?
+        } else {
+            value.to_string()
+        };
+        let rendered_path = Path::new(&rendered);
+        let resolved = if rendered_path.is_absolute()
+            || rendered_path == Path::new("~")
+            || rendered_path.starts_with("~/")
+        {
+            rendered_path.to_path_buf()
+        } else {
+            let joined = config_root.join(rendered_path);
+            joined
+                .absolutize()
+                .map(|p| p.into_owned())
+                .unwrap_or(joined)
+        };
+        *target = toml::Value::String(resolved.to_string_lossy().into_owned());
+        Ok(())
+    };
+
+    if let Some(key_file) = age.get_mut("key_file") {
+        resolve("key_file", key_file)?;
+    }
+    for setting in ["identity_files", "ssh_identity_files"] {
+        if let Some(values) = age.get_mut(setting).and_then(toml::Value::as_array_mut) {
+            for value in values {
+                resolve(setting, value)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl Settings {
@@ -507,6 +686,64 @@ impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
     }
+
+    pub fn all_compile(&self) -> bool {
+        self.all_compile.unwrap_or_else(|| {
+            !cfg!(test)
+                && default_all_compile(env::LINUX_DISTRO.as_ref().map(|distro| distro.as_str()))
+        })
+    }
+
+    fn compile_setting(
+        &self,
+        purpose: CompilePurpose,
+        tool: &str,
+        id: &'static str,
+        compile: Option<bool>,
+    ) -> Option<bool> {
+        if matches!(purpose, CompilePurpose::Install) {
+            warn_nixos_all_compile_default_deprecated(tool, id, self.all_compile, compile);
+        }
+        effective_compile_setting(self.all_compile(), compile)
+    }
+
+    pub fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "node",
+            "nixos.node_all_compile_default",
+            self.node.compile,
+        )
+    }
+
+    pub fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "python",
+            "nixos.python_all_compile_default",
+            self.python.compile,
+        )
+    }
+
+    pub fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "erlang",
+            "nixos.erlang_all_compile_default",
+            self.erlang.compile,
+        )
+    }
+
+    #[cfg(not(windows))]
+    pub fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(
+            purpose,
+            "ruby",
+            "nixos.ruby_all_compile_default",
+            self.ruby.compile,
+        )
+    }
+
     pub fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
@@ -552,6 +789,8 @@ impl Settings {
         }
         if settings.raw {
             settings.jobs = 1;
+        } else {
+            settings.jobs = crate::jobs::normalize(settings.jobs);
         }
         // Handle NO_COLOR environment variable
         if *env::NO_COLOR {
@@ -601,20 +840,6 @@ impl Settings {
         }
         if settings.ci {
             settings.yes = true;
-        }
-        if settings.all_compile {
-            if settings.node.compile.is_none() {
-                settings.node.compile = Some(true);
-            }
-            if settings.python.compile.is_none() {
-                settings.python.compile = Some(true);
-            }
-            if settings.erlang.compile.is_none() {
-                settings.erlang.compile = Some(true);
-            }
-            if settings.ruby.compile.is_none() {
-                settings.ruby.compile = Some(true);
-            }
         }
         if settings.gpg_verify.is_some() {
             settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);
@@ -801,6 +1026,11 @@ impl Settings {
         let tera_v1_from_env = tera_v1_from_env_config(&raw);
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));
+            strip_env_only_settings(settings, path);
+            // After the strips, so a setting that will not survive them is
+            // never rewritten.
+            resolve_aqua_registry_paths(settings, path);
+            resolve_age_paths(settings, path)?;
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -943,7 +1173,11 @@ impl Settings {
 
     pub fn as_dict(&self) -> eyre::Result<toml::Table> {
         let s = toml::to_string(self)?;
-        let mut table = toml::from_str(&s)?;
+        let mut table: toml::Table = toml::from_str(&s)?;
+        table.insert(
+            "all_compile".to_string(),
+            toml::Value::Boolean(self.all_compile()),
+        );
         redact_settings_table(&mut table);
         Ok(table)
     }
@@ -1443,6 +1677,84 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_all_compile_is_limited_to_alpine_and_deprecated_nixos_behavior() {
+        assert!(default_all_compile(Some("alpine")));
+        assert!(default_all_compile(Some("nixos")));
+        assert!(!default_all_compile(Some("ubuntu")));
+        assert!(!default_all_compile(None));
+    }
+
+    #[test]
+    fn all_compile_preserves_unset_and_explicit_values() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.all_compile, None);
+        assert!(!settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(false))
+        );
+
+        settings.all_compile = Some(true);
+        assert!(settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(true))
+        );
+
+        settings.all_compile = Some(false);
+        assert!(!settings.all_compile());
+        assert_eq!(
+            settings.as_dict().unwrap().get("all_compile"),
+            Some(&toml::Value::Boolean(false))
+        );
+    }
+
+    #[test]
+    fn compile_warning_only_applies_to_implicit_nixos_values() {
+        assert!(compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            None,
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            Some(true),
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            Some(false),
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            None,
+            Some(true)
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("nixos"),
+            None,
+            Some(false)
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            Some("alpine"),
+            None,
+            None
+        ));
+        assert!(!compile_inherits_nixos_all_compile_default(
+            None, None, None
+        ));
+    }
+
+    #[test]
+    fn effective_compile_prefers_tool_setting_then_global_source_setting() {
+        assert_eq!(effective_compile_setting(true, None), Some(true));
+        assert_eq!(effective_compile_setting(false, None), None);
+        assert_eq!(effective_compile_setting(true, Some(true)), Some(true));
+        assert_eq!(effective_compile_setting(true, Some(false)), Some(false));
+    }
+
+    #[test]
     fn debug_settings_redact_remote_cache_token() {
         let mut settings = Settings::default();
         settings.task.cache.remote_token = Some("super-secret-token".to_string());
@@ -1562,6 +1874,43 @@ mod tests {
     #[test]
     fn test_split_default_shell_or_fallback_reports_parse_errors() {
         assert!(split_default_shell_or_fallback("\"unterminated", "cmd /c").is_err());
+    }
+
+    /// The shape #5791 reported: the setting is accepted into the file, so without this it
+    /// survives into the partial and `mise settings get` echoes it back while the config
+    /// loader — which already ran — never saw it.
+    #[test]
+    fn test_parse_settings_file_strips_env_only_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings]
+            default_config_filename = ".mise.toml"
+            default_tool_versions_filename = ".tool-versions-custom"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.default_config_filename, None);
+        assert_eq!(partial.default_tool_versions_filename, None);
+    }
+
+    /// Unlike `global_only`, being in the *global* config does not rescue these — the loader
+    /// has read the file by the time the value would be applied either way.
+    #[test]
+    fn test_parse_settings_file_strips_env_only_settings_from_global_too() {
+        let mut settings = toml::Table::new();
+        settings.insert(
+            "global_config_file".to_string(),
+            toml::Value::String("/tmp/elsewhere.toml".to_string()),
+        );
+        strip_env_only_settings(&mut settings, Path::new("/tmp/global-config.toml"));
+
+        assert!(settings.get("global_config_file").is_none());
     }
 
     #[test]
@@ -1727,6 +2076,195 @@ mod tests {
         let partial = Settings::parse_settings_file(&path).unwrap();
 
         assert_eq!(partial.tera_v1, Some(false));
+    }
+
+    /// Run the rewrite over a `[settings]` block and return the resulting
+    /// `aqua.registries` entries, as `parse_settings_file` would see them.
+    fn rewritten_registries(dir: &Path, body: &str) -> Vec<String> {
+        let mut settings = toml::from_str::<toml::Table>(body).unwrap();
+        resolve_aqua_registry_paths(&mut settings, &dir.join(".mise.toml"));
+        settings["aqua"]["registries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// discussion #4306: a registry committed next to the project could not be
+    /// referenced, because a relative entry failed as `relative URL without a
+    /// base`.
+    #[test]
+    fn relative_aqua_registry_resolves_against_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(dir.path(), r#"aqua.registries = ["registry.yaml"]"#);
+
+        let expected = Url::from_file_path(dir.path().join("registry.yaml"))
+            .unwrap()
+            .to_string();
+        assert_eq!(registries, vec![expected]);
+    }
+
+    /// `aqua.registries = [..]` and `[aqua]` + `registries = [..]` parse to the
+    /// same nested table, so both spellings must be picked up.
+    #[test]
+    fn table_form_registries_also_resolve() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(
+            dir.path(),
+            r#"
+            [aqua]
+            registries = ["registry.yaml"]
+            "#,
+        );
+
+        let expected = Url::from_file_path(dir.path().join("registry.yaml"))
+            .unwrap()
+            .to_string();
+        assert_eq!(registries, vec![expected]);
+    }
+
+    #[test]
+    fn absolute_registry_urls_are_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(
+            dir.path(),
+            r#"
+            aqua.registries = [
+              "https://github.com/aquaproj/aqua-registry",
+              "file:///somewhere/registry.yaml",
+            ]
+            "#,
+        );
+
+        assert_eq!(
+            registries,
+            vec![
+                "https://github.com/aquaproj/aqua-registry".to_string(),
+                "file:///somewhere/registry.yaml".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parent_relative_registry_path_is_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries = rewritten_registries(
+            dir.path(),
+            r#"aqua.registries = ["../shared/registry.yaml"]"#,
+        );
+
+        assert!(
+            !registries[0].contains(".."),
+            "expected `..` to be normalized away, got {}",
+            registries[0]
+        );
+    }
+
+    #[test]
+    fn registries_without_aqua_table_are_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = toml::from_str::<toml::Table>("offline = true").unwrap();
+        resolve_aqua_registry_paths(&mut settings, &dir.path().join(".mise.toml"));
+        assert_eq!(settings["offline"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn age_paths_resolve_against_the_declaring_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [age]
+            key_file = "keys/age.txt"
+            identity_files = ["identities/first.txt", "{{ config_root }}/second.txt"]
+            ssh_identity_files = ["ssh/id_ed25519"]
+            "#,
+        )
+        .unwrap();
+
+        resolve_age_paths(&mut settings, &config_path).unwrap();
+
+        assert_eq!(
+            settings["age"]["key_file"].as_str(),
+            Some(dir.path().join("keys/age.txt").to_str().unwrap())
+        );
+        assert_eq!(
+            settings["age"]["identity_files"][0].as_str(),
+            Some(dir.path().join("identities/first.txt").to_str().unwrap())
+        );
+        assert_eq!(
+            Path::new(settings["age"]["identity_files"][1].as_str().unwrap()),
+            dir.path().join("second.txt")
+        );
+        assert_eq!(
+            settings["age"]["ssh_identity_files"][0].as_str(),
+            Some(dir.path().join("ssh/id_ed25519").to_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn age_paths_preserve_absolute_and_home_relative_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let absolute = dir.path().join("absolute.txt");
+        let mut age = toml::Table::new();
+        age.insert(
+            "key_file".into(),
+            toml::Value::String(absolute.to_string_lossy().into_owned()),
+        );
+        age.insert(
+            "identity_files".into(),
+            toml::Value::Array(vec![toml::Value::String("~/identity.txt".into())]),
+        );
+        let mut settings = toml::Table::new();
+        settings.insert("age".into(), toml::Value::Table(age));
+
+        resolve_age_paths(&mut settings, &dir.path().join("mise.toml")).unwrap();
+
+        assert_eq!(
+            settings["age"]["key_file"].as_str(),
+            Some(absolute.to_str().unwrap())
+        );
+        assert_eq!(
+            settings["age"]["identity_files"][0].as_str(),
+            Some("~/identity.txt")
+        );
+    }
+
+    #[test]
+    fn invalid_age_path_template_names_the_setting_and_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [age]
+            key_file = "{{ missing_variable }}"
+            "#,
+        )
+        .unwrap();
+
+        let err = resolve_age_paths(&mut settings, &config_path)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("settings.age.key_file"), "{err}");
+        assert!(err.contains("mise.toml"), "{err}");
+    }
+
+    /// A drive-letter path parses as a URL whose scheme is one character, so it
+    /// must not be mistaken for an absolute URL and left unusable.
+    #[cfg(windows)]
+    #[test]
+    fn windows_drive_registry_path_is_treated_as_a_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let registries =
+            rewritten_registries(dir.path(), r#"aqua.registries = ['C:\reg\registry.yaml']"#);
+
+        assert_eq!(registries.len(), 1);
+        assert!(
+            registries[0].starts_with("file:///C:/reg/"),
+            "expected a file URL, got {}",
+            registries[0]
+        );
     }
 
     #[test]
@@ -2139,6 +2677,133 @@ mod tests {
                 "settings.toml is not alphabetically sorted at index {i}: found \"{got}\", expected \"{expected}\". Run the sort script or reorder manually."
             );
         }
+    }
+
+    /// Every scalar setting type in settings.toml. Anything else is a collection.
+    ///
+    /// Spelled as "not a scalar" rather than by listing the collections on purpose. A new
+    /// collection type — `SetPath`, say — has the same failure mode and is caught here
+    /// automatically, whereas enumerating `List*`/`SetString`/`IndexMap<…>` would let it through
+    /// silently, which is the exact failure this guard exists to prevent. A new *scalar* type
+    /// instead fails this test loudly and is fixed by adding one entry here, which is the cheaper
+    /// mistake to make.
+    const SCALAR_SETTING_TYPES: &[&str] = &[
+        "Bool",
+        "BoolOrString",
+        "Duration",
+        "Integer",
+        "Path",
+        "String",
+        "Url",
+    ];
+
+    /// Collect settings that are readable from the environment, hold a collection, and declare no
+    /// `parse_env`.
+    fn collect_settings_missing_parse_env(
+        table: &toml::Table,
+        prefix: &str,
+        missing: &mut Vec<String>,
+    ) {
+        for (key, value) in table {
+            let toml::Value::Table(setting) = value else {
+                continue;
+            };
+            let full_key = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            // A nested table that has no "type" or "description" is a grouping table
+            // (e.g., [aqua], [node]), not a setting itself.
+            if !setting.contains_key("type") && !setting.contains_key("description") {
+                collect_settings_missing_parse_env(setting, &full_key, missing);
+                continue;
+            }
+            let is_collection = setting
+                .get("type")
+                .and_then(|type_| type_.as_str())
+                .is_some_and(|type_| !SCALAR_SETTING_TYPES.contains(&type_));
+            if is_collection && setting.contains_key("env") && !setting.contains_key("parse_env") {
+                missing.push(full_key);
+            }
+        }
+    }
+
+    #[test]
+    fn test_settings_toml_collection_settings_declare_parse_env() {
+        // A collection setting that can be set from the environment needs `parse_env`. Without it
+        // confique hands the raw string to a `Vec`, set or map deserializer and mise aborts before
+        // doing anything: "failed to deserialize value `SettingsAge::identity_files` from
+        // environment variable `MISE_AGE_IDENTITY_FILES`: invalid type: string "...", expected a
+        // sequence".
+        let content =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/settings.toml"))
+                .expect("failed to read settings.toml");
+        let table: toml::Table = content.parse().expect("failed to parse settings.toml");
+
+        let mut missing = vec![];
+        collect_settings_missing_parse_env(&table, "", &mut missing);
+
+        assert!(
+            missing.is_empty(),
+            "these collection settings are readable from the environment but declare no \
+             parse_env, so mise panics as soon as one is set: {missing:?}"
+        );
+    }
+
+    /// The guard above only earns its place if it catches every collection type, not just `List*`.
+    /// settings.toml also carries `SetString` and `IndexMap<String, String>`, which fail the same
+    /// way, so a violation of each is checked against a fixture here rather than waiting for one
+    /// to be committed.
+    #[test]
+    fn test_parse_env_guard_covers_sets_and_maps_too() {
+        let table: toml::Table = r#"
+            [bad_list]
+            description = "x"
+            type = "ListString"
+            env = "MISE_BAD_LIST"
+
+            [bad_set]
+            description = "x"
+            type = "SetString"
+            env = "MISE_BAD_SET"
+
+            [bad_map]
+            description = "x"
+            type = "IndexMap<String, String>"
+            env = "MISE_BAD_MAP"
+
+            [group.bad_nested]
+            description = "x"
+            type = "ListPath"
+            env = "MISE_BAD_NESTED"
+
+            [ok_has_parse_env]
+            description = "x"
+            type = "SetString"
+            env = "MISE_OK_PARSE"
+            parse_env = "set_by_comma"
+
+            [ok_no_env]
+            description = "x"
+            type = "SetString"
+
+            [ok_scalar]
+            description = "x"
+            type = "String"
+            env = "MISE_OK_SCALAR"
+        "#
+        .parse()
+        .expect("fixture parses");
+
+        let mut missing = vec![];
+        collect_settings_missing_parse_env(&table, "", &mut missing);
+        missing.sort();
+
+        assert_eq!(
+            missing,
+            vec!["bad_list", "bad_map", "bad_set", "group.bad_nested"]
+        );
     }
 
     #[test]

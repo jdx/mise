@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::options::VersionOrder;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::http::HTTP;
@@ -40,7 +41,13 @@ pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     }
 
     match load_cached_floating_registry() {
-        Ok(registry) => Box::leak(Box::new(registry)),
+        Ok(registry) if !registry.missing_version_order => Box::leak(Box::new(registry)),
+        Ok(_) => {
+            warn!(
+                "cached floating mise registry predates version-order metadata, using baked-in registry"
+            );
+            &BAKED_REGISTRY
+        }
         Err(err) => {
             warn!("failed to load floating mise registry, using baked-in registry: {err:#}");
             &BAKED_REGISTRY
@@ -56,6 +63,7 @@ const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 pub struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
     lookup: RegistryLookup,
+    missing_version_order: bool,
 }
 
 enum RegistryLookup {
@@ -84,7 +92,7 @@ impl Registry {
         self.entries.iter().map(|(_, tool)| tool)
     }
 
-    fn dynamic(entries: BTreeMap<String, RegistryTool>) -> Self {
+    fn dynamic(entries: BTreeMap<String, RegistryTool>, missing_version_order: bool) -> Self {
         let entries = entries
             .into_iter()
             .map(|(name, tool)| (leak_string(name), tool))
@@ -98,6 +106,7 @@ impl Registry {
         Self {
             entries,
             lookup: RegistryLookup::Dynamic(lookup),
+            missing_version_order,
         }
     }
 }
@@ -115,6 +124,7 @@ impl RegistryLookup {
 pub struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
+    pub(crate) version_order: VersionOrder,
     pub backends: &'static [RegistryBackend],
     pub bins: &'static [&'static str],
     #[allow(unused)]
@@ -182,10 +192,13 @@ pub async fn refresh() {
 
     let cache_path = registry_cache_path();
     if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
-        if parse_registry_archive(&cache_path).is_ok() {
-            return;
+        match parse_registry_archive(&cache_path) {
+            Ok(registry) if !registry.missing_version_order => return,
+            Ok(_) => warn!(
+                "cached floating mise registry predates version-order metadata; refreshing it"
+            ),
+            Err(_) => warn!("cached floating mise registry is invalid; refreshing it"),
         }
-        warn!("cached floating mise registry is invalid; refreshing it");
     }
 
     if let Err(err) = download_registry_archive(&cache_path).await {
@@ -323,20 +336,22 @@ fn track_registry_archive_entry(
 
 fn registry_from_sources(sources: BTreeMap<String, String>) -> Result<Registry> {
     let mut entries = BTreeMap::new();
+    let mut missing_version_order = false;
     for (short, source) in sources {
         let value: toml::Value = toml::from_str(&source)
             .wrap_err_with(|| format!("failed to parse registry/{short}.toml"))?;
-        let tool = parse_registry_tool(&short, &value)
+        let (tool, tool_missing_version_order) = parse_registry_tool(&short, &value)
             .wrap_err_with(|| format!("invalid registry/{short}.toml"))?;
+        missing_version_order |= tool_missing_version_order;
         entries.insert(short, tool.clone());
         for alias in tool.aliases {
             entries.insert((*alias).to_string(), tool.clone());
         }
     }
-    Ok(Registry::dynamic(entries))
+    Ok(Registry::dynamic(entries, missing_version_order))
 }
 
-fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool> {
+fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool, bool)> {
     let table = value
         .as_table()
         .ok_or_else(|| eyre::eyre!("registry tool must be a TOML table"))?;
@@ -348,6 +363,14 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         .map(parse_registry_backend)
         .collect::<Result<Vec<_>>>()?;
     ensure!(!backends.is_empty(), "backends must not be empty");
+
+    let missing_version_order = !table.contains_key("version_order");
+    let version_order = match table.get("version_order").and_then(toml::Value::as_str) {
+        Some("source") => VersionOrder::Source,
+        Some("semver") => VersionOrder::Semver,
+        Some(_) => bail!("version_order must be \"source\" or \"semver\""),
+        None => VersionOrder::Source,
+    };
 
     let aliases = string_array(table.get("aliases"), "aliases")?;
     let bins = string_array(table.get("bins"), "bins")?;
@@ -366,9 +389,10 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         .transpose()?;
     let test = table.get("test").map(parse_registry_test).transpose()?;
 
-    Ok(RegistryTool {
+    let tool = RegistryTool {
         short: leak_string(short.to_string()),
         description,
+        version_order,
         backends: leak_vec(backends),
         bins: leak_vec(bins),
         aliases: leak_vec(aliases),
@@ -377,7 +401,8 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<RegistryTool>
         os: leak_vec(os),
         idiomatic_files: leak_vec(idiomatic_files),
         detect: leak_vec(detect),
-    })
+    };
+    Ok((tool, missing_version_order))
 }
 
 fn parse_registry_idiomatic_files(
@@ -641,6 +666,18 @@ impl RegistryTool {
             ..Default::default()
         }
     }
+
+    pub(crate) fn version_order(&self, full: &str) -> Option<VersionOrder> {
+        matches!(
+            BackendType::guess(full),
+            BackendType::Aqua
+                | BackendType::Forgejo
+                | BackendType::Github
+                | BackendType::Gitlab
+                | BackendType::Http
+        )
+        .then_some(self.version_order)
+    }
 }
 
 /// Matches registry backend selectors using the schema's normalized platform names.
@@ -788,6 +825,7 @@ mod tests {
             r#"
 aliases = ["example-alias"]
 description = "Example tool"
+version_order = "semver"
 bins = ["example", "example-helper"]
 backends = [
   "aqua:example/tool",
@@ -819,6 +857,10 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             tool.backend_options("github:example/tool").get("bin"),
             Some("example")
         );
+        assert_eq!(
+            tool.version_order("aqua:example/tool"),
+            Some(VersionOrder::Semver)
+        );
         assert_eq!(tool.idiomatic_files[0].path, ".example-version");
         assert!(!tool.idiomatic_files[0].has_parser());
         assert_eq!(tool.idiomatic_files[1].path, "example.json");
@@ -832,6 +874,27 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
+        assert!(!registry.missing_version_order);
+    }
+
+    #[test]
+    fn test_dynamic_registry_defaults_missing_version_order_to_source() {
+        use super::*;
+
+        let registry = registry_from_sources(BTreeMap::from([(
+            "example".to_string(),
+            "backends = [\"aqua:example/tool\"]".to_string(),
+        )]))
+        .unwrap();
+
+        assert_eq!(
+            registry
+                .get("example")
+                .unwrap()
+                .version_order("aqua:example/tool"),
+            Some(VersionOrder::Source)
+        );
+        assert!(registry.missing_version_order);
     }
 
     #[test]
@@ -842,6 +905,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             "example".to_string(),
             r#"
 backends = ["aqua:example/tool"]
+version_order = "source"
 idiomatic_files = [{ path = ".example-version", parser = "shell" }]
 "#
             .to_string(),
@@ -860,7 +924,10 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         use super::*;
 
         let archive = registry_archive(&[
-            ("registry/example.toml", "backends = [\"aqua:good/tool\"]"),
+            (
+                "registry/example.toml",
+                "backends = [\"aqua:good/tool\"]\nversion_order = \"source\"",
+            ),
             (
                 "e2e/registry/example.toml",
                 "backends = [\"aqua:wrong/tool\"]",
@@ -1052,6 +1119,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         let tool = RegistryTool {
             short: "test",
             description: None,
+            version_order: VersionOrder::Source,
             backends: BACKENDS,
             bins: &[],
             aliases: &[],
@@ -1078,6 +1146,43 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             opts.get_nested_string("platforms.linux-x64.asset_pattern"),
             Some("tool-linux.tar.gz".to_string())
         );
+    }
+
+    #[test]
+    fn test_semver_registry_order_only_applies_to_supported_backends() {
+        use super::*;
+
+        static BACKENDS: &[RegistryBackend] = &[
+            RegistryBackend {
+                full: "aqua:owner/repo",
+                platforms: &[],
+                options: &[],
+            },
+            RegistryBackend {
+                full: "npm:package",
+                platforms: &[],
+                options: &[],
+            },
+        ];
+        let tool = RegistryTool {
+            short: "test",
+            description: None,
+            version_order: VersionOrder::Semver,
+            backends: BACKENDS,
+            bins: &[],
+            aliases: &[],
+            overrides: &[],
+            test: &None,
+            os: &[],
+            idiomatic_files: &[],
+            detect: &[],
+        };
+
+        assert_eq!(
+            tool.version_order("aqua:owner/repo"),
+            Some(VersionOrder::Semver)
+        );
+        assert_eq!(tool.version_order("npm:package"), None);
     }
 
     #[tokio::test]

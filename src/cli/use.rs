@@ -67,6 +67,7 @@ pub struct Use {
     global: bool,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
@@ -79,7 +80,10 @@ pub struct Use {
     ///
     /// If a directory is specified, it will look for a config file in that directory following
     /// the rules above.
-    #[clap(short, long, visible_alias = "file", overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    // No `--file` alias here: `-f` on this command is `--force`, so offering `--file`
+    // invites `-f <path>`, which is a different action. See `mise unset --path` for the
+    // commands where the short form is free.
+    #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Like --dry-run but exits with code 1 if there are changes to make
@@ -101,8 +105,11 @@ pub struct Use {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
-    /// Save exact version to config file
-    /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
+    /// Save the resolved concrete version to the config file
+    ///
+    /// If the request exactly matches an available release, that release is preferred over
+    /// installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
+    /// e.g.: `mise use --pin node@20` will save the resolved `20.x.y` version
     /// Set `MISE_PIN=1` to make this the default behavior
     ///
     /// Consider using mise.lock as a better alternative to pinning in mise.toml:
@@ -140,10 +147,13 @@ impl Use {
             .with_scope(scope)
             .build(&config)
             .await?;
-        let cf = self.get_config_file().await?;
+        let mut cf = self.get_config_file().await?;
+        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
+            resolve_rolling_channels: false,
+            prefer_exact_version: pin,
             before_date: self.get_before_date()?,
             before_date_from_default: false,
             filter_installed_versions_by_release_date: false,
@@ -182,13 +192,24 @@ impl Use {
                     jobs: self.jobs,
                     raw: self.raw,
                     dry_run: self.is_dry_run(),
+                    global_hooks_only: self.global,
                     resolve_options,
                     ..Default::default()
                 },
             )
             .await?;
 
-        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
+        // Installation can take long enough for another `mise use` process to update this file.
+        // Serialize only the read-modify-write phase, then re-read under the lock so we apply our
+        // changes to the latest contents instead of overwriting them with the stale snapshot used
+        // during resolution and installation.
+        let mut config_lock = if self.is_dry_run() {
+            None
+        } else {
+            let (lock, latest_cf) = config_file::lock_and_parse_or_init(cf.get_path()).await?;
+            cf = latest_cf;
+            Some(lock)
+        };
 
         for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl
@@ -225,6 +246,7 @@ impl Use {
 
         if !self.is_dry_run() {
             cf.save()?;
+            drop(config_lock.take());
             for tv in &mut versions {
                 // update the source so the lockfile is updated correctly
                 tv.request.set_source(cf.source());

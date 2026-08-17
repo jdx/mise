@@ -4,6 +4,7 @@ use crate::task::task_output::TaskOutput;
 use crate::task::{Task, TaskCacheOutput};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
+use crate::ui::style;
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -224,6 +225,30 @@ impl OutputHandler {
             pr
         }
     }
+
+    /// Return the task prefix's ANSI opening sequence when the selected output
+    /// path actually preserves the styled prefix.
+    pub fn task_prefix_color(&self, task: &Task) -> String {
+        if self.quiet(Some(task)) {
+            return String::new();
+        }
+
+        let output = self.output(Some(task));
+        if console::colors_enabled_stderr() && displays_colored_task_prefix(output) {
+            style::prefix_ansi(&task.display_name)
+        } else {
+            String::new()
+        }
+    }
+}
+
+// This reports whether the mode renders a styled task label, not whether every
+// output line is prefixed. Replacing's text fallback still renders that label.
+fn displays_colored_task_prefix(output: TaskOutput) -> bool {
+    matches!(
+        output,
+        TaskOutput::Prefix | TaskOutput::KeepOrder | TaskOutput::Replacing | TaskOutput::Timed
+    )
 }
 
 impl OutputHandler {
@@ -442,7 +467,7 @@ impl OutputHandler {
         if self.raw {
             1
         } else {
-            self.jobs.unwrap_or(Settings::get().jobs)
+            crate::jobs::resolve(Settings::get().jobs, self.jobs)
         }
     }
 }
@@ -450,6 +475,25 @@ impl OutputHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colored_prefix_modes_require_a_rendered_style() {
+        for output in [
+            TaskOutput::Prefix,
+            TaskOutput::KeepOrder,
+            TaskOutput::Replacing,
+            TaskOutput::Timed,
+        ] {
+            assert!(displays_colored_task_prefix(output));
+        }
+        for output in [
+            TaskOutput::Interleave,
+            TaskOutput::Quiet,
+            TaskOutput::Silent,
+        ] {
+            assert!(!displays_colored_task_prefix(output));
+        }
+    }
 
     #[test]
     fn cached_timed_output_preserves_all_stdout_lines() {

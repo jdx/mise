@@ -1,5 +1,6 @@
 description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
 test = { cmd = "clusterawsadm version", expected = "clusterawsadm version:" }
+version_order = "semver"
 
 bins = ["clusterawsadm"]
 [[backends]]

@@ -86,6 +86,11 @@ start_calendar_interval = [
   { minute = 59, hour = 23, day = 31, weekday = 7, month = 12 },
 ]
 
+[bootstrap.macos.launchd.agents.queue]
+program = "/bin/echo"
+throttle_interval = 300
+queue_directories = ["~/Library/Queues/sync", "/var/spool/sync"]
+
 [bootstrap.linux.systemd.units.sync]
 exec_start = "/usr/bin/rsync --archive source/ destination/"
 type = "oneshot"
@@ -181,6 +186,7 @@ backends = [
   { full = "github:owner/repo", platforms = ["linux", "arm64"], options = { platforms = { linux-x64 = { asset_pattern = "tool-linux.tar.gz" }, darwin-aarch64 = { asset_pattern = "tool-darwin.tar.gz" } } } },
 ]
 description = "Example tool"
+version_order = "source"
 test = { cmd = "tool --version", expected = "tool {{version}}" }
 TOML
 
@@ -211,7 +217,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -360,6 +366,32 @@ start_calendar_interval = $interval
 TOML
   assert_fail "$TOMBI_LINT mise-bad-launchd-calendar.toml"
 done
+
+# Verify that launchd queue directories match runtime validation
+for queue_directories in \
+  '[""]' \
+  '["   "]' \
+  '["/var/spool/sync", ""]' \
+  '["queues/sync"]' \
+  '["./queues"]' \
+  '["~user/queues"]' \
+  '["/var/spool/sync", "queues/sync"]'; do
+  cat >"$HOME/workdir/mise-bad-launchd-queue.toml" <<TOML
+[bootstrap.macos.launchd.agents.invalid]
+program = "/bin/echo"
+queue_directories = $queue_directories
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-launchd-queue.toml"
+done
+
+# Verify that a negative launchd throttle interval is rejected, matching the
+# runtime type (u64)
+cat >"$HOME/workdir/mise-bad-launchd-throttle.toml" <<TOML
+[bootstrap.macos.launchd.agents.invalid]
+program = "/bin/echo"
+throttle_interval = -1
+TOML
+assert_fail "$TOMBI_LINT mise-bad-launchd-throttle.toml"
 
 # Verify that systemd service/timer declarations match runtime validation
 for unit in \

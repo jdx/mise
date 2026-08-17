@@ -159,6 +159,20 @@ including patterns inherited from a global config:
 TEST_TOKEN = { value = "not-sensitive", redact = false }
 ```
 
+Redaction also covers values the caller supplies. A variable declared with `required = true` is only
+validated — mise never assigns it — but the value the caller passed in is still redacted when
+`redact = true` or a `redactions` pattern matches its name:
+
+```toml
+redactions = ["*_KEY_*"]
+
+[tasks.deploy]
+env = { ASC_KEY_ID = { required = true, redact = true } }
+run = "./deploy.sh"
+```
+
+The same applies to a `default` whose fallback the caller overrides.
+
 ### Viewing Redacted Environment Variables
 
 The `mise env` command provides flags to work with redacted variables:
@@ -220,6 +234,10 @@ You can mark environment variables as required by setting `required = true`. Thi
 DATABASE_URL = { required = true }
 API_KEY = { required = true }
 ```
+
+A required variable is validated but never assigned by mise. Its value still participates in
+[redactions](#redactions), so `redact = true` or a matching `redactions` pattern masks whatever the
+caller passed in.
 
 You can also provide help text to guide users on how to set the variable:
 
@@ -495,6 +513,19 @@ The `env._.source` directive supports:
 - Multiple sources as an array of strings and objects
 - Using relative or absolute paths
 - The `redact` and `tools` options
+
+For `PATH`, sourced scripts may prepend entries by preserving the original value as an exact
+suffix:
+
+```sh
+export PATH="/new/bin:$PATH"
+```
+
+Appending, removing, reordering, or replacing existing `PATH` entries is not supported. Those
+changes are ignored because mise tracks path additions separately so it can preserve activation
+ordering and remove them cleanly when the environment changes. Relative prepended entries are
+resolved against <span v-pre>`{{config_root}}`</span>, and empty entries are ignored rather than
+adding the current directory to `PATH`.
 
 ```toml
 [env]

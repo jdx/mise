@@ -1263,6 +1263,7 @@ impl Bootstrap {
                 let opts = DriverOpts {
                     manager: None,
                     explicit: false,
+                    allow_unavailable_manager: false,
                     dry_run: self.dry_run,
                     update: self.update,
                     yes: self.yes,
@@ -1551,6 +1552,7 @@ impl Bootstrap {
                     &DriverOpts {
                         manager: None,
                         explicit: false,
+                        allow_unavailable_manager: false,
                         dry_run: self.dry_run,
                         update: self.update,
                         yes: self.yes,
@@ -1617,9 +1619,10 @@ impl Bootstrap {
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
         run::Run {
-            task: task.into(),
+            task: Some(task.into()),
             args: vec![],
             args_last: vec![],
+            all: false,
             affected: false,
             affected_base: None,
             affected_head: None,
@@ -1768,7 +1771,9 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_mise_config_target(&file.target) || !file.source.is_file() {
+        if !is_mise_config_target(&file.target)
+            || (file.mode != system::files::FileMode::Content && !file.source.is_file())
+        {
             continue;
         }
         if file.mode == FileMode::Template {
@@ -1781,7 +1786,12 @@ fn config_files_after_dotfiles_dry_run(
             );
             continue;
         }
-        match crate::file::read_to_string(&file.source) {
+        let contents = if file.mode == system::files::FileMode::Content {
+            Ok(file.content.clone().expect("inline content"))
+        } else {
+            crate::file::read_to_string(&file.source)
+        };
+        match contents {
             Ok(body) => match parse_mise_config_body(&file.target, &body) {
                 Ok(cf) => {
                     bodies.insert(file.target.clone(), body);
@@ -1929,13 +1939,21 @@ impl BootstrapPlan {
         } else if output.resources.is_empty() {
             info!("nothing configured for bootstrap planning");
         } else {
-            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
             for resource in &output.resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
                     resource.current.clone(),
                     resource.desired.clone(),
+                    resource
+                        .origin
+                        .as_ref()
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
                 ]);
             }
             table.print()?;
@@ -2128,13 +2146,20 @@ impl BootstrapFilesStatus {
         } else if resources.is_empty() {
             info!("no system files or directories configured");
         } else {
-            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
             for resource in resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
                     resource.current,
                     resource.desired,
+                    resource
+                        .origin
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
                 ]);
             }
             table.print()?;
@@ -2763,29 +2788,40 @@ impl BootstrapStatus {
             let statuses = mp.manager.installed(&mp.requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
-                let (installed_version, state, missing) = match &s.state {
-                    PackageState::Installed { version } => (version.clone(), "installed", false),
-                    PackageState::Missing => ("".to_string(), "missing", true),
+                let (installed_version, state, reason, missing) = match &s.state {
+                    PackageState::Installed { version } => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    PackageState::Missing => ("".to_string(), "missing", None, true),
                     PackageState::NeedsRepair { installed } => {
-                        (installed.clone(), "needs repair", true)
+                        (installed.clone(), "needs repair", None, true)
                     }
                     PackageState::VersionMismatch { installed } => {
-                        (installed.clone(), "version mismatch", true)
+                        (installed.clone(), "version mismatch", None, true)
+                    }
+                    #[cfg(unix)]
+                    PackageState::Unavailable { reason } => {
+                        ("".to_string(), "skipped", Some(reason.as_str()), false)
                     }
                 };
                 report.row(
                     "packages",
                     format!("{name}:{}", s.request),
                     installed_version.clone(),
-                    state,
+                    reason
+                        .map_or_else(|| state.to_string(), |reason| format!("{state} ({reason})")),
                     missing,
                 );
-                json_pkgs.push(json!({
+                let mut package = json!({
                     "package": s.request.name,
                     "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
                     "state": state.replace(' ', "_"),
                     "installed_version": installed_version,
-                }));
+                });
+                if let Some(reason) = reason {
+                    package["reason"] = json!(reason);
+                }
+                json_pkgs.push(package);
             }
             json_out.insert(
                 name.to_string(),
@@ -2865,13 +2901,18 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                format!("{} {}", req.mode.name(), req.source.display_user()),
+                if req.mode == system::files::FileMode::Content {
+                    "content inline".to_string()
+                } else {
+                    format!("{} {}", req.mode.name(), req.source.display_user())
+                },
                 state_str,
                 missing,
             );
             json_files.push(json!({
                 "target": req.target_raw,
-                "source": req.source.display_user(),
+                "source": (req.mode != system::files::FileMode::Content)
+                    .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
             }));

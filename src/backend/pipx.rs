@@ -165,24 +165,11 @@ impl Backend for PIPXBackend {
                     let html = HTTP_FETCH.get_html(url).await?;
 
                     // PEP-0503 (HTML format doesn't include timestamps)
-                    let version_re = regex!(
-                        r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#
-                    );
-
-                    version_re
-                        .captures_iter(&html)
-                        .filter_map(|cap| {
-                            let filename = cap.get(1)?.as_str();
-                            let escaped_package = regex::escape(&package);
-                            // PEP-503: normalize package names by replacing hyphens with character class that allows -, _, .
-                            let re_str = escaped_package.replace(r"\-", r"[\-_.]");
-                            let re_str = format!("^{re_str}-(.+)$");
-                            let pkg_re = regex::Regex::new(&re_str).ok()?;
-                            let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
-                            Some(VersionInfo {
-                                version: pkg_version.to_string(),
-                                ..Default::default()
-                            })
+                    Self::versions_from_simple_index(&package, &html)
+                        .into_iter()
+                        .map(|version| VersionInfo {
+                            version,
+                            ..Default::default()
                         })
                         .sorted_by_cached_key(|v| Versioning::new(&v.version))
                         .collect()
@@ -231,21 +218,8 @@ impl Backend for PIPXBackend {
                             let url = registry_url.replace("{}", &package);
                             let html = HTTP_FETCH.get_html(url).await?;
 
-                            // PEP-0503
-                            let version_re = regex!(r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#);
-
-                            let version = version_re
-                                .captures_iter(&html)
-                                .filter_map(|cap| {
-                                    let filename = cap.get(1)?.as_str();
-                                    let escaped_package = regex::escape(&package);
-                                    // PEP-503: normalize package names by replacing hyphens with character class that allows -, _, .
-                                    let re_str = escaped_package.replace(r"\-", r"[\-_.]");
-                                    let re_str = format!("^{re_str}-(.+)$");
-                                    let pkg_re = regex::Regex::new(&re_str).ok()?;
-                                    let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
-                                    Some(pkg_version.to_string())
-                                })
+                            let version = Self::versions_from_simple_index(&package, &html)
+                                .into_iter()
                                 .filter(|v| {
                                     !v.contains("dev")
                                         && !v.contains("a")
@@ -465,6 +439,60 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    fn versions_from_simple_index(package: &str, html: &str) -> Vec<String> {
+        let href_re = regex!(r#"(?i)href\s*=\s*["']([^"']+)["']"#);
+
+        href_re
+            .captures_iter(html)
+            .filter_map(|cap| {
+                let href = cap.get(1)?.as_str();
+                let path = href.split(['?', '#']).next()?;
+                let filename = path.rsplit('/').next()?;
+                let filename = urlencoding::decode(filename).ok()?;
+
+                Self::version_from_distribution_filename(package, &filename)
+            })
+            .unique()
+            .collect()
+    }
+
+    fn version_from_distribution_filename(package: &str, filename: &str) -> Option<String> {
+        let normalized_package = Self::normalize_package_name(package);
+
+        if let Some(stem) = filename.strip_suffix(".whl") {
+            let fields = stem.split('-').collect_vec();
+            if !(fields.len() == 5 || fields.len() == 6)
+                || Self::normalize_package_name(fields[0]) != normalized_package
+            {
+                return None;
+            }
+            return Some(fields[1].to_string());
+        }
+
+        let stem = filename.strip_suffix(".tar.gz")?;
+        stem.match_indices('-').find_map(|(index, _)| {
+            (Self::normalize_package_name(&stem[..index]) == normalized_package)
+                .then(|| stem[index + 1..].to_string())
+        })
+    }
+
+    fn normalize_package_name(package: &str) -> String {
+        let mut normalized = String::with_capacity(package.len());
+        let mut separator = false;
+        for c in package.chars() {
+            if matches!(c, '-' | '_' | '.') {
+                if !separator {
+                    normalized.push('-');
+                    separator = true;
+                }
+            } else {
+                normalized.extend(c.to_lowercase());
+                separator = false;
+            }
+        }
+        normalized
+    }
+
     fn versions_from_pypi_package(data: PypiPackage) -> Vec<VersionInfo> {
         // Releases with only yanked files are ignored so fuzzy/latest
         // resolution mirrors pip's default yanked-file behavior.
@@ -983,6 +1011,79 @@ mod tests {
     use indexmap::IndexMap;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+
+    #[test]
+    fn parses_versions_from_simple_index_artifacts() {
+        let html = r#"
+            <a href="https://files.example/demo_pkg-1.0.0.tar.gz#sha256=abc">sdist</a>
+            <a href="demo_pkg-2.0.0-py3-none-any.whl#sha256=def">wheel</a>
+            <a href="/demo_pkg-2.0.0-cp313-cp313-manylinux_x86_64.whl">duplicate wheel</a>
+            <a href="/demo_pkg-2.1.0-1-py3-none-any.whl">wheel with build tag</a>
+            <a href="/demo_pkg-3.0.0rc1-py3-none-any.whl">prerelease wheel</a>
+            <a href="/other-9.9.9-py3-none-any.whl">other package</a>
+        "#;
+
+        assert_eq!(
+            PIPXBackend::versions_from_simple_index("demo-pkg", html),
+            vec!["1.0.0", "2.0.0", "2.1.0", "3.0.0rc1"]
+        );
+    }
+
+    #[test]
+    fn parses_normalized_and_encoded_simple_index_filenames() {
+        let html = r#"
+            <a href="demo.pkg-1.0%2Bcpu.tar.gz?download=1">sdist</a>
+            <a HREF='DEMO_PKG-2.0%2Bcpu-py3-none-any.whl'>wheel</a>
+        "#;
+
+        assert_eq!(
+            PIPXBackend::versions_from_simple_index("Demo_Pkg", html),
+            vec!["1.0+cpu", "2.0+cpu"]
+        );
+    }
+
+    #[tokio::test]
+    async fn simple_index_resolves_wheel_only_packages() {
+        use crate::backend::Backend;
+
+        let mut server = mockito::Server::new_async().await;
+        let index = server
+            .mock("GET", "/simple/wheel-only/")
+            .with_status(200)
+            .with_header("content-type", "text/html")
+            .with_body(
+                r#"
+                    <a href="wheel_only-1.0.0-py3-none-any.whl">1.0.0</a>
+                    <a href="wheel_only-2.0.0-py3-none-any.whl">2.0.0</a>
+                    <a href="wheel_only-2.0.0-cp313-cp313-manylinux_x86_64.whl">2.0.0</a>
+                "#,
+            )
+            .expect(2)
+            .create_async()
+            .await;
+        let config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg(
+            format!(
+                "pipx:wheel-only[registry_url='{}/simple/{{}}/']",
+                server.url()
+            )
+            .into(),
+        );
+
+        assert_eq!(
+            backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0", "2.0.0"]
+        );
+        assert_eq!(
+            backend
+                .latest_stable_version(&config)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
+        index.assert_async().await;
+    }
 
     #[tokio::test]
     async fn exact_semver_versions_resolve_without_remote_discovery() {

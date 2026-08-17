@@ -2,3 +2,4 @@ backends = ["aqua:jdx/aube", "github:jdx/aube", "cargo:aube"]
 bins = ["aube", "aubr", "aubx"]
 description = "A fast Node.js package manager"
 test = { cmd = "aube --version", expected = "{{version}}" }
+version_order = "semver"

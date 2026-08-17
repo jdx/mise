@@ -50,7 +50,10 @@ pub struct DotfilesAdd {
     pub(super) no_apply: bool,
 
     /// Write to this config file or directory
-    #[clap(long, short, visible_alias = "file", value_name = "PATH", conflicts_with_all = ["global", "local"])]
+    // No `--file` alias here: `-f` on this command is `--force`, and `targets` accepts any
+    // string, so `-f <path>` silently adds the config file as a dotfile instead of writing
+    // to it. See `mise unset --path` for the commands where the short form is free.
+    #[clap(long, short, value_name = "PATH", conflicts_with_all = ["global", "local"])]
     pub(super) path: Option<PathBuf>,
 
     /// Source path to use for a single target
@@ -382,12 +385,19 @@ impl PlannedAdd {
             target_raw: self.target_raw.clone(),
             target: self.target.clone(),
             source: self.source.clone(),
+            content: None,
             mode: self.mode,
             exclude: vec![],
             base: config_path
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .to_path_buf(),
+            origin: crate::system::resources::ResourceOrigin {
+                config: config_path.to_path_buf(),
+                config_root: crate::config::config_file::config_root::config_root(config_path),
+                environment: crate::config::environments_for_config_path(config_path),
+                source: Some(self.source.clone()),
+            },
         }
     }
 }
@@ -454,6 +464,7 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
+        FileMode::Content => unreachable!("dotfiles add always captures a source file"),
     }
 }
 

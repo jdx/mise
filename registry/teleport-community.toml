@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["tbot", "tctl", "teleport", "tsh"]
 description = "Teleport provides connectivity, authentication, access controls and audit for infrastructure (community version)"
+version_order = "semver"

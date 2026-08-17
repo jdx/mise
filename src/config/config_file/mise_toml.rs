@@ -20,7 +20,7 @@ use versions::Versioning;
 use crate::backend::unalias_backend;
 use crate::cli::args::BackendArg;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, config_trust_root, is_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{
@@ -28,14 +28,14 @@ use crate::config::env_directive::{
 };
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config, Settings};
-use crate::deps::DepsConfig;
+use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig};
+use crate::system::{BootstrapTomlConfig, DotfilesTomlConfig, PackageTomlConfig};
 use crate::task::workspace::WorkspaceProjectOverride;
 use crate::task::{Task, TaskTemplate, TaskTomlBoolPresence};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
@@ -199,6 +199,166 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
     }
 }
 
+const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
+
+fn tool_request_selector(request: &ToolRequest) -> (&'static str, String) {
+    match request {
+        ToolRequest::Version { version, .. } => ("version", version.clone()),
+        ToolRequest::Prefix { prefix, .. } => ("prefix", prefix.clone()),
+        ToolRequest::Ref { ref_, ref_type, .. } if ref_type == "ref" => ("ref", ref_.clone()),
+        ToolRequest::Path { .. } => (
+            "path",
+            request.version().strip_prefix("path:").unwrap().to_string(),
+        ),
+        // `tag:`, `branch:`, `rev:`, `sub-N:` and `system` have no dedicated
+        // key in table syntax, so preserve their complete request string in
+        // the general `version` selector.
+        _ => ("version", request.version()),
+    }
+}
+
+fn insert_table_item_preserving_decor(table: &mut toml_edit::Table, key: &str, mut item: Item) {
+    let key = get_key_with_decor(table, key);
+    let value_decor = get_value_decor(table, key.get());
+    set_value_decor(&mut item, &value_decor);
+    table.insert_formatted(&key, item);
+}
+
+fn insert_inline_value_preserving_decor(table: &mut InlineTable, key: &str, mut value: Value) {
+    let key = table
+        .get_key_value(key)
+        .map(|(key, _)| key.clone())
+        .unwrap_or_else(|| Key::from(key));
+    if let Some(existing) = table.get(key.get()) {
+        *value.decor_mut() = existing.decor().clone();
+    }
+    table.insert_formatted(&key, value);
+}
+
+fn update_install_env_table(table: &mut toml_edit::Table, options: &ToolVersionOptions) {
+    if options.install_env.is_empty() {
+        return;
+    }
+
+    match table.get_mut("install_env") {
+        Some(Item::Table(env)) => {
+            for (key, env_value) in &options.install_env {
+                insert_table_item_preserving_decor(env, key, value(env_value.clone()));
+            }
+        }
+        Some(Item::Value(Value::InlineTable(env))) => {
+            for (key, env_value) in &options.install_env {
+                insert_inline_value_preserving_decor(env, key, env_value.clone().into());
+            }
+        }
+        _ => {
+            let mut env = InlineTable::new();
+            for (key, env_value) in &options.install_env {
+                env.insert(key, env_value.clone().into());
+            }
+            insert_table_item_preserving_decor(
+                table,
+                "install_env",
+                Item::Value(Value::InlineTable(env)),
+            );
+        }
+    }
+}
+
+fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVersionOptions) {
+    for (key, value) in &options.opts {
+        insert_table_item_preserving_decor(
+            table,
+            key,
+            Item::Value(toml_value_to_edit(value.clone())),
+        );
+    }
+    if let Some(os) = options.os.as_ref().filter(|os| !os.is_empty()) {
+        let mut arr = Array::new();
+        for os in os {
+            arr.push(os.as_str());
+        }
+        insert_table_item_preserving_decor(table, "os", Item::Value(Value::Array(arr)));
+    }
+    if let Some(depends) = options
+        .depends
+        .as_ref()
+        .filter(|depends| !depends.is_empty())
+    {
+        let mut arr = Array::new();
+        for dependency in depends {
+            arr.push(dependency.as_str());
+        }
+        insert_table_item_preserving_decor(table, "depends", Item::Value(Value::Array(arr)));
+    }
+    update_install_env_table(table, options);
+}
+
+fn update_standard_tool_table(
+    table: &mut toml_edit::Table,
+    request: &ToolRequest,
+    explicit_options: Option<&ToolVersionOptions>,
+) {
+    let (selector, selector_value) = tool_request_selector(request);
+    let existing_selector = TOOL_SELECTOR_KEYS
+        .iter()
+        .find(|key| table.contains_key(key))
+        .copied();
+    let selector_key = existing_selector
+        .map(|existing| get_key_with_decor_from(table, selector, existing))
+        .unwrap_or_else(|| Key::from(selector));
+    let selector_decor = existing_selector.and_then(|key| get_value_decor(table, key));
+    let mut selector_item = value(selector_value);
+    set_value_decor(&mut selector_item, &selector_decor);
+
+    if let Some(existing) = existing_selector {
+        let names = table.iter().map(|(key, _)| key.to_string()).collect_vec();
+        let entries = names
+            .into_iter()
+            .filter_map(|key| table.remove_entry(&key).map(|entry| (key, entry)))
+            .collect_vec();
+        for (key, (formatted_key, item)) in entries {
+            if key == existing {
+                table.insert_formatted(&selector_key, selector_item.clone());
+            } else if !TOOL_SELECTOR_KEYS.contains(&key.as_str()) {
+                table.insert_formatted(&formatted_key, item);
+            }
+        }
+    } else {
+        table.insert_formatted(&selector_key, selector_item);
+    }
+
+    // Options omitted from the CLI are inherited from this table, not removed. Only rewrite
+    // options the user supplied explicitly so their existing representation and decor survive.
+    if let Some(options) = explicit_options {
+        update_explicit_tool_options(table, options);
+    }
+}
+
+fn replace_tool_entries_preserving_position(
+    tools: &mut toml_edit::Table,
+    keys: &[String],
+    key: Key,
+    item: Item,
+) {
+    let Some(first) = keys.first() else {
+        tools.insert_formatted(&key, item);
+        return;
+    };
+    let names = tools.iter().map(|(key, _)| key.to_string()).collect_vec();
+    let entries = names
+        .into_iter()
+        .filter_map(|name| tools.remove_entry(&name).map(|entry| (name, entry)))
+        .collect_vec();
+    for (name, (formatted_key, existing_item)) in entries {
+        if &name == first {
+            tools.insert_formatted(&key, item.clone());
+        } else if !keys.contains(&name) {
+            tools.insert_formatted(&formatted_key, existing_item);
+        }
+    }
+}
+
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
     #[serde(rename = "_")]
@@ -235,6 +395,8 @@ pub struct MiseToml {
     redactions: Redactions,
     #[serde(default)]
     task_config: TaskConfig,
+    #[serde(default)]
+    tool_config: ToolConfig,
     #[serde(default)]
     tasks: Tasks,
     #[serde(default)]
@@ -639,10 +801,20 @@ impl MiseToml {
     /// Set `[bootstrap.packages]."<manager>:<package>" = "<version>"`,
     /// creating the tables as needed ("latest" means no pin)
     pub fn update_bootstrap_package(&mut self, spec: &str, version: &str) -> eyre::Result<()> {
-        self.bootstrap
-            .get_or_insert_with(Default::default)
-            .packages
-            .insert(spec.to_string(), version.to_string());
+        let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
+        let preserve_options = match packages.get_mut(spec) {
+            Some(PackageTomlConfig::Options(options)) => {
+                options.version = version.to_string();
+                true
+            }
+            _ => {
+                packages.insert(
+                    spec.to_string(),
+                    PackageTomlConfig::Version(version.to_string()),
+                );
+                false
+            }
+        };
         let mut doc = self.doc_mut()?;
         let bootstrap = doc
             .get_mut()
@@ -658,12 +830,73 @@ impl MiseToml {
             .or_insert_with(table)
             .as_table_mut()
             .unwrap();
+        if preserve_options && let Some(item) = packages.get_mut(spec) {
+            if let Some(options) = item.as_value_mut().and_then(Value::as_inline_table_mut) {
+                options.insert("version", Value::from(version));
+                return Ok(());
+            }
+            if item.as_table().is_some() {
+                insert_preserving_decor(item, "version", value(version));
+                return Ok(());
+            }
+        }
         let key = get_key_with_decor(packages, spec);
         let value_decor = get_value_decor(packages, spec);
         let mut item = toml_edit::value(version);
         set_value_decor(&mut item, &value_decor);
         packages.insert_formatted(&key, item);
         Ok(())
+    }
+
+    /// Update a package while inheriting table-form options when this file does not declare it.
+    #[cfg(unix)]
+    pub fn update_bootstrap_package_with_fallback(
+        &mut self,
+        spec: &str,
+        version: &str,
+        fallback: Option<&PackageTomlConfig>,
+    ) -> eyre::Result<()> {
+        let is_missing = self
+            .bootstrap
+            .as_ref()
+            .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
+        if is_missing
+            && let Some(PackageTomlConfig::Options(options)) = fallback
+            && !options.os.is_empty()
+        {
+            let mut options = options.clone();
+            options.version = version.to_string();
+            self.bootstrap
+                .get_or_insert_with(Default::default)
+                .packages
+                .insert(
+                    spec.to_string(),
+                    PackageTomlConfig::Options(options.clone()),
+                );
+
+            let mut doc = self.doc_mut()?;
+            let bootstrap = doc
+                .get_mut()
+                .unwrap()
+                .entry("bootstrap")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            bootstrap.set_implicit(true);
+            let packages = bootstrap
+                .entry("packages")
+                .or_insert_with(table)
+                .as_table_mut()
+                .unwrap();
+            let mut value = InlineTable::new();
+            value.insert("version", Value::from(version));
+            let mut os = Array::new();
+            os.extend(options.os);
+            value.insert("os", Value::Array(os));
+            packages.insert(spec, Item::Value(Value::InlineTable(value)));
+            return Ok(());
+        }
+        self.update_bootstrap_package(spec, version)
     }
 
     /// Set `[bootstrap.brew.taps]."<owner>/<tap>" = "<url>"`, creating the
@@ -1061,9 +1294,11 @@ impl ConfigFile for MiseToml {
         // the entry may be written under any spelling of this tool — an alias like "nodejs", a
         // qualified "core:node", or the fully-qualified backend — so collect every key in the
         // document that refers to it. The first one is the entry the file appears to define, so it
-        // supplies the decorations; the rest are duplicates of it and are dropped below.
+        // supplies the decorations; the last one is the effective entry after deserialization.
+        // The rest are duplicates and are dropped below.
         let keys = tool_keys_for(&*tools, ba);
         let existing = keys.first().cloned().unwrap_or_else(|| ba.short.clone());
+        let effective = keys.last().cloned().unwrap_or_else(|| ba.short.clone());
         if keys.len() > 1 {
             let dupes = keys.iter().map(|k| format!("`{k}`")).join(", ");
             warn!(
@@ -1084,6 +1319,23 @@ impl ConfigFile for MiseToml {
             .and_then(|i| i.as_value())
             .and_then(|v| v.as_array())
             .cloned();
+
+        if versions.len() == 1
+            && let Some(mut table) = tools.get(&effective).and_then(Item::as_table).cloned()
+        {
+            if let Some(first_table) = tools.get(&existing).and_then(Item::as_table) {
+                let decor = first_table.decor().clone();
+                let position = first_table.position();
+                *table.decor_mut() = decor;
+                table.set_position(position);
+            }
+            update_standard_tool_table(&mut table, &versions[0], ba.explicit_opts());
+            replace_tool_entries_preserving_position(tools, &keys, key, Item::Table(table));
+            if is_tools_sorted {
+                tools.sort_values();
+            }
+            return Ok(());
+        }
 
         // drop the other spellings: they all deserialize to this one entry, so leaving one behind
         // means the file has two keys for one tool and the later one silently wins on read-back.
@@ -1159,7 +1411,7 @@ impl ConfigFile for MiseToml {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        file::write(&self.path, contents)?;
+        file::write_atomic(&self.path, contents)?;
         trust(&config_trust_root(&self.path))?;
         Ok(())
     }
@@ -1337,6 +1589,10 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn tool_config(&self) -> &ToolConfig {
+        &self.tool_config
+    }
+
     fn task_config_includes(&self) -> eyre::Result<Option<Vec<String>>> {
         self.task_config
             .includes
@@ -1409,8 +1665,20 @@ impl ConfigFile for MiseToml {
             .collect())
     }
 
-    fn deps_config(&self) -> Option<DepsConfig> {
-        self.deps.clone()
+    fn deps_config(&self) -> eyre::Result<Option<DepsConfig>> {
+        let Some(mut deps) = self.deps.clone() else {
+            return Ok(None);
+        };
+        let context = self.template_context();
+        for (provider_id, provider) in &mut deps.providers {
+            provider.template_context = Some(DepsTemplateContext {
+                config_path: self.path.clone(),
+                provider_id: provider_id.clone(),
+                context: context.clone(),
+            });
+            provider.validate_template_syntax()?;
+        }
+        Ok(Some(deps))
     }
 
     fn oci_config(&self) -> Option<OciConfig> {
@@ -1588,6 +1856,7 @@ impl Clone for MiseToml {
             tasks: self.tasks.clone(),
             task_templates: self.task_templates.clone(),
             task_config: self.task_config.clone(),
+            tool_config: self.tool_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
             deps: self.deps.clone(),
@@ -2788,6 +3057,33 @@ mod tests {
         assert_snapshot!(replace_path(&format!("{:#?}", cf)));
     }
 
+    /// `save()` has to replace the config file, not rewrite it in place.
+    ///
+    /// An in-place `O_TRUNC` write is not atomic. A second mise process can read the
+    /// file while it is truncated and conclude no tools are configured, and because
+    /// `O_TRUNC` only shortens the file at open time, a shorter write landing on a
+    /// longer one leaves the previous tail attached — which is invalid TOML and breaks
+    /// every later mise command. Replacing through a rename makes the update
+    /// all-or-nothing for concurrent readers, so assert the file is genuinely swapped.
+    #[test]
+    fn save_replaces_the_config_file_rather_than_rewriting_in_place() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let p = temp.path().join("config.toml");
+        file::write(&p, "[tools]\nclaude = \"latest\"\n").unwrap();
+        let before = std::fs::metadata(&p).unwrap().ino();
+
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.save().unwrap();
+
+        let after = std::fs::metadata(&p).unwrap().ino();
+        assert_ne!(
+            before, after,
+            "save() rewrote the config in place, so a concurrent reader can observe a torn file"
+        );
+    }
+
     #[tokio::test]
     async fn test_env() {
         let _config = Config::get().await.unwrap();
@@ -2986,6 +3282,8 @@ mod tests {
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
+        "brew-cask:1password" = { version = "latest", os = "macos" }
+        "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
 
         [bootstrap.brew.taps]
@@ -3004,9 +3302,34 @@ mod tests {
         .unwrap();
         let cf = MiseToml::from_file(&p).unwrap();
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:libssl-dev").unwrap(), "latest");
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
-        assert_eq!(system.packages.get("brew:postgresql@17").unwrap(), "latest");
+        assert_eq!(
+            system.packages.get("apt:libssl-dev").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            "8.5.0-2"
+        );
+        assert_eq!(
+            system.packages.get("brew:postgresql@17").unwrap().version(),
+            "latest"
+        );
+        assert_eq!(
+            system
+                .packages
+                .get("brew-cask:1password")
+                .unwrap()
+                .version(),
+            "latest"
+        );
+        assert_eq!(
+            system
+                .packages
+                .get("brew-cask:font-example")
+                .unwrap()
+                .version(),
+            "latest"
+        );
         assert_eq!(
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3022,7 +3345,11 @@ mod tests {
         assert_eq!(system.user.login_shell, None);
         // unknown managers parse fine (forward compatibility)
         assert_eq!(
-            system.packages.get("future-manager:whatever").unwrap(),
+            system
+                .packages
+                .get("future-manager:whatever")
+                .unwrap()
+                .version(),
             "latest"
         );
 
@@ -3160,7 +3487,9 @@ mod tests {
         args = ["--watch"]
         run_at_load = true
         start_interval = 300
+        throttle_interval = 60
         start_calendar_interval = { hour = 2, minute = 0 }
+        queue_directories = ["~/Library/Queues/my-sync"]
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
@@ -3179,6 +3508,8 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(agent.throttle_interval, Some(60));
+        assert_eq!(agent.queue_directories, vec!["~/Library/Queues/my-sync"]);
         let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
             agent.start_calendar_interval.as_ref().unwrap()
         else {
@@ -3230,7 +3561,105 @@ mod tests {
         "brew:postgresql@17" = "latest"
         "#);
         let system = cf.bootstrap_config().unwrap();
-        assert_eq!(system.packages.get("apt:curl").unwrap(), "8.5.0-2");
+        assert_eq!(
+            system.packages.get("apt:curl").unwrap().version(),
+            "8.5.0-2"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_bootstrap_package_preserves_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".bootstrap-package-options.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [bootstrap.packages]
+            "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"] }} # keep me
+            "apt:curl" = "8.5.0"
+
+            [bootstrap.packages."brew:fd"]
+            version = "10.0.0" # keep version comment
+            os = ["macos"] # keep selector comment
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        cf.update_bootstrap_package("brew:ripgrep", "latest")
+            .unwrap();
+        cf.update_bootstrap_package("brew:fd", "latest").unwrap();
+        #[cfg(unix)]
+        {
+            let inherited = cf
+                .bootstrap_config()
+                .unwrap()
+                .packages
+                .get("brew:ripgrep")
+                .unwrap()
+                .clone();
+            cf.update_bootstrap_package_with_fallback("brew:bat", "latest", Some(&inherited))
+                .unwrap();
+            #[cfg(unix)]
+            {
+                let inherited_without_selector =
+                    PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
+                        version: "1.0.0".to_string(),
+                        os: vec![],
+                    });
+                cf.update_bootstrap_package_with_fallback(
+                    "brew:tree",
+                    "latest",
+                    Some(&inherited_without_selector),
+                )
+                .unwrap();
+            }
+        }
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains(r#""brew:ripgrep" = { version = "latest", os = ["macos"] } # keep me"#),
+            "package selectors and comments should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"version = "latest" # keep version comment"#),
+            "nested package version comments should survive: {dump}"
+        );
+        assert!(
+            dump.contains(r#"os = ["macos"] # keep selector comment"#),
+            "nested package selectors should survive: {dump}"
+        );
+        #[cfg(unix)]
+        assert!(
+            dump.contains(r#""brew:bat" = { version = "latest", os = ["macos"] }"#),
+            "inherited package selectors should be written locally: {dump}"
+        );
+        #[cfg(unix)]
+        assert!(
+            dump.contains(r#""brew:tree" = "latest""#),
+            "an inherited options table without selectors should use scalar form: {dump}"
+        );
+        #[cfg(unix)]
+        MiseToml::from_str(&dump, &p).expect("updated package config should parse");
+        assert!(matches!(
+            cf.bootstrap_config()
+                .unwrap()
+                .packages
+                .get("brew:ripgrep"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
+        assert!(matches!(
+            cf.bootstrap_config().unwrap().packages.get("brew:fd"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
+        #[cfg(unix)]
+        assert!(matches!(
+            cf.bootstrap_config().unwrap().packages.get("brew:bat"),
+            Some(PackageTomlConfig::Options(options)) if options.version == "latest" && options.os == ["macos"]
+        ));
         file::remove_file(&p).unwrap();
     }
 
@@ -3624,6 +4053,297 @@ run = 'echo "template"'
     }
 
     #[tokio::test]
+    async fn test_replace_versions_preserves_standard_tool_table() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".standard-tool-table.mise.toml");
+        let input = indoc! {r#"
+            # tool header comment
+            [tools.dummy]
+            # version explanation
+            version = "1.0.0" # selector comment
+            foo = "bar" # option comment
+
+            [tools.dummy.install_env]
+            # nested explanation
+            FOO = "bar" # nested comment
+        "#};
+        file::write(&p, input).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = BackendArg::from("dummy");
+        let options = cf.tools.lock().unwrap().get(&dummy).unwrap().0[0]
+            .options
+            .clone()
+            .unwrap();
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new(dummy.clone()),
+                    "2.0.0",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            input.replace("version = \"1.0.0\"", "version = \"2.0.0\"")
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_updates_explicit_standard_table_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".standard-tool-table-explicit-options.mise.toml");
+        file::write(
+            &p,
+            indoc! {r#"
+                [tools.dummy]
+                version = "1.0.0"
+                foo = "bar" # option comment
+                os = ["macos"] # os comment
+                depends = ["old"] # depends comment
+
+                [tools.dummy.install_env]
+                FOO = "bar" # install env comment
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy =
+            BackendArg::from("dummy[foo=baz,os=linux,depends=tiny,install_env.FOO=updated]");
+        let options = dummy.explicit_opts().unwrap().clone();
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new(dummy.clone()),
+                    "2.0.0",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                [tools.dummy]
+                version = "2.0.0"
+                foo = "baz" # option comment
+                os = ["linux"] # os comment
+                depends = ["tiny"] # depends comment
+
+                [tools.dummy.install_env]
+                FOO = "updated" # install env comment
+            "#}
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_omits_empty_explicit_standard_table_options() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".standard-tool-table-empty-options.mise.toml");
+        file::write(&p, "[tools.dummy]\nversion = \"1.0.0\"\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = BackendArg::from("dummy[os=[],depends=[]]");
+        let options = dummy.explicit_opts().unwrap().clone();
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new(dummy.clone()),
+                    "2.0.0",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(cf.dump().unwrap(), "[tools.dummy]\nversion = \"2.0.0\"\n");
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_changes_standard_table_selector_in_place() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".standard-selector.mise.toml");
+        file::write(
+            &p,
+            indoc! {r#"
+                [tools.dummy]
+                version = "1.0.0" # keep selector comment
+                foo = "bar"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = BackendArg::from("dummy");
+        let options = cf.tools.lock().unwrap().get(&dummy).unwrap().0[0]
+            .options
+            .clone()
+            .unwrap();
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_opts(
+                    Arc::new(dummy.clone()),
+                    "prefix:2",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                [tools.dummy]
+                prefix = "2" # keep selector comment
+                foo = "bar"
+            "#}
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_preserves_standard_table_when_renaming_alias() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".standard-alias.mise.toml");
+        file::write(
+            &p,
+            indoc! {r#"
+                # node table comment
+                [tools.nodejs]
+                version = "20.0.0" # keep me
+
+                [tools.dummy]
+                version = "1.0.0"
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node = BackendArg::from("node");
+
+        cf.replace_versions(
+            &node,
+            vec![ToolRequest::new(Arc::new(node.clone()), "22.0.0", ToolSource::Unknown).unwrap()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                # node table comment
+                [tools.node]
+                version = "22.0.0" # keep me
+
+                [tools.dummy]
+                version = "1.0.0"
+            "#}
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_preserves_effective_duplicate_standard_table() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".duplicate-standard-tool-table.mise.toml");
+        file::write(
+            &p,
+            indoc! {r#"
+                # first spelling supplies the table position
+                [tools.nodejs]
+                version = "20.0.0"
+                flavor = "shadowed"
+
+                [tools.dummy]
+                version = "1.0.0"
+
+                [tools.node]
+                version = "22.0.0" # effective selector
+                flavor = "effective" # effective option
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node = BackendArg::from("node");
+
+        cf.replace_versions(
+            &node,
+            vec![ToolRequest::new(Arc::new(node.clone()), "24.0.0", ToolSource::Unknown).unwrap()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                # first spelling supplies the table position
+                [tools.node]
+                version = "24.0.0" # effective selector
+                flavor = "effective" # effective option
+
+                [tools.dummy]
+                version = "1.0.0"
+            "#}
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions_converts_standard_table_for_multiple_versions() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".standard-to-array.mise.toml");
+        file::write(&p, "[tools.dummy]\nversion = \"1.0.0\"\n").unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = BackendArg::from("dummy");
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new(Arc::new(dummy.clone()), "1.0.0", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new(dummy.clone()), "2.0.0", ToolSource::Unknown).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        let dump = cf.dump().unwrap();
+        assert!(
+            dump.contains("[\"1.0.0\", \"2.0.0\"]"),
+            "both versions should be preserved: {dump}"
+        );
+        assert!(
+            !dump.contains("[tools.dummy]"),
+            "multiple versions should use array syntax: {dump}"
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
     async fn test_replace_versions_keeps_sorted_across_multiple_updates() {
         let _config = Config::get().await.unwrap();
         let p = CWD.as_ref().unwrap().join(".multiple-tool-sort.mise.toml");
@@ -3777,6 +4497,66 @@ run = 'echo "template"'
         foo5=5
         foo6=6
         "#);
+    }
+
+    #[test]
+    fn test_deps_config_renders_templates_and_shell_env() {
+        let config = parse(
+            indoc! {r#"
+            [env]
+            DEPS_SUFFIX = "expanded"
+
+            [deps.setup]
+            run = "echo {{ config_root }} $DEPS_SUFFIX"
+            sources = ["{{ config_root }}/input-$DEPS_SUFFIX"]
+            outputs = ["$DEPS_SUFFIX/output"]
+            env = { ROOT = "{{ config_root }}", SUFFIX = "$DEPS_SUFFIX" }
+            dir = "{{ config_root }}/$DEPS_SUFFIX"
+            description = "setup-$DEPS_SUFFIX"
+            depends = ["dependency-$DEPS_SUFFIX"]
+            timeout = "{{ 2 + 3 }}s"
+        "#}
+            .to_string(),
+        );
+
+        let deps = config.deps_config().unwrap().unwrap();
+        let provider = deps.providers["setup"].rendered(&BTreeMap::new()).unwrap();
+        let config_root = CWD.as_ref().unwrap().to_string_lossy();
+        assert_eq!(
+            provider.run.as_deref(),
+            Some(format!("echo {config_root} $DEPS_SUFFIX").as_str())
+        );
+        assert_eq!(
+            provider.sources,
+            Some(vec![format!("{config_root}/input-expanded")])
+        );
+        assert_eq!(provider.outputs, Some(vec!["expanded/output".to_string()]));
+        assert_eq!(provider.env["ROOT"], config_root);
+        assert_eq!(provider.env["SUFFIX"], "expanded");
+        assert_eq!(
+            provider.dir.as_deref(),
+            Some(format!("{config_root}/expanded").as_str())
+        );
+        assert_eq!(provider.description.as_deref(), Some("setup-expanded"));
+        assert_eq!(provider.depends, ["dependency-expanded"]);
+        assert_eq!(provider.timeout.as_deref(), Some("5s"));
+    }
+
+    #[test]
+    fn test_deps_config_reports_template_errors_with_field_context() {
+        let config = parse(
+            indoc! {r#"
+            [deps.setup]
+            run = "echo ok"
+            sources = ["{{ invalid("]
+        "#}
+            .to_string(),
+        );
+
+        let err = config.deps_config().unwrap_err().to_string();
+        assert!(err.contains("deps provider \"setup\""), "{err}");
+        assert!(err.contains("field \"sources[0]\""), "{err}");
+        assert!(err.contains(".test.mise.toml"), "{err}");
     }
 
     fn parse(s: String) -> MiseToml {

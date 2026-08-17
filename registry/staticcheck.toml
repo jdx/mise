@@ -6,3 +6,4 @@ backends = [
 bins = ["staticcheck"]
 description = "Staticcheck - The advanced Go linter"
 test = { cmd = "staticcheck --version", expected = "staticcheck {{version}}" }
+version_order = "source"

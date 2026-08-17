@@ -13,7 +13,7 @@ flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=#tr
     arg <ENV>
 }
 flag "-f --force" help="Force the operation" hide=#true
-flag "-j --jobs" help="How many jobs to run in parallel [default: 8]" global=#true {
+flag "-j --jobs" help="How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]" global=#true {
     arg <JOBS>
 }
 flag "-n --dry-run" help="Dry run, don't actually do anything" hide=#true
@@ -125,7 +125,7 @@ Examples:
     flag "-q --quiet" help="Suppress non-error messages"
     flag "-s --shell" help="Shell type to generate the script for" hide=#true {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     flag --no-hook-env help="Do not automatically call hook-env" {
@@ -151,7 +151,7 @@ See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
     }
     flag --status help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=#true
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" required=#false {
-        choices bash elvish fish nu xonsh zsh pwsh
+        choices bash elvish fish nu xonsh zsh pwsh powershell
     }
 }
 cmd tool-alias help="Manage tool version aliases." effect=read {
@@ -428,7 +428,7 @@ Examples:
             }
             flag "-n --dry-run" help="Print the config/source updates without writing anything"
             flag --no-apply help="Add the entry without applying it"
-            flag "-p --path --file" help="Write to this config file or directory" {
+            flag "-p --path" help="Write to this config file or directory" {
                 arg <PATH>
             }
             flag "-s --source" help="Source path to use for a single target" {
@@ -715,9 +715,9 @@ Examples:
             long_help #"""
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning removes linked formulae
-that are not needed by the current config or by trusted, loadable tracked
-configs.
+Supports Homebrew formulae and conservatively removable, mise-owned casks.
+Pruning keeps packages needed by the current config or by trusted, loadable
+tracked configs.
 """#
             after_long_help #"""
 Examples:
@@ -725,11 +725,12 @@ Examples:
     $ mise bootstrap packages prune --manager brew
     $ mise bootstrap packages prune --manager brew --dry-run
     $ mise bootstrap packages prune --manager brew --yes
+    $ mise bootstrap packages prune --manager brew-cask --dry-run
 
 """#
-            flag "-m --manager" help="Only prune packages for this manager. Currently only `brew` is supported" default=brew {
+            flag "-m --manager" help="Only prune packages for this manager" default=brew {
                 arg <MANAGER> {
-                    choices brew
+                    choices brew brew-cask
                 }
             }
             flag "-n --dry-run" help="Print what would be removed without deleting anything"
@@ -995,7 +996,7 @@ Examples:
 """#
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL_TYPE> {
-            choices bash fish powershell zsh
+            choices bash fish powershell pwsh zsh
         }
     }
     flag --include-bash-completion-lib help="Include the bash completion library in the bash completion script" {
@@ -1021,7 +1022,7 @@ https://usage.jdx.dev
 """#
     }
     arg "[SHELL]" help="Shell type to generate completions for" required=#false {
-        choices bash fish powershell zsh
+        choices bash fish powershell pwsh zsh
     }
 }
 cmd config help="Manage config files" effect=read {
@@ -1214,7 +1215,7 @@ Examples:
         }
         flag "-n --dry-run" help="Print the config/source updates without writing anything"
         flag --no-apply help="Add the entry without applying it"
-        flag "-p --path --file" help="Write to this config file or directory" {
+        flag "-p --path" help="Write to this config file or directory" {
             arg <PATH>
         }
         flag "-s --source" help="Source path to use for a single target" {
@@ -1382,7 +1383,7 @@ Examples:
     flag "-J --json" help="Output in JSON format"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     flag --json-extended help="Output in JSON format with additional information (source, tool)"
@@ -1421,6 +1422,7 @@ Examples:
     }
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 """# {
         arg <JOBS>
@@ -1482,9 +1484,12 @@ This is designed to be used in a project where contributors may not have mise in
         after_long_help #"""
 Examples:
 
-    $ mise generate bootstrap >./bin/mise
-    $ chmod +x ./bin/mise
-    $ ./bin/mise install – automatically downloads mise to .mise if not already installed
+    $ mise generate bootstrap --write ./bin/mise
+    $ ./bin/mise install                                    # downloads mise to .mise if not already installed
+
+    # add a launcher for contributors who clone the project on Windows
+    $ mise generate bootstrap --write ./bin/mise --windows  # also writes bin/mise.cmd
+    $ .\bin\mise.cmd install
 
 """#
         flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
@@ -1502,6 +1507,18 @@ This is necessary if users may use a different version of mise outside the proje
         }
         flag --localized-dir help="Directory to put localized data into" default=.mise {
             arg <LOCALIZED_DIR>
+        }
+        flag --windows help="Also write a Windows launcher, `<WRITE>.cmd`" {
+            long_help #"""
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `--write`, since stdout cannot
+carry two files.
+"""#
         }
     }
     cmd config help="Generate a mise.toml file" effect=write {
@@ -1556,6 +1573,9 @@ Examples:
     $ mise generate git-pre-commit --write --task=pre-commit
     $ git commit -m "feat: add new feature" # runs `mise run pre-commit`
 
+    # config lives in a subdirectory, so the hook has to change into it first
+    $ mise generate git-pre-commit --write -- -C subdir
+
 """#
         flag "-t --task" help="The task to run when the pre-commit hook is triggered" default=pre-commit {
             arg <TASK>
@@ -1564,6 +1584,13 @@ Examples:
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" default=pre-commit {
             arg <HOOK>
         }
+        arg "[-- MISE_ARG]…" help="mise flags to embed in the generated hook, given after `--`" help_long=#"""
+mise flags to embed in the generated hook, given after `--`
+
+These are inserted between `mise` and `run`, so the hook carries the same context you
+would pass on the command line. Useful when the config is not at the repository root,
+since git runs hooks from the top level: `-- -C subdir` makes the hook find it.
+"""# required=#false var=#true
     }
     cmd github-action help="Generate a GitHub Action workflow file" effect=write {
         long_help #"""
@@ -1625,6 +1652,7 @@ Generates shims to run mise tasks
 
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
 so contributors to a project can execute mise tasks without installing mise into their system.
+When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 """#
         after_long_help #"""
 Examples:
@@ -1736,6 +1764,16 @@ By default, uses the latest version from the install script.
 Use this to pin to a specific version (e.g., "2025.1.0").
 """#
             arg <BOOTSTRAP_VERSION>
+        }
+        flag --checksum-algorithm help="Checksum algorithm to use when downloading artifacts" default=blake3 {
+            long_help #"""
+Checksum algorithm to use when downloading artifacts
+
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lock` or `--skip-download` because those modes do not calculate checksums.
+"""#
+            arg <CHECKSUM_ALGORITHM> {
+                choices blake3 sha256
+            }
         }
         flag --fetch help="Fetch checksums and sizes for an existing tool stub file" {
             long_help #"""
@@ -1864,7 +1902,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
     flag "-s --shell" help="Shell type to generate script for" {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     flag --reason help="Reason for calling hook-env (e.g., \"precmd\", \"chpwd\")" hide=#true {
@@ -1877,7 +1915,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
 cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" effect=write {
     flag "-s --shell" help="Shell type to generate script for" {
         arg <SHELL> {
-            choices bash elvish fish nu xonsh zsh pwsh
+            choices bash elvish fish nu xonsh zsh pwsh powershell
         }
     }
     arg <BIN> help="Attempted bin to run"
@@ -1929,11 +1967,16 @@ Examples:
     $ mise install node@20      # install fuzzy node version
     $ mise install node         # install version specified in mise.toml
     $ mise install              # installs everything specified in mise.toml
+    $ mise install --include-task-tools # also install tools required by tasks
 
 """#
-    flag "-f --force" help="Force reinstall even if already installed"
+    flag "-f --force" help=#"""
+Force reinstall even if already installed
+With no tools specified, reinstall all configured tools
+"""#
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 """# {
         arg <JOBS>
@@ -1951,6 +1994,14 @@ This argument will print backend output such as download, configuration, and com
 Like --dry-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
+"""#
+    }
+    flag --include-task-tools help="Also install tools required by tasks in the current scope" {
+        long_help #"""
+Also install tools required by tasks in the current scope
+
+This prepares task tools without running task commands or dependencies.
+Combine with --monorepo to include tasks from every configured root.
 """#
     }
     flag --minimum-release-age help="Only install versions released before this date or older than this duration" {
@@ -2120,7 +2171,8 @@ cmd lock help="Update lockfile checksums and URLs for all specified platforms" e
 Update lockfile checksums and URLs for all specified platforms
 
 Updates checksums and download URLs for all platforms already specified in the lockfile.
-If no lockfile exists, shows what would be created based on the current configuration.
+If no lockfile exists, shows what would be created based on the current configuration,
+including tools declared by tasks.
 This allows you to refresh lockfile data for platforms other than the one you're currently on.
 Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 """#
@@ -2142,7 +2194,10 @@ Examples:
 Target only global config lockfiles (~/.config/mise/mise.lock and system config)
 By default, only the active project config root is locked
 """#
-    flag "-j --jobs" help="Number of jobs to run in parallel" {
+    flag "-j --jobs" help=#"""
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+"""# {
         arg <JOBS>
     }
     flag "-n --dry-run" help="Show what would be updated without making changes"
@@ -2197,7 +2252,7 @@ Existing matching lockfile entries are preserved and are not downgraded solely b
     arg "[TOOL]…" help=#"""
 Tool(s) to update in lockfile
 e.g.: node python
-If not specified, all tools in lockfile will be updated
+If not specified, all configured and task-specific tools will be updated
 """# required=#false var=#true
 }
 cmd ls help="List installed and active tool versions" effect=read {
@@ -2658,6 +2713,11 @@ Shows outdated tool versions
 See `mise upgrade` to upgrade these versions.
 """#
     after_long_help #"""
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
 Examples:
 
     $ mise outdated
@@ -2677,8 +2737,7 @@ Examples:
     node    20         20.0.0   20.1.0
 
 """#
-    flag "-J --json" help="Output in JSON format"
-    flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
+    flag "-b --bump" help="Compares against the latest versions available, not what matches the current config" {
         long_help #"""
 Compares against the latest versions available, not what matches the current config
 
@@ -2688,6 +2747,8 @@ show other 20.x versions, not 21.x or 22.x versions.
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 """#
     }
+    flag "-J --json" help="Output in JSON format"
+    flag -l help="Deprecated shorthand for --bump" hide=#true
     flag --inactive help="Show outdated tools including installed-but-inactive tools not present in the current config" {
         long_help #"""
 Show outdated tools including installed-but-inactive tools not present in the current config
@@ -2794,7 +2855,10 @@ This will only install plugins that have matching shorthands.
 i.e.: they don't need the full git repo url
 """#
         flag "-f --force" help="Reinstall even if plugin exists"
-        flag "-j --jobs" help="Number of jobs to run in parallel" {
+        flag "-j --jobs" help=#"""
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+"""# {
             arg <JOBS>
         }
         flag "-v --verbose" help="Show installation output" var=#true count=#true
@@ -2919,6 +2983,7 @@ Examples:
 """#
         flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 Default: 4
 """# {
             arg <JOBS>
@@ -3206,6 +3271,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
         arg <REV>
     }
     flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
+    flag --all help="Open the interactive selector with all tasks from the entire monorepo"
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
@@ -3213,6 +3279,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
     flag "-j --jobs" help=#"""
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 """# {
@@ -3640,6 +3707,7 @@ Examples:
 """#
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 """# {
         arg <JOBS>
@@ -4059,6 +4127,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
             arg <REV>
         }
         flag --affected-json help="Output affected projects and tasks as JSON without running tasks"
+        flag --all help="Open the interactive selector with all tasks from the entire monorepo"
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
@@ -4066,6 +4135,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
         flag "-j --jobs" help=#"""
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 """# {
@@ -4179,7 +4249,8 @@ Default to always show with `MISE_TASK_TIMINGS=1`
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-"""# required=#false default=default
+Defaults to `default` when omitted
+"""# required=#false
         arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true
         arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true
         mount run="mise tasks --usage"
@@ -4234,6 +4305,7 @@ Examples:
     flag "-a --all" help="Test every tool specified in registry/"
     flag "-j --jobs" help=#"""
 Number of tool tests to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 """# {
         arg <JOBS>
@@ -4530,6 +4602,11 @@ and bump the version in mise.toml.
 This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 """#
     after_long_help #"""
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
 Examples:
 
     # Upgrades node to the latest version matching the range in mise.toml
@@ -4560,14 +4637,7 @@ Examples:
     $ mise upgrade --local
 
 """#
-    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
-    flag "-j --jobs" help=#"""
-Number of jobs to run in parallel
-[default: 4]
-"""# {
-        arg <JOBS>
-    }
-    flag "-l --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
+    flag "-b --bump" help="Upgrades to the latest version available, bumping the version in mise.toml" {
         long_help #"""
 Upgrades to the latest version available, bumping the version in mise.toml
 
@@ -4578,6 +4648,15 @@ It keeps the same precision as what was there before, so if you instead had `nod
 would change your config to `node = "22"`.
 """#
     }
+    flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
+    flag "-j --jobs" help=#"""
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+[default: 4]
+"""# {
+        arg <JOBS>
+    }
+    flag -l help="Deprecated shorthand for --bump" hide=#true
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
     flag "-x --exclude" help=#"""
 Tool(s) to exclude from upgrading
@@ -4621,6 +4700,16 @@ Do not uninstall the versions that were upgraded away from
 By default the old version is removed once the new one installs, unless another
 tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
 something outside of mise points at the old install directory.
+
+Set `upgrade.auto_prune = false` to make this the default.
+"""#
+    }
+    flag --prune help="Uninstall the versions that were upgraded away from" {
+        long_help #"""
+Uninstall the versions that were upgraded away from
+
+This is already the default. Use it to override `upgrade.auto_prune = false`
+for a single run.
 """#
     }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1"
@@ -4688,12 +4777,13 @@ Examples:
     flag "-g --global" help="Use the global config file (`~/.config/mise/config.toml`) instead of the local one"
     flag "-j --jobs" help=#"""
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 """# {
         arg <JOBS>
     }
     flag "-n --dry-run" help="Perform a dry run, showing what would be installed and modified without making changes"
-    flag "-p --path --file" help="Specify a path to a config file or directory" {
+    flag "-p --path" help="Specify a path to a config file or directory" {
         long_help #"""
 Specify a path to a config file or directory
 
@@ -4724,14 +4814,13 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
-    flag --pin help=#"""
-Save exact version to config file
-e.g.: `mise use --pin node@20` will save 20.0.0 as the version
-Set `MISE_PIN=1` to make this the default behavior
-"""# {
+    flag --pin help="Save the resolved concrete version to the config file" {
         long_help #"""
-Save exact version to config file
-e.g.: `mise use --pin node@20` will save 20.0.0 as the version
+Save the resolved concrete version to the config file
+
+If the request exactly matches an available release, that release is preferred over
+installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
+e.g.: `mise use --pin node@20` will save the resolved `20.x.y` version
 Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
@@ -5425,6 +5514,7 @@ This shows the manual page for Watchexec, if the output is a terminal and the 'm
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+Defaults to `default`
 """# required=#false
     arg "[ARGS]…" help="Task and arguments to run" required=#false double_dash=automatic var=#true
 }

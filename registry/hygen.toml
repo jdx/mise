@@ -1,3 +1,4 @@
 backends = ["github:jondot/hygen", "asdf:brentjanderson/asdf-hygen"]
 bins = ["hygen"]
 description = "The simple, fast, and scalable code generator that lives in your project"
+version_order = "semver"

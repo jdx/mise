@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Inside ~/.config/mise, config.local.toml overrides config.toml, which overrides
+# conf.d fragments. The ceiling keeps the config dir out of the cwd walk, so it is
+# only found as the global config group, together with ~/.tool-versions.
+export MISE_CEILING_PATHS="$HOME"
+
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+
+cat >"$MISE_CONFIG_DIR/conf.d/10-fragment.toml" <<EOF
+[settings]
+minimum_release_age_excludes = ["from-conf-d"]
+[env]
+GLOBAL_PRECEDENCE = "from-conf-d"
+EOF
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[settings]
+minimum_release_age_excludes = ["from-config"]
+[env]
+GLOBAL_PRECEDENCE = "from-config"
+[tools]
+dummy = "2.0.0"
+EOF
+
+cat >"$MISE_CONFIG_DIR/config.local.toml" <<EOF
+[settings]
+minimum_release_age_excludes = ["from-local"]
+[env]
+GLOBAL_PRECEDENCE = "from-local"
+EOF
+
+echo "dummy 1.0.0" >"$HOME/.tool-versions"
+
+assert "mise env | grep GLOBAL_PRECEDENCE" "export GLOBAL_PRECEDENCE=from-local"
+assert "mise settings get minimum_release_age_excludes" '["from-local"]'
+# ~/.tool-versions joins the global group only under MISE_USE_TOML=0, and outranks
+# the config dir. Only the active version carries a source.
+assert "MISE_USE_TOML=0 mise ls dummy --json | jq -r '.[] | select(.source) | .source.path'" "$HOME/.tool-versions"
+
+rm "$MISE_CONFIG_DIR/config.local.toml"
+assert "mise env | grep GLOBAL_PRECEDENCE" "export GLOBAL_PRECEDENCE=from-config"

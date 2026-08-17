@@ -62,6 +62,7 @@ mod hooks;
 mod http;
 mod install_before;
 mod install_context;
+mod jobs;
 mod lock_file;
 mod lockfile;
 pub(crate) mod logger;
@@ -110,6 +111,14 @@ fn main() -> ExitCode {
     // build. Dispatch on argv0 before runtime, logging, clap, or config startup.
     if cache::session::is_rustc_shim() {
         return cache::session::run_rustc_shim();
+    }
+    // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
+    // name to finish an update, and when its own init hook does not intercept that, mise would run
+    // its shim path and report the generated name as a broken shim. There is nothing for `main` to
+    // do here — the copy exists to be deleted — so leave before anything else starts.
+    #[cfg(windows)]
+    if env::invoked_as_self_replace_helper() {
+        return ExitCode::SUCCESS;
     }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())

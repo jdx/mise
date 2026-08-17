@@ -14,6 +14,7 @@
 ## Configuration
 
 - [mise.toml](https://mise.jdx.dev/configuration.html): Learn how to configure mise for your project with mise.toml files, environment variables, and various configuration options to manage your development environment.
+- [Variables](https://mise.jdx.dev/configuration/vars.html): [vars] defines values that can be reused in mise configuration templates. Vars are similar to environment variables, but mise does not export them to child processes.
 - [Settings](https://mise.jdx.dev/configuration/settings.html): The following is a list of all of mise's settings. These can be set via mise settings key=value, by directly modifying the global config file (~/.config/mise/config.toml) or local config, or via…
 - [Configuration Environments](https://mise.jdx.dev/configuration/environments.html): It's possible to have separate mise.toml files in the same directory for different environments like development and production.
 

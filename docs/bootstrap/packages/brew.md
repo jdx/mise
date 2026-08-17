@@ -59,13 +59,36 @@ Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
 the Homebrew cask API (or from tap API metadata), downloads the artifact,
 verifies its sha256 when the cask provides one, extracts the archive, and
 installs app bundles into `/Applications` while recording the version under
-`<prefix>/Caskroom`.
+`<prefix>/Caskroom`. Like Homebrew, mise moves each app bundle into
+`/Applications` and leaves a symlink at its versioned Caskroom path instead of
+retaining a second copy of the application.
 
 ```toml
 [bootstrap.packages]
 "brew-cask:firefox" = "latest"
 "brew-cask:homebrew/cask/visual-studio-code" = "latest"
 ```
+
+### Overriding the application directory
+
+By default `app` artifacts are installed into `/Applications`, matching
+Homebrew. Set the `MISE_BREW_CASK_OPT_APPDIR` environment variable to install
+them somewhere else — for example a user-writable `~/Applications` that does not
+require elevation:
+
+```sh
+MISE_BREW_CASK_OPT_APPDIR="$HOME/Applications" mise bootstrap packages apply brew-cask:firefox
+```
+
+The value must be an absolute path, must not contain `..`, and must not resolve
+to the filesystem root. It is resolved to a real path (symlinks are followed)
+before use, so it acts as a fixed containment boundary for the app links mise
+creates. An empty value is ignored and falls back to `/Applications`. When the
+override is set, a cask that targets the default `/Applications` (as most do) is
+relocated into the override directory, preserving any subdirectories the cask
+requests; targets that a cask anchors under `$HOMEBREW_PREFIX/Applications` are
+left in the Homebrew prefix and are never relocated. This mirrors Homebrew's own
+`--appdir` install option.
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
@@ -78,13 +101,17 @@ installed into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
 "brew-cask:font-heavy-data-nerd-font" = "latest"
 ```
 
-Other Linux casks fail with a clear unsupported-platform error. This boundary
-will expand as mise gains portable implementations for more cask artifact
-types.
+Other Linux casks are reported as unavailable and skipped when they come from
+`[bootstrap.packages]`, allowing macOS and Linux to share a package list. An
+explicit request such as `mise bootstrap packages apply brew-cask:firefox`
+still fails with a clear unsupported-platform error. You can also mark macOS
+casks explicitly with `{ os = "macos" }`. This boundary will expand as mise
+gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
-simple macOS installer packages (`pkg` artifacts), and shell completions
+generic prefix artifacts (`artifact`), simple macOS installer packages (`pkg`
+artifacts), script-based cask installers, and shell completions
 (`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
@@ -101,6 +128,11 @@ delegating to Homebrew. mise also supports structured `preflight_steps` and
 operations using Homebrew's serialized command bases, arguments, environment,
 guards, and sudo setting, and `terminate_process` operations with
 Homebrew-compatible name/full matching, retries, notices, and failure policy.
+Structured `copy` and `symlink` steps support Homebrew path bases, templates,
+guards, source globs, replacement, and sudo behavior. External paths created by
+lifecycle steps are recorded in the mise receipt and restored if the install
+transaction fails. Cask formula and cask dependencies are installed first, and
+declared cask conflicts fail before mutation.
 Casks that require custom installer
 choices, services, unsupported hook DSL, unsupported structured lifecycle
 steps, or other cask artifact types fail with a clear unsupported artifact
@@ -201,6 +233,22 @@ This command is mise's declarative cleanup for bootstrap packages, similar to
 [`brew bundle cleanup`](https://docs.brew.sh/Manpage). It is not upstream
 `brew prune`, which Homebrew removed in favor of cleanup commands.
 
+`mise bootstrap packages prune --manager brew-cask` applies the same merged
+config model to direct cask artifacts, with a deliberately narrower ownership
+boundary. A cask is removed only when its install-time `.mise-cask.toml`
+receipt explicitly marks it safe to prune and every recorded target still has
+the exact content fingerprint mise recorded after installation. The command
+removes those targets and the cask's Caskroom entry; `--dry-run` previews the
+plan and `--yes` skips confirmation.
+
+Casks installed before their receipt included prune metadata are skipped until
+a later upgrade or reinstall refreshes the receipt. Casks with pkg or command
+wrapper artifacts, install or uninstall lifecycle actions, pending
+transactions, Homebrew `.metadata`, changed targets, or targets shared with
+another mise cask are also skipped with a reason. Prune never runs `zap`
+metadata and never reconstructs historical uninstall behavior from the current
+Homebrew API.
+
 ## How pouring works
 
 For each formula in the dependency closure (dependencies first):
@@ -281,8 +329,10 @@ operation.
   `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
   IDs, and pkg installers with custom choices fail explicitly.
 - **`brew services` is not implemented.**
-- **Cask import/prune is not implemented.** `import` and `prune` are formulae-only
-  until cask uninstall semantics can be made safe for app and pkg artifacts.
+- **Cask import is not implemented.** Cask prune is limited to mise-owned direct
+  artifacts whose install-time receipt proves they can be removed safely. Pkg
+  artifacts and casks with lifecycle actions are skipped until their uninstall
+  semantics are supported.
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail

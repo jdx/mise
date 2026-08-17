@@ -6,3 +6,4 @@ backends = [
 bins = ["ls-lint"]
 description = "An extremely fast directory and filename linter - Bring some structure to your project filesystem"
 test = { cmd = "ls-lint --version", expected = "ls-lint v{{version}}" }
+version_order = "semver"

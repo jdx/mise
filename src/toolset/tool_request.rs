@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use versions::{Chunk, Version};
 use xx::file;
 
@@ -107,8 +107,9 @@ impl ToolRequest {
                 }
             }
             Some(("path", p)) => {
-                validate_path_string(p)?;
-                let path = resolve_path(p, &source);
+                let p = windows_path_separators(p);
+                validate_path_string(&p)?;
+                let path = resolve_path(&p, &source);
                 Self::Path {
                     path,
                     options: backend.opts(),
@@ -299,10 +300,18 @@ impl ToolRequest {
                 .local_resolve(config, orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
                 .unwrap_or_default()
-                .map(|v| {
-                    let pathname = version_sub(&v, sub.as_str());
+                .and_then(|v| {
+                    // A version that cannot be subtracted from has no install path to look
+                    // for, which is the same answer as "nothing installed matches".
+                    let pathname = version_sub(&v, sub.as_str())
+                        .inspect_err(|e| warn!("ToolRequest.version_sub: {e:#}"))
+                        .ok()?;
                     let path = backend.installs_path.join(&pathname);
-                    env::find_in_shared_installs(path, &backend.tool_dir_name(), &pathname)
+                    Some(env::find_in_shared_installs(
+                        path,
+                        &backend.tool_dir_name(),
+                        &pathname,
+                    ))
                 }),
             Self::Prefix {
                 backend, prefix, ..
@@ -511,6 +520,12 @@ fn validate_ref_string(s: &str) -> Result<()> {
 /// entry in a project config cannot inject shell syntax. Path traversal is
 /// intentionally not rejected here because `path:../tools/foo` is a normal
 /// relative-path use case.
+///
+/// The list is written for a POSIX shell, which is why `\` is on it. On Windows `\` is a path
+/// separator instead, so it is rewritten by [`windows_path_separators`] before it gets here rather
+/// than being allowed through — see that function. The shell those hooks run through there is
+/// `cmd.exe`, whose metacharacters are a different set, so a few more are rejected on Windows —
+/// see [`is_forbidden_path_char`].
 fn validate_path_string(s: &str) -> Result<()> {
     if s.is_empty() {
         return Ok(());
@@ -518,11 +533,49 @@ fn validate_path_string(s: &str) -> Result<()> {
     if let Some(c) = s.chars().find(|c| {
         // Allow newlines/tabs/etc. in paths is still bad — keep control-char
         // and quote/expansion rejection, but allow `/` since paths need it.
-        is_forbidden_version_char(*c)
+        is_forbidden_path_char(*c)
     }) {
+        // The only `\` that survives the rewrite is an extended-length or device prefix, so say
+        // what is actually wrong instead of naming a character the user cannot avoid.
+        #[cfg(windows)]
+        if c == '\\' {
+            bail!(
+                "invalid tool path {s:?}: extended-length and device paths (\\\\?\\, \\\\.\\) are not supported"
+            );
+        }
         bail!("invalid tool path {s:?}: contains forbidden character {c:?}");
     }
     Ok(())
+}
+
+/// Rewrite `\` to `/` in a `path:` value on Windows.
+///
+/// `\` is the path separator there, not a shell metacharacter, so [`validate_path_string`] used to
+/// reject every native path — anything copied out of Explorer or printed by `pwd`. Win32 accepts
+/// `/` wherever it accepts `\`, so rewriting is what makes those usable *without* letting a `\`
+/// reach a vfox hook's `ctx.rootPath`, which is the thing the list exists to prevent (#9814). The
+/// alternative — dropping `\` from the list on Windows — would have weakened that.
+///
+/// Extended-length and device prefixes (`\\?\`, `\\.\`) are left alone. Those are the one place
+/// Windows does not accept `/`, so rewriting would hand back a path that looks right and does not
+/// resolve; they keep being rejected, as they are today.
+#[cfg(windows)]
+fn windows_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.starts_with(r"\\?\") || s.starts_with(r"\\.\") {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    if s.contains('\\') {
+        std::borrow::Cow::Owned(s.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
+/// No-op off Windows: `\` is a legal character in a unix filename, so rewriting it would change
+/// which file is meant, and there it really is a shell escape — it stays rejected.
+#[cfg(not(windows))]
+fn windows_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    std::borrow::Cow::Borrowed(s)
 }
 
 fn is_forbidden_version_char(c: char) -> bool {
@@ -530,6 +583,30 @@ fn is_forbidden_version_char(c: char) -> bool {
         return true;
     }
     matches!(c, '"' | '\'' | '`' | '\\' | '$')
+}
+
+/// The `path:` denylist: the shared version list, plus `cmd.exe`'s metacharacters on Windows.
+///
+/// The version list covers a POSIX shell. On Windows the resolved path reaches vfox hooks that
+/// build `cmd.exe` command lines with it, so cmd's metacharacters are as dangerous here as the
+/// POSIX ones already are — this mirrors that rejection on the platform where cmd is the shell.
+/// `%` is the sharpest: cmd expands `%NAME%` even inside double quotes, so a hook that quotes its
+/// interpolation correctly still cannot contain it.
+///
+/// Only the `path:` arm uses this. Version strings keep the POSIX-only list, because `^` is a real
+/// npm-style range prefix (`^1.2.3`) that must not become a hard error.
+fn is_forbidden_path_char(c: char) -> bool {
+    is_forbidden_version_char(c) || is_forbidden_cmd_char(c)
+}
+
+#[cfg(windows)]
+fn is_forbidden_cmd_char(c: char) -> bool {
+    matches!(c, '&' | '|' | '<' | '>' | '^' | '%')
+}
+
+#[cfg(not(windows))]
+fn is_forbidden_cmd_char(_c: char) -> bool {
+    false
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.
@@ -581,32 +658,45 @@ fn normalize_arch(arch: &str) -> &str {
 /// e.g. version_sub("18.2.3", "2") -> "16"
 /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
 /// e.g. version_sub("2.79.0", "0.0.1") -> "2.78" (underflow, returns prefix)
-pub fn version_sub(orig: &str, sub: &str) -> String {
-    let mut orig = Version::new(orig).unwrap();
-    let sub = Version::new(sub).unwrap();
-    while orig.chunks.0.len() > sub.chunks.0.len() {
-        orig.chunks.0.pop();
+///
+/// `orig` must already be a concrete version. `latest` and aliases like `lts` have to be
+/// resolved by the caller first — there is nothing here to subtract from — which is what
+/// `tool_version::resolve_sub_base` exists for.
+pub fn version_sub(orig: &str, sub: &str) -> Result<String> {
+    fn not_numeric(orig: &str, sub: &str) -> eyre::Report {
+        eyre!("cannot subtract {sub} from {orig}: {orig} is not a numeric version")
     }
-    for i in 0..orig.chunks.0.len() {
-        let m = sub.nth(i).unwrap();
-        let orig_val = orig.chunks.0[i].single_digit().unwrap();
+    let mut version = Version::new(orig).ok_or_else(|| eyre!("invalid version: {orig}"))?;
+    let sub_version = Version::new(sub).ok_or_else(|| eyre!("invalid version: {sub}"))?;
+    while version.chunks.0.len() > sub_version.chunks.0.len() {
+        version.chunks.0.pop();
+    }
+    for i in 0..version.chunks.0.len() {
+        let m = sub_version
+            .nth(i)
+            .ok_or_else(|| eyre!("invalid version: {sub}"))?;
+        let orig_val = version.chunks.0[i]
+            .single_digit()
+            .ok_or_else(|| not_numeric(orig, sub))?;
 
         if orig_val < m {
             // Handle underflow with borrowing from higher digits
             for j in (0..i).rev() {
-                let prev_val = orig.chunks.0[j].single_digit().unwrap();
+                let prev_val = version.chunks.0[j]
+                    .single_digit()
+                    .ok_or_else(|| not_numeric(orig, sub))?;
                 if prev_val > 0 {
-                    orig.chunks.0[j] = Chunk::Numeric(prev_val - 1);
-                    orig.chunks.0.truncate(j + 1);
-                    return orig.to_string();
+                    version.chunks.0[j] = Chunk::Numeric(prev_val - 1);
+                    version.chunks.0.truncate(j + 1);
+                    return Ok(version.to_string());
                 }
             }
-            return "0".to_string();
+            return Ok("0".to_string());
         }
 
-        orig.chunks.0[i] = Chunk::Numeric(orig_val - m);
+        version.chunks.0[i] = Chunk::Numeric(orig_val - m);
     }
-    orig.to_string()
+    Ok(version.to_string())
 }
 
 impl Display for ToolRequest {
@@ -762,6 +852,8 @@ mod tests {
 
     #[test]
     fn test_validate_path_string() {
+        // `validate_path_string` in isolation. On Windows the `path:` arm rewrites separators
+        // first, so a `\` in a real config does not reach here — that pair is covered below.
         use super::validate_path_string;
         // valid paths
         for p in [
@@ -794,22 +886,140 @@ mod tests {
         }
     }
 
+    /// Rewrite then validate, in the order the `path:` arm does it.
+    fn accept_tool_path(p: &str) -> Result<String, eyre::Report> {
+        let p = super::windows_path_separators(p);
+        super::validate_path_string(&p)?;
+        Ok(p.into_owned())
+    }
+
+    #[test]
+    fn test_tool_path_rewrite_does_not_widen_the_rest() {
+        // The control for the two platform-specific tests below: quote and expansion characters
+        // stay rejected everywhere, and a path with no separator to rewrite comes back untouched.
+        assert_eq!(
+            accept_tool_path("/home/user/tools/foo").unwrap(),
+            "/home/user/tools/foo"
+        );
+        assert_eq!(accept_tool_path("C:/Users/foo").unwrap(), "C:/Users/foo");
+        for p in [
+            "/tmp/$HOME",
+            "/tmp/`id`",
+            "/tmp/$(id)",
+            "/tmp/'rm",
+            "/tmp/\"rm",
+            "/tmp/\nrm",
+        ] {
+            assert!(
+                accept_tool_path(p).is_err(),
+                "expected path {p:?} to be rejected"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_native_windows_tool_path_is_accepted() {
+        // The reported case: a path spelled the way Windows spells it. Rewritten rather than
+        // allowed through, so no `\` reaches a plugin hook's `ctx.rootPath`.
+        for (input, expected) in [
+            (r"C:\Users\foo\bin", "C:/Users/foo/bin"),
+            (r"~\.local\bin", "~/.local/bin"),
+            (r"..\tools\foo", "../tools/foo"),
+            (r"C:\Program Files\tool", "C:/Program Files/tool"),
+        ] {
+            assert_eq!(accept_tool_path(input).unwrap(), expected, "{input:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_extended_length_tool_path_is_left_alone_and_rejected() {
+        // `\\?\` and `\\.\` are the one place Windows does not accept `/`, so rewriting them
+        // would produce a path that looks right and does not resolve. They stay rejected, as
+        // they are on every version before this change.
+        for input in [r"\\?\C:\Users\foo", r"\\.\COM1"] {
+            assert_eq!(
+                super::windows_path_separators(input),
+                input,
+                "{input:?} should not be rewritten"
+            );
+            assert!(accept_tool_path(input).is_err(), "{input:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_backslash_is_still_rejected_on_unix() {
+        // The control for the Windows tests: `\` is a legal character in a unix filename and a
+        // shell escape there, so none of the rewriting reaches this platform.
+        assert_eq!(super::windows_path_separators(r"/tmp/\rm"), r"/tmp/\rm");
+        assert!(accept_tool_path(r"/tmp/\rm").is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_validate_path_string_rejects_cmd_metacharacters() {
+        use super::validate_path_string;
+        // These pass a POSIX shell but are cmd.exe metacharacters, and the resolved path reaches
+        // vfox hooks that build cmd command lines with it. `%` is the one that survives quoting.
+        for p in [
+            "C:/a&b/tool",
+            "C:/%USERPROFILE%/tool",
+            "C:/a^b/tool",
+            "C:/a|b/tool",
+            "C:/a<b/tool",
+            "C:/a>b/tool",
+        ] {
+            assert!(
+                validate_path_string(p).is_err(),
+                "expected Windows path {p:?} to be rejected"
+            );
+        }
+        // An ordinary Windows path is still fine.
+        assert!(validate_path_string("C:/Program Files/tool").is_ok());
+    }
+
+    #[test]
+    fn test_version_string_keeps_the_posix_only_list() {
+        // The cmd-metacharacter rejection is `path:`-only. Versions keep the POSIX list, or `^1.2.3`
+        // — a real npm-style range — would become a hard error. `&` is not a version metacharacter
+        // there, so this stays accepted on every platform.
+        assert!(validate_version_string("^1.2.3").is_ok());
+        assert!(validate_version_string("1.0&x").is_ok());
+        // The POSIX shell characters are still rejected, unchanged.
+        assert!(validate_version_string("1.0$(id)").is_err());
+    }
+
     #[test]
     fn test_version_sub() {
-        assert_str_eq!(version_sub("18.2.3", "2"), "16");
-        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
-        assert_str_eq!(version_sub("18.2.3", "0.0.1"), "18.2.2");
+        assert_str_eq!(version_sub("18.2.3", "2").unwrap(), "16");
+        assert_str_eq!(version_sub("18.2.3", "0.1").unwrap(), "18.1");
+        assert_str_eq!(version_sub("18.2.3", "0.0.1").unwrap(), "18.2.2");
     }
 
     #[test]
     fn test_version_sub_underflow() {
         // Test cases that would cause underflow return prefix for higher digit
-        assert_str_eq!(version_sub("2.0.0", "0.0.1"), "1");
-        assert_str_eq!(version_sub("2.79.0", "0.0.1"), "2.78");
-        assert_str_eq!(version_sub("1.0.0", "0.1.0"), "0");
-        assert_str_eq!(version_sub("0.1.0", "1"), "0");
-        assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
-        assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
+        assert_str_eq!(version_sub("2.0.0", "0.0.1").unwrap(), "1");
+        assert_str_eq!(version_sub("2.79.0", "0.0.1").unwrap(), "2.78");
+        assert_str_eq!(version_sub("1.0.0", "0.1.0").unwrap(), "0");
+        assert_str_eq!(version_sub("0.1.0", "1").unwrap(), "0");
+        assert_str_eq!(version_sub("1.2.3", "0.2.4").unwrap(), "0");
+        assert_str_eq!(version_sub("1.3.3", "0.2.4").unwrap(), "1.0");
+    }
+
+    #[test]
+    fn test_version_sub_rejects_non_numeric_base() {
+        // An unresolved alias must not reach here, but if it does it has to be an
+        // error rather than a panic: this used to abort the process from
+        // `mise ls-remote <tool>@sub-2:lts`.
+        let err = version_sub("lts", "2").unwrap_err().to_string();
+        assert!(err.contains("lts"), "unexpected error: {err}");
+
+        assert!(version_sub("latest", "1").is_err());
+        assert!(version_sub("1.2.3", "x").is_err());
+        assert!(version_sub("", "1").is_err());
     }
 
     #[test]

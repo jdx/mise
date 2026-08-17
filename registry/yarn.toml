@@ -9,3 +9,4 @@ description = "Yarn is a package manager that doubles down as project manager. W
 detect = ["yarn.lock", ".yarnrc.yml"]
 idiomatic_files = [".yvmrc", "package.json"]
 test = { cmd = "yarn --version", expected = "{{version}}" }
+version_order = "semver"

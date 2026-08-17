@@ -24,16 +24,7 @@ If not specified, all current tools will be upgraded
 
 ## Flags
 
-### `-i --interactive`
-
-Display multiselect menu to choose which tools to upgrade
-
-### `-j --jobs <JOBS>`
-
-Number of jobs to run in parallel
-[default: 4]
-
-### `-l --bump`
+### `-b --bump`
 
 Upgrades to the latest version available, bumping the version in mise.toml
 
@@ -42,6 +33,16 @@ this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
 It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
 would change your config to `node = "22"`.
+
+### `-i --interactive`
+
+Display multiselect menu to choose which tools to upgrade
+
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+[default: 4]
 
 ### `-n --dry-run`
 
@@ -91,9 +92,23 @@ By default the old version is removed once the new one installs, unless another
 tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
 something outside of mise points at the old install directory.
 
+Set `upgrade.auto_prune = false` to make this the default.
+
+### `--prune`
+
+Uninstall the versions that were upgraded away from
+
+This is already the default. Use it to override `upgrade.auto_prune = false`
+for a single run.
+
 ### `--raw`
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+
+Deprecation:
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
 Examples:
 

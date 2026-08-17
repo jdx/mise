@@ -364,7 +364,7 @@ impl Toolset {
             .collect();
 
         env.extend(config.env().await?.clone());
-        if let Some(venv) = uv::uv_venv(config, self).await {
+        if let Some(venv) = uv::uv_venv(config, self).await? {
             for (k, v) in venv.env.clone() {
                 env.insert(k, v);
             }

@@ -1,3 +1,4 @@
 backends = ["aqua:tenable/terrascan", "asdf:hpdobrica/asdf-terrascan"]
 bins = ["terrascan"]
 description = "Detect compliance and security violations across Infrastructure as Code to mitigate risk before provisioning cloud native infrastructure"
+version_order = "semver"

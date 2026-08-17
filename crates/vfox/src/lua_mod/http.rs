@@ -191,6 +191,79 @@ fn add_default_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMa
     headers
 }
 
+fn add_default_headers_for_request(
+    lua: &Lua,
+    original_url: &str,
+    request_url: &str,
+    headers: HeaderMap,
+) -> HeaderMap {
+    let same_origin = Url::parse(original_url)
+        .ok()
+        .zip(Url::parse(request_url).ok())
+        .is_some_and(|(original, request)| original.origin() == request.origin());
+
+    // Do not forward credentials selected for the original origin, but retain
+    // non-sensitive plugin headers that may be required by the replacement.
+    if !same_origin {
+        return headers
+            .iter()
+            .filter(|(name, _)| !is_sensitive_header(name))
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+    }
+
+    add_default_headers(lua, original_url, headers)
+}
+
+fn is_sensitive_header(name: &HeaderName) -> bool {
+    let name = name.as_str();
+    let normalized: String = name.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+
+    matches!(
+        name,
+        "authorization"
+            | "cookie"
+            | "cookie2"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "set-cookie"
+            | "www-authenticate"
+    ) || normalized.ends_with("auth")
+        || [
+            "accesskey",
+            "accesstoken",
+            "apikey",
+            "apitoken",
+            "authtoken",
+            "authentication",
+            "authorization",
+            "bearertoken",
+            "credential",
+            "githubtoken",
+            "gitlabtoken",
+            "idtoken",
+            "privatekey",
+            "privatetoken",
+            "refreshtoken",
+            "secret",
+            "secretkey",
+            "sessionid",
+            "sessionkey",
+            "sessiontoken",
+            "subscriptionkey",
+            "vaulttoken",
+        ]
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
+fn rewrite_url(lua: &Lua, url: &str) -> Result<String> {
+    match lua.named_registry_value::<mlua::Function>(crate::http::URL_REWRITER_REGISTRY_KEY) {
+        Ok(rewriter) => rewriter.call(url),
+        Err(_) => Ok(url.to_string()),
+    }
+}
+
 async fn get(lua: &Lua, input: Table) -> Result<Table> {
     get_with_cancellation(lua, input, http_cancellation()).await
 }
@@ -206,9 +279,10 @@ async fn get_with_cancellation(
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let headers = add_default_headers(lua, &url, headers);
+    let request_url = rewrite_url(lua, &url)?;
+    let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
     let resp = cancel_on_signal(
-        send_with_retry(CLIENT.get(&url).headers(headers)),
+        send_with_retry(CLIENT.get(&request_url).headers(headers)),
         cancellation.cancelled(),
     )
     .await?;
@@ -227,12 +301,17 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let headers = add_default_headers(lua, &url, headers);
+    let request_url = rewrite_url(lua, &url)?;
+    let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
     // Retry the whole flow (request + body) so a mid-stream drop restarts the
     // download instead of failing.
-    let bytes = cancel_on_interrupt(retry_async(&url, || async {
-        let resp = CLIENT.get(&url).headers(headers.clone()).send().await?;
+    let bytes = cancel_on_interrupt(retry_async(&request_url, || async {
+        let resp = CLIENT
+            .get(&request_url)
+            .headers(headers.clone())
+            .send()
+            .await?;
         let resp = resp.error_for_status()?;
         resp.bytes().await
     }))
@@ -258,8 +337,10 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let headers = add_default_headers(lua, &url, headers);
-    let resp = cancel_on_interrupt(send_with_retry(CLIENT.head(&url).headers(headers))).await?;
+    let request_url = rewrite_url(lua, &url)?;
+    let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
+    let resp =
+        cancel_on_interrupt(send_with_retry(CLIENT.head(&request_url).headers(headers))).await?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
@@ -281,9 +362,10 @@ async fn try_get_with_cancellation(
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let headers = add_default_headers(lua, &url, headers);
+    let request_url = rewrite_url(lua, &url)?;
+    let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
     let resp = match cancel_on_signal(
-        send_with_retry(CLIENT.get(&url).headers(headers)),
+        send_with_retry(CLIENT.get(&request_url).headers(headers)),
         cancellation.cancelled(),
     )
     .await
@@ -317,8 +399,12 @@ async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let headers = add_default_headers(lua, &url, headers);
-    let resp = match cancel_on_interrupt(send_with_retry(CLIENT.head(&url).headers(headers))).await
+    let request_url = rewrite_url(lua, &url)?;
+    let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
+    let resp = match cancel_on_interrupt(send_with_retry(
+        CLIENT.head(&request_url).headers(headers),
+    ))
+    .await
     {
         Ok(resp) => resp,
         Err(e) => {
@@ -349,7 +435,8 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let headers = add_default_headers(lua, &url, headers);
+    let request_url = rewrite_url(lua, &url)?;
+    let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
     let path = match input.get(1).and_then(|v| v.to_string().ok()) {
         Some(p) => p,
         None => {
@@ -359,8 +446,12 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
             ]));
         }
     };
-    let bytes = match cancel_on_interrupt(retry_async(&url, || async {
-        let resp = CLIENT.get(&url).headers(headers.clone()).send().await?;
+    let bytes = match cancel_on_interrupt(retry_async(&request_url, || async {
+        let resp = CLIENT
+            .get(&request_url)
+            .headers(headers.clone())
+            .send()
+            .await?;
         let resp = resp.error_for_status()?;
         resp.bytes().await
     }))
@@ -498,6 +589,193 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn test_rewrite_url_defaults_to_original() {
+        let lua = Lua::new();
+        let url = "https://upstream.example/resource";
+        assert_eq!(rewrite_url(&lua, url).unwrap(), url);
+    }
+
+    #[tokio::test]
+    async fn test_url_rewriter_applies_to_all_lua_http_methods() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/resource"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("rewritten"))
+            .expect(4)
+            .mount(&server)
+            .await;
+        Mock::given(method("HEAD"))
+            .and(path("/resource"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(2)
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+        lua.set_named_registry_value("github_token", "original-host")
+            .unwrap();
+        let replacement_origin = server.uri();
+        let rewriter = lua
+            .create_function(move |_, url: String| {
+                Ok(url.replacen("https://api.github.com", &replacement_origin, 1))
+            })
+            .unwrap();
+        lua.set_named_registry_value(crate::http::URL_REWRITER_REGISTRY_KEY, rewriter)
+            .unwrap();
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let download_path = temp_dir.path().join("download.txt");
+        let try_download_path = temp_dir.path().join("try-download.txt");
+        let download_path_str = download_path.to_string_lossy().to_string();
+        let try_download_path_str = try_download_path.to_string_lossy().to_string();
+        let url = "https://api.github.com/resource";
+
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local request = {
+                url = $url,
+                headers = {
+                    ["Accept"] = "application/vnd.vfox+json",
+                    ["Authorization"] = "Bearer plugin-token",
+                    ["Cookie"] = "session=secret",
+                    ["Cookie2"] = "session2=secret",
+                    ["Proxy-Authorization"] = "Basic proxy-secret",
+                    ["WWW-Authenticate"] = "Bearer challenge-secret",
+                    ["X-Api-Key"] = "service-secret",
+                    ["X-ApiKey"] = "service-secret-without-delimiter",
+                    ["X-Gitlab-Token"] = "gitlab-secret",
+                    ["X-Session-Id"] = "session-secret",
+                    ["X-Vault-Token"] = "vault-secret",
+                    ["X-Auth-Method"] = "mirror-v1",
+                    ["X-Cache-Key"] = "cache-entry",
+                    ["X-Request-Key"] = "request-route",
+                    ["X-Vfox-Test"] = "required",
+                },
+            }
+
+            local get_resp = http.get(request)
+            assert(get_resp.status_code == 200)
+            assert(get_resp.body == "rewritten")
+
+            local try_get_resp, try_get_err = http.try_get(request)
+            assert(try_get_err == nil)
+            assert(try_get_resp.body == "rewritten")
+
+            assert(http.head(request).status_code == 200)
+            local try_head_resp, try_head_err = http.try_head(request)
+            assert(try_head_err == nil)
+            assert(try_head_resp.status_code == 200)
+
+            assert(http.download_file(request, $download_path_str) == nil)
+            local ok, try_download_err = http.try_download_file(
+                request,
+                $try_download_path_str
+            )
+            assert(ok == true)
+            assert(try_download_err == nil)
+        })
+        .exec_async()
+        .await
+        .unwrap();
+
+        assert_eq!(
+            tokio::fs::read_to_string(download_path).await.unwrap(),
+            "rewritten"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(try_download_path).await.unwrap(),
+            "rewritten"
+        );
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 6);
+        for request in requests {
+            assert_eq!(
+                request
+                    .headers
+                    .get("accept")
+                    .and_then(|value| value.to_str().ok()),
+                Some("application/vnd.vfox+json")
+            );
+            assert!(!request.headers.contains_key(AUTHORIZATION));
+            assert!(!request.headers.contains_key("cookie"));
+            assert!(!request.headers.contains_key("cookie2"));
+            assert!(!request.headers.contains_key("proxy-authorization"));
+            assert!(!request.headers.contains_key("www-authenticate"));
+            assert!(!request.headers.contains_key("x-api-key"));
+            assert!(!request.headers.contains_key("x-apikey"));
+            assert!(!request.headers.contains_key("x-gitlab-token"));
+            assert!(!request.headers.contains_key("x-session-id"));
+            assert!(!request.headers.contains_key("x-vault-token"));
+            assert_eq!(
+                request
+                    .headers
+                    .get("x-auth-method")
+                    .and_then(|value| value.to_str().ok()),
+                Some("mirror-v1")
+            );
+            assert_eq!(
+                request
+                    .headers
+                    .get("x-cache-key")
+                    .and_then(|value| value.to_str().ok()),
+                Some("cache-entry")
+            );
+            assert_eq!(
+                request
+                    .headers
+                    .get("x-request-key")
+                    .and_then(|value| value.to_str().ok()),
+                Some("request-route")
+            );
+            assert_eq!(
+                request
+                    .headers
+                    .get("x-vfox-test")
+                    .and_then(|value| value.to_str().ok()),
+                Some("required")
+            );
+            assert!(!request.headers.contains_key("x-github-api-version"));
+        }
+    }
+
+    #[test]
+    fn test_same_origin_rewrite_keeps_default_github_headers() {
+        let lua = Lua::new();
+        lua.set_named_registry_value("github_token", "same-origin")
+            .unwrap();
+        let mut input_headers = HeaderMap::new();
+        input_headers.insert("x-api-key", HeaderValue::from_static("same-origin-secret"));
+
+        let headers = add_default_headers_for_request(
+            &lua,
+            "https://api.github.com/repos/owner/repo",
+            "https://api.github.com/mirror/owner/repo",
+            input_headers,
+        );
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer same-origin")
+        );
+        assert_eq!(
+            headers
+                .get("x-github-api-version")
+                .and_then(|value| value.to_str().ok()),
+            Some("2022-11-28")
+        );
+        assert_eq!(
+            headers
+                .get("x-api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("same-origin-secret")
+        );
     }
 
     #[tokio::test]

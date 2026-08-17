@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/http-redirect-format.XXXXXX")
+PORT_FILE="$FIXTURE_DIR/port"
+mkdir -p "$FIXTURE_DIR/archive/bin"
+
+cat >"$FIXTURE_DIR/archive/bin/redirect-tool" <<'EOF'
+#!/usr/bin/env sh
+echo redirected archive
+EOF
+chmod +x "$FIXTURE_DIR/archive/bin/redirect-tool"
+tar -C "$FIXTURE_DIR/archive" -czf "$FIXTURE_DIR/artifact.tar.gz" bin
+
+cat >"$FIXTURE_DIR/raw-tool" <<'EOF'
+#!/usr/bin/env sh
+echo redirected raw file
+EOF
+chmod +x "$FIXTURE_DIR/raw-tool"
+
+FIXTURE_DIR="$FIXTURE_DIR" PORT_FILE="$PORT_FILE" python3 - <<'PY' &
+import http.server
+import os
+
+root = os.environ["FIXTURE_DIR"]
+port_file = os.environ["PORT_FILE"]
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        redirects = {
+            "/download": "/artifact.tar.gz",
+            "/explicit": "/artifact.zip",
+            "/raw": "/raw-tool",
+        }
+        if path in redirects:
+            self.send_response(302)
+            self.send_header("Location", redirects[path])
+            self.end_headers()
+            return
+
+        files = {
+            "/artifact.tar.gz": "artifact.tar.gz",
+            # Deliberately misleading suffix: explicit format must win.
+            "/artifact.zip": "artifact.tar.gz",
+            "/raw-tool": "raw-tool",
+        }
+        filename = files.get(path)
+        if filename is None:
+            self.send_error(404)
+            return
+        with open(os.path.join(root, filename), "rb") as file:
+            body = file.read()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("ETag", '"redirect-fixture"')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        pass
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+with open(port_file, "w", encoding="utf-8") as file:
+    file.write(str(server.server_address[1]))
+server.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true; rm -rf "$FIXTURE_DIR"' EXIT
+
+while [[ ! -s $PORT_FILE ]]; do
+  sleep 0.05
+done
+PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[tools]
+"http:redirect-archive" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/download?arch=x64", bin_path = "bin" }
+EOF
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+touch mise.lock
+mise install
+assert_contains "mise x -- redirect-tool" "redirected archive"
+assert_contains "cat mise.lock" "http://127.0.0.1:$PORT/download?arch=x64"
+assert_not_contains "cat mise.lock" "/artifact.tar.gz"
+
+cat >mise.toml <<EOF
+[tools]
+"http:redirect-explicit" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/explicit", format = "tar.gz", bin_path = "bin" }
+EOF
+
+mise install
+assert_contains "mise x -- redirect-tool" "redirected archive"
+
+cat >mise.toml <<EOF
+[tools]
+"http:redirect-raw" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/raw", bin = "redirect-raw" }
+EOF
+
+mise install
+assert_contains "mise x -- redirect-raw" "redirected raw file"

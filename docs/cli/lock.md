@@ -8,7 +8,8 @@
 Update lockfile checksums and URLs for all specified platforms
 
 Updates checksums and download URLs for all platforms already specified in the lockfile.
-If no lockfile exists, shows what would be created based on the current configuration.
+If no lockfile exists, shows what would be created based on the current configuration,
+including tools declared by tasks.
 This allows you to refresh lockfile data for platforms other than the one you're currently on.
 Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 
@@ -18,7 +19,7 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
 
 Tool(s) to update in lockfile
 e.g.: node python
-If not specified, all tools in lockfile will be updated
+If not specified, all configured and task-specific tools will be updated
 
 ## Flags
 
@@ -30,6 +31,7 @@ By default, only the active project config root is locked
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 
 ### `-n --dry-run`
 

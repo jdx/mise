@@ -21,7 +21,7 @@ Set the environment for loading `mise.<ENV>.toml`
 Force the operation
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
-How many jobs to run in parallel [default: 8]
+How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
 .TP
 \fB\-n, \-\-dry\-run\fR
 Dry run, don't actually do anything
@@ -1069,7 +1069,7 @@ Print the config/source updates without writing anything
 \fB\-\-no\-apply\fR
 Add the entry without applying it
 .TP
-\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
+\fB\-p, \-\-path\fR \fI<PATH>\fR
 Write to this config file or directory
 .TP
 \fB\-s, \-\-source\fR \fI<PATH>\fR
@@ -1435,9 +1435,9 @@ Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Currently supports Homebrew formulae only. Pruning removes linked formulae
-that are not needed by the current config or by trusted, loadable tracked
-configs.
+Supports Homebrew formulae and conservatively removable, mise\-owned casks.
+Pruning keeps packages needed by the current config or by trusted, loadable
+tracked configs.
 .PP
 \fBUsage:\fR mise bootstrap packages prune [OPTIONS]
 .PP
@@ -1445,7 +1445,7 @@ configs.
 .PP
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only prune packages for this manager. Currently only `brew` is supported
+Only prune packages for this manager
 .RS
 \fIDefault: \fRbrew
 .RE
@@ -2038,6 +2038,7 @@ Command string to execute
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
@@ -2129,6 +2130,16 @@ Directory to put localized data into
 .RS
 \fIDefault: \fR.mise
 .RE
+.TP
+\fB\-\-windows\fR
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `\-\-write`, since stdout cannot
+carry two files.
 .SH "MISE GENERATE CONFIG"
 Generate a mise.toml file
 .PP
@@ -2179,7 +2190,7 @@ Staged files are passed to the task as `STAGED`.
 
 For more advanced pre\-commit functionality, see mise's sister project: https://hk.jdx.dev/
 .PP
-\fBUsage:\fR mise generate git\-pre\-commit [OPTIONS]
+\fBUsage:\fR mise generate git\-pre\-commit [OPTIONS] [<MISE_ARG>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -2198,6 +2209,15 @@ Which hook to generate (saves to .git/hooks/$hook)
 .RS
 \fIDefault: \fRpre\-commit
 .RE
+\fBArguments:\fR
+.PP
+.TP
+\fB<MISE_ARG>\fR
+mise flags to embed in the generated hook, given after `\-\-`
+
+These are inserted between `mise` and `run`, so the hook carries the same context you
+would pass on the command line. Useful when the config is not at the repository root,
+since git runs hooks from the top level: `\-\- \-C subdir` makes the hook find it.
 .SH "MISE GENERATE GITHUB-ACTION"
 Generate a GitHub Action workflow file
 
@@ -2260,6 +2280,7 @@ Generates shims to run mise tasks
 
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
 so contributors to a project can execute mise tasks without installing mise into their system.
+When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 .PP
 \fBUsage:\fR mise generate task\-stubs [OPTIONS]
 .PP
@@ -2313,6 +2334,14 @@ Specify mise version for the bootstrap script
 
 By default, uses the latest version from the install script.
 Use this to pin to a specific version (e.g., "2025.1.0").
+.TP
+\fB\-\-checksum\-algorithm\fR \fI<CHECKSUM_ALGORITHM>\fR
+Checksum algorithm to use when downloading artifacts
+
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `\-\-lock` or `\-\-skip\-download` because those modes do not calculate checksums.
+.RS
+\fIDefault: \fRblake3
+.RE
 .TP
 \fB\-\-fetch\fR
 Fetch checksums and sizes for an existing tool stub file
@@ -2414,9 +2443,11 @@ Tools will be installed in parallel. To disable, set `\-\-jobs=1` or `MISE_JOBS=
 .TP
 \fB\-f, \-\-force\fR
 Force reinstall even if already installed
+With no tools specified, reinstall all configured tools
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-n, \-\-dry\-run\fR
@@ -2431,6 +2462,12 @@ This argument will print backend output such as download, configuration, and com
 Like \-\-dry\-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
+.TP
+\fB\-\-include\-task\-tools\fR
+Also install tools required by tasks in the current scope
+
+This prepares task tools without running task commands or dependencies.
+Combine with \-\-monorepo to include tasks from every configured root.
 .TP
 \fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
 Only install versions released before this date or older than this duration
@@ -2528,7 +2565,8 @@ e.g.: ~/.nvm/versions/node/v20.0.0
 Update lockfile checksums and URLs for all specified platforms
 
 Updates checksums and download URLs for all platforms already specified in the lockfile.
-If no lockfile exists, shows what would be created based on the current configuration.
+If no lockfile exists, shows what would be created based on the current configuration,
+including tools declared by tasks.
 This allows you to refresh lockfile data for platforms other than the one you're currently on.
 Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 .PP
@@ -2543,6 +2581,7 @@ By default, only the active project config root is locked
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would be updated without making changes
@@ -2591,7 +2630,7 @@ Existing matching lockfile entries are preserved and are not downgraded solely b
 \fB<TOOL>\fR
 Tool(s) to update in lockfile
 e.g.: node python
-If not specified, all tools in lockfile will be updated
+If not specified, all configured and task\-specific tools will be updated
 .SH "MISE LS"
 List installed and active tool versions
 
@@ -2891,16 +2930,19 @@ See `mise upgrade` to upgrade these versions.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-J, \-\-json\fR
-Output in JSON format
-.TP
-\fB\-l, \-\-bump\fR
+\fB\-b, \-\-bump\fR
 Compares against the latest versions available, not what matches the current config
 
 For example, if you have `node = "20"` in your config by default `mise outdated` will only
 show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-l\fR
+Deprecated shorthand for \-\-bump
 .TP
 \fB\-\-inactive\fR
 Show outdated tools including installed\-but\-inactive tools not present in the current config
@@ -2997,6 +3039,7 @@ Reinstall even if plugin exists
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 .TP
 \fB\-v, \-\-verbose\fR
 Show installation output
@@ -3115,6 +3158,7 @@ note: this updates the plugin itself, not the runtime versions
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 Default: 4
 \fBArguments:\fR
 .PP
@@ -3383,6 +3427,9 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 \fB\-\-affected\-json\fR
 Output affected projects and tasks as JSON without running tasks
 .TP
+\fB\-\-all\fR
+Open the interactive selector with all tasks from the entire monorepo
+.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
@@ -3394,6 +3441,7 @@ Force the tasks to run even if outputs are up to date
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
@@ -3808,6 +3856,7 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-u, \-\-unset\fR
@@ -4204,6 +4253,9 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 \fB\-\-affected\-json\fR
 Output affected projects and tasks as JSON without running tasks
 .TP
+\fB\-\-all\fR
+Open the interactive selector with all tasks from the entire monorepo
+.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
@@ -4215,6 +4267,7 @@ Force the tasks to run even if outputs are up to date
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
@@ -4340,9 +4393,7 @@ Default to always show with `MISE_TASK_TIMINGS=1`
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-.RS
-\fIDefault: \fRdefault
-.RE
+Defaults to `default` when omitted
 .TP
 \fB<ARGS>\fR
 Arguments to pass to the tasks. Use ":::" to separate tasks
@@ -4381,6 +4432,7 @@ Test every tool specified in registry/
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tool tests to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-\-all\-config\fR
@@ -4687,14 +4739,7 @@ This will update mise.lock if it is enabled, see https://mise.jdx.dev/configurat
 \fBOptions:\fR
 .PP
 .TP
-\fB\-i, \-\-interactive\fR
-Display multiselect menu to choose which tools to upgrade
-.TP
-\fB\-j, \-\-jobs\fR \fI<JOBS>\fR
-Number of jobs to run in parallel
-[default: 4]
-.TP
-\fB\-l, \-\-bump\fR
+\fB\-b, \-\-bump\fR
 Upgrades to the latest version available, bumping the version in mise.toml
 
 For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
@@ -4702,6 +4747,17 @@ this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
 It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
 would change your config to `node = "22"`.
+.TP
+\fB\-i, \-\-interactive\fR
+Display multiselect menu to choose which tools to upgrade
+.TP
+\fB\-j, \-\-jobs\fR \fI<JOBS>\fR
+Number of jobs to run in parallel
+Values below 1 are treated as 1
+[default: 4]
+.TP
+\fB\-l\fR
+Deprecated shorthand for \-\-bump
 .TP
 \fB\-n, \-\-dry\-run\fR
 Just print what would be done, don't actually do it
@@ -4742,6 +4798,14 @@ Do not uninstall the versions that were upgraded away from
 By default the old version is removed once the new one installs, unless another
 tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
 something outside of mise points at the old install directory.
+
+Set `upgrade.auto_prune = false` to make this the default.
+.TP
+\fB\-\-prune\fR
+Uninstall the versions that were upgraded away from
+
+This is already the default. Use it to override `upgrade.auto_prune = false`
+for a single run.
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
@@ -4789,12 +4853,13 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 .TP
 \fB\-n, \-\-dry\-run\fR
 Perform a dry run, showing what would be installed and modified without making changes
 .TP
-\fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
+\fB\-p, \-\-path\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.
@@ -4816,8 +4881,11 @@ Only install versions released before this date or older than this duration
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP
 \fB\-\-pin\fR
-Save exact version to config file
-e.g.: `mise use \-\-pin node@20` will save 20.0.0 as the version
+Save the resolved concrete version to the config file
+
+If the request exactly matches an available release, that release is preferred over
+installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
+e.g.: `mise use \-\-pin node@20` will save the resolved `20.x.y` version
 Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
@@ -5393,6 +5461,7 @@ This shows the manual page for Watchexec, if the output is a terminal and the 'm
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+Defaults to `default`
 .TP
 \fB<ARGS>\fR
 Task and arguments to run

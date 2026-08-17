@@ -30,6 +30,12 @@ lockfile = true
 2. **Version Resolution**: If a `mise.lock` exists, mise will prefer locked versions over version ranges in `mise.toml`
 3. **Checksum Verification**: For supported backends, mise stores and verifies checksums of downloaded tools
 
+`mise lock` resolves both config-level tools and tools declared in individual tasks. It reads task
+definitions—including inherited templates and included task files—but does not run tasks, their
+dependencies, hooks, or tool installers. This lets task-specific tools be locked before the first
+task execution. Their entries use the same `[[tools.*]]` format and are written to the lockfile for
+the config that owns the task.
+
 ## File Format
 
 `mise.lock` is a TOML file with a platform-based format that organizes asset information by platform:
@@ -185,6 +191,23 @@ MISE_LOCKED=1 mise install
 ::: warning
 All mise settings are global in scope. Setting `locked = true` in a project's `mise.toml` applies to **all** tool resolution, including tools from your global `~/.config/mise/config.toml`. If you see warnings about global tools missing from the lockfile, run `mise lock -g` to generate a global lockfile.
 :::
+
+To enforce strict mode only for tools declared by one config root, use
+`tool_config.locked` instead of the invocation-wide setting:
+
+```toml
+[tool_config]
+locked = true
+
+[tools]
+node = "24"
+```
+
+This policy belongs to the containing config root: tools declared by `mise.toml`,
+`mise.local.toml`, and other configs sharing that root must be present in their
+respective lockfiles. Tools inherited from global or parent config roots keep
+their own policy. `--locked`, `MISE_LOCKED=1`, and `[settings] locked = true`
+continue to apply to the entire active toolset.
 
 When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
 

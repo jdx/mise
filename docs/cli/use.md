@@ -58,6 +58,7 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 
 ### `-n --dry-run`
@@ -91,8 +92,11 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 
 ### `--pin`
 
-Save exact version to config file
-e.g.: `mise use --pin node@20` will save 20.0.0 as the version
+Save the resolved concrete version to the config file
+
+If the request exactly matches an available release, that release is preferred over
+installed fuzzy matches. Use `prefix:` to explicitly request recursive prefix matching.
+e.g.: `mise use --pin node@20` will save the resolved `20.x.y` version
 Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:

@@ -7,7 +7,7 @@ use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
-use crate::config::{Config, Settings};
+use crate::config::{CompilePurpose, Config, Settings};
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -17,7 +17,7 @@ use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
 use async_trait::async_trait;
-use eyre::{Result, bail, ensure};
+use eyre::{Result, WrapErr, bail, ensure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -126,7 +126,10 @@ impl NodePlugin {
             })
             .await?
         {
-            FetchOutcome::Downloaded => Ok(()),
+            FetchOutcome::Downloaded => {
+                warn_patches_not_applied();
+                Ok(())
+            }
             FetchOutcome::NotFound => {
                 if ctx.locked {
                     if let Some(message) = node_flavor_not_found_message(opts) {
@@ -135,7 +138,7 @@ impl NodePlugin {
                     bail!(
                         "precompiled node archive not found and locked mode requires the locked precompiled artifact"
                     )
-                } else if Settings::get().node.compile != Some(false) {
+                } else if Settings::get().node_compile(CompilePurpose::Inspect) != Some(false) {
                     if let Some(message) = node_flavor_not_found_message(opts) {
                         warn!("{message}");
                     }
@@ -160,7 +163,10 @@ impl NodePlugin {
             .fetch_binary(ctx, tv, opts, || self.extract_zip(opts, ctx))
             .await?
         {
-            FetchOutcome::Downloaded => Ok(()),
+            FetchOutcome::Downloaded => {
+                warn_patches_not_applied();
+                Ok(())
+            }
             FetchOutcome::NotFound => bail!("precompiled node archive not found (404)"),
         }
     }
@@ -206,9 +212,49 @@ impl NodePlugin {
                 ..Default::default()
             },
         )?;
+        self.exec_patches(ctx, opts, tv).await?;
         self.exec_configure(ctx, opts, tv)?;
         self.exec_make(ctx, opts, tv)?;
         self.exec_make_install(ctx, opts, tv)?;
+        Ok(())
+    }
+
+    /// Apply `node.apply_patches` to the extracted source, before `./configure` sees it.
+    ///
+    /// Each patch is applied on its own rather than concatenated, because the `-p` strip level is
+    /// decided per patch — a git-style patch and a plain one in the same blob cannot both be right.
+    async fn exec_patches(
+        &self,
+        ctx: &InstallContext,
+        opts: &BuildOpts,
+        tv: &ToolVersion,
+    ) -> Result<()> {
+        let sources = plugins::core::patch_sources(Settings::get().node.apply_patches.as_deref());
+        if sources.is_empty() {
+            return Ok(());
+        }
+        let patches = plugins::core::fetch_patch_contents(&sources).await?;
+        file::create_dir_all(&*env::MISE_TMP_DIR)?;
+        for (source, patch) in sources.iter().zip(patches) {
+            ctx.pr.set_message(format!("patch {source}"));
+            let patch_file = env::MISE_TMP_DIR.join(format!(
+                "node-v{}-{}.patch",
+                opts.version,
+                hash::hash_to_str(source)
+            ));
+            file::write(&patch_file, &patch)?;
+            CmdLineRunner::new("patch")
+                .with_pr(ctx.pr.as_ref())
+                .prepend_path(opts.path.clone())?
+                .current_dir(&opts.build_dir)
+                .env_values(tv.install_env())
+                .arg(format!("-p{}", patch_strip_level(&patch)))
+                .arg("--force")
+                .arg("-i")
+                .arg(&patch_file)
+                .execute()
+                .wrap_err_with(|| format!("failed to apply patch {source}"))?;
+        }
         Ok(())
     }
 
@@ -670,12 +716,13 @@ impl Backend for NodePlugin {
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
         let platform_key = self.get_platform_key();
-        let compile_from_source = should_compile_from_source(
-            ctx.locked,
-            &tv.lock_platforms,
-            &platform_key,
-            settings.node.compile,
-        );
+        let node_compile = if ctx.locked {
+            settings.node_compile(CompilePurpose::Inspect)
+        } else {
+            settings.node_compile(CompilePurpose::Install)
+        };
+        let compile_from_source =
+            should_compile_from_source(ctx.locked, &tv.lock_platforms, &platform_key, node_compile);
 
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
@@ -801,6 +848,14 @@ impl Backend for NodePlugin {
             {
                 opts.insert("make_install_opts".to_string(), make_install_opts);
             }
+            // Patches change what the build produces, so they belong to the artifact's identity.
+            if let Some(apply_patches) = node
+                .apply_patches
+                .clone()
+                .filter(|patches| !patches.is_empty())
+            {
+                opts.insert("apply_patches".to_string(), apply_patches);
+            }
         }
 
         // Flavor affects which binary variant is downloaded.
@@ -836,7 +891,8 @@ impl Backend for NodePlugin {
             .join(&format!("v{version}/{filename}"))
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
-        if settings.node.compile == Some(true) && target.os_name() != "windows" {
+        let node_compile = settings.node_compile(CompilePurpose::Inspect);
+        if node_compile == Some(true) && target.os_name() != "windows" {
             return self.resolve_source_lock_info(version).await;
         }
 
@@ -846,7 +902,7 @@ impl Backend for NodePlugin {
         let checksum = match self.resolve_shasum(&mirror, version, &filename).await {
             Ok(Some(shasum)) => Some(shasum),
             Ok(None) => {
-                if settings.node.compile != Some(false) && target.os_name() != "windows" {
+                if node_compile != Some(false) && target.os_name() != "windows" {
                     return self.resolve_source_lock_info(version).await;
                 }
                 debug!(
@@ -1124,6 +1180,35 @@ fn source_tarball_name(v: &str) -> String {
     format!("node-v{v}.tar.gz")
 }
 
+/// How far to strip leading path components when applying `patch`.
+///
+/// python-build and ruby-build both default to `-p0` and bump to `-p1` when the patch looks
+/// git-generated, but they sniff for different markers — `diff --git a/` and `--- a/`
+/// respectively. Accepting either means a patch written for python or for ruby applies the same
+/// way here, rather than the user having to know which tool a patch was authored against.
+fn patch_strip_level(patch: &str) -> u8 {
+    let git_style = patch
+        .lines()
+        .any(|line| line.starts_with("diff --git a/") || line.starts_with("--- a/"));
+    if git_style { 1 } else { 0 }
+}
+
+/// `node.apply_patches` only reaches the source build, so say so rather than let the patches
+/// vanish silently when a precompiled binary is what actually got installed.
+fn warn_patches_not_applied() {
+    if Settings::get()
+        .node
+        .apply_patches
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty())
+    {
+        warn!(
+            "node.apply_patches is set but a precompiled node was installed, so no patch was applied. \
+             Set node.compile=true to build from source."
+        );
+    }
+}
+
 fn should_compile_from_source(
     locked: bool,
     lock_platforms: &BTreeMap<String, PlatformInfo>,
@@ -1199,7 +1284,7 @@ mod tests {
     fn resolve_node_lockfile_options(
         configure_settings: impl FnOnce(&mut SettingsPartial),
     ) -> BTreeMap<String, String> {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let _guard = SettingsResetGuard { _lock: lock };
         let _env_guard = NodeEnvResetGuard::clear();
         let mut settings = SettingsPartial::empty();
@@ -1298,7 +1383,7 @@ mod tests {
 
     #[test]
     fn test_node_flavor_not_found_message_is_flavor_specific() {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let _guard = SettingsResetGuard { _lock: lock };
         let mut settings = SettingsPartial::empty();
         settings.node.flavor = Some("glibc-217".to_string());
@@ -1399,8 +1484,62 @@ mod tests {
     }
 
     #[test]
+    fn test_node_lockfile_options_include_apply_patches() {
+        let opts = resolve_node_lockfile_options(|settings| {
+            settings.node.compile = Some(true);
+            settings.node.apply_patches = Some("https://example.com/node.patch".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                (
+                    "apply_patches".to_string(),
+                    "https://example.com/node.patch".to_string(),
+                ),
+                ("compile".to_string(), "true".to_string()),
+            ])
+        );
+    }
+
+    /// With compilation off the patches never run, so recording them would split lockfile entries
+    /// for artifacts that are in fact identical.
+    #[test]
+    fn test_node_lockfile_options_omit_apply_patches_when_not_compiling() {
+        let opts = resolve_node_lockfile_options(|settings| {
+            settings.node.compile = Some(false);
+            settings.node.apply_patches = Some("https://example.com/node.patch".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([("compile".to_string(), "false".to_string())])
+        );
+    }
+
+    /// Mirrors what python-build and ruby-build sniff for, taking either marker so a patch written
+    /// against either tool lands the same way.
+    #[test]
+    fn test_patch_strip_level() {
+        assert_eq!(
+            patch_strip_level("diff --git a/src/node.cc b/src/node.cc\n--- a/src/node.cc\n"),
+            1
+        );
+        // ruby-build's marker on its own, with no `diff --git` header
+        assert_eq!(patch_strip_level("--- a/configure\n+++ b/configure\n"), 1);
+        // a plain `diff -u` between two trees
+        assert_eq!(
+            patch_strip_level("--- configure.orig\n+++ configure\n@@ -1 +1 @@\n"),
+            0
+        );
+        assert_eq!(patch_strip_level(""), 0);
+        // the marker only counts at the start of a line, not inside the diff body
+        assert_eq!(patch_strip_level("--- old\n+++ new\n+// --- a/nope\n"), 0);
+    }
+
+    #[test]
     fn test_node_lockfile_options_include_legacy_source_build_env() {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let _guard = SettingsResetGuard { _lock: lock };
         let _env_guard = NodeEnvResetGuard::clear();
         env::set_var("NODE_CONFIGURE_OPTS", "--openssl-no-asm");

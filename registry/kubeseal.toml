@@ -5,3 +5,4 @@ backends = [
 bins = ["kubeseal"]
 description = "A Kubernetes controller and tool for one-way encrypted Secrets"
 test = { cmd = "kubeseal --version", expected = "kubeseal version: {{version}}" }
+version_order = "semver"

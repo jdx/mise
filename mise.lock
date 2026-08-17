@@ -117,62 +117,62 @@ url_api = "https://api.github.com/repos/FiloSottile/age/releases/assets/33375267
 provenance = "github-attestations"
 
 [[tools.aube]]
-version = "1.37.0"
+version = "1.41.0"
 backend = "github:endevco/aube"
 
 [tools.aube."platforms.linux-arm64"]
-checksum = "sha256:63488ce5494e80343129e360a59528562a9c5a82d538d10774c3e2f7ae0d8734"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496820640"
+checksum = "sha256:012b0da68e9e285aee1564178b2a668f4d79eac9b40868112674ff03c2cdfe22"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517186261"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-arm64-musl"]
-checksum = "sha256:ebd90cdd570e58af23e31f43b3708be4778505316c8a842ac69929c191361bf3"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496788139"
+checksum = "sha256:5a2e5afb02759abad7f56e083c7e2fa2b0ae841f3669cbcf5add42ca5846821f"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517161124"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64"]
-checksum = "sha256:1775b37c4381bff2314c96635cac3eeb90b02bea0f33371e553a4431dc893546"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496796145"
+checksum = "sha256:965ae6a487c3e280206afb93649e721387dbbba168567f02e2fa5c797c450c2b"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517166989"
 provenance = "github-attestations"
 provenance_verified = true
 
 [tools.aube."platforms.linux-x64-baseline"]
-checksum = "sha256:1775b37c4381bff2314c96635cac3eeb90b02bea0f33371e553a4431dc893546"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496796145"
+checksum = "sha256:965ae6a487c3e280206afb93649e721387dbbba168567f02e2fa5c797c450c2b"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517166989"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-musl"]
-checksum = "sha256:56f7b1978e66c6d5a80dc86c38c0b2c83e7019811524b41d941fdbf79b912a4c"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496794035"
+checksum = "sha256:7955ddee163f64e9e4348200bb777c0f83fa596410de75e1ea5dd43d4b3fe7f1"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517165326"
 provenance = "github-attestations"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:56f7b1978e66c6d5a80dc86c38c0b2c83e7019811524b41d941fdbf79b912a4c"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496794035"
+checksum = "sha256:7955ddee163f64e9e4348200bb777c0f83fa596410de75e1ea5dd43d4b3fe7f1"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517165326"
 provenance = "github-attestations"
 
 [tools.aube."platforms.macos-arm64"]
-checksum = "sha256:6fdc27e146e5d6a45abf60ef7cf2e83d5b7284acbba4cecf6237905bd528a916"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496852124"
+checksum = "sha256:635720a45125b3cc8afb2979c9a18ed484deecfc91938e9d941e278f529e87e1"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517208780"
 provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64"]
-checksum = "sha256:7a264819a7c05d107ac72916f82209a183bfd26842b9528f1ca281bb32596c5e"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496805373"
+checksum = "sha256:03e4d130262219c86d729001c3fc8c502198c60578360a4e8fba29a9564b89a4"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517175467"
 provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64-baseline"]
-checksum = "sha256:7a264819a7c05d107ac72916f82209a183bfd26842b9528f1ca281bb32596c5e"
-url = "https://github.com/jdx/aube/releases/download/v1.37.0/aube-v1.37.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/496805373"
+checksum = "sha256:03e4d130262219c86d729001c3fc8c502198c60578360a4e8fba29a9564b89a4"
+url = "https://github.com/jdx/aube/releases/download/v1.41.0/aube-v1.41.0-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/aube/releases/assets/517175467"
 provenance = "github-attestations"
 
 [[tools.bun]]
@@ -311,6 +311,10 @@ url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/44475786
 checksum = "sha256:7e23929588aaf5daff1e93bfc4addca7ccf55195444e84552b6588c9d864642e"
 url = "https://github.com/mitsuhiko/insta/releases/download/1.48.0/cargo-insta-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/mitsuhiko/insta/releases/assets/444757862"
+
+[[tools."cargo:flamegraph"]]
+version = "0.6.14"
+backend = "cargo:flamegraph"
 
 [[tools.communique]]
 version = "1.2.4"
@@ -538,53 +542,53 @@ url_api = "https://api.github.com/repos/jdx/tak/releases/assets/491688671"
 provenance = "github-attestations"
 
 [[tools.hk]]
-version = "1.54.0"
+version = "1.55.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:79458d7464bbdf63cd578ef9ece71003d3e53a993f9fa630888b93d3ae24dd79"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037128"
+checksum = "sha256:64c44aa0f26e995f7d9c44cc9c5116e20052bcefc821daf17ce3df265bb0b2d6"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729669"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:c1ad33f83265363440c7fc77656e604532049f038c42d7b8924fc43e5a3b935d"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037132"
+checksum = "sha256:21eccba81a4b9ac73431d876d8ed5add16a01df360f6d3d576279903254599f6"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729671"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:467f691713b1afbeada4df662bd44696405cd987a5c7f64fee0fe71399628d0c"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037136"
+checksum = "sha256:efd6ed276ae8a26cc95fcb8c83051d9a3fd05e124d38170c0f057a716e9de94d"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729679"
 
 [tools.hk."platforms.linux-x64-baseline"]
-checksum = "sha256:467f691713b1afbeada4df662bd44696405cd987a5c7f64fee0fe71399628d0c"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037136"
+checksum = "sha256:efd6ed276ae8a26cc95fcb8c83051d9a3fd05e124d38170c0f057a716e9de94d"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729679"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:ddce69611ce32a08b481dd3ccd5c700b1d535d12c86be784bc6d74b1d6256546"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037135"
+checksum = "sha256:f00e04f536bec16bbc8c7cf8696f834d6ad80ddbcc1e653e3110d12ee4de2b42"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729680"
 
 [tools.hk."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:ddce69611ce32a08b481dd3ccd5c700b1d535d12c86be784bc6d74b1d6256546"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037135"
+checksum = "sha256:f00e04f536bec16bbc8c7cf8696f834d6ad80ddbcc1e653e3110d12ee4de2b42"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729680"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:54e47c56f64916e63004b68ae848637e3e90d06f89e3ae8de985ebc35fd9f7e7"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037130"
+checksum = "sha256:a995ff68402bcf6c16ab054e4c45db592213bcd661c9b92003d4a62f2d56d4b1"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729670"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:ab0f65942c89c72b322c700bf427926f54db84fd2827121eab03287144d2ec64"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037131"
+checksum = "sha256:402b3c9c5f9a5b3cb8ab6229d0f6d169b122fc3db1e39fc2fa53421a1aa24fc5"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729674"
 
 [tools.hk."platforms.windows-x64-baseline"]
-checksum = "sha256:ab0f65942c89c72b322c700bf427926f54db84fd2827121eab03287144d2ec64"
-url = "https://github.com/jdx/hk/releases/download/v1.54.0/hk-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/496037131"
+checksum = "sha256:402b3c9c5f9a5b3cb8ab6229d0f6d169b122fc3db1e39fc2fa53421a1aa24fc5"
+url = "https://github.com/jdx/hk/releases/download/v1.55.0/hk-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/hk/releases/assets/510729674"
 
 [[tools.jq]]
 version = "1.8.2"

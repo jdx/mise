@@ -6,3 +6,4 @@ backends = [
 bins = ["release-plz"]
 description = "Publish Rust crates from CI with a Release PR."
 test = { cmd = "release-plz --version", expected = "release-plz {{version}}" }
+version_order = "semver"

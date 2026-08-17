@@ -8,3 +8,4 @@ bins = [
   "redis-server",
 ]
 description = "Cache & in-memory datastore"
+version_order = "semver"

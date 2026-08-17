@@ -1,3 +1,4 @@
 backends = ["aqua:kubernetes/minikube", "asdf:alvarobp/asdf-minikube"]
 bins = ["minikube"]
 description = "Run Kubernetes locally"
+version_order = "semver"

@@ -23,6 +23,18 @@ and the value is a version: `"latest"` for whatever the manager installs, or
 a pin in the manager's native format where supported (see the per-manager
 pages).
 
+Use the table form to restrict an individual package by operating system or
+OS/architecture. `os` accepts one value or a list and uses the same names and
+aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
+`macos/arm64`, and so on). `version` defaults to `"latest"` when omitted:
+
+```toml
+[bootstrap.packages]
+"brew:coreutils" = "latest"
+"brew-cask:1password" = { os = "macos" }
+"brew-cask:font-jetbrains-mono" = { os = ["linux", "macos"] }
+```
+
 Host packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are managed
 outside the project by the platform's package manager — or, for `brew` and
@@ -67,14 +79,15 @@ declarative sections work the same way:
   [config hierarchy](/configuration.html) (global → project) as a union of
   keys. A project can add packages on top of the global list (and override a
   global entry's version pin) but not remove them. For Homebrew formulae,
-  `mise bootstrap packages prune --manager brew` is an explicit destructive command
-  that removes linked formulae no longer needed by the current config or by
-  trusted, loadable tracked configs.
-- **OS-filtered** — entries for a manager that isn't available on the current
-  machine are not acted on, so the same config works across platforms: `apt`
-  entries are ignored on macOS, `dnf` entries on Ubuntu, and so on. `brew`
-  works on both macOS and Linux; `brew-cask` works on macOS and supports
-  font-only casks without lifecycle hooks or structured flight steps on Linux;
+  `mise bootstrap packages prune` is an explicit destructive command that
+  removes linked formulae or safely prunable mise-owned casks no longer needed
+  by the current config or by trusted, loadable tracked configs.
+- **OS-filtered** — entries whose `os` selector does not match and entries for
+  a manager that isn't available on the current machine are not acted on, so
+  the same config works across platforms: `apt` entries are ignored on macOS,
+  `dnf` entries on Ubuntu, and so on. `brew` works on both macOS and Linux;
+  `brew-cask` works on macOS and supports font-only casks without lifecycle
+  hooks or structured flight steps on Linux;
   `flatpak` and `flatpak-user` work on Linux when the `flatpak` CLI is on
   `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`. Status commands
   still list
@@ -120,6 +133,8 @@ mise bootstrap packages import --manager brew --dry-run
 mise bootstrap packages prune --manager brew    # remove unneeded linked brew formulae
 mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
+mise bootstrap packages prune --manager brew-cask # remove safely prunable mise casks
+mise bootstrap packages prune --manager brew-cask --dry-run
 
 mise bootstrap packages upgrade           # upgrade installed packages to current versions
 mise bootstrap packages upgrade --manager brew
@@ -149,6 +164,13 @@ configs. This includes formulae installed by a real Homebrew. It is mise's
 declarative cleanup command, similar in spirit to
 [Homebrew Bundle cleanup](https://docs.brew.sh/Manpage), not the old upstream
 `brew prune` command, which Homebrew removed.
+
+`mise bootstrap packages prune --manager brew-cask` removes only mise-owned
+direct artifacts backed by a current install-time receipt and unchanged content
+fingerprints. It skips older receipts, Homebrew-owned casks, pkg and command
+wrapper artifacts, casks with lifecycle actions, changed or shared targets,
+and incomplete transactions. Skips include a reason, and `zap` metadata is
+never applied.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available

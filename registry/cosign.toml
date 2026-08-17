@@ -2,3 +2,4 @@ backends = ["aqua:sigstore/cosign", "asdf:https://gitlab.com/wt0f/asdf-cosign"]
 bins = ["cosign"]
 description = "Code signing and transparency for containers and binaries"
 test = { cmd = "cosign version", expected = "v{{version}}" }
+version_order = "semver"

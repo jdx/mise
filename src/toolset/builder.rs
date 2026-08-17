@@ -7,6 +7,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
+use crate::toolset::tool_request_set::configured_options_for_runtime_request;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
@@ -79,7 +80,7 @@ impl ToolsetBuilder {
                 .resolve_with_opts(config, &self.resolve_options)
                 .await
             {
-                if Error::is_argument_err(&err) {
+                if Error::is_argument_err(&err) || Error::is_required_channel_resolution_err(&err) {
                     return Err(err);
                 }
                 warn!("failed to resolve toolset: {err}");
@@ -128,14 +129,14 @@ impl ToolsetBuilder {
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
-            // carry over options (e.g. filter_bins) from config for this tool
-            let config_options = ts
+            let configured = ts
                 .versions
                 .get(&args[0].ba)
-                .and_then(|tvl| tvl.requests.first())
-                .map(|tvr| tvr.options());
+                .map(|tvl| tvl.requests.clone())
+                .unwrap_or_default();
             let apply_arg_options = |mut tvr: ToolRequest, ba: &BackendArg| {
-                tvr.set_options(ba.opts_with_config(config_options.clone()));
+                let config_options = configured_options_for_runtime_request(&configured, &tvr);
+                tvr.set_options(ba.opts_with_config(config_options));
                 tvr
             };
             for arg in args {
@@ -151,6 +152,7 @@ impl ToolsetBuilder {
                     let current_active = ts
                         .list_current_requests()
                         .into_iter()
+                        .filter(|tvr| tvr.is_os_supported())
                         .find(|tvr| tvr.ba() == &arg.ba);
 
                     if let Some(current_active) = current_active {
@@ -173,5 +175,48 @@ impl ToolsetBuilder {
             ts.merge(arg_ts);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        let mut inactive_options = parse_tool_options(r#"selected="inactive""#);
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let inactive =
+            ToolRequest::new_opts(ba.clone(), "1.0.0", inactive_options, ToolSource::Unknown)
+                .unwrap();
+        let active = ToolRequest::new_opts(
+            ba.clone(),
+            "2.0.0",
+            parse_tool_options(r#"selected="active""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(inactive);
+        toolset.add_version(active);
+
+        let arg = "dummy".parse::<ToolArg>().unwrap();
+        ToolsetBuilder::new()
+            .with_args(&[arg])
+            .with_default_to_latest(true)
+            .load_runtime_args(&mut toolset)
+            .unwrap();
+
+        let requests = &toolset.versions.get(&ba).unwrap().requests;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].version(), "2.0.0");
+        assert_eq!(requests[0].options().get("selected"), Some("active"));
     }
 }

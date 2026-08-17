@@ -1,0 +1,39 @@
+description = "Official Android command-line tool for creating, building, and running Android apps, managing emulators, and installing SDK packages"
+os = ["linux", "macos", "windows"]
+# The version baked into the binary lags the published build number (1.0.15985488
+# reports 1.0.15857036), so it cannot be asserted against {{version}}.
+test = { cmd = "android --version", expected = "1." }
+version_order = "semver"
+
+bins = ["android"]
+[[backends]]
+full = "http:android-cli"
+platforms = ["macos", "linux-x64", "windows-x64"]
+
+[backends.options]
+bin = "android"
+# dl.google.com publishes no version index for the raw binaries, but the apt
+# repo behind the documented `apt-get install android-cli` carries the current
+# build number, and older builds stay downloadable at their versioned URLs.
+version_list_url = "https://dl.google.com/android/cli/latest/debian/dists/stable/main/binary-amd64/Packages"
+version_regex = '(?m)^Version: (\S+)$'
+
+# Google ships only these four targets -- there is no linux-arm64 or
+# windows-arm64 build -- so each URL is declared per platform rather than
+# templated, to keep `mise lock` from recording targets that 404.
+[backends.options.platforms.linux-x64]
+checksum_url = "https://dl.google.com/android/cli/{{ version }}/linux_x86_64/android.sha256"
+url = "https://dl.google.com/android/cli/{{ version }}/linux_x86_64/android"
+
+[backends.options.platforms.macos-arm64]
+checksum_url = "https://dl.google.com/android/cli/{{ version }}/darwin_arm64/android.sha256"
+url = "https://dl.google.com/android/cli/{{ version }}/darwin_arm64/android"
+
+[backends.options.platforms.macos-x64]
+checksum_url = "https://dl.google.com/android/cli/{{ version }}/darwin_x86_64/android.sha256"
+url = "https://dl.google.com/android/cli/{{ version }}/darwin_x86_64/android"
+
+[backends.options.platforms.windows-x64]
+bin = "android.exe"
+checksum_url = "https://dl.google.com/android/cli/{{ version }}/windows_x86_64/android.exe.sha256"
+url = "https://dl.google.com/android/cli/{{ version }}/windows_x86_64/android.exe"

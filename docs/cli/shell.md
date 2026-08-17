@@ -24,6 +24,7 @@ Tool(s) to use
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 
 ### `-u --unset`

@@ -17,6 +17,7 @@ use versions::Versioning;
     RkyvDeserialize,
     RkyvSerialize,
     Default,
+    Copy,
     Clone,
     PartialEq,
     strum::Display,
@@ -38,7 +39,7 @@ pub enum AquaPackageType {
 ///
 /// rkyv archives parsed package data only. Runtime-only fields mirror serde's
 /// skipped behavior with `rkyv::with::Skip`.
-#[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
+#[derive(Debug, Default, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone)]
 #[rkyv(serialize_bounds(
     __S: rkyv::ser::Writer + rkyv::ser::Allocator,
     __S::Error: rkyv::rancor::Source,
@@ -52,7 +53,7 @@ pub enum AquaPackageType {
 ))]
 #[serde(default)]
 pub struct AquaPackage {
-    pub r#type: AquaPackageType,
+    pub r#type: Option<AquaPackageType>,
     pub repo_owner: String,
     pub repo_name: String,
     pub name: Option<String>,
@@ -371,49 +372,13 @@ fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
     }
 }
 
-impl Default for AquaPackage {
-    fn default() -> Self {
-        Self {
-            r#type: AquaPackageType::GithubRelease,
-            repo_owner: String::new(),
-            repo_name: String::new(),
-            name: None,
-            asset: String::new(),
-            url: String::new(),
-            description: None,
-            format: String::new(),
-            rosetta2: None,
-            windows_arm_emulation: None,
-            complete_windows_ext: None,
-            windows_ext: String::new(),
-            append_ext: None,
-            supported_envs: Vec::new(),
-            files: Vec::new(),
-            vars: Vec::new(),
-            replacements: HashMap::new(),
-            version_prefix: None,
-            version_filter: None,
-            version_filter_expr: None,
-            version_source: None,
-            cosign: None,
-            checksum: None,
-            slsa_provenance: None,
-            minisign: None,
-            github_artifact_attestations: None,
-            format_overrides: Vec::new(),
-            overrides: Vec::new(),
-            version_constraint: String::new(),
-            version_overrides: Vec::new(),
-            no_asset: None,
-            private: false,
-            error_message: None,
-            path: None,
-            var_values: HashMap::new(),
-        }
-    }
-}
-
 impl AquaPackage {
+    /// Return the package type, preserving aqua's default of `github_release`
+    /// when the field is omitted.
+    pub fn package_type(&self) -> AquaPackageType {
+        self.r#type.unwrap_or_default()
+    }
+
     /// Apply version-specific configurations and overrides
     pub fn with_version(self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
         self.with_version_runtime(versions, os, arch, AquaRuntime::default())
@@ -528,7 +493,7 @@ impl AquaPackage {
 
     pub fn windows_ext(&self) -> &str {
         if self.windows_ext.is_empty() {
-            match self.r#type {
+            match self.package_type() {
                 AquaPackageType::GithubArchive | AquaPackageType::GithubContent => ".sh",
                 _ => ".exe",
             }
@@ -541,7 +506,7 @@ impl AquaPackage {
         match self.complete_windows_ext {
             Some(complete) => complete,
             None => !matches!(
-                self.r#type,
+                self.package_type(),
                 AquaPackageType::GithubArchive | AquaPackageType::GithubContent
             ),
         }
@@ -597,7 +562,7 @@ impl AquaPackage {
 
     /// Get the format for this package and version
     pub fn format(&self, v: &str, os: &str, arch: &str) -> Result<&str> {
-        if self.r#type == AquaPackageType::GithubArchive {
+        if self.package_type() == AquaPackageType::GithubArchive {
             return Ok("tar.gz");
         }
         let format = if self.format.is_empty() {
@@ -836,7 +801,7 @@ impl AquaPackage {
                 .unwrap()
                 .replace(' ', "")
                 .split(',')
-                .map(versions::Requirement::new)
+                .map(AquaRequirement::parse)
                 .collect::<Vec<_>>();
             if requirements.iter().any(|r| r.is_none()) {
                 return Err("invalid semver requirement".to_string().into());
@@ -844,7 +809,7 @@ impl AquaPackage {
             if let Some(ver) = &ver {
                 Ok(requirements
                     .iter()
-                    .all(|r| r.clone().is_some_and(|r| r.matches(ver)))
+                    .all(|r| r.as_ref().is_some_and(|r| r.matches(ver)))
                     .into())
             } else {
                 Err("invalid version".to_string().into())
@@ -857,6 +822,64 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+/// One comma-separated term of an aqua `semver()` constraint, e.g. `<=5.34.1.0` or `!=0.0.45`.
+///
+/// `versions::Requirement::new` cannot express these. It requires the whole string to parse,
+/// and the `Versioning::parse` inside it tries `SemVer` first — so a bound like `5.34.1.0` is
+/// consumed as `5.34.1` with `.0` left over and the requirement is rejected outright. It also
+/// has no operator for `!=`. Either way the caller only sees `None`, which
+/// `AquaPackage::version_override` turns into a silently false constraint.
+///
+/// aqua evaluates these with `hashicorp/go-version`, which accepts any number of components and
+/// supports `!=`, so the operator is split off here and the bound read with `Versioning::new`,
+/// which does fall back to `Version` for such strings. The comparison itself is still
+/// `versions::Requirement::matches`, so ordering, tilde and caret semantics are unchanged.
+struct AquaRequirement {
+    inner: versions::Requirement,
+    /// `!=` has no `versions::Op`, so it is `Exact` read backwards.
+    negated: bool,
+}
+
+impl AquaRequirement {
+    fn parse(s: &str) -> Option<Self> {
+        if s == "*" {
+            return Some(Self {
+                inner: versions::Requirement {
+                    op: versions::Op::Wildcard,
+                    version: None,
+                },
+                negated: false,
+            });
+        }
+        // Longest operators first, or `>=` would be read as `>` with a leading `=` on the bound.
+        let (op, negated, bound) = [
+            (">=", versions::Op::GreaterEq, false),
+            ("<=", versions::Op::LessEq, false),
+            ("!=", versions::Op::Exact, true),
+            (">", versions::Op::Greater, false),
+            ("<", versions::Op::Less, false),
+            ("=", versions::Op::Exact, false),
+            ("~", versions::Op::Tilde, false),
+            ("^", versions::Op::Caret, false),
+        ]
+        .into_iter()
+        .find_map(|(prefix, op, negated)| {
+            s.strip_prefix(prefix).map(|bound| (op, negated, bound))
+        })?;
+        Some(Self {
+            inner: versions::Requirement {
+                op,
+                version: Some(Versioning::new(bound)?),
+            },
+            negated,
+        })
+    }
+
+    fn matches(&self, v: &Versioning) -> bool {
+        self.inner.matches(v) != self.negated
     }
 }
 
@@ -986,8 +1009,8 @@ impl AquaFile {
 }
 
 fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
-    if avo.r#type != AquaPackageType::GithubRelease {
-        orig.r#type = avo.r#type.clone();
+    if let Some(r#type) = avo.r#type {
+        orig.r#type = Some(r#type);
     }
     if !avo.repo_owner.is_empty() {
         orig.repo_owner = avo.repo_owner.clone();
@@ -1217,7 +1240,7 @@ impl AquaChecksum {
         arch: &str,
     ) -> Result<HashMap<String, String>> {
         let mut ctx = pkg.template_context(&self.effective_replacements(pkg), v, os, arch);
-        if pkg.r#type == AquaPackageType::Http {
+        if pkg.package_type() == AquaPackageType::Http {
             ctx.insert("AssetURL".to_string(), pkg.url(v, os, arch)?);
         }
         Ok(ctx)
@@ -1530,6 +1553,104 @@ packages:
         .with_version(&["1.0.0"], "linux", "amd64");
 
         assert!(pkg.private);
+    }
+
+    #[test]
+    fn test_package_type_defaults_to_github_release_when_omitted() {
+        let pkg = first_registry_package("packages:\n  - name: example/tool\n");
+
+        assert_eq!(pkg.r#type, None);
+        assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
+    }
+
+    #[test]
+    fn test_version_override_can_explicitly_select_github_release() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    repo_owner: anthropics
+    repo_name: claude-code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        type: github_release
+        asset: claude-{{.OS}}-{{.Arch}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+"#,
+        )
+        .with_version(&["2.1.226"], "linux", "amd64");
+
+        assert_eq!(pkg.r#type, Some(AquaPackageType::GithubRelease));
+        assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(pkg.format("2.1.226", "linux", "amd64").unwrap(), "tar.gz");
+        assert_eq!(
+            pkg.asset("2.1.226", "linux", "amd64").unwrap(),
+            "claude-linux-x64.tar.gz"
+        );
+    }
+
+    #[test]
+    fn test_omitted_version_override_type_preserves_http() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.r#type, Some(AquaPackageType::Http));
+        assert_eq!(pkg.package_type(), AquaPackageType::Http);
+    }
+
+    #[test]
+    fn test_version_override_can_select_http() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: github_release
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        type: http
+        url: https://example.com/tool
+"#,
+        )
+        .with_version(&["1.0.0"], "linux", "amd64");
+
+        assert_eq!(pkg.r#type, Some(AquaPackageType::Http));
+        assert_eq!(pkg.package_type(), AquaPackageType::Http);
+    }
+
+    #[test]
+    fn test_platform_override_can_explicitly_select_github_release() {
+        let pkg = first_registry_package(
+            r#"
+packages:
+  - type: http
+    url: https://example.com/tool
+    overrides:
+      - goos: linux
+        type: github_release
+        asset: tool-{{.OS}}-{{.Arch}}
+"#,
+        );
+
+        let linux = pkg.clone().with_version(&["1.0.0"], "linux", "amd64");
+        let darwin = pkg.with_version(&["1.0.0"], "darwin", "arm64");
+
+        assert_eq!(linux.r#type, Some(AquaPackageType::GithubRelease));
+        assert_eq!(linux.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(darwin.r#type, Some(AquaPackageType::Http));
+        assert_eq!(darwin.package_type(), AquaPackageType::Http);
     }
 
     #[test]
@@ -1938,6 +2059,82 @@ packages:
         assert!(result.asset.is_empty());
     }
 
+    /// Two overrides that differ only in which branch is picked, so `version_override`
+    /// reports the answer: `Some("first")` when the constraint held, `Some("fallback")` otherwise.
+    fn constraint_probe(constraint: &str) -> AquaPackage {
+        AquaPackage {
+            version_constraint: "false".to_string(),
+            version_overrides: vec![
+                AquaPackage {
+                    version_constraint: constraint.to_string(),
+                    asset: "first".to_string(),
+                    ..Default::default()
+                },
+                AquaPackage {
+                    version_constraint: "true".to_string(),
+                    asset: "fallback".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn constraint_holds(constraint: &str, version: &str) -> bool {
+        constraint_probe(constraint)
+            .version_override(&[version])
+            .map(|pkg| pkg.asset == "first")
+            .expect("a version_override always matches, since the last one is unconditional")
+    }
+
+    #[test]
+    fn test_semver_constraint_accepts_four_component_bounds() {
+        // https://github.com/jdx/mise/discussions/4813: relocatable-perl selects the linux asset
+        // name for old releases with semver("<= 5.34.1.0"). Rejecting that bound sent 5.32.1.0
+        // to the fallback branch, which asks for an asset the release does not have.
+        assert!(constraint_holds("semver(\"<= 5.34.1.0\")", "5.32.1.0"));
+        assert!(constraint_holds("semver(\"<= 5.34.1.0\")", "5.34.1.0"));
+        assert!(!constraint_holds("semver(\"<= 5.34.1.0\")", "5.36.0.0"));
+
+        // Both directions, so "the bound is rejected and everything is false" cannot pass.
+        assert!(constraint_holds("semver(\">= 1.0.0.0\")", "5.32.1.0"));
+        assert!(!constraint_holds("semver(\"< 1.0.0.0\")", "5.32.1.0"));
+    }
+
+    #[test]
+    fn test_semver_constraint_compares_bounds_against_shorter_versions() {
+        // haskell/cabal pins 4-component bounds while its releases are 3-component.
+        assert!(constraint_holds("semver(\"<= 3.16.1.0\")", "3.16.1"));
+        assert!(!constraint_holds("semver(\"<= 3.16.1.0\")", "3.17.0"));
+    }
+
+    #[test]
+    fn test_semver_constraint_supports_not_equal() {
+        // mattn/efm-langserver and sheepla/qiitaz exclude a single bad release this way.
+        assert!(constraint_holds("semver(\"!= 0.0.45\")", "0.0.46"));
+        assert!(!constraint_holds("semver(\"!= 0.0.45\")", "0.0.45"));
+    }
+
+    #[test]
+    fn test_semver_constraint_still_ands_comma_separated_terms() {
+        assert!(constraint_holds(
+            "semver(\">= 1.0.0, <= 9.0.0\")",
+            "5.32.1.0"
+        ));
+        assert!(!constraint_holds(
+            "semver(\">= 1.0.0, <= 5.0.0\")",
+            "5.32.1.0"
+        ));
+    }
+
+    #[test]
+    fn test_semver_constraint_without_an_operator_is_not_satisfied() {
+        // aqua requires an operator; an unparseable term errors, and the caller reads that
+        // as "does not apply" rather than propagating it.
+        assert!(!constraint_holds("semver(\"5.32.1.0\")", "5.32.1.0"));
+        assert!(!constraint_holds("semver(\"<= \")", "5.32.1.0"));
+    }
+
     #[test]
     fn test_version_override_matches_version_prefix() {
         let pkg = AquaPackage {
@@ -2231,7 +2428,7 @@ packages:
     #[test]
     fn test_github_content_does_not_complete_windows_ext_by_default() {
         let pkg = AquaPackage {
-            r#type: AquaPackageType::GithubContent,
+            r#type: Some(AquaPackageType::GithubContent),
             path: Some("install".to_string()),
             asset: "install".to_string(),
             format: "raw".to_string(),
@@ -2246,7 +2443,7 @@ packages:
     #[test]
     fn test_github_content_complete_windows_ext_defaults_to_sh() {
         let pkg = AquaPackage {
-            r#type: AquaPackageType::GithubContent,
+            r#type: Some(AquaPackageType::GithubContent),
             path: Some("install".to_string()),
             asset: "install".to_string(),
             format: "raw".to_string(),
@@ -2636,17 +2833,17 @@ packages:
 "#;
         let pkg = first_registry_package(yml);
 
-        for (os, arch) in [
-            ("linux", "amd64"),
-            ("darwin", "arm64"),
-            ("windows", "amd64"),
+        // What is under test is that the `envs: [all]` override supplied the URL on every
+        // platform. A raw-format URL additionally picks up the Windows executable extension,
+        // which `test_url_adds_exe_when_missing` covers on its own.
+        for (os, arch, expected) in [
+            ("linux", "amd64", "https://example.com/tool-all"),
+            ("darwin", "arm64", "https://example.com/tool-all"),
+            ("windows", "amd64", "https://example.com/tool-all.exe"),
         ] {
             let resolved = pkg.clone().with_version(&["1.0.0"], os, arch);
 
-            assert_eq!(
-                resolved.url("1.0.0", os, arch).unwrap(),
-                "https://example.com/tool-all"
-            );
+            assert_eq!(resolved.url("1.0.0", os, arch).unwrap(), expected);
         }
     }
 

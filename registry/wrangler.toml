@@ -2,6 +2,7 @@ description = "A command line tool for building Cloudflare Workers"
 test = { cmd = "wrangler --version", expected = "{{version}}", tools = [
   "aube",
 ] }
+version_order = "semver"
 
 bins = ["cf-wrangler", "wrangler", "wrangler2"]
 [[backends]]

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.first]
+run = '''
+if ! mkdir "$SERIAL_LOCK" 2>/dev/null; then
+  echo "tasks overlapped" >&2
+  exit 1
+fi
+sleep 0.1
+rmdir "$SERIAL_LOCK"
+touch "$FIRST_MARKER"
+'''
+
+[tasks.second]
+run = '''
+if ! mkdir "$SERIAL_LOCK" 2>/dev/null; then
+  echo "tasks overlapped" >&2
+  exit 1
+fi
+sleep 0.1
+rmdir "$SERIAL_LOCK"
+touch "$SECOND_MARKER"
+'''
+
+[tasks.interrupt]
+run = '''
+touch "$READY_FILE"
+sleep 5
+'''
+EOF
+
+serial_lock="$PWD/serial-lock"
+first_marker="$PWD/first-complete"
+second_marker="$PWD/second-complete"
+
+assert_tasks_completed() {
+  [[ -f $first_marker ]] || fail "first task did not complete"
+  [[ -f $second_marker ]] || fail "second task did not complete"
+  rm -f "$first_marker" "$second_marker"
+}
+
+FIRST_MARKER="$first_marker" SECOND_MARKER="$second_marker" SERIAL_LOCK="$serial_lock" \
+  mise run --jobs 0 first ::: second
+assert_tasks_completed
+FIRST_MARKER="$first_marker" SECOND_MARKER="$second_marker" SERIAL_LOCK="$serial_lock" \
+  MISE_JOBS=0 mise run first ::: second
+assert_tasks_completed
+
+cat <<'EOF' >>mise.toml
+
+[settings]
+jobs = 0
+EOF
+
+assert "mise settings get jobs" "1"
+FIRST_MARKER="$first_marker" SECOND_MARKER="$second_marker" SERIAL_LOCK="$serial_lock" \
+  mise run first ::: second
+assert_tasks_completed
+
+interrupt_dir="$PWD/jobs-zero-interrupt"
+mkdir -p "$interrupt_dir"
+ready_file="$interrupt_dir/ready"
+output_file="$interrupt_dir/output"
+READY_FILE="$ready_file" mise run --jobs 0 interrupt >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$ready_file" "task started with --jobs 0" 30 "$mise_pid"
+kill -INT "$mise_pid"
+
+status=0
+wait "$mise_pid" || status=$?
+if [[ $status -ne 130 ]]; then
+  fail "mise run expected exit code 130 after Ctrl-C, got $status: $(cat "$output_file")"
+fi
+
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise install dummy@1.0.0 --jobs 0
+assert_contains "mise ls --installed dummy" "1.0.0"

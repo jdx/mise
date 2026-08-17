@@ -1046,41 +1046,59 @@ mod tests {
         );
     }
 
+    const GITHUB_TOKEN_VARS: [&str; 4] = [
+        "MISE_GITHUB_TOKEN",
+        "GITHUB_API_TOKEN",
+        "GITHUB_TOKEN",
+        "MISE_GITHUB_ENTERPRISE_TOKEN",
+    ];
+
+    /// Holds [`super::TEST_ENV_LOCK`] and puts the token variables back in `Drop`.
+    ///
+    /// Restoring in `Drop` rather than after the callback is what makes the lock's poison flag
+    /// unnecessary: `Drop` runs while unwinding, so a panicking test cannot leave `ghp_test`
+    /// behind for whatever runs next.
+    struct GithubTokenGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        // `var_os`, not `var`: the latter reports a non-Unicode value as `None`, which `Drop`
+        // would then read as "was unset" and delete. Same shape as `crate::test::EnvVarGuard`.
+        prev: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl GithubTokenGuard {
+        fn new() -> Self {
+            let lock = crate::test::lock_ignoring_poison(&super::TEST_ENV_LOCK);
+            let prev = GITHUB_TOKEN_VARS
+                .iter()
+                .map(|name| (*name, std::env::var_os(name)))
+                .collect();
+
+            env::remove_var("MISE_GITHUB_TOKEN");
+            env::remove_var("GITHUB_API_TOKEN");
+            env::set_var("GITHUB_TOKEN", "ghp_test");
+            env::remove_var("MISE_GITHUB_ENTERPRISE_TOKEN");
+
+            Self { _lock: lock, prev }
+        }
+    }
+
+    impl Drop for GithubTokenGuard {
+        fn drop(&mut self) {
+            for (name, prev) in self.prev.drain(..) {
+                match prev {
+                    Some(v) => env::set_var(name, v),
+                    None => env::remove_var(name),
+                }
+            }
+        }
+    }
+
     fn with_github_token<F, R>(test_fn: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _guard = super::TEST_ENV_LOCK.lock().unwrap();
-        let orig_mise = std::env::var("MISE_GITHUB_TOKEN").ok();
-        let orig_api = std::env::var("GITHUB_API_TOKEN").ok();
-        let orig_gh = std::env::var("GITHUB_TOKEN").ok();
-        let orig_enterprise = std::env::var("MISE_GITHUB_ENTERPRISE_TOKEN").ok();
-
-        env::remove_var("MISE_GITHUB_TOKEN");
-        env::remove_var("GITHUB_API_TOKEN");
-        env::set_var("GITHUB_TOKEN", "ghp_test");
-        env::remove_var("MISE_GITHUB_ENTERPRISE_TOKEN");
-
-        let result = test_fn();
-
-        match orig_mise {
-            Some(v) => env::set_var("MISE_GITHUB_TOKEN", v),
-            None => env::remove_var("MISE_GITHUB_TOKEN"),
-        }
-        match orig_api {
-            Some(v) => env::set_var("GITHUB_API_TOKEN", v),
-            None => env::remove_var("GITHUB_API_TOKEN"),
-        }
-        match orig_gh {
-            Some(v) => env::set_var("GITHUB_TOKEN", v),
-            None => env::remove_var("GITHUB_TOKEN"),
-        }
-        match orig_enterprise {
-            Some(v) => env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", v),
-            None => env::remove_var("MISE_GITHUB_ENTERPRISE_TOKEN"),
-        }
-
-        result
+        let _guard = GithubTokenGuard::new();
+        test_fn()
     }
 
     struct TokensFileOverrideGuard;
@@ -1118,7 +1136,7 @@ mod tests {
 
     #[test]
     fn test_get_headers_remembers_tokens_file_source() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&TEST_ENV_LOCK);
         let host = "github-tokens-file-test.example.com";
         let _tokens_file = TokensFileOverrideGuard::set(host, "ghp_from_tokens_file");
 
@@ -1310,6 +1328,20 @@ something_else = "value"
 
         let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
         assert!(pick_best_numeric_build_revision(releases, "3.3.11").is_none());
+    }
+
+    /// RubyInstaller2 tags releases `RubyInstaller-<version>-<revision>`, so the
+    /// caller passes the prefixed tag as the "version" (discussion #5227). The
+    /// prefix comparison must also keep 3.4.4 from matching 3.4.10.
+    #[test]
+    fn test_numeric_build_revision_handles_prefixed_tags() {
+        let releases = vec![
+            make_release("RubyInstaller-3.4.4-1"),
+            make_release("RubyInstaller-3.4.4-2"),
+            make_release("RubyInstaller-3.4.10-1"),
+        ];
+        let best = pick_best_numeric_build_revision(releases, "RubyInstaller-3.4.4").unwrap();
+        assert_eq!(best.tag_name, "RubyInstaller-3.4.4-2");
     }
 
     #[test]

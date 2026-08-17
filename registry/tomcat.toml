@@ -14,3 +14,4 @@ bins = [
   "version.sh",
 ]
 description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"
+version_order = "semver"

@@ -1,3 +1,4 @@
 backends = ["aqua:kyoh86/richgo", "asdf:paxosglobal/asdf-richgo"]
 bins = ["richgo"]
 description = "Enrich `go test` outputs with text decorations"
+version_order = "semver"

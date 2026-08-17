@@ -121,7 +121,7 @@ pub struct Cli {
     /// Force the operation
     #[clap(long, short, hide = true)]
     pub force: bool,
-    /// How many jobs to run in parallel [default: 8]
+    /// How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
     #[clap(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     /// Dry run, don't actually do anything
@@ -413,6 +413,30 @@ fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
+fn get_value_taking_short_flags(cmd: &clap::Command) -> Vec<(String, String)> {
+    cmd.get_arguments()
+        .filter(|arg| {
+            matches!(
+                arg.get_action(),
+                clap::ArgAction::Set | clap::ArgAction::Append
+            )
+        })
+        .filter_map(|arg| Some((arg.get_short()?, arg.get_long()?)))
+        .map(|(short, long)| (format!("-{short}"), format!("--{long}")))
+        .collect()
+}
+
+fn get_all_run_value_taking_short_flags(cmd: &clap::Command) -> Vec<(String, String)> {
+    let mut flags = get_value_taking_short_flags(cmd);
+    if let Some(run_cmd) = cmd
+        .get_subcommands()
+        .find(|subcommand| subcommand.get_name() == "run")
+    {
+        flags.extend(get_value_taking_short_flags(run_cmd));
+    }
+    flags
+}
+
 /// Prefix used to escape flags that should be passed to tasks, not mise
 const TASK_ARG_ESCAPE_PREFIX: &str = "\x00MISE_TASK_ARG\x00";
 
@@ -568,6 +592,7 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     }
 
     let (flags_with_values, _) = get_all_run_flags(cmd);
+    let short_flags_with_values = get_all_run_value_taking_short_flags(cmd);
 
     // Build result, escaping flags that appear after task names
     let mut result = args[..=run_pos].to_vec(); // Include up to and including "run"
@@ -588,6 +613,23 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
         if !in_task_args {
             // Looking for task name - skip any mise flags
             if arg.starts_with('-') {
+                // clap treats attached values for short options as positional
+                // values when the positional allows hyphens. Normalize them to
+                // unambiguous long options before parsing.
+                let attached_short_value =
+                    short_flags_with_values.iter().find_map(|(short, long)| {
+                        arg.strip_prefix(short)
+                            .filter(|value| !value.is_empty())
+                            .map(|value| (long, value))
+                    });
+
+                if let Some((long, value)) = attached_short_value {
+                    let value = value.strip_prefix('=').unwrap_or(value);
+                    result.push(format!("{long}={value}"));
+                    i += 1;
+                    continue;
+                }
+
                 // It's a flag - keep it as-is for mise to parse
                 result.push(arg.clone());
 
@@ -751,6 +793,7 @@ impl Cli {
             version::show_latest().await;
             return Err(request_exit(0));
         }
+        let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();
         let cmd = cli.get_command().await?;
         measure!("run {cmd}", { cmd.run().await })
     }
@@ -781,9 +824,10 @@ impl Cli {
                 };
                 if tasks.iter().any(|(_, t)| t.is_match(&task)) {
                     return Ok(Commands::Run(Box::new(run::Run {
-                        task,
+                        task: Some(task),
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
+                        all: false,
                         affected: false,
                         affected_base: None,
                         affected_head: None,
@@ -1036,14 +1080,14 @@ mod tests {
     #[test]
     fn test_config_target_options_accept_both_names() {
         // (command path, argument id, expected alias, available on this platform)
+        // `use` and `dotfiles add` are deliberately absent: `-f` is `--force` on both, so
+        // they carry `--path` only. See the shadowing test below.
         let cases: &[(&[&str], &str, &str, bool)] = &[
-            (&["use"], "path", "file", true),
             (&["unuse"], "path", "file", true),
             (&["set"], "file", "path", true),
             (&["unset"], "file", "path", true),
             (&["config", "get"], "file", "path", true),
             (&["config", "set"], "file", "path", true),
-            (&["dotfiles", "add"], "path", "file", true),
             (&["bootstrap", "packages", "use"], "path", "file", true),
             (&["bootstrap", "packages", "import"], "path", "file", true),
             // the brew manager is not registered on Windows
@@ -1086,6 +1130,52 @@ mod tests {
         }
     }
 
+    /// A `--file`/`--path` alias whose natural short form belongs to a *different* argument
+    /// on the same command teaches the wrong flag. `mise dotfiles add` carried `--file` as an
+    /// alias of `--path` while `-f` was `--force`, and because its targets accept any string,
+    /// `mise dotfiles add -f <path>` silently adopted that config file as a dotfile instead of
+    /// writing to it — no error, and `--force` meant no prompt either.
+    ///
+    /// Walks the whole CLI rather than a fixed list, so re-adding the alias anywhere fails
+    /// even if the case table above is left alone.
+    #[test]
+    fn config_target_aliases_do_not_shadow_another_short_flag() {
+        fn check(command: &clap::Command, path: &mut Vec<String>) {
+            for arg in command.get_arguments() {
+                let Some(aliases) = arg.get_visible_aliases() else {
+                    continue;
+                };
+                for alias in aliases {
+                    // Only this vocabulary — an unrelated alias sharing a letter with some
+                    // other flag is ordinary and not what this is about.
+                    if alias != "file" && alias != "path" {
+                        continue;
+                    }
+                    let short = alias.chars().next().unwrap();
+                    if let Some(owner) = command.get_arguments().find(|other| {
+                        other.get_id() != arg.get_id() && other.get_short() == Some(short)
+                    }) {
+                        panic!(
+                            "mise {}: --{alias} aliases --{}, but -{short} is --{} — \
+                             drop the alias or the collision",
+                            path.join(" "),
+                            arg.get_id().as_str(),
+                            owner.get_id().as_str()
+                        );
+                    }
+                }
+            }
+            for subcommand in command.get_subcommands() {
+                path.push(subcommand.get_name().to_string());
+                check(subcommand, path);
+                path.pop();
+            }
+        }
+
+        let root = expand_deferred_subcommands(Cli::command());
+        check(&root, &mut Vec::new());
+    }
+
     #[test]
     fn test_escape_task_args_preserves_task_separator_tail() {
         let cmd = Cli::command();
@@ -1108,6 +1198,71 @@ mod tests {
             unescape_task_args(&escaped[separator_idx + 1..]),
             vec!["--".to_string(), "--help".to_string()]
         );
+    }
+
+    #[test]
+    fn test_escape_task_args_splits_attached_short_option_values_before_task() {
+        let cmd = Cli::command();
+        let args = vec![
+            "mise".to_string(),
+            "run".to_string(),
+            "-j1".to_string(),
+            "-Ctmp".to_string(),
+            "-oprefix".to_string(),
+            "atask".to_string(),
+        ];
+
+        assert_eq!(
+            escape_task_args(&cmd, &args),
+            [
+                "mise",
+                "run",
+                "--jobs=1",
+                "--cd=tmp",
+                "--output=prefix",
+                "atask",
+            ]
+            .map(str::to_string)
+        );
+    }
+
+    #[test]
+    fn test_escape_task_args_preserves_equals_attached_option_values() {
+        let cmd = Cli::command();
+        let args = ["mise", "run", "-C=/tmp", "-o=prefix", "atask"].map(str::to_string);
+        let processed = escape_task_args(&cmd, &args);
+
+        assert_eq!(
+            processed,
+            ["mise", "run", "--cd=/tmp", "--output=prefix", "atask"].map(str::to_string)
+        );
+        let matches = cmd.try_get_matches_from(processed).unwrap();
+        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        assert_eq!(cli.cd, Some(PathBuf::from("/tmp")));
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("atask"));
+    }
+
+    #[test]
+    fn test_escape_task_args_keeps_hyphen_prefixed_attached_value_bound_to_option() {
+        let cmd = Cli::command();
+        let args = ["mise", "run", "-C-dir", "atask"].map(str::to_string);
+        let processed = escape_task_args(&cmd, &args);
+
+        assert_eq!(
+            processed,
+            ["mise", "run", "--cd=-dir", "atask"].map(str::to_string)
+        );
+
+        let matches = cmd.try_get_matches_from(processed).unwrap();
+        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        assert_eq!(cli.cd, Some(PathBuf::from("-dir")));
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("atask"));
     }
 
     #[test]

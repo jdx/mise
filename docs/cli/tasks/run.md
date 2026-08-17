@@ -42,8 +42,7 @@ $ mise run build
 Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-
-**Default:** `default`
+Defaults to `default` when omitted
 
 ### `[ARGS]…`
 
@@ -73,6 +72,10 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
 
 Output affected projects and tasks as JSON without running tasks
 
+### `--all`
+
+Open the interactive selector with all tasks from the entire monorepo
+
 ### `-c --continue-on-error`
 
 Continue running tasks even if one fails
@@ -88,6 +91,7 @@ Force the tasks to run even if outputs are up to date
 ### `-j --jobs <JOBS>`
 
 Number of tasks to run in parallel
+Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 

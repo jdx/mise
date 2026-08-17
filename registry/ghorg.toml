@@ -1,3 +1,4 @@
 backends = ["aqua:gabrie30/ghorg", "asdf:gbloquel/asdf-ghorg"]
 bins = ["ghorg"]
 description = "Quickly clone an entire org/users repositories into one directory - Supports GitHub, GitLab, Bitbucket, and more"
+version_order = "semver"

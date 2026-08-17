@@ -6,3 +6,4 @@ backends = [
 bins = ["bat"]
 description = "A cat(1) clone with wings"
 test = { cmd = "bat --version", expected = "bat {{version}}" }
+version_order = "semver"

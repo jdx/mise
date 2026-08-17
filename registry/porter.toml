@@ -1,5 +1,6 @@
 description = "CNAB bundle authoring and management tool"
 test = { cmd = "porter version", expected = "porter v{{version}}" }
+version_order = "semver"
 
 bins = ["porter"]
 [[backends]]

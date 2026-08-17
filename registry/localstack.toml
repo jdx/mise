@@ -1,5 +1,6 @@
 description = "The LocalStack CLI packaged using pyinstaller"
 test = { cmd = "localstack --version", expected = "LocalStack CLI {{version}}" }
+version_order = "semver"
 
 backends = [
   "aqua:localstack/localstack-cli",

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::{Config, config_file};
+use crate::config::{Config, Settings, config_file};
 use crate::errors::split_install_result;
 use crate::file::display_path;
 use crate::install_before::{
@@ -43,15 +43,6 @@ pub struct Upgrade {
     #[clap(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Display multiselect menu to choose which tools to upgrade
-    #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
-    interactive: bool,
-
-    /// Number of jobs to run in parallel
-    /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
-    jobs: Option<usize>,
-
     /// Upgrades to the latest version available, bumping the version in mise.toml
     ///
     /// For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
@@ -59,8 +50,22 @@ pub struct Upgrade {
     ///
     /// It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
     /// would change your config to `node = "22"`.
-    #[clap(long, short = 'l', verbatim_doc_comment)]
+    #[clap(long, short = 'b', verbatim_doc_comment)]
     bump: bool,
+
+    /// Display multiselect menu to choose which tools to upgrade
+    #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
+    interactive: bool,
+
+    /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
+    /// [default: 4]
+    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    jobs: Option<usize>,
+
+    /// Deprecated shorthand for --bump
+    #[clap(short = 'l', hide = true)]
+    legacy_bump: bool,
 
     /// Just print what would be done, don't actually do it
     #[clap(long, short = 'n', verbatim_doc_comment)]
@@ -107,8 +112,17 @@ pub struct Upgrade {
     /// By default the old version is removed once the new one installs, unless another
     /// tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
     /// something outside of mise points at the old install directory.
-    #[clap(long, verbatim_doc_comment)]
+    ///
+    /// Set `upgrade.auto_prune = false` to make this the default.
+    #[clap(long, verbatim_doc_comment, overrides_with = "prune")]
     no_prune: bool,
+
+    /// Uninstall the versions that were upgraded away from
+    ///
+    /// This is already the default. Use it to override `upgrade.auto_prune = false`
+    /// for a single run.
+    #[clap(long, verbatim_doc_comment, overrides_with = "no_prune")]
+    prune: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
@@ -121,6 +135,12 @@ impl Upgrade {
         self.dry_run || self.dry_run_code
     }
 
+    /// Whether the version being upgraded away from should be uninstalled. Either flag wins
+    /// over the setting, and `overrides_with` makes the later of the two win over the other.
+    fn should_prune(&self) -> bool {
+        self.prune || !self.no_prune && Settings::get().upgrade.auto_prune
+    }
+
     fn scope(&self) -> ConfigScope {
         if self.local {
             ConfigScope::LocalOnly
@@ -129,7 +149,16 @@ impl Upgrade {
         }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
+        if self.legacy_bump {
+            deprecated_at!(
+                "2026.8.5",
+                "2027.8.5",
+                "cli.upgrade.bump-l",
+                "`mise upgrade -l` is deprecated. Use `mise upgrade -b` or `mise upgrade --bump` instead. After removal, `-l` will become shorthand for `--local`."
+            );
+            self.bump = true;
+        }
         if self.monorepo {
             unimplemented!("mise upgrade --monorepo is not implemented yet");
         }
@@ -147,6 +176,8 @@ impl Upgrade {
         let opts = ResolveOptions {
             use_locked_version: false,
             latest_versions: true,
+            resolve_rolling_channels: false,
+            prefer_exact_version: false,
             before_date,
             before_date_from_default: false,
             filter_installed_versions_by_release_date: false,
@@ -182,11 +213,20 @@ impl Upgrade {
         if outdated.is_empty() {
             info!("All tools are up to date");
             if !self.bump {
-                hint!(
-                    "outdated_bump",
-                    r#"By default, `mise upgrade` only upgrades versions that match your config. Use `mise upgrade --bump` to upgrade all new versions."#,
-                    ""
-                );
+                let bump_outdated = ts
+                    .list_outdated_versions_filtered(
+                        &config,
+                        true,
+                        &opts,
+                        filter_tools,
+                        exclude_tools,
+                    )
+                    .await;
+                if bump_outdated.iter().any(|o| o.bump.is_some()) {
+                    info!(
+                        "Newer versions are available outside the configured version ranges. Use `mise upgrade --bump` to upgrade them."
+                    );
+                }
             }
         } else {
             self.upgrade(&mut config, outdated, before_date).await?;
@@ -252,7 +292,7 @@ impl Upgrade {
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
-        let to_remove: Vec<_> = if self.no_prune {
+        let to_remove: Vec<_> = if !self.should_prune() {
             vec![]
         } else {
             outdated
@@ -325,6 +365,8 @@ impl Upgrade {
             resolve_options: ResolveOptions {
                 use_locked_version: false,
                 latest_versions: true,
+                resolve_rolling_channels: false,
+                prefer_exact_version: false,
                 before_date,
                 before_date_from_default: false,
                 filter_installed_versions_by_release_date: false,
@@ -896,7 +938,12 @@ fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> 
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
+    r#"<bold><underline>Deprecation:</underline></bold>
+
+The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
+
+<bold><underline>Examples:</underline></bold>
 
     # Upgrades node to the latest version matching the range in mise.toml
     $ <bold>mise upgrade node</bold>

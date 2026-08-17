@@ -568,70 +568,76 @@ pub struct TaskWatchOptions {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct TaskLanguageCacheOptions {
+struct TaskRustCacheOptions {
     enabled: bool,
+    verify: bool,
 }
 
-impl Default for TaskLanguageCacheOptions {
+impl Default for TaskRustCacheOptions {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            verify: false,
+        }
     }
 }
 
-macro_rules! task_language_cache_config {
-    ($name:ident) => {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct $name {
-            pub enabled: bool,
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self { enabled: true }
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                struct LanguageCacheVisitor;
-
-                impl<'de> serde::de::Visitor<'de> for LanguageCacheVisitor {
-                    type Value = $name;
-
-                    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                        formatter.write_str("a boolean or language cache options table")
-                    }
-
-                    fn visit_bool<E>(self, enabled: bool) -> std::result::Result<Self::Value, E>
-                    where
-                        E: serde::de::Error,
-                    {
-                        Ok($name { enabled })
-                    }
-
-                    fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
-                    where
-                        M: serde::de::MapAccess<'de>,
-                    {
-                        let options = TaskLanguageCacheOptions::deserialize(
-                            serde::de::value::MapAccessDeserializer::new(map),
-                        )?;
-                        Ok($name {
-                            enabled: options.enabled,
-                        })
-                    }
-                }
-
-                deserializer.deserialize_any(LanguageCacheVisitor)
-            }
-        }
-    };
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskRustCacheConfig {
+    pub enabled: bool,
+    pub verify: bool,
 }
 
-task_language_cache_config!(TaskRustCacheConfig);
+impl Default for TaskRustCacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            verify: false,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskRustCacheConfig {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct RustCacheVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for RustCacheVisitor {
+            type Value = TaskRustCacheConfig;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or Rust cache options table")
+            }
+
+            fn visit_bool<E>(self, enabled: bool) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(TaskRustCacheConfig {
+                    enabled,
+                    verify: false,
+                })
+            }
+
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let options = TaskRustCacheOptions::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                Ok(TaskRustCacheConfig {
+                    enabled: options.enabled,
+                    verify: options.verify,
+                })
+            }
+        }
+
+        deserializer.deserialize_any(RustCacheVisitor)
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -652,8 +658,8 @@ pub struct Task {
     pub config_source: PathBuf,
     /// Additional files that contributed to this task's definition.
     ///
-    /// The primary definition remains in `config_source`; this contains
-    /// metadata overlays merged from same-named `[tasks.<name>]` blocks.
+    /// The primary definition remains in `config_source`; this contains task
+    /// templates, workspace defaults, and metadata overlays merged into it.
     #[serde(skip)]
     pub additional_config_sources: Vec<PathBuf>,
     #[serde(skip)]
@@ -1027,6 +1033,11 @@ fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Re
 /// only part parsed and rendered at load).
 pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     use crate::config::config_file::mise_toml::toml_value_has_template;
+    // Must see exactly what the loader sees. `Task::from_path_unrendered_with_cf` strips a
+    // byte-order mark before scanning headers, so leaving one here would let a `#MISE` on line 1
+    // hide an escaped template from this check and then render it anyway -- the caller runs the
+    // two back to back on the same file.
+    let body = file::strip_utf8_bom(body);
     if path.extension().is_some_and(|e| e == "toml") {
         // Unparseable TOML won't load as a task file (it errors before any
         // render), so it doesn't need trust on this account.
@@ -1043,7 +1054,8 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
 
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
-    let raw = extract_usage_from_comments(&script);
+    // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
+    let raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
     if raw.trim().is_empty() {
         return usage::Spec::parse_script(file);
     }
@@ -1260,6 +1272,17 @@ fn usage_flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
 }
 
 impl Task {
+    pub fn add_config_source(&mut self, source: &Path) {
+        if source != self.config_source
+            && !self
+                .additional_config_sources
+                .iter()
+                .any(|existing| existing == source)
+        {
+            self.additional_config_sources.push(source.to_path_buf());
+        }
+    }
+
     pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
@@ -1311,7 +1334,11 @@ impl Task {
     ) -> Result<Task> {
         let mut task = Task::new(path, prefix, config_root)?;
         task.cf = cf;
-        let info = parse_mise_header_toml(&file::read_to_string(path)?)?
+        // Stripped before scanning: the header patterns anchor at the start of a line, so a
+        // byte-order mark would hide a `#MISE` written on line 1 -- which is where a task with
+        // an executable extension rather than a shebang puts it.
+        let body = file::read_to_string(path)?;
+        let info = parse_mise_header_toml(file::strip_utf8_bom(&body))?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
@@ -1431,11 +1458,20 @@ impl Task {
         unparsed.sort();
 
         if !unparsed.is_empty() {
-            return Err(eyre::eyre!(
-                "unknown field(s) {:?} in task file header: {}",
+            // A warning rather than an error, matching how `mise.toml` treats a key it does not
+            // recognise (`MiseToml::from_str` reports one through `serde_ignored` and carries on).
+            // A file task has no reason to be stricter than the config file, and it is in a worse
+            // position to be: this parse runs inside the loop that loads *every* task in the
+            // project, so returning here made one unrecognised key in one file take all of them
+            // down -- `mise run <some other task>` failed too.
+            //
+            // Only genuinely unknown key names reach this point. `TrackingTomlParser` records a key
+            // as parsed when it is looked up, so a known key holding the wrong type is not here.
+            warn!(
+                "unknown field(s) {:?} in task file header, ignoring: {}",
                 unparsed,
                 display_path(path)
-            ));
+            );
         }
 
         #[cfg(test)]
@@ -1993,6 +2029,37 @@ impl Task {
         Ok(spec)
     }
 
+    /// Parse usage metadata without resolving task- or subproject-specific
+    /// environment directives. This is used before the scheduler starts, where
+    /// source/module hooks must not run ahead of task dependencies.
+    pub(crate) async fn parse_usage_spec_for_preflight(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
+        let mut spec = if let Some(file) = self.file_path_raw() {
+            parse_task_script_usage(&file)
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(&file)
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            let scripts_only = self.run_script_strings();
+            TaskScriptParser::new(self.config_root.clone())
+                .parse_run_scripts_for_preflight(config, self, &scripts_only)
+                .await?
+        };
+        self.populate_spec_metadata(&mut spec);
+        self.populate_usage_about(&mut spec);
+        Ok(spec)
+    }
+
+    pub(crate) fn validate_template_syntax_for_preflight(&self, input: &str) -> Result<()> {
+        TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
+    }
+
     pub async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
@@ -2106,7 +2173,7 @@ impl Task {
 
     /// Get file path without templating (for display purposes)
     /// This is a non-async version used when we just need the path for display
-    fn file_path_raw(&self) -> Option<PathBuf> {
+    pub(crate) fn file_path_raw(&self) -> Option<PathBuf> {
         self.file.as_ref().map(|file| {
             if file.is_absolute() {
                 file.clone()
@@ -2124,6 +2191,14 @@ impl Task {
 
     pub(crate) async fn tera_ctx_for_usage(&self, config: &Arc<Config>) -> Result<tera::Context> {
         self.build_tera_ctx(config, !self.raw_args).await
+    }
+
+    pub(crate) fn tera_ctx_for_usage_preflight(&self, config: &Config) -> tera::Context {
+        let mut tera_ctx = config.tera_ctx.clone();
+        tera_ctx.insert("env", &EnvMap::new());
+        tera_ctx.insert("vars", &IndexMap::<String, String>::new());
+        tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx
     }
 
     async fn build_tera_ctx(
@@ -2398,14 +2473,7 @@ impl Task {
     /// TOML file they were written in rather than the file task's script path.
     pub fn merge_toml_overlay(&mut self, other: Task) {
         for source in other.config_sources() {
-            if source != self.config_source
-                && !self
-                    .additional_config_sources
-                    .iter()
-                    .any(|existing| existing == source)
-            {
-                self.additional_config_sources.push(source.to_path_buf());
-            }
+            self.add_config_source(source);
         }
 
         fn merge_bool(base: &mut bool, overlay: bool, explicit: bool) {
@@ -2766,15 +2834,18 @@ impl Task {
             .redaction_keys()
             .into_iter()
             .chain(env_results.redactions.iter().cloned());
-        let task_env_map: EnvMap = env_results
-            .env
-            .iter()
-            .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect();
+        // Config-level exclusions are resolved separately from task env, so carry them over
+        // here or a `redact = false` variable the task merely declares `required` would be
+        // registered anyway. A task *assignment* still overrides the config-level exclusion.
+        let mut redaction_exclusions = config.env_results().await?.redaction_exclusions.clone();
+        for key in env_results.env.keys() {
+            redaction_exclusions.remove(key);
+        }
+        redaction_exclusions.extend(env_results.redaction_exclusions.iter().cloned());
         config.add_redactions_excluding(
             redact_keys,
-            &task_env_map,
-            &env_results.redaction_exclusions,
+            &env_results.redactable_env(&env),
+            &redaction_exclusions,
         );
 
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
@@ -3304,12 +3375,19 @@ where
             if !exact.is_empty() {
                 return Ok(exact);
             }
-            return Ok(self
+            let ext_stripped: Vec<&T> = self
                 .iter()
                 .filter(|(name, _)| task_name_matches(&matcher, name, true))
                 .map(|(_, task)| task)
                 .unique()
-                .collect());
+                .collect();
+            if !ext_stripped.is_empty() {
+                return Ok(ext_stripped);
+            }
+            if self.keys().any(|k| k.starts_with("//")) {
+                return self.get_matching(&format!("//{pat}"));
+            }
+            return Ok(vec![]);
         }
 
         // === Parse monorepo pattern ===
@@ -3621,13 +3699,22 @@ rust_cache = {}
         )
         .unwrap();
 
+        assert_eq!(enabled.rust_cache, Some(TaskRustCacheConfig::default()));
+        assert_eq!(table.rust_cache, Some(TaskRustCacheConfig::default()));
+
+        let verify: Task = toml::from_str(
+            r#"
+run = "cargo build"
+rust_cache = { verify = true }
+"#,
+        )
+        .unwrap();
         assert_eq!(
-            enabled.rust_cache,
-            Some(TaskRustCacheConfig { enabled: true })
-        );
-        assert_eq!(
-            table.rust_cache,
-            Some(TaskRustCacheConfig { enabled: true })
+            verify.rust_cache,
+            Some(TaskRustCacheConfig {
+                verify: true,
+                ..TaskRustCacheConfig::default()
+            })
         );
     }
 
@@ -3650,11 +3737,17 @@ rust_cache = { enabled = false }
 
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig { enabled: false })
+            Some(TaskRustCacheConfig {
+                enabled: false,
+                ..TaskRustCacheConfig::default()
+            })
         );
         assert_eq!(
             table.rust_cache,
-            Some(TaskRustCacheConfig { enabled: false })
+            Some(TaskRustCacheConfig {
+                enabled: false,
+                ..TaskRustCacheConfig::default()
+            })
         );
     }
 
@@ -3756,6 +3849,23 @@ rust_cache = { unknown = true }
             script,
             "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
         ));
+
+        // A byte-order mark must not hide the header from this check. The loader strips one
+        // before parsing the same header, so a miss here would mean rendering a template that
+        // was never gated on trust.
+        assert!(file_has_decoded_template(
+            script,
+            "\u{feff}#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
+        assert!(file_has_decoded_template(
+            toml,
+            "\u{feff}[hello]\nrun = \"echo hi\"\ndescription = \"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\n"
+        ));
+        // and it must not turn a plain file into one that needs trust
+        assert!(!file_has_decoded_template(
+            script,
+            "\u{feff}#MISE description=\"a plain task\"\necho hi\n"
+        ));
     }
 
     #[test]
@@ -3782,6 +3892,27 @@ exec shapeme "$@"
             assert_eq!(spec.cmd.mounts.len(), 1);
             assert_eq!(spec.cmd.mounts[0].run, "shapeme --usage-spec");
             assert!(!spec.cmd.subcommands.contains_key("__mise_task_root_mounts"));
+        }
+    }
+
+    /// A `#USAGE` on line 1 is the case a byte-order mark hides: the extractor anchors at the
+    /// start of a line, and `str::trim` does not remove U+FEFF. Without the mark stripped the
+    /// flag never reaches the spec, so `mise run task -- -f` leaves `usage_force` unset.
+    #[test]
+    fn test_parse_task_script_usage_reads_a_marked_first_line() {
+        use std::io::Write;
+
+        let directives = "#USAGE flag \"-f --force\" help=\"force it\"\nexec tool \"$@\"\n";
+        for (label, body) in [
+            ("marked", format!("\u{feff}{directives}")),
+            ("unmarked", directives.to_string()),
+        ] {
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(body.as_bytes()).unwrap();
+
+            let spec = super::parse_task_script_usage(tmp.path()).unwrap();
+            assert_eq!(spec.cmd.flags.len(), 1, "{label}");
+            assert_eq!(&spec.cmd.flags[0].name, "force", "{label}");
         }
     }
 
@@ -4288,6 +4419,43 @@ echo "hello world"
                 .to_string()
                 .contains("failed to parse task header TOML")
         );
+    }
+
+    /// An unrecognised header key is a warning, not an error.
+    ///
+    /// This parse runs for every task file in the project, so failing here took down tasks in
+    /// other files — including TOML ones — over a single typo. `mise.toml` already treats an
+    /// unknown key as a warning; a file task should not be stricter.
+    ///
+    /// `run_windows` is the real case that turned this up: it is a TOML-task key, so a file task
+    /// header does not know it.
+    #[tokio::test]
+    async fn test_from_path_unknown_header_field_is_ignored() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE description="still parsed"
+#MISE run_windows="echo nope"
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+
+        // The known key beside it still takes effect: what is dropped is the unknown key alone,
+        // not the whole header and not the task.
+        assert_eq!(task.description, "still parsed");
+        assert!(task.run_windows.is_empty());
     }
 
     #[test]
@@ -4950,7 +5118,7 @@ echo "test"
                 command_inputs: vec![],
             })
         );
-        assert_eq!(task.rust_cache, Some(TaskRustCacheConfig { enabled: true }));
+        assert_eq!(task.rust_cache, Some(TaskRustCacheConfig::default()));
         assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
@@ -5920,6 +6088,49 @@ echo "test"
                 &"node:@scope/app#test:units:local".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_get_matching_monorepo_project_without_slash_prefix() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let tasks = BTreeMap::from([
+            ("//web:build".to_string(), "//web:build".to_string()),
+            ("//web:dev".to_string(), "//web:dev".to_string()),
+            ("//api:build".to_string(), "//api:build".to_string()),
+        ]);
+
+        assert_eq!(
+            tasks.get_matching("web:build").unwrap(),
+            vec![&"//web:build".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("web:*").unwrap(),
+            vec![&"//web:build".to_string(), &"//web:dev".to_string()]
+        );
+        assert_eq!(
+            tasks.get_matching("api:build").unwrap(),
+            vec![&"//api:build".to_string()]
+        );
+        assert!(tasks.get_matching("web:missing").unwrap().is_empty());
+        assert!(tasks.get_matching("missing:build").unwrap().is_empty());
+
+        // A root task whose name contains `:` still wins over the project
+        // interpretation of the same pattern.
+        let shadowed = BTreeMap::from([
+            ("//web:build".to_string(), "//web:build".to_string()),
+            ("web:build".to_string(), "web:build".to_string()),
+        ]);
+        assert_eq!(
+            shadowed.get_matching("web:build").unwrap(),
+            vec![&"web:build".to_string()]
+        );
+
+        // Outside a monorepo the pattern must not gain a `//` interpretation.
+        let flat = BTreeMap::from([("test:units".to_string(), "test:units".to_string())]);
+        assert!(flat.get_matching("web:build").unwrap().is_empty());
     }
 
     #[test]

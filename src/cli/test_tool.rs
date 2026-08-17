@@ -23,6 +23,7 @@ pub struct TestTool {
     #[clap(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
     pub all: bool,
     /// Number of tool tests to run in parallel
+    /// Values below 1 are treated as 1
     /// [default: 4]
     #[clap(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
@@ -300,7 +301,7 @@ impl TestTool {
         if self.raw {
             1
         } else {
-            self.jobs.unwrap_or(4).max(1)
+            crate::jobs::resolve(4, self.jobs)
         }
     }
 

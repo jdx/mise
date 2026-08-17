@@ -2,3 +2,4 @@ backends = ["aqua:bufbuild/buf", "asdf:truepay/asdf-buf"]
 bins = ["buf", "protoc-gen-buf-breaking", "protoc-gen-buf-lint"]
 description = "The best way of working with Protocol Buffers"
 test = { cmd = "buf --version", expected = "{{version}}" }
+version_order = "semver"

@@ -47,13 +47,24 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         }
     };
 
+    // Writing it would succeed and then be ignored, and `mise settings get` would report the
+    // stored value as if it were live. See https://github.com/jdx/mise/discussions/5791.
+    // `mise settings unset` is deliberately still allowed, so anyone who already has one of
+    // these in a config can remove it.
+    if meta.env_only {
+        bail!(
+            "{key} cannot be set in a config file: mise reads it before config files load. Use the {} environment variable instead.",
+            meta.env.unwrap_or("matching MISE_*")
+        );
+    }
+
     let value = match meta.type_ {
         SettingsType::Bool => parse_bool(value)?,
         SettingsType::Integer => parse_i64(value)?,
         SettingsType::Duration => parse_duration(value)?,
         SettingsType::Url | SettingsType::Path | SettingsType::String => value.into(),
         SettingsType::ListString => parse_list_by_comma(value)?,
-        SettingsType::ListPath => parse_list_by_colon(value)?,
+        SettingsType::ListPath => parse_list_by_os_path_separator(value)?,
         SettingsType::SetString => parse_set_by_comma(value)?,
         SettingsType::IndexMap => parse_indexmap_by_json(value)?,
         SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
@@ -118,11 +129,26 @@ fn parse_list_by_comma(value: &str) -> Result<toml_edit::Value> {
     Ok(value.split(',').map(|s| s.trim().to_string()).collect())
 }
 
-fn parse_list_by_colon(value: &str) -> Result<toml_edit::Value> {
+/// Split a path list the way the host does: `;` on Windows, `:` on Unix.
+///
+/// Splitting on `:` unconditionally made `mise settings set trusted_config_paths 'C:\proj'`
+/// store `["C", "\proj"]`. A Windows drive letter's colon is not a separator, so even a lone
+/// path with no list separator in it came apart, leaving no way to write one from the CLI.
+/// #9058 gave the environment-variable route the OS separator; this is the CLI route it missed.
+///
+/// Deliberately the same `std::env::split_paths` that `list_by_os_path_separator` in
+/// `config::settings` uses for `parse_env = "list_by_os_path_separator"`, so the two entry
+/// points to the same settings cannot drift apart again. On Windows it also strips surrounding
+/// double quotes, matching how the OS itself reads a path list.
+fn parse_list_by_os_path_separator(value: &str) -> Result<toml_edit::Value> {
     if value.is_empty() || value == "[]" {
         return Ok(toml_edit::Array::new().into());
     }
-    Ok(value.split(':').map(|s| s.trim().to_string()).collect())
+    // `std::env` rather than `crate::env`, which is what `env` resolves to elsewhere in mise.
+    Ok(std::env::split_paths(value)
+        .map(|p| p.to_string_lossy().trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect())
 }
 
 fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
@@ -177,3 +203,89 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise settings idiomatic_version_file=true</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn entries(value: toml_edit::Value) -> Vec<String> {
+        value
+            .as_array()
+            .expect("a path list parses to an array")
+            .iter()
+            .map(|v| v.as_str().expect("array of strings").to_string())
+            .collect()
+    }
+
+    fn parse(value: &str) -> Vec<String> {
+        entries(parse_list_by_os_path_separator(value).unwrap())
+    }
+
+    fn expect(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// The defect this function exists for: a drive letter's colon is not a separator, so a
+    /// path list splits on `;` here. Asserted only on Windows -- `\` and `;` are ordinary
+    /// filename characters on unix, where `C:\a` really is one relative path named `C:\a`.
+    #[cfg(windows)]
+    #[test]
+    fn windows_drive_letter_is_not_a_separator() {
+        // The sharpest form: no list separator anywhere, and it still came apart before.
+        assert_eq!(parse(r"C:\a"), expect(&[r"C:\a"]));
+        assert_eq!(
+            parse(r"C:\a\one;C:\b\two"),
+            expect(&[r"C:\a\one", r"C:\b\two"])
+        );
+    }
+
+    /// `split_paths` unquotes on Windows, the way the OS reads a path list -- which is the only
+    /// way to spell a path containing the separator. Asserted so that swapping the split for a
+    /// hand-rolled one would fail here rather than quietly drop the quotes into the config.
+    #[cfg(windows)]
+    #[test]
+    fn windows_quoted_paths_are_unquoted() {
+        assert_eq!(
+            parse(r#""C:\Program Files\one";"C:\Program Files\two""#),
+            expect(&[r"C:\Program Files\one", r"C:\Program Files\two"])
+        );
+        // Quoting is per entry, not all-or-nothing.
+        assert_eq!(parse(r#""C:\a b";C:\c"#), expect(&[r"C:\a b", r"C:\c"]));
+    }
+
+    /// Unix keeps the colon it always had. This is the control for the change above: the
+    /// separator moved with the platform rather than everywhere.
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_still_splits_on_colon() {
+        assert_eq!(parse("/a/one:/b/two"), expect(&["/a/one", "/b/two"]));
+        assert_eq!(parse("/a"), expect(&["/a"]));
+    }
+
+    #[test]
+    fn empty_input_parses_to_an_empty_array() {
+        assert!(parse("").is_empty());
+        assert!(parse("[]").is_empty());
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_trimmed() {
+        #[cfg(windows)]
+        let (input, expected) = (r"  C:\a ; C:\b  ", expect(&[r"C:\a", r"C:\b"]));
+        #[cfg(not(windows))]
+        let (input, expected) = ("  /a : /b  ", expect(&["/a", "/b"]));
+        assert_eq!(parse(input), expected);
+    }
+
+    /// An empty segment is not a path. `list_by_os_path_separator` and `env::split_colon_list`
+    /// both drop them; writing one into the config would only be dropped again on read.
+    #[test]
+    fn empty_segments_are_dropped() {
+        #[cfg(windows)]
+        let (input, expected) = (r";C:\a;;C:\b;", expect(&[r"C:\a", r"C:\b"]));
+        #[cfg(not(windows))]
+        let (input, expected) = (":/a::/b:", expect(&["/a", "/b"]));
+        assert_eq!(parse(input), expected);
+    }
+}

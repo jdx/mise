@@ -103,10 +103,33 @@ For more information, see:
 - [Plugin Development](../../tool-plugin-development.md) - Developer guide
 - [Plugin Template](https://github.com/jdx/mise-tool-plugin-template) - Quick start template for creating plugins
 
+## URL replacements
+
+The vfox backend honors mise's [`url_replacements`](/url-replacements.html) setting for both
+tool artifact downloads and requests made through the plugin's built-in Lua HTTP module. This
+includes `http.get`, `http.head`, `http.download_file`, and their `try_*` variants.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these
 go in `[tools]` in `mise.toml`.
+
+Traditional vfox lifecycle hooks for a selected tool version can read custom options from their
+hook environment. Option names are uppercased and exposed with both the current and legacy-compatible
+prefixes:
+
+```toml
+[tools]
+"vfox:example/plugin" = { version = "1.0.0", extensions = "opentelemetry,swoole" }
+```
+
+```lua
+local extensions = os.getenv("MISE_TOOL_OPTS__EXTENSIONS")
+-- RTX_TOOL_OPTS__EXTENSIONS contains the same value for legacy compatibility.
+```
+
+These variables are available only while mise runs the plugin hook and are not exported to the
+user's shell. Backend plugins should use the structured `ctx.options` value instead.
 
 ### `install_env`
 

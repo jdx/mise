@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export MISE_RUSTUP_HOME="$PWD/rustup"
+export MISE_CARGO_HOME="$PWD/cargo"
+
+SERVER_ROOT="$PWD/server"
+PORT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mise-rustup-init.XXXXXX")
+PORT_FILE="$PORT_DIR/port"
+mkdir -p "$SERVER_ROOT"
+
+cat >"$SERVER_ROOT/rustup-init" <<'INIT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p "$RUSTUP_HOME" "$CARGO_HOME/bin"
+echo init >>"$RUSTUP_HOME/init.log"
+# Widen the race so a second mise process would also try to initialize rustup.
+sleep 1
+
+cat >"$CARGO_HOME/bin/rustup" <<'RUSTUP'
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-} ${2:-}" in
+	"toolchain install")
+		version="$3"
+		if ! mkdir "$RUSTUP_HOME/install-in-progress" 2>/dev/null; then
+			echo "concurrent rustup toolchain install" >&2
+			exit 88
+		fi
+		trap 'rmdir "$RUSTUP_HOME/install-in-progress"' EXIT
+		echo "$version" >>"$RUSTUP_HOME/toolchain-installs.log"
+		sleep 1
+		mkdir -p "$RUSTUP_HOME/toolchains/$version"
+		;;
+	"component list" | "target list")
+		;;
+	*)
+		echo "unexpected rustup args: $*" >&2
+		exit 1
+		;;
+esac
+RUSTUP
+
+cat >"$CARGO_HOME/bin/rustc" <<'RUSTC'
+#!/usr/bin/env bash
+set -euo pipefail
+
+test -d "$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN"
+echo "rustc $RUSTUP_TOOLCHAIN"
+RUSTC
+
+cat >"$CARGO_HOME/bin/cargo" <<'CARGO'
+#!/usr/bin/env bash
+echo cargo
+CARGO
+
+chmod +x "$CARGO_HOME/bin/rustup" "$CARGO_HOME/bin/rustc" "$CARGO_HOME/bin/cargo"
+touch "$RUSTUP_HOME/settings.toml"
+INIT
+
+python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
+import http.server
+import os
+import socketserver
+import sys
+
+root, port_file = sys.argv[1:]
+os.chdir(root)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as file:
+        file.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -rf "$PORT_DIR"
+}
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "rustup-init HTTP server port" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { 'regex:^https://sh\.rustup\.rs/?$' = "http://127.0.0.1:$SERVER_PORT/rustup-init" }
+EOF
+
+mise install rust@1.80.0 >install-1.log 2>&1 &
+PID_1=$!
+mise install rust@1.81.0 >install-2.log 2>&1 &
+PID_2=$!
+
+STATUS_1=0
+STATUS_2=0
+wait "$PID_1" || STATUS_1=$?
+wait "$PID_2" || STATUS_2=$?
+if [[ $STATUS_1 -ne 0 || $STATUS_2 -ne 0 ]]; then
+  cat install-1.log install-2.log
+  fail "parallel Rust installs failed: $STATUS_1, $STATUS_2"
+fi
+
+assert_contains "wc -l <'$MISE_RUSTUP_HOME/init.log'" "1"
+assert_contains "sort '$MISE_RUSTUP_HOME/toolchain-installs.log'" "1.80.0"
+assert_contains "sort '$MISE_RUSTUP_HOME/toolchain-installs.log'" "1.81.0"
+assert "test -L '$MISE_DATA_DIR/installs/rust/1.80.0'"
+assert "test -L '$MISE_DATA_DIR/installs/rust/1.81.0'"
+assert_contains "mise x rust@1.80.0 -- rustc -V" "rustc 1.80.0"
+assert_contains "mise x rust@1.81.0 -- rustc -V" "rustc 1.81.0"
+assert "test ! -e '$MISE_RUSTUP_HOME/install-in-progress'"
+assert_not_contains "cat install-1.log install-2.log" "Permission denied"

@@ -9,3 +9,4 @@ idiomatic_files = [
   { path = "goreleaser.yml", version_regex = '''(?m)^\s*version\s*:\s*["']?v?([0-9]+)''' },
   { path = "goreleaser.yaml", version_regex = '''(?m)^\s*version\s*:\s*["']?v?([0-9]+)''' },
 ]
+version_order = "semver"

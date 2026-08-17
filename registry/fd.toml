@@ -6,3 +6,4 @@ backends = [
 bins = ["fd"]
 description = "A simple, fast and user-friendly alternative to 'find'"
 test = { cmd = "fd --version", expected = "fd {{version}}" }
+version_order = "semver"

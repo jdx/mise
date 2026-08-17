@@ -1,4 +1,5 @@
 description = "tsuru-client is a tsuru command line tool for application developers"
+version_order = "semver"
 # test = { cmd = "tsuru version --help", expected = "display the current version" }
 
 bins = ["tsuru"]

@@ -4,7 +4,7 @@ use jiff::Timestamp;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::install_before::resolve_cli_minimum_release_age;
-use crate::toolset::ToolRequest;
+use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 /// Gets the latest available version for a plugin
@@ -50,9 +50,12 @@ impl Latest {
             installed,
             minimum_release_age: _,
         } = self;
-        let mut prefix = match &tool.tvr {
+        let prefix = match &tool.tvr {
             None => asdf_version,
             Some(ToolRequest::Version { version, .. }) => Some(version.clone()),
+            // `sub-N:<base>` resolves its base against the backend, so it is handled
+            // below once the backend (and its plugin) is ready.
+            Some(ToolRequest::Sub { .. }) => None,
             _ => bail!("invalid version: {}", tool.style()),
         };
 
@@ -62,9 +65,17 @@ impl Latest {
             plugin.ensure_installed(&config, &mpr, false, false).await?;
             backend = tool.ba.backend()?;
         }
-        if let Some(v) = prefix {
-            prefix = Some(config.resolve_alias(&backend, &v).await?);
-        }
+        let prefix = match &tool.tvr {
+            Some(ToolRequest::Sub {
+                sub, orig_version, ..
+            }) => Some(
+                resolve_sub_base(&config, &backend, sub, orig_version, before_date, false).await?,
+            ),
+            _ => match prefix {
+                Some(v) => Some(config.resolve_alias(&backend, &v).await?),
+                None => None,
+            },
+        };
 
         let latest_version = if installed {
             backend.latest_installed_version(prefix)?

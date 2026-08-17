@@ -35,7 +35,12 @@ impl ToolVersionList {
             // explicitly specify "latest". This ensures `mise x node@20 npm@latest` only
             // fetches latest for npm, not node.
             // However, we always respect the caller's use_locked_version setting.
-            let request_opts = if tvr.version() == "latest" {
+            let request_opts = if tvr.version() == "latest"
+                || tvr
+                    .ba()
+                    .backend()
+                    .is_ok_and(|backend| backend.is_rolling_channel(&tvr.version()))
+            {
                 opts.clone()
             } else {
                 ResolveOptions {
@@ -57,6 +62,16 @@ impl ToolVersionList {
             }
         }
         Ok(())
+    }
+
+    pub fn os_supported_versions(&self) -> impl Iterator<Item = &ToolVersion> {
+        self.versions
+            .iter()
+            .filter(|tv| tv.request.is_os_supported())
+    }
+
+    pub fn os_supported_requests(&self) -> impl Iterator<Item = &ToolRequest> {
+        self.requests.iter().filter(|tvr| tvr.is_os_supported())
     }
 }
 

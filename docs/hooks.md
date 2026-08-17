@@ -34,6 +34,8 @@ leave = "echo 'I left the project'"
 ## Preinstall/postinstall hook
 
 These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
+They run with the project root as their working directory, even when `mise install` is invoked from
+a subdirectory. The invocation directory remains available in `MISE_ORIGINAL_CWD`.
 
 ```toml
 [hooks]
@@ -112,6 +114,11 @@ enter = ["echo 'entering project'", { task = "setup" }]
 
 Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
 
+Task references used as `preinstall` hooks do not automatically install missing project- or
+task-level tools. This keeps the hook ahead of the installation it is preparing. Commands needed
+by a preinstall task must already be available from the system or an existing installation. Other
+task-backed hook types retain normal task tool installation behavior.
+
 ## Watch files hook
 
 While using `mise activate` you can have mise watch files for changes and execute a script or task when a file changes.
@@ -154,8 +161,13 @@ Hooks are executed with the following environment variables set:
 
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
 - `MISE_PROJECT_ROOT`: The root directory of the project.
+- `MISE_CONFIG_ROOT`: The root directory of the config that defines the hook.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
 - `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
+
+Global hooks use the active project's root for `MISE_PROJECT_ROOT` and the global config root for
+`MISE_CONFIG_ROOT`. For global-only operations such as `mise use --global`, both variables use the
+global config root and project hooks do not run.
 
 Inline `run` hooks can be written as `{ run = "..." }` for any hook type. The string shorthand
 (`enter = "echo hi"`) is equivalent to `{ run = "echo hi" }`.

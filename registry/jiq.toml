@@ -1,3 +1,4 @@
 backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
 bins = ["jiq"]
 description = "jid on jq - interactive JSON query tool using jq expressions"
+version_order = "semver"

@@ -22,6 +22,7 @@ pub struct Update {
     plugin: Option<Vec<String>>,
 
     /// Number of jobs to run in parallel
+    /// Values below 1 are treated as 1
     /// Default: 4
     #[clap(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
@@ -46,7 +47,8 @@ impl Update {
         let settings = Settings::try_get()?;
         let mut jset: JoinSet<PluginTaskResult> = JoinSet::new();
         let mut task_names = PluginTaskNames::new();
-        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(settings.jobs)));
+        let jobs = crate::jobs::resolve(settings.jobs, self.jobs);
+        let semaphore = Arc::new(Semaphore::new(jobs));
         for (short, ref_) in plugins {
             let semaphore = semaphore.clone();
             let plugin_name = short.clone();

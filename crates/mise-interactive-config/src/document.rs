@@ -409,8 +409,18 @@ impl TomlDocument {
         }
     }
 
-    /// Save the document to a file
+    /// Save the document to a file, creating its directory if it is not there yet.
+    ///
+    /// The editor is routinely pointed at a config that does not exist yet, and its directory
+    /// may not either — `mise generate config --global` on a fresh install is exactly that
+    /// case. Without this the save fails after the whole session's worth of edits, which is
+    /// the worst possible moment to find out.
+    ///
+    /// A bare relative name gives an empty parent, which `create_dir_all` treats as a no-op.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         std::fs::write(path, self.to_toml())
     }
 
@@ -729,5 +739,40 @@ node = "22"
             "Output should not contain quoted key: {}",
             output
         );
+    }
+
+    #[test]
+    fn test_save_creates_missing_directories() {
+        // `mise generate config --global` on a fresh install points here at
+        // ~/.config/mise/config.toml, and neither the file nor its directory exists yet.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise").join("config.toml");
+        assert!(!path.parent().unwrap().exists());
+
+        TomlDocument::new().save(&path).unwrap();
+
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn test_save_still_writes_into_an_existing_directory() {
+        // Control for the case above: without it, that test would also pass if `save` had
+        // started creating a directory *at* `path` and writing nothing.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        TomlDocument::new().save(&path).unwrap();
+
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn test_a_bare_relative_name_has_an_empty_parent_that_is_safe_to_create() {
+        // What `save` relies on for `mise edit foo.toml`, pinned here rather than assumed:
+        // the parent is the empty path, and creating that is a no-op rather than an error.
+        // Asserted without touching the process's current directory, which the test harness
+        // shares across threads.
+        assert_eq!(Path::new("foo.toml").parent(), Some(Path::new("")));
+        std::fs::create_dir_all(Path::new("")).unwrap();
     }
 }

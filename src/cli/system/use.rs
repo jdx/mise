@@ -136,7 +136,8 @@ impl SystemUse {
         }
         let opts = DriverOpts {
             manager: None,
-            explicit: false,
+            explicit: true,
+            allow_unavailable_manager: true,
             dry_run: self.dry_run,
             update: false,
             yes: self.yes,

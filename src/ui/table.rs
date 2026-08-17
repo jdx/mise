@@ -50,7 +50,8 @@ impl MiseTable {
     pub fn new(no_header: bool, headers: &[&str]) -> Self {
         let mut table = comfy_table::Table::new();
         table
-            .load_preset(comfy_table::presets::NOTHING)
+            .load_style(comfy_table::presets::NOTHING)
+            .set_truncation_indicator("...")
             .set_content_arrangement(ContentArrangement::Dynamic);
         // Pin the width when the user overrides it (e.g. MISE_TERM_WIDTH in CI).
         // comfy_table does its own terminal detection, which fails in non-ttys,
@@ -58,7 +59,9 @@ impl MiseTable {
         if let Some(w) = *crate::env::TERM_WIDTH_OVERRIDE {
             table.set_width(w.min(u16::MAX as usize) as u16);
         }
-        if !console::colors_enabled() {
+        if console::colors_enabled() {
+            table.enforce_styling();
+        } else {
             table.force_no_tty();
         }
         if !no_header && console::user_attended() {

@@ -8,7 +8,9 @@ use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
 use mise_cache_core::{
-    BlobSource, BlobUpload, CLIENT_METADATA_MEDIA_TYPE, CacheDigest, DIRECTORY_MEDIA_TYPE,
+    BlobSource, BlobUpload, CLIENT_METADATA_MEDIA_TYPE, CacheDigest,
+    CacheDirectory as RemoteDirectory, CacheDirectoryNode as RemoteDirectoryNode,
+    CacheFileNode as RemoteFileNode, CacheSymlinkNode as RemoteSymlinkNode, DIRECTORY_MEDIA_TYPE,
     RemoteActionResult, RemoteCacheClient, RemoteCacheConfig,
 };
 use serde::{Deserialize, Serialize};
@@ -74,36 +76,6 @@ impl RemoteClientMetadata {
             execution_duration_ns: self.execution_duration_ns,
         })
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteDirectory {
-    directories: Vec<RemoteDirectoryNode>,
-    files: Vec<RemoteFileNode>,
-    symlinks: Vec<RemoteSymlinkNode>,
-    version: u8,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteDirectoryNode {
-    digest: CacheDigest,
-    mode: u32,
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteFileNode {
-    digest: CacheDigest,
-    executable: bool,
-    mode: u32,
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RemoteSymlinkNode {
-    mode: u32,
-    name: String,
-    target: String,
 }
 
 enum ArchiveNode {
@@ -597,7 +569,7 @@ fn archive_to_cas(path: &Path, staging_dir: &Path) -> Result<(CacheDigest, Vec<B
         let mut entry = entry?;
         let entry_path = entry.path()?.into_owned();
         validate_cache_path(&entry_path)?;
-        let mode = entry.header().mode();
+        let mode = entry.header().mode() & 0o7777;
         let entry_type = entry.entry_type();
         let node = if entry_type == EntryType::Directory {
             ArchiveNode::Directory { mode }
@@ -1166,13 +1138,13 @@ mod tests {
         let encoder = zstd::Encoder::new(File::create(&archive_path).unwrap(), 0).unwrap();
         let mut archive = Builder::new(encoder);
         let mut directory_header = Header::new_gnu(EntryType::Directory);
-        directory_header.set_mode(0o755);
+        directory_header.set_mode(0o040755);
         directory_header.set_size(0);
         archive
             .append_data(&mut directory_header, "dist", std::io::empty())
             .unwrap();
         let mut file_header = Header::new_gnu(EntryType::File);
-        file_header.set_mode(0o755);
+        file_header.set_mode(0o100755);
         file_header.set_size(5);
         archive
             .append_data(&mut file_header, "dist/app", b"hello".as_slice())
@@ -1185,20 +1157,25 @@ mod tests {
             .find_map(|upload| {
                 (upload.digest == root).then(|| match &upload.source {
                     BlobSource::Bytes(bytes) => bytes.as_slice(),
-                    BlobSource::File(_) => panic!("directory object must be in memory"),
+                    BlobSource::File(_) | BlobSource::Path(_) => {
+                        panic!("directory object must be in memory")
+                    }
                 })
             })
             .unwrap();
         let root_directory: RemoteDirectory = serde_json::from_slice(root_bytes).unwrap();
         assert_eq!(root_directory.directories.len(), 1);
         assert_eq!(root_directory.directories[0].name, "dist");
+        assert_eq!(root_directory.directories[0].mode, 0o755);
         let dist_digest = &root_directory.directories[0].digest;
         let dist_bytes = uploads
             .iter()
             .find_map(|upload| {
                 (&upload.digest == dist_digest).then(|| match &upload.source {
                     BlobSource::Bytes(bytes) => bytes.as_slice(),
-                    BlobSource::File(_) => panic!("directory object must be in memory"),
+                    BlobSource::File(_) | BlobSource::Path(_) => {
+                        panic!("directory object must be in memory")
+                    }
                 })
             })
             .unwrap();
@@ -1206,6 +1183,7 @@ mod tests {
         assert_eq!(dist.files.len(), 1);
         assert_eq!(dist.files[0].name, "app");
         assert_eq!(dist.files[0].digest, CacheDigest::blake3(b"hello"));
+        assert_eq!(dist.files[0].mode, 0o755);
         assert!(dist.files[0].executable);
     }
 

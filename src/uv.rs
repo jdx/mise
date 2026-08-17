@@ -5,6 +5,7 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::toolset::Toolset;
 use crate::{dirs, env, file};
+use eyre::Result;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::{collections::HashMap, sync::Arc};
@@ -15,15 +16,17 @@ use tokio::sync::OnceCell;
 static UV_VENV: Lazy<OnceCell<Option<Venv>>> = Lazy::new(Default::default);
 const UV_PROJECT_ENVIRONMENT: &str = "UV_PROJECT_ENVIRONMENT";
 
-pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv> {
+pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'static Option<Venv>> {
     UV_VENV
-        .get_or_init(async || {
+        .get_or_try_init(async || {
             let settings = Settings::get();
             let uv_auto = settings.python.uv_venv_auto;
             if !uv_auto.should_source() {
-                return None;
+                return Ok(None);
             }
-            let uv_root = uv_root()?;
+            let Some(uv_root) = uv_root() else {
+                return Ok(None);
+            };
             let venv_path = uv_venv_path(config, &uv_root);
             if !venv_path.exists() {
                 if uv_auto.should_create() {
@@ -39,18 +42,18 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
                     )
                     .await
                     {
-                        Ok(true) => {}            // venv created successfully, fall through to load it
-                        Ok(false) => return None, // uv not available, venv not created
+                        Ok(true) => {}                // venv created successfully, fall through to load it
+                        Ok(false) => return Ok(None), // uv not available, venv not created
                         Err(err) => {
                             warn_once!(
                                 "uv venv creation failed at: {p}\n\n{err}",
                                 p = display_path(&venv_path)
                             );
-                            return None;
+                            return Ok(None);
                         }
                     }
                 } else {
-                    if !deps_uv_enabled(config, &uv_root) {
+                    if !deps_uv_enabled(config, &uv_root)? {
                         warn_once!(
                             "uv venv not found at: {p}\n\n\
                             To create it, run a `uv` command like `uv sync` or `uv venv`. \
@@ -58,7 +61,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
                             p = display_path(&venv_path)
                         );
                     }
-                    return None;
+                    return Ok(None);
                 }
             }
 
@@ -70,7 +73,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
             {
                 extra_env.insert("UV_PYTHON".to_string(), tv.version.to_string());
             }
-            Some(load_venv(&venv_path, extra_env))
+            Ok(Some(load_venv(&venv_path, extra_env)))
         })
         .await
 }
@@ -111,14 +114,19 @@ fn resolve_uv_venv_path(uv_root: &Path, project_environment: Option<&str>) -> Pa
     }
 }
 
-fn deps_uv_enabled(config: &Config, uv_root: &Path) -> bool {
-    config.config_files.values().any(|cf| {
+fn deps_uv_enabled(config: &Config, uv_root: &Path) -> Result<bool> {
+    for cf in config.config_files.values() {
         if cf.config_root() != uv_root {
-            return false;
+            continue;
         }
-        cf.deps_config()
+        if cf
+            .deps_config()?
             .is_some_and(|deps| deps.providers.contains_key("uv"))
-    })
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]

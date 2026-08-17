@@ -2,3 +2,4 @@ backends = ["github:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
 bins = ["hivemind"]
 description = "Process manager for Procfile-based applications"
 test = { cmd = "hivemind --version", expected = "Hivemind version {{version}}" }
+version_order = "source"

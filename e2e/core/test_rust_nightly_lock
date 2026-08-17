@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export MISE_LOCKFILE=1
+export MISE_CARGO_HOME="$PWD/cargo"
+export MISE_RUSTUP_HOME="$PWD/rustup"
+
+SERVER_ROOT="$PWD/server"
+PORT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mise-rust-nightly.XXXXXX")
+PORT_FILE="$PORT_DIR/port"
+MANIFEST="$SERVER_ROOT/dist/channel-rust-nightly.toml"
+mkdir -p "$SERVER_ROOT/dist" "$SERVER_ROOT/repos/rust-lang/rust" "$MISE_CARGO_HOME/bin" "$MISE_RUSTUP_HOME"
+touch "$MISE_RUSTUP_HOME/settings.toml"
+printf '[]\n' >"$SERVER_ROOT/repos/rust-lang/rust/releases"
+
+write_manifest() {
+  cat >"$MANIFEST" <<EOF
+manifest-version = "2"
+date = "$1"
+EOF
+}
+
+write_manifest 2026-08-12
+
+cat >"$MISE_CARGO_HOME/bin/rustup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "$*" >>"$CARGO_HOME/rustup.log"
+case "${1:-} ${2:-}" in
+	"toolchain install")
+		mkdir -p "$RUSTUP_HOME/toolchains/$3"
+		;;
+	"toolchain uninstall")
+		;;
+	"component list" | "target list")
+		;;
+	*)
+		echo "unexpected rustup args: $*" >&2
+		exit 1
+		;;
+esac
+EOF
+
+cat >"$MISE_CARGO_HOME/bin/rustc" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+test -d "$RUSTUP_HOME/toolchains/$RUSTUP_TOOLCHAIN"
+echo "rustc $RUSTUP_TOOLCHAIN"
+EOF
+
+cat >"$MISE_CARGO_HOME/bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo cargo
+EOF
+
+chmod +x "$MISE_CARGO_HOME/bin/rustup" "$MISE_CARGO_HOME/bin/rustc" "$MISE_CARGO_HOME/bin/cargo"
+
+python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' &
+import http.server
+import os
+import socketserver
+import sys
+
+root, port_file = sys.argv[1:]
+os.chdir(root)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as file:
+        file.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  rm -rf "$PORT_DIR"
+}
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "Rust nightly manifest HTTP server port" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+rust = "dev"
+
+[tool_alias.rust.versions]
+dev = "nightly"
+EOF
+
+# A legacy literal-nightly install is not a reproducible fallback for offline use,
+# including when the rolling channel is reached through an alias.
+mkdir -p "$MISE_DATA_DIR/installs/rust"
+ln -s "$MISE_CARGO_HOME/bin" "$MISE_DATA_DIR/installs/rust/nightly"
+assert_fail_contains "MISE_OFFLINE=1 mise exec -- rustc -V 2>&1" "cannot resolve rolling channel rust@nightly while offline"
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+rust = "nightly"
+
+[tool_alias.rust.versions]
+dev = "nightly"
+EOF
+
+# Locking resolves the rolling channel without installing it or changing config.
+mise lock
+assert_contains "cat mise.lock" 'version = "nightly-2026-08-12"'
+assert_not_contains "cat mise.lock" 'version = "nightly"'
+assert "test ! -e '$MISE_CARGO_HOME/rustup.log'"
+assert_contains "cat mise.toml" 'rust = "nightly"'
+
+# Explicit tool filtering follows the same concrete-resolution path.
+rm mise.lock
+mise lock rust@nightly
+assert_contains "cat mise.lock" 'version = "nightly-2026-08-12"'
+assert_not_contains "cat mise.lock" 'version = "nightly"'
+
+# Explicit aliases are resolved before rolling-channel detection.
+rm mise.lock
+mise lock rust@dev
+assert_contains "cat mise.lock" 'version = "nightly-2026-08-12"'
+assert_not_contains "cat mise.lock" 'version = "dev"'
+
+mise install
+assert_contains "cat '$MISE_CARGO_HOME/rustup.log'" "toolchain install nightly-2026-08-12"
+assert "MISE_OFFLINE=1 mise exec -- rustc -V" "rustc nightly-2026-08-12"
+
+# Advancing the manifest makes the channel outdated and upgrade updates the lock,
+# while the configured selector remains rolling.
+write_manifest 2026-08-13
+assert_contains "mise outdated rust" "nightly-2026-08-13"
+mise upgrade rust --no-prune
+assert_contains "cat mise.lock" 'version = "nightly-2026-08-13"'
+assert_contains "cat mise.toml" 'rust = "nightly"'
+assert_contains "cat '$MISE_CARGO_HOME/rustup.log'" "toolchain install nightly-2026-08-13"
+
+# An explicit dated nightly remains pinned unless --bump is requested.
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+rust = "nightly-2026-08-12"
+EOF
+write_manifest 2026-08-14
+assert_not_contains "mise outdated rust" "nightly-2026-08-14"
+assert_contains "mise outdated --bump rust" "nightly-2026-08-14"
+mise upgrade --bump rust --no-prune
+assert_contains "cat mise.toml" 'rust = "nightly-2026-08-14"'
+assert_contains "cat '$MISE_CARGO_HOME/rustup.log'" "toolchain install nightly-2026-08-14"
+
+# A malformed manifest must not replace a valid existing lock entry.
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+url_replacements = { "https://static.rust-lang.org" = "http://127.0.0.1:$SERVER_PORT", "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+rust = "nightly"
+EOF
+cp mise.lock mise.lock.before
+printf 'manifest-version = "2"\ndate = "invalid"\n' >"$MANIFEST"
+assert_fail_contains "mise lock --bump 2>&1" "invalid Rust nightly channel manifest date"
+assert "cmp mise.lock.before mise.lock"
+
+# A broken nightly manifest does not prevent listing stable Rust releases.
+mise cache clear rust
+assert_contains "mise ls-remote --no-versions-host rust" "stable"
+
+write_manifest 2026-08-14
+mise cache clear rust
+assert_contains "mise ls-remote --no-versions-host rust" "nightly-2026-08-14"

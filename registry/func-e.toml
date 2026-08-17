@@ -2,3 +2,4 @@ backends = ["github:tetratelabs/func-e", "asdf:mise-plugins/mise-func-e"]
 bins = ["func-e"]
 description = "func-e (pronounced funky) makes running Envoy® easy"
 test = { cmd = "func-e --version", expected = "func-e version {{version}}" }
+version_order = "semver"

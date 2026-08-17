@@ -318,14 +318,18 @@ fn extract_settings_keys(
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
 
-            // Check if this is a nested object with properties (like aqua, cargo, etc.)
+            // Check if this is a nested object with properties (like aqua, cargo, etc.).
+            //
+            // The presence of `properties` is what separates the two shapes the schema emits
+            // for `type: "object"`: a group of nested settings has them, while a map-valued
+            // setting such as `url_replacements` instead carries an object-valued
+            // `additionalProperties` and no `properties`. Do not key this on how the object is
+            // closed -- the schema has used `additionalProperties: false` and
+            // `unevaluatedProperties: false` at different times, and matching on one of them
+            // silently drops every nested setting.
             let is_nested_object = prop_value.get("type").and_then(|t| t.as_str())
                 == Some("object")
-                && prop_value.get("properties").is_some()
-                && prop_value
-                    .get("additionalProperties")
-                    .and_then(|a| a.as_bool())
-                    == Some(false);
+                && prop_value.get("properties").is_some();
 
             if is_nested_object {
                 // Recurse into nested settings

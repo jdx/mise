@@ -197,7 +197,7 @@ impl TaskScriptParser {
                     }
 
                     let expanded_patterns =
-                        crate::task::task_source_checker::expand_glob_braces(pattern);
+                        crate::task::task_source_checker::expand_enumeration_patterns(pattern);
                     match expanded_patterns {
                         Err(error) => {
                             warn!(
@@ -560,6 +560,33 @@ impl TaskScriptParser {
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
+        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, false)
+            .await
+    }
+
+    pub async fn parse_run_scripts_for_preflight(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        scripts: &[String],
+    ) -> Result<usage::Spec> {
+        self.parse_run_scripts_for_spec_only_inner(config, task, scripts, true)
+            .await
+    }
+
+    pub(crate) fn validate_template_syntax(&self, task: &Task, input: &str) -> Result<()> {
+        let (mut tera, _, _, _) = self.setup_tera_for_spec_parsing(task);
+        tera.validate_template_syntax("__mise_validate", input)
+            .map_err(Self::task_script_tera_error)
+    }
+
+    async fn parse_run_scripts_for_spec_only_inner(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        scripts: &[String],
+        preflight: bool,
+    ) -> Result<usage::Spec> {
         let usage_has_template = contains_template_syntax(&task.usage);
         let scripts_have_template = scripts
             .iter()
@@ -571,7 +598,11 @@ impl TaskScriptParser {
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let mut tera_ctx = task.tera_ctx_for_usage(config).await?;
+        let mut tera_ctx = if preflight {
+            task.tera_ctx_for_usage_preflight(config)
+        } else {
+            task.tera_ctx_for_usage(config).await?
+        };
         // First render the usage field to collect the spec
         let rendered_usage = if usage_has_template {
             Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?
@@ -811,25 +842,29 @@ impl TaskScriptParser {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         // These values are not escaped or shell-quoted.
-        let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
-            use tera::Value;
-            use usage::parse::ParseValue::*;
-            match val {
-                MultiBool(v) => Value::from(v.len()),
-                MultiString(v) => Value::from(v.to_vec()),
-                Bool(v) => Value::from(*v),
-                String(v) => Value::from(v.clone()),
-            }
-        };
+        let to_tera_value =
+            |val: &usage::parse::ParseValue, variadic_string: bool| -> tera::Value {
+                use tera::Value;
+                use usage::parse::ParseValue::*;
+                match val {
+                    MultiBool(v) => Value::from(v.len()),
+                    MultiString(v) => Value::from(v.to_vec()),
+                    Bool(v) => Value::from(*v),
+                    // usage-lib returns env-backed variadic values as String. Keep the
+                    // structured usage map consistent with CLI and default values.
+                    String(v) if variadic_string => Value::from(vec![v.clone()]),
+                    String(v) => Value::from(v.clone()),
+                }
+            };
 
         // The names are converted to snake_case (hyphens become underscores).
         // For example, a flag like "--dry-run" becomes accessible as {{ usage.dry_run }}.
         for (arg, val) in &usage.args {
-            let tera_val = to_tera_value(val);
+            let tera_val = to_tera_value(val, arg.var);
             usage_ctx.insert(arg.name.to_snake_case(), tera_val);
         }
         for (flag, val) in &usage.flags {
-            let tera_val = to_tera_value(val);
+            let tera_val = to_tera_value(val, flag.var && flag.arg.is_some());
             usage_ctx.insert(flag.name.to_snake_case(), tera_val);
         }
 
@@ -958,7 +993,7 @@ mod tests {
 
     impl TeraV1Guard {
         fn new() -> Self {
-            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
             Settings::override_with(|settings| settings.tera_v1 = Some(true));
             Self { _lock: lock }
         }
@@ -1271,38 +1306,49 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_parse_task_source_files() {
-        let cases: &[(&[&str], &str, &str)] = &[
-            (&[], "echo {{ task_source_files() }}", "echo []"),
+        // A source that reaches the filesystem comes back with the platform separator, so its
+        // expectation has to follow. A source containing template syntax never reaches the
+        // filesystem -- it is passed through verbatim, keeping whatever the user wrote -- so
+        // `native` must not be applied to it, or the expectation rewrites a template instead
+        // of a path.
+        fn native(expected: &str) -> String {
+            match cfg!(windows) {
+                true => expected.replace('/', "\\"),
+                false => expected.to_string(),
+            }
+        }
+
+        let cases: Vec<(&[&str], &str, String)> = vec![
+            (&[], "echo {{ task_source_files() }}", native("echo []")),
             (
                 &["**/filetask"],
                 "echo {{ task_source_files() | first }}",
-                "echo .mise/tasks/filetask", // created by constructor in `src/test.rs`, guaranteed to exist
+                native("echo .mise/tasks/filetask"), // created by constructor in `src/test.rs`, guaranteed to exist
             ),
             (
                 &["nonexistent/*.xyz"],
                 "echo {{ task_source_files() }}",
-                "echo []",
+                native("echo []"),
             ),
             (
                 &["../../Cargo.toml"],
                 "echo {{ task_source_files() | first }}",
-                "echo ../../Cargo.toml",
+                native("echo ../../Cargo.toml"),
             ),
             (
                 &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],
                 "echo {{ task_source_files() | first }}",
-                concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                native(concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")),
             ),
-            #[cfg(not(windows))] // TODO: this cases panics on windows currently
             (
                 &["{{ env.HOME }}/file.txt", "src/*.rs"],
                 "echo {{ task_source_files() | first }}",
-                "echo {{ env.HOME }}/file.txt",
+                "echo {{ env.HOME }}/file.txt".to_string(),
             ),
             (
                 &["[invalid"],
                 "echo {{ task_source_files() | first }}",
-                "echo [invalid",
+                native("echo [invalid"),
             ),
             (
                 &[
@@ -1310,24 +1356,24 @@ mod tests {
                     concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"),
                 ],
                 "{% for file in task_source_files() %}echo {{ file }}; {% endfor %}",
-                concat!(
+                native(concat!(
                     "echo ",
                     env!("CARGO_MANIFEST_DIR"),
                     "/Cargo.toml; echo ",
                     env!("CARGO_MANIFEST_DIR"),
                     "/README.md; ",
-                ),
+                )),
             ),
             // `!` excludes a previously matched file
             (
                 &["**/filetask", "!**/filetask"],
                 "echo {{ task_source_files() }}",
-                "echo []",
+                native("echo []"),
             ),
         ];
 
-        for (sources, template, expected) in cases {
-            let (sources, template, expected) = (*sources, *template, *expected);
+        for (sources, template, expected) in &cases {
+            let (sources, template) = (*sources, *template);
 
             let (mut task, scripts, parser, config) = (
                 Task::default(),
@@ -1343,10 +1389,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            #[cfg(windows)]
-            let expected = expected.replace("/", r"\"); // 🙄
-
-            assert_eq!(parsed, vec![expected]);
+            assert_eq!(parsed, vec![expected.clone()]);
         }
     }
 
@@ -1692,6 +1735,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_usage_variadic_arg_env() {
+        let env = EnvMap::from_iter(vec![("NODENAMES".to_string(), "foo bar baz".to_string())]);
+        let usage = r#"arg "<nodenames>" var=#true env="NODENAMES""#;
+        let template = "echo {{ usage.nodenames | length }}:{{ usage.nodenames | join(sep='::') }}";
+
+        assert_eq!(
+            render_usage_with_env(usage, template, &[], &env).await,
+            "echo 1:foo bar baz"
+        );
+        assert_eq!(
+            render_usage_with_env(usage, template, &["one", "two"], &env).await,
+            "echo 2:one::two"
+        );
+
+        let spec: usage::Spec = usage.parse().unwrap();
+        let env_map = HashMap::from_iter(env);
+        let parsed = usage::Parser::new(&spec)
+            .with_env(env_map)
+            .parse(&[String::new()])
+            .unwrap();
+        let usage_ctx = TaskScriptParser::make_usage_ctx(&parsed);
+        assert_eq!(
+            usage_ctx["nodenames"].as_array().unwrap()[0],
+            tera::Value::from("foo bar baz")
+        );
+    }
+
+    #[tokio::test]
     async fn test_usage_flag_renders() {
         // Short + long with value
         assert_eq!(
@@ -1780,6 +1851,21 @@ mod tests {
             )
             .await,
             "echo true"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_variadic_flag_env() {
+        let env = EnvMap::from_iter(vec![("TAGS".to_string(), "foo bar".to_string())]);
+        assert_eq!(
+            render_usage_with_env(
+                r#"flag "--tag <tag>" var=#true env="TAGS""#,
+                "echo {{ usage.tag | length }}:{{ usage.tag | join(sep='::') }}",
+                &[],
+                &env,
+            )
+            .await,
+            "echo 1:foo bar"
         );
     }
 

@@ -2,6 +2,7 @@ description = "Jules, the asynchronous coding agent from Google, in the terminal
 test = { cmd = "jules version", expected = "Version: v{{version}}", tools = [
   "aube",
 ] }
+version_order = "semver"
 
 bins = ["jules"]
 [[backends]]

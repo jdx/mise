@@ -1,3 +1,4 @@
 backends = ["aqua:snyk/driftctl", "asdf:nlamirault/asdf-driftctl"]
 bins = ["driftctl"]
 description = "Detect, track and alert on infrastructure drift"
+version_order = "semver"

@@ -45,6 +45,14 @@ assert_fail "mise link --force tiny@3.1.0 \"$MISE_DATA_DIR/installs/tiny/3.1.0\"
 assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.1.0"
 assert "test -f \"$MISE_CACHE_DIR/tiny/3.1.0/incomplete\""
 
+# A filesystem alias to the managed install is still the install itself.
+# In particular, --force must not remove the directory before replacing it
+# with a link back through the alias.
+touch "$MISE_DATA_DIR/installs/tiny/3.1.0/sentinel"
+ln -s "$MISE_DATA_DIR/installs/tiny/3.1.0" tmp/tiny-managed-alias
+assert_fail "mise link --force tiny@3.1.0 tmp/tiny-managed-alias"
+assert "test -f \"$MISE_DATA_DIR/installs/tiny/3.1.0/sentinel\""
+
 # Request-style versions use their normalized install pathname for both the
 # symlink and incomplete marker.
 mkdir -p tmp/tiny-ref

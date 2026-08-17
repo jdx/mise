@@ -1,3 +1,4 @@
 backends = ["aqua:jesseduffield/lazygit", "asdf:nklmilojevic/asdf-lazygit"]
 bins = ["lazygit"]
 description = "simple terminal UI for git commands"
+version_order = "source"

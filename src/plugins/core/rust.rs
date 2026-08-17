@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
 use crate::backend::VersionInfo;
@@ -8,19 +9,54 @@ use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::{CmdLineRunner, cmd};
 use crate::config::{Config, Settings};
-use crate::http::HTTP;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lock_file::LockFile;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Context, Result};
+use indexmap::IndexMap;
 use xx::regex;
 
 #[derive(Debug)]
 pub struct RustPlugin {
     ba: Arc<BackendArg>,
+}
+
+const RUST_NIGHTLY_MANIFEST_URL: &str =
+    "https://static.rust-lang.org/dist/channel-rust-nightly.toml";
+
+fn parse_nightly_manifest(manifest: &str) -> Result<String> {
+    let manifest: toml::Value =
+        toml::from_str(manifest).wrap_err("failed to parse the Rust nightly channel manifest")?;
+    let date = manifest
+        .get("date")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| eyre::eyre!("Rust nightly channel manifest is missing its date"))?;
+    date.parse::<jiff::civil::Date>()
+        .wrap_err_with(|| format!("invalid Rust nightly channel manifest date: {date}"))?;
+    Ok(format!("nightly-{date}"))
+}
+
+async fn current_nightly_version() -> Result<String> {
+    let manifest = HTTP_FETCH
+        .get_text_cached(RUST_NIGHTLY_MANIFEST_URL)
+        .await
+        .wrap_err("failed to fetch the Rust nightly channel manifest")?;
+    parse_nightly_manifest(&manifest)
+}
+
+fn is_dated_nightly(version: &str) -> bool {
+    version
+        .strip_prefix("nightly-")
+        .is_some_and(|date| date.parse::<jiff::civil::Date>().is_ok())
+}
+
+fn latest_installed_nightly(versions: impl DoubleEndedIterator<Item = String>) -> Option<String> {
+    versions.rev().find(|version| is_dated_nightly(version))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -103,17 +139,39 @@ impl RustPlugin {
         }
     }
 
-    async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+    async fn setup_rustup(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<()> {
+        if runtime.is_external() {
+            return Ok(());
+        }
+        let homes = &runtime.homes;
         let settings = Settings::get();
-        if rustup_home().join("settings.toml").exists() && cargo_bin().exists() {
+        if rustup_is_initialized(homes) {
+            return Ok(());
+        }
+        let _installer_lock = tokio::task::spawn_blocking(|| {
+            LockFile::new(&rustup_path())
+                .with_callback(|path| {
+                    debug!(
+                        "waiting for rustup-init lock on {}",
+                        file::display_path(path)
+                    );
+                })
+                .lock()
+        })
+        .await??;
+        if rustup_is_initialized(homes) {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
         HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(ctx.pr.as_ref()))
             .await?;
         file::make_executable(rustup_path())?;
-        file::create_dir_all(rustup_home())?;
-        let ts = ctx.config.get_toolset().await?;
+        file::create_dir_all(&homes.rustup)?;
         let mut cmd = CmdLineRunner::new(rustup_path())
             .with_pr(ctx.pr.as_ref())
             .arg("--no-modify-path")
@@ -121,7 +179,7 @@ impl RustPlugin {
             .arg("none")
             .arg("-y")
             .env_values(tv.install_env())
-            .envs(self.exec_env(&ctx.config, ts, tv).await?);
+            .envs(rustup_env(homes, &tv.version));
         if let Some(host) = settings.rust.default_host.as_ref() {
             cmd = cmd.arg("--default-host").arg(host);
         }
@@ -129,15 +187,19 @@ impl RustPlugin {
         Ok(())
     }
 
-    async fn test_rust(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+    async fn test_rust(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        runtime: &RustRuntime,
+    ) -> Result<()> {
         ctx.pr.set_message(format!("{RUSTC_BIN} -V"));
-        let ts = ctx.config.get_toolset().await?;
-        CmdLineRunner::new(RUSTC_BIN)
+        CmdLineRunner::new(runtime.bin_dir.join(RUSTC_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("-V")
             .env_values(tv.install_env())
-            .envs(self.exec_env(&ctx.config, ts, tv).await?)
-            .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
+            .envs(rustup_env(&runtime.homes, &tv.version))
+            .prepend_path(vec![runtime.bin_dir.clone()])?
             .execute()
     }
 
@@ -149,6 +211,7 @@ impl RustPlugin {
         &self,
         tv: &ToolVersion,
         subcommand: &str,
+        runtime: &RustRuntime,
     ) -> Result<Option<BTreeSet<String>>> {
         let args = vec![
             subcommand.to_string(),
@@ -157,12 +220,12 @@ impl RustPlugin {
             "--toolchain".to_string(),
             tv.version.clone(),
         ];
-        let mut cmd = cmd(RUSTUP_BIN, args)
-            .env("PATH", rustup_path_env()?)
+        let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), args)
+            .env("PATH", rustup_path_env(runtime)?)
             .stdout_capture()
             .stderr_capture()
             .unchecked();
-        for (key, value) in rustup_env(&tv.version) {
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
             cmd = cmd.env(key, value);
         }
         let output = match cmd.run() {
@@ -239,13 +302,22 @@ impl Backend for RustPlugin {
             return Ok(false);
         }
 
+        let runtime = RustRuntime::resolve_for_tool_version(config, tv).await?;
+        if !file::is_symlink_to(&tv.install_path(), &runtime.bin_dir) {
+            debug!(
+                "{} points outside the selected Rust proxy directory",
+                tv.install_path().display()
+            );
+            return Ok(false);
+        }
+
         let raw_opts = tv.request.options();
         let (_, components, targets) = RustOptions::new(&raw_opts).install_args();
 
         if let Some(components) = components
             && !components.is_empty()
         {
-            let Some(installed) = self.rustup_installed_items(tv, "component")? else {
+            let Some(installed) = self.rustup_installed_items(tv, "component", &runtime)? else {
                 return Ok(false);
             };
             let missing = self.missing_components(&components, &installed);
@@ -262,7 +334,7 @@ impl Backend for RustPlugin {
         if let Some(targets) = targets
             && !targets.is_empty()
         {
-            let Some(installed) = self.rustup_installed_items(tv, "target")? else {
+            let Some(installed) = self.rustup_installed_items(tv, "target", &runtime)? else {
                 return Ok(false);
             };
             let missing = self.missing_targets(&targets, &installed);
@@ -289,7 +361,7 @@ impl Backend for RustPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
+        let mut versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
             .map(|r| {
@@ -302,26 +374,70 @@ impl Backend for RustPlugin {
                 }
             })
             .rev()
-            .chain(vec![
-                // Special channels - these are rolling releases that should always be updated
-                VersionInfo {
-                    version: "nightly".into(),
-                    rolling: true,
-                    ..Default::default()
-                },
-                VersionInfo {
-                    version: "beta".into(),
-                    rolling: true,
-                    ..Default::default()
-                },
-                VersionInfo {
-                    version: "stable".into(),
-                    rolling: true,
-                    ..Default::default()
-                },
-            ])
             .collect();
+        if let Ok(current_nightly) = current_nightly_version().await {
+            versions.push(VersionInfo {
+                version: current_nightly,
+                ..Default::default()
+            });
+        }
+        versions.extend([
+            // Special channels - these are rolling releases that should always be updated
+            VersionInfo {
+                version: "nightly".into(),
+                rolling: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "beta".into(),
+                rolling: true,
+                ..Default::default()
+            },
+            VersionInfo {
+                version: "stable".into(),
+                rolling: true,
+                ..Default::default()
+            },
+        ]);
         Ok(versions)
+    }
+
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "nightly"
+    }
+
+    fn latest_installed_channel_version(&self, channel: &str) -> Option<String> {
+        if !self.is_rolling_channel(channel) {
+            return None;
+        }
+        latest_installed_nightly(self.list_installed_versions().into_iter())
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        current_nightly_version().await.map(Some)
+    }
+
+    fn requires_concrete_channel_version(&self, version: &str) -> bool {
+        self.is_rolling_channel(version)
+    }
+
+    fn is_exact_version(&self, version: &str) -> bool {
+        is_dated_nightly(version)
+    }
+
+    async fn resolve_exact_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        Ok(is_dated_nightly(version).then(|| version.to_string()))
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -349,31 +465,32 @@ impl Backend for RustPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.setup_rustup(ctx, &tv).await?;
-        let ts = ctx.config.get_toolset().await?;
+        let runtime = RustRuntime::resolve_for_tool_version(&ctx.config, &tv).await?;
+        let _state_locks = lock_rust_state(&runtime.homes).await?;
+        self.setup_rustup(ctx, &tv, &runtime).await?;
 
         let raw_opts = tv.request.options();
         let (profile, components, targets) = RustOptions::new(&raw_opts).install_args();
 
-        let mut cmd = CmdLineRunner::new(RUSTUP_BIN)
+        let mut cmd = CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
             .opt_args("--component", components)
             .opt_args("--target", targets)
-            .prepend_path(self.list_bin_paths(&ctx.config, &tv).await?)?
+            .prepend_path(vec![runtime.bin_dir.clone()])?
             .env_values(tv.install_env())
-            .envs(self.exec_env(&ctx.config, ts, &tv).await?);
+            .envs(rustup_env(&runtime.homes, &tv.version));
         if let Some(profile) = profile.as_ref() {
             cmd = cmd.arg("--profile").arg(profile);
         }
         cmd.execute()?;
 
         file::remove_all(tv.install_path())?;
-        file::make_symlink(&cargo_home().join("bin"), &tv.install_path())?;
+        file::make_symlink(&runtime.bin_dir, &tv.install_path())?;
 
-        self.test_rust(ctx, &tv).await?;
+        self.test_rust(ctx, &tv, &runtime).await?;
 
         Ok(tv)
     }
@@ -384,34 +501,34 @@ impl Backend for RustPlugin {
         pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
-        let ts = config.get_toolset().await?;
-        let mut env = self.exec_env(config, ts, tv).await?;
+        let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+        let mut env = rustup_env(&runtime.homes, &tv.version);
         env.remove("RUSTUP_TOOLCHAIN");
-        CmdLineRunner::new(RUSTUP_BIN)
+        CmdLineRunner::new(runtime.bin_dir.join(RUSTUP_BIN))
             .with_pr(pr)
             .arg("toolchain")
             .arg("uninstall")
             .arg(&tv.version)
-            .prepend_path(self.list_bin_paths(config, tv).await?)?
+            .prepend_path(vec![runtime.bin_dir])?
             .envs(env)
             .execute()
     }
 
-    async fn list_bin_paths(
-        &self,
-        _config: &Arc<Config>,
-        _tv: &ToolVersion,
-    ) -> Result<Vec<PathBuf>> {
-        Ok(vec![cargo_bindir()])
+    async fn list_bin_paths(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<Vec<PathBuf>> {
+        Ok(vec![
+            RustRuntime::resolve_recorded_for_tool_version(config, tv)
+                .await?
+                .bin_dir,
+        ])
     }
 
     async fn exec_env(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
-        Ok(rustup_env(&tv.version))
+        Ok(rustup_env(&RustHomes::resolve(config).await?, &tv.version))
     }
 
     async fn outdated_info(
@@ -421,14 +538,43 @@ impl Backend for RustPlugin {
         bump: bool,
         opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
+        let requested = tv.request.version();
+        if requested == "nightly" {
+            if Settings::get().offline() || opts.offline {
+                let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
+                return Ok((oi.current.as_ref() != Some(&tv.version)).then_some(oi));
+            }
+            let latest = current_nightly_version().await?;
+            let oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
+            return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
+        }
+        if is_dated_nightly(&requested) {
+            let latest = if bump && !Settings::get().offline() && !opts.offline {
+                current_nightly_version().await?
+            } else {
+                tv.version.clone()
+            };
+            let mut oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
+            if bump && requested != latest {
+                oi.bump = Some(latest.clone());
+                oi.tool_request = ToolRequest::new_opts(
+                    tv.request.ba().clone(),
+                    &latest,
+                    tv.request.options(),
+                    tv.request.source().clone(),
+                )?;
+            }
+            return Ok((oi.current.as_ref() != Some(&latest)).then_some(oi));
+        }
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
             let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
             Ok(oi)
         } else {
             let ts = config.get_toolset().await?;
-            let mut cmd =
-                cmd!(RUSTUP_BIN, "check").env("PATH", self.path_env_for_cmd(config, tv).await?);
+            let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+            let mut cmd = cmd(runtime.bin_dir.join(RUSTUP_BIN), ["check"])
+                .env("PATH", self.path_env_for_cmd(config, tv).await?);
             for (k, v) in self.exec_env(config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }
@@ -457,6 +603,10 @@ impl Backend for RustPlugin {
             }
             Ok(None)
         }
+    }
+
+    fn uses_custom_outdated_info(&self) -> bool {
+        true
     }
 }
 
@@ -575,26 +725,273 @@ fn rustup_path() -> PathBuf {
     dirs::CACHE.join("rust").join(RUSTUP_INIT_BIN)
 }
 
-fn rustup_home() -> PathBuf {
-    resolve_rust_home(
-        Settings::get()
-            .rust
-            .rustup_home
-            .clone()
-            .or(env::var_path("RUSTUP_HOME"))
-            .unwrap_or(dirs::HOME.join(".rustup")),
-    )
+fn rust_state_lock_identities(rustup_home: &Path, cargo_home: &Path) -> Vec<PathBuf> {
+    let mut identities = vec![
+        file::desymlink_path(rustup_home),
+        file::desymlink_path(cargo_home),
+    ];
+    identities.sort();
+    identities.dedup();
+    identities
 }
 
-fn cargo_home() -> PathBuf {
-    resolve_rust_home(
-        Settings::get()
-            .rust
-            .cargo_home
-            .clone()
-            .or(env::var_path("CARGO_HOME"))
-            .unwrap_or(dirs::HOME.join(".cargo")),
-    )
+async fn lock_rust_state(homes: &RustHomes) -> Result<Vec<fslock::LockFile>> {
+    let identities = rust_state_lock_identities(&homes.rustup, &homes.cargo);
+    tokio::task::spawn_blocking(move || {
+        identities
+            .into_iter()
+            .map(|identity| {
+                let display_identity = identity.clone();
+                LockFile::new(&identity)
+                    .with_callback(move |_| {
+                        debug!(
+                            "waiting for Rust state lock on {}",
+                            file::display_path(&display_identity)
+                        );
+                    })
+                    .lock()
+            })
+            .collect()
+    })
+    .await?
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RustHomes {
+    cargo: PathBuf,
+    rustup: PathBuf,
+    explicit: bool,
+}
+
+impl RustHomes {
+    async fn resolve(config: &Arc<Config>) -> Result<Self> {
+        let config_env = config.env().await?;
+        let settings = Settings::get();
+        Ok(Self::from_sources(
+            &config_env,
+            settings.rust.cargo_home.clone(),
+            env::var_path("CARGO_HOME"),
+            settings.rust.rustup_home.clone(),
+            env::var_path("RUSTUP_HOME"),
+        ))
+    }
+
+    fn from_sources(
+        config_env: &IndexMap<String, String>,
+        configured_cargo: Option<PathBuf>,
+        ambient_cargo: Option<PathBuf>,
+        configured_rustup: Option<PathBuf>,
+        ambient_rustup: Option<PathBuf>,
+    ) -> Self {
+        let cargo_explicit = config_env.contains_key("CARGO_HOME")
+            || config_env.contains_key("MISE_CARGO_HOME")
+            || configured_cargo.is_some()
+            || ambient_cargo.is_some();
+        let rustup_explicit = config_env.contains_key("RUSTUP_HOME")
+            || config_env.contains_key("MISE_RUSTUP_HOME")
+            || configured_rustup.is_some()
+            || ambient_rustup.is_some();
+        Self {
+            cargo: select_rust_home(
+                config_env,
+                "CARGO_HOME",
+                "MISE_CARGO_HOME",
+                configured_cargo,
+                ambient_cargo,
+                dirs::HOME.join(".cargo"),
+            ),
+            rustup: select_rust_home(
+                config_env,
+                "RUSTUP_HOME",
+                "MISE_RUSTUP_HOME",
+                configured_rustup,
+                ambient_rustup,
+                dirs::HOME.join(".rustup"),
+            ),
+            explicit: cargo_explicit || rustup_explicit,
+        }
+    }
+
+    fn cargo_bindir(&self) -> PathBuf {
+        self.cargo.join("bin")
+    }
+
+    fn cargo_bin(&self) -> PathBuf {
+        self.cargo_bindir().join(CARGO_BIN)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RustProvider {
+    Managed,
+    External,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RustRuntime {
+    homes: RustHomes,
+    bin_dir: PathBuf,
+    provider: RustProvider,
+}
+
+impl RustRuntime {
+    async fn resolve_for_tool_version(config: &Arc<Config>, tv: &ToolVersion) -> Result<Self> {
+        let homes = RustHomes::resolve(config).await?;
+        Ok(Self::from_paths_with_install(
+            homes,
+            &env::PATH,
+            &tv.install_path(),
+            rustup_proxy_dir_is_usable,
+        ))
+    }
+
+    async fn resolve_recorded_for_tool_version(
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Self> {
+        let homes = RustHomes::resolve(config).await?;
+        Ok(Self::from_paths_with_install(
+            homes,
+            &env::PATH,
+            &tv.install_path(),
+            rustup_proxy_dir_is_usable,
+        ))
+    }
+
+    fn from_paths_with(
+        homes: RustHomes,
+        paths: &[PathBuf],
+        provider_is_usable: impl Fn(&Path) -> bool,
+    ) -> Self {
+        if !rustup_is_initialized(&homes)
+            && !homes.explicit
+            && let Some(bin_dir) = external_rustup_bin_dir(paths, provider_is_usable)
+        {
+            debug!(
+                "using external rustup proxies from {}",
+                file::display_path(&bin_dir)
+            );
+            return Self {
+                homes,
+                bin_dir,
+                provider: RustProvider::External,
+            };
+        }
+        let bin_dir = homes.cargo_bindir();
+        Self {
+            homes,
+            bin_dir,
+            provider: RustProvider::Managed,
+        }
+    }
+
+    fn from_paths_with_install(
+        homes: RustHomes,
+        paths: &[PathBuf],
+        install_path: &Path,
+        provider_is_usable: impl Fn(&Path) -> bool,
+    ) -> Self {
+        if !homes.explicit
+            && let Some(bin_dir) =
+                recorded_external_rustup_bin_dir(&homes, install_path, &provider_is_usable)
+        {
+            debug!(
+                "using recorded external rustup proxies from {}",
+                file::display_path(&bin_dir)
+            );
+            return Self {
+                homes,
+                bin_dir,
+                provider: RustProvider::External,
+            };
+        }
+        Self::from_paths_with(homes, paths, provider_is_usable)
+    }
+
+    fn is_external(&self) -> bool {
+        self.provider == RustProvider::External
+    }
+}
+
+fn recorded_external_rustup_bin_dir(
+    homes: &RustHomes,
+    install_path: &Path,
+    provider_is_usable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    file::resolve_symlink(install_path)
+        .ok()
+        .flatten()
+        .map(|target| {
+            if target.is_absolute() {
+                target
+            } else {
+                install_path.parent().unwrap_or(Path::new(".")).join(target)
+            }
+        })
+        .filter(|target| target != &homes.cargo_bindir())
+        .filter(|target| provider_is_usable(target))
+}
+
+fn external_rustup_bin_dir(
+    paths: &[PathBuf],
+    provider_is_usable: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| !file::is_mise_shims_dir(path))
+        .find(|path| {
+            [RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]
+                .iter()
+                .all(|bin| file::is_executable(&path.join(bin)))
+                && provider_is_usable(path)
+        })
+        .cloned()
+}
+
+fn rustup_proxy_dir_is_usable(bin_dir: &Path) -> bool {
+    if !Command::new(bin_dir.join(RUSTUP_BIN))
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+    {
+        return false;
+    }
+
+    const PROBE_TOOLCHAIN: &str = "mise-proxy-probe:invalid";
+    [CARGO_BIN, RUSTC_BIN].iter().all(|bin| {
+        Command::new(bin_dir.join(bin))
+            .arg("--version")
+            .env("RUSTUP_TOOLCHAIN", PROBE_TOOLCHAIN)
+            .env("RUSTUP_AUTO_INSTALL", "0")
+            .output()
+            .is_ok_and(|output| {
+                !output.status.success()
+                    && (String::from_utf8_lossy(&output.stdout).contains(PROBE_TOOLCHAIN)
+                        || String::from_utf8_lossy(&output.stderr).contains(PROBE_TOOLCHAIN))
+            })
+    })
+}
+
+fn rustup_is_initialized(homes: &RustHomes) -> bool {
+    homes.rustup.join("settings.toml").exists() && homes.cargo_bin().exists()
+}
+
+fn select_rust_home(
+    config_env: &IndexMap<String, String>,
+    direct_key: &str,
+    mise_key: &str,
+    configured: Option<PathBuf>,
+    ambient: Option<PathBuf>,
+    default: PathBuf,
+) -> PathBuf {
+    let path = config_env
+        .get(direct_key)
+        .or_else(|| config_env.get(mise_key))
+        .map(PathBuf::from)
+        .or(configured)
+        .or(ambient)
+        .unwrap_or(default);
+    resolve_rust_home(path)
 }
 
 fn resolve_rust_home(path: PathBuf) -> PathBuf {
@@ -608,31 +1005,24 @@ fn resolve_rust_home(path: PathBuf) -> PathBuf {
     }
 }
 
-fn cargo_bin() -> PathBuf {
-    cargo_bindir().join(CARGO_BIN)
-}
-fn cargo_bindir() -> PathBuf {
-    cargo_home().join("bin")
-}
-
-fn rustup_env(toolchain: &str) -> BTreeMap<String, String> {
+fn rustup_env(homes: &RustHomes, toolchain: &str) -> BTreeMap<String, String> {
     [
         (
             "CARGO_HOME".to_string(),
-            cargo_home().to_string_lossy().to_string(),
+            homes.cargo.to_string_lossy().to_string(),
         ),
         (
             "RUSTUP_HOME".to_string(),
-            rustup_home().to_string_lossy().to_string(),
+            homes.rustup.to_string_lossy().to_string(),
         ),
         ("RUSTUP_TOOLCHAIN".to_string(), toolchain.to_string()),
     ]
     .into()
 }
 
-fn rustup_path_env() -> Result<OsString> {
+fn rustup_path_env(runtime: &RustRuntime) -> Result<OsString> {
     Ok(env::join_paths(
-        std::iter::once(cargo_bindir()).chain(env::PATH.clone()),
+        std::iter::once(runtime.bin_dir.clone()).chain(env::PATH.clone()),
     )?)
 }
 
@@ -705,11 +1095,69 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
 
+    fn rust_homes_at(root: &Path, explicit: bool) -> RustHomes {
+        RustHomes {
+            cargo: root.join("cargo"),
+            rustup: root.join("rustup"),
+            explicit,
+        }
+    }
+
+    fn create_proxy_dir(path: &Path, bins: &[&str]) {
+        std::fs::create_dir_all(path).unwrap();
+        for bin in bins {
+            let path = path.join(bin);
+            std::fs::write(&path, b"proxy").unwrap();
+            file::make_executable(path).unwrap();
+        }
+    }
+
     fn opts_with(key: &str, value: &str) -> ToolVersionOptions {
         let mut opts = ToolVersionOptions::default();
         opts.opts
             .insert(key.to_string(), toml::Value::String(value.to_string()));
         opts
+    }
+
+    #[test]
+    fn parses_nightly_manifest_date() {
+        assert_eq!(
+            parse_nightly_manifest("manifest-version = \"2\"\ndate = \"2026-08-13\"\n").unwrap(),
+            "nightly-2026-08-13"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_invalid_nightly_manifest_date() {
+        assert!(parse_nightly_manifest("manifest-version = \"2\"\n").is_err());
+        assert!(parse_nightly_manifest("date = \"2026-13-40\"\n").is_err());
+        assert!(parse_nightly_manifest("not toml").is_err());
+    }
+
+    #[test]
+    fn recognizes_only_valid_dated_nightlies() {
+        assert!(is_dated_nightly("nightly-2026-08-13"));
+        assert!(!is_dated_nightly("nightly"));
+        assert!(!is_dated_nightly("nightly-2026-13-40"));
+        assert!(!is_dated_nightly("1.90.0"));
+    }
+
+    #[test]
+    fn selects_latest_installed_dated_nightly() {
+        let versions = vec![
+            "nightly-2026-08-11".to_string(),
+            "nightly".to_string(),
+            "1.90.0".to_string(),
+            "nightly-2026-08-13".to_string(),
+        ];
+        assert_eq!(
+            latest_installed_nightly(versions.into_iter()).as_deref(),
+            Some("nightly-2026-08-13")
+        );
+        assert_eq!(
+            latest_installed_nightly(["nightly".to_string()].into_iter()),
+            None
+        );
     }
 
     #[test]
@@ -882,5 +1330,245 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
             resolve_rust_home(PathBuf::from("~/.rustup-custom")),
             dirs::HOME.join(".rustup-custom")
         );
+    }
+
+    #[test]
+    fn rust_state_locks_are_shared_by_either_home() {
+        let first = rust_state_lock_identities(Path::new("/rustup/shared"), Path::new("/cargo/a"));
+        let same_rustup =
+            rust_state_lock_identities(Path::new("/rustup/shared"), Path::new("/cargo/b"));
+        let same_cargo =
+            rust_state_lock_identities(Path::new("/rustup/other"), Path::new("/cargo/a"));
+        let separate =
+            rust_state_lock_identities(Path::new("/rustup/other"), Path::new("/cargo/b"));
+
+        assert!(first.iter().any(|identity| same_rustup.contains(identity)));
+        assert!(first.iter().any(|identity| same_cargo.contains(identity)));
+        assert!(!first.iter().any(|identity| separate.contains(identity)));
+    }
+
+    #[test]
+    fn rust_state_locks_are_ordered_and_deduplicated() {
+        let cargo = file::desymlink_path(Path::new("/a/cargo"));
+        let rustup = file::desymlink_path(Path::new("/z/rustup"));
+        assert_eq!(
+            rust_state_lock_identities(Path::new("/z/rustup"), Path::new("/a/cargo")),
+            vec![cargo, rustup]
+        );
+        assert_eq!(
+            rust_state_lock_identities(Path::new("/shared"), Path::new("/shared")),
+            vec![file::desymlink_path(Path::new("/shared"))]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rust_state_locks_resolve_filesystem_aliases() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        let alias = root.path().join("alias");
+        std::fs::create_dir_all(&state).unwrap();
+        symlink(&state, &alias).unwrap();
+
+        assert_eq!(
+            rust_state_lock_identities(&state, &state),
+            rust_state_lock_identities(&alias, &alias)
+        );
+    }
+
+    #[test]
+    fn rust_homes_use_defaults_without_overrides() {
+        let homes = RustHomes::from_sources(&indexmap::IndexMap::new(), None, None, None, None);
+
+        assert_eq!(homes.cargo, dirs::HOME.join(".cargo"));
+        assert_eq!(homes.rustup, dirs::HOME.join(".rustup"));
+        assert!(!homes.explicit);
+    }
+
+    #[test]
+    fn rust_homes_follow_config_environment_precedence() {
+        let config_env = indexmap::IndexMap::from([
+            (
+                "MISE_CARGO_HOME".to_string(),
+                "/config/mise-cargo".to_string(),
+            ),
+            ("CARGO_HOME".to_string(), "/config/cargo".to_string()),
+            (
+                "MISE_RUSTUP_HOME".to_string(),
+                "/config/mise-rustup".to_string(),
+            ),
+            ("RUSTUP_HOME".to_string(), "/config/rustup".to_string()),
+        ]);
+
+        let homes = RustHomes::from_sources(
+            &config_env,
+            Some("/settings/cargo".into()),
+            Some("/ambient/cargo".into()),
+            Some("/settings/rustup".into()),
+            Some("/ambient/rustup".into()),
+        );
+
+        assert_eq!(
+            homes.cargo,
+            resolve_rust_home(PathBuf::from("/config/cargo"))
+        );
+        assert_eq!(
+            homes.rustup,
+            resolve_rust_home(PathBuf::from("/config/rustup"))
+        );
+        assert!(homes.explicit);
+    }
+
+    #[test]
+    fn rust_homes_use_config_mise_environment_before_existing_sources() {
+        let config_env = indexmap::IndexMap::from([(
+            "MISE_CARGO_HOME".to_string(),
+            "/config/cargo".to_string(),
+        )]);
+
+        let homes = RustHomes::from_sources(
+            &config_env,
+            Some("/settings/cargo".into()),
+            Some("/ambient/cargo".into()),
+            Some("/settings/rustup".into()),
+            Some("/ambient/rustup".into()),
+        );
+
+        assert_eq!(
+            homes.cargo,
+            resolve_rust_home(PathBuf::from("/config/cargo"))
+        );
+        assert_eq!(
+            homes.rustup,
+            resolve_rust_home(PathBuf::from("/settings/rustup"))
+        );
+        assert!(homes.explicit);
+    }
+
+    #[test]
+    fn rust_runtime_prefers_initialized_homes() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        std::fs::create_dir_all(&homes.rustup).unwrap();
+        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+
+        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    #[test]
+    fn rust_runtime_uses_complete_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+
+        let runtime =
+            RustRuntime::from_paths_with(homes, std::slice::from_ref(&external), |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::External);
+        assert_eq!(runtime.bin_dir, external);
+    }
+
+    #[test]
+    fn rust_runtime_prefers_recorded_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let recorded = root.path().join("recorded/bin");
+        let earlier_on_path = root.path().join("earlier/bin");
+        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        create_proxy_dir(&earlier_on_path, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
+        file::make_symlink(&recorded, &install_path).unwrap();
+
+        let runtime =
+            RustRuntime::from_paths_with_install(homes, &[earlier_on_path], &install_path, |_| {
+                true
+            });
+
+        assert_eq!(runtime.provider, RustProvider::External);
+        assert_eq!(runtime.bin_dir, recorded);
+    }
+
+    #[test]
+    fn rust_runtime_keeps_recorded_external_provider_after_default_home_initialization() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        std::fs::create_dir_all(&homes.rustup).unwrap();
+        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let recorded = root.path().join("recorded/bin");
+        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
+        file::make_symlink(&recorded, &install_path).unwrap();
+
+        let runtime = RustRuntime::from_paths_with_install(
+            homes,
+            std::slice::from_ref(&recorded),
+            &install_path,
+            |_| true,
+        );
+
+        assert_eq!(runtime.provider, RustProvider::External);
+        assert_eq!(runtime.bin_dir, recorded);
+    }
+
+    #[test]
+    fn rust_runtime_explicit_homes_override_recorded_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), true);
+        create_proxy_dir(&homes.cargo_bindir(), &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        std::fs::create_dir_all(&homes.rustup).unwrap();
+        std::fs::write(homes.rustup.join("settings.toml"), b"").unwrap();
+        let recorded = root.path().join("recorded/bin");
+        create_proxy_dir(&recorded, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let install_path = root.path().join("installs/rust/1.80.0");
+        std::fs::create_dir_all(install_path.parent().unwrap()).unwrap();
+        file::make_symlink(&recorded, &install_path).unwrap();
+
+        let runtime = RustRuntime::from_paths_with_install(
+            homes.clone(),
+            std::slice::from_ref(&recorded),
+            &install_path,
+            |_| true,
+        );
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    #[test]
+    fn rust_runtime_rejects_incomplete_external_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), false);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN]);
+
+        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    #[test]
+    fn rust_runtime_does_not_replace_explicit_homes() {
+        let root = tempfile::tempdir().unwrap();
+        let homes = rust_homes_at(root.path(), true);
+        let external = root.path().join("external/bin");
+        create_proxy_dir(&external, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+
+        let runtime = RustRuntime::from_paths_with(homes.clone(), &[external], |_| true);
+
+        assert_eq!(runtime.provider, RustProvider::Managed);
+        assert_eq!(runtime.bin_dir, homes.cargo_bindir());
     }
 }

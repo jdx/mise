@@ -2391,7 +2391,7 @@ pub async fn auto_lock_new_versions(
     }
 
     let settings = Settings::get();
-    let jobs = settings.jobs;
+    let jobs = crate::jobs::normalize(settings.jobs);
     let deferred_retry_only = new_versions.is_empty();
     let mut all_provenance_errors: Vec<String> = Vec::new();
 
@@ -2597,9 +2597,11 @@ fn deferred_provenance_resolution_error(
 
 /// Result type for lock resolution tasks (shared by `mise lock` and auto-lock).
 ///
-/// Fields: (short_name, version, backend_full, platform, info_or_error, options, conda_packages).
+/// Fields: (short_name, version, backend_full, platform, info_or_error, options,
+/// conda_packages, pkgx_packages, error_is_fatal).
 /// The `info_or_error` field is `Ok(info)` on success or `Err(message)` on failure,
-/// allowing callers to log at the appropriate level.
+/// allowing callers to log at the appropriate level. `error_is_fatal` distinguishes
+/// genuine conda solve failures from backends that use errors to skip unsupported targets.
 pub type LockResolutionResult = (
     String,
     String,
@@ -2609,11 +2611,13 @@ pub type LockResolutionResult = (
     BTreeMap<String, String>,
     BTreeMap<String, CondaPackageInfo>,
     BTreeMap<String, PkgxPackageInfo>,
+    bool,
 );
 
 /// Resolve lock info for a single tool/platform combination.
 ///
-/// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options, conda_packages).
+/// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options,
+/// conda_packages, pkgx_packages, error_is_fatal).
 /// Does not log errors — callers decide the appropriate log level.
 pub async fn resolve_tool_lock_info(
     ba: crate::cli::args::BackendArg,
@@ -2622,6 +2626,9 @@ pub async fn resolve_tool_lock_info(
     backend: Option<crate::backend::ABackend>,
 ) -> LockResolutionResult {
     let target = PlatformTarget::new(platform.clone());
+    let error_is_fatal = backend
+        .as_ref()
+        .is_some_and(|backend| backend.get_type() == BackendType::Conda);
 
     let (info, options, conda_packages, pkgx_packages) = if let Some(backend) = backend {
         let options = match backend.resolve_lockfile_options(&tv.request, &target) {
@@ -2636,6 +2643,7 @@ pub async fn resolve_tool_lock_info(
                     BTreeMap::new(),
                     BTreeMap::new(),
                     BTreeMap::new(),
+                    error_is_fatal,
                 );
             }
         };
@@ -2646,13 +2654,22 @@ pub async fn resolve_tool_lock_info(
                     match conda_backend.resolve_conda_packages(&tv, &target).await {
                         Ok(packages) => packages,
                         Err(e) => {
-                            debug!(
-                                "failed to resolve conda packages for {} on {}: {}",
-                                ba.short,
-                                platform.to_key(),
-                                e
+                            return (
+                                ba.short.clone(),
+                                tv.version.clone(),
+                                ba.stored_full(),
+                                platform,
+                                Err(format!(
+                                    "failed to resolve conda packages for {} on {}: {}",
+                                    ba.short,
+                                    target.to_key(),
+                                    e
+                                )),
+                                options,
+                                BTreeMap::new(),
+                                BTreeMap::new(),
+                                error_is_fatal,
                             );
-                            BTreeMap::new()
                         }
                     }
                 } else {
@@ -2677,6 +2694,7 @@ pub async fn resolve_tool_lock_info(
                                 options,
                                 BTreeMap::new(),
                                 BTreeMap::new(),
+                                error_is_fatal,
                             );
                         }
                     }
@@ -2715,6 +2733,7 @@ pub async fn resolve_tool_lock_info(
         options,
         conda_packages,
         pkgx_packages,
+        error_is_fatal,
     )
 }
 
@@ -2722,14 +2741,25 @@ pub async fn resolve_tool_lock_info(
 /// Only applies data when the resolution succeeded (info is `Ok`).
 ///
 /// Returns whether the resolution contributed any data. A backend that can't
-/// resolve metadata without installing falls back to an empty `PlatformInfo`,
-/// which is `Ok` but writes no entry — callers report those as skipped rather
-/// than claiming an update they didn't make.
+/// resolve metadata without installing falls back to an empty `PlatformInfo`.
+/// This still creates a tool/version entry when one does not exist, but it does
+/// not overwrite an existing entry's platform metadata or count as a resolved
+/// platform.
 ///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
 pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
-    let (short, version, backend, platform, info, options, conda_packages, pkgx_packages) = result;
+    let (
+        short,
+        version,
+        backend,
+        platform,
+        info,
+        options,
+        conda_packages,
+        pkgx_packages,
+        _error_is_fatal,
+    ) = result;
     let platform_key = platform.to_key();
     let mut applied = false;
     if let Ok(ref info) = info {
@@ -2743,15 +2773,33 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
         ) {
             return Err(eyre!("{err}"));
         }
-        applied |= !info.is_empty();
-        lockfile.set_platform_info(
-            &short,
-            &version,
-            Some(&backend),
-            &options,
-            &platform_key,
-            info.clone(),
-        );
+        if info.is_empty() {
+            let tool_exists = lockfile.tools.get(&short).is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool.version == version && tool.options == options)
+            });
+            if !tool_exists {
+                lockfile.set_platform_info(
+                    &short,
+                    &version,
+                    Some(&backend),
+                    &options,
+                    &platform_key,
+                    info.clone(),
+                );
+            }
+        } else {
+            applied = true;
+            lockfile.set_platform_info(
+                &short,
+                &version,
+                Some(&backend),
+                &options,
+                &platform_key,
+                info.clone(),
+            );
+        }
     }
     for (basename, pkg_info) in conda_packages {
         applied = true;
@@ -3613,6 +3661,70 @@ mod tests {
                 checksum: Some(format!("sha256:{basename}")),
             },
         );
+    }
+
+    #[test]
+    fn empty_resolution_preserves_existing_conda_dependencies() {
+        let platform_key = "linux-x64";
+        let dependency = "libfoo-1.0-h123_0";
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "ffmpeg".to_string(),
+            vec![tool_with_conda_dep(
+                "7.1.1",
+                "conda:ffmpeg",
+                platform_key,
+                dependency,
+            )],
+        );
+        add_test_conda_package(&mut lockfile, platform_key, dependency);
+
+        let result = (
+            "ffmpeg".to_string(),
+            "7.1.1".to_string(),
+            "conda:ffmpeg".to_string(),
+            Platform::parse(platform_key).unwrap(),
+            Ok(PlatformInfo::default()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            false,
+        );
+
+        assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+        lockfile.cleanup_unreferenced_conda_packages();
+
+        let platform = &lockfile.tools["ffmpeg"][0].platforms[platform_key];
+        assert_eq!(
+            platform.conda_deps.as_deref(),
+            Some(&[dependency.to_string()][..])
+        );
+        assert!(
+            lockfile
+                .get_conda_package(platform_key, dependency)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn empty_resolution_creates_new_tool_entry_without_platform_metadata() {
+        let mut lockfile = Lockfile::default();
+        let result = (
+            "dummy".to_string(),
+            "1.0.0".to_string(),
+            "asdf:dummy".to_string(),
+            Platform::parse("linux-x64").unwrap(),
+            Ok(PlatformInfo::default()),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            false,
+        );
+
+        assert!(!apply_lock_result(&mut lockfile, result).unwrap());
+        let tool = &lockfile.tools["dummy"][0];
+        assert_eq!(tool.version, "1.0.0");
+        assert!(tool.platforms.is_empty());
     }
 
     #[test]

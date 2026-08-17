@@ -8,7 +8,7 @@ use crate::backend::{
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::http::HTTP;
+use crate::http::{HTTP, apply_url_replacements};
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::toolset::{ToolVersion, ToolVersionOptions};
@@ -16,6 +16,7 @@ use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr};
+use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
@@ -27,10 +28,11 @@ use rattler_solve::{
     ChannelPriority, SolveStrategy, SolverImpl, SolverTask, resolvo::Solver as ResolvoSolver,
 };
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
+use reqwest_middleware::{ClientBuilder as MiddlewareClientBuilder, Middleware, Next};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use versions::Versioning;
@@ -51,6 +53,26 @@ pub struct CondaBackend {
 #[derive(Debug, Clone, Copy)]
 struct CondaOptions<'a> {
     values: BackendOptions<'a>,
+}
+
+#[derive(Debug)]
+struct UrlReplacementMiddleware;
+
+fn rewrite_request_url(request: &mut reqwest::Request, rewriter: impl FnOnce(&mut url::Url)) {
+    rewriter(request.url_mut());
+}
+
+#[async_trait]
+impl Middleware for UrlReplacementMiddleware {
+    async fn handle(
+        &self,
+        mut request: reqwest::Request,
+        extensions: &mut Extensions,
+        next: Next<'_>,
+    ) -> reqwest_middleware::Result<reqwest::Response> {
+        rewrite_request_url(&mut request, apply_url_replacements);
+        next.run(request, extensions).await
+    }
 }
 
 impl<'a> CondaOptions<'a> {
@@ -98,10 +120,14 @@ impl CondaBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    fn create_gateway() -> Gateway {
-        Gateway::builder()
+    fn create_gateway() -> Result<Gateway> {
+        let client = MiddlewareClientBuilder::new(HTTP.reqwest()?.clone())
+            .with(UrlReplacementMiddleware)
+            .build();
+        Ok(Gateway::builder()
+            .with_client(client)
             .with_cache_dir(dirs::CACHE.join("conda"))
-            .finish()
+            .finish())
     }
 
     /// Map a mise PlatformTarget to a rattler conda Platform
@@ -116,10 +142,14 @@ impl CondaBackend {
         }
     }
 
-    fn detect_virtual_packages(platform: CondaPlatform) -> Vec<GenericVirtualPackage> {
-        VirtualPackages::detect_for_platform(platform, &VirtualPackageOverrides::default())
-            .map(|vp| vp.into_generic_virtual_packages().collect())
-            .unwrap_or_default()
+    fn detect_virtual_packages(platform: CondaPlatform) -> Result<Vec<GenericVirtualPackage>> {
+        VirtualPackages::detect_for_platform(
+            platform,
+            &VirtualPackageOverrides::from_env(),
+            Some(&dirs::CACHE.join("conda")),
+        )
+        .map(|vp| vp.into_generic_virtual_packages().collect())
+        .map_err(|e| eyre::eyre!("failed to detect conda virtual packages: {e}"))
     }
 
     /// Deduplicate records that share the same archive identifier
@@ -152,7 +182,7 @@ impl CondaBackend {
         opts: CondaOptions<'_>,
     ) -> Result<Vec<RepoDataRecord>> {
         let channel = opts.channel()?;
-        let gateway = Self::create_gateway();
+        let gateway = Self::create_gateway()?;
 
         let repodata: Vec<RepoData> = gateway
             .query([channel], [platform, CondaPlatform::NoArch], specs.clone())
@@ -162,7 +192,7 @@ impl CondaBackend {
             .to_vec();
 
         let flat_records = Self::flatten_repodata(&repodata);
-        let virtual_packages = Self::detect_virtual_packages(platform);
+        let virtual_packages = Self::detect_virtual_packages(platform)?;
 
         let task = SolverTask {
             available_packages: [flat_records.as_slice()],
@@ -433,7 +463,7 @@ impl CondaBackend {
         }
 
         Self::make_bins_executable(&install_path)?;
-        self.create_symlink_bin_dir(tv, &main_paths)?;
+        self.create_bin_launcher_dir(tv, &main_paths)?;
 
         // Store lockfile info
         let n_deps = all_records.len() - 1; // all except main
@@ -529,7 +559,7 @@ impl CondaBackend {
         }
 
         Self::make_bins_executable(&install_path)?;
-        self.create_symlink_bin_dir(tv, &main_paths)?;
+        self.create_bin_launcher_dir(tv, &main_paths)?;
 
         // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
         for basename in &dep_basenames {
@@ -562,10 +592,12 @@ impl CondaBackend {
         Ok(())
     }
 
-    /// Creates a `.mise-bins` directory with symlinks only to binaries from the main package.
+    /// Creates a `.mise-bins` directory with launchers only for binaries from the main package.
     /// Uses the PathsEntry list returned by rattler's link_package to identify which files
-    /// belong to the main package (excluding transitive dependency binaries).
-    fn create_symlink_bin_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
+    /// belong to the main package (excluding transitive dependency binaries). The launchers
+    /// activate the package prefix only for the command they start, so dependencies are
+    /// available to that command without exposing their binaries on the user's PATH.
+    fn create_bin_launcher_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
         let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
 
@@ -591,12 +623,173 @@ impl CondaBackend {
                 continue;
             };
             let src = install_path.join(&entry.relative_path);
-            let dst = symlink_dir.join(bin_name);
+            let dst = Self::bin_launcher_path(&symlink_dir, bin_name, cfg!(windows));
             if src.exists() && !dst.exists() {
-                file::make_symlink_or_copy(&src, &dst)?;
+                Self::create_bin_launcher(&install_path, &src, &dst)?;
+            }
+        }
+
+        // On Windows the entries above are copies, and a copied executable resolves its
+        // imports from its own directory before anything on PATH. The DLLs it needs sit
+        // next to the original and mostly belong to dependency packages, so the
+        // main-package filter leaves them behind and the copy dies with
+        // STATUS_DLL_NOT_FOUND (`conda:postgresql` needs 91 of them). Bring every DLL
+        // along: they are libraries, not commands, so this does not put dependency
+        // executables on PATH, which is what this directory exists to prevent.
+        //
+        // unix does not need it — the entries there are symlinks, and `$ORIGIN` in an
+        // ELF RPATH resolves against the *target's* directory, so `../lib` still lands
+        // inside the install.
+        if cfg!(windows) {
+            for dir in bin_dirs {
+                let bin_dir = install_path.join(dir);
+                // Only some of these exist in any given package. Anything other than a
+                // missing directory has to surface: swallowing it would drop a DLL and
+                // still report the install as a success, which lands the user right back
+                // on the STATUS_DLL_NOT_FOUND this is meant to prevent.
+                let entries = match std::fs::read_dir(&bin_dir) {
+                    Ok(entries) => entries,
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(err) => {
+                        return Err(err).wrap_err_with(|| {
+                            format!("failed to read {}", file::display_path(&bin_dir))
+                        });
+                    }
+                };
+                for entry in entries {
+                    let entry = entry.wrap_err_with(|| {
+                        format!(
+                            "failed to read an entry in {}",
+                            file::display_path(&bin_dir)
+                        )
+                    })?;
+                    let src = entry.path();
+                    if !src
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
+                    {
+                        continue;
+                    }
+                    // Asked of the `DirEntry` rather than the path: `Path::is_file`
+                    // reports a metadata failure as "not a file", which would skip a DLL
+                    // that antivirus or a permission problem merely made unreadable for a
+                    // moment. Anything not a directory is fair game, including a symlink.
+                    let file_type = entry.file_type().wrap_err_with(|| {
+                        format!(
+                            "failed to stat {} in {}",
+                            entry.file_name().to_string_lossy(),
+                            file::display_path(&bin_dir)
+                        )
+                    })?;
+                    if file_type.is_dir() {
+                        continue;
+                    }
+                    let Some(name) = src.file_name() else {
+                        continue;
+                    };
+                    let dst = symlink_dir.join(name);
+                    if dst.exists() {
+                        // First writer wins, and the order is deliberate: the main
+                        // package's own DLLs are placed above, then `Library/bin` before
+                        // `Scripts` and `bin`. A name reaching here twice means two bin
+                        // directories disagree, which is worth seeing under --verbose.
+                        trace!(
+                            "conda: {} already present in {}, keeping the earlier one",
+                            name.to_string_lossy(),
+                            file::display_path(&symlink_dir)
+                        );
+                        continue;
+                    }
+                    file::hard_link_or_copy(&src, &dst)?;
+                }
             }
         }
         Ok(())
+    }
+
+    fn bin_launcher_path(
+        launcher_dir: &Path,
+        bin_name: &std::ffi::OsStr,
+        windows: bool,
+    ) -> PathBuf {
+        let launcher = launcher_dir.join(bin_name);
+        if windows
+            && launcher
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+        {
+            launcher.with_extension("cmd")
+        } else {
+            launcher
+        }
+    }
+
+    fn create_bin_launcher(prefix: &Path, target: &Path, launcher: &Path) -> Result<()> {
+        #[cfg(unix)]
+        {
+            file::write(launcher, Self::render_unix_launcher(prefix, target))?;
+            file::make_executable(launcher)?;
+        }
+
+        #[cfg(windows)]
+        {
+            let needs_activation_launcher = target
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("exe")
+                        || ext.eq_ignore_ascii_case("cmd")
+                        || ext.eq_ignore_ascii_case("bat")
+                });
+            if needs_activation_launcher {
+                file::write(launcher, Self::render_windows_launcher(prefix, target))?;
+            } else {
+                // Preserve the existing fallback for uncommon executable formats. Native
+                // .exe files remain at their original path and are invoked by a .cmd launcher
+                // so their adjacent dependency DLLs and prefix activation are both available.
+                file::make_symlink_or_copy(target, launcher)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(any(unix, test))]
+    fn render_unix_launcher(prefix: &Path, target: &Path) -> String {
+        let prefix = shell_quote(&prefix.to_string_lossy());
+        let target = shell_quote(&target.to_string_lossy());
+        format!(
+            "#!/bin/sh\n\
+             export CONDA_PREFIX={prefix}\n\
+             export CONDA_DEFAULT_ENV={prefix}\n\
+             export CONDA_SHLVL=1\n\
+             export PATH=\"$CONDA_PREFIX/bin${{PATH:+:$PATH}}\"\n\
+             for _mise_conda_script in \"$CONDA_PREFIX\"/etc/conda/activate.d/*.sh; do\n\
+             \tif [ -f \"$_mise_conda_script\" ]; then\n\
+             \t\t. \"$_mise_conda_script\" || exit $?\n\
+             \tfi\n\
+             done\n\
+             unset _mise_conda_script\n\
+             exec {target} \"$@\"\n"
+        )
+    }
+
+    #[cfg(any(windows, test))]
+    fn render_windows_launcher(prefix: &Path, target: &Path) -> String {
+        let prefix = cmd_escape_value(&prefix.to_string_lossy());
+        let target = cmd_escape_value(&target.to_string_lossy());
+        format!(
+            "@echo off\r\n\
+             setlocal\r\n\
+             set \"CONDA_PREFIX={prefix}\"\r\n\
+             set \"CONDA_DEFAULT_ENV={prefix}\"\r\n\
+             set \"CONDA_SHLVL=1\"\r\n\
+             set \"PATH={prefix};{prefix}\\Library\\mingw-w64\\bin;{prefix}\\Library\\usr\\bin;{prefix}\\Library\\bin;{prefix}\\Scripts;{prefix}\\bin;%PATH%\"\r\n\
+             for %%F in (\"{prefix}\\etc\\conda\\activate.d\\*.bat\") do if exist \"%%~fF\" call \"%%~fF\"\r\n\
+             for %%F in (\"{prefix}\\etc\\conda\\activate.d\\*.cmd\") do if exist \"%%~fF\" call \"%%~fF\"\r\n\
+             call \"{target}\" %*\r\n\
+             exit /b %ERRORLEVEL%\r\n"
+        )
     }
 
     /// Resolve conda packages for lockfile's shared conda-packages section.
@@ -668,7 +861,7 @@ impl Backend for CondaBackend {
         let current_platform = CondaPlatform::current();
         let tool_name = self.tool_name();
 
-        let gateway = Self::create_gateway();
+        let gateway = Self::create_gateway()?;
         let match_spec = MatchSpec::from_str(&tool_name, ParseStrictness::Lenient)
             .map_err(|e| eyre::eyre!("invalid match spec for '{}': {}", tool_name, e))?;
 
@@ -703,17 +896,17 @@ impl Backend for CondaBackend {
     }
 
     /// Override to bypass the shared remote_versions cache since conda's
-    /// channel option affects which versions are available. The override is
-    /// on `_with_refresh` so it applies to both cached and refresh-enabled
-    /// resolution paths; conda always queries the channel directly so the
-    /// `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_with_refresh(
+    /// channel option affects which versions are available. Conda always
+    /// queries the channel directly, so the `_refresh` flag is irrelevant.
+    async fn list_remote_versions_with_info_and_options(
         &self,
         config: &Arc<Config>,
+        _listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
         _refresh: bool,
+        _has_local_version_listing_override: bool,
     ) -> Result<Vec<VersionInfo>> {
-        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let want_prereleases = self.include_prereleases(&opts);
+        let want_prereleases = self.include_prereleases(selection_opts);
         let versions = self
             ._list_remote_versions(config)
             .await?
@@ -754,28 +947,15 @@ impl Backend for CondaBackend {
         let tool_name = self.tool_name();
         let spec_str = format!("{}=={}", tool_name, tv.version);
 
-        let match_spec = match MatchSpec::from_str(&spec_str, ParseStrictness::Lenient) {
-            Ok(s) => s,
-            Err(e) => {
-                debug!("invalid conda spec '{}': {}", spec_str, e);
-                return Ok(PlatformInfo::default());
-            }
-        };
+        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
+            .map_err(|e| eyre::eyre!("invalid conda spec '{spec_str}': {e}"))?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
-        let records = match self.solve_packages(vec![match_spec], platform, opts).await {
-            Ok(r) => r,
-            Err(e) => {
-                debug!(
-                    "failed to resolve {} for {}: {}",
-                    tool_name,
-                    target.to_key(),
-                    e
-                );
-                return Ok(PlatformInfo::default());
-            }
-        };
+        let records = self
+            .solve_packages(vec![match_spec], platform, opts)
+            .await
+            .wrap_err_with(|| format!("failed to solve {tool_name} for {}", target.to_key()))?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut main_record = None;
@@ -789,17 +969,20 @@ impl Backend for CondaBackend {
             }
         }
 
-        match main_record {
-            Some(main) => Ok(PlatformInfo {
-                url: Some(main.url.to_string()),
-                checksum: Self::format_sha256(&main),
-                size: None,
-                url_api: None,
-                conda_deps: Some(dep_basenames),
-                ..Default::default()
-            }),
-            None => Ok(PlatformInfo::default()),
-        }
+        let main = main_record.ok_or_else(|| {
+            eyre::eyre!(
+                "conda solve for {tool_name} on {} did not return the requested package",
+                target.to_key()
+            )
+        })?;
+        Ok(PlatformInfo {
+            url: Some(main.url.to_string()),
+            checksum: Self::format_sha256(&main),
+            size: None,
+            url_api: None,
+            conda_deps: Some(dep_basenames),
+            ..Default::default()
+        })
     }
 
     async fn list_bin_paths(
@@ -832,15 +1015,37 @@ impl Backend for CondaBackend {
     }
 }
 
+#[cfg(any(unix, test))]
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(any(windows, test))]
+fn cmd_escape_value(value: &str) -> String {
+    value
+        .replace('^', "^^")
+        .replace('%', "%%")
+        .replace('&', "^&")
+        .replace('|', "^|")
+        .replace('<', "^<")
+        .replace('>', "^>")
+        .replace('"', "^\"")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CondaBackend, CondaOptions};
+    use super::{CondaBackend, CondaOptions, rewrite_request_url};
+    #[cfg(unix)]
+    use crate::file;
     use crate::toolset::ToolVersionOptions;
     use rattler_conda_types::package::{ArchiveIdentifier, CondaArchiveType, DistArchiveType};
     use rattler_conda_types::{
         PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
     };
     use std::collections::BTreeMap;
+    use std::path::Path;
+    #[cfg(unix)]
+    use std::process::Command;
     use std::str::FromStr;
     use url::Url;
 
@@ -865,6 +1070,42 @@ mod tests {
             url: Url::parse(url).unwrap(),
             channel: None,
         }
+    }
+
+    #[test]
+    fn request_url_rewrite_preserves_request_data() {
+        let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::POST, original);
+        request.headers_mut().insert(
+            "x-conda-test",
+            reqwest::header::HeaderValue::from_static("preserved"),
+        );
+        *request.body_mut() = Some("request-body".into());
+
+        rewrite_request_url(&mut request, |url| {
+            *url = Url::parse("https://mirror.invalid/conda/noarch/repodata.json").unwrap();
+        });
+
+        assert_eq!(
+            request.url().as_str(),
+            "https://mirror.invalid/conda/noarch/repodata.json"
+        );
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(request.headers()["x-conda-test"], "preserved");
+        assert_eq!(
+            request.body().and_then(reqwest::Body::as_bytes),
+            Some(&b"request-body"[..])
+        );
+    }
+
+    #[test]
+    fn request_url_rewrite_can_be_a_noop() {
+        let original = Url::parse("https://upstream.invalid/channel/noarch/repodata.json").unwrap();
+        let mut request = reqwest::Request::new(reqwest::Method::GET, original.clone());
+
+        rewrite_request_url(&mut request, |_| {});
+
+        assert_eq!(request.url(), &original);
     }
 
     #[test]
@@ -903,6 +1144,91 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(first.parent(), dest.parent());
         assert_eq!(second.parent(), dest.parent());
+    }
+
+    #[test]
+    fn unix_launcher_quotes_prefix_and_target() {
+        let launcher = CondaBackend::render_unix_launcher(
+            Path::new("/tmp/prefix with ' quote"),
+            Path::new("/tmp/prefix with ' quote/bin/tool"),
+        );
+
+        assert!(launcher.contains("export CONDA_PREFIX='/tmp/prefix with '\\'' quote'"));
+        assert!(launcher.contains("exec '/tmp/prefix with '\\'' quote/bin/tool' \"$@\""));
+    }
+
+    #[test]
+    fn windows_launcher_escapes_cmd_metacharacters() {
+        let launcher = CondaBackend::render_windows_launcher(
+            Path::new(r"C:\prefix&tools%name%"),
+            Path::new(r"C:\prefix&tools%name%\Scripts\tool.cmd"),
+        );
+
+        assert!(launcher.contains(r#"set "CONDA_PREFIX=C:\prefix^&tools%%name%%""#));
+        assert!(launcher.contains(r#"call "C:\prefix^&tools%%name%%\Scripts\tool.cmd" %*"#));
+    }
+
+    #[test]
+    fn windows_native_executable_uses_cmd_launcher_path() {
+        let launcher = CondaBackend::bin_launcher_path(
+            Path::new("/prefix/.mise-bins"),
+            std::ffi::OsStr::new("tool.exe"),
+            true,
+        );
+
+        assert_eq!(launcher, Path::new("/prefix/.mise-bins/tool.cmd"));
+        assert_eq!(
+            CondaBackend::bin_launcher_path(
+                Path::new("/prefix/.mise-bins"),
+                std::ffi::OsStr::new("tool.cmd"),
+                true,
+            ),
+            Path::new("/prefix/.mise-bins/tool.cmd")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_launcher_activates_only_its_own_prefix() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("prefix with ' quote");
+        let bin_dir = prefix.join("bin");
+        let activate_dir = prefix.join("etc/conda/activate.d");
+        let target = bin_dir.join("tool");
+        let dependency = bin_dir.join("dependency-command");
+        let launcher = temp.path().join("launcher");
+        file::create_dir_all(&bin_dir).unwrap();
+        file::create_dir_all(&activate_dir).unwrap();
+        file::write(
+            &target,
+            "#!/bin/sh\nprintf '%s\\n' \"$CONDA_PREFIX\" \"$CONDA_DEFAULT_ENV\" \"$CONDA_SHLVL\" \"$CONDA_TEST_ACTIVATED\" \"$(dependency-command)\" \"$1\"\nexit 23\n",
+        )
+        .unwrap();
+        file::make_executable(&target).unwrap();
+        file::write(&dependency, "#!/bin/sh\nprintf dependency-output\n").unwrap();
+        file::make_executable(&dependency).unwrap();
+        file::write(
+            activate_dir.join("test.sh"),
+            "export CONDA_TEST_ACTIVATED=activated\n",
+        )
+        .unwrap();
+        CondaBackend::create_bin_launcher(&prefix, &target, &launcher).unwrap();
+
+        let output = Command::new(&launcher)
+            .arg("forwarded argument")
+            .env("CONDA_PREFIX", "/wrong/prefix")
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(23));
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!(
+                "{0}\n{0}\n1\nactivated\ndependency-output\nforwarded argument\n",
+                prefix.display()
+            )
+        );
     }
 
     /// Regression test for https://github.com/jdx/mise/discussions/9829:

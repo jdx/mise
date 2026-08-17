@@ -1,12 +1,13 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
-use crate::backend::options::BackendOptions;
+use crate::backend::options::{BackendOptions, VersionOrder};
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
+use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -159,13 +160,20 @@ enum GithubAttestationStatus {
 
 #[async_trait]
 impl Backend for AquaBackend {
+    fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
     }
 
     async fn description(&self) -> Option<String> {
+        // `self.id`, not `ba.tool_name`: the registry is keyed by aqua package name, and
+        // `from_arg` is what turns a bare `jq` into `jqlang/jq`. Looking it up by the
+        // short name misses every tool named the usual way, and `.ok()` hides that.
         AQUA_REGISTRY
-            .package(&self.ba.tool_name)
+            .package(&self.id)
             .await
             .ok()
             .and_then(|p| p.description.clone())
@@ -182,11 +190,11 @@ impl Backend for AquaBackend {
         // Count checksum operation if explicitly configured OR if this is a GitHub release
         // (GitHub API may provide a digest even without explicit checksum config)
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled())
-            || pkg.r#type == AquaPackageType::GithubRelease
+            || pkg.package_type() == AquaPackageType::GithubRelease
         {
             count += 1;
         }
-        if needs_extraction(format, &pkg.r#type) {
+        if needs_extraction(format, &pkg.package_type()) {
             count += 1;
         }
         count
@@ -195,7 +203,8 @@ impl Backend for AquaBackend {
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
-        let pkg = match AQUA_REGISTRY.package(&self.ba.tool_name).await {
+        // Keyed by aqua package name, same as `description` above.
+        let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(_) => return vec![],
         };
@@ -465,7 +474,7 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let versions = install_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        let pkg = Self::package_with_options_for_pkg(&tv, pkg, &versions)?;
+        let mut pkg = Self::package_with_options_for_pkg(&tv, pkg, &versions)?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
         {
@@ -486,11 +495,10 @@ impl Backend for AquaBackend {
         // Only validate for GithubRelease packages - other types use fixed URL formats
         // In locked mode, trust the lockfile URL without validation to avoid API calls
         let validated_url = if let Some(ref url) = existing_platform {
-            if ctx.locked || pkg.r#type != AquaPackageType::GithubRelease {
+            if ctx.locked || pkg.package_type() != AquaPackageType::GithubRelease {
                 existing_platform // Trust lockfile URL in locked mode or for non-release types
             } else {
                 let cached_filename = get_filename_from_url(url);
-                let cached_filename_lower = cached_filename.to_lowercase();
                 // Check assets for both version variants (with and without v prefix)
                 let version_variants: Vec<&str> = match &v_prefixed {
                     Some(vp) => vec![v.as_str(), vp.as_str()],
@@ -501,9 +509,11 @@ impl Backend for AquaBackend {
                         .unwrap_or_default()
                         .iter()
                         .any(|expected| {
-                            // Case-insensitive match to align with github_release_asset behavior
-                            cached_filename == *expected
-                                || cached_filename_lower == expected.to_lowercase()
+                            asset_name_matches_expected(
+                                &cached_filename,
+                                expected,
+                                libc_asset_preference(&PlatformTarget::from_current()),
+                            )
                         })
                 });
                 if matches {
@@ -553,7 +563,7 @@ impl Backend for AquaBackend {
                 platform_key
             );
         } else {
-            let (url, url_api, v, digest) = if pkg.r#type == AquaPackageType::Http {
+            let (url, url_api, v, digest) = if pkg.package_type() == AquaPackageType::Http {
                 let (url, resolved_version) =
                     resolve_aqua_http_url(&pkg, &v, v_prefixed.as_deref(), os(), arch()).await?;
                 (url, None, resolved_version, None)
@@ -597,6 +607,11 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
+        let original_linux_replacement = pkg.replacements.get("linux").cloned();
+        pkg = Self::apply_selected_asset_libc_replacement(pkg, os(), &filename);
+        let selected_libc_sibling =
+            original_linux_replacement != pkg.replacements.get("linux").cloned();
+
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
 
         // Public repos download from the browser URL; private repos return 404/HTML there
@@ -622,10 +637,10 @@ impl Backend for AquaBackend {
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
 
         // Advance to extraction operation if applicable
-        if needs_extraction(format, &pkg.r#type) {
+        if needs_extraction(format, &pkg.package_type()) {
             ctx.pr.next_operation();
         }
-        self.install(ctx, &tv, &pkg, &v, &filename)?;
+        self.install(ctx, &tv, &pkg, &v, &filename, selected_libc_sibling)?;
 
         Ok(tv)
     }
@@ -797,7 +812,7 @@ impl Backend for AquaBackend {
         let target_libc = Self::target_variant_libc(target);
         let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
-        let pkg = Self::apply_var_options(pkg, &opts)?;
+        let mut pkg = Self::apply_var_options(pkg, &opts)?;
 
         // Apply version prefix if present
         if let Some(prefix) = &pkg.version_prefix
@@ -825,7 +840,7 @@ impl Backend for AquaBackend {
         }
 
         // Get URL and checksum for the target platform
-        let (url, url_api, checksum) = match pkg.r#type {
+        let (url, url_api, checksum) = match pkg.package_type() {
             AquaPackageType::GithubRelease => {
                 // Try v-prefixed version first (most aqua packages use v-prefixed tags),
                 // then fall back to the non-prefixed version.
@@ -884,15 +899,26 @@ impl Backend for AquaBackend {
         };
 
         let name = url.as_ref().map(|u| get_filename_from_url(u));
+        if let Some(filename) = &name {
+            pkg = Self::apply_selected_asset_libc_replacement(pkg, target_os, filename);
+        }
 
         // Try to get checksum from checksum file if not available from GitHub API
         let checksum = match checksum {
             Some(c) => Some(c),
-            None => self
-                .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref())
+            None => match self
+                .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref(), target)
                 .await
-                .ok()
-                .flatten(),
+            {
+                Ok(checksum) => checksum,
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to get checksum from checksum file: {e}",
+                        self.ba()
+                    );
+                    None
+                }
+            },
         };
 
         // Detect provenance from aqua registry config
@@ -936,7 +962,7 @@ impl Backend for AquaBackend {
         // This ensures deterministic lockfile output regardless of host platform.
         if matches!(provenance, Some(ProvenanceType::Slsa { url: None })) {
             match self
-                .resolve_slsa_url(&pkg, &v, target_os, target_arch)
+                .resolve_slsa_url(&pkg, &v, target_os, target_arch, target)
                 .await
             {
                 Ok((canonical_url, _url_api)) => {
@@ -980,8 +1006,9 @@ impl Backend for AquaBackend {
                     // would be true and verify_provenance() would be skipped.
                     warn!(
                         "lock-time provenance verification failed for {}, \
-                         will be verified at install time: {e}",
-                        self.id
+                         will be verified at install time: {e}{}",
+                        self.id,
+                        Self::scratch_length_hint()
                     );
                     provenance = None;
                 }
@@ -1084,6 +1111,25 @@ impl AquaBackend {
             *linux = format!("{prefix}-{libc}");
         }
         pkg
+    }
+
+    fn apply_selected_asset_libc_replacement(
+        pkg: AquaPackage,
+        target_os: &str,
+        filename: &str,
+    ) -> AquaPackage {
+        let tokens = asset_name_tokens(filename);
+        let libc = if tokens.iter().any(|token| token == "musl") {
+            Some("musl")
+        } else if tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc"))
+        {
+            Some("gnu")
+        } else {
+            None
+        };
+        Self::apply_aqua_libc_replacement(pkg, target_os, libc.map(str::to_string))
     }
 
     fn apply_var_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
@@ -1237,7 +1283,70 @@ impl AquaBackend {
         .await
     }
 
-    /// Verify provenance at lock time by downloading the artifact to a temp directory
+    /// A scratch directory for the lock-time artifact download, under
+    /// `MISE_CACHE_DIR/lock-provenance`.
+    ///
+    /// Deliberately not `TEMP`. A lockfile is a committed artifact, so its contents must not
+    /// depend on where a machine happens to point `TEMP` — and they did: on Windows a `TEMP`
+    /// deep enough to push this download past `MAX_PATH` made the download fail, which drops
+    /// `provenance` for the current platform from the generated lockfile.
+    ///
+    /// Deliberately not `MISE_DOWNLOADS_DIR` either, though that is where install puts the same
+    /// artifact. This copy is verified and thrown away, never reused, and `TempDir` cleanup is
+    /// best-effort: a crash or a failed delete strands a randomly named directory. At the root of
+    /// the persistent downloads directory nothing would ever collect it — not `mise cache clear`,
+    /// not the per-tool download cleanup. Under a named directory in the cache, ordinary cache
+    /// clearing sweeps it up.
+    fn lock_time_download_dir() -> Result<tempfile::TempDir> {
+        let scratch = dirs::CACHE.join("lock-provenance");
+        crate::file::create_dir_all(&scratch)?;
+        Ok(tempfile::tempdir_in(&scratch)?)
+    }
+
+    /// A note about the scratch directory's length, appended when lock-time verification fails.
+    ///
+    /// Moving the scratch out of `TEMP` removed one environment variable from the answer, not the
+    /// arithmetic: `MISE_CACHE_DIR` is configurable too, and past `MAX_PATH` the download comes back
+    /// as a bare `os error 3` while the lockfile quietly loses `provenance` for this platform.
+    /// Measured on 2026.8.6: with the cache at 200 characters `mise install` and `mise lock` both
+    /// still exit 0, so nothing else fails at that depth to suggest why.
+    ///
+    /// This deliberately annotates the *failure* rather than predicting it. Several files land in
+    /// that directory — the artifact and its `.mise-part.json` sidecar, a checksum file, a
+    /// provenance or signature file — with names taken from URLs, and a check on any one of them
+    /// passes while a later one is longer. Reporting after the fact covers all of them.
+    fn scratch_length_hint() -> String {
+        Self::scratch_length_hint_for(&dirs::CACHE.join("lock-provenance"))
+    }
+
+    /// Split out from [`Self::scratch_length_hint`] so it can be tested without depending on
+    /// wherever the machine running the tests happens to keep its cache.
+    fn scratch_length_hint_for(root: &Path) -> String {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+
+            // The scratch adds `\.tmpXXXXXX` and then a downloaded name; 64 is a modest allowance
+            // for both, so this fires while a real name could still have fitted. That is the right
+            // side to err on for a note that is only printed once something has already failed.
+            const ALLOWANCE: usize = 64;
+
+            let len = root.as_os_str().encode_wide().count();
+            if len + ALLOWANCE >= crate::file::MAX_PATH {
+                return format!(
+                    "\nthe download directory is {len} characters ({}) and Windows stops at {}, \
+                     which may be the reason — point MISE_CACHE_DIR at a shorter directory",
+                    crate::file::display_path(root),
+                    crate::file::MAX_PATH,
+                );
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = root;
+        String::new()
+    }
+
+    /// Verify provenance at lock time by downloading the artifact to a scratch directory
     /// and running the appropriate cryptographic verification. Only called for the
     /// current platform during `mise lock`.
     async fn verify_provenance_at_lock_time(
@@ -1248,7 +1357,7 @@ impl AquaBackend {
         detected: &ProvenanceType,
         expected_checksum: Option<&str>,
     ) -> Result<Option<ProvenanceType>> {
-        let tmp_dir = tempfile::tempdir()?;
+        let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
 
@@ -1452,6 +1561,7 @@ impl AquaBackend {
         v: &str,
         target_os: &str,
         target_arch: &str,
+        target: &PlatformTarget,
     ) -> Result<(String, Option<String>)> {
         let slsa = pkg
             .slsa_provenance
@@ -1465,7 +1575,9 @@ impl AquaBackend {
         match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
                 let asset_strs = slsa.asset_strs(&slsa_pkg, v, target_os, target_arch)?;
-                let (url, url_api, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
+                let (url, url_api, _) = self
+                    .github_release_asset_for_target(&slsa_pkg, v, asset_strs, target)
+                    .await?;
                 Ok((url, url_api))
             }
             "http" => slsa
@@ -1485,7 +1597,9 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
-        let (provenance_url, url_api) = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
+        let target = PlatformTarget::from_current();
+        let (provenance_url, url_api) =
+            self.resolve_slsa_url(pkg, v, os(), arch(), &target).await?;
         let download_url =
             select_github_download_url(pkg.private, &provenance_url, url_api.as_deref()).await;
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
@@ -1969,7 +2083,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
     ) -> Result<(String, Option<String>, bool, Option<String>)> {
-        match pkg.r#type {
+        match pkg.package_type() {
             AquaPackageType::GithubRelease => self
                 .github_release_url(pkg, v)
                 .await
@@ -2008,16 +2122,6 @@ impl AquaBackend {
             .await
     }
 
-    async fn github_release_asset(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        asset_strs: IndexSet<String>,
-    ) -> Result<(String, Option<String>, Option<String>)> {
-        self.github_release_asset_matching(pkg, v, asset_strs, false)
-            .await
-    }
-
     /// Resolve a GitHub release asset to `(canonical_url, transport_url)`.
     ///
     /// `canonical_url` is the browser download URL (`github.com/.../releases/download/...`),
@@ -2035,7 +2139,21 @@ impl AquaBackend {
         v: &str,
         asset_strs: IndexSet<String>,
     ) -> Result<(String, String)> {
-        let (url, url_api, _) = self.github_release_asset(pkg, v, asset_strs).await?;
+        let target = PlatformTarget::from_current();
+        self.github_release_asset_urls_for_target(pkg, v, asset_strs, &target)
+            .await
+    }
+
+    async fn github_release_asset_urls_for_target(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        asset_strs: IndexSet<String>,
+        target: &PlatformTarget,
+    ) -> Result<(String, String)> {
+        let (url, url_api, _) = self
+            .github_release_asset_for_target(pkg, v, asset_strs, target)
+            .await?;
         let transport = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
         Ok((url, transport))
     }
@@ -2047,12 +2165,10 @@ impl AquaBackend {
         asset_strs: IndexSet<String>,
         target: &PlatformTarget,
     ) -> Result<(String, Option<String>, Option<String>)> {
-        // TODO: remove this when aqua supports musl variants natively.
-        // For now aqua templates only see linux/amd64 or linux/arm64, so a
-        // linux-*-musl lock target would otherwise choose the glibc asset even
-        // when a release also publishes the same asset name with an added musl
-        // token.
-        self.github_release_asset_matching(pkg, v, asset_strs, target_prefers_musl(target))
+        // Aqua metadata sometimes names only one libc variant even when the release
+        // publishes both. Prefer the target libc sibling while retaining the exact
+        // metadata asset as a fallback for unqualified Linux targets.
+        self.github_release_asset_matching(pkg, v, asset_strs, libc_asset_preference(target))
             .await
     }
 
@@ -2072,20 +2188,20 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         asset_strs: IndexSet<String>,
-        prefer_musl: bool,
+        libc_preference: LibcAssetPreference,
     ) -> Result<(String, Option<String>, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = self.get_github_release(&gh_id, v).await?;
 
         // Prioritize order of asset_strs
-        let asset = select_github_release_asset(&gh_release.assets, &asset_strs, prefer_musl)
+        let asset = select_github_release_asset(&gh_release.assets, &asset_strs, libc_preference)
             .wrap_err_with(|| {
-                format!(
-                    "no asset found: {}\nAvailable assets:\n{}",
-                    asset_strs.iter().join(", "),
-                    gh_release.assets.iter().map(|a| &a.name).join("\n")
-                )
-            })?;
+            format!(
+                "no asset found: {}\nAvailable assets:\n{}",
+                asset_strs.iter().join(", "),
+                gh_release.assets.iter().map(|a| &a.name).join("\n")
+            )
+        })?;
 
         Ok((
             asset.browser_download_url.to_string(),
@@ -2146,6 +2262,7 @@ impl AquaBackend {
         target_os: &str,
         target_arch: &str,
         filename: Option<&str>,
+        target: &PlatformTarget,
     ) -> Result<Option<String>> {
         let Some(checksum_config) = &pkg.checksum else {
             return Ok(None);
@@ -2163,7 +2280,10 @@ impl AquaBackend {
                 let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
                 // No filename derivation is needed here, so the transport URL is all that
                 // is needed.
-                match self.github_release_asset_urls(pkg, v, asset_strs).await {
+                match self
+                    .github_release_asset_urls_for_target(pkg, v, asset_strs, target)
+                    .await
+                {
                     Ok((_, download_url)) => download_url,
                     Err(e) => {
                         debug!("Failed to get checksum file asset: {}", e);
@@ -2210,17 +2330,13 @@ impl AquaBackend {
             let pattern = checksum_config.pattern();
             if let Some(file_pattern) = &pattern.file {
                 let re = regex::Regex::new(file_pattern.as_str())?;
-                if let Some(line) = checksum_file
+                let Some(line) = checksum_file
                     .lines()
                     .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
-                {
-                    checksum_file = line.to_string();
-                } else {
-                    debug!(
-                        "no line found matching {} in checksum file for {}",
-                        file_pattern, filename
-                    );
-                }
+                else {
+                    bail!("no checksum entry found for {filename} in checksum file");
+                };
+                checksum_file = line.to_string();
             }
             let re = regex::Regex::new(pattern.checksum.as_str())?;
             if let Some(caps) = re.captures(checksum_file.as_str()) {
@@ -2234,7 +2350,7 @@ impl AquaBackend {
         }
 
         // Standard format: "<hash>  <filename>" or "<hash> *<filename>"
-        let checksum_str = checksum_file
+        let entries = checksum_file
             .lines()
             .filter_map(|l| {
                 let split = l.split_whitespace().collect_vec();
@@ -2252,9 +2368,22 @@ impl AquaBackend {
                     None
                 }
             })
-            .find(|(_, f)| f == filename)
-            .map(|(c, _)| c)
-            .unwrap_or(checksum_file);
+            .collect_vec();
+
+        let checksum_str = if let Some((c, _)) = entries.iter().find(|(_, f)| f == filename) {
+            c.clone()
+        } else if entries.is_empty() {
+            // No "<hash>  <filename>" entries were found at all, so the file is either a
+            // single bare checksum (no filename column) or was already reduced to just the
+            // checksum by the regexp format handling above. There's nothing to disambiguate
+            // against, so use the content as-is.
+            checksum_file
+        } else {
+            // The file lists checksums for other filenames, but not this one. Silently
+            // falling back to some other entry's checksum would produce a wrong-but-valid-
+            // looking checksum, so treat this as an error instead.
+            bail!("no checksum entry found for {filename} in checksum file");
+        };
 
         let checksum_str = checksum_str
             .split_whitespace()
@@ -2772,7 +2901,7 @@ impl AquaBackend {
             bail!("unsupported aqua package format: {format}");
         }
         let extraction_format = extraction_format.unwrap_or(ExtractionFormat::Raw);
-        if pkg.r#type == AquaPackageType::GithubArchive
+        if pkg.package_type() == AquaPackageType::GithubArchive
             && extraction_format == ExtractionFormat::Raw
         {
             // The aqua registry can omit format for GitHub-generated archive downloads.
@@ -2790,6 +2919,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
+        selected_libc_sibling: bool,
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
         ctx.pr.set_message(format!("extract {filename}"));
@@ -2830,7 +2960,7 @@ impl AquaBackend {
         };
         let extraction_format = Self::effective_extraction_format(pkg, format)?;
         let mut make_executable = false;
-        if let AquaPackageType::GithubArchive = pkg.r#type {
+        if let AquaPackageType::GithubArchive = pkg.package_type() {
             file::extract_archive(
                 &tarball_path,
                 &install_path,
@@ -2838,7 +2968,7 @@ impl AquaBackend {
                 &extract_opts,
             )?;
             make_executable = true;
-        } else if let AquaPackageType::GithubContent = pkg.r#type {
+        } else if let AquaPackageType::GithubContent = pkg.package_type() {
             if let Some(parent) = first_bin_path.parent() {
                 file::create_dir_all(parent)?;
             }
@@ -2887,7 +3017,7 @@ impl AquaBackend {
 
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
-        if opts.symlink_bins() {
+        if opts.symlink_bins() || selected_libc_sibling {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
@@ -2898,12 +3028,20 @@ impl AquaBackend {
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[AquaFileLink]) -> Result<()> {
         let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
-        file::create_dir_all(&symlink_dir)?;
+        Self::create_symlink_bin_dir_at(&symlink_dir, srcs)
+    }
+
+    fn create_symlink_bin_dir_at(symlink_dir: &Path, srcs: &[AquaFileLink]) -> Result<()> {
+        let srcs = srcs.iter().filter(|link| link.dst.exists()).collect_vec();
+        if srcs.is_empty() {
+            return Ok(());
+        }
+        file::create_dir_all(symlink_dir)?;
 
         for link in srcs {
             if let Some(bin_name) = link.dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
-                if link.dst.exists() && !symlink_path.exists() {
+                if !symlink_path.exists() {
                     file::make_symlink_or_copy(&link.dst, &symlink_path)?;
                 }
             }
@@ -3410,6 +3548,61 @@ mod tests {
     }
 
     #[test]
+    fn an_ordinary_cache_path_gets_no_length_note() {
+        // The note is only worth printing when length is a plausible explanation, so on a normal
+        // machine it must stay out of the way. On unix it never appears at all.
+        let root = PathBuf::from(r"C:\Users\u\AppData\Local\Temp\mise\lock-provenance");
+        assert_eq!(AquaBackend::scratch_length_hint_for(&root), "");
+    }
+
+    #[test]
+    fn symlink_bin_dir_is_not_created_without_existing_bins() {
+        let temp = tempfile::tempdir().unwrap();
+        let symlink_dir = temp.path().join(MISE_BINS_DIR);
+        let bin = temp.path().join("missing-bin");
+        let srcs = [AquaFileLink {
+            src: bin.clone(),
+            dst: bin.clone(),
+            hard: false,
+            explicit_link: false,
+        }];
+
+        AquaBackend::create_symlink_bin_dir_at(&symlink_dir, &srcs).unwrap();
+        assert!(!symlink_dir.exists());
+
+        fs::write(&bin, b"binary").unwrap();
+        AquaBackend::create_symlink_bin_dir_at(&symlink_dir, &srcs).unwrap();
+        assert!(symlink_dir.join("missing-bin").exists());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_deep_cache_path_says_which_variable_to_change() {
+        // Measured: at a 200-character cache, `mise install` and `mise lock` both still exit 0, so
+        // a failure here comes with no other signal about why.
+        let root = PathBuf::from(format!(r"C:\{}", "d".repeat(200)));
+        let hint = AquaBackend::scratch_length_hint_for(&root);
+        assert!(hint.contains("MISE_CACHE_DIR"), "{hint}");
+        assert!(hint.contains("260"), "{hint}");
+    }
+
+    #[test]
+    fn the_lock_time_download_lands_in_a_sweepable_cache_directory() {
+        // Two things at once. A lockfile is a committed artifact, so what `mise lock` writes must
+        // not depend on where the machine points TEMP — and the scratch has to sit somewhere
+        // ordinary cache clearing reaches, because `TempDir` cleanup is best-effort and an orphan
+        // under the persistent downloads directory would never be collected.
+        let expected = dirs::CACHE.join("lock-provenance");
+        let dir = AquaBackend::lock_time_download_dir().unwrap();
+        assert!(
+            dir.path().starts_with(&expected),
+            "expected {} to be under {}",
+            dir.path().display(),
+            expected.display()
+        );
+    }
+
+    #[test]
     fn detects_legacy_root_binary_layout() {
         let temp = tempfile::tempdir().unwrap();
         let ba = BackendArg::from("codex");
@@ -3574,7 +3767,7 @@ mod tests {
     #[test]
     fn test_github_archive_omitted_format_defaults_to_targz() {
         let mut pkg = AquaPackage::default();
-        pkg.r#type = AquaPackageType::GithubArchive;
+        pkg.r#type = Some(AquaPackageType::GithubArchive);
 
         assert_eq!(
             AquaBackend::effective_extraction_format(&pkg, "").unwrap(),
@@ -3847,7 +4040,7 @@ packages:
     #[test]
     fn test_complete_windows_ext_can_default_to_sh() {
         let mut pkg = AquaPackage::default();
-        pkg.r#type = AquaPackageType::GithubContent;
+        pkg.r#type = Some(AquaPackageType::GithubContent);
         pkg.complete_windows_ext = Some(true);
 
         assert_eq!(
@@ -4531,7 +4724,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
             pkg.supported_envs
         );
     }
-    match pkg.r#type {
+    match pkg.package_type() {
         AquaPackageType::Cargo => {
             bail!(
                 "package type `cargo` is not supported in the aqua backend. Use the cargo backend instead{}.",
@@ -4545,7 +4738,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
         AquaPackageType::GoInstall | AquaPackageType::GoBuild => {
             bail!(
                 "package type `{}` is not supported in the aqua backend. Use the go backend instead{}.",
-                pkg.r#type,
+                pkg.package_type(),
                 pkg.path
                     .as_ref()
                     .map(|path| format!(": go:{path}"))
@@ -4600,8 +4793,23 @@ fn is_platform_supported(supported_envs: &[String], os: &str, arch: &str) -> boo
     !envs.is_disjoint(&myself)
 }
 
-fn target_prefers_musl(target: &PlatformTarget) -> bool {
-    target.os_name() == "linux" && AquaBackend::target_libc(target).as_deref() == Some("musl")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LibcAssetPreference {
+    Exact,
+    GlibcWithFallback,
+    GlibcStrict,
+    MuslStrict,
+}
+
+fn libc_asset_preference(target: &PlatformTarget) -> LibcAssetPreference {
+    if target.os_name() != "linux" {
+        return LibcAssetPreference::Exact;
+    }
+    match AquaBackend::target_libc(target).as_deref() {
+        Some("gnu") => LibcAssetPreference::GlibcStrict,
+        Some("musl") => LibcAssetPreference::MuslStrict,
+        _ => LibcAssetPreference::GlibcWithFallback,
+    }
 }
 
 fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
@@ -4614,9 +4822,9 @@ fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
 fn select_github_release_asset<'a>(
     assets: &'a [github::GithubAsset],
     asset_strs: &IndexSet<String>,
-    prefer_musl: bool,
+    libc_preference: LibcAssetPreference,
 ) -> Option<&'a github::GithubAsset> {
-    let assets_with_tokens = if prefer_musl {
+    let assets_with_tokens = if libc_preference != LibcAssetPreference::Exact {
         assets
             .iter()
             .map(|asset| (asset, asset_name_tokens(&asset.name)))
@@ -4630,21 +4838,64 @@ fn select_github_release_asset<'a>(
             .find(|a| a.name == *expected || a.name.to_lowercase() == expected.to_lowercase());
 
         let expected_tokens = asset_name_tokens(expected);
-        if prefer_musl
-            && let Some(musl_asset) = assets_with_tokens.iter().find_map(|(asset, tokens)| {
-                is_musl_variant_of_expected_asset(tokens, &expected_tokens).then_some(*asset)
+        if libc_preference != LibcAssetPreference::Exact
+            && let Some(preferred_asset) = assets_with_tokens.iter().find_map(|(asset, tokens)| {
+                is_libc_variant_of_expected_asset(tokens, &expected_tokens, libc_preference)
+                    .then_some(*asset)
             })
         {
-            return Some(musl_asset);
+            return Some(preferred_asset);
         }
 
-        exact
+        exact.filter(|_| exact_asset_matches_libc_preference(&expected_tokens, libc_preference))
     })
 }
 
-fn is_musl_variant_of_expected_asset(asset_tokens: &[String], expected_tokens: &[String]) -> bool {
-    asset_tokens.iter().any(|token| token == "musl")
-        && !expected_tokens.iter().any(|token| token == "musl")
+fn exact_asset_matches_libc_preference(
+    asset_tokens: &[String],
+    preference: LibcAssetPreference,
+) -> bool {
+    match preference {
+        LibcAssetPreference::Exact | LibcAssetPreference::GlibcWithFallback => true,
+        LibcAssetPreference::GlibcStrict => !asset_tokens.iter().any(|token| token == "musl"),
+        LibcAssetPreference::MuslStrict => !asset_tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
+    }
+}
+
+fn asset_name_matches_expected(
+    actual: &str,
+    expected: &str,
+    preference: LibcAssetPreference,
+) -> bool {
+    let actual_tokens = asset_name_tokens(actual);
+    let expected_tokens = asset_name_tokens(expected);
+    ((actual == expected || actual.eq_ignore_ascii_case(expected))
+        && exact_asset_matches_libc_preference(&actual_tokens, preference))
+        || is_libc_variant_of_expected_asset(&actual_tokens, &expected_tokens, preference)
+}
+
+fn is_libc_variant_of_expected_asset(
+    asset_tokens: &[String],
+    expected_tokens: &[String],
+    preference: LibcAssetPreference,
+) -> bool {
+    let asset_matches = match preference {
+        LibcAssetPreference::Exact => false,
+        LibcAssetPreference::GlibcWithFallback | LibcAssetPreference::GlibcStrict => asset_tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
+        LibcAssetPreference::MuslStrict => asset_tokens.iter().any(|token| token == "musl"),
+    };
+    asset_matches
+        && !expected_tokens.iter().any(|token| match preference {
+            LibcAssetPreference::Exact => false,
+            LibcAssetPreference::GlibcWithFallback | LibcAssetPreference::GlibcStrict => {
+                matches!(token.as_str(), "gnu" | "glibc")
+            }
+            LibcAssetPreference::MuslStrict => token == "musl",
+        })
         && itertools::equal(
             asset_tokens
                 .iter()
@@ -4781,6 +5032,70 @@ mod lock_candidate_tests {
         assert!(err.contains("does not match expected checksum"), "{err}");
     }
 
+    /// A checksum file listing several other filenames, but not the requested one, must not
+    /// silently hand back some other entry's checksum (or the raw file content) as if it were a
+    /// match — that produced a wrong-but-valid-looking checksum, as reported in a case where the
+    /// target asset's filename changed and no line in the multi-platform checksums file matched.
+    #[test]
+    fn test_parse_checksum_from_content_errors_on_filename_mismatch() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha256"}"#).unwrap();
+        let content = "\
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tool-1.0.0-linux-amd64.tar.gz\n\
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  tool-1.0.0-darwin-amd64.tar.gz\n";
+
+        let err = backend
+            .parse_checksum_from_content(content, &checksum, "tool-1.0.0-windows-amd64.zip")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tool-1.0.0-windows-amd64.zip"), "{err}");
+    }
+
+    /// A checksum file with no filename column at all (a single bare hash) is a legitimate,
+    /// unambiguous format still supported via the same fallback the mismatch case above disables.
+    #[test]
+    fn test_parse_checksum_from_content_accepts_bare_single_checksum() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha256"}"#).unwrap();
+        const DIGEST: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+        let result = backend
+            .parse_checksum_from_content(&format!("{DIGEST}\n"), &checksum, "tool-1.0.0.tar.gz")
+            .unwrap();
+        assert_eq!(result, DIGEST);
+    }
+
+    /// The `file_format: "regexp"` path has its own line-selection step ahead of the raw-entries
+    /// fallback above. If it can't find a line for the requested filename, it must not fall
+    /// through to running the checksum pattern against the whole (still multi-entry) file — that
+    /// would extract some other line's digest instead of erroring, bypassing the mismatch check.
+    #[test]
+    fn test_parse_checksum_from_content_errors_on_regexp_filename_mismatch() {
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(
+            r#"{"algorithm":"sha256","file_format":"regexp","pattern":{"checksum":"^(\\S+)","file":"\\S+\\s+(\\S+)$"}}"#,
+        )
+        .unwrap();
+        let content = "\
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tool-1.0.0-linux-amd64.tar.gz\n\
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  tool-1.0.0-darwin-amd64.tar.gz\n";
+
+        let err = backend
+            .parse_checksum_from_content(content, &checksum, "tool-1.0.0-windows-amd64.zip")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tool-1.0.0-windows-amd64.zip"), "{err}");
+    }
+
     /// The counterpart over HTTP, which needs no decoding of its own: reqwest's `text()` goes
     /// through `text_with_charset` -> `encoding_rs::Encoding::decode`, which sniffs the BOM and
     /// strips it. Pinned here because that is a property of the *transport*, easy to lose by
@@ -4818,9 +5133,10 @@ mod lock_candidate_tests {
             "tool".to_string(),
             Some("aqua:owner/repo".to_string()),
         ));
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
 
         let checksum = backend
-            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT))
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
             .await
             .unwrap();
 
@@ -5059,7 +5375,9 @@ version_overrides:
         ];
         let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
 
-        let selected = select_github_release_asset(&assets, &asset_strs, true).unwrap();
+        let selected =
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
     }
@@ -5072,7 +5390,8 @@ version_overrides:
         ];
         let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
 
-        let selected = select_github_release_asset(&assets, &asset_strs, false).unwrap();
+        let selected =
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::Exact).unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz");
     }
@@ -5082,7 +5401,9 @@ version_overrides:
         let assets = vec![asset("tool-1.0.0-linux-amd64-musl.tar.gz")];
         let asset_strs = IndexSet::from(["tool-1.0.0-linux-amd64.tar.gz".to_string()]);
 
-        let selected = select_github_release_asset(&assets, &asset_strs, true).unwrap();
+        let selected =
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-linux-amd64-musl.tar.gz");
     }
@@ -5092,9 +5413,85 @@ version_overrides:
         let asset_tokens = asset_name_tokens("tool-1.0.0-linux-amd64-muslvariant.tar.gz");
         let expected_tokens = asset_name_tokens("tool-1.0.0-linux-amd64.tar.gz");
 
-        assert!(!is_musl_variant_of_expected_asset(
+        assert!(!is_libc_variant_of_expected_asset(
             &asset_tokens,
             &expected_tokens,
+            LibcAssetPreference::MuslStrict,
+        ));
+    }
+
+    #[test]
+    fn test_select_github_release_asset_prefers_glibc_then_falls_back_to_musl() {
+        let assets = vec![
+            asset("tool-1.0.0-x86_64-unknown-linux-musl.tar.gz"),
+            asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz"),
+        ];
+        let asset_strs =
+            IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-musl.tar.gz".to_string()]);
+
+        let selected = select_github_release_asset(
+            &assets,
+            &asset_strs,
+            LibcAssetPreference::GlibcWithFallback,
+        )
+        .unwrap();
+        assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz");
+
+        let selected = select_github_release_asset(
+            &assets[..1],
+            &asset_strs,
+            LibcAssetPreference::GlibcWithFallback,
+        )
+        .unwrap();
+        assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
+    }
+
+    #[test]
+    fn test_select_github_release_asset_keeps_explicit_glibc_strict() {
+        let assets = vec![asset("tool-1.0.0-x86_64-unknown-linux-musl.tar.gz")];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        assert!(
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::GlibcStrict)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_select_github_release_asset_keeps_explicit_musl_strict() {
+        let assets = vec![asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz")];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        assert!(
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_lock_asset_validation_preserves_explicit_libc() {
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+
+        assert!(!asset_name_matches_expected(
+            musl,
+            musl,
+            LibcAssetPreference::GlibcStrict,
+        ));
+        assert!(!asset_name_matches_expected(
+            gnu,
+            gnu,
+            LibcAssetPreference::MuslStrict,
+        ));
+        assert!(asset_name_matches_expected(
+            gnu,
+            musl,
+            LibcAssetPreference::GlibcWithFallback,
+        ));
+        assert!(asset_name_matches_expected(
+            musl,
+            musl,
+            LibcAssetPreference::GlibcWithFallback,
         ));
     }
 
@@ -5137,6 +5534,24 @@ version_overrides:
         assert_eq!(
             pkg.replacements.get("linux").map(String::as_str),
             Some("Linux")
+        );
+    }
+
+    #[test]
+    fn test_apply_selected_asset_libc_replacement_tracks_downloaded_archive() {
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "unknown-linux-musl".to_string());
+
+        let pkg = AquaBackend::apply_selected_asset_libc_replacement(
+            pkg,
+            "linux",
+            "tool-x86_64-unknown-linux-gnu.tar.gz",
+        );
+
+        assert_eq!(
+            pkg.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-gnu")
         );
     }
 }

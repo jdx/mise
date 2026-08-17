@@ -2,3 +2,4 @@ backends = ["aqua:jkfran/killport", "cargo:killport"]
 bins = ["killport"]
 description = "A command-line tool to easily kill processes running on a specified port"
 test = { cmd = "killport --version", expected = "killport {{version}}" }
+version_order = "semver"

@@ -6,3 +6,4 @@ backends = [
 ]
 description = "Count your code, quickly"
 test = { cmd = "tokei --version", expected = "tokei {{version}}" }
+version_order = "semver"

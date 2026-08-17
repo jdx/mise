@@ -1,8 +1,8 @@
 use crate::cli::args::ToolArg;
 use crate::config::{Config, Settings};
-use crate::task::Deps;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::canonicalize_path;
+use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolSource, ToolVersion, Toolset};
 use eyre::Result;
 use std::collections::HashSet;
@@ -31,34 +31,12 @@ impl<'a> TaskToolInstaller<'a> {
         dry_run: bool,
         previewed_tools: &HashSet<ToolVersion>,
     ) -> Result<()> {
-        let mut all_tools = self.cli_tools.to_vec();
-        let mut all_tool_requests = vec![];
         let all_tasks: Vec<_> = tasks.all().collect();
-
-        trace!("Collecting tools from {} tasks", all_tasks.len());
-
-        // Collect tools from tasks
-        for t in &all_tasks {
-            // Collect tools from task.tools (task-level tool overrides)
-            all_tools.extend(t.tool_args()?);
-
-            // Collect tools from monorepo task config files
-            if let Some(task_cf) = t.cf(config) {
-                let tool_requests = self
-                    .collect_tools_from_config_file(task_cf.clone(), &t.name)
-                    .await?;
-                all_tool_requests.extend(tool_requests);
-            } else if let Some(config_root) = &t.config_root {
-                // For file tasks without a config file (e.g. scripts in .mise-tasks/),
-                // fall back to loading tools from the project's config hierarchy
-                let tool_requests = self.collect_tools_from_dir(config_root, &t.name).await?;
-                all_tool_requests.extend(tool_requests);
-            }
-        }
+        let all_tool_requests = self.collect_tool_requests(config, all_tasks).await?;
 
         // Build and install toolset
         let toolset = self
-            .build_toolset(config, all_tools, all_tool_requests)
+            .build_toolset(config, self.cli_tools.to_vec(), all_tool_requests)
             .await?;
         self.install_toolset(config, toolset, dry_run, previewed_tools)
             .await?;
@@ -66,14 +44,41 @@ impl<'a> TaskToolInstaller<'a> {
         Ok(())
     }
 
-    /// Collect tools from a task's config file hierarchy
-    async fn collect_tools_from_config_file(
+    /// Collect every tool request needed to prepare the supplied tasks without
+    /// executing their commands or dependency graphs.
+    pub async fn collect_tool_requests<'t>(
         &self,
-        task_cf: Arc<dyn crate::config::config_file::ConfigFile>,
-        task_name: &str,
+        config: &Arc<Config>,
+        tasks: impl IntoIterator<Item = &'t Task>,
     ) -> Result<Vec<crate::toolset::ToolRequest>> {
-        let task_dir = task_cf.config_root();
-        self.collect_tools_from_dir(&task_dir, task_name).await
+        let tasks = tasks.into_iter().collect::<Vec<_>>();
+        let mut requests = vec![];
+        let mut seen_config_roots = HashSet::new();
+
+        trace!("Collecting tools from {} tasks", tasks.len());
+
+        for task in tasks {
+            requests.extend(task.tool_args()?.into_iter().filter_map(|tool| tool.tvr));
+
+            // Task execution combines task-level tools with the config hierarchy
+            // that owns the task. Keep pre-installation consistent with that
+            // environment, including file and monorepo tasks.
+            let config_root = task
+                .cf(config)
+                .map(|task_cf| task_cf.config_root())
+                .or_else(|| task.config_root.clone());
+            if let Some(config_root) = config_root {
+                let config_root = canonicalize_path(&config_root);
+                if seen_config_roots.insert(config_root.clone()) {
+                    requests.extend(
+                        self.collect_tools_from_dir(&config_root, &task.name)
+                            .await?,
+                    );
+                }
+            }
+        }
+
+        Ok(requests)
     }
 
     /// Collect tools from config files found in a directory hierarchy

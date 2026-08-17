@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
 use crate::env::TERM_WIDTH;
+use crate::errors::Error;
 use crate::file::display_path;
 use crate::lockfile::{Lockfile, lockfile_path_for_config};
 use crate::registry::REGISTRY;
@@ -32,11 +33,13 @@ use std::{
 use tokio::sync::OnceCell;
 
 pub use install_options::InstallOptions;
+pub(crate) use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
 };
 pub use tool_source::ToolSource;
+pub(crate) use tool_version::resolve_sub_base;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_options::{
@@ -138,6 +141,9 @@ impl Toolset {
             .collect::<Vec<_>>();
         let tvls = parallel::parallel(versions, |(config, ba, mut tvl, opts)| async move {
             if let Err(err) = tvl.resolve(&config, &opts).await {
+                if Error::is_required_channel_resolution_err(&err) {
+                    return Err(err);
+                }
                 // warn_once: a command may resolve the same toolset more than
                 // once, and repeating an identical failure adds no information.
                 warn_once!("Failed to resolve tool version list for {ba}: {err}");
@@ -275,10 +281,10 @@ impl Toolset {
             .collect()
     }
 
-    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &Vec<ToolVersion>)> {
+    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
         self.versions
             .iter()
-            .flat_map(|(ba, v)| eyre::Ok((ba.backend()?, &v.versions)))
+            .flat_map(|(ba, tvl)| eyre::Ok((ba.backend()?, tvl)))
             .collect()
     }
 
@@ -286,11 +292,7 @@ impl Toolset {
         trace!("list_current_versions");
         self.list_versions_by_plugin()
             .iter()
-            .flat_map(|(p, v)| {
-                v.iter()
-                    .filter(|v| v.request.is_os_supported())
-                    .map(|v| (p.clone(), v.clone()))
-            })
+            .flat_map(|(p, tvl)| tvl.os_supported_versions().map(|v| (p.clone(), v.clone())))
             .collect()
     }
 
@@ -382,6 +384,9 @@ impl Toolset {
             {
                 trace!("skipping symlinked version {tv}");
                 // do not consider symlinked versions to be outdated
+                return Ok(outdated);
+            }
+            if t.uses_custom_outdated_info() {
                 return Ok(outdated);
             }
             match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {

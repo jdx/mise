@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["goconvey"]
 description = "Go testing in the browser. Integrates with `go test`. Write behavioral tests in Go"
+version_order = "semver"

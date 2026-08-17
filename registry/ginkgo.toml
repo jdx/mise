@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["ginkgo"]
 description = "A Modern Testing Framework for Go"
+version_order = "semver"

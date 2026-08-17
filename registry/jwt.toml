@@ -2,3 +2,4 @@ backends = ["aqua:mike-engel/jwt-cli", "cargo:jwt-cli"]
 bins = ["jwt"]
 description = "A super fast CLI tool to decode and encode JWTs built in Rust"
 test = { cmd = "jwt --version", expected = "jwt {{version}}" }
+version_order = "semver"

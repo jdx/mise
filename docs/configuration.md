@@ -10,9 +10,10 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `mise.toml`
 - `mise/config.toml`
 - `.mise/config.toml`
+- `.mise/conf.d/*.toml` - all non-hidden TOML files in this directory will be loaded in alphabetical order
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
-- `.config/mise/conf.d/*.toml` - all files in this directory will be loaded in alphabetical order
+- `.config/mise/conf.d/*.toml` - all non-hidden TOML files in this directory will be loaded in alphabetical order
 
 ::: tip
 Run [`mise cfg`](/cli/config.html) to figure out what order mise is loading files on your particular setup. This is often
@@ -64,6 +65,9 @@ When mise needs configuration, it follows this process:
         └── myproject/
             ├── mise.local.toml       # Local overrides (git-ignored)
             ├── mise.toml             # Project config
+            ├── .mise/
+            │   ├── config.toml       # Project config grouped under .mise
+            │   └── conf.d/*.toml     # Project fragments, loaded alphabetically
             ├── mise.<env>.toml       # Env-specific project config
             ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/
@@ -80,6 +84,14 @@ Different configuration sections merge in different ways:
 # Global: node@18, python@3.11
 # Project: node@20, go@1.21
 # Result: node@20, python@3.11, go@1.21
+```
+
+**Tool policy** (`[tool_config]`): Applies only to tools declared by configs
+sharing the same config root; it is not merged into invocation-wide settings
+
+```toml
+[tool_config]
+locked = true
 ```
 
 **Environment Variables** (`[env]`): Additive with overrides
@@ -188,9 +200,32 @@ Examples:
 node = { version = "22", postinstall = "corepack enable" }
 ```
 
+### `[tool_config]` - Config-root-scoped tool policy
+
+`[tool_config]` applies policy to tools declared by configs sharing the same
+config root. For example, policy in `mise.local.toml` also applies to tools in
+`mise.toml` beside it. It does not affect tools inherited from global, system,
+or parent config roots.
+
+```toml
+[tool_config]
+locked = true
+
+[tools]
+node = "24"
+```
+
+Currently, `locked` is the only supported policy. It requires this config
+root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-tools/mise-lock.html#strict-lockfile-mode).
+
 ### `[env]` - Arbitrary Environment Variables
 
 See [environments](/environments/).
+
+### `[vars]` - Configuration Variables
+
+Define values that can be reused in Tera-rendered configuration without exporting them to child
+processes. See [Variables](/configuration/vars).
 
 ### `[tasks.*]` - Run files or shell scripts
 
@@ -392,7 +427,13 @@ Both `mise.toml` and `.tool-versions` support "scopes" which modify the behavior
 - `prefix:<PREFIX>` - use the latest version that matches the prefix. Useful for Go since `1.20`
   would only match `1.20` exactly but `prefix:1.20` will match `1.20.1` and `1.20.2` etc.
 - `path:<PATH>` - use a custom compiled version at the given path. One use-case is to re-use
-  Homebrew tools (e.g.: `path:/opt/homebrew/opt/node@20`).
+  Homebrew tools (e.g.: `path:/opt/homebrew/opt/node@20`). On Windows both separators work and
+  mise stores the forward-slash form either way, but mind the TOML quoting: a backslash is an
+  escape inside a _basic_ (double-quoted) string, so write `{ path = 'C:\tools\node' }` as a
+  literal string, or double them as `"C:\\tools\\node"`. `"C:\tools\node"` is not rejected — TOML
+  reads `\t` as a tab — so the path silently becomes something else. A path containing a `cmd.exe`
+  metacharacter (`& | < > ^ %`) is rejected there, since the path is passed to tool plugins that
+  build shell commands with it; `%` in particular is not a literal.
 - `sub-<PARTIAL_VERSION>:<ORIG_VERSION>` - resolves `ORIG_VERSION`, subtracts the numeric components
   in `PARTIAL_VERSION` from the corresponding resolved version components, then resolves the result
   as a version prefix. For example, `sub-2:lts` resolves `lts` and subtracts 2 from its major
@@ -461,6 +502,12 @@ Some files declare a minimum compatible version or a configuration-format major 
 exact binary release. mise treats that value as a normal version request, so a value such as
 `3.25` selects the latest matching CMake 3.25 release and a GoReleaser config `version: 2` selects
 the latest GoReleaser 2.x release.
+
+For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn`):
+
+- Runtime tools (`node`, `deno`, and `bun`) read `devEngines.runtime` (both single object and array formats are supported).
+- Package managers (`npm`, `pnpm`, and `yarn`) read `devEngines.packageManager` or top-level `packageManager` (e.g. `pnpm@9.1.0` or `npm@10.0.0`).
+- For `bun`, mise checks `devEngines.runtime` first, falling back to `devEngines.packageManager` and top-level `packageManager` (e.g. `bun@1.2.0`).
 
 For `go.mod`, the `toolchain goX.Y.Z` directive (an exact toolchain pin) is used when present.
 Otherwise the `go X.Y` directive is used; because it declares only the _minimum_ required Go

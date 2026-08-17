@@ -13,6 +13,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "depends",
     "install_before",
     "minimum_release_age",
+    "version_order",
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]

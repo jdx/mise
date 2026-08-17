@@ -1,3 +1,4 @@
 backends = ["github:onyx-lang/onyx", "asdf:jtakakura/asdf-onyx"]
 bins = ["onyx"]
 description = "The compiler and developer toolchain for Onyx"
+version_order = "source"

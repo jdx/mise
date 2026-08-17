@@ -2,3 +2,4 @@ backends = ["npm:@antfu/ni"]
 bins = ["na", "nci", "nd", "ni", "nlx", "nr", "nun", "nup"]
 description = "ni - use the right package manager"
 test = { cmd = "ni --version", expected = "@antfu/ni  v{{version}}" }
+version_order = "semver"

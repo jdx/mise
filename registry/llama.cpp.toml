@@ -1,5 +1,6 @@
 description = "LLM inference in C/C++"
 test = { cmd = "llama-cli --version", expected = "version: {{version}}" }
+version_order = "source"
 
 bins = [
   "ggml-rpc-server",

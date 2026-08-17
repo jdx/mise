@@ -2,3 +2,4 @@ backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
 bins = ["pipx"]
 description = "Install and Run Python Applications in Isolated Environments"
 test = { cmd = "pipx --version", expected = "{{version}}", tools = ["python"] }
+version_order = "semver"

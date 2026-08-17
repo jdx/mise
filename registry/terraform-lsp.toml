@@ -4,3 +4,4 @@ backends = [
 ]
 bins = ["terraform-lsp"]
 description = "Language Server Protocol for Terraform"
+version_order = "semver"

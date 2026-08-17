@@ -5,12 +5,14 @@ without adding a manager to mise core. They are useful for machine-global
 state owned by another tool, such as VS Code extensions, Helm plugins, krew
 plugins, and GitHub CLI extensions.
 
-Declare the plugin source and packages together:
+Declare the plugin source and packages together. The `example/*` repository
+URLs below are **placeholders** for syntax only — replace them with maintained,
+installable plugin repositories before running these commands:
 
 ```toml
 [bootstrap.plugins]
-vscode = "https://github.com/mise-plugins/mise-vscode-extensions"
-krew = "https://github.com/mise-plugins/mise-krew"
+vscode = "https://github.com/example/mise-vscode-extensions" # placeholder
+krew = "https://github.com/example/mise-krew" # placeholder
 
 [bootstrap.packages]
 "vscode:ms-python.python" = "latest"
@@ -35,7 +37,8 @@ mise bootstrap packages apply
 You can install a plugin without declaring it:
 
 ```sh
-mise plugin install package:vscode https://github.com/mise-plugins/mise-vscode-extensions
+# placeholder URL — replace with a real package-plugin repository
+mise plugin install package:vscode https://github.com/example/mise-vscode-extensions
 ```
 
 Package plugins install into the host application's own state directory. They

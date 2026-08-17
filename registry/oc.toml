@@ -1,6 +1,7 @@
 description = "OpenShift Client CLI (oc)"
 os = ["linux", "macos", "windows"]
 test = { cmd = "oc version --client", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["oc"]
 [[backends]]

@@ -22,9 +22,10 @@ are resolved from the configuration file that declares them. Present files
 must declare exactly one content source. Targets must be absolute paths, and
 mise refuses to manage `/` itself.
 
-Mise creates only directories that are explicitly declared. If multiple
-missing levels are needed, declare each directory so its ownership and mode are
-intentional; mise never creates undeclared ancestors with process defaults.
+Directory creation uses `mkdir -p` semantics, so missing parent directories are
+created automatically. The configured ownership and mode apply to the declared
+directory; implicitly created parents use the operating system defaults. Declare
+a parent separately when it needs specific ownership or permissions.
 
 By default, a target with the wrong node type is reported as `unknown` and
 apply refuses to destroy it. Set `replace = true` on that file or directory to
@@ -42,10 +43,14 @@ output.
 
 Mise compares content, type, mode, owner, and group before applying changes.
 Writes use a temporary file in the target directory followed by an atomic
-rename. If the current user cannot inspect a target or search one of its parent
-directories, mise compares its metadata and content in one privileged batch.
-Plans and file content are sent to narrowly scoped mise helpers over stdin, so
-file content does not appear in process arguments or logs.
+rename. Changes are attempted as the current user first. If the filesystem
+rejects an operation with a permission error, mise retries that operation and
+the remaining ordered changes in one privileged batch. User-writable targets
+therefore do not require `sudo`. If the current user cannot inspect a target or
+search one of its parent directories, mise compares its metadata and content in
+one privileged batch. Plans and file content are sent to narrowly scoped mise
+helpers over stdin, so file content does not appear in process arguments or
+logs.
 
 ## Removing resources
 
@@ -92,3 +97,11 @@ change.
 `mise bootstrap plan` includes these resources and automatically orders a
 managed file after its managed parent directory. Removal reverses that
 dependency so children are removed before their parent.
+
+The JSON output from `mise bootstrap plan`, `mise bootstrap status`, and
+`mise bootstrap files status` includes an `origin` object for managed files
+and directories. It identifies the declaring config, that config's
+`config_root`, any configuration environment encoded by its filename, and a
+resolved source path when the file uses `source`.
+Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
+non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.

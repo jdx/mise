@@ -1,6 +1,7 @@
 aliases = ["hunkdiff"]
 description = "Review-first terminal diff viewer for agentic coders"
 test = { cmd = "hunk --version", expected = "{{version}}" }
+version_order = "semver"
 
 bins = ["hunk"]
 [[backends]]

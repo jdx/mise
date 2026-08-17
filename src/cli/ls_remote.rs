@@ -8,7 +8,7 @@ use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::ToolArg;
 use crate::config::Settings;
 use crate::install_before::{resolve_before_date_for_backend, resolve_cli_minimum_release_age};
-use crate::toolset::{ToolRequest, tool_request};
+use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
 
@@ -111,7 +111,10 @@ impl LsRemote {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
                 Some(ToolRequest::Sub {
                     sub, orig_version, ..
-                }) => Some(tool_request::version_sub(orig_version, sub)),
+                }) => Some(
+                    resolve_sub_base(config, &plugin, sub, orig_version, before_date, false)
+                        .await?,
+                ),
                 _ => self.prefix.clone(),
             },
             _ => self.prefix.clone(),

@@ -1,0 +1,4 @@
+backends = ["aqua:axllent/mailpit"]
+description = "An email and SMTP testing tool with API for developers"
+test = { cmd = "mailpit version | grep 'mailpit v' | awk '{print $2}'", expected = "v{{version}}" }
+version_order = "semver"

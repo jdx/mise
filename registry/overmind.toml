@@ -1,3 +1,4 @@
 backends = ["github:DarthSim/overmind", "go:github.com/DarthSim/overmind/v2"]
 bins = ["overmind"]
 description = "Process manager for Procfile-based applications and tmux"
+version_order = "source"
