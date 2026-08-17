@@ -1529,18 +1529,13 @@ fn open_or_create_directory_tree_inner(
                         )
                     });
                 }
-                match mkdirat(
+                let created_by_us = match mkdirat(
                     &directory,
                     name.as_os_str(),
                     Mode::from_bits_truncate(0o777),
                 ) {
-                    Ok(()) => {}
-                    Err(nix::errno::Errno::EEXIST) => {
-                        bail!(
-                            "path component {} appeared while it was being created",
-                            component_path.display()
-                        )
-                    }
+                    Ok(()) => true,
+                    Err(nix::errno::Errno::EEXIST) => false,
                     Err(error) => {
                         return Err(error).wrap_err_with(|| {
                             format!(
@@ -1549,20 +1544,27 @@ fn open_or_create_directory_tree_inner(
                             )
                         });
                     }
-                }
+                };
                 let created = openat(&directory, name.as_os_str(), flags, Mode::empty())
                     .wrap_err_with(|| {
                         format!(
-                            "failed to open created path component {} without following symlinks",
+                            "failed to open newly available path component {} without following symlinks",
                             component_path.display()
                         )
                     })?;
                 let stat = nix::sys::stat::fstat(&created)?;
                 if stat.st_uid != nix::unistd::geteuid().as_raw() {
-                    bail!(
-                        "created path component {} was replaced before it could be opened",
-                        component_path.display()
-                    );
+                    if created_by_us {
+                        bail!(
+                            "created path component {} was replaced before it could be opened",
+                            component_path.display()
+                        );
+                    } else {
+                        bail!(
+                            "path component {} was concurrently created by another user",
+                            component_path.display()
+                        );
+                    }
                 }
                 created
             }
@@ -1926,16 +1928,19 @@ mod tests {
             "unexpected error: {error:#}"
         );
 
-        let external = tempfile::tempdir().unwrap();
-        let symlink_parent = temp.path().join("symlink-parent");
-        std::os::unix::fs::symlink(external.path(), &symlink_parent).unwrap();
-        let escaped = symlink_parent.join("nested");
-        let error = create_directory(&escaped, None, None, 0o755, false).unwrap_err();
-        assert!(
-            format!("{error:#}").contains("refusing to follow symlink"),
-            "unexpected error: {error:#}"
-        );
-        assert!(!external.path().join("nested").exists());
+        // Root-owned parents are trusted, so symlink traversal is permitted.
+        if !nix::unistd::geteuid().is_root() {
+            let external = tempfile::tempdir().unwrap();
+            let symlink_parent = temp.path().join("symlink-parent");
+            std::os::unix::fs::symlink(external.path(), &symlink_parent).unwrap();
+            let escaped = symlink_parent.join("nested");
+            let error = create_directory(&escaped, None, None, 0o755, false).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("refusing to follow symlink"),
+                "unexpected error: {error:#}"
+            );
+            assert!(!external.path().join("nested").exists());
+        }
     }
 
     #[test]
