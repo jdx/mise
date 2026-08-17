@@ -301,7 +301,8 @@ reporting capability is enabled.
 Servers advertising `features.blob_packs` accept `POST /v1/blobs:pack` with the same
 `application/vnd.mise.cache-digests.v1+json` body as `blobs:missing`. The aggregate declared size
 must not exceed `limits.max_pack_bytes`, and the number of digests must not exceed
-`limits.max_batch_items`.
+`limits.max_batch_items`. Servers return `400 Bad Request` when the item limit is exceeded and
+`413 Content Too Large` when the aggregate declared size exceeds the byte limit.
 
 A successful response uses `application/vnd.mise.cache-blob-pack.v1` and begins with the eight-byte
 ASCII magic `MISEPK01`. The remainder is a stream of frames in request order:

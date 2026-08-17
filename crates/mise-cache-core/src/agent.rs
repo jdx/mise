@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const MAX_EXECUTABLE_IDENTITIES: usize = 64;
@@ -23,7 +23,10 @@ const MAX_TASK_ACTION_PREDICTIONS: usize = 16 * 1024;
 const MAX_ACTION_PREDICTION_PAYLOAD: usize = 256 * 1024;
 const MAX_REMOTE_TRANSFERS: usize = 64;
 const MAX_PREFETCH_TRANSFERS: usize = 48;
+const MAX_PREFETCH_ACTION_BATCH: usize = 256;
+const PREFETCH_ACTION_BATCH_DELAY: Duration = Duration::from_millis(5);
 const MAX_PREFETCH_DIRECTORY_OBJECTS: usize = 100_000;
+const MAX_PREFETCH_OBJECTS_PER_WAVE: usize = 100_000;
 
 /// Remote action-cache access owned by one task session.
 pub struct AgentRemoteCache {
@@ -250,6 +253,21 @@ fn atomic_saturating_add(target: &AtomicU64, value: u64) {
     let _ = target.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
         Some(current.saturating_add(value))
     });
+}
+
+fn queue_prefetch_digest(
+    verified: &BTreeMap<CacheDigest, PathBuf>,
+    pending: &mut BTreeMap<CacheDigest, ()>,
+    digest: CacheDigest,
+) -> bool {
+    if verified.contains_key(&digest) || pending.contains_key(&digest) {
+        return true;
+    }
+    if verified.len().saturating_add(pending.len()) >= MAX_PREFETCH_OBJECTS_PER_WAVE {
+        return false;
+    }
+    pending.insert(digest, ());
+    true
 }
 
 /// Shared state for an agent hosted by the top-level `mise run` process.
@@ -736,7 +754,22 @@ impl CacheAgent {
             tasks.spawn(async move { agent.resolve_prefetch_action(action, adapter).await });
         }
         let mut resolved = Vec::new();
-        while let Some(result) = tasks.join_next().await {
+        while !tasks.is_empty() {
+            let result = if resolved.is_empty() {
+                tasks.join_next().await
+            } else {
+                match tokio::time::timeout(PREFETCH_ACTION_BATCH_DELAY, tasks.join_next()).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        self.prefetch_resolved_actions(std::mem::take(&mut resolved))
+                            .await;
+                        continue;
+                    }
+                }
+            };
+            let Some(result) = result else {
+                break;
+            };
             match result {
                 Ok(Ok(Some(action))) => resolved.push(action),
                 Ok(Ok(None)) => {}
@@ -747,8 +780,14 @@ impl CacheAgent {
                 let agent = self.clone();
                 tasks.spawn(async move { agent.resolve_prefetch_action(action, adapter).await });
             }
+            if resolved.len() == MAX_PREFETCH_ACTION_BATCH {
+                self.prefetch_resolved_actions(std::mem::take(&mut resolved))
+                    .await;
+            }
         }
-        self.prefetch_resolved_actions(resolved).await;
+        if !resolved.is_empty() {
+            self.prefetch_resolved_actions(resolved).await;
+        }
     }
 
     #[cfg(test)]
@@ -822,19 +861,30 @@ impl CacheAgent {
                 top_level.insert(digest.clone(), ());
             }
         }
-        self.prefetch_remote_blobs(remote, top_level.into_keys().collect())
+        let mut verified = self
+            .prefetch_remote_blobs(remote, top_level.into_keys().collect())
             .await;
 
         let mut next = BTreeMap::new();
-        let mut directories = BTreeMap::new();
+        let mut pending_directories = BTreeMap::new();
+        let mut parsed_directories = BTreeMap::new();
+        let mut rustc_metadata = BTreeMap::new();
         for action in &actions {
             if action.adapter == "rustc"
-                && let Some(metadata) = &action.result.metadata
+                && let Some(metadata_digest) = &action.result.metadata
             {
-                match self.load_rustc_metadata(metadata) {
+                match verified
+                    .get(metadata_digest)
+                    .ok_or_else(|| eyre::eyre!("remote rustc action metadata is missing"))
+                    .and_then(|path| Self::parse_rustc_metadata(path))
+                {
                     Ok(metadata) => {
-                        next.insert(metadata.stdout, ());
-                        next.insert(metadata.stderr, ());
+                        if !queue_prefetch_digest(&verified, &mut next, metadata.stdout.clone())
+                            || !queue_prefetch_digest(&verified, &mut next, metadata.stderr.clone())
+                        {
+                            warn!("remote action prefetch wave contains too many objects");
+                        }
+                        rustc_metadata.insert(metadata_digest.clone(), metadata);
                     }
                     Err(error) => warn!(
                         "remote rustc action metadata prefetch failed for {}: {error}",
@@ -843,14 +893,14 @@ impl CacheAgent {
                 }
             }
             if let Some(output_root) = &action.result.output_root {
-                directories.insert(output_root.clone(), ());
+                pending_directories.insert(output_root.clone(), ());
             }
         }
 
         let mut seen_directories = BTreeMap::new();
         loop {
             let mut following = BTreeMap::new();
-            for digest in directories.into_keys() {
+            for digest in pending_directories.into_keys() {
                 if seen_directories.insert(digest.clone(), ()).is_some() {
                     continue;
                 }
@@ -859,15 +909,26 @@ impl CacheAgent {
                     following.clear();
                     break;
                 }
-                match self.load_cache_directory(&digest) {
+                match verified
+                    .get(&digest)
+                    .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))
+                    .and_then(|path| Self::parse_cache_directory(path))
+                {
                     Ok(directory) => {
-                        for file in directory.files {
-                            next.insert(file.digest, ());
+                        for file in &directory.files {
+                            if !queue_prefetch_digest(&verified, &mut next, file.digest.clone()) {
+                                warn!("remote action prefetch wave contains too many objects");
+                                break;
+                            }
                         }
-                        for directory in directory.directories {
-                            next.insert(directory.digest.clone(), ());
-                            following.insert(directory.digest, ());
+                        for child in &directory.directories {
+                            if !queue_prefetch_digest(&verified, &mut next, child.digest.clone()) {
+                                warn!("remote action prefetch wave contains too many objects");
+                                break;
+                            }
+                            following.insert(child.digest.clone(), ());
                         }
+                        parsed_directories.insert(digest, directory);
                     }
                     Err(error) => warn!(
                         "remote action output directory prefetch failed for {}: {error}",
@@ -878,17 +939,24 @@ impl CacheAgent {
             if next.is_empty() {
                 break;
             }
-            self.prefetch_remote_blobs(remote, next.into_keys().collect())
-                .await;
+            verified.extend(
+                self.prefetch_remote_blobs(remote, next.into_keys().collect())
+                    .await,
+            );
             next = BTreeMap::new();
             if following.is_empty() {
                 break;
             }
-            directories = following;
+            pending_directories = following;
         }
 
         for action in actions {
-            match self.validate_prefetched_action(&action) {
+            match Self::validate_prefetched_action(
+                &action,
+                &verified,
+                &rustc_metadata,
+                &parsed_directories,
+            ) {
                 Ok(()) => {
                     if let Err(error) = self.actions.store(&action.result) {
                         warn!(
@@ -913,11 +981,18 @@ impl CacheAgent {
         }
     }
 
-    async fn prefetch_remote_blobs(&self, remote: &RemoteCacheClient, digests: Vec<CacheDigest>) {
+    async fn prefetch_remote_blobs(
+        &self,
+        remote: &RemoteCacheClient,
+        digests: Vec<CacheDigest>,
+    ) -> BTreeMap<CacheDigest, PathBuf> {
+        let mut verified = BTreeMap::new();
         let mut missing = BTreeMap::new();
         for digest in digests {
             match self.find_verified_blob(&digest) {
-                Ok(Some(_)) => {}
+                Ok(Some(path)) => {
+                    verified.insert(digest, path);
+                }
                 Ok(None) => {
                     missing.insert(digest, ());
                 }
@@ -928,86 +1003,119 @@ impl CacheAgent {
             }
         }
         if missing.is_empty() {
-            return;
+            return verified;
         }
 
-        let requested = missing.keys().cloned().collect::<Vec<_>>();
-        let transfer_started = Instant::now();
-        match remote
-            .get_blob_pack(&requested, self.remote_staging_dir.as_path())
-            .await
-        {
-            Ok(Some(pack)) => {
-                atomic_saturating_add(
-                    &self.stats.remote_blob_transfer_duration_ns,
-                    duration_ns(transfer_started),
-                );
-                atomic_saturating_add(&self.stats.remote_blob_pack_requests, pack.requests);
-                atomic_saturating_add(
-                    &self.stats.remote_blob_pack_blobs,
-                    pack.blobs.len().try_into().unwrap_or(u64::MAX),
-                );
-                for (digest, source) in pack.blobs {
-                    atomic_saturating_add(&self.stats.downloaded_bytes, digest.size);
-                    let lock = self.write_lock(&digest);
-                    let _guard = lock.lock().await;
-                    match self.find_verified_blob(&digest) {
-                        Ok(Some(_)) => {
-                            missing.remove(&digest);
-                        }
-                        Ok(None) => {
-                            let cas_started = Instant::now();
-                            let stored = self.cas.store_verified_file(&digest, &source);
-                            atomic_saturating_add(
-                                &self.stats.local_cas_write_duration_ns,
-                                duration_ns(cas_started),
-                            );
-                            match stored {
-                                Ok(path) => {
-                                    self.remember_verified_blob(&digest, &path);
-                                    self.stats.stores.fetch_add(1, Ordering::Relaxed);
-                                    atomic_saturating_add(&self.stats.stored_bytes, digest.size);
-                                    missing.remove(&digest);
-                                }
-                                Err(error) => warn!(
-                                    "remote cache packed blob ingest failed for {}: {error}",
-                                    digest.hash
-                                ),
-                            }
-                        }
-                        Err(error) => warn!(
-                            "local cache blob lookup failed for {}: {error}",
-                            digest.hash
-                        ),
+        let mut pack_candidates = missing.clone();
+        while !pack_candidates.is_empty() {
+            let requested = pack_candidates.keys().cloned().collect::<Vec<_>>();
+            let transfer_started = Instant::now();
+            let pack = match remote
+                .get_blob_pack(&requested, self.remote_staging_dir.as_path())
+                .await
+            {
+                Ok(Some(pack)) => pack,
+                Ok(None) => break,
+                Err(error) => {
+                    atomic_saturating_add(
+                        &self.stats.remote_blob_transfer_duration_ns,
+                        duration_ns(transfer_started),
+                    );
+                    warn!(
+                        "remote cache blob pack failed; falling back to individual blobs: {error}"
+                    );
+                    break;
+                }
+            };
+            atomic_saturating_add(
+                &self.stats.remote_blob_transfer_duration_ns,
+                duration_ns(transfer_started),
+            );
+            atomic_saturating_add(&self.stats.remote_blob_pack_requests, pack.requests);
+            atomic_saturating_add(
+                &self.stats.remote_blob_pack_blobs,
+                pack.blobs.len().try_into().unwrap_or(u64::MAX),
+            );
+            if pack.requested.is_empty() {
+                break;
+            }
+            for digest in &pack.requested {
+                pack_candidates.remove(digest);
+            }
+            let mut ingests = stream::iter(pack.blobs.into_iter().map(|(digest, source)| {
+                let digest_for_result = digest.clone();
+                async move {
+                    (
+                        digest_for_result,
+                        self.ingest_packed_blob(digest, source).await,
+                    )
+                }
+            }))
+            .buffer_unordered(MAX_PREFETCH_TRANSFERS);
+            while let Some((digest, result)) = ingests.next().await {
+                match result {
+                    Ok(path) => {
+                        missing.remove(&digest);
+                        verified.insert(digest, path);
                     }
+                    Err(error) => warn!(
+                        "remote cache packed blob ingest failed for {}: {error}",
+                        digest.hash
+                    ),
                 }
             }
-            Ok(None) => {}
-            Err(error) => {
-                atomic_saturating_add(
-                    &self.stats.remote_blob_transfer_duration_ns,
-                    duration_ns(transfer_started),
-                );
-                warn!("remote cache blob pack failed; falling back to individual blobs: {error}");
-            }
         }
 
-        let mut transfers = stream::iter(missing.into_keys().map(|digest| async move {
-            if let Err(error) = self.fetch_remote_blob_prefetch(remote, &digest).await {
-                warn!(
-                    "remote cache blob prefetch failed for {}: {error}",
-                    digest.hash
-                );
+        let mut transfers = stream::iter(missing.into_keys().map(|digest| {
+            let digest_for_result = digest.clone();
+            async move {
+                (
+                    digest_for_result,
+                    self.fetch_remote_blob_prefetch(remote, &digest).await,
+                )
             }
         }))
         .buffer_unordered(MAX_PREFETCH_TRANSFERS);
-        while transfers.next().await.is_some() {}
+        while let Some((digest, result)) = transfers.next().await {
+            match result {
+                Ok(path) => {
+                    verified.insert(digest, path);
+                }
+                Err(error) => warn!(
+                    "remote cache blob prefetch failed for {}: {error}",
+                    digest.hash
+                ),
+            }
+        }
+        verified
     }
 
-    fn load_rustc_metadata(&self, digest: &CacheDigest) -> Result<RustcMetadata> {
-        let path = self
-            .find_verified_blob(digest)?
-            .ok_or_else(|| eyre::eyre!("remote rustc action metadata is missing"))?;
+    async fn ingest_packed_blob(&self, digest: CacheDigest, source: PathBuf) -> Result<PathBuf> {
+        atomic_saturating_add(&self.stats.downloaded_bytes, digest.size);
+        let digest_size = digest.size;
+        let lock = self.write_lock(&digest);
+        let _guard = lock.lock().await;
+        let agent = self.clone();
+        let (path, stored, cas_duration_ns) = tokio::task::spawn_blocking(move || {
+            if let Some(path) = agent.find_verified_blob(&digest)? {
+                return Ok::<_, eyre::Report>((path, false, 0));
+            }
+            let cas_started = Instant::now();
+            let path = agent.cas.store_verified_file(&digest, &source)?;
+            let cas_duration_ns = duration_ns(cas_started);
+            agent.remember_verified_blob(&digest, &path);
+            Ok((path, true, cas_duration_ns))
+        })
+        .await??;
+        atomic_saturating_add(&self.stats.local_cas_write_duration_ns, cas_duration_ns);
+        if stored {
+            self.stats.stores.fetch_add(1, Ordering::Relaxed);
+            atomic_saturating_add(&self.stats.stored_bytes, digest_size);
+        }
+        Ok(path)
+    }
+
+    fn parse_rustc_metadata(path: &Path) -> Result<RustcMetadata> {
         let bytes = fs::read(path)?;
         let metadata: RustcMetadata = serde_json::from_slice(&bytes)?;
         if metadata.version != 1 || metadata.kind != "rustc" || canonical_json(&metadata)? != bytes
@@ -1017,10 +1125,7 @@ impl CacheAgent {
         Ok(metadata)
     }
 
-    fn load_cache_directory(&self, digest: &CacheDigest) -> Result<CacheDirectory> {
-        let path = self
-            .find_verified_blob(digest)?
-            .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))?;
+    fn parse_cache_directory(path: &Path) -> Result<CacheDirectory> {
         let bytes = fs::read(path)?;
         let directory: CacheDirectory = serde_json::from_slice(&bytes)?;
         if directory.version != 1 || canonical_json(&directory)? != bytes {
@@ -1029,19 +1134,34 @@ impl CacheAgent {
         Ok(directory)
     }
 
-    fn validate_prefetched_action(&self, action: &PrefetchedAction) -> Result<()> {
-        if self.find_verified_blob(&action.result.action)?.is_none() {
+    #[cfg(test)]
+    fn load_cache_directory(&self, digest: &CacheDigest) -> Result<CacheDirectory> {
+        let path = self
+            .find_verified_blob(digest)?
+            .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))?;
+        Self::parse_cache_directory(&path)
+    }
+
+    fn validate_prefetched_action(
+        action: &PrefetchedAction,
+        verified: &BTreeMap<CacheDigest, PathBuf>,
+        rustc_metadata: &BTreeMap<CacheDigest, RustcMetadata>,
+        directories: &BTreeMap<CacheDigest, CacheDirectory>,
+    ) -> Result<()> {
+        if !verified.contains_key(&action.result.action) {
             bail!("remote action descriptor is missing");
         }
         if let Some(metadata) = &action.result.metadata {
             if action.adapter == "rustc" {
-                let metadata = self.load_rustc_metadata(metadata)?;
+                let metadata = rustc_metadata
+                    .get(metadata)
+                    .ok_or_else(|| eyre::eyre!("remote rustc action metadata is missing"))?;
                 for digest in [&metadata.stdout, &metadata.stderr] {
-                    if self.find_verified_blob(digest)?.is_none() {
+                    if !verified.contains_key(digest) {
                         bail!("remote rustc action diagnostic blob is missing");
                     }
                 }
-            } else if self.find_verified_blob(metadata)?.is_none() {
+            } else if !verified.contains_key(metadata) {
                 bail!("remote action metadata is missing");
             }
         }
@@ -1059,17 +1179,19 @@ impl CacheAgent {
             if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
                 bail!("remote action output tree is too large");
             }
-            let directory = self.load_cache_directory(&digest)?;
-            for file in directory.files {
-                if self.find_verified_blob(&file.digest)?.is_none() {
+            let directory = directories
+                .get(&digest)
+                .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))?;
+            for file in &directory.files {
+                if !verified.contains_key(&file.digest) {
                     bail!("remote action output file is missing");
                 }
             }
             pending.extend(
                 directory
                     .directories
-                    .into_iter()
-                    .map(|directory| directory.digest),
+                    .iter()
+                    .map(|directory| directory.digest.clone()),
             );
         }
         Ok(())
@@ -1090,12 +1212,8 @@ impl CacheAgent {
             if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
                 bail!("remote action output tree is too large");
             }
-            let path = self.fetch_remote_blob_prefetch(remote, &digest).await?;
-            let bytes = fs::read(path)?;
-            let directory: CacheDirectory = serde_json::from_slice(&bytes)?;
-            if directory.version != 1 || canonical_json(&directory)? != bytes {
-                bail!("remote action output directory is invalid");
-            }
+            self.fetch_remote_blob_prefetch(remote, &digest).await?;
+            let directory = self.load_cache_directory(&digest)?;
             let mut transfers = stream::iter(directory.files.into_iter().map(|file| async move {
                 self.fetch_remote_blob_prefetch(remote, &file.digest)
                     .await
@@ -2521,6 +2639,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preserves_successful_pack_metrics_when_a_later_chunk_falls_back() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut entries = [
+            (CacheDigest::blake3(b"first"), b"first".as_slice()),
+            (CacheDigest::blake3(b"second"), b"second".as_slice()),
+        ];
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        let (first_digest, first_bytes) = entries[0].clone();
+        let (second_digest, second_bytes) = entries[1].clone();
+        let capabilities = server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":1,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let first_pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": [&first_digest]
+            })))
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_body(blob_pack_body(&[(first_digest.clone(), first_bytes)]))
+            .expect(1)
+            .create_async()
+            .await;
+        let failed_pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": [&second_digest]
+            })))
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+        let fallback = server
+            .mock("GET", blob_path(&second_digest).as_str())
+            .with_status(200)
+            .with_body(second_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let remote = agent.remote.as_deref().unwrap();
+
+        let verified = agent
+            .prefetch_remote_blobs(remote, vec![first_digest.clone(), second_digest.clone()])
+            .await;
+
+        assert_eq!(verified.len(), 2);
+        assert_eq!(fs::read(&verified[&first_digest]).unwrap(), first_bytes);
+        assert_eq!(fs::read(&verified[&second_digest]).unwrap(), second_bytes);
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_pack_requests, 1);
+        assert_eq!(stats.remote_blob_pack_blobs, 1);
+        assert_eq!(stats.remote_blob_requests, 1);
+        capabilities.assert_async().await;
+        first_pack.assert_async().await;
+        failed_pack.assert_async().await;
+        fallback.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn foreground_action_lookup_does_not_wait_for_prefetch_output() {
         let directory = tempfile::tempdir().unwrap();
         let mut server = mockito::Server::new_async().await;
@@ -2740,7 +2935,7 @@ mod tests {
     }
 
     fn blob_pack_body(entries: &[(CacheDigest, &[u8])]) -> Vec<u8> {
-        let mut pack = b"MISEPK01".to_vec();
+        let mut pack = crate::BLOB_PACK_MAGIC.to_vec();
         for (digest, bytes) in entries {
             pack.push(match digest.algorithm.as_str() {
                 "blake3" => 1,

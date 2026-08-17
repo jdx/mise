@@ -39,6 +39,8 @@ pub const BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 pub const BLOB_PACK_MEDIA_TYPE: &str = "application/vnd.mise.cache-blob-pack.v1";
 const DIGEST_LIST_MEDIA_TYPE: &str = "application/vnd.mise.cache-digests.v1+json";
 const BLOB_PACK_MAGIC: &[u8; 8] = b"MISEPK01";
+const MAX_STAGED_BLOB_PACK_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_STAGED_BLOB_PACK_ITEMS: usize = 2 * 1024;
 
 /// Serialize a protocol object using the JSON Canonicalization Scheme.
 ///
@@ -266,9 +268,10 @@ pub struct RemoteActionManifest {
 
 /// A verified set of remote CAS objects downloaded through blob-pack streams.
 pub struct RemoteBlobPack {
-    _directories: Vec<tempfile::TempDir>,
+    _directory: tempfile::TempDir,
     pub blobs: Vec<(CacheDigest, PathBuf)>,
     pub requests: u64,
+    pub requested: Vec<CacheDigest>,
 }
 
 struct DownloadedBlobPack {
@@ -428,10 +431,8 @@ impl RemoteCacheClient {
             .get_or_try_init(|| async {
                 let url = self.capabilities_endpoint()?;
                 let response = self
-                    .client
-                    .get(url)
-                    .header(PROTOCOL_HEADER, u16::from(PROTOCOL_VERSION))
-                    .header(ACCEPT, "application/json")
+                    .request(reqwest::Method::GET, url, "application/json")
+                    .await?
                     .send()
                     .await?;
                 if matches!(
@@ -463,8 +464,11 @@ impl RemoteCacheClient {
                     bail!("remote cache blob packs require a positive max_pack_bytes limit");
                 }
                 Ok(Some(BlobPackLimits {
-                    max_items,
-                    max_bytes: capabilities.limits.max_pack_bytes,
+                    max_items: max_items.min(MAX_STAGED_BLOB_PACK_ITEMS),
+                    max_bytes: capabilities
+                        .limits
+                        .max_pack_bytes
+                        .min(MAX_STAGED_BLOB_PACK_BYTES),
                 }))
             })
             .await
@@ -487,30 +491,28 @@ impl RemoteCacheClient {
         let Some(limits) = self.blob_pack_limits().await? else {
             return Ok(None);
         };
-        let chunks = blob_pack_chunks(digests, limits)?;
-
         fs::create_dir_all(staging_dir)?;
-        let mut directories = Vec::with_capacity(chunks.len());
-        let mut blobs = Vec::new();
-        let mut requests = 0_u64;
-        for chunk in chunks {
-            match self.download_blob_pack_chunk(&chunk, staging_dir).await? {
-                Some(mut pack) => {
-                    requests += 1;
-                    blobs.append(&mut pack.blobs);
-                    directories.push(pack.directory);
-                }
-                None => {
-                    self.blob_packs_disabled.store(true, Ordering::Relaxed);
-                    return Ok(None);
-                }
+        let chunk = blob_pack_chunk(digests, limits)?;
+        if chunk.is_empty() {
+            return Ok(Some(RemoteBlobPack {
+                _directory: tempfile::tempdir_in(staging_dir)?,
+                blobs: Vec::new(),
+                requests: 0,
+                requested: Vec::new(),
+            }));
+        }
+        match self.download_blob_pack_chunk(&chunk, staging_dir).await? {
+            Some(pack) => Ok(Some(RemoteBlobPack {
+                _directory: pack.directory,
+                blobs: pack.blobs,
+                requests: 1,
+                requested: chunk,
+            })),
+            None => {
+                self.blob_packs_disabled.store(true, Ordering::Relaxed);
+                Ok(None)
             }
         }
-        Ok(Some(RemoteBlobPack {
-            _directories: directories,
-            blobs,
-            requests,
-        }))
     }
 
     async fn download_blob_pack_chunk(
@@ -520,7 +522,7 @@ impl RemoteCacheClient {
     ) -> Result<Option<DownloadedBlobPack>> {
         let url = self.blob_pack_endpoint()?;
         let body = serde_json::to_vec(&DigestList { digests })?;
-        let download = retry_async("POST", &url, self.retries, || async {
+        retry_async("POST", &url, self.retries, || async {
             let response = self
                 .request(reqwest::Method::POST, url.clone(), BLOB_PACK_MEDIA_TYPE)
                 .await?
@@ -549,10 +551,8 @@ impl RemoteCacheClient {
             Ok(Some(
                 decode_blob_pack(response, digests, staging_dir).await?,
             ))
-        });
-        tokio::time::timeout(self.download_timeout, download)
-            .await
-            .map_err(|_| eyre!("remote cache blob pack download timed out for {url}"))?
+        })
+        .await
     }
 
     pub async fn get_action_result(
@@ -760,35 +760,24 @@ impl RemoteCacheClient {
     }
 }
 
-fn blob_pack_chunks(
-    digests: &[CacheDigest],
-    limits: BlobPackLimits,
-) -> Result<Vec<Vec<CacheDigest>>> {
-    let mut unique = BTreeSet::new();
-    for digest in digests {
-        digest.validate()?;
-        unique.insert(digest.clone());
-    }
-    let mut chunks = Vec::new();
+fn blob_pack_chunk(digests: &[CacheDigest], limits: BlobPackLimits) -> Result<Vec<CacheDigest>> {
+    let mut seen = BTreeSet::new();
     let mut chunk = Vec::new();
     let mut chunk_bytes = 0_u64;
-    for digest in unique {
-        if digest.size > limits.max_bytes {
+    for digest in digests {
+        digest.validate()?;
+        if !seen.insert(digest.clone()) || digest.size > limits.max_bytes {
             continue;
         }
         if chunk.len() == limits.max_items
             || chunk_bytes.saturating_add(digest.size) > limits.max_bytes
         {
-            chunks.push(std::mem::take(&mut chunk));
-            chunk_bytes = 0;
+            break;
         }
         chunk_bytes = chunk_bytes.saturating_add(digest.size);
-        chunk.push(digest);
+        chunk.push(digest.clone());
     }
-    if !chunk.is_empty() {
-        chunks.push(chunk);
-    }
-    Ok(chunks)
+    Ok(chunk)
 }
 
 async fn decode_blob_pack(
@@ -1325,6 +1314,7 @@ mod tests {
         let capabilities = server
             .mock("GET", "/v1/capabilities")
             .match_header(PROTOCOL_HEADER, "1")
+            .match_header(AUTHORIZATION.as_str(), "Bearer test-token")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -1434,12 +1424,113 @@ mod tests {
         capabilities.assert_async().await;
     }
 
+    #[tokio::test]
+    async fn disables_blob_packs_when_the_advertised_endpoint_is_unavailable() {
+        let mut server = mockito::Server::new_async().await;
+        let capabilities = server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1024}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let request = server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = test_client(&server);
+        let staging = tempfile::tempdir().unwrap();
+        let digest = CacheDigest::blake3(b"blob");
+
+        assert!(
+            client
+                .get_blob_pack(std::slice::from_ref(&digest), staging.path())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            client
+                .get_blob_pack(&[digest], staging.path())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        capabilities.assert_async().await;
+        request.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn rejects_truncated_blob_pack_frames() {
+        let mut server = mockito::Server::new_async().await;
+        let contents = b"complete blob";
+        let digest = CacheDigest::blake3(contents);
+        let mut pack = encode_blob_pack(&[(&digest, contents.as_slice())]);
+        pack.truncate(pack.len() - 3);
+        mock_blob_pack_capabilities(&mut server).await;
+        server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
+            .with_body(pack)
+            .create_async()
+            .await;
+        let client = test_client(&server);
+        let staging = tempfile::tempdir().unwrap();
+
+        let error = match client.get_blob_pack(&[digest], staging.path()).await {
+            Err(error) => error,
+            Ok(_) => panic!("truncated pack should be rejected"),
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("ended before a blob was complete")
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_blob_pack_frames_with_corrupt_content() {
+        let mut server = mockito::Server::new_async().await;
+        let digest = CacheDigest::blake3(b"expected");
+        let corrupt = b"corrupt!";
+        let pack = encode_blob_pack(&[(&digest, corrupt.as_slice())]);
+        mock_blob_pack_capabilities(&mut server).await;
+        server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
+            .with_body(pack)
+            .create_async()
+            .await;
+        let client = test_client(&server);
+        let staging = tempfile::tempdir().unwrap();
+
+        let error = match client.get_blob_pack(&[digest], staging.path()).await {
+            Err(error) => error,
+            Ok(_) => panic!("corrupt pack should be rejected"),
+        };
+
+        assert!(error.to_string().contains("failed digest verification"));
+    }
+
     #[test]
-    fn blob_pack_chunks_honor_item_and_byte_limits() {
+    fn blob_pack_chunk_honors_item_and_byte_limits() {
         let first = CacheDigest::blake3(b"1234");
         let second = CacheDigest::blake3(b"5678");
         let oversized = CacheDigest::blake3(b"123456789");
-        let chunks = blob_pack_chunks(
+        let chunk = blob_pack_chunk(
             &[first.clone(), second.clone(), first.clone(), oversized],
             BlobPackLimits {
                 max_items: 10,
@@ -1448,12 +1539,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(chunks.len(), 2);
-        let mut expected = vec![first, second];
-        expected.sort();
-        assert_eq!(chunks.concat(), expected);
+        assert_eq!(chunk, vec![first]);
 
-        let chunks = blob_pack_chunks(
+        let chunk = blob_pack_chunk(
             &[CacheDigest::blake3(b"a"), CacheDigest::blake3(b"b")],
             BlobPackLimits {
                 max_items: 1,
@@ -1461,7 +1549,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunk.len(), 1);
     }
 
     #[test]
@@ -1476,7 +1564,7 @@ mod tests {
         RemoteCacheClient::new(RemoteCacheConfig {
             base_url: server.url().parse().unwrap(),
             namespace: "test".into(),
-            token: None,
+            token: Some("test-token".into()),
             token_file: None,
             oidc_audience: None,
             connect_timeout: Duration::from_secs(1),
@@ -1485,6 +1573,23 @@ mod tests {
             retries: 0,
         })
         .unwrap()
+    }
+
+    async fn mock_blob_pack_capabilities(server: &mut mockito::ServerGuard) {
+        server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1024}
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
     }
 
     fn encode_blob_pack(entries: &[(&CacheDigest, &[u8])]) -> Vec<u8> {
