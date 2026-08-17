@@ -17,7 +17,7 @@ use std::sync::LazyLock as Lazy;
 use crate::cli::HookReason;
 use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings, config_file};
 use crate::env::PATH_KEY;
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::errors::Error;
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
@@ -252,11 +252,6 @@ pub fn should_exit_early_fast() -> bool {
     if have_mise_env_vars_been_modified() {
         return false;
     }
-    // Restore only environment state previously owned by mise. User-added
-    // variables and PATH entries do not affect this check.
-    if has_managed_env_drift(&env::__MISE_DIFF, &current_managed_env(&env::__MISE_DIFF)) {
-        return false;
-    }
 
     // chpwd_only mode: skip on precmd if directory hasn't changed
     // This significantly reduces stat operations on slow filesystems like NFS
@@ -379,9 +374,6 @@ pub fn should_exit_early(
     if have_mise_env_vars_been_modified() {
         return false;
     }
-    if has_managed_env_drift(&env::__MISE_DIFF, &current_managed_env(&env::__MISE_DIFF)) {
-        return false;
-    }
     // The fast path already decided this run is necessary. Check it only after
     // the slow-path checks above, since they also record modified watch files
     // and schedule hooks as side effects.
@@ -458,49 +450,6 @@ fn has_preclap_logging_flag(args: &[String]) -> bool {
 
 fn have_mise_env_vars_been_modified() -> bool {
     get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash
-}
-
-fn current_managed_env(diff: &EnvDiff) -> EnvMap {
-    let mut current: EnvMap = diff
-        .new
-        .keys()
-        .filter_map(|key| env::var(key).ok().map(|value| (key.clone(), value)))
-        .collect();
-    if !diff.path.is_empty()
-        && let Ok(path) = env::var(&*PATH_KEY)
-    {
-        current.insert(PATH_KEY.to_string(), path);
-    }
-    current
-}
-
-fn has_managed_env_drift(diff: &EnvDiff, current: &EnvMap) -> bool {
-    for (key, expected) in &diff.new {
-        if current.get(key) != Some(expected) {
-            trace!("mise-managed environment variable changed: {key}");
-            return true;
-        }
-    }
-
-    if diff.path.is_empty() {
-        return false;
-    }
-
-    // PATH ownership is set-based: shells such as fish deduplicate entries when
-    // applying the environment, so requiring the serialized occurrence count
-    // would report permanent drift even though the managed path is present.
-    let current_paths = current
-        .get(&*PATH_KEY)
-        .map(|path| env::split_paths(path).collect::<std::collections::HashSet<PathBuf>>())
-        .unwrap_or_default();
-    diff.path.iter().any(|path| {
-        if !current_paths.contains(path) {
-            trace!("mise-managed PATH entry changed: {}", path.display());
-            true
-        } else {
-            false
-        }
-    })
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -843,13 +792,7 @@ pub fn build_alias_commands(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        FAST_PATH_FORCED_FULL_RUN, force_full_run, has_managed_env_drift, has_preclap_logging_flag,
-    };
-    use crate::env::PATH_KEY;
-    use crate::env_diff::{EnvDiff, EnvMap};
-    use indexmap::indexmap;
-    use std::path::PathBuf;
+    use super::{FAST_PATH_FORCED_FULL_RUN, force_full_run, has_preclap_logging_flag};
     use std::sync::atomic::Ordering;
 
     fn args(values: &[&str]) -> Vec<String> {
@@ -906,65 +849,5 @@ mod tests {
             "hook-env",
             "--verbose"
         ])));
-    }
-
-    fn managed_diff() -> EnvDiff {
-        EnvDiff {
-            new: indexmap! {
-                "MANAGED".into() => "expected".into(),
-            },
-            path: vec![PathBuf::from("/managed/bin"), PathBuf::from("/managed/bin")],
-            ..Default::default()
-        }
-    }
-
-    fn current_env(entries: &[(&str, &str)]) -> EnvMap {
-        entries
-            .iter()
-            .map(|(key, value)| ((*key).into(), (*value).into()))
-            .collect()
-    }
-
-    #[test]
-    fn detects_changed_or_missing_managed_variables() {
-        let diff = managed_diff();
-        let path = std::env::join_paths(["/managed/bin", "/managed/bin"])
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-
-        let changed = current_env(&[("MANAGED", "changed"), (PATH_KEY.as_str(), &path)]);
-        assert!(has_managed_env_drift(&diff, &changed));
-
-        let missing = current_env(&[(PATH_KEY.as_str(), &path)]);
-        assert!(has_managed_env_drift(&diff, &missing));
-    }
-
-    #[test]
-    fn ignores_unmanaged_variables_path_order_and_duplicate_managed_entries() {
-        let diff = managed_diff();
-        let path = std::env::join_paths(["/user/after", "/managed/bin", "/user/before"])
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let current = current_env(&[
-            ("MANAGED", "expected"),
-            ("UNMANAGED", "changed"),
-            (PATH_KEY.as_str(), &path),
-        ]);
-
-        assert!(!has_managed_env_drift(&diff, &current));
-    }
-
-    #[test]
-    fn detects_missing_managed_path() {
-        let diff = managed_diff();
-        let path = std::env::join_paths(["/user/bin"])
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let current = current_env(&[("MANAGED", "expected"), (PATH_KEY.as_str(), &path)]);
-
-        assert!(has_managed_env_drift(&diff, &current));
     }
 }

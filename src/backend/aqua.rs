@@ -474,7 +474,7 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let versions = install_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        let pkg = Self::package_with_options_for_pkg(&tv, pkg, &versions)?;
+        let mut pkg = Self::package_with_options_for_pkg(&tv, pkg, &versions)?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
         {
@@ -499,7 +499,6 @@ impl Backend for AquaBackend {
                 existing_platform // Trust lockfile URL in locked mode or for non-release types
             } else {
                 let cached_filename = get_filename_from_url(url);
-                let cached_filename_lower = cached_filename.to_lowercase();
                 // Check assets for both version variants (with and without v prefix)
                 let version_variants: Vec<&str> = match &v_prefixed {
                     Some(vp) => vec![v.as_str(), vp.as_str()],
@@ -510,9 +509,11 @@ impl Backend for AquaBackend {
                         .unwrap_or_default()
                         .iter()
                         .any(|expected| {
-                            // Case-insensitive match to align with github_release_asset behavior
-                            cached_filename == *expected
-                                || cached_filename_lower == expected.to_lowercase()
+                            asset_name_matches_expected(
+                                &cached_filename,
+                                expected,
+                                libc_asset_preference(&PlatformTarget::from_current()),
+                            )
                         })
                 });
                 if matches {
@@ -606,6 +607,11 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
+        let original_linux_replacement = pkg.replacements.get("linux").cloned();
+        pkg = Self::apply_selected_asset_libc_replacement(pkg, os(), &filename);
+        let selected_libc_sibling =
+            original_linux_replacement != pkg.replacements.get("linux").cloned();
+
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
 
         // Public repos download from the browser URL; private repos return 404/HTML there
@@ -634,7 +640,7 @@ impl Backend for AquaBackend {
         if needs_extraction(format, &pkg.package_type()) {
             ctx.pr.next_operation();
         }
-        self.install(ctx, &tv, &pkg, &v, &filename)?;
+        self.install(ctx, &tv, &pkg, &v, &filename, selected_libc_sibling)?;
 
         Ok(tv)
     }
@@ -806,7 +812,7 @@ impl Backend for AquaBackend {
         let target_libc = Self::target_variant_libc(target);
         let pkg = pkg.with_version_libc(&versions, target_os, target_arch, target_libc.as_deref());
         let pkg = Self::apply_aqua_libc_replacement(pkg, target_os, Self::target_libc(target));
-        let pkg = Self::apply_var_options(pkg, &opts)?;
+        let mut pkg = Self::apply_var_options(pkg, &opts)?;
 
         // Apply version prefix if present
         if let Some(prefix) = &pkg.version_prefix
@@ -893,12 +899,15 @@ impl Backend for AquaBackend {
         };
 
         let name = url.as_ref().map(|u| get_filename_from_url(u));
+        if let Some(filename) = &name {
+            pkg = Self::apply_selected_asset_libc_replacement(pkg, target_os, filename);
+        }
 
         // Try to get checksum from checksum file if not available from GitHub API
         let checksum = match checksum {
             Some(c) => Some(c),
             None => match self
-                .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref())
+                .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref(), target)
                 .await
             {
                 Ok(checksum) => checksum,
@@ -953,7 +962,7 @@ impl Backend for AquaBackend {
         // This ensures deterministic lockfile output regardless of host platform.
         if matches!(provenance, Some(ProvenanceType::Slsa { url: None })) {
             match self
-                .resolve_slsa_url(&pkg, &v, target_os, target_arch)
+                .resolve_slsa_url(&pkg, &v, target_os, target_arch, target)
                 .await
             {
                 Ok((canonical_url, _url_api)) => {
@@ -1102,6 +1111,25 @@ impl AquaBackend {
             *linux = format!("{prefix}-{libc}");
         }
         pkg
+    }
+
+    fn apply_selected_asset_libc_replacement(
+        pkg: AquaPackage,
+        target_os: &str,
+        filename: &str,
+    ) -> AquaPackage {
+        let tokens = asset_name_tokens(filename);
+        let libc = if tokens.iter().any(|token| token == "musl") {
+            Some("musl")
+        } else if tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc"))
+        {
+            Some("gnu")
+        } else {
+            None
+        };
+        Self::apply_aqua_libc_replacement(pkg, target_os, libc.map(str::to_string))
     }
 
     fn apply_var_options(pkg: AquaPackage, opts: &AquaOptions<'_>) -> Result<AquaPackage> {
@@ -1533,6 +1561,7 @@ impl AquaBackend {
         v: &str,
         target_os: &str,
         target_arch: &str,
+        target: &PlatformTarget,
     ) -> Result<(String, Option<String>)> {
         let slsa = pkg
             .slsa_provenance
@@ -1546,7 +1575,9 @@ impl AquaBackend {
         match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
                 let asset_strs = slsa.asset_strs(&slsa_pkg, v, target_os, target_arch)?;
-                let (url, url_api, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
+                let (url, url_api, _) = self
+                    .github_release_asset_for_target(&slsa_pkg, v, asset_strs, target)
+                    .await?;
                 Ok((url, url_api))
             }
             "http" => slsa
@@ -1566,7 +1597,9 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
-        let (provenance_url, url_api) = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
+        let target = PlatformTarget::from_current();
+        let (provenance_url, url_api) =
+            self.resolve_slsa_url(pkg, v, os(), arch(), &target).await?;
         let download_url =
             select_github_download_url(pkg.private, &provenance_url, url_api.as_deref()).await;
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
@@ -2089,16 +2122,6 @@ impl AquaBackend {
             .await
     }
 
-    async fn github_release_asset(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        asset_strs: IndexSet<String>,
-    ) -> Result<(String, Option<String>, Option<String>)> {
-        self.github_release_asset_matching(pkg, v, asset_strs, false)
-            .await
-    }
-
     /// Resolve a GitHub release asset to `(canonical_url, transport_url)`.
     ///
     /// `canonical_url` is the browser download URL (`github.com/.../releases/download/...`),
@@ -2116,7 +2139,21 @@ impl AquaBackend {
         v: &str,
         asset_strs: IndexSet<String>,
     ) -> Result<(String, String)> {
-        let (url, url_api, _) = self.github_release_asset(pkg, v, asset_strs).await?;
+        let target = PlatformTarget::from_current();
+        self.github_release_asset_urls_for_target(pkg, v, asset_strs, &target)
+            .await
+    }
+
+    async fn github_release_asset_urls_for_target(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        asset_strs: IndexSet<String>,
+        target: &PlatformTarget,
+    ) -> Result<(String, String)> {
+        let (url, url_api, _) = self
+            .github_release_asset_for_target(pkg, v, asset_strs, target)
+            .await?;
         let transport = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
         Ok((url, transport))
     }
@@ -2128,12 +2165,10 @@ impl AquaBackend {
         asset_strs: IndexSet<String>,
         target: &PlatformTarget,
     ) -> Result<(String, Option<String>, Option<String>)> {
-        // TODO: remove this when aqua supports musl variants natively.
-        // For now aqua templates only see linux/amd64 or linux/arm64, so a
-        // linux-*-musl lock target would otherwise choose the glibc asset even
-        // when a release also publishes the same asset name with an added musl
-        // token.
-        self.github_release_asset_matching(pkg, v, asset_strs, target_prefers_musl(target))
+        // Aqua metadata sometimes names only one libc variant even when the release
+        // publishes both. Prefer the target libc sibling while retaining the exact
+        // metadata asset as a fallback for unqualified Linux targets.
+        self.github_release_asset_matching(pkg, v, asset_strs, libc_asset_preference(target))
             .await
     }
 
@@ -2153,20 +2188,20 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         asset_strs: IndexSet<String>,
-        prefer_musl: bool,
+        libc_preference: LibcAssetPreference,
     ) -> Result<(String, Option<String>, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = self.get_github_release(&gh_id, v).await?;
 
         // Prioritize order of asset_strs
-        let asset = select_github_release_asset(&gh_release.assets, &asset_strs, prefer_musl)
+        let asset = select_github_release_asset(&gh_release.assets, &asset_strs, libc_preference)
             .wrap_err_with(|| {
-                format!(
-                    "no asset found: {}\nAvailable assets:\n{}",
-                    asset_strs.iter().join(", "),
-                    gh_release.assets.iter().map(|a| &a.name).join("\n")
-                )
-            })?;
+            format!(
+                "no asset found: {}\nAvailable assets:\n{}",
+                asset_strs.iter().join(", "),
+                gh_release.assets.iter().map(|a| &a.name).join("\n")
+            )
+        })?;
 
         Ok((
             asset.browser_download_url.to_string(),
@@ -2227,6 +2262,7 @@ impl AquaBackend {
         target_os: &str,
         target_arch: &str,
         filename: Option<&str>,
+        target: &PlatformTarget,
     ) -> Result<Option<String>> {
         let Some(checksum_config) = &pkg.checksum else {
             return Ok(None);
@@ -2244,7 +2280,10 @@ impl AquaBackend {
                 let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
                 // No filename derivation is needed here, so the transport URL is all that
                 // is needed.
-                match self.github_release_asset_urls(pkg, v, asset_strs).await {
+                match self
+                    .github_release_asset_urls_for_target(pkg, v, asset_strs, target)
+                    .await
+                {
                     Ok((_, download_url)) => download_url,
                     Err(e) => {
                         debug!("Failed to get checksum file asset: {}", e);
@@ -2880,6 +2919,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
+        selected_libc_sibling: bool,
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
         ctx.pr.set_message(format!("extract {filename}"));
@@ -2977,7 +3017,7 @@ impl AquaBackend {
 
         let raw_opts = tv.request.options();
         let opts = AquaOptions::new(&raw_opts);
-        if opts.symlink_bins() {
+        if opts.symlink_bins() || selected_libc_sibling {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
@@ -2988,12 +3028,20 @@ impl AquaBackend {
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[AquaFileLink]) -> Result<()> {
         let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
-        file::create_dir_all(&symlink_dir)?;
+        Self::create_symlink_bin_dir_at(&symlink_dir, srcs)
+    }
+
+    fn create_symlink_bin_dir_at(symlink_dir: &Path, srcs: &[AquaFileLink]) -> Result<()> {
+        let srcs = srcs.iter().filter(|link| link.dst.exists()).collect_vec();
+        if srcs.is_empty() {
+            return Ok(());
+        }
+        file::create_dir_all(symlink_dir)?;
 
         for link in srcs {
             if let Some(bin_name) = link.dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
-                if link.dst.exists() && !symlink_path.exists() {
+                if !symlink_path.exists() {
                     file::make_symlink_or_copy(&link.dst, &symlink_path)?;
                 }
             }
@@ -3505,6 +3553,26 @@ mod tests {
         // machine it must stay out of the way. On unix it never appears at all.
         let root = PathBuf::from(r"C:\Users\u\AppData\Local\Temp\mise\lock-provenance");
         assert_eq!(AquaBackend::scratch_length_hint_for(&root), "");
+    }
+
+    #[test]
+    fn symlink_bin_dir_is_not_created_without_existing_bins() {
+        let temp = tempfile::tempdir().unwrap();
+        let symlink_dir = temp.path().join(MISE_BINS_DIR);
+        let bin = temp.path().join("missing-bin");
+        let srcs = [AquaFileLink {
+            src: bin.clone(),
+            dst: bin.clone(),
+            hard: false,
+            explicit_link: false,
+        }];
+
+        AquaBackend::create_symlink_bin_dir_at(&symlink_dir, &srcs).unwrap();
+        assert!(!symlink_dir.exists());
+
+        fs::write(&bin, b"binary").unwrap();
+        AquaBackend::create_symlink_bin_dir_at(&symlink_dir, &srcs).unwrap();
+        assert!(symlink_dir.join("missing-bin").exists());
     }
 
     #[test]
@@ -4725,8 +4793,23 @@ fn is_platform_supported(supported_envs: &[String], os: &str, arch: &str) -> boo
     !envs.is_disjoint(&myself)
 }
 
-fn target_prefers_musl(target: &PlatformTarget) -> bool {
-    target.os_name() == "linux" && AquaBackend::target_libc(target).as_deref() == Some("musl")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LibcAssetPreference {
+    Exact,
+    GlibcWithFallback,
+    GlibcStrict,
+    MuslStrict,
+}
+
+fn libc_asset_preference(target: &PlatformTarget) -> LibcAssetPreference {
+    if target.os_name() != "linux" {
+        return LibcAssetPreference::Exact;
+    }
+    match AquaBackend::target_libc(target).as_deref() {
+        Some("gnu") => LibcAssetPreference::GlibcStrict,
+        Some("musl") => LibcAssetPreference::MuslStrict,
+        _ => LibcAssetPreference::GlibcWithFallback,
+    }
 }
 
 fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
@@ -4739,9 +4822,9 @@ fn is_aqua_linux_libc_replacement(replacement: &str) -> bool {
 fn select_github_release_asset<'a>(
     assets: &'a [github::GithubAsset],
     asset_strs: &IndexSet<String>,
-    prefer_musl: bool,
+    libc_preference: LibcAssetPreference,
 ) -> Option<&'a github::GithubAsset> {
-    let assets_with_tokens = if prefer_musl {
+    let assets_with_tokens = if libc_preference != LibcAssetPreference::Exact {
         assets
             .iter()
             .map(|asset| (asset, asset_name_tokens(&asset.name)))
@@ -4755,21 +4838,64 @@ fn select_github_release_asset<'a>(
             .find(|a| a.name == *expected || a.name.to_lowercase() == expected.to_lowercase());
 
         let expected_tokens = asset_name_tokens(expected);
-        if prefer_musl
-            && let Some(musl_asset) = assets_with_tokens.iter().find_map(|(asset, tokens)| {
-                is_musl_variant_of_expected_asset(tokens, &expected_tokens).then_some(*asset)
+        if libc_preference != LibcAssetPreference::Exact
+            && let Some(preferred_asset) = assets_with_tokens.iter().find_map(|(asset, tokens)| {
+                is_libc_variant_of_expected_asset(tokens, &expected_tokens, libc_preference)
+                    .then_some(*asset)
             })
         {
-            return Some(musl_asset);
+            return Some(preferred_asset);
         }
 
-        exact
+        exact.filter(|_| exact_asset_matches_libc_preference(&expected_tokens, libc_preference))
     })
 }
 
-fn is_musl_variant_of_expected_asset(asset_tokens: &[String], expected_tokens: &[String]) -> bool {
-    asset_tokens.iter().any(|token| token == "musl")
-        && !expected_tokens.iter().any(|token| token == "musl")
+fn exact_asset_matches_libc_preference(
+    asset_tokens: &[String],
+    preference: LibcAssetPreference,
+) -> bool {
+    match preference {
+        LibcAssetPreference::Exact | LibcAssetPreference::GlibcWithFallback => true,
+        LibcAssetPreference::GlibcStrict => !asset_tokens.iter().any(|token| token == "musl"),
+        LibcAssetPreference::MuslStrict => !asset_tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
+    }
+}
+
+fn asset_name_matches_expected(
+    actual: &str,
+    expected: &str,
+    preference: LibcAssetPreference,
+) -> bool {
+    let actual_tokens = asset_name_tokens(actual);
+    let expected_tokens = asset_name_tokens(expected);
+    ((actual == expected || actual.eq_ignore_ascii_case(expected))
+        && exact_asset_matches_libc_preference(&actual_tokens, preference))
+        || is_libc_variant_of_expected_asset(&actual_tokens, &expected_tokens, preference)
+}
+
+fn is_libc_variant_of_expected_asset(
+    asset_tokens: &[String],
+    expected_tokens: &[String],
+    preference: LibcAssetPreference,
+) -> bool {
+    let asset_matches = match preference {
+        LibcAssetPreference::Exact => false,
+        LibcAssetPreference::GlibcWithFallback | LibcAssetPreference::GlibcStrict => asset_tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "gnu" | "glibc")),
+        LibcAssetPreference::MuslStrict => asset_tokens.iter().any(|token| token == "musl"),
+    };
+    asset_matches
+        && !expected_tokens.iter().any(|token| match preference {
+            LibcAssetPreference::Exact => false,
+            LibcAssetPreference::GlibcWithFallback | LibcAssetPreference::GlibcStrict => {
+                matches!(token.as_str(), "gnu" | "glibc")
+            }
+            LibcAssetPreference::MuslStrict => token == "musl",
+        })
         && itertools::equal(
             asset_tokens
                 .iter()
@@ -5007,9 +5133,10 @@ mod lock_candidate_tests {
             "tool".to_string(),
             Some("aqua:owner/repo".to_string()),
         ));
+        let target = PlatformTarget::new(crate::platform::Platform::parse("linux-x64").unwrap());
 
         let checksum = backend
-            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT))
+            .fetch_checksum_from_file(&pkg, "1.0.0", "linux", "amd64", Some(ARTIFACT), &target)
             .await
             .unwrap();
 
@@ -5248,7 +5375,9 @@ version_overrides:
         ];
         let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
 
-        let selected = select_github_release_asset(&assets, &asset_strs, true).unwrap();
+        let selected =
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
     }
@@ -5261,7 +5390,8 @@ version_overrides:
         ];
         let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
 
-        let selected = select_github_release_asset(&assets, &asset_strs, false).unwrap();
+        let selected =
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::Exact).unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz");
     }
@@ -5271,7 +5401,9 @@ version_overrides:
         let assets = vec![asset("tool-1.0.0-linux-amd64-musl.tar.gz")];
         let asset_strs = IndexSet::from(["tool-1.0.0-linux-amd64.tar.gz".to_string()]);
 
-        let selected = select_github_release_asset(&assets, &asset_strs, true).unwrap();
+        let selected =
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .unwrap();
 
         assert_eq!(selected.name, "tool-1.0.0-linux-amd64-musl.tar.gz");
     }
@@ -5281,9 +5413,85 @@ version_overrides:
         let asset_tokens = asset_name_tokens("tool-1.0.0-linux-amd64-muslvariant.tar.gz");
         let expected_tokens = asset_name_tokens("tool-1.0.0-linux-amd64.tar.gz");
 
-        assert!(!is_musl_variant_of_expected_asset(
+        assert!(!is_libc_variant_of_expected_asset(
             &asset_tokens,
             &expected_tokens,
+            LibcAssetPreference::MuslStrict,
+        ));
+    }
+
+    #[test]
+    fn test_select_github_release_asset_prefers_glibc_then_falls_back_to_musl() {
+        let assets = vec![
+            asset("tool-1.0.0-x86_64-unknown-linux-musl.tar.gz"),
+            asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz"),
+        ];
+        let asset_strs =
+            IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-musl.tar.gz".to_string()]);
+
+        let selected = select_github_release_asset(
+            &assets,
+            &asset_strs,
+            LibcAssetPreference::GlibcWithFallback,
+        )
+        .unwrap();
+        assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz");
+
+        let selected = select_github_release_asset(
+            &assets[..1],
+            &asset_strs,
+            LibcAssetPreference::GlibcWithFallback,
+        )
+        .unwrap();
+        assert_eq!(selected.name, "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz");
+    }
+
+    #[test]
+    fn test_select_github_release_asset_keeps_explicit_glibc_strict() {
+        let assets = vec![asset("tool-1.0.0-x86_64-unknown-linux-musl.tar.gz")];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        assert!(
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::GlibcStrict)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_select_github_release_asset_keeps_explicit_musl_strict() {
+        let assets = vec![asset("tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz")];
+        let asset_strs = IndexSet::from(["tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz".to_string()]);
+
+        assert!(
+            select_github_release_asset(&assets, &asset_strs, LibcAssetPreference::MuslStrict)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_lock_asset_validation_preserves_explicit_libc() {
+        let musl = "tool-1.0.0-x86_64-unknown-linux-musl.tar.gz";
+        let gnu = "tool-1.0.0-x86_64-unknown-linux-gnu.tar.gz";
+
+        assert!(!asset_name_matches_expected(
+            musl,
+            musl,
+            LibcAssetPreference::GlibcStrict,
+        ));
+        assert!(!asset_name_matches_expected(
+            gnu,
+            gnu,
+            LibcAssetPreference::MuslStrict,
+        ));
+        assert!(asset_name_matches_expected(
+            gnu,
+            musl,
+            LibcAssetPreference::GlibcWithFallback,
+        ));
+        assert!(asset_name_matches_expected(
+            musl,
+            musl,
+            LibcAssetPreference::GlibcWithFallback,
         ));
     }
 
@@ -5326,6 +5534,24 @@ version_overrides:
         assert_eq!(
             pkg.replacements.get("linux").map(String::as_str),
             Some("Linux")
+        );
+    }
+
+    #[test]
+    fn test_apply_selected_asset_libc_replacement_tracks_downloaded_archive() {
+        let mut pkg = AquaPackage::default();
+        pkg.replacements
+            .insert("linux".to_string(), "unknown-linux-musl".to_string());
+
+        let pkg = AquaBackend::apply_selected_asset_libc_replacement(
+            pkg,
+            "linux",
+            "tool-x86_64-unknown-linux-gnu.tar.gz",
+        );
+
+        assert_eq!(
+            pkg.replacements.get("linux").map(String::as_str),
+            Some("unknown-linux-gnu")
         );
     }
 }
