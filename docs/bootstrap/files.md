@@ -22,9 +22,10 @@ are resolved from the configuration file that declares them. Present files
 must declare exactly one content source. Targets must be absolute paths, and
 mise refuses to manage `/` itself.
 
-Mise creates only directories that are explicitly declared. If multiple
-missing levels are needed, declare each directory so its ownership and mode are
-intentional; mise never creates undeclared ancestors with process defaults.
+Directory creation uses `mkdir -p` semantics, so missing parent directories are
+created automatically. The configured ownership and mode apply to the declared
+directory; implicitly created parents use the operating system defaults. Declare
+a parent separately when it needs specific ownership or permissions.
 
 By default, a target with the wrong node type is reported as `unknown` and
 apply refuses to destroy it. Set `replace = true` on that file or directory to
