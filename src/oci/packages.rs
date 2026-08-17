@@ -80,7 +80,7 @@ pub fn build_system_packages_layer(
     }
     validate_host_requirements(manager)?;
 
-    let td = TempDir::with_prefix(&format!("mise-oci-{}-rootfs-", manager.name())).wrap_err_with(
+    let td = TempDir::with_prefix(format!("mise-oci-{}-rootfs-", manager.name())).wrap_err_with(
         || {
             format!(
                 "creating temp rootfs for {} system packages",
