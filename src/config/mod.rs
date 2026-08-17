@@ -3595,7 +3595,7 @@ fn expand_config_roots_inner(
     ctx: Option<&crate::task::TaskLoadContext>,
     filenames: Option<&[String]>,
 ) -> Result<Vec<PathBuf>> {
-    expand_config_roots_inner_for("monorepo", root, patterns, ctx, filenames)
+    expand_config_roots_inner_for("monorepo", root, patterns, ctx, filenames, false)
 }
 
 /// Expands bootstrap root patterns using the normal mise config filenames.
@@ -3606,6 +3606,7 @@ fn expand_bootstrap_config_roots(root: &Path, patterns: &[String]) -> Result<Vec
         patterns,
         None,
         Some(&DEFAULT_CONFIG_FILENAMES),
+        true,
     )
 }
 
@@ -3616,6 +3617,7 @@ fn expand_config_roots_inner_for(
     patterns: &[String],
     ctx: Option<&crate::task::TaskLoadContext>,
     filenames: Option<&[String]>,
+    canonicalize_results: bool,
 ) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
     let canonical_root = match root.canonicalize() {
@@ -3655,7 +3657,7 @@ fn expand_config_roots_inner_for(
 
         if pattern.contains('*') {
             // Single-level glob expansion
-            let full_pattern = canonical_root.join(pattern);
+            let full_pattern = root.join(pattern);
             match glob::glob(&full_pattern.to_string_lossy()) {
                 Ok(entries) => {
                     for entry in entries {
@@ -3683,7 +3685,11 @@ fn expand_config_roots_inner_for(
                                         has_mise_config_with_filenames(&canonical, filenames)
                                     })
                                 {
-                                    subdirs.push(canonical);
+                                    subdirs.push(if canonicalize_results {
+                                        canonical
+                                    } else {
+                                        path
+                                    });
                                 }
                             }
                             Err(e) => {
@@ -3698,7 +3704,7 @@ fn expand_config_roots_inner_for(
             }
         } else {
             // Explicit path
-            let path = canonical_root.join(pattern);
+            let path = root.join(pattern);
             let canonical = match path.canonicalize() {
                 Ok(path) => path,
                 Err(_) => {
@@ -3717,7 +3723,11 @@ fn expand_config_roots_inner_for(
                 if filenames
                     .is_none_or(|filenames| has_mise_config_with_filenames(&canonical, filenames))
                 {
-                    subdirs.push(canonical);
+                    subdirs.push(if canonicalize_results {
+                        canonical
+                    } else {
+                        path
+                    });
                 } else {
                     warn!(
                         "[{section}].config_roots: '{}' has no mise config file",
@@ -3734,11 +3744,11 @@ fn expand_config_roots_inner_for(
     if let Some(ctx) = ctx {
         subdirs.retain(|dir| {
             let rel_path = dir
-                .strip_prefix(&canonical_root)
+                .strip_prefix(root)
                 .ok()
                 .and_then(|p| p.to_str())
                 .unwrap_or("");
-            ctx.should_load_subdir(rel_path, canonical_root.to_str().unwrap_or(""))
+            ctx.should_load_subdir(rel_path, root.to_str().unwrap_or(""))
         });
     }
 
