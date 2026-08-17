@@ -1117,6 +1117,9 @@
         "expand": {
           "$ref": "#/$defs/env_file_expand"
         },
+        "parser": {
+          "$ref": "#/$defs/env_file_parser"
+        },
         "redact": {
           "$ref": "#/$defs/env_redact"
         },
@@ -1191,6 +1194,12 @@
       "type": "boolean",
       "default": false,
       "description": "enable shell-style variable expansion for values loaded by env._.file"
+    },
+    "env_file_parser": {
+      "type": "string",
+      "enum": ["dotenvy", "dotenv-ng"],
+      "default": "dotenvy",
+      "description": "dotenv parser used by env._.file"
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",

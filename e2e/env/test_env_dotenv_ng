@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+cat >mise.toml <<'EOF'
+[env]
+_.file = { path = '.env', parser = 'dotenv-ng' }
+EOF
+cat >.env <<'EOF'
+BASE=hello
+SAME_FILE=$BASE
+PASSWORD="foo:$2a$10$TWoviNHS27HJMw1PKe4tBeIMlms6tWdYS9hKoHANKCQhluDlEt/gu"
+EOF
+
+assert "mise env --json | jq -r .SAME_FILE" '$BASE'
+assert "mise env --json | jq -r .PASSWORD" 'foo:$2a$10$TWoviNHS27HJMw1PKe4tBeIMlms6tWdYS9hKoHANKCQhluDlEt/gu'
+
+cat >mise.toml <<'EOF'
+[env]
+PREFIX = 'before'
+_.file = { path = '.env', parser = 'dotenv-ng', expand = true }
+EOF
+cat >.env <<'EOF'
+BASE=hello
+SAME_FILE=$BASE
+CROSS_FILE=${PREFIX}/after
+EOF
+
+assert "mise env --json | jq -r .SAME_FILE" 'hello'
+assert "mise env --json | jq -r .CROSS_FILE" 'before/after'
+
+# Omitting parser retains dotenvy's existing same-file substitution behavior.
+cat >mise.toml <<'EOF'
+[env]
+_.file = '.env'
+EOF
+assert "mise env --json | jq -r .SAME_FILE" 'hello'

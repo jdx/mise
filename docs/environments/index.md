@@ -386,7 +386,7 @@ The `env._.file` directive supports:
 - Multiple files as an array of strings and objects
 - Using relative or absolute paths
 - Using `dotenv`, `json`, `yaml`, or `toml` file formats
-- The `redact`, `tools`, and `expand` options
+- The `redact`, `tools`, `expand`, and `parser` options
 
 ```toml
 [env]
@@ -417,6 +417,16 @@ _.file = { path = ".env.json", expand = true }
 The `env_shell_expand` setting remains the global switch and can disable expansion even when a file
 sets `expand = true`. Dotenv files retain dotenvy's normal same-file expansion behavior regardless;
 for dotenv files, `expand = true` additionally enables references to previously loaded values.
+
+Dotenv files use `dotenvy` by default for compatibility. Set `parser = "dotenv-ng"` to opt in to
+the [`dotenv-ng`](https://crates.io/crates/dotenv-ng) parser. Its syntax preserves dollar signs
+literally by default, which is useful for values such as password hashes. With this parser,
+`expand = true` explicitly enables same-file and cross-file variable substitution.
+
+```toml
+[env]
+_.file = { path = ".env", parser = "dotenv-ng" }
+```
 
 ```toml
 [env]

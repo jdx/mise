@@ -2308,6 +2308,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         redact: Some(false),
                                         required: RequiredValue::False,
                                         expand: false,
+                                        parser: None,
                                     },
                                 });
                             }

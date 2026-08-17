@@ -1,6 +1,6 @@
 use crate::config::{
     Config,
-    env_directive::{EnvDirectiveContext, EnvResults},
+    env_directive::{DotenvParser, EnvDirectiveContext, EnvResults},
 };
 use crate::env_diff::EnvMap as TeraEnvMap;
 use crate::file::display_path;
@@ -29,6 +29,7 @@ impl EnvResults {
         ctx: &mut EnvDirectiveContext<'_>,
         input: String,
         expand: bool,
+        parser: Option<DotenvParser>,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
         let s = ctx.parse_template(&input)?;
@@ -45,10 +46,22 @@ impl EnvResults {
                 .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
             let mut loaded = match ext.as_str() {
-                "json" => Self::json(config, exec_env, &p, parse_template).await?,
-                "yaml" => Self::yaml(config, exec_env, &p, parse_template).await?,
-                "toml" => Self::toml(config, exec_env, &p, parse_template).await?,
-                _ => Self::dotenv(&p, &acc, expand).await?,
+                "json" => {
+                    ensure_no_dotenv_parser(&p, parser)?;
+                    Self::json(config, exec_env, &p, parse_template).await?
+                }
+                "yaml" => {
+                    ensure_no_dotenv_parser(&p, parser)?;
+                    Self::yaml(config, exec_env, &p, parse_template).await?
+                }
+                "toml" => {
+                    ensure_no_dotenv_parser(&p, parser)?;
+                    Self::toml(config, exec_env, &p, parse_template).await?
+                }
+                _ => match parser.unwrap_or(DotenvParser::Dotenvy) {
+                    DotenvParser::Dotenvy => Self::dotenv(&p, &acc, expand).await?,
+                    DotenvParser::DotenvNg => Self::dotenv_ng(&p, &acc, expand).await?,
+                },
             };
             // Structured files are literal by default. With `expand = true`, run
             // their values through the same `$VAR` engine used by `[env]` values
@@ -263,6 +276,54 @@ impl EnvResults {
         }
         Ok(env)
     }
+
+    async fn dotenv_ng(p: &Path, acc: &TeraEnvMap, expand: bool) -> Result<EnvMap> {
+        use dotenv_ng_parser::{EnvLoader, EnvSequence};
+
+        let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
+        let Ok(content) = file::read_to_string(p) else {
+            return Ok(EnvMap::new());
+        };
+        let load = |expand, substitutions: Vec<(String, String)>| {
+            EnvLoader::with_reader(content.as_bytes())
+                .path(p)
+                .sequence(EnvSequence::InputOnly)
+                .substitution(expand)
+                .substitutions(substitutions)
+                .load()
+                .wrap_err_with(errfn)
+        };
+
+        if !expand {
+            return Ok(dotenv_ng_map(load(false, vec![])?));
+        }
+
+        // Parse literally first so accumulated values do not override keys owned
+        // by this file when substitution is enabled for the second parse.
+        let own = load(false, vec![])?;
+        let substitutions = acc
+            .iter()
+            .filter(|(key, _)| !own.contains_key(key))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        Ok(dotenv_ng_map(load(true, substitutions)?))
+    }
+}
+
+fn dotenv_ng_map(map: dotenv_ng_parser::EnvMap) -> EnvMap {
+    let mut entries: Vec<_> = map.into_iter().collect();
+    entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    entries.into_iter().collect()
+}
+
+fn ensure_no_dotenv_parser(p: &Path, parser: Option<DotenvParser>) -> Result<()> {
+    if parser.is_some() {
+        bail!(
+            "`parser` is only supported for dotenv files, but {} has a structured file extension",
+            display_path(p)
+        );
+    }
+    Ok(())
 }
 
 fn is_env_key(k: &str) -> bool {

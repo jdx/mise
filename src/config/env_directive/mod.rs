@@ -115,6 +115,15 @@ pub struct EnvDirectiveOptions {
     pub(crate) required: RequiredValue,
     #[serde(default)]
     pub(crate) expand: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) parser: Option<DotenvParser>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DotenvParser {
+    Dotenvy,
+    DotenvNg,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -713,7 +722,8 @@ impl EnvResults {
                         config_root: &config_root,
                         toolset,
                     };
-                    let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
+                    let files =
+                        Self::file(&mut directive_ctx, input, opts.expand, opts.parser).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
