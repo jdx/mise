@@ -55,7 +55,7 @@ jobs:
           - name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
           - name: linux-armv7
-            target: armv7-unknown-linux-gnueabi
+            target: armv7-unknown-linux-gnueabihf
           - name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
     steps:
