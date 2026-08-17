@@ -1589,13 +1589,24 @@ fn set_directory_metadata(
         .map(nix::unistd::Gid::from_raw);
     nix::unistd::fchown(directory, uid, gid)?;
     // chown may clear setuid/setgid bits, so apply the requested mode last.
-    let platform_mode = mode
-        .try_into()
-        .map_err(|_| eyre!("mode {mode:o} does not fit the platform mode type"))?;
-    nix::sys::stat::fchmod(
-        directory,
-        nix::sys::stat::Mode::from_bits_truncate(platform_mode),
-    )?;
+    let platform_mode = [
+        (0o4000, nix::sys::stat::Mode::S_ISUID),
+        (0o2000, nix::sys::stat::Mode::S_ISGID),
+        (0o1000, nix::sys::stat::Mode::S_ISVTX),
+        (0o0400, nix::sys::stat::Mode::S_IRUSR),
+        (0o0200, nix::sys::stat::Mode::S_IWUSR),
+        (0o0100, nix::sys::stat::Mode::S_IXUSR),
+        (0o0040, nix::sys::stat::Mode::S_IRGRP),
+        (0o0020, nix::sys::stat::Mode::S_IWGRP),
+        (0o0010, nix::sys::stat::Mode::S_IXGRP),
+        (0o0004, nix::sys::stat::Mode::S_IROTH),
+        (0o0002, nix::sys::stat::Mode::S_IWOTH),
+        (0o0001, nix::sys::stat::Mode::S_IXOTH),
+    ]
+    .into_iter()
+    .filter_map(|(bit, flag)| (mode & bit != 0).then_some(flag))
+    .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag);
+    nix::sys::stat::fchmod(directory, platform_mode)?;
     Ok(())
 }
 
