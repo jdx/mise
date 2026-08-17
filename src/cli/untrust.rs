@@ -5,7 +5,7 @@ use clap::ValueHint;
 
 use super::trust;
 
-/// No longer trust a config, will prompt in the future
+/// Remove explicit trust for a config
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Untrust {

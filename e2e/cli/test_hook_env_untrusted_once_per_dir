@@ -120,12 +120,13 @@ if ! contains_trust_warning "$quiet_stderr"; then
 fi
 cd ../project
 
-MISE_YES=0 mise run make 2>"$explicit_stderr" >/dev/null && {
-  echo "expected mise run to fail on untrusted config"
+if ! MISE_YES=0 mise run make 2>"$explicit_stderr" >/dev/null; then
+  echo "expected explicit mise run to trust the active config"
+  cat "$explicit_stderr"
   exit 1
-}
-if ! contains_trust_warning "$explicit_stderr"; then
-  echo "expected explicit mise run to keep reporting untrusted config"
+fi
+if contains_trust_warning "$explicit_stderr"; then
+  echo "expected explicit mise run not to report an untrusted config"
   cat "$explicit_stderr"
   exit 1
 fi

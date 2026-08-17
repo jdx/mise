@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -374,6 +375,34 @@ pub fn is_path_trusted(path: &Path) -> bool {
     is_trusted(&config_trust_root(path)) || is_trusted(path)
 }
 
+static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
+
+pub fn set_implicitly_trust_active_config(enabled: bool) {
+    IMPLICITLY_TRUST_ACTIVE_CONFIG.store(enabled, Ordering::Relaxed);
+}
+
+pub fn trust_active_config() -> Result<()> {
+    if !IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+    let Ok(settings) = Settings::try_get() else {
+        return Ok(());
+    };
+    if settings.paranoid || Settings::safe_mode() {
+        return Ok(());
+    }
+    for path in config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, false) {
+        if config::is_global_config(&path) {
+            continue;
+        }
+        let config_root = config_trust_root(&path);
+        if !is_trusted(&config_root) {
+            trust(&config_root)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // In safe mode, config is inert (no code execution, no env injection — see
     // MISE_SAFE / the `safe` setting), so loading an untrusted config is
@@ -381,6 +410,19 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // config cannot disable it for itself.
     if Settings::safe_mode() {
         return Ok(());
+    }
+    // Commands that execute project-defined behavior are an explicit signal
+    // to trust their active config in normal mode. Persist the decision here
+    // so unsafe config can load before the command starts; safe config is
+    // persisted by `trust_active_config` after settings initialization.
+    if IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed)
+        && Settings::try_get().is_ok_and(|settings| !settings.paranoid)
+    {
+        let config_root = config_trust_root(path);
+        if is_path_trusted(path) || (!is_ignored(&config_root) && !is_ignored(path)) {
+            trust(&config_root)?;
+            return Ok(());
+        }
     }
     static MUTEX: Mutex<()> = Mutex::new(());
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple checks at once so we don't prompt multiple times for the same path
