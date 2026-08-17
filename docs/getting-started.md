@@ -6,7 +6,7 @@ Get up and running with mise in minutes.
 
 ## 1. Install `mise` CLI {#installing-mise-cli}
 
-See [installing mise](/installing-mise) for other ways to install mise (`macport`, `apt`, `yum`, `nix`, etc.).
+See [installing mise](/installing-mise.html) for other ways to install mise (`macport`, `apt`, `yum`, `nix`, etc.).
 
 :::tabs key:installing-mise
 == Linux/macOS
