@@ -170,6 +170,9 @@ static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
     ]
 });
 
+static BARE_ARM_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:\b|_)arm(?:\b|_)").unwrap());
+
 static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
     vec![
         (
@@ -523,6 +526,14 @@ impl AssetPicker {
                     // Some projects use "x86" for their x86-64 artifacts. Keep
                     // this below a real x64/amd64 match so correctly named
                     // assets win when both are present.
+                    5
+                } else if *arch == AssetArch::Arm
+                    && AssetArch::Arm64.matches_target(&self.target_arch)
+                    && BARE_ARM_PATTERN.is_match(asset)
+                {
+                    // Modern projects often use bare "arm" for their 64-bit ARM
+                    // artifacts. Keep this below a real arm64/aarch64 match, and
+                    // do not apply it to explicitly 32-bit armv0-armv7 assets.
                     5
                 } else {
                     // Architecture mismatch should be disqualifying - don't silently
@@ -2726,6 +2737,42 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             score < 0,
             "Architecture mismatch should result in negative score, got {}",
             score
+        );
+    }
+
+    #[test]
+    fn test_arm_is_arm64_fallback() {
+        let assets = vec![
+            "elm-0.19.2-linux-arm.gz".to_string(),
+            "elm-0.19.2-mac-arm.gz".to_string(),
+            "elm-0.19.2-windows.exe".to_string(),
+        ];
+
+        let macos_picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            macos_picker.pick_best_asset(&assets).as_deref(),
+            Some("elm-0.19.2-mac-arm.gz")
+        );
+
+        let linux_picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            linux_picker.pick_best_asset(&assets).as_deref(),
+            Some("elm-0.19.2-linux-arm.gz")
+        );
+
+        let explicit_assets = vec![
+            "tool-linux-arm.gz".to_string(),
+            "tool-linux-arm64.gz".to_string(),
+        ];
+        assert_eq!(
+            linux_picker.pick_best_asset(&explicit_assets).as_deref(),
+            Some("tool-linux-arm64.gz")
+        );
+
+        assert!(
+            linux_picker
+                .pick_best_asset(&["tool-linux-armv7.gz".to_string()])
+                .is_none()
         );
     }
 
