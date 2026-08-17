@@ -36,7 +36,16 @@ pre-build = [
 image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:0.2.5"
 pre-build = [
   "dpkg --add-architecture armhf",
-  "apt-get update && apt-get install -y libclang-dev clang llvm-dev pkg-config",
+  "apt-get update && apt-get install -y apt-transport-https ca-certificates gnupg pkg-config wget",
+  "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -",
+  "echo 'deb [arch=amd64] https://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main' > /etc/apt/sources.list.d/llvm.list",
+  "apt-get update && apt-get install -y libclang-6.0-dev",
+]
+
+[target.armv7-unknown-linux-gnueabihf.env]
+passthrough = [
+  "BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabihf",
+  "LIBCLANG_PATH",
 ]
 
 
