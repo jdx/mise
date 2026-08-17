@@ -1416,11 +1416,7 @@ fn create_directory(
             if matches!(
                 error.kind(),
                 std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-            ) =>
-        {
-            fs::create_dir_all(path)
-                .wrap_err_with(|| format!("failed to create directory {}", path.display()))?
-        }
+            ) => {}
         Err(error) => {
             return Err(error)
                 .wrap_err_with(|| format!("failed to inspect directory {}", path.display()));
@@ -1430,13 +1426,171 @@ fn create_directory(
             bail!("refusing to replace non-directory path: {}", path.display())
         }
         Ok(_) => {
-            fs::remove_file(path)?;
-            fs::create_dir_all(path)
-                .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
+            fs::remove_file(path).wrap_err_with(|| {
+                format!(
+                    "failed to remove existing path before creating directory {}",
+                    path.display()
+                )
+            })?;
         }
     }
-    set_metadata(path, owner, group, mode)
-        .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
+
+    #[cfg(unix)]
+    {
+        let directory = open_or_create_directory_tree(path)
+            .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
+        set_directory_metadata(&directory, owner, group, mode)
+            .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(path)
+            .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
+        set_metadata(path, owner, group, mode)
+            .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
+    }
+}
+
+/// Open an absolute directory path one component at a time without following
+/// symlinks, creating missing components with process-default metadata. The
+/// returned descriptor binds later metadata changes to the directory that was
+/// actually opened instead of resolving the path again.
+#[cfg(unix)]
+fn open_or_create_directory_tree(path: &Path) -> Result<std::os::fd::OwnedFd> {
+    open_or_create_directory_tree_inner(path, 0)
+}
+
+#[cfg(unix)]
+fn open_or_create_directory_tree_inner(
+    path: &Path,
+    followed_symlinks: usize,
+) -> Result<std::os::fd::OwnedFd> {
+    use nix::fcntl::{AtFlags, OFlag, open, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat, fstatat, mkdirat};
+
+    if followed_symlinks > 40 {
+        bail!(
+            "too many symbolic links in managed directory {}",
+            path.display()
+        );
+    }
+
+    let components = path
+        .strip_prefix(Path::new("/"))
+        .wrap_err_with(|| format!("managed directory must be absolute: {}", path.display()))?
+        .components()
+        .map(|component| match component {
+            std::path::Component::Normal(name) => Ok(name.to_os_string()),
+            _ => bail!("invalid managed directory path: {}", path.display()),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
+    let mut directory = open(Path::new("/"), flags, Mode::empty())?;
+    let mut current = PathBuf::from("/");
+    for (index, name) in components.iter().enumerate() {
+        let component_path = current.join(name);
+        directory = match openat(&directory, name.as_os_str(), flags, Mode::empty()) {
+            Ok(directory) => directory,
+            Err(open_error) => {
+                let metadata = fstatat(&directory, name.as_os_str(), AtFlags::AT_SYMLINK_NOFOLLOW);
+                if metadata.is_ok_and(|metadata| {
+                    SFlag::from_bits_truncate(metadata.st_mode).contains(SFlag::S_IFLNK)
+                }) {
+                    let parent = fstat(&directory)?;
+                    if parent.st_uid != 0 || parent.st_mode & 0o022 != 0 {
+                        bail!(
+                            "refusing to follow symlink {} from an untrusted parent directory",
+                            component_path.display()
+                        );
+                    }
+                    let target = nix::fcntl::readlinkat(&directory, name.as_os_str())?;
+                    let mut resolved = if Path::new(&target).is_absolute() {
+                        PathBuf::from(target)
+                    } else {
+                        current.join(target)
+                    };
+                    resolved.extend(components.iter().skip(index + 1));
+                    let resolved = resolved.absolutize()?.to_path_buf();
+                    if resolved == Path::new("/") {
+                        bail!(
+                            "refusing to resolve managed directory {} to the filesystem root",
+                            path.display()
+                        );
+                    }
+                    return open_or_create_directory_tree_inner(&resolved, followed_symlinks + 1);
+                }
+                if open_error != nix::errno::Errno::ENOENT {
+                    return Err(open_error).wrap_err_with(|| {
+                        format!(
+                            "failed to open path component {} without following symlinks",
+                            component_path.display()
+                        )
+                    });
+                }
+                match mkdirat(
+                    &directory,
+                    name.as_os_str(),
+                    Mode::from_bits_truncate(0o777),
+                ) {
+                    Ok(()) => {}
+                    Err(nix::errno::Errno::EEXIST) => {
+                        bail!(
+                            "path component {} appeared while it was being created",
+                            component_path.display()
+                        )
+                    }
+                    Err(error) => {
+                        return Err(error).wrap_err_with(|| {
+                            format!(
+                                "failed to create path component {}",
+                                component_path.display()
+                            )
+                        });
+                    }
+                }
+                let created = openat(&directory, name.as_os_str(), flags, Mode::empty())
+                    .wrap_err_with(|| {
+                        format!(
+                            "failed to open created path component {} without following symlinks",
+                            component_path.display()
+                        )
+                    })?;
+                let stat = nix::sys::stat::fstat(&created)?;
+                if stat.st_uid != nix::unistd::geteuid().as_raw() {
+                    bail!(
+                        "created path component {} was replaced before it could be opened",
+                        component_path.display()
+                    );
+                }
+                created
+            }
+        };
+        current.push(name);
+    }
+    Ok(directory)
+}
+
+#[cfg(unix)]
+fn set_directory_metadata(
+    directory: &std::os::fd::OwnedFd,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: u32,
+) -> Result<()> {
+    let uid = owner
+        .map(resolve_user)
+        .transpose()?
+        .map(nix::unistd::Uid::from_raw);
+    let gid = group
+        .map(resolve_group)
+        .transpose()?
+        .map(nix::unistd::Gid::from_raw);
+    nix::unistd::fchown(directory, uid, gid)?;
+    // chown may clear setuid/setgid bits, so apply the requested mode last.
+    nix::sys::stat::fchmod(directory, nix::sys::stat::Mode::from_bits_truncate(mode))?;
+    Ok(())
 }
 
 fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
@@ -1754,6 +1908,17 @@ mod tests {
                 .contains(&format!("failed to create directory {}", blocked.display())),
             "unexpected error: {error:#}"
         );
+
+        let external = tempfile::tempdir().unwrap();
+        let symlink_parent = temp.path().join("symlink-parent");
+        std::os::unix::fs::symlink(external.path(), &symlink_parent).unwrap();
+        let escaped = symlink_parent.join("nested");
+        let error = create_directory(&escaped, None, None, 0o755, false).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("refusing to follow symlink"),
+            "unexpected error: {error:#}"
+        );
+        assert!(!external.path().join("nested").exists());
     }
 
     #[test]
