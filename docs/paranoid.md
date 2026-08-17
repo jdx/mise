@@ -21,9 +21,10 @@ $ mise env
 mise ~/src/mise/mise.toml is not trusted. Trust it [y/n]?
 ```
 
-In normal mode, `mise run`, `mise install`, `mise exec`, and `mise watch`
-automatically trust their active config because they explicitly execute
-project-defined behavior. Automatic shell activation through `hook-env` does not.
+In normal mode, `mise run`, naked task invocations such as `mise <TASK>`,
+`mise install`, `mise exec`, and `mise watch` automatically trust their active
+config because they explicitly execute project-defined behavior. Automatic shell
+activation through `hook-env` does not.
 
 Other commands check trust before parsing `mise.toml` files because they can
 contain behavior that executes code or affects the environment. Some discovery

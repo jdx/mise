@@ -20,10 +20,11 @@ use itertools::Itertools;
 /// untrusted-config error when it cannot prompt.
 ///
 /// In normal mode, commands that execute project-defined behavior (`mise run`,
-/// `mise install`, `mise exec`, and `mise watch`) automatically trust their
-/// active config. Paranoid mode always requires explicit, content-bound trust.
+/// naked task invocations such as `mise <TASK>`, `mise install`, `mise exec`,
+/// and `mise watch`) automatically trust their active config. Paranoid mode
+/// requires explicit, content-bound trust for every non-global config.
 ///
-/// Safe config files do not require trust: files that only contain
+/// In normal mode, safe config files do not require trust: files that only contain
 /// `min_version`, `[tools]` entries with plain version strings (or arrays of
 /// them), and `[tasks]` without templates or tool options.
 ///

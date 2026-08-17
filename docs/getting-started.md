@@ -324,9 +324,10 @@ This is a security measure — config files can execute arbitrary code via `[env
 mise trust
 ```
 
-In normal mode, `mise run`, `mise install`, `mise exec`, and `mise watch`
-automatically trust the active config because those commands explicitly execute
-project-defined behavior. Paranoid mode always requires `mise trust`.
+In normal mode, `mise run`, naked task invocations such as `mise <TASK>`, `mise install`,
+`mise exec`, and `mise watch` automatically trust the active config because those commands
+explicitly execute project-defined behavior. Paranoid mode requires `mise trust` for all
+non-global configs, including configs that are safe in normal mode.
 
 To disable trust prompts for a path, configure:
 
