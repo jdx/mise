@@ -785,18 +785,33 @@ pub(crate) fn matching_idiomatic_filenames<'a>(
 }
 
 async fn path_is_idiomatic(path: &Path) -> Option<Vec<Arc<dyn Backend>>> {
-    let disable_files = Settings::try_get()
-        .map(|settings| settings.idiomatic_version_file_disable_files.clone())
+    let (enable_tools, disable_files) = Settings::try_get()
+        .map(|settings| {
+            (
+                settings.idiomatic_version_file_enable_tools.clone(),
+                settings.idiomatic_version_file_disable_files.clone(),
+            )
+        })
         .unwrap_or_default();
-    path_is_idiomatic_with_disabled_files(path, &disable_files).await
+    path_is_idiomatic_for_enabled_tools(path, &enable_tools, &disable_files).await
 }
 
-async fn path_is_idiomatic_with_disabled_files(
+async fn path_is_idiomatic_for_enabled_tools(
     path: &Path,
+    enable_tools: &BTreeSet<String>,
     disable_files: &BTreeSet<String>,
 ) -> Option<Vec<Arc<dyn Backend>>> {
+    // Idiomatic version files are opt-in per tool. Skipping non-enabled backends is
+    // also what keeps `idiomatic_filenames()` from booting a Lua VM for every
+    // installed vfox plugin on every invocation just to classify a config path.
+    if enable_tools.is_empty() {
+        return None;
+    }
     let mut backends_by_filename = BTreeMap::<String, Vec<Arc<dyn Backend>>>::new();
     for b in backend::list() {
+        if !enable_tools.contains(b.id()) {
+            continue;
+        }
         match b.idiomatic_filenames().await {
             Ok(filenames) => {
                 for filename in filenames {
@@ -1000,14 +1015,16 @@ mod tests {
     async fn test_detect_config_file_type() {
         env::set_var("MISE_EXPERIMENTAL", "true");
         backend::load_tools().await.unwrap();
-        assert!(matches!(
+        // Idiomatic version files are opt-in; with the default (empty)
+        // `idiomatic_version_file_enable_tools` they are not detected.
+        assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")).await,
-            Some(ConfigFileType::IdiomaticVersion(_))
-        ));
-        assert!(matches!(
-            detect_config_file_type(Path::new("/foo/bar/.ruby-version")).await,
-            Some(ConfigFileType::IdiomaticVersion(_))
-        ));
+            None
+        );
+        assert_eq!(
+            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
+            Some(ConfigFileType::MiseToml)
+        );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")).await,
             Some(ConfigFileType::ToolVersions)
@@ -1016,14 +1033,36 @@ mod tests {
             detect_config_file_type(Path::new("/foo/bar/mise.toml")).await,
             Some(ConfigFileType::MiseToml)
         );
-        assert!(matches!(
-            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
-            Some(ConfigFileType::IdiomaticVersion(_))
-        ));
-        assert!(matches!(
-            detect_config_file_type(Path::new("/foo/bar/.config/goreleaser.yaml")).await,
-            Some(ConfigFileType::IdiomaticVersion(_))
-        ));
+    }
+
+    #[tokio::test]
+    async fn test_path_is_idiomatic_for_enabled_tools() -> Result<()> {
+        backend::load_tools().await?;
+        let disable_files = BTreeSet::new();
+        for (enabled, path) in [
+            ("node", "/foo/bar/.nvmrc"),
+            ("ruby", "/foo/bar/.ruby-version"),
+            ("rust", "/foo/bar/rust-toolchain.toml"),
+            ("goreleaser", "/foo/bar/.config/goreleaser.yaml"),
+        ] {
+            let enable_tools = BTreeSet::from([enabled.to_string()]);
+            let backends =
+                path_is_idiomatic_for_enabled_tools(Path::new(path), &enable_tools, &disable_files)
+                    .await
+                    .unwrap_or_else(|| panic!("{path} should be idiomatic for {enabled}"));
+            assert!(backends.iter().any(|b| b.id() == enabled));
+            // A file for a non-enabled tool must not match.
+            assert!(
+                path_is_idiomatic_for_enabled_tools(
+                    Path::new(path),
+                    &BTreeSet::from(["zig".to_string()]),
+                    &disable_files,
+                )
+                .await
+                .is_none()
+            );
+        }
+        Ok(())
     }
 
     #[tokio::test]
@@ -1036,7 +1075,14 @@ mod tests {
         let path = config_dir.join("goreleaser.yaml");
         file::write(&path, "version: 2\n")?;
 
-        let tools = parse(&path)
+        let backends = path_is_idiomatic_for_enabled_tools(
+            &path,
+            &BTreeSet::from(["goreleaser".to_string()]),
+            &BTreeSet::new(),
+        )
+        .await
+        .expect("goreleaser should be matched from its nested idiomatic path");
+        let tools = IdiomaticVersionFile::parse(path.clone(), backends)
             .await?
             .to_tool_request_set()?
             .into_iter()
@@ -1103,11 +1149,13 @@ mod tests {
     #[tokio::test]
     async fn test_path_is_idiomatic_respects_disabled_files() -> Result<()> {
         backend::load_tools().await?;
+        let enabled = BTreeSet::from(["node".to_string(), "pnpm".to_string()]);
         let disabled = BTreeSet::from(["node:package.json".to_string()]);
 
-        let backends = path_is_idiomatic_with_disabled_files(Path::new("package.json"), &disabled)
-            .await
-            .expect("package.json should remain idiomatic for package managers");
+        let backends =
+            path_is_idiomatic_for_enabled_tools(Path::new("package.json"), &enabled, &disabled)
+                .await
+                .expect("package.json should remain idiomatic for package managers");
 
         assert!(!backends.iter().any(|backend| backend.id() == "node"));
         assert!(backends.iter().any(|backend| backend.id() == "pnpm"));

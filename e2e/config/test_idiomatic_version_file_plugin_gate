@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Config files not named mise.toml (e.g. the global config.toml) are classified via
+# path_is_idiomatic(), which used to query idiomatic_filenames() on every backend —
+# booting a Lua VM for every installed vfox plugin (and running any top-level code
+# in its metadata.lua) on every mise invocation, even though idiomatic version
+# files are opt-in. Plugin metadata must not load unless the tool is listed in
+# idiomatic_version_file_enable_tools.
+
+marker="$PWD/metadata-loaded"
+
+mkdir -p "$MISE_DATA_DIR/plugins/sideeffect"
+cat <<EOF >"$MISE_DATA_DIR/plugins/sideeffect/metadata.lua"
+PLUGIN = {
+    name = "sideeffect",
+    version = "0.1.0",
+    description = "records when its metadata is loaded",
+}
+local f = io.open("$marker", "w")
+if f then
+    f:write("loaded")
+    f:close()
+end
+EOF
+
+# a global config file not named mise.toml exercises the idiomatic-file fallback
+# in detect_config_file_type()
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+experimental = true
+EOF
+
+mise env >/dev/null
+assert_fail "test -f '$marker'"
+
+# enabling the tool for idiomatic version files opts into loading its metadata
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+experimental = true
+idiomatic_version_file_enable_tools = ["sideeffect"]
+EOF
+
+mise env >/dev/null
+assert "test -f '$marker'"
