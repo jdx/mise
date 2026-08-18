@@ -1476,6 +1476,36 @@ mod tests {
     }
 
     #[test]
+    fn test_fuzzy_match_versions_flavour_query_does_not_cross_a_plus() {
+        // "truffleruby" and "truffleruby+graalvm" are distinct flavours, so a
+        // bare flavour name must not select the other one.
+        let versions = ["truffleruby-34.0.1", "truffleruby+graalvm-34.0.1"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "truffleruby", true),
+            ["truffleruby-34.0.1".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions(versions, "truffleruby+graalvm", true),
+            ["truffleruby+graalvm-34.0.1".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_numeric_query_still_matches_build_metadata() {
+        // `+` remains a separator for numeric queries, where it introduces
+        // semver build metadata rather than a different flavour.
+        let versions = ["1.9.1", "v1.9.1+hotfix.2", "1.9.10"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            fuzzy_match_versions(versions, "1.9.1", true),
+            ["1.9.1".to_string(), "v1.9.1+hotfix.2".to_string()]
+        );
+    }
+
+    #[test]
     fn test_fuzzy_match_versions_pep440_drops_alphas_but_honors_exact_match() {
         let versions = vec![
             "3.13.0".to_string(),
@@ -4853,10 +4883,23 @@ pub(crate) fn fuzzy_match_versions(
     // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
     // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
     // the prefix (e.g. "temurin-25.0.1").
+    // `+` separates semver build metadata ("1.9.1" -> "1.9.1+hotfix.2"), but it
+    // also separates flavour names ("truffleruby" -> "truffleruby+graalvm"). Only
+    // treat it as a separator for numeric queries, so a bare flavour name cannot
+    // select a different flavour.
+    let numeric_query = query
+        .strip_prefix(['v', 'V'])
+        .unwrap_or(query)
+        .starts_with(|c: char| c.is_ascii_digit());
+    let sep = if query == "latest" || numeric_query {
+        "[+\\-.]"
+    } else {
+        "[\\-.]"
+    };
     let query_regex = if query != "latest" && query.ends_with('-') {
         Regex::new(&format!("^{query_pattern}.*$")).unwrap()
     } else {
-        Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
+        Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
     };
 
     // Also create a regex without the 'v' prefix if query starts with 'v'
@@ -4866,7 +4909,7 @@ pub(crate) fn fuzzy_match_versions(
         let re = if query.ends_with('-') {
             Regex::new(&format!("^{without_v}.*$")).unwrap()
         } else {
-            Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
+            Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
         };
         Some(re)
     } else {
