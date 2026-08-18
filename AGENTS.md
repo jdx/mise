@@ -311,13 +311,15 @@ Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.cursor/inst
 
 The install script:
 
-- installs host packages needed to build mise and to run most e2e tests (openssl, pkg-config, zsh, fish, direnv, python3 + venv, jq, git, build-essential, and compile-time libs). It does **not** install a JDK or GUI libraries; those live in `packaging/e2e/Dockerfile`
+- cds to the repository root derived from the script path before reading `Cargo.toml` or building
+- installs host packages needed to build mise and to run most e2e tests (openssl, pkg-config, zsh, fish, direnv, python3 + venv, jq, git, build-essential, and compile-time libs). It does **not** install a JDK or GUI libraries; those live in `packaging/e2e/Dockerfile`. `apt-get` is invoked as `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get …` so the frontend reaches apt when elevation is required
 - selects the Rust toolchain from the root `Cargo.toml` `rust-version`, including `rustfmt` and `clippy` (do not hardcode the MSRV)
 - builds `target/debug/mise` and symlinks it to `/usr/local/bin/mise`
-- copies `gh auth token` into `GITHUB_TOKEN` / `MISE_GITHUB_TOKEN` when unset, and installs `/etc/profile.d/mise-dev-github-token.sh` so later shells can do the same without storing the secret
+- keeps `GITHUB_TOKEN` and `MISE_GITHUB_TOKEN` in sync (copy whichever is already set; fall back to `gh auth token` only when both are empty), and installs `/etc/profile.d/mise-dev-github-token.sh` so later shells can do the same without storing the secret
 - runs `mise install` for tools in `mise.toml`
 - runs `hk install --mise` (`hk.pkl` has no git hook, so this may report that nothing is installed)
-- exposes the mise-installed `node` / `npm` / `npx` binaries on `/usr/local/bin` (isolated e2e PATH includes that directory, not the agent's shims)
+- persists mise shims on `PATH` via `/etc/profile.d/mise-dev-shims.sh` and `/etc/bash.bashrc` so agent shells after a snapshot still see tools from `mise.toml`
+- exposes the mise-installed `node` / `npm` / `npx` / `hk` binaries on `/usr/local/bin` (isolated e2e PATH includes that directory, not the agent's shims)
 
 There is no long-running service to start. Do not put `mise run build` or `mise run test:unit` in `terminals`; those are one-shot commands and would rerun a full build/test on every boot.
 

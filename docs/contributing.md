@@ -444,24 +444,20 @@ hk check --step shellcheck
 
 ### Using hk in Development
 
+`hk.pkl` currently defines `check` and `fix` steps only (no git `pre-commit` hook).
+`hk install --mise` may report that nothing is installed; that is expected. Use
+the mise tasks:
+
 ```bash
-# Run linting (used in CI and pre-commit)
+# Run linting (used in CI)
 mise run lint  # This runs hk check --all
 
 # Run linting with fixes
-hk fix --all
+mise run lint-fix
 
 # Check specific file types
 hk check --step prettier
 hk check --step shellcheck
-```
-
-### Setting Up Pre-commit Hooks
-
-```bash
-# Optional: hk.pkl currently has check/fix steps, not a git pre-commit hook.
-# `hk install --mise` may report that nothing is installed; use mise tasks instead.
-hk install --mise
 ```
 
 ### Running Checks Manually
