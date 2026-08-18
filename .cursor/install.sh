@@ -91,7 +91,6 @@ cargo build --all-features
 hash -r
 
 export MISE_YES=1
-export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS:-$PWD}"
 
 # Keep GITHUB_TOKEN and MISE_GITHUB_TOKEN in sync. mise backends do not all
 # read the same name; copy whichever is set, and only then fall back to gh.
@@ -124,8 +123,16 @@ fi
 EOF
 "${SUDO[@]}" chmod 644 "$github_token_profile"
 
-eval "$(mise activate bash --shims)"
-mise install
+# Install tools without executing checkout-controlled hooks, templates, or
+# [env], and without auto-trusting the branch. Tokens stay set so GitHub API
+# calls during install are authenticated; MISE_SAFE=1 is the boundary that
+# keeps those credentials away from project hooks.
+eval "$(MISE_SAFE=1 mise activate bash --shims)"
+MISE_SAFE=1 mise install
+# Persist trust for later agent commands (tasks, exec). Install itself used
+# safe mode so a branch-defined preinstall/postinstall hook could not run
+# with GITHUB_TOKEN / MISE_GITHUB_TOKEN.
+mise trust
 hk install --mise
 
 # Snapshots keep disk state but reset process env, so `eval "$(mise activate …)"`

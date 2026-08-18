@@ -316,7 +316,7 @@ The install script:
 - selects the Rust toolchain from the root `Cargo.toml` `rust-version`, including `rustfmt` and `clippy` (do not hardcode the MSRV)
 - builds `target/debug/mise` and symlinks it to `/usr/local/bin/mise`
 - keeps `GITHUB_TOKEN` and `MISE_GITHUB_TOKEN` in sync (copy whichever is already set; fall back to `gh auth token` only when both are empty), and installs `/etc/profile.d/mise-dev-github-token.sh` so later shells can do the same without storing the secret
-- runs `mise install` for tools in `mise.toml`
+- runs `MISE_SAFE=1 mise install` so checkout-controlled hooks/templates/`[env]` cannot run with those tokens, then `mise trust` for later agent commands
 - runs `hk install --mise` (`hk.pkl` has no git hook, so this may report that nothing is installed)
 - persists mise shims on `PATH` via `/etc/profile.d/mise-dev-shims.sh` and `/etc/bash.bashrc` so agent shells after a snapshot still see tools from `mise.toml`
 - exposes the mise-installed `node` / `npm` / `npx` / `hk` binaries on `/usr/local/bin` (isolated e2e PATH includes that directory, not the agent's shims)
