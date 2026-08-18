@@ -2,16 +2,21 @@
 # vfox plugin metadata is cached on disk per plugin. Loading it boots a Lua VM
 # and executes the plugin's top-level metadata.lua, which can do arbitrary work
 # (e.g. probe system packages), so it must not re-run on every mise invocation —
-# only when the plugin changes.
+# only when the plugin's Lua sources change.
 
 marker="$PWD/metadata-loaded"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/sideeffect"
+mkdir -p "$PLUGIN_DIR/lib"
 
-mkdir -p "$MISE_DATA_DIR/plugins/sideeffect"
-cat <<EOF >"$MISE_DATA_DIR/plugins/sideeffect/metadata.lua"
+# metadata.lua derives a field from a sibling module, so the cache has to track
+# that module too.
+write_metadata() { # $1 = version
+  cat <<EOF >"$PLUGIN_DIR/metadata.lua"
+local meta = require("meta")
 PLUGIN = {
     name = "sideeffect",
-    version = "0.1.0",
-    description = "records when its metadata is loaded",
+    version = "$1",
+    description = meta.description,
 }
 local f = io.open("$marker", "w")
 if f then
@@ -19,6 +24,16 @@ if f then
     f:close()
 end
 EOF
+}
+
+write_meta_module() { # $1 = description
+  cat <<EOF >"$PLUGIN_DIR/lib/meta.lua"
+return { description = "$1" }
+EOF
+}
+
+write_meta_module "first"
+write_metadata "0.1.0"
 
 cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 [settings]
@@ -32,7 +47,17 @@ rm -f "$marker"
 mise env >/dev/null
 assert_fail "test -f '$marker'" # served from the metadata cache, Lua did not run
 
-sleep 1 # let mtime advance past the cache file's
-touch "$MISE_DATA_DIR/plugins/sideeffect/metadata.lua"
+# Editing a sibling module leaves metadata.lua's mtime — and every directory
+# mtime — untouched, so an mtime-keyed cache would keep serving stale metadata.
+write_meta_module "second"
 mise env >/dev/null
-assert "test -f '$marker'" # plugin changed, cache refreshed
+assert "test -f '$marker'"
+
+rm -f "$marker"
+mise env >/dev/null
+assert_fail "test -f '$marker'" # re-cached under the new sources
+
+# metadata.lua itself changing also refreshes.
+write_metadata "0.2.0"
+mise env >/dev/null
+assert "test -f '$marker'"

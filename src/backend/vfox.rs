@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use tokio::sync::RwLock;
+use walkdir::WalkDir;
 
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -18,6 +19,7 @@ use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env_diff::EnvMap;
+use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
@@ -35,7 +37,7 @@ pub struct VfoxBackend {
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
     system_deps: OnceLock<Vec<crate::system::deps::SystemDep>>,
-    metadata_snapshot_cache: CacheManager<VfoxMetadataSnapshot>,
+    metadata_snapshot_cache: OnceLock<CacheManager<VfoxMetadataSnapshot>>,
 }
 
 /// Disk-cached subset of a filesystem vfox plugin's metadata. Loading metadata
@@ -47,6 +49,36 @@ struct VfoxMetadataSnapshot {
     legacy_filenames: Vec<String>,
     depends: Vec<String>,
     system_dependencies: Vec<vfox::SystemDependency>,
+}
+
+/// Fingerprint of every Lua source under a plugin, used as the metadata cache
+/// key.
+///
+/// metadata.lua may `require` sibling modules and derive its table from them,
+/// so keying on its own mtime alone would serve stale metadata when only a
+/// module changed — editing a file in place leaves the directory's mtime
+/// untouched, so the directory is no help either. Hashing the sources is exact
+/// and costs a few KB of reads, against the Lua VM boot it avoids. Computed
+/// lazily: plugins whose metadata is never requested read nothing.
+fn lua_sources_fingerprint(plugin_path: &Path) -> String {
+    let mut sources: Vec<(String, Vec<u8>)> = WalkDir::new(plugin_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "lua"))
+        .filter_map(|e| {
+            let rel = e
+                .path()
+                .strip_prefix(plugin_path)
+                .unwrap_or(e.path())
+                .to_string_lossy()
+                .to_string();
+            std::fs::read(e.path()).ok().map(|bytes| (rel, bytes))
+        })
+        .collect();
+    sources.sort_by(|a, b| a.0.cmp(&b.0));
+    hash_to_str(&sources)
 }
 
 fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
@@ -586,14 +618,8 @@ impl VfoxBackend {
         // name to a backend plugin still provide the plugin:tool identifier.
         let tool_name = backend_plugin_name.as_ref().map(|_| ba.tool_name());
 
-        let metadata_snapshot_cache =
-            CacheManagerBuilder::new(ba.cache_path.join("metadata.msgpack.z"))
-                .with_fresh_file(plugin_path.clone())
-                .with_fresh_file(plugin_path.join("metadata.lua"))
-                .build();
-
         Self {
-            metadata_snapshot_cache,
+            metadata_snapshot_cache: OnceLock::new(),
             exec_env_cache: Default::default(),
             plugin: plugin.clone(),
             plugin_enum: match backend_plugin_name {
@@ -616,7 +642,12 @@ impl VfoxBackend {
         if !plugin_path.exists() {
             return Ok(None);
         }
-        let snapshot = self.metadata_snapshot_cache.get_or_try_init(|| {
+        let cache = self.metadata_snapshot_cache.get_or_init(|| {
+            CacheManagerBuilder::new(self.ba.cache_path.join("metadata.msgpack.z"))
+                .with_cache_key(lua_sources_fingerprint(&plugin_path))
+                .build()
+        });
+        let snapshot = cache.get_or_try_init(|| {
             let plugin = vfox::Plugin::from_dir(&plugin_path)?;
             let metadata = plugin.get_metadata()?;
             Ok(VfoxMetadataSnapshot {
