@@ -425,6 +425,20 @@ jobs:
       - name: Converge a complete Linux host over SSH
         run: scripts/test-bootstrap-linux-host.sh target/debug/mise
 
+  oats:
+    runs-on: ubuntu-latest
+    needs: [build-ubuntu]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - uses: ./.github/actions/mise-tools
+      - run: mise run test:oats
+
   windows-unit:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -490,6 +504,7 @@ jobs:
       - nightly
       - lint
       - e2e
+      - oats
       - bootstrap-linux-host
       - windows-unit
       - windows-e2e
@@ -532,6 +547,10 @@ jobs:
             fi
             if [ "${{ needs.bootstrap-linux-host.result }}" != "success" ]; then
               echo "bootstrap-linux-host failed or was skipped"
+              exit 1
+            fi
+            if [ "${{ needs.oats.result }}" != "success" ]; then
+              echo "oats failed or was skipped"
               exit 1
             fi
             if [ "${{ needs.windows-unit.result }}" != "success" ]; then

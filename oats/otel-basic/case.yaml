@@ -1,0 +1,29 @@
+name: otel-basic
+fixture:
+  compose:
+    file: docker-compose.yaml
+seed:
+  type: app
+input:
+  - compose:
+      service: app
+      command: [mise, run, hello]
+expected:
+  traces:
+    - traceql: '{ resource.service.name = "mise-oats" && name = "mise run hello" }'
+      match_spans:
+        - name: mise run hello
+          attributes:
+            - key: mise.span_type
+              value: run
+    - traceql: '{ resource.service.name = "mise-oats" && name = "hello" }'
+      match_spans:
+        - name: hello
+          attributes:
+            - key: mise.task.name
+              value: hello
+  logs:
+    - logql: '{service_name="mise-oats"} |= `hello from oats task`'
+      match:
+        - name: hello from oats task
+      count: == 1

@@ -205,6 +205,7 @@ export const sidebar: SidebarItem[] = [
       { text: "Remote Cache Protocol", link: "/tasks/remote-cache-protocol" },
       { text: "Task Templates", link: "/tasks/templates" },
       { text: "Monorepo Tasks", link: "/tasks/monorepo" },
+      { text: "OpenTelemetry", link: "/tasks/opentelemetry" },
       { text: "Sandboxing", link: "/sandboxing" },
     ],
   },

@@ -12,6 +12,7 @@ use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;
 use crate::file::display_path;
+use crate::otel;
 use crate::task::has_any_usage_spec;
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
@@ -26,6 +27,8 @@ use clap::{CommandFactory, ValueHint};
 use eyre::{Context, Result, bail, eyre};
 use futures_util::FutureExt;
 use itertools::Itertools;
+// Brings `Span::span_context` into scope for the live task spans.
+use opentelemetry::trace::Span as _;
 use serde::Serialize;
 use std::panic::AssertUnwindSafe;
 use tokio::sync::Mutex;
@@ -295,6 +298,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
+
+    #[clap(skip)]
+    pub telemetry: Option<otel::TaskRunTelemetry>,
 
     #[clap(skip)]
     pub cache_session: Option<crate::cache::session::CacheSession>,
@@ -699,6 +705,10 @@ impl Run {
         // 1. Discover deps providers from monorepo subdirectory configs
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Validate and install tools for the complete dependency set before execution
+        // Capture the user-requested task names before dependency resolution,
+        // so the OpenTelemetry root span is named after what was invoked
+        // rather than the (much larger) resolved dep set.
+        let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
         let execution_tasks = task_list.clone();
         let resolved_tasks = resolve_depends(&config, task_list).await?;
 
@@ -818,6 +828,11 @@ impl Run {
             }
         }
 
+        // Initialize OpenTelemetry before the timeout wrapper so traces are
+        // finalized even when the run is cancelled by --timeout:
+        // TaskRunTelemetry finishes on drop.
+        self.telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
+
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
             Some(duration::parse_duration(timeout_str)?)
@@ -877,6 +892,9 @@ impl Run {
 
         // Step 5: Create TaskExecutor after tool installation
         self.setup_executor()?;
+        if let (Some(t), Some(executor)) = (&self.telemetry, &mut self.executor) {
+            executor.output_forwarder = t.output_forwarder();
+        }
 
         // Validate every scheduled invocation before starting the scheduler so
         // an invalid parent or dependency cannot run any task commands first.
@@ -935,6 +953,15 @@ impl Run {
             .await?;
 
         let join_result = scheduler.join_all(this.continue_on_error).await;
+        if let Some(t) = &this.telemetry {
+            // Mark success only when everything actually succeeded.
+            if !this.is_stopping() && join_result.is_ok() {
+                t.set_succeeded();
+            }
+            // Finalize explicitly: `this` holds the only remaining handle, so
+            // relying on drop alone would order this after results display.
+            t.finish();
+        }
         if let Some(session) = &this.cache_session {
             crate::cache::session::display_stats(session.finish().await?);
         }
@@ -1031,6 +1058,13 @@ impl Run {
                 let deps = deps_for_remove.lock().await;
                 (deps.completion_state(), deps.dependency_state(&task))
             };
+            // The task's span stays live for as long as the task runs, so its
+            // context is available for W3C propagation. Ended below.
+            let otel_span = this
+                .telemetry
+                .as_ref()
+                .map(|t| t.start_task(&task, ctx.config.project_root.as_ref()));
+            let otel_span_cx = otel_span.as_ref().map(|span| span.span_context().clone());
             let (result, panicked) = match AssertUnwindSafe(this.run_task_sched(TaskRunContext {
                 task: &task,
                 config: &ctx.config,
@@ -1040,6 +1074,7 @@ impl Run {
                 semaphore,
                 permit: &mut permit,
                 allow_during_interruption,
+                otel_span_cx,
             }))
             .catch_unwind()
             .await
@@ -1050,6 +1085,7 @@ impl Run {
                     true,
                 ),
             };
+            let otel_end = std::time::SystemTime::now();
             // If the task executed or restored outputs and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
@@ -1065,6 +1101,11 @@ impl Run {
             let interrupted = result.as_ref().is_err_and(|err| {
                 !panicked && ctrlc::is_cancelled() && Error::is_task_interrupted(err)
             });
+            // Whether this task's failure is collateral damage — a ctrl-c, or
+            // an earlier task failing and SIGTERMing its siblings — rather
+            // than a fault of its own. Only the task that actually failed
+            // should be reported as an error, in the terminal and in the span.
+            let mut cancelled = interrupted;
             if let Err(err) = &result {
                 if interrupted {
                     this.mark_interrupted();
@@ -1074,7 +1115,14 @@ impl Run {
                 } else {
                     Error::get_exit_status(err)
                 };
-                if !interrupted && !this.is_stopping() && (panicked || status.is_none()) {
+                let was_stopping = if interrupted {
+                    this.is_stopping()
+                } else {
+                    let was_stopping = this.add_failed_task(task.clone(), status);
+                    cancelled |= was_stopping && !this.continue_on_error;
+                    was_stopping
+                };
+                if !interrupted && !was_stopping && (panicked || status.is_none()) {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
@@ -1086,9 +1134,6 @@ impl Run {
                             current_err = e.source();
                         }
                     };
-                }
-                if !interrupted {
-                    this.add_failed_task(task.clone(), status);
                 }
                 // SIGTERM any still-running siblings so we exit promptly on
                 // failure instead of waiting for them to finish naturally.
@@ -1103,6 +1148,11 @@ impl Run {
                     crate::cmd::CmdLineRunner::kill_all();
                 }
             }
+            // Close the task's span with real timing and status.
+            if let (Some(t), Some(span)) = (&this.telemetry, otel_span) {
+                t.end_task(span, &task, otel_end, &result, cancelled);
+            }
+
             if let Some(oh) = &this.output_handler
                 && oh.output(Some(&task)) == TaskOutput::KeepOrder
             {
@@ -1353,9 +1403,12 @@ impl Run {
             .await
     }
 
-    fn add_failed_task(&self, task: Task, status: Option<i32>) {
-        if let Some(executor) = &self.executor {
-            executor.add_failed_task(task, status);
+    /// Record a failed task, returning whether the run was already stopping
+    /// because of an earlier failure. See [`TaskExecutor::add_failed_task`].
+    fn add_failed_task(&self, task: Task, status: Option<i32>) -> bool {
+        match &self.executor {
+            Some(executor) => executor.add_failed_task(task, status),
+            None => false,
         }
     }
 

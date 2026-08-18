@@ -116,6 +116,64 @@ url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-wi
 url_api = "https://api.github.com/repos/FiloSottile/age/releases/assets/333752673"
 provenance = "github-attestations"
 
+[[tools."aqua:grafana/oats"]]
+version = "v0.9.0"
+backend = "aqua:grafana/oats"
+
+[tools."aqua:grafana/oats"."platforms.linux-arm64"]
+checksum = "sha256:90288a2080953d61a266121a42b666a66a74ca4d2bcba1fc64f209fc71683236"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845192"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.linux-arm64-musl"]
+checksum = "sha256:90288a2080953d61a266121a42b666a66a74ca4d2bcba1fc64f209fc71683236"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845192"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.linux-x64"]
+checksum = "sha256:49b731bb55980e0ce772b0eef8bfdf65ed770f4ba5be9d6f7bb7c8332ec67e09"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845194"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.linux-x64-baseline"]
+checksum = "sha256:49b731bb55980e0ce772b0eef8bfdf65ed770f4ba5be9d6f7bb7c8332ec67e09"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845194"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.linux-x64-musl"]
+checksum = "sha256:49b731bb55980e0ce772b0eef8bfdf65ed770f4ba5be9d6f7bb7c8332ec67e09"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845194"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:49b731bb55980e0ce772b0eef8bfdf65ed770f4ba5be9d6f7bb7c8332ec67e09"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845194"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.macos-arm64"]
+checksum = "sha256:624a5b6992cdbb1db0864e281fe2572459ac2180442420e52b505cc5b7567b04"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845193"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.windows-x64"]
+checksum = "sha256:69a25265f2f8f285b1fd74576435cad93806166860e80f8bc081e12bd5254435"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845223"
+provenance = "github-attestations"
+
+[tools."aqua:grafana/oats"."platforms.windows-x64-baseline"]
+checksum = "sha256:69a25265f2f8f285b1fd74576435cad93806166860e80f8bc081e12bd5254435"
+url = "https://github.com/grafana/oats/releases/download/v0.9.0/oats_0.9.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/grafana/oats/releases/assets/492845223"
+provenance = "github-attestations"
+
 [[tools.aube]]
 version = "1.41.0"
 backend = "github:endevco/aube"
