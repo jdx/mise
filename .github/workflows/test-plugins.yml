@@ -32,7 +32,7 @@ jobs:
         with:
           tool: cross
       - name: Rust Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if: false makes this read-only
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if: false makes this read-only
         with:
           shared-key: build
           save-if: false
