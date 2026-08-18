@@ -2979,6 +2979,10 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Toolset installs preflight these options before doing any work, but
+        // direct callers such as `install-into` must be protected here too.
+        tv.request.ensure_safe_install_options()?;
+
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
         // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
@@ -3120,7 +3124,6 @@ pub trait Backend: Debug + Send + Sync {
         }
         install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
-            Settings::ensure_not_safe("running tool-level postinstall hooks")?;
             ctx.pr
                 .finish_with_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(&ctx, &tv, script).await?;

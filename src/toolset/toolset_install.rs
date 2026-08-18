@@ -733,23 +733,8 @@ impl Toolset {
 }
 
 fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
-    if !Settings::safe_mode() {
-        return Ok(());
-    }
     for request in versions {
-        let options = request.options();
-        if options.get("postinstall").is_some() {
-            Settings::ensure_not_safe(&format!(
-                "running tool-level postinstall hooks for {}",
-                request.ba().short
-            ))?;
-        }
-        if !options.core.install_env.is_empty() {
-            Settings::ensure_not_safe(&format!(
-                "using tool-level install_env for {}",
-                request.ba().short
-            ))?;
-        }
+        request.ensure_safe_install_options()?;
     }
     Ok(())
 }
