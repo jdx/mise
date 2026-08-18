@@ -23,6 +23,9 @@ if [ "$(id -u)" -ne 0 ]; then
 	fi
 fi
 
+"${SUDO[@]}" mkdir -p /tmp/fslock
+"${SUDO[@]}" chmod 1777 /tmp/fslock
+
 msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
 if [ -z "$msrv" ]; then
 	echo "failed to parse rust-version from Cargo.toml" >&2
