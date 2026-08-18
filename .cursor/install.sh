@@ -13,6 +13,16 @@ export DEBIAN_FRONTEND=noninteractive
 "${SUDO[@]}" apt-get update
 "${SUDO[@]}" apt-get install -y --no-install-recommends libssl-dev pkg-config
 
+# Root-owned cargo/rustup homes from a snapshot are not usable by `ubuntu`.
+if [ "$(id -u)" -ne 0 ]; then
+	if [ -d /usr/local/cargo ]; then
+		"${SUDO[@]}" chmod -R a+rwX /usr/local/cargo
+	fi
+	if [ -d /usr/local/rustup ]; then
+		"${SUDO[@]}" chmod -R a+rwX /usr/local/rustup
+	fi
+fi
+
 msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
 if [ -z "$msrv" ]; then
 	echo "failed to parse rust-version from Cargo.toml" >&2
