@@ -161,6 +161,21 @@ pub trait SystemPackageManager: Send + Sync {
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
 
+    /// Whether each name exists as an installable package, positionally.
+    ///
+    /// This is *availability*, not installed state — [`Self::installed`]
+    /// cannot answer it (apt's asks dpkg, which only knows what is already on
+    /// the box). Used to resolve a plugin's candidate package names, where the
+    /// same capability is packaged under different names across distro
+    /// releases. Must be side-effect free and never elevate.
+    ///
+    /// The default reports every name as available, which makes candidate
+    /// resolution pick the first one — the behavior before candidate lists
+    /// existed. Managers override it where the query is cheap.
+    async fn available(&self, names: &[String]) -> Result<Vec<bool>> {
+        Ok(vec![true; names.len()])
+    }
+
     /// Install the given packages (already filtered to missing, mismatched, or repairable).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
 

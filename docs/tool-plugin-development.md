@@ -355,9 +355,11 @@ PLUGIN = {
         { pkgconfig = "openssl",
           packages = { brew = "openssl@3", apt = "libssl-dev", dnf = "openssl-devel" } },
 
-        -- a runtime shared library, by soname (Linux)
+        -- a runtime shared library, by soname (Linux). apt renamed this
+        -- package in the 64-bit time_t transition, so list both names and
+        -- let mise pick the one that exists.
         { sharedlib = "libaio.so.1",
-          packages = { apt = "libaio1", dnf = "libaio" } },
+          packages = { apt = { "libaio1t64", "libaio1" }, dnf = "libaio" } },
 
         -- an escape hatch: any shell command whose exit status 0 means "satisfied"
         { command = "xcode-select -p", optional = "macOS command line tools" },
@@ -378,7 +380,9 @@ Optional fields:
 
 - **`version`** — a constraint (`>=3.0`, `>3`, `<=1.2`, `=3.0`, or a bare `3.0` meaning `>=3.0`) for `bin` and `pkgconfig`. mise runs `<bin> --version` / `pkg-config --modversion` and compares. If a version can't be extracted, the dependency is treated as satisfied (presence is enough) rather than blocking the install.
 - **`optional`** — a short reason string. Missing optional dependencies never prompt or fail; they surface as a single informational line, letting users build without features they don't need (e.g. Erlang's `wxWidgets` GUI).
-- **`packages`** — a map of package-manager name (`brew`, `brew-cask`, `apt`, `dnf`, `pacman`, `apk`, `flatpak`, `flatpak-user`, `mas`) to the package that provides the capability.
+- **`packages`** — a map of package-manager name (`brew`, `brew-cask`, `apt`, `dnf`, `pacman`, `apk`, `flatpak`, `flatpak-user`, `mas`) to the package that provides the capability. A value is either a single package name (`apt = "bison"`) or a list of candidates (`apt = { "libaio1t64", "libaio1" }`) when the same capability is packaged under different names across distro releases — mise uses the first candidate that actually exists.
+
+**Never probe the host from `metadata.lua`.** Its top level runs every time mise loads the plugin's metadata, so a shell-out there (checking which package name exists, reading the distro version) costs that on many mise invocations, and its result gets cached alongside the metadata — freezing a machine-specific answer that goes stale when the user upgrades their OS. Declare candidates instead and let mise resolve them, which it does lazily: only for a dependency that actually failed its check, at the point it is about to install packages anyway.
 
 **Detection is the source of truth.** A check that passes is satisfied no matter how the capability was installed — Homebrew, apt, nix, MacPorts, or from source all pass without ceremony, and mise never asks _how_ it got there. The `packages` map is only consulted to _offer_ installing the missing subset; it is a remediation hint, not a declaration that the tool must come from that package manager.
 
