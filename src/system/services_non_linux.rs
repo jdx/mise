@@ -188,9 +188,11 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
 }
 
 fn reject_configured(config: &Config) -> Result<Vec<ServiceRequest>> {
-    let configured = config.config_files.values().any(|cf| {
-        cf.bootstrap_config()
-            .is_some_and(|bootstrap| !bootstrap.services.is_empty())
+    let configured = config.bootstrap_config_maps().any(|config_files| {
+        config_files.values().any(|cf| {
+            cf.bootstrap_config()
+                .is_some_and(|bootstrap| !bootstrap.services.is_empty())
+        })
     });
     if configured {
         bail!("bootstrap system services are only supported on Linux");
