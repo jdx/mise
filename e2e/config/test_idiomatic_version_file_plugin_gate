@@ -32,6 +32,19 @@ EOF
 mise env >/dev/null
 assert_fail "test -f '$marker'"
 
+# Enabling a different tool still classifies config.toml through path_is_idiomatic()
+# (the empty-set early return no longer applies) but must not boot this plugin.
+# load_idiomatic_filenames() only queries enabled tools, so this is the unique
+# coverage for the per-backend skip in the fallback path.
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+experimental = true
+idiomatic_version_file_enable_tools = ["other"]
+EOF
+
+mise env >/dev/null
+assert_fail "test -f '$marker'"
+
 # enabling the tool for idiomatic version files opts into loading its metadata
 cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 [settings]
