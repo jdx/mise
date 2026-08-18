@@ -4,3 +4,6 @@ cache/
 state/
 cwd/
 test-build-output.txt
+# unit tests point HOME here without pointing XDG_CACHE_HOME anywhere, so
+# tools that default to ~/.cache (aube) write into the repo
+.cache/
