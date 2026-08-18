@@ -3120,6 +3120,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
+            Settings::ensure_not_safe("running tool-level postinstall hooks")?;
             ctx.pr
                 .finish_with_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(&ctx, &tv, script).await?;

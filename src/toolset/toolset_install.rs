@@ -167,6 +167,7 @@ impl Toolset {
 
         self.init_request_options(&mut versions);
         ensure_compatible_install_requests(&versions)?;
+        ensure_safe_install_options(&versions)?;
 
         // Validate shared install destinations before plugin installation or
         // hooks introduce side effects.
@@ -729,6 +730,28 @@ impl Toolset {
     fn parse_plugin_key(key: &str) -> (PluginType, &str) {
         PluginType::from_plugin_config(key)
     }
+}
+
+fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
+    if !Settings::safe_mode() {
+        return Ok(());
+    }
+    for request in versions {
+        let options = request.options();
+        if options.get("postinstall").is_some() {
+            Settings::ensure_not_safe(&format!(
+                "running tool-level postinstall hooks for {}",
+                request.ba().short
+            ))?;
+        }
+        if !options.core.install_env.is_empty() {
+            Settings::ensure_not_safe(&format!(
+                "using tool-level install_env for {}",
+                request.ba().short
+            ))?;
+        }
+    }
+    Ok(())
 }
 
 /// Whether install-time resolution should refresh the remote-versions cache
