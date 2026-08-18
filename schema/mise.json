@@ -3874,6 +3874,13 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "config_roots": {
+          "type": "array",
+          "description": "independent config roots whose dotfiles and managed files/directories are composed into bootstrap",
+          "items": {
+            "type": "string"
+          }
+        },
         "plugins": {
           "type": "object",
           "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",

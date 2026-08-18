@@ -75,6 +75,9 @@ pub mod systemd;
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapTomlConfig {
+    /// Independent configuration roots whose declarative files and dotfiles
+    /// participate in bootstrap composition.
+    pub config_roots: Option<Vec<String>>,
     /// Logical secret name -> environment input declaration.
     #[serde(default)]
     pub secrets: IndexMap<String, secrets::SecretTomlConfig>,
