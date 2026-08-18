@@ -303,3 +303,17 @@ When referencing mise documentation URLs, use the correct path structure based o
 - **CLI reference**: `mise.jdx.dev/cli/...`
 
 Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.
+
+## Cursor Cloud specific instructions
+
+Cloud Agents bootstrap from `.cursor/environment.json`. The install script (`.cursor/install.sh`):
+
+- installs `libssl-dev` and `pkg-config`
+- selects the Rust toolchain from the root `Cargo.toml` `rust-version`, including `rustfmt` and `clippy`
+- builds `target/debug/mise` and symlinks it to `/usr/local/bin/mise`
+- runs `mise install` for tools in `mise.toml`
+- runs `hk install --mise`
+
+There is no long-running service to start. Do not launch `mise run build` or `mise run test:unit` as boot terminals; run those when validating a change.
+
+The debug `mise` binary is already on PATH. Prefer `mise run …` for project tasks. For e2e tests, always use `mise run test:e2e [test_filename]...` — never execute e2e scripts directly.
