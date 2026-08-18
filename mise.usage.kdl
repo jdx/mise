@@ -838,6 +838,10 @@ Examples:
         flag --connect-timeout help="SSH connection timeout in seconds" default="10" {
             arg <CONNECT_TIMEOUT>
         }
+        flag --copy-link help="Dereference one source-relative symbolic link; repeat for multiple links" var=#true {
+            arg <PATH>
+        }
+        flag --copy-links help="Dereference every symbolic link in the source archive"
         flag --exclude help="Additional archive pattern to exclude; repeat for multiple patterns" var=#true {
             arg <PATTERN>
         }
