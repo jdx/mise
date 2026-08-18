@@ -650,6 +650,10 @@ fn package_resource_state(
         PackageState::Installed { version } => {
             (format!("installed ({version})"), ResourceAction::Noop)
         }
+        #[cfg(unix)]
+        PackageState::InstalledAutoUpdates { version } => {
+            (format!("installed ({version})"), ResourceAction::Noop)
+        }
         PackageState::Missing if unsupported_pin => (
             "missing (manager cannot install pinned versions)".to_string(),
             ResourceAction::Unknown,

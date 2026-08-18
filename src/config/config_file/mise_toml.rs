@@ -862,7 +862,7 @@ impl MiseToml {
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
         if is_missing
             && let Some(PackageTomlConfig::Options(options)) = fallback
-            && !options.os.is_empty()
+            && (!options.os.is_empty() || options.adopt.is_some())
         {
             let mut options = options.clone();
             options.version = version.to_string();
@@ -890,9 +890,14 @@ impl MiseToml {
                 .unwrap();
             let mut value = InlineTable::new();
             value.insert("version", Value::from(version));
-            let mut os = Array::new();
-            os.extend(options.os);
-            value.insert("os", Value::Array(os));
+            if !options.os.is_empty() {
+                let mut os = Array::new();
+                os.extend(options.os);
+                value.insert("os", Value::Array(os));
+            }
+            if let Some(adopt) = options.adopt {
+                value.insert("adopt", Value::from(adopt));
+            }
             packages.insert(spec, Item::Value(Value::InlineTable(value)));
             return Ok(());
         }
@@ -3282,9 +3287,12 @@ mod tests {
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
-        "brew-cask:1password" = { version = "latest", os = "macos" }
+        "brew-cask:1password" = { version = "latest", os = "macos", adopt = true }
         "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
+
+        [bootstrap.brew]
+        adopt = true
 
         [bootstrap.brew.taps]
         "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3306,6 +3314,10 @@ mod tests {
             system.packages.get("apt:libssl-dev").unwrap().version(),
             "latest"
         );
+        assert!(matches!(
+            system.packages.get("brew-cask:1password"),
+            Some(crate::system::PackageTomlConfig::Options(options)) if options.adopt == Some(true)
+        ));
         assert_eq!(
             system.packages.get("apt:curl").unwrap().version(),
             "8.5.0-2"
@@ -3334,6 +3346,7 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
+        assert_eq!(system.brew.adopt, Some(true));
         let repo = system.repos.get("~/src/dotfiles").unwrap();
         assert_eq!(
             repo.url.as_deref(),
@@ -3358,6 +3371,21 @@ mod tests {
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.bootstrap_config().is_none());
         file::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn test_bootstrap_brew_adopt_is_not_reported_as_unknown() {
+        let des = toml::Deserializer::parse(
+            r#"
+            [bootstrap.brew]
+            adopt = true
+            "#,
+        )
+        .unwrap();
+        let mut ignored = Vec::new();
+        let _: MiseToml = serde_ignored::deserialize(des, |path| ignored.push(path.to_string()))
+            .expect("config should deserialize");
+        assert!(ignored.is_empty(), "unexpected ignored fields: {ignored:?}");
     }
 
     #[tokio::test]
@@ -3609,6 +3637,7 @@ mod tests {
                     PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
+                        adopt: None,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
