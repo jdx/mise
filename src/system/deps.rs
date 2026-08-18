@@ -480,7 +480,9 @@ pub async fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManage
         if m.unavailable_reason_async().await.is_some() {
             continue;
         }
-        if dep.packages.contains_key(name) {
+        // An empty candidate list names no package, so this manager cannot
+        // remediate the dep even though it has an entry.
+        if dep.packages.get(name).is_some_and(|c| !c.is_empty()) {
             return Some(m);
         }
     }
@@ -530,9 +532,14 @@ pub async fn build_requests(
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     let mut unremediable = vec![];
     for dep in missing {
-        match pick_manager(dep).await {
-            Some(m) => {
-                let pkg = resolve_package(&m, dep).await.unwrap_or_default();
+        // A dep with no manager, or whose hint names no package, is reported as
+        // unremediable rather than sent to a manager as an empty operand.
+        let resolved = match pick_manager(dep).await {
+            Some(m) => resolve_package(&m, dep).await.map(|pkg| (m, pkg)),
+            None => None,
+        };
+        match resolved {
+            Some((m, pkg)) => {
                 let requests = by_mgr.entry(m.name().to_string()).or_default();
                 if !requests.iter().any(|r| r.name == pkg) {
                     requests.push(PackageRequest {
@@ -720,6 +727,16 @@ mod tests {
             Some("libaio1")
         );
         assert_eq!(*m.queries.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_empty_candidate_list_is_unremediable() {
+        // `packages = { apt = {} }` names no package: the dep must be reported
+        // as unremediable, never sent to a manager as an empty operand.
+        let dep = dep_with_packages(vec![]);
+        let (by_mgr, unremediable) = build_requests(&[&dep]).await;
+        assert!(by_mgr.is_empty());
+        assert_eq!(unremediable.len(), 1);
     }
 
     #[tokio::test]

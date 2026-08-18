@@ -178,6 +178,10 @@ impl SystemPackageManager for AptManager {
         let output = tokio::process::Command::new("apt-cache")
             .arg("policy")
             .args(&args)
+            // apt translates the stanza labels this parses, so pin the locale
+            // rather than reading "Kandidat:" as an unavailable package
+            .env("LC_ALL", "C")
+            .env("LANGUAGE", "C")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
