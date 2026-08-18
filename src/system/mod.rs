@@ -304,6 +304,7 @@ pub struct BootstrapLinuxSystemdTomlConfig {
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemBrewTomlConfig {
     /// Adopt identical existing app bundles for brew-cask entries by default.
+    #[cfg(unix)]
     #[serde(default)]
     pub adopt: Option<bool>,
     /// `[bootstrap.brew.taps]`: `owner/tap` -> GitHub git URL. Like
@@ -624,14 +625,17 @@ fn package_requests_from_config_files(
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
-    let mut options = IndexMap::new();
     #[cfg(unix)]
-    if !cask_adopt.is_empty() {
-        options.insert(
+    let options = if cask_adopt.is_empty() {
+        IndexMap::new()
+    } else {
+        IndexMap::from([(
             "brew-cask".to_string(),
             ManagerPackageOptions::BrewCask { adopt: cask_adopt },
-        );
-    }
+        )])
+    };
+    #[cfg(not(unix))]
+    let options = IndexMap::new();
     (by_mgr, options)
 }
 
@@ -1546,6 +1550,7 @@ fn brew_taps_from_config_files(config_files: &ConfigMap) -> IndexMap<String, Str
     brew_taps
 }
 
+#[cfg(unix)]
 fn brew_adopt_from_config_files(config_files: &ConfigMap) -> bool {
     let mut adopt = false;
     for cf in config_files.values().rev() {
