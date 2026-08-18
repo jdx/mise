@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# Idempotent Cloud Agent bootstrap. Safe to rerun; does not start long-lived processes.
+#
+# Host packages are a subset of packaging/e2e/Dockerfile: enough to build mise and
+# run most e2e tests (zsh/fish/direnv/python/jq/build tools). GUI libraries and
+# a JDK are omitted; those belong in the dedicated e2e image.
+set -euo pipefail
+
+# environment.json does not set a working directory. Anchor to the repo root
+# derived from this script so Cargo.toml, cargo build, and the mise symlink
+# resolve correctly even if the runner starts elsewhere.
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$repo_root"
+
+# Draft builds and some Cloud Agent images run as `ubuntu`, not root.
+if [ "$(id -u)" -eq 0 ]; then
+	SUDO=()
+else
+	SUDO=(sudo -n)
+fi
+
+# sudo -n resets the environment; pass DEBIAN_FRONTEND through env so apt-get
+# actually sees it (same pattern as src/system/sudo.rs).
+apt_get() {
+	"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get "$@"
+}
+
+# Keep GITHUB_TOKEN, MISE_GITHUB_TOKEN, and GH_TOKEN in sync. Different
+# callers (mise backends, gh, embedded vfox hooks) do not all read the same
+# name. Prefer any already-set token; only then fall back to `gh auth token`.
+# Defined once and reused for install-time + profile.d (via declare -f).
+sync_github_tokens() {
+	local token=""
+	if [ -n "${GITHUB_TOKEN:-}" ]; then
+		token="$GITHUB_TOKEN"
+	elif [ -n "${MISE_GITHUB_TOKEN:-}" ]; then
+		token="$MISE_GITHUB_TOKEN"
+	elif [ -n "${GH_TOKEN:-}" ]; then
+		token="$GH_TOKEN"
+	elif command -v gh >/dev/null 2>&1; then
+		token="$(gh auth token 2>/dev/null || true)"
+	fi
+	if [ -n "$token" ]; then
+		export GITHUB_TOKEN="$token"
+		export MISE_GITHUB_TOKEN="$token"
+		export GH_TOKEN="$token"
+	fi
+}
+
+apt_get update
+apt_get install -y --no-install-recommends \
+	autoconf \
+	bison \
+	build-essential \
+	ca-certificates \
+	curl \
+	direnv \
+	fish \
+	git \
+	jq \
+	libffi-dev \
+	libicu-dev \
+	libncurses-dev \
+	libreadline-dev \
+	libssl-dev \
+	libxml2-dev \
+	libyaml-dev \
+	openssh-client \
+	pkg-config \
+	python-is-python3 \
+	python3 \
+	python3-pip \
+	python3-venv \
+	unzip \
+	xz-utils \
+	zlib1g-dev \
+	zsh
+
+# Root-owned cargo/rustup homes from a snapshot are not usable by `ubuntu`.
+if [ "$(id -u)" -ne 0 ]; then
+	if [ -d /usr/local/cargo ]; then
+		"${SUDO[@]}" chmod -R a+rwX /usr/local/cargo
+	fi
+	if [ -d /usr/local/rustup ]; then
+		"${SUDO[@]}" chmod -R a+rwX /usr/local/rustup
+	fi
+fi
+
+# aube's lock dir is /tmp/fslock. Recreate it if a leftover symlink is in the
+# way so the privileged chmod cannot follow that path to another directory.
+fslock=/tmp/fslock
+if [ -L "$fslock" ]; then
+	"${SUDO[@]}" rm -f "$fslock"
+fi
+"${SUDO[@]}" mkdir -p "$fslock"
+if [ -L "$fslock" ] || [ ! -d "$fslock" ]; then
+	echo "refusing to chmod $fslock: not a real directory" >&2
+	exit 1
+fi
+"${SUDO[@]}" chmod 1777 "$fslock"
+
+msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+if [ -z "$msrv" ]; then
+	echo "failed to parse rust-version from Cargo.toml" >&2
+	exit 1
+fi
+
+rustup toolchain install "$msrv" --profile minimal --no-self-update -c rustfmt,clippy
+rustup default "$msrv"
+
+cargo build --all-features
+# Always invoke this binary. `mise activate --shims` prepends shims that may
+# point at an older mise which still ran tool-level postinstall under MISE_SAFE.
+mise_bin=/usr/local/bin/mise
+"${SUDO[@]}" ln -sfn "$PWD/target/debug/mise" "$mise_bin"
+hash -r
+
+export MISE_YES=1
+
+sync_github_tokens
+
+# Install tools without executing checkout-controlled hooks, templates,
+# [env], tool-level postinstall, or install_env, and without auto-trusting
+# the branch. Tokens stay set so GitHub API calls during install are
+# authenticated; this binary's MISE_SAFE=1 rejects those install options
+# before any tool is installed (see src/toolset/tool_request.rs).
+eval "$(MISE_SAFE=1 "$mise_bin" activate bash --shims)"
+MISE_SAFE=1 "$mise_bin" install
+# Persist trust for later agent commands (tasks, exec). Install itself used
+# safe mode so a branch-defined hook or tool-level postinstall could not run
+# with GitHub tokens.
+"$mise_bin" trust
+hk install --mise
+
+# Snapshots keep disk state but reset process env, so `eval "$(mise activate …)"`
+# from this script does not survive into later agent shells. Persist shims and
+# token sync in one profile.d file so shims (including `gh` from mise.toml) are
+# on PATH before the `gh auth token` fallback. Login shells source profile.d;
+# interactive non-login bash sources bash.bashrc. POSIX PATH prepend — not
+# `mise activate bash`. Fish/zsh non-login shells do not get bash.bashrc; they
+# only pick this up as login shells (or when the agent sources profile.d).
+#
+# Remove the previous split files: profile.d is alphabetical, so
+# mise-dev-github-token.sh ran before mise-dev-shims.sh and missed mise's gh.
+"${SUDO[@]}" rm -f /etc/profile.d/mise-dev-github-token.sh /etc/profile.d/mise-dev-shims.sh
+dev_profile=/etc/profile.d/mise-dev-env.sh
+{
+	cat <<'EOF'
+# Generated by .cursor/install.sh — do not store secrets here.
+# Shims first so `gh` from mise.toml is on PATH before the token fallback.
+mise_shims="${HOME}/.local/share/mise/shims"
+if [ -d "$mise_shims" ]; then
+	case ":${PATH}:" in
+	*":$mise_shims:"*) ;;
+	*) PATH="$mise_shims:$PATH" ;;
+	esac
+	export PATH
+fi
+EOF
+	declare -f sync_github_tokens
+	echo 'sync_github_tokens'
+} | "${SUDO[@]}" tee "$dev_profile" >/dev/null
+"${SUDO[@]}" chmod 644 "$dev_profile"
+
+# Drop stale Cloud Agent snippets (old split files and prior mise-dev-env),
+# then append a single current block. Idempotent on reruns.
+bashrc=/etc/bash.bashrc
+if [ -f "$bashrc" ]; then
+	cleaned="$(
+		awk '
+			/^# mise-dev-(github-token|shims|env)/ { skip = 1; next }
+			skip && /^fi$/ { skip = 0; next }
+			skip { next }
+			{ print }
+		' "$bashrc"
+	)"
+	printf '%s\n' "$cleaned" | "${SUDO[@]}" tee "$bashrc" >/dev/null
+	"${SUDO[@]}" tee -a "$bashrc" >/dev/null <<'EOF'
+# mise-dev-env — Cloud Agent non-login interactive bash
+if [ -f /etc/profile.d/mise-dev-env.sh ]; then
+	# shellcheck disable=SC1091
+	. /etc/profile.d/mise-dev-env.sh
+fi
+EOF
+fi
+
+# Isolated e2e PATH includes /usr/local/bin but not the agent's mise shims.
+# Point at the real binaries so require_cmd node/npm, non-interactive `hk`,
+# and `gh auth token` work without putting them on /usr/bin
+# (test_backend_missing_deps uses PATH=/usr/bin:/bin). These links freeze the
+# version resolved at install time; re-run install.sh after upgrading tools.
+for cmd in node npm npx hk gh; do
+	if bin="$("$mise_bin" which "$cmd" 2>/dev/null)"; then
+		"${SUDO[@]}" ln -sfn "$bin" "/usr/local/bin/$cmd"
+	fi
+done
