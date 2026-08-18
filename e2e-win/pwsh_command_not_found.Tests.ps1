@@ -119,3 +119,38 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         $guarded.Error | Should -BeNullOrEmpty -Because 'the handoff ran, so nothing propagated out'
     }
 }
+
+Describe 'the pwsh command-not-found hook leaves mise its own names' {
+    It 'skips them before spending a hook-not-found call' {
+        $script = mise activate pwsh | Out-String
+
+        $guard = $script.IndexOf("if (`$Name -eq 'mise' -or `$Name -like 'mise-*') { return }")
+        ($guard -ge 0) | Should -BeTrue -Because 'bash, zsh and fish all skip mise''s own names'
+
+        # Position matters, not just presence: past the guard the handler pays a full mise
+        # startup only to be told that `mise-foo` is not a tool.
+        $call = $script.IndexOf('hook-not-found -s pwsh')
+        ($guard -lt $call) | Should -BeTrue -Because 'the guard exists to avoid that call'
+    }
+
+    It 'skips exactly mise and mise-*, and nothing that merely contains it' {
+        # Evaluate the condition the script actually ships rather than a copy of it, so a
+        # rewrite to `-like ''mise*''` or `-match ''mise''` fails here instead of silently
+        # swallowing somebody else''s tool.
+        $script = mise activate pwsh | Out-String
+        $pattern = '(?m)^\s*if \((\$Name -eq .+?)\) \{ return \}'
+        $condition = [regex]::Match($script, $pattern).Groups[1].Value
+        $condition | Should -Not -BeNullOrEmpty
+
+        $skips = [scriptblock]::Create("param(`$Name) $condition")
+
+        # mise's own names, in the casing Windows lets you type them in
+        foreach ($name in 'mise', 'MISE', 'mise-foo', 'MISE-FOO') {
+            (& $skips $name) | Should -BeTrue -Because "$name is mise, not a tool"
+        }
+        # and names that only look like it
+        foreach ($name in 'premise', 'mise2', 'misexyz', 'my-mise-tool') {
+            (& $skips $name) | Should -BeFalse -Because "$name is somebody else's tool"
+        }
+    }
+}

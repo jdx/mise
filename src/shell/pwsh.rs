@@ -150,6 +150,13 @@ impl Shell for Pwsh {
                     $_mise_pwsh_cmd_not_found_hook = [EventHandler[System.Management.Automation.CommandLookupEventArgs]] {{
                         param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
                         end {{
+                            # mise's own commands are not tools: `mise-foo` must not be
+                            # looked up as something to install, and `deactivate` removes
+                            # the wrapper function while leaving this handler registered,
+                            # so `mise` itself reaches here too. bash, zsh and fish all
+                            # skip these names before calling hook-not-found. `-like`
+                            # rather than a prefix match: `mise2` is somebody else's tool.
+                            if ($Name -eq 'mise' -or $Name -like 'mise-*') {{ return }}
                             # Only auto-install when the missing command is what the
                             # user actually typed. PSReadLine is absent in
                             # non-interactive sessions, and even when its module is
@@ -303,6 +310,31 @@ mod tests {
             prelude: vec![],
         };
         assert_snapshot!(pwsh.activate(opts));
+    }
+
+    /// bash, zsh and fish all skip mise's own names before calling `hook-not-found`.
+    /// The guard has to come first: past it the handler pays a full mise startup just to
+    /// be told that `mise-foo` is not a tool.
+    #[test]
+    fn test_activate_command_not_found_skips_mise_itself() {
+        let opts = ActivateOptions {
+            exe: Path::new("/some/dir/mise").to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: false,
+            prelude: vec![],
+        };
+        let script = Pwsh::default().activate(opts);
+
+        let guard = script
+            .find("if ($Name -eq 'mise' -or $Name -like 'mise-*') { return }")
+            .expect("the command-not-found handler should skip mise's own commands");
+        let call = script
+            .find("hook-not-found -s pwsh")
+            .expect("the command-not-found handler should still call hook-not-found");
+        assert!(
+            guard < call,
+            "the guard has to run before the call it avoids"
+        );
     }
 
     #[test]
