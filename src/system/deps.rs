@@ -219,11 +219,26 @@ impl TryFrom<vfox::SystemDependency> for SystemDep {
                 None
             }
         };
+        // Drop blank candidate names here so nothing downstream can turn one
+        // into an empty package operand, and a hint left with no usable name
+        // at all reports as unremediable rather than as a nameless install.
+        let packages = d
+            .packages
+            .into_iter()
+            .map(|(mgr, candidates)| {
+                let candidates: Vec<String> = candidates
+                    .into_iter()
+                    .filter(|c| !c.trim().is_empty())
+                    .collect();
+                (mgr, candidates)
+            })
+            .filter(|(_, candidates)| !candidates.is_empty())
+            .collect();
         Ok(SystemDep {
             check,
             version,
             optional: d.optional.clone(),
-            packages: d.packages.into_iter().collect(),
+            packages,
         })
     }
 }
@@ -730,13 +745,79 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_empty_candidate_list_is_unremediable() {
-        // `packages = { apt = {} }` names no package: the dep must be reported
-        // as unremediable, never sent to a manager as an empty operand.
+    async fn test_resolve_package_returns_none_for_empty_candidates() {
+        // `packages = { apt = {} }` names no package, so there is nothing to
+        // install — resolution must yield None rather than an empty name.
+        let m: Arc<dyn SystemPackageManager> = Arc::new(StubManager {
+            stock: vec![],
+            queries: Mutex::new(0),
+        });
         let dep = dep_with_packages(vec![]);
-        let (by_mgr, unremediable) = build_requests(&[&dep]).await;
+        assert_eq!(resolve_package(&m, &dep).await, None);
+    }
+
+    /// Name of a package manager that can actually run here, or None. Tests
+    /// that exercise `pick_manager` need one: it only ever considers managers
+    /// from `all_managers()`, so a dep keyed on a fictional name is skipped for
+    /// the wrong reason and proves nothing.
+    async fn available_manager_name() -> Option<String> {
+        for m in packages::all_managers() {
+            if m.unavailable_reason_async().await.is_none() {
+                return Some(m.name().to_string());
+            }
+        }
+        None
+    }
+
+    fn dep_under_manager(mgr: &str, candidates: Vec<&str>) -> SystemDep {
+        SystemDep {
+            check: SystemDepCheck::SharedLib("libaio.so.1".into()),
+            version: None,
+            optional: None,
+            packages: [(
+                mgr.to_string(),
+                candidates.into_iter().map(str::to_string).collect(),
+            )]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pick_manager_skips_empty_candidate_list() {
+        let Some(mgr) = available_manager_name().await else {
+            return; // no usable package manager on this host
+        };
+        // a real, available manager with a usable name is picked...
+        let usable = dep_under_manager(&mgr, vec!["some-package"]);
+        assert!(pick_manager(&usable).await.is_some());
+        // ...but the same manager naming no package cannot remediate
+        let empty = dep_under_manager(&mgr, vec![]);
+        assert!(pick_manager(&empty).await.is_none());
+        let (by_mgr, unremediable) = build_requests(&[&empty]).await;
         assert!(by_mgr.is_empty());
         assert_eq!(unremediable.len(), 1);
+    }
+
+    #[test]
+    fn test_blank_candidate_names_are_dropped() {
+        // A hint of only blank names must not survive as a nameless install.
+        let d = vfox::SystemDependency {
+            sharedlib: Some("libaio.so.1".into()),
+            packages: [
+                ("apt".to_string(), vec!["".to_string(), "  ".to_string()]),
+                (
+                    "dnf".to_string(),
+                    vec!["".to_string(), "libaio".to_string()],
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        let dep = SystemDep::try_from(d).unwrap();
+        assert!(!dep.packages.contains_key("apt"));
+        assert_eq!(dep.packages.get("dnf"), Some(&vec!["libaio".to_string()]));
     }
 
     #[tokio::test]

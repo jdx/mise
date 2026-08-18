@@ -27,6 +27,36 @@ impl AptManager {
         })
     }
 
+    /// Names in `args` that `apt-cache policy` reports with an install
+    /// candidate. Keyed by the bare name apt heads each stanza with, so callers
+    /// holding an arch-qualified name must query it alone.
+    async fn policy_installable(&self, args: &[&str]) -> Result<std::collections::HashSet<String>> {
+        debug!("$ apt-cache policy {}", args.join(" "));
+        let output = tokio::process::Command::new("apt-cache")
+            .arg("policy")
+            .args(args)
+            // apt translates the stanza labels this parses, so pin the locale
+            // rather than reading "Kandidat:" as an unavailable package
+            .env("LC_ALL", "C")
+            .env("LANGUAGE", "C")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await?;
+        // unknown names are reported on stderr and do not fail the command,
+        // so a nonzero status means apt-cache itself could not run
+        if !output.status.success() {
+            bail!(
+                "apt-cache policy failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(parse_apt_cache_policy(&String::from_utf8_lossy(
+            &output.stdout,
+        )))
+    }
+
     fn update(&self, opts: &InstallOpts) -> Result<()> {
         let args = vec!["update".to_string()];
         if opts.dry_run {
@@ -173,33 +203,26 @@ impl SystemPackageManager for AptManager {
         if names.is_empty() {
             return Ok(vec![]);
         }
-        let args = names.iter().map(|n| n.as_str()).collect::<Vec<_>>();
-        debug!("$ apt-cache policy {}", args.join(" "));
-        let output = tokio::process::Command::new("apt-cache")
-            .arg("policy")
-            .args(&args)
-            // apt translates the stanza labels this parses, so pin the locale
-            // rather than reading "Kandidat:" as an unavailable package
-            .env("LC_ALL", "C")
-            .env("LANGUAGE", "C")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-        // unknown names are reported on stderr and do not fail the command,
-        // so a nonzero status means apt-cache itself could not run
-        if !output.status.success() {
-            bail!(
-                "apt-cache policy failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
+        // apt-cache policy heads every stanza with the *bare* package name, so
+        // `bash:amd64` reports as `bash:` — an arch qualifier cannot be
+        // recovered from a batched result, and matching one by its bare name
+        // would call `bash:arm64` installable whenever any `bash` stanza is
+        // present. Bare names go in one batch; each qualified name gets its own
+        // query, where apt answers by emitting a stanza or nothing at all.
+        let (qualified, bare): (Vec<&String>, Vec<&String>) =
+            names.iter().partition(|n| n.contains(':'));
+        let mut installable = if bare.is_empty() {
+            Default::default()
+        } else {
+            self.policy_installable(&bare.iter().map(|n| n.as_str()).collect::<Vec<_>>())
+                .await?
+        };
+        for name in qualified {
+            if !self.policy_installable(&[name.as_str()]).await?.is_empty() {
+                installable.insert(name.clone());
+            }
         }
-        let installable = parse_apt_cache_policy(&String::from_utf8_lossy(&output.stdout));
-        Ok(names
-            .iter()
-            .map(|n| installable.contains(n) || installable.contains(dpkg_name(n)))
-            .collect())
+        Ok(names.iter().map(|n| installable.contains(n)).collect())
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -279,6 +302,14 @@ mod tests {
         let names = vec!["bash".to_string(), "mise-nonexistent-pkg-xyz".to_string()];
         let available = mgr.available(&names).await.unwrap();
         assert_eq!(available, vec![true, false]);
+
+        // An arch qualifier apt cannot satisfy must stay unavailable even when
+        // a bare candidate for the same package is installable in the same
+        // batch: apt heads both stanzas with the bare name, so a batched result
+        // cannot tell them apart.
+        let names = vec!["bash:mise-not-an-arch".to_string(), "bash".to_string()];
+        let available = mgr.available(&names).await.unwrap();
+        assert_eq!(available, vec![false, true]);
     }
 
     #[test]
