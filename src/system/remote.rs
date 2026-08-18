@@ -1527,7 +1527,6 @@ fn normalize_arch(value: &str) -> String {
         "x86_64" | "amd64" => "x86_64".to_string(),
         "aarch64" | "arm64" => "aarch64".to_string(),
         "armv7l" | "armv7" => "armv7".to_string(),
-        "armv6l" | "armv6" => "armv6".to_string(),
         other => other.to_string(),
     }
 }

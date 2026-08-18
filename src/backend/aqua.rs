@@ -1055,6 +1055,7 @@ impl AquaBackend {
         };
         let target_arch = match target.arch_name() {
             "x64" => "amd64",
+            "arm" => "armv7l",
             other => other,
         };
         (target_os, target_arch)
@@ -4925,7 +4926,7 @@ pub fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") {
         "amd64"
     } else if cfg!(target_arch = "arm") {
-        "armv6l"
+        "armv7l"
     } else if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
