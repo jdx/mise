@@ -27,6 +27,7 @@ use crate::watch_files::WatchFile;
 use crate::{
     backend::{self, Backend},
     config, dirs, env, file, hash,
+    registry::REGISTRY,
 };
 use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
@@ -268,16 +269,14 @@ impl dyn ConfigFile {
     }
 }
 
-async fn init(path: &Path) -> Arc<dyn ConfigFile> {
+async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     match detect_config_file_type(path).await {
-        Some(ConfigFileType::MiseToml) => Arc::new(MiseToml::init(path)),
-        Some(ConfigFileType::ToolVersions) => Arc::new(ToolVersions::init(path)),
-        Some(ConfigFileType::IdiomaticVersion(backends)) => Arc::new(
-            IdiomaticVersionFile::parse(path.to_path_buf(), backends)
-                .await
-                .expect("failed to parse idiomatic version file"),
-        ),
-        _ => panic!("Unknown config file type: {}", path.display()),
+        Some(ConfigFileType::MiseToml) => Ok(Arc::new(MiseToml::init(path))),
+        Some(ConfigFileType::ToolVersions) => Ok(Arc::new(ToolVersions::init(path))),
+        Some(ConfigFileType::IdiomaticVersion(backends)) => Ok(Arc::new(
+            IdiomaticVersionFile::parse(path.to_path_buf(), backends).await?,
+        )),
+        None => Err(unsupported_config_file_error(path)),
     }
 }
 
@@ -289,7 +288,7 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     };
     let cf = match path.exists() {
         true => parse(&path).await?,
-        false => init(&path).await,
+        false => init(&path).await?,
     };
     Ok(cf)
 }
@@ -337,7 +336,7 @@ pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
         Some(ConfigFileType::IdiomaticVersion(backends)) => Ok(Arc::new(
             IdiomaticVersionFile::parse(path.to_path_buf(), backends).await?,
         )),
-        _ => Ok(Arc::new(MiseToml::default())),
+        None => Err(unsupported_config_file_error(path)),
     }
 }
 
@@ -784,6 +783,24 @@ pub(crate) fn matching_idiomatic_filenames<'a>(
         .collect()
 }
 
+fn path_matches_registry_idiomatic(path: &Path) -> bool {
+    let filenames = REGISTRY
+        .values()
+        .flat_map(|rt| rt.idiomatic_files.iter().map(|f| f.path));
+    !matching_idiomatic_filenames(path, filenames).is_empty()
+}
+
+fn unsupported_config_file_error(path: &Path) -> eyre::Report {
+    if path_matches_registry_idiomatic(path) {
+        eyre!(
+            "cannot update idiomatic version file {}; use mise.toml, .tool-versions, or --path to choose a writable config file",
+            display_path(path)
+        )
+    } else {
+        eyre!("unknown config file type: {}", display_path(path))
+    }
+}
+
 async fn path_is_idiomatic(path: &Path) -> Option<Vec<Arc<dyn Backend>>> {
     let (enable_tools, disable_files) = Settings::try_get()
         .map(|settings| {
@@ -862,6 +879,11 @@ async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         f => {
             if let Some(backends) = path_is_idiomatic(path).await {
                 Some(ConfigFileType::IdiomaticVersion(backends))
+            } else if path_matches_registry_idiomatic(path) {
+                // Known idiomatic filenames stay unrecognized until the tool is
+                // opted in. Do not fall through to MiseToml for names like
+                // rust-toolchain.toml.
+                None
             } else if f.ends_with(".toml") {
                 Some(ConfigFileType::MiseToml)
             } else {
@@ -1022,8 +1044,12 @@ mod tests {
             None
         );
         assert_eq!(
+            detect_config_file_type(Path::new("/foo/bar/package.json")).await,
+            None
+        );
+        assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
-            Some(ConfigFileType::MiseToml)
+            None
         );
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")).await,
@@ -1032,6 +1058,19 @@ mod tests {
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/mise.toml")).await,
             Some(ConfigFileType::MiseToml)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_or_init_rejects_disabled_idiomatic_file() {
+        backend::load_tools().await.unwrap();
+        let err = parse_or_init(Path::new("package.json"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("cannot update idiomatic version file"),
+            "unexpected error: {err}"
         );
     }
 
