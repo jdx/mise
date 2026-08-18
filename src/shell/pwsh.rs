@@ -97,6 +97,12 @@ impl Shell for Pwsh {
                 }}
             }}
 
+            # Declared up front because the prompt reads it before any directory change
+            # has set it, and Set-StrictMode makes reading an unset variable an error.
+            if (-not (Test-Path variable:global:__mise_pwsh_chpwd_handled)) {{
+                $Global:__mise_pwsh_chpwd_handled = $null
+            }}
+
             function __enable_mise_chpwd{{
                 if ($PSVersionTable.PSVersion.Major -lt 7) {{
                     if ($env:MISE_PWSH_CHPWD_WARNING -ne '0') {{
@@ -110,6 +116,13 @@ impl Shell for Pwsh {
                         param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
                         end {{
                             _mise_hook
+                            # The prompt fires immediately after this handler, and its own
+                            # hook-env would find the directory unchanged and early-exit. On
+                            # Windows that costs a whole process (~22ms, almost entirely
+                            # CreateProcess) to learn nothing. Record that this directory is
+                            # already done so the prompt can skip it. $PWD is the new location
+                            # by the time this handler runs.
+                            $Global:__mise_pwsh_chpwd_handled = $PWD.Path
                         }}
                     }};
                     $__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
@@ -130,7 +143,15 @@ impl Shell for Pwsh {
                     $Global:__mise_pwsh_previous_prompt_function=$function:prompt
                     function global:prompt {{
                         if (Test-Path -Path Function:\_mise_hook){{
-                            _mise_hook
+                            # Skip only when the chpwd handler already ran hook-env for this
+                            # exact directory. Everything else still gets a full prompt-time
+                            # check: a hand-edited config, `mise use` (the mise wrapper calls
+                            # _mise_hook itself and never sets this marker), or a MISE_* change.
+                            if ($Global:__mise_pwsh_chpwd_handled -eq $PWD.Path) {{
+                                $Global:__mise_pwsh_chpwd_handled = $null
+                            }} else {{
+                                _mise_hook
+                            }}
                         }}
                         & $__mise_pwsh_previous_prompt_function
                     }}
@@ -223,6 +244,7 @@ impl Shell for Pwsh {
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_DIFF
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_SESSION
+        Remove-Variable -Name __mise_pwsh_chpwd_handled -Scope Global -ErrorAction SilentlyContinue
         "#}
     }
 
