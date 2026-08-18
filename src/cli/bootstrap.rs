@@ -327,7 +327,7 @@ enum Commands {
     Packages(BootstrapPackages),
     Plan(BootstrapPlan),
     Plugins(BootstrapPlugins),
-    Remote(BootstrapRemote),
+    Remote(Box<BootstrapRemote>),
     Repos(BootstrapRepos),
     Secrets(BootstrapSecrets),
     Services(BootstrapServices),
@@ -610,6 +610,14 @@ struct BootstrapRemote {
     /// SSH connection timeout in seconds
     #[clap(long, default_value_t = 10)]
     connect_timeout: u16,
+
+    /// Dereference one source-relative symbolic link; repeat for multiple links
+    #[clap(long, value_name = "PATH", value_hint = clap::ValueHint::AnyPath)]
+    copy_link: Vec<std::path::PathBuf>,
+
+    /// Dereference every symbolic link in the source archive
+    #[clap(long)]
+    copy_links: bool,
 
     /// Additional archive pattern to exclude; repeat for multiple patterns
     #[clap(long, value_name = "PATTERN")]
@@ -2361,6 +2369,8 @@ impl BootstrapRemote {
 
         let overrides = system::remote::RemoteOverrides {
             source: self.source,
+            copy_links: self.copy_links,
+            copy_link: self.copy_link,
             port: self.port,
             identity_file: self.identity_file,
             exclude: self.exclude,
