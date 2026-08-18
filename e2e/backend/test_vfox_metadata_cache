@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# vfox plugin metadata is cached on disk per plugin. Loading it boots a Lua VM
+# and executes the plugin's top-level metadata.lua, which can do arbitrary work
+# (e.g. probe system packages), so it must not re-run on every mise invocation —
+# only when the plugin changes.
+
+marker="$PWD/metadata-loaded"
+
+mkdir -p "$MISE_DATA_DIR/plugins/sideeffect"
+cat <<EOF >"$MISE_DATA_DIR/plugins/sideeffect/metadata.lua"
+PLUGIN = {
+    name = "sideeffect",
+    version = "0.1.0",
+    description = "records when its metadata is loaded",
+}
+local f = io.open("$marker", "w")
+if f then
+    f:write("loaded")
+    f:close()
+end
+EOF
+
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+idiomatic_version_file_enable_tools = ["sideeffect"]
+EOF
+
+mise env >/dev/null
+assert "test -f '$marker'"
+
+rm -f "$marker"
+mise env >/dev/null
+assert_fail "test -f '$marker'" # served from the metadata cache, Lua did not run
+
+sleep 1 # let mtime advance past the cache file's
+touch "$MISE_DATA_DIR/plugins/sideeffect/metadata.lua"
+mise env >/dev/null
+assert "test -f '$marker'" # plugin changed, cache refreshed

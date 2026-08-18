@@ -29,7 +29,7 @@ pub struct Metadata {
 /// apt's `libaio1` became `libaio1t64` in the 64-bit time_t transition). The
 /// consumer picks the first candidate that exists, so plugins never have to
 /// probe the host while their metadata loads.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SystemDependency {
     pub bin: Option<String>,
     pub pkgconfig: Option<String>,

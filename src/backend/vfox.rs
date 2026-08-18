@@ -35,6 +35,18 @@ pub struct VfoxBackend {
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
     system_deps: OnceLock<Vec<crate::system::deps::SystemDep>>,
+    metadata_snapshot_cache: CacheManager<VfoxMetadataSnapshot>,
+}
+
+/// Disk-cached subset of a filesystem vfox plugin's metadata. Loading metadata
+/// boots a Lua VM and executes the plugin's top-level metadata.lua, which can
+/// do arbitrary work (e.g. probe system packages), so it must not re-run on
+/// every mise invocation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct VfoxMetadataSnapshot {
+    legacy_filenames: Vec<String>,
+    depends: Vec<String>,
+    system_dependencies: Vec<vfox::SystemDependency>,
 }
 
 fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
@@ -430,6 +442,9 @@ impl Backend for VfoxBackend {
     }
 
     async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        if let Some(snapshot) = self.plugin_metadata_snapshot()? {
+            return Ok(snapshot.legacy_filenames);
+        }
         let (vfox, _log_rx) = self.plugin.vfox()?;
 
         let metadata = vfox.metadata(&self.pathname).await?;
@@ -571,7 +586,14 @@ impl VfoxBackend {
         // name to a backend plugin still provide the plugin:tool identifier.
         let tool_name = backend_plugin_name.as_ref().map(|_| ba.tool_name());
 
+        let metadata_snapshot_cache =
+            CacheManagerBuilder::new(ba.cache_path.join("metadata.msgpack.z"))
+                .with_fresh_file(plugin_path.clone())
+                .with_fresh_file(plugin_path.join("metadata.lua"))
+                .build();
+
         Self {
+            metadata_snapshot_cache,
             exec_env_cache: Default::default(),
             plugin: plugin.clone(),
             plugin_enum: match backend_plugin_name {
@@ -586,25 +608,39 @@ impl VfoxBackend {
         }
     }
 
-    fn load_metadata_deps(&self) -> eyre::Result<Vec<String>> {
+    /// Loads (or reads from the disk cache) the metadata snapshot of a
+    /// filesystem plugin. Returns `None` for tools without a plugin dir
+    /// (embedded plugins) — their metadata is compiled in and cheap to load.
+    fn plugin_metadata_snapshot(&self) -> eyre::Result<Option<VfoxMetadataSnapshot>> {
         let plugin_path = dirs::PLUGINS.join(&self.pathname);
         if !plugin_path.exists() {
-            return Ok(vec![]);
+            return Ok(None);
         }
-        let plugin = vfox::Plugin::from_dir(&plugin_path)?;
-        let metadata = plugin.get_metadata()?;
-        Ok(metadata.depends)
+        let snapshot = self.metadata_snapshot_cache.get_or_try_init(|| {
+            let plugin = vfox::Plugin::from_dir(&plugin_path)?;
+            let metadata = plugin.get_metadata()?;
+            Ok(VfoxMetadataSnapshot {
+                legacy_filenames: metadata.legacy_filenames,
+                depends: metadata.depends,
+                system_dependencies: metadata.system_dependencies,
+            })
+        })?;
+        Ok(Some(snapshot.clone()))
+    }
+
+    fn load_metadata_deps(&self) -> eyre::Result<Vec<String>> {
+        Ok(self
+            .plugin_metadata_snapshot()?
+            .map(|m| m.depends)
+            .unwrap_or_default())
     }
 
     fn load_system_deps(&self) -> eyre::Result<Vec<crate::system::deps::SystemDep>> {
-        let plugin_path = dirs::PLUGINS.join(&self.pathname);
-        if !plugin_path.exists() {
+        let Some(snapshot) = self.plugin_metadata_snapshot()? else {
             return Ok(vec![]);
-        }
-        let plugin = vfox::Plugin::from_dir(&plugin_path)?;
-        let metadata = plugin.get_metadata()?;
+        };
         let mut deps = vec![];
-        for raw in metadata.system_dependencies {
+        for raw in snapshot.system_dependencies {
             match crate::system::deps::SystemDep::try_from(raw) {
                 Ok(dep) => deps.push(dep),
                 Err(e) => warn!(
