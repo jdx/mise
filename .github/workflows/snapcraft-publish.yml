@@ -15,7 +15,7 @@ jobs:
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,7 +25,24 @@ jobs:
           snapcraft-channel: stable
         id: snapbuild
 
+      - name: Check release is current
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          publish=true
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+            if [[ "$RELEASE_TAG" != "$latest_tag" ]]; then
+              echo "Skipping stale release $RELEASE_TAG; latest is $latest_tag"
+              publish=false
+            fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
       - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
+        if: steps.release.outputs.publish == 'true'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
