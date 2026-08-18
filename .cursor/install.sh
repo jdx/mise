@@ -154,6 +154,16 @@ EOF
 "${SUDO[@]}" chmod 644 "$shims_profile"
 
 bashrc=/etc/bash.bashrc
+if [ -f "$bashrc" ] && ! grep -qF "mise-dev-github-token" "$bashrc"; then
+	"${SUDO[@]}" tee -a "$bashrc" >/dev/null <<'EOF'
+# mise-dev-github-token — Cloud Agent non-login interactive bash
+if [ -f /etc/profile.d/mise-dev-github-token.sh ]; then
+	# shellcheck disable=SC1091
+	. /etc/profile.d/mise-dev-github-token.sh
+fi
+EOF
+fi
+
 if [ -f "$bashrc" ] && ! grep -qF "mise-dev-shims" "$bashrc"; then
 	"${SUDO[@]}" tee -a "$bashrc" >/dev/null <<'EOF'
 # mise-dev-shims — Cloud Agent non-login interactive bash
