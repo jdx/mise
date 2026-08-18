@@ -33,15 +33,16 @@ relative to the config that declared them. Variables declared by a selected root
 are available to that root's dotfile templates without leaking into sibling
 roots.
 
-Composition includes `[dotfiles]`, `[bootstrap.files]`, and
-`[bootstrap.directories]`. Equivalent declarations are deduplicated. Different
-declarations for the same dotfile target, edit `(path, id)`, managed file, or
-managed directory are errors that identify both declaring configs. Independent
+Composition includes `[dotfiles]`, `[bootstrap.files]`,
+`[bootstrap.directories]`, `[bootstrap.services]`, and `[bootstrap.compose]`.
+Equivalent declarations are deduplicated. Different declarations for the same
+dotfile target, edit `(path, id)`, managed file, managed directory, service, or
+Compose project are errors that identify both declaring configs. Independent
 roots never acquire precedence from their order in `config_roots`.
 
-Other configuration such as tools, tasks, packages, services, hooks, and repos
-is not collected from these roots. Use their existing explicit workflows when
-those resources need aggregate behavior.
+Other configuration such as tools, tasks, packages, hooks, and repos is not
+collected from these roots. Use their existing explicit workflows when those
+resources need aggregate behavior.
 
 ## How it runs
 

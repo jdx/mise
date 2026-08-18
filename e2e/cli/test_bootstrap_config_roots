@@ -45,6 +45,14 @@ content = "managed"
 [bootstrap.directories."$managed_dir"]
 mode = "0755"
 
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_a"
+state = "stopped"
+
 [bootstrap.repos."$leaked_repo"]
 url = "https://example.com/not-collected.git"
 
@@ -67,6 +75,14 @@ content = "managed"
 
 [bootstrap.directories."$managed_dir"]
 mode = "0755"
+
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_a"
+state = "stopped"
 EOF
 
 assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files | length == 5'"
@@ -83,6 +99,8 @@ assert_fail "test -e $PWD/escaped.conf"
 assert_succeed "mise bootstrap files status --json | jq -e 'length == 2'"
 assert_succeed "mise bootstrap files status --json | jq -e '.[] | select(.id.name == \"$managed_file\") | .origin.config == \"$root_a/mise.toml\"'"
 assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.name == \"$managed_dir\") | .origin.config == \"$root_a/mise.toml\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"service\" and .id.name == \"shared\")] | length == 1 and .[0].origin.config == \"$root_a/mise.toml\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"compose\" and .id.name == \"shared\")] | length == 1 and .[0].origin.config == \"$root_a/mise.toml\"'"
 assert_not_contains "mise bootstrap plan --json" "$leaked_repo"
 assert_not_contains "mise tasks ls" "leaked-root-task"
 
@@ -94,6 +112,44 @@ assert_fail "mise bootstrap dotfiles status" "conflicting dotfile declarations f
 assert_fail "mise bootstrap dotfiles status" "$root_a/mise.toml"
 assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
 
+cat <<EOF >"$root_a/mise.toml"
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_a"
+state = "stopped"
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[bootstrap.services.shared]
+state = "running"
+
+[bootstrap.compose.shared]
+project_dir = "$root_b"
+state = "stopped"
+EOF
+assert_fail "mise bootstrap plan" "conflicting bootstrap service declarations for shared"
+assert_fail "mise bootstrap plan" "$root_a/mise.toml"
+assert_fail "mise bootstrap plan" "$root_b/mise.toml"
+
+cat <<EOF >"$root_b/mise.toml"
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_b"
+state = "stopped"
+EOF
+assert_fail "mise bootstrap plan" "conflicting bootstrap compose declarations for shared"
+assert_fail "mise bootstrap plan" "$root_a/mise.toml"
+assert_fail "mise bootstrap plan" "$root_b/mise.toml"
+
+cat <<EOF >"$root_a/mise.toml"
+[bootstrap.files."$managed_file"]
+content = "managed"
+EOF
 cat <<EOF >"$root_b/mise.toml"
 [bootstrap.files."$managed_file"]
 content = "different"
