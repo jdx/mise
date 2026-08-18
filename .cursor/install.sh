@@ -2,9 +2,16 @@
 # Idempotent Cloud Agent bootstrap. Safe to rerun; does not start long-lived processes.
 set -euo pipefail
 
+# Draft builds and some Cloud Agent images run as `ubuntu`, not root.
+if [ "$(id -u)" -eq 0 ]; then
+	SUDO=()
+else
+	SUDO=(sudo -n)
+fi
+
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends libssl-dev pkg-config
+"${SUDO[@]}" apt-get update
+"${SUDO[@]}" apt-get install -y --no-install-recommends libssl-dev pkg-config
 
 msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
 if [ -z "$msrv" ]; then
@@ -16,7 +23,7 @@ rustup toolchain install "$msrv" --profile minimal --no-self-update -c rustfmt,c
 rustup default "$msrv"
 
 cargo build --all-features
-ln -sfn "$PWD/target/debug/mise" /usr/local/bin/mise
+"${SUDO[@]}" ln -sfn "$PWD/target/debug/mise" /usr/local/bin/mise
 hash -r
 
 export MISE_YES=1
