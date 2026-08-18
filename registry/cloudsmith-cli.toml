@@ -1,5 +1,5 @@
 backends = ["aqua:cloudsmith-io/cloudsmith-cli"]
 bins = ["cloudsmith"]
 description = "Official Cloudsmith Command-Line Interface"
-test = { cmd = "cloudsmith --version", expected = "CLI Package Version" }
+test = { cmd = "cloudsmith --version", expected = "CLI Package Version: {{version}}" }
 version_order = "semver"
