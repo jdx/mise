@@ -4,7 +4,7 @@ use crate::{
     canonical_json,
 };
 use eyre::{Result, bail};
-use futures_util::{StreamExt, stream};
+use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream};
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -852,7 +852,11 @@ impl CacheAgent {
         Ok(Some(PrefetchedAction { adapter, result }))
     }
 
-    async fn prefetch_resolved_actions(&self, actions: Vec<PrefetchedAction>) {
+    fn prefetch_resolved_actions(&self, actions: Vec<PrefetchedAction>) -> BoxFuture<'_, ()> {
+        self.prefetch_resolved_actions_inner(actions).boxed()
+    }
+
+    async fn prefetch_resolved_actions_inner(&self, actions: Vec<PrefetchedAction>) {
         let Some(remote) = self.remote.as_deref() else {
             return;
         };
