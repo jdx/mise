@@ -219,16 +219,18 @@ impl TryFrom<vfox::SystemDependency> for SystemDep {
                 None
             }
         };
-        // Drop blank candidate names here so nothing downstream can turn one
-        // into an empty package operand, and a hint left with no usable name
-        // at all reports as unremediable rather than as a nameless install.
+        // Normalize candidate names here so nothing downstream can pass a
+        // package manager a padded or empty operand, and a hint left with no
+        // usable name at all reports as unremediable rather than as a nameless
+        // install.
         let packages = d
             .packages
             .into_iter()
             .map(|(mgr, candidates)| {
                 let candidates: Vec<String> = candidates
                     .into_iter()
-                    .filter(|c| !c.trim().is_empty())
+                    .map(|c| c.trim().to_string())
+                    .filter(|c| !c.is_empty())
                     .collect();
                 (mgr, candidates)
             })
@@ -801,14 +803,16 @@ mod tests {
 
     #[test]
     fn test_blank_candidate_names_are_dropped() {
-        // A hint of only blank names must not survive as a nameless install.
+        // A hint of only blank names must not survive as a nameless install,
+        // and a padded name must reach the package manager trimmed rather than
+        // as the invalid operand "  libaio  ".
         let d = vfox::SystemDependency {
             sharedlib: Some("libaio.so.1".into()),
             packages: [
                 ("apt".to_string(), vec!["".to_string(), "  ".to_string()]),
                 (
                     "dnf".to_string(),
-                    vec!["".to_string(), "libaio".to_string()],
+                    vec!["".to_string(), "  libaio  ".to_string()],
                 ),
             ]
             .into_iter()
