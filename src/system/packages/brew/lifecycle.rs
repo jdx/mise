@@ -1037,8 +1037,8 @@ fn validate_shared_mapping(keg: &Path, mapping: &LifecycleSharedState) -> bool {
             .ok()
             .is_some_and(|relative| {
                 let target = prefix::prefix().join(root).join(relative);
-                mapping.target == target
-                    || mapping.target == PathBuf::from(format!("{}.default", target.display()))
+                let default = shared_default_path(&target);
+                mapping.target == target || mapping.target == default
             })
     })
 }
@@ -1580,7 +1580,7 @@ fn install_destination(
             return Ok(destination.to_path_buf());
         }
     }
-    let default = PathBuf::from(format!("{}.default", destination.display()));
+    let default = shared_default_path(destination);
     debug!(
         "brew:{} preserving modified {}; writing new default to {}",
         formula,
@@ -1588,6 +1588,12 @@ fn install_destination(
         default.display()
     );
     Ok(default)
+}
+
+fn shared_default_path(destination: &Path) -> PathBuf {
+    let mut default = destination.as_os_str().to_os_string();
+    default.push(".default");
+    default.into()
 }
 
 pub(super) fn atomic_copy(source: &Path, destination: &Path) -> Result<()> {
