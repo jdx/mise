@@ -65,7 +65,7 @@ struct BottleFacts {
     source: Option<Value>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum FinalizationPhase {
     Receipt,
@@ -74,12 +74,14 @@ enum FinalizationPhase {
     Complete,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct FinalizationState {
     formula: String,
     version: String,
     provenance: String,
     phase: FinalizationPhase,
+    #[serde(default)]
+    predecessor_keg: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -945,25 +947,48 @@ fn bottled_by_homebrew_at_least(
 }
 
 pub(super) fn backup_existing_keg(keg: &Path) -> Result<Option<PathBuf>> {
+    let backup = recovery_backup_path(keg)?;
+    if backup.symlink_metadata().is_ok() {
+        let state = read_finalization_state(keg)?.ok_or_else(|| {
+            eyre::eyre!(
+                "refusing to reuse recovery backup {} without finalization state",
+                backup.display()
+            )
+        })?;
+        validate_finalization_identity(keg, &state)?;
+        if state.phase == FinalizationPhase::Complete {
+            bail!(
+                "refusing to reuse recovery backup {} for a completed transaction",
+                backup.display()
+            );
+        }
+        let backup_metadata = backup.symlink_metadata()?;
+        if !backup_metadata.is_dir() || backup_metadata.file_type().is_symlink() {
+            bail!("recovery backup is not a directory: {}", backup.display());
+        }
+        if let Ok(keg_metadata) = keg.symlink_metadata() {
+            if !keg_metadata.is_dir() || keg_metadata.file_type().is_symlink() {
+                bail!("interrupted keg is not a directory: {}", keg.display());
+            }
+            crate::file::remove_all(keg)?;
+        }
+        return Ok(Some(backup));
+    }
     if keg.symlink_metadata().is_err() {
         return Ok(None);
     }
+    crate::file::rename(keg, &backup)?;
+    Ok(Some(backup))
+}
+
+fn recovery_backup_path(keg: &Path) -> Result<PathBuf> {
     let version = keg
         .file_name()
         .ok_or_else(|| eyre::eyre!("keg has no version component"))?;
-    let backup = keg
+    Ok(keg
         .parent()
         .ok_or_else(|| eyre::eyre!("keg has no rack"))?
-        .join(format!(".mise-backup-{}", version.to_string_lossy()));
-    if backup.symlink_metadata().is_ok() {
-        bail!(
-            "refusing to replace {} while recovery backup {} exists",
-            keg.display(),
-            backup.display()
-        );
-    }
-    crate::file::rename(keg, &backup)?;
-    Ok(Some(backup))
+        .join(format!(".mise-backup-{}", version.to_string_lossy())))
 }
 
 pub(super) fn restore_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()> {
@@ -1007,6 +1032,32 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
     let name = &rf.formula.name;
     let pkg_version = rf.formula.pkg_version()?;
     let previous_finalization_state = std::fs::read(finalization_state_path(keg)).ok();
+    let previous_state = previous_finalization_state
+        .as_deref()
+        .map(serde_json::from_slice::<FinalizationState>)
+        .transpose()
+        .wrap_err_with(|| format!("brew:{name}: unreadable formula finalization state"))?;
+    if let Some(state) = &previous_state {
+        validate_finalization_identity(keg, state)?;
+    }
+    let predecessor_keg = previous_state
+        .as_ref()
+        .filter(|state| state.phase != FinalizationPhase::Complete)
+        .map(|state| state.predecessor_keg.clone())
+        .unwrap_or(predecessor_keg);
+    let planned_backup = if staged_keg == keg {
+        existing_backup.clone()
+    } else {
+        let backup = recovery_backup_path(keg)?;
+        (keg.symlink_metadata().is_ok() || backup.symlink_metadata().is_ok()).then_some(backup)
+    };
+    let predecessor_keg = predecessor_keg.and_then(|predecessor| {
+        if predecessor == keg {
+            planned_backup.clone()
+        } else {
+            Some(predecessor)
+        }
+    });
     let provenance_name = match &provenance {
         FormulaInstallProvenance::OciBottle { .. } => "oci_bottle",
         FormulaInstallProvenance::ArchiveBottle { .. } => "archive_bottle",
@@ -1025,6 +1076,7 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
             version: pkg_version.clone(),
             provenance: provenance_name.to_string(),
             phase: FinalizationPhase::Receipt,
+            predecessor_keg: predecessor_keg.clone(),
         },
     ) {
         if staged_keg == keg {
@@ -1051,6 +1103,11 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         }
         backup
     };
+    if backup != planned_backup {
+        restore_keg_backup(keg, backup.as_deref())?;
+        restore_finalization_state(keg, previous_finalization_state.as_deref())?;
+        bail!("brew:{name}: finalization recovery backup changed during commit");
+    }
     if let Err(error) = write_finalization_state(
         keg,
         &FinalizationState {
@@ -1058,6 +1115,7 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
             version: pkg_version.clone(),
             provenance: provenance_name.to_string(),
             phase: FinalizationPhase::Keg,
+            predecessor_keg: predecessor_keg.clone(),
         },
     ) {
         restore_keg_backup(keg, backup.as_deref())?;
@@ -1078,6 +1136,7 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
             version: pkg_version.clone(),
             provenance: provenance_name.to_string(),
             phase: FinalizationPhase::Linked,
+            predecessor_keg: predecessor_keg.clone(),
         },
     ) {
         restore_keg_backup(keg, backup.as_deref())?;
@@ -1086,14 +1145,7 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
     }
 
     pr.set_message("shared state".to_string());
-    let predecessor_keg = predecessor_keg.as_deref().and_then(|predecessor| {
-        if predecessor == keg {
-            backup.as_deref()
-        } else {
-            Some(predecessor)
-        }
-    });
-    super::lifecycle::install(lifecycle, predecessor_keg)
+    super::lifecycle::install(lifecycle, predecessor_keg.as_deref())
         .await
         .wrap_err_with(|| {
             format!(
@@ -1111,6 +1163,7 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
             version: pkg_version.clone(),
             provenance: provenance_name.to_string(),
             phase: FinalizationPhase::Complete,
+            predecessor_keg,
         },
     )?;
     Ok(())
@@ -1123,6 +1176,40 @@ fn finalization_state_path(keg: &Path) -> PathBuf {
             "{}.json",
             crate::hash::hash_to_str(&(prefix::prefix(), keg))
         ))
+}
+
+fn read_finalization_state(keg: &Path) -> Result<Option<FinalizationState>> {
+    let path = finalization_state_path(keg);
+    if path.symlink_metadata().is_err() {
+        return Ok(None);
+    }
+    Ok(Some(serde_json::from_str(
+        &crate::file::read_to_string(&path)
+            .wrap_err_with(|| format!("could not read {}", path.display()))?,
+    )?))
+}
+
+fn validate_finalization_identity(keg: &Path, state: &FinalizationState) -> Result<()> {
+    let formula = keg
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str());
+    let version = keg.file_name().and_then(|version| version.to_str());
+    if formula != Some(state.formula.as_str()) || version != Some(state.version.as_str()) {
+        bail!(
+            "formula finalization state does not match keg {}",
+            keg.display()
+        );
+    }
+    if let Some(predecessor) = &state.predecessor_keg
+        && predecessor.parent() != keg.parent()
+    {
+        bail!(
+            "formula finalization predecessor is outside rack: {}",
+            predecessor.display()
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn remove_finalization_state(keg: &Path) -> Result<()> {
@@ -2255,6 +2342,71 @@ mod tests {
         );
         assert!(finalization_needs_repair(&keg));
         assert!(lifecycle::needs_repair(&keg));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalizer_retry_uses_durable_original_predecessor() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let rf = resolved_formula("foo", "2.0");
+        let old_keg = keg_path("foo", "1.0");
+        let keg = keg_path("foo", "2.0");
+        let _state = FormulaStateGuard::new(&keg);
+
+        write_source_keg(&old_keg, "old")?;
+        crate::file::create_dir_all(old_keg.join(".bottle/etc/foo"))?;
+        crate::file::write(old_keg.join(".bottle/etc/foo/config"), "old-default")?;
+        write_source_keg(&keg, "interrupted")?;
+        link_keg("foo", "2.0", false)?;
+        crate::file::create_dir_all(prefix.join("etc/foo"))?;
+        crate::file::write(prefix.join("etc/foo/config"), "old-default")?;
+        write_finalization_state(
+            &keg,
+            &FinalizationState {
+                formula: "foo".into(),
+                version: "2.0".into(),
+                provenance: "source_build".into(),
+                phase: FinalizationPhase::Linked,
+                predecessor_keg: Some(old_keg.clone()),
+            },
+        )?;
+
+        let staged = keg.parent().unwrap().join(".mise-tmp-2.0");
+        let snapshot = write_source_keg(&staged, "retry")?;
+        crate::file::create_dir_all(staged.join(".bottle/etc/foo"))?;
+        crate::file::write(staged.join(".bottle/etc/foo/config"), "new-default")?;
+        let prepared = lifecycle::prepare(&rf.formula, &keg)?;
+        let pr = crate::ui::progress_report::QuietReport::new();
+
+        finalize_formula(FormulaFinalizer {
+            rf: &rf,
+            tag: "test",
+            staged_keg: &staged,
+            keg: &keg,
+            report: &Default::default(),
+            closure: &[],
+            provenance: source_provenance(snapshot),
+            lifecycle: &prepared,
+            pr: &pr,
+            existing_backup: None,
+            predecessor_keg: Some(keg.clone()),
+        })
+        .await?;
+
+        assert_eq!(
+            crate::file::read_to_string(prefix.join("etc/foo/config"))?,
+            "new-default"
+        );
+        assert!(
+            prefix
+                .join("etc/foo/config.default")
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(recovery_backup_path(&keg)?.symlink_metadata().is_err());
+        assert!(!finalization_needs_repair(&keg));
         Ok(())
     }
 
