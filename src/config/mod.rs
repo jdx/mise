@@ -1698,16 +1698,20 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
 /// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
 fn env_config_patterns(env: &str) -> Vec<String> {
     vec![
+        format!(".config/mise/conf.d/*.{env}.toml"),
         format!(".config/mise/config.{env}.toml"),
         format!(".config/mise.{env}.toml"),
         format!("mise/config.{env}.toml"),
         format!("mise.{env}.toml"),
+        format!(".mise/conf.d/*.{env}.toml"),
         format!(".mise/config.{env}.toml"),
         format!(".mise.{env}.toml"),
+        format!(".config/mise/conf.d/*.{env}.local.toml"),
         format!(".config/mise/config.{env}.local.toml"),
         format!(".config/mise.{env}.local.toml"),
         format!("mise/config.{env}.local.toml"),
         format!("mise.{env}.local.toml"),
+        format!(".mise/conf.d/*.{env}.local.toml"),
         format!(".mise/config.{env}.local.toml"),
         format!(".mise.{env}.local.toml"),
     ]
@@ -1803,6 +1807,39 @@ fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+fn is_unconditional_conf_d_pattern(pattern: &str) -> bool {
+    pattern.ends_with("conf.d/*.toml")
+}
+
+/// Whether a conf.d fragment reserves a filename component for an environment.
+///
+/// `name.toml` and `name.local.toml` are unconditional. `name.dev.toml` and
+/// `name.dev.local.toml` are environment-specific. Environment names themselves
+/// may contain dots; active files are selected by exact glob patterns.
+fn is_environment_conf_d_file(path: &Path) -> bool {
+    if !is_conf_d_file(path) {
+        return false;
+    }
+    let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(stem) = filename.strip_suffix(".toml") else {
+        return false;
+    };
+    let stem = stem.strip_suffix(".local").unwrap_or(stem);
+    stem.split_once('.')
+        .is_some_and(|(name, env)| !name.is_empty() && !env.is_empty())
+}
+
+fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    config_glob(dir, pattern)
+        .into_iter()
+        .filter(|path| {
+            !is_unconditional_conf_d_pattern(pattern) || !is_environment_conf_d_file(path)
+        })
+        .collect()
+}
+
 pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
     DEFAULT_CONFIG_FILENAMES
         .iter()
@@ -1827,7 +1864,9 @@ pub(crate) fn environments_for_config_path(path: &Path) -> Vec<String> {
             ["config", "mise", ".mise"].into_iter().any(|prefix| {
                 filename == format!("{prefix}.{environment}.toml")
                     || filename == format!("{prefix}.{environment}.local.toml")
-            })
+            }) || (is_conf_d_file(path)
+                && (filename.ends_with(&format!(".{environment}.toml"))
+                    || filename.ends_with(&format!(".{environment}.local.toml"))))
         })
         .cloned()
         .collect()
@@ -1839,7 +1878,7 @@ fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<P
         .rev()
         .flat_map(|f| {
             if f.contains('*') {
-                config_glob(dir, f).into_iter().rev().collect()
+                load_config_glob(dir, f).into_iter().rev().collect()
             } else {
                 let path = dir.join(f);
                 if path.exists() { vec![path] } else { vec![] }
@@ -1907,7 +1946,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
     }
     filenames
         .iter()
-        .flat_map(|f| config_glob(dir, f))
+        .flat_map(|f| load_config_glob(dir, f))
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
         .collect()
@@ -2211,6 +2250,8 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     }
     for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
         for env_name in &candidate_envs {
+            found.extend(conf_d_environment_files(&dir, env_name, false));
+            found.extend(conf_d_environment_files(&dir, env_name, true));
             for filename in [
                 format!("config.{env_name}.toml"),
                 format!("mise.{env_name}.toml"),
@@ -2434,21 +2475,6 @@ pub fn system_config_files() -> IndexSet<PathBuf> {
     config_files
 }
 
-static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    let mut filenames = vec!["config.toml".to_string(), "mise.toml".to_string()];
-    for env in &*env::MISE_ENV_WITH_AUTO {
-        filenames.push(format!("config.{env}.toml"));
-        filenames.push(format!("mise.{env}.toml"));
-    }
-    filenames.push("config.local.toml".to_string());
-    filenames.push("mise.local.toml".to_string());
-    for env in &*env::MISE_ENV_WITH_AUTO {
-        filenames.push(format!("config.{env}.local.toml"));
-        filenames.push(format!("mise.{env}.local.toml"));
-    }
-    filenames
-});
-
 /// Config files in a global/system config dir, lowest precedence first: `conf.d`,
 /// then `config.toml`/`mise.toml`, then the `.local` variants.
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
@@ -2457,12 +2483,45 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
             && file_name.ends_with(".toml")
+            && !is_environment_conf_d_file(&p)
         {
             files.insert(p);
         }
     }
-    files.extend(CONFIG_FILENAMES.iter().map(|f| dir.join(f)));
+    files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
+    for environment in &*env::MISE_ENV_WITH_AUTO {
+        files.extend(conf_d_environment_files(dir, environment, false));
+        files.extend([
+            dir.join(format!("config.{environment}.toml")),
+            dir.join(format!("mise.{environment}.toml")),
+        ]);
+    }
+    files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
+    for environment in &*env::MISE_ENV_WITH_AUTO {
+        files.extend(conf_d_environment_files(dir, environment, true));
+        files.extend([
+            dir.join(format!("config.{environment}.local.toml")),
+            dir.join(format!("mise.{environment}.local.toml")),
+        ]);
+    }
     files.into_iter().filter(|p| p.is_file()).collect()
+}
+
+fn conf_d_environment_files(dir: &Path, environment: &str, local: bool) -> Vec<PathBuf> {
+    let suffix = if local {
+        format!(".{environment}.local.toml")
+    } else {
+        format!(".{environment}.toml")
+    };
+    file::ls(&dir.join("conf.d"))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| !name.starts_with('.') && name.ends_with(&suffix))
+        })
+        .collect()
 }
 
 /// the preferred global config file to write to, or the path where it should be created.
@@ -3764,7 +3823,7 @@ fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
 fn has_config_file_with_filenames(dir: &Path, filenames: &[String]) -> bool {
     filenames.iter().any(|f| {
         if f.contains('*') {
-            !config_glob(dir, f).is_empty()
+            !load_config_glob(dir, f).is_empty()
         } else {
             dir.join(f).exists()
         }
@@ -5325,6 +5384,52 @@ mod tests {
     }
 
     #[test]
+    fn test_project_conf_d_environment_precedence() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        for filename in [
+            "01-base.toml",
+            "02-local.local.toml",
+            "03-dev.dev.toml",
+            "04-dev-local.dev.local.toml",
+            "05-ci.ci.toml",
+        ] {
+            fs::write(confd.join(filename), "[env]\n")?;
+        }
+
+        let filenames = vec![
+            ".mise/conf.d/*.toml".to_string(),
+            ".mise/conf.d/*.dev.toml".to_string(),
+            ".mise/conf.d/*.dev.local.toml".to_string(),
+        ];
+        let paths = config_paths_in_dir_with_filenames(tmp.path(), &filenames);
+        let relative = paths
+            .iter()
+            .map(|path| path.strip_prefix(tmp.path()).unwrap())
+            .collect_vec();
+        assert_eq!(
+            relative,
+            vec![
+                Path::new(".mise/conf.d/04-dev-local.dev.local.toml"),
+                Path::new(".mise/conf.d/03-dev.dev.toml"),
+                Path::new(".mise/conf.d/02-local.local.toml"),
+                Path::new(".mise/conf.d/01-base.toml"),
+            ]
+        );
+
+        assert!(is_environment_conf_d_file(&confd.join("03-dev.dev.toml")));
+        assert!(is_environment_conf_d_file(
+            &confd.join("04-dev-local.dev.local.toml")
+        ));
+        assert!(!is_environment_conf_d_file(
+            &confd.join("02-local.local.toml")
+        ));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_prefer_windows_file_task_siblings_keeps_windows_native_script() {
         let file_tasks = vec![
             Task {
@@ -5652,16 +5757,20 @@ mod tests {
         assert_eq!(
             env_config_patterns("linux"),
             vec![
+                ".config/mise/conf.d/*.linux.toml",
                 ".config/mise/config.linux.toml",
                 ".config/mise.linux.toml",
                 "mise/config.linux.toml",
                 "mise.linux.toml",
+                ".mise/conf.d/*.linux.toml",
                 ".mise/config.linux.toml",
                 ".mise.linux.toml",
+                ".config/mise/conf.d/*.linux.local.toml",
                 ".config/mise/config.linux.local.toml",
                 ".config/mise.linux.local.toml",
                 "mise/config.linux.local.toml",
                 "mise.linux.local.toml",
+                ".mise/conf.d/*.linux.local.toml",
                 ".mise/config.linux.local.toml",
                 ".mise.linux.local.toml",
             ]
