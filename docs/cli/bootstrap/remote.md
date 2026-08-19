@@ -107,7 +107,7 @@ Prompt securely for missing secret inputs on the remote host
 
 ### `--remote-env… <ENV>`
 
-Config environments to load on the remote host
+Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
 
 ### `--remote-mise <COMMAND>`
 

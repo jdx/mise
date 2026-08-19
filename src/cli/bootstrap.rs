@@ -667,7 +667,7 @@ struct BootstrapRemote {
     #[clap(long)]
     prompt_secrets: bool,
 
-    /// Config environments to load on the remote host
+    /// Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
     #[clap(long, value_name = "ENV", value_delimiter = ',')]
     remote_env: Option<Vec<String>>,
 

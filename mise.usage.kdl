@@ -867,7 +867,7 @@ Examples:
             arg <PORT>
         }
         flag --prompt-secrets help="Prompt securely for missing secret inputs on the remote host"
-        flag --remote-env help="Config environments to load on the remote host" var=#true {
+        flag --remote-env help="Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)" var=#true {
             arg <ENV>
         }
         flag --remote-mise help="Existing mise executable name or path; relative paths use the staged project" {
