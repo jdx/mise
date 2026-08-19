@@ -1627,20 +1627,10 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
         return crate::github::get_headers(url.as_str());
     }
 
-    let Some(host) = url.host_str() else {
-        return Ok(HeaderMap::new());
-    };
-
-    let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
-    if is_gitlab {
-        return Ok(crate::gitlab::get_headers(url.as_str()));
-    }
-
-    let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
-    if is_forgejo {
-        return Ok(crate::forgejo::get_headers(url.as_str()));
-    }
-
+    // A generic URL does not carry the configured GitLab or Forgejo API origin,
+    // so it cannot establish a safe trust boundary for those tokens. Their
+    // backend-specific callers must pass the request and API URLs directly to
+    // the corresponding `get_headers` function.
     Ok(HeaderMap::new())
 }
 
