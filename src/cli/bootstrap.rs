@@ -655,6 +655,10 @@ struct BootstrapRemote {
     )]
     mise_bin: Option<std::path::PathBuf>,
 
+    /// Config environments to load on the remote host
+    #[clap(long, value_name = "ENV", value_delimiter = ',')]
+    remote_env: Option<Vec<String>>,
+
     /// Run only one or more remote bootstrap parts
     #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
     only: Vec<BootstrapPart>,
@@ -2369,6 +2373,7 @@ impl BootstrapRemote {
 
         let overrides = system::remote::RemoteOverrides {
             source: self.source,
+            mise_env: self.remote_env,
             copy_links: self.copy_links,
             copy_link: self.copy_link,
             port: self.port,

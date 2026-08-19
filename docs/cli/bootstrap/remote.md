@@ -69,6 +69,10 @@ Keep the remote staging directory for debugging
 
 Local mise binary to upload (escape hatch for custom architectures)
 
+### `--remote-env… <ENV>`
+
+Config environments to load on the remote host
+
 ### `--only… <ONLY>`
 
 Run only one or more remote bootstrap parts

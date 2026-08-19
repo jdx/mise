@@ -16,6 +16,7 @@ const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct RemoteTomlConfig {
     pub source: Option<PathBuf>,
+    pub mise_env: Option<Vec<String>>,
     #[serde(default)]
     pub copy_links: bool,
     #[serde(default)]
@@ -33,6 +34,7 @@ pub struct RemoteHostTomlConfig {
     pub port: Option<u16>,
     pub identity_file: Option<PathBuf>,
     pub source: Option<PathBuf>,
+    pub mise_env: Option<Vec<String>>,
     pub copy_links: Option<bool>,
     #[serde(default)]
     pub copy_link: Vec<PathBuf>,
@@ -55,6 +57,7 @@ pub struct RemoteHost {
     pub port: Option<u16>,
     pub identity_file: Option<PathBuf>,
     pub source: PathBuf,
+    pub mise_env: Vec<String>,
     pub copy_links: bool,
     pub copy_link: Vec<PathBuf>,
     pub exclude: Vec<String>,
@@ -68,6 +71,7 @@ pub struct RemoteHost {
 #[derive(Clone, Debug, Default)]
 pub struct RemoteOverrides {
     pub source: Option<PathBuf>,
+    pub mise_env: Option<Vec<String>>,
     pub copy_links: bool,
     pub copy_link: Vec<PathBuf>,
     pub port: Option<u16>,
@@ -124,6 +128,7 @@ pub fn hosts_from_config(
         let remote = bootstrap.remote;
         let base = cf.get_path().parent().unwrap_or_else(|| Path::new("."));
         let default_source = resolve_local_path(base, remote.source.as_deref())?;
+        let default_mise_env = remote.mise_env;
         let default_copy_links = remote.copy_links;
         let default_copy_link = remote.copy_link;
         for (name, host) in remote.hosts {
@@ -149,6 +154,9 @@ pub fn hosts_from_config(
                 port: host.port,
                 identity_file,
                 source,
+                mise_env: host
+                    .mise_env
+                    .unwrap_or_else(|| default_mise_env.clone().unwrap_or_default()),
                 copy_links: host.copy_links.unwrap_or(default_copy_links),
                 copy_link: dedupe_paths(copy_link),
                 exclude: dedupe(exclude),
@@ -189,6 +197,7 @@ pub fn ad_hoc_host(
         port: None,
         identity_file: None,
         source,
+        mise_env: vec![],
         copy_links: false,
         copy_link: vec![],
         exclude: dedupe(
@@ -211,6 +220,9 @@ impl RemoteHost {
     pub fn apply_overrides(&mut self, overrides: &RemoteOverrides) -> Result<()> {
         if let Some(source) = &overrides.source {
             self.source = absolutize(source)?;
+        }
+        if let Some(mise_env) = &overrides.mise_env {
+            self.mise_env.clone_from(mise_env);
         }
         if overrides.copy_links {
             self.copy_links = true;
@@ -310,6 +322,12 @@ impl RemoteHost {
         for exclude in &self.exclude {
             validate_value("archive exclude", exclude)?;
         }
+        for env in &self.mise_env {
+            validate_value("mise environment", env)?;
+            if env.contains(',') {
+                bail!("remote mise environment cannot contain a comma: {env}");
+            }
+        }
         if let Some(remote_mise) = &self.remote_mise {
             validate_remote_executable(remote_mise)?;
         }
@@ -396,11 +414,11 @@ async fn run_staged(
     let mut argv = vec![
         "env".to_string(),
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
-        mise,
-        "--cd".to_string(),
-        project,
-        "bootstrap".to_string(),
     ];
+    if !session.host.mise_env.is_empty() {
+        argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
+    }
+    argv.extend([mise, "--cd".to_string(), project, "bootstrap".to_string()]);
     if options.dry_run {
         argv.push("--dry-run".to_string());
     }

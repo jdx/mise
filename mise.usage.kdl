@@ -858,6 +858,9 @@ Examples:
         flag --mise-bin help="Local mise binary to upload (escape hatch for custom architectures)" {
             arg <MISE_BIN>
         }
+        flag --remote-env help="Config environments to load on the remote host" var=#true {
+            arg <ENV>
+        }
         flag --only help="Run only one or more remote bootstrap parts" var=#true {
             arg <ONLY> {
                 choices plugins packages accounts files services firewall compose repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
