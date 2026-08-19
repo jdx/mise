@@ -295,12 +295,6 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     None
 }
 
-/// Returns true if the given hostname has a token available from a non-env-var source.
-pub fn is_forgejo_host(host: &str) -> bool {
-    MISE_FORGEJO_TOKENS.contains_key(host)
-        || (Settings::get().forgejo.fj_cli_tokens && FJ_HOSTS.contains_key(host))
-}
-
 // ── forgejo_tokens.toml ────────────────────────────────────────────
 
 static MISE_FORGEJO_TOKENS: Lazy<HashMap<String, String>> = Lazy::new(|| {

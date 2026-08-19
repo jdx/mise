@@ -398,12 +398,6 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     None
 }
 
-/// Returns true if the given hostname has a token available from a non-env-var source.
-pub fn is_gitlab_host(host: &str) -> bool {
-    MISE_GITLAB_TOKENS.contains_key(host)
-        || (Settings::get().gitlab.glab_cli_tokens && GLAB_HOSTS.contains_key(host))
-}
-
 // ── gitlab_tokens.toml ─────────────────────────────────────────────
 
 static MISE_GITLAB_TOKENS: Lazy<HashMap<String, String>> = Lazy::new(|| {
