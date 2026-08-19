@@ -144,7 +144,12 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
-    timeout-minutes: 60
+    # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
+    # link this job now does is the long pole and its cost varies a lot with
+    # available memory — locally the same relink took ~20 minutes with RAM to spare
+    # and ~180 minutes when it did not. If this proves too tight on a runner,
+    # thin LTO for Windows is the fallback.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
