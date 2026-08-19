@@ -254,7 +254,7 @@ jobs:
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
           MISE_DISABLE_TOOLS: "1"
           MISE_AUTO_INSTALL: "false"
-        run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_macos_slow
       - name: Run canonical formula lifecycle oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
@@ -265,7 +265,7 @@ jobs:
           MISE_BREW_LIFECYCLE_TEST_PREFIX: /opt/homebrew
           MISE_DISABLE_TOOLS: "1"
           MISE_AUTO_INSTALL: "false"
-        run: mise run test:e2e e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow
+        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow
       - name: Verify oracle completion records
         if: always()
         env:
@@ -365,7 +365,7 @@ jobs:
             MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
             MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
             MISE_E2E_DOCKER=1 \
-            mise run test:e2e e2e/cli/test_system_install_brew_linux
+            mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_linux
       - name: Run source-build formula oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
@@ -391,7 +391,7 @@ jobs:
             MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
             MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
             MISE_E2E_DOCKER=1 \
-            mise run test:e2e e2e/cli/test_system_install_brew_source_slow
+            mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
       - name: Verify oracle completion record
         if: always()
         env:
