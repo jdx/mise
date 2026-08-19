@@ -775,16 +775,15 @@ fn extraction_suffix_len(name: &str) -> Option<usize> {
     if format == ExtractionFormat::Raw {
         return None;
     }
-    if let Some(idx) = name.rfind(".tar.") {
-        let ext = &name[idx + 1..];
-        if ExtractionFormat::from_ext(ext) == Some(format) {
-            return Some(name.len() - idx);
-        }
+    if let Some(idx) = name.rfind(".tar.")
+        && ExtractionFormat::from_ext(&name[idx + 1..]) == Some(format)
+    {
+        return Some(name.len() - idx);
     }
-    if let Some((_, ext)) = name.rsplit_once('.') {
-        if ExtractionFormat::from_ext(ext) == Some(format) {
-            return Some(ext.len() + 1);
-        }
+    if let Some((_, ext)) = name.rsplit_once('.')
+        && ExtractionFormat::from_ext(ext) == Some(format)
+    {
+        return Some(ext.len() + 1);
     }
     None
 }
