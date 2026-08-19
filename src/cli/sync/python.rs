@@ -11,7 +11,7 @@ use super::reconcile;
 ///
 /// For example, use this to import all pyenv installs into mise
 ///
-/// This won't overwrite any existing installs but will overwrite any existing symlinks
+/// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncPython {
@@ -26,11 +26,25 @@ pub struct SyncPython {
 
 impl SyncPython {
     pub async fn run(self) -> Result<()> {
+        let python = backend::get(&"python".into()).unwrap();
+        let mut providers = vec![];
         if self.pyenv {
-            self.pyenv().await?;
+            providers.push(self.pyenv_links()?);
         }
         if self.uv {
-            self.uv().await?;
+            providers.push(self.uv_links()?);
+        }
+        let mut changed = reconcile::reconcile_all(python.ba(), providers)?.into_iter();
+        if self.pyenv {
+            for v in changed.next().unwrap_or_default() {
+                miseprintln!("Synced python@{} from pyenv", v);
+            }
+        }
+        if self.uv {
+            for v in changed.next().unwrap_or_default() {
+                miseprintln!("Synced python@{v} from uv to mise");
+            }
+            self.mise_to_uv()?;
         }
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
@@ -44,9 +58,7 @@ impl SyncPython {
         Ok(())
     }
 
-    async fn pyenv(&self) -> Result<()> {
-        let python = backend::get(&"python".into()).unwrap();
-
+    fn pyenv_links(&self) -> Result<reconcile::ProviderLinks> {
         let pyenv_versions_path = PYENV_ROOT.join("versions");
 
         let subdirs = file::dir_subdirs(&pyenv_versions_path)?;
@@ -57,17 +69,12 @@ impl SyncPython {
             }
             links.push((v.clone(), pyenv_versions_path.join(&v)));
         }
-        let ownership = reconcile::LinkOwnership::resolved(&pyenv_versions_path);
-        for v in reconcile::reconcile(python.ba(), ownership, links)? {
-            miseprintln!("Synced python@{} from pyenv", v);
-        }
-        Ok(())
+        let ownership = reconcile::LinkOwnership::in_namespace(&pyenv_versions_path);
+        Ok(reconcile::ProviderLinks::new(ownership, links))
     }
 
-    async fn uv(&self) -> Result<()> {
-        let python = backend::get(&"python".into()).unwrap();
+    fn uv_links(&self) -> Result<reconcile::ProviderLinks> {
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
-        let installed_python_versions_path = dirs::INSTALLS.join("python");
 
         let subdirs = file::dir_subdirs(uv_versions_path)?;
         let mut links = vec![];
@@ -82,11 +89,13 @@ impl SyncPython {
             };
             links.push((v.to_string(), uv_versions_path.join(&name)));
         }
-        let ownership = reconcile::LinkOwnership::resolved(uv_versions_path);
-        for v in reconcile::reconcile(python.ba(), ownership, links)? {
-            miseprintln!("Synced python@{v} from uv to mise");
-        }
+        let ownership = reconcile::LinkOwnership::in_namespace(uv_versions_path);
+        Ok(reconcile::ProviderLinks::new(ownership, links))
+    }
 
+    fn mise_to_uv(&self) -> Result<()> {
+        let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
+        let installed_python_versions_path = dirs::INSTALLS.join("python");
         let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
         for v in sorted(subdirs) {
             if v.starts_with(".") {

@@ -36,3 +36,12 @@ mise sync node --nvm
 assert "test ! -e \"$MISE_DATA_DIR/installs/node/18.0.0\" && test ! -L \"$MISE_DATA_DIR/installs/node/18.0.0\""
 assert "test -d \"$MISE_DATA_DIR/installs/node/20.0.0\""
 assert_contains "readlink \"$MISE_DATA_DIR/installs/node/21.0.0\"" "other-provider/21.0.0"
+
+# A stale link from a later selected provider must not block an earlier
+# provider's desired version and then disappear during the later cleanup.
+export NODENV_ROOT="$PWD/.nodenv"
+install_fake_node "$NVM_DIR/versions/node/v23.0.0"
+mkdir -p "$NODENV_ROOT/versions"
+ln -s "$NODENV_ROOT/versions/23.0.0" "$MISE_DATA_DIR/installs/node/23.0.0"
+mise sync node --nvm --nodenv
+assert_contains "readlink \"$MISE_DATA_DIR/installs/node/23.0.0\"" ".nvm/versions/node/v23.0.0"

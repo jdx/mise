@@ -8,36 +8,34 @@ use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::install_state;
 
-pub(super) struct LinkOwnership<'a> {
-    direct_root: Option<&'a Path>,
-    resolved_root: Option<&'a Path>,
+pub(super) struct LinkOwnership {
+    root: PathBuf,
 }
 
-impl<'a> LinkOwnership<'a> {
-    pub(super) fn resolved(root: &'a Path) -> Self {
+impl LinkOwnership {
+    /// Own links whose immediate target is under the provider namespace.
+    ///
+    /// This intentionally includes dangling terminal entries and does not
+    /// resolve a provider entry that itself redirects elsewhere.
+    pub(super) fn in_namespace(root: &Path) -> Self {
         Self {
-            direct_root: None,
-            resolved_root: Some(root),
-        }
-    }
-
-    pub(super) fn direct(root: &'a Path) -> Self {
-        Self {
-            direct_root: Some(root),
-            resolved_root: None,
+            root: root.to_path_buf(),
         }
     }
 
     fn owns(&self, link: &Path) -> Result<bool> {
-        if let Some(root) = self.direct_root
-            && file::is_symlink_target_within(link, root)?
-        {
-            return Ok(true);
-        }
-        match self.resolved_root {
-            Some(root) => file::is_symlink_target_within(link, root),
-            None => Ok(false),
-        }
+        file::is_symlink_target_within(link, &self.root)
+    }
+}
+
+pub(super) struct ProviderLinks {
+    ownership: LinkOwnership,
+    links: Vec<(String, PathBuf)>,
+}
+
+impl ProviderLinks {
+    pub(super) fn new(ownership: LinkOwnership, links: Vec<(String, PathBuf)>) -> Self {
+        Self { ownership, links }
     }
 }
 
@@ -52,14 +50,35 @@ impl<'a> LinkOwnership<'a> {
 /// Returns versions whose links were created or changed.
 pub(super) fn reconcile(
     tool: &BackendArg,
-    ownership: LinkOwnership<'_>,
+    ownership: LinkOwnership,
     links: Vec<(String, PathBuf)>,
 ) -> Result<BTreeSet<String>> {
+    Ok(
+        reconcile_all(tool, vec![ProviderLinks::new(ownership, links)])?
+            .pop()
+            .unwrap_or_default(),
+    )
+}
+
+/// Reconciles multiple selected providers as one operation.
+///
+/// Earlier providers take precedence when multiple sources expose the same
+/// version. Ownership from every selected provider is considered before any
+/// link is removed or replaced, so a stale link from a later provider cannot
+/// block an earlier provider's desired version.
+pub(super) fn reconcile_all(
+    tool: &BackendArg,
+    providers: Vec<ProviderLinks>,
+) -> Result<Vec<BTreeSet<String>>> {
     let mut desired = BTreeMap::new();
-    for (version, target) in links {
-        // Preserve the first source entry for a version, matching the previous
-        // create-if-missing loop when a source exposes duplicates.
-        desired.entry(version).or_insert(target);
+    for (provider_index, provider) in providers.iter().enumerate() {
+        for (version, target) in &provider.links {
+            // Preserve the first source entry for a version, matching the
+            // previous create-if-missing provider precedence.
+            desired
+                .entry(version.clone())
+                .or_insert_with(|| (provider_index, target.clone()));
+        }
     }
     let installs_path = &tool.installs_path;
     let mut versions = desired.keys().cloned().collect::<BTreeSet<_>>();
@@ -68,7 +87,7 @@ pub(super) fn reconcile(
         for entry in installs_path.read_dir()? {
             let path = entry?.path();
             if !is_runtime_symlink(&path)
-                && ownership.owns(&path)?
+                && providers_own(&providers, &path)?
                 && let Some(version) = path.file_name().and_then(|v| v.to_str())
             {
                 versions.insert(version.to_string());
@@ -77,13 +96,13 @@ pub(super) fn reconcile(
     }
 
     file::create_dir_all(installs_path)?;
-    let mut changed = BTreeSet::new();
+    let mut changed = vec![BTreeSet::new(); providers.len()];
     for version in versions {
         let _state_lock = install_state::lock_tool_version(&tool.short, &version)?;
         let link = installs_path.join(&version);
         let runtime_link = is_runtime_symlink(&link);
-        let source_link = !runtime_link && ownership.owns(&link)?;
-        let Some(target) = desired.get(&version) else {
+        let source_link = !runtime_link && providers_own(&providers, &link)?;
+        let Some((provider_index, target)) = desired.get(&version) else {
             if source_link {
                 file::remove_symlink_or_junction(&link)?;
             }
@@ -106,9 +125,18 @@ pub(super) fn reconcile(
         if target.exists() {
             install_state::clear_incomplete_marker(&tool.short, &version)?;
         }
-        changed.insert(version);
+        changed[*provider_index].insert(version);
     }
     Ok(changed)
+}
+
+fn providers_own(providers: &[ProviderLinks], link: &Path) -> Result<bool> {
+    for provider in providers {
+        if provider.ownership.owns(link)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -135,7 +163,7 @@ mod tests {
         let mut tool = BackendArg::from("node");
         tool.installs_path = installs_path.clone();
 
-        reconcile(&tool, LinkOwnership::resolved(&source_root), vec![]).unwrap();
+        reconcile(&tool, LinkOwnership::in_namespace(&source_root), vec![]).unwrap();
 
         assert!(std::fs::symlink_metadata(installs_path.join("1.0.0")).is_err());
         assert!(file::is_symlink_or_junction(&installs_path.join("2.0.0")));
@@ -161,7 +189,7 @@ mod tests {
         tool.installs_path = installs_path.clone();
         std::fs::remove_file(&direct_target).unwrap();
 
-        reconcile(&tool, LinkOwnership::direct(&direct_root), vec![]).unwrap();
+        reconcile(&tool, LinkOwnership::in_namespace(&direct_root), vec![]).unwrap();
 
         assert!(std::fs::symlink_metadata(installs_path.join("22")).is_err());
     }
@@ -181,11 +209,45 @@ mod tests {
         let mut tool = BackendArg::from("node");
         tool.installs_path = installs_path.clone();
 
-        reconcile(&tool, LinkOwnership::direct(&direct_root), vec![]).unwrap();
+        reconcile(&tool, LinkOwnership::in_namespace(&direct_root), vec![]).unwrap();
 
         assert!(file::is_symlink_to(
             &installs_path.join("22"),
             &storage_target
+        ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn later_provider_stale_link_does_not_block_earlier_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let earlier_root = dir.path().join("earlier");
+        let later_root = dir.path().join("later");
+        let installs_path = dir.path().join("installs");
+        let desired_target = earlier_root.join("1.0.0");
+        let stale_target = later_root.join("1.0.0");
+        file::create_dir_all(&desired_target).unwrap();
+        file::create_dir_all(&later_root).unwrap();
+        file::create_dir_all(&installs_path).unwrap();
+        file::make_symlink(&stale_target, &installs_path.join("1.0.0")).unwrap();
+
+        let mut tool = BackendArg::from("node");
+        tool.installs_path = installs_path.clone();
+        let providers = vec![
+            ProviderLinks::new(
+                LinkOwnership::in_namespace(&earlier_root),
+                vec![("1.0.0".to_string(), desired_target.clone())],
+            ),
+            ProviderLinks::new(LinkOwnership::in_namespace(&later_root), vec![]),
+        ];
+
+        let changed = reconcile_all(&tool, providers).unwrap();
+
+        assert_eq!(changed[0], BTreeSet::from(["1.0.0".to_string()]));
+        assert!(changed[1].is_empty());
+        assert!(file::is_symlink_to(
+            &installs_path.join("1.0.0"),
+            &desired_target
         ));
     }
 
@@ -209,7 +271,7 @@ mod tests {
             ready_tx.send(()).unwrap();
             let result = reconcile(
                 &tool,
-                LinkOwnership::resolved(&source_root),
+                LinkOwnership::in_namespace(&source_root),
                 vec![("1.0.0".to_string(), target)],
             );
             done_tx.send(result).unwrap();

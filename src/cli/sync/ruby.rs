@@ -61,7 +61,7 @@ impl SyncRuby {
             let v = entry.trim_start_matches("ruby@");
             links.push((v.to_string(), brew_opt.join(&entry)));
         }
-        let ownership = reconcile::LinkOwnership::direct(&brew_opt);
+        let ownership = reconcile::LinkOwnership::in_namespace(&brew_opt);
         for v in reconcile::reconcile(ruby.ba(), ownership, links)? {
             miseprintln!("Synced ruby@{} from Homebrew", v);
         }

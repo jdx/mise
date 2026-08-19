@@ -22,3 +22,12 @@ assert "mise sync python --uv"
 assert "test ! -f \"$MISE_CACHE_DIR/python/3.11.1/incomplete\""
 assert "mise x python@3.11.1 -- python -V" "Python 3.11.1"
 assert "mise x -- uv run -p 3.11.3 -- python -V" "Python 3.11.3"
+
+# Joint reconciliation lets the earlier pyenv source replace a stale uv-owned
+# link before uv removes it.
+export PYENV_ROOT="$PWD/.pyenv"
+mkdir -p "$PYENV_ROOT/versions/3.11.2"
+ln -s "$test_uv_python_dir/cpython-3.11.2-linux-x86_64-gnu" \
+  "$MISE_DATA_DIR/installs/python/3.11.2"
+assert "mise sync python --pyenv --uv"
+assert_contains "readlink \"$MISE_DATA_DIR/installs/python/3.11.2\"" ".pyenv/versions/3.11.2"
