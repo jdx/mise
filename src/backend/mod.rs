@@ -635,25 +635,8 @@ fn parse_matching_registry_idiomatic_file(
     }
 }
 
-fn executable_names(bin: &str) -> Vec<String> {
-    let mut names = vec![bin.to_string()];
-    if cfg!(target_os = "windows") && Path::new(bin).extension().is_none() {
-        for ext in &Settings::get().windows_executable_extensions {
-            let name = if ext.is_empty() {
-                bin.to_string()
-            } else {
-                format!("{bin}.{ext}")
-            };
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-    }
-    names
-}
-
 fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
-    executable_names(bin)
+    file::executable_names(bin)
         .into_iter()
         .find_map(file::which_non_pristine)
 }
@@ -689,7 +672,7 @@ fn is_spawnable(path: &Path) -> bool {
 ///   searching **past** a candidate it rejects, so `None` means "nothing spawnable
 ///   exists" rather than "the first thing I looked at was not spawnable".
 ///
-/// Directory-major only matters on Windows, where [`executable_names`] yields several
+/// Directory-major only matters on Windows, where [`file::executable_names`] yields several
 /// candidates per directory. It is the order `CreateProcess`+`PATHEXT`, `cmd.exe` and the
 /// `which` crate all use, and the order [`Backend::which`] has always used. It diverges
 /// from [`which_non_pristine_executable`], which is *name-major* — the bare name is tried
@@ -697,13 +680,13 @@ fn is_spawnable(path: &Path) -> bool {
 /// directory-major resolves the case this exists for: mise's own node install ships a
 /// shebang `npm` and an `npm.cmd` side by side in one directory, with no `npm.exe`.
 ///
-/// On unix `executable_names` returns exactly one name, so both orders are the same
+/// On unix `file::executable_names` returns exactly one name, so both orders are the same
 /// traversal and this degenerates to `file::_which` with a different predicate.
 fn which_in_dirs<I>(dirs: I, bin: &str, spawnable: bool) -> Option<PathBuf>
 where
     I: IntoIterator<Item = PathBuf>,
 {
-    let names = executable_names(bin);
+    let names = file::executable_names(bin);
     dirs.into_iter().find_map(|dir| {
         names.iter().map(|name| dir.join(name)).find(|candidate| {
             if spawnable {

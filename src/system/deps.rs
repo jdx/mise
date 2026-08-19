@@ -307,7 +307,7 @@ async fn check_bin(
     name: &str,
     constraint: Option<&VersionConstraint>,
 ) -> (bool, Option<String>, Option<String>) {
-    let Some(path) = crate::file::which(name) else {
+    let Some(path) = crate::file::which_with_extensions(name) else {
         return (false, None, Some(format!("`{name}` not found on PATH")));
     };
     let Some(constraint) = constraint else {
@@ -349,7 +349,7 @@ async fn check_pkgconfig(
     name: &str,
     constraint: Option<&VersionConstraint>,
 ) -> (bool, Option<String>, Option<String>) {
-    if crate::file::which("pkg-config").is_none() {
+    if crate::file::which_with_extensions("pkg-config").is_none() {
         return (
             false,
             None,
@@ -884,9 +884,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_bin_present_and_missing() {
-        // `file::which` does no PATHEXT resolution, so on Windows the name must
-        // carry the `.exe` extension (cmd.exe lives in System32, on PATH on CI).
-        let present = if cfg!(windows) { "cmd.exe" } else { "sh" };
+        // The bare name resolves through configured executable extensions on Windows.
+        let present = if cfg!(windows) { "cmd" } else { "sh" };
         let (ok, _, _) = check_bin(present, None).await;
         assert!(ok);
 
