@@ -59,7 +59,7 @@ struct Cask {
     #[serde(default)]
     old_tokens: Vec<String>,
     version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     auto_updates: bool,
     url: String,
     #[serde(default)]
@@ -8511,6 +8511,14 @@ mod tests {
         assert!(cask.depends_on.formula.is_empty());
         assert!(cask.conflicts_with.cask.is_empty());
         assert!(cask.auto_updates);
+
+        let cask: Cask = serde_json::from_value(serde_json::json!({
+            "token": "example",
+            "version": "1.0.0",
+            "url": "https://example.com/example.zip",
+            "auto_updates": null
+        }))?;
+        assert!(!cask.auto_updates);
         Ok(())
     }
 

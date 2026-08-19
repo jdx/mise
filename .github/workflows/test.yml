@@ -326,7 +326,7 @@ jobs:
         run: |
           export RUSTC_WRAPPER=sccache
           export SCCACHE_DIR="$HOME/.cache/sccache"
-          cargo build --all-features
+          cargo build --all-features --ignore-rust-version
           strip --strip-debug target/debug/mise
       - name: Prepare exact-head oracle environment
         run: |
