@@ -26,6 +26,11 @@ fi
 unset RUNNER_TRACKING_ID
 
 MISE_BREW_ORACLE_DISPOSABLE=1
+export GITHUB_TOKEN=must-not-leak
+if brew_oracle_require_disposable credential-leak /opt/homebrew; then
+  fail "CI credential was accepted by the destructive oracle"
+fi
+unset GITHUB_TOKEN
 brew_oracle_require_disposable valid-marker /opt/homebrew
 brew_oracle_complete test_brew_oracle_guard 2 /opt/homebrew
 brew_oracle_verify_marker \

@@ -157,7 +157,7 @@ brew_oracle_remove_runtime_bridge() {
 
 brew_oracle_require_disposable() {
   local marker_name=$1 expected_prefix=$2
-  local runner_temp result_dir runner_real result_real checkout_sha
+  local runner_temp result_dir runner_real result_real checkout_sha credential_name
 
   if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} != 1 ]]; then
     brew_oracle_fail "MISE_BREW_ORACLE_DISPOSABLE=1 is required"
@@ -236,6 +236,12 @@ brew_oracle_require_disposable() {
     brew_oracle_fail "a non-allowlisted variable leaked through the e2e sanitizer"
     return 1
   fi
+  for credential_name in GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN; do
+    if [[ -n ${!credential_name:-} ]]; then
+      brew_oracle_fail "CI credential leaked into destructive oracle: $credential_name"
+      return 1
+    fi
+  done
 
   BREW_ORACLE_EXPECTED_PREFIX=$expected_prefix
   BREW_ORACLE_MARKER="$result_real/$marker_name.completed"

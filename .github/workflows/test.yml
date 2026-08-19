@@ -182,6 +182,9 @@ jobs:
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 45
     env:
+      GITHUB_TOKEN: ""
+      GH_TOKEN: ""
+      MISE_GITHUB_TOKEN: ""
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
     needs: [classify-changes]
@@ -193,6 +196,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -300,6 +304,9 @@ jobs:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 30
     env:
+      GITHUB_TOKEN: ""
+      GH_TOKEN: ""
+      MISE_GITHUB_TOKEN: ""
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
@@ -311,6 +318,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
