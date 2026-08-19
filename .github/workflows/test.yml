@@ -281,8 +281,8 @@ jobs:
               CARGO_TARGET_DIR: target/msrv
           - name: Run Clippy
             run: |
-              cargo clippy -- -D warnings
-              cargo clippy --all-features --all-targets -- -D warnings
+              cargo clippy --ignore-rust-version -- -D warnings
+              cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
       - run: sccache --show-stats
         if: always()
 
