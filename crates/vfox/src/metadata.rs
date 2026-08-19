@@ -23,6 +23,12 @@ pub struct Metadata {
 /// one of `bin`/`pkgconfig`/`sharedlib`/`command` must be set; `packages` maps
 /// a package-manager name (brew, apt, dnf, pacman, apk) to the package that
 /// provides the capability, used only as a remediation hint.
+///
+/// A hint may list several candidate package names for one manager — the same
+/// capability is packaged under different names across distro releases (e.g.
+/// apt's `libaio1` became `libaio1t64` in the 64-bit time_t transition). The
+/// consumer picks the first candidate that exists, so plugins never have to
+/// probe the host while their metadata loads.
 #[derive(Debug, Clone, Default)]
 pub struct SystemDependency {
     pub bin: Option<String>,
@@ -31,7 +37,20 @@ pub struct SystemDependency {
     pub command: Option<String>,
     pub version: Option<String>,
     pub optional: Option<String>,
-    pub packages: BTreeMap<String, String>,
+    pub packages: BTreeMap<String, Vec<String>>,
+}
+
+/// One manager's package hint: either a single name (`apt = "libaio1"`) or an
+/// ordered list of candidates (`apt = { "libaio1t64", "libaio1" }`).
+struct PackageCandidates(Vec<String>);
+
+impl FromLua for PackageCandidates {
+    fn from_lua(value: Value, lua: &Lua) -> mlua::Result<Self> {
+        match value {
+            Value::Table(_) => Ok(PackageCandidates(Vec::<String>::from_lua(value, lua)?)),
+            other => Ok(PackageCandidates(vec![String::from_lua(other, lua)?])),
+        }
+    }
 }
 
 impl FromLua for SystemDependency {
@@ -55,8 +74,11 @@ impl FromLua for SystemDependency {
             version: table.get("version")?,
             optional: table.get("optional")?,
             packages: table
-                .get::<Option<BTreeMap<String, String>>>("packages")?
-                .unwrap_or_default(),
+                .get::<Option<BTreeMap<String, PackageCandidates>>>("packages")?
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(mgr, candidates)| (mgr, candidates.0))
+                .collect(),
         })
     }
 }
@@ -161,11 +183,8 @@ mod tests {
         let bison = &m.system_dependencies[0];
         assert_eq!(bison.bin.as_deref(), Some("bison"));
         assert_eq!(bison.version.as_deref(), Some(">=3.0"));
-        assert_eq!(
-            bison.packages.get("brew").map(|s| s.as_str()),
-            Some("bison")
-        );
-        assert_eq!(bison.packages.get("apt").map(|s| s.as_str()), Some("bison"));
+        assert_eq!(bison.packages.get("brew"), Some(&vec!["bison".to_string()]));
+        assert_eq!(bison.packages.get("apt"), Some(&vec!["bison".to_string()]));
         assert_eq!(
             m.system_dependencies[1].pkgconfig.as_deref(),
             Some("libxml-2.0")
@@ -178,6 +197,31 @@ mod tests {
             m.system_dependencies[3].optional.as_deref(),
             Some("extra feature")
         );
+    }
+
+    #[test]
+    fn test_system_dependencies_package_candidate_lists() {
+        // The same capability is packaged under different names across distro
+        // releases; a plugin lists candidates instead of probing the host.
+        let m = metadata_from_lua(
+            r#"
+            PLUGIN = {
+                name = "test",
+                version = "1.0.0",
+                systemDependencies = {
+                    { sharedlib = "libaio.so.1",
+                      packages = { apt = { "libaio1t64", "libaio1" }, dnf = "libaio" } },
+                },
+            }
+            "#,
+        );
+        let dep = &m.system_dependencies[0];
+        assert_eq!(
+            dep.packages.get("apt"),
+            Some(&vec!["libaio1t64".to_string(), "libaio1".to_string()])
+        );
+        // a bare string is still valid and means a single candidate
+        assert_eq!(dep.packages.get("dnf"), Some(&vec!["libaio".to_string()]));
     }
 
     #[test]
