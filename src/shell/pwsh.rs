@@ -222,21 +222,29 @@ impl Shell for Pwsh {
                                 # and get its status; this is the same thing spelled for pwsh.
                                 & '{exe}' hook-not-found -s pwsh -- $Name | Out-Null
                                 if ($LASTEXITCODE -eq 0){{
-                                    # `--no-hook-env` omits the `_mise_hook` definition but still
-                                    # emits this block, so the refresh cannot depend on it: an
-                                    # unresolved name inside a CommandNotFoundAction throws out of
-                                    # the handler, and skipping the refresh leaves the tool that was
-                                    # just installed off PATH for the handoff below. fish inlines
-                                    # `hook-env` here for the same reason.
-                                    if (Test-Path -Path Function:\_mise_hook){{
-                                        _mise_hook
-                                    }} else {{
-                                        $status = $global:LASTEXITCODE
-                                        $output = & '{exe}' hook-env{flags} -s pwsh | Out-String
+                                    # Refresh inline rather than through `_mise_hook`:
+                                    # `--no-hook-env` omits that definition while still emitting
+                                    # this block, an unresolved name inside a
+                                    # CommandNotFoundAction throws out of the handler, and
+                                    # skipping the refresh leaves the tool just installed off
+                                    # PATH for the handoff below. fish inlines `hook-env` here
+                                    # for the same reason.
+                                    #
+                                    # The MISE_SHELL check is the one `_mise_hook` carries.
+                                    # `deactivate` unsets the variable but leaves this handler
+                                    # registered, and a CommandNotFoundAction runs in-process:
+                                    # without the gate, a deactivated session would get mise's
+                                    # PATH and `__MISE_SESSION` re-applied for good.
+                                    #
+                                    # `--force` because an install just happened: with
+                                    # `hook_env.cache_ttl` set and an inherited `__MISE_SESSION`,
+                                    # the TTL fast path returns before the check that would
+                                    # notice it, and the handoff below would find nothing.
+                                    if ($env:MISE_SHELL -eq "pwsh"){{
+                                        $output = & '{exe}' hook-env{flags} --force -s pwsh | Out-String
                                         if ($output -and $output.Trim()) {{
                                             $output | Invoke-Expression
                                         }}
-                                        $global:LASTEXITCODE = $status
                                     }}
                                     if (Get-Command $Name -ErrorAction SilentlyContinue){{
                                         $EventArgs.Command = Get-Command $Name
@@ -383,6 +391,18 @@ mod tests {
         );
     }
 
+    /// The text of the command-not-found handler, from the `hook-not-found` call to the
+    /// `$EventArgs` handoff that ends the block.
+    fn command_not_found_branch(script: &str) -> &str {
+        let start = script
+            .find("hook-not-found -s pwsh")
+            .expect("activate should emit a command-not-found handler");
+        let end = script[start..]
+            .find("$EventArgs.StopSearch")
+            .expect("the handler should hand the resolved command back");
+        &script[start..start + end]
+    }
+
     /// `--no-hook-env` drops the `_mise_hook` definition but still emits the
     /// command-not-found block, so that block has to refresh the environment on its own —
     /// otherwise the tool it just installed is not on PATH when the handoff looks for it.
@@ -398,8 +418,41 @@ mod tests {
 
         assert!(!script.contains("function Global:_mise_hook"));
         assert!(script.contains("hook-not-found -s pwsh"));
-        // With the definition gone, the only `hook-env` left in the script is the fallback.
-        assert!(script.contains("hook-env --status -s pwsh"));
+        // With the definition gone, the only `hook-env` left in the script is this refresh.
+        // `--force` so an inherited `__MISE_SESSION` plus `hook_env.cache_ttl` cannot make it
+        // exit early on the one call that follows a fresh install.
+        assert!(script.contains("hook-env --status --force -s pwsh"));
+    }
+
+    /// `deactivate` unsets `MISE_SHELL` but leaves the handler registered, and a
+    /// `CommandNotFoundAction` runs in-process: an ungated refresh would re-apply mise's
+    /// PATH permanently in a session the user had deactivated. `_mise_hook` carries the
+    /// same check, and the refresh must not be reached through it — that indirection is
+    /// what `--no-hook-env` removes.
+    #[test]
+    fn test_activate_command_not_found_refresh_is_gated_on_mise_shell() {
+        for no_hook_env in [false, true] {
+            let opts = ActivateOptions {
+                exe: Path::new("/some/dir/mise").to_path_buf(),
+                flags: " --status".into(),
+                no_hook_env,
+                prelude: vec![],
+            };
+            let script = Pwsh::default().activate(opts);
+            let branch = command_not_found_branch(&script);
+
+            let gate = branch
+                .find(r#"if ($env:MISE_SHELL -eq "pwsh"){"#)
+                .expect("the refresh should be gated on MISE_SHELL");
+            let refresh = branch
+                .find("hook-env --status --force -s pwsh")
+                .expect("the handler should refresh the environment after an install");
+            assert!(gate < refresh, "the gate has to precede what it guards");
+            assert!(
+                !branch.lines().any(|l| l.trim() == "_mise_hook"),
+                "the refresh is inline: routing it through _mise_hook is what --no-hook-env breaks"
+            );
+        }
     }
 
     #[test]

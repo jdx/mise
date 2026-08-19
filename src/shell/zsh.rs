@@ -113,13 +113,21 @@ impl Shell for Zsh {
 
                 function command_not_found_handler() {{
                     if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s zsh -- "$1"; then
-                      # `--no-hook-env` omits the `_mise_hook` definition while this handler is
-                      # still emitted, so refresh inline when it is absent: otherwise "$@" runs
-                      # before the tool that was just installed is on PATH. fish does the same.
-                      if (( $+functions[_mise_hook] )); then
-                        _mise_hook
-                      else
-                        eval "$({exe} hook-env{flags} -s zsh)"
+                      # Refresh inline rather than through `_mise_hook`: `--no-hook-env` omits
+                      # that definition while still emitting this handler, and without a refresh
+                      # "$@" runs before the tool just installed is on PATH. Called with no
+                      # arguments `_mise_hook` is this same eval, so one inline call -- fish's
+                      # shape -- covers both modes and leaves nothing to keep in sync.
+                      #
+                      # MISE_SHELL is the gate `deactivate` turns off: it unsets the variable but
+                      # leaves this handler registered, and a shell the user deactivated must not
+                      # have mise's environment applied back to it.
+                      #
+                      # `--force` because an install just happened: with `hook_env.cache_ttl` set
+                      # and an inherited `__MISE_SESSION`, the TTL fast path returns before the
+                      # check that would notice it, and "$@" would fail exactly as before.
+                      if [ -n "${{MISE_SHELL:-}}" ]; then
+                        eval "$({exe} hook-env{flags} --force -s zsh)"
                       fi
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handler)" ]; then
@@ -212,6 +220,14 @@ mod tests {
         assert_snapshot!(zsh.activate(opts));
     }
 
+    /// The text of `command_not_found_handler`, which `activate` emits last.
+    fn command_not_found_handler(script: &str) -> &str {
+        let start = script
+            .find("function command_not_found_handler()")
+            .expect("activate should emit a command-not-found handler");
+        &script[start..]
+    }
+
     /// `--no-hook-env` drops the `_mise_hook` definition but still emits
     /// `command_not_found_handler`, so the handler has to refresh the environment on its
     /// own — otherwise `"$@"` runs before the tool it just installed is on PATH.
@@ -227,8 +243,52 @@ mod tests {
 
         assert!(!script.contains("_mise_hook() {"));
         assert!(script.contains("hook-not-found -s zsh"));
-        // With the definition gone, the only `hook-env` left in the script is the fallback.
-        assert!(script.contains("hook-env --status -s zsh"));
+        // With the definition gone, the only `hook-env` left in the script is this refresh.
+        // `--force` so an inherited `__MISE_SESSION` plus `hook_env.cache_ttl` cannot make it
+        // exit early on the one call that follows a fresh install.
+        assert!(script.contains("hook-env --status --force -s zsh"));
+    }
+
+    /// `deactivate` unsets `MISE_SHELL` but leaves this handler registered, so an
+    /// ungated refresh would re-apply mise's environment in a shell the user had
+    /// deactivated. It is the same gate `_mise_hook` carries in the other shells.
+    #[test]
+    fn test_activate_command_not_found_refresh_is_gated_on_mise_shell() {
+        for no_hook_env in [false, true] {
+            let opts = ActivateOptions {
+                exe: Path::new("/some/dir/mise").to_path_buf(),
+                flags: " --status".into(),
+                no_hook_env,
+                prelude: vec![],
+            };
+            let script = Zsh::default().activate(opts);
+            let handler = command_not_found_handler(&script);
+
+            let gate = handler
+                .find(r#"if [ -n "${MISE_SHELL:-}" ]; then"#)
+                .expect("the refresh should be gated on MISE_SHELL");
+            let refresh = handler
+                .find("hook-env --status --force -s zsh")
+                .expect("the handler should refresh the environment after an install");
+            assert!(gate < refresh, "the gate has to precede what it guards");
+        }
+    }
+
+    /// Referencing a `zsh/parameter` special autoloads the module via dlopen, which can
+    /// deadlock under Rosetta in login shells (jdx/mise#11187). `_mise_hook_env_state` was
+    /// rewritten to avoid exactly that; the handler must not reintroduce it, and under
+    /// `--no-hook-env` nothing else in the script would have loaded the module first.
+    #[test]
+    fn test_activate_command_not_found_avoids_zsh_parameter_module() {
+        let opts = ActivateOptions {
+            exe: Path::new("/some/dir/mise").to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: true,
+            prelude: vec![],
+        };
+        let script = Zsh::default().activate(opts);
+
+        assert!(!command_not_found_handler(&script).contains("$+functions"));
     }
 
     #[test]

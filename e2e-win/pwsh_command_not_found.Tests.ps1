@@ -40,38 +40,39 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
     }
 
     It 'refreshes the environment itself when --no-hook-env leaves _mise_hook undefined' {
-        # Now that the branch can actually be taken, what it calls has to exist. `--no-hook-env`
-        # suppresses the `_mise_hook` definition while still emitting this block.
+        # `--no-hook-env` suppresses the `_mise_hook` definition while still emitting this block,
+        # so the refresh has to be spelled out here rather than reached through that function.
         $script = mise activate pwsh --no-hook-env | Out-String
 
         $script | Should -Not -Match 'function Global:_mise_hook'
         $script | Should -Match 'hook-not-found -s pwsh'
 
-        # A `-Not -Match` alone passes on any build that never had the branch, and a positive match
-        # that merely wants `Test-Path` somewhere would accept a guard around nothing. Pin the whole
-        # shape instead.
-        $guardedCall = 'LASTEXITCODE -eq 0\)\{[^}]*if \(Test-Path -Path Function:\\_mise_hook\)\{\s*_mise_hook\s*\}'
-        $script | Should -Match $guardedCall
-
-        # Then require it to be the only call in the branch: a second one, added later and left
-        # unguarded, would still satisfy the shape above.
         $branch = [regex]::Match($script, '(?s)hook-not-found -s pwsh.*?StopSearch = \$true').Value
         $branch | Should -Not -BeNullOrEmpty
-        $calls = [regex]::Matches($branch, '(?m)^\s*_mise_hook\s*$').Count
-        $calls | Should -Be 1 -Because 'the guarded one is the only call the branch may make'
 
-        # Not throwing is only half of it: skipping the refresh leaves the tool that was just
-        # installed off PATH, so the handoff finds nothing. The branch has to refresh on its own.
-        $fallback = 'Function:\\_mise_hook\)\{\s*_mise_hook\s*\} else \{'
-        $script | Should -Match $fallback
-        # With the definition suppressed, the only `hook-env` left in the script is that fallback.
-        $script | Should -Match 'hook-env.*-s pwsh'
+        # Nothing in the branch may call `_mise_hook`: an unresolved name inside a
+        # CommandNotFoundAction throws out of the handler, taking the $EventArgs handoff with it.
+        $calls = [regex]::Matches($branch, '(?m)^\s*_mise_hook\s*$').Count
+        $calls | Should -Be 0 -Because 'the refresh is inline, which is what makes it work under the flag'
+
+        # The refresh itself, gated the way `_mise_hook` gates its own body: `deactivate` unsets
+        # MISE_SHELL but leaves this handler registered, and a CommandNotFoundAction runs
+        # in-process, so an ungated refresh would re-apply mise's PATH there for good.
+        $refresh = '(?s)if \(\$env:MISE_SHELL -eq "pwsh"\)\{.*?hook-env[^\r\n]*--force -s pwsh'
+        $branch | Should -Match $refresh
+
+        # And it has to be the only one. The comment here used to promise uniqueness while the
+        # assertion under it checked mere existence, which a stray unguarded call would satisfy.
+        $hookEnvCalls = [regex]::Matches($script, 'hook-env[^\r\n]*-s pwsh').Count
+        $hookEnvCalls | Should -Be 1 -Because 'with the definition suppressed, this is the only hook-env in the script'
     }
 
     It 'because an unresolved name inside the handler throws instead of continuing' {
-        # A plain script block carries on past a command it cannot resolve, so the guard only looks
-        # unnecessary until it is run where mise actually runs it: inside a CommandNotFoundAction,
-        # where the same call aborts the handler and takes the $EventArgs handoff with it.
+        # Why the branch inlines `hook-env` instead of calling `_mise_hook`. A plain script block
+        # carries on past a command it cannot resolve, so the difference only shows up where mise
+        # actually runs this: inside a CommandNotFoundAction, where the call to a function
+        # `--no-hook-env` never defined aborts the handler and takes the $EventArgs handoff with
+        # it. `Guarded` here stands for any shape that does not make that call.
         function Invoke-MiseHandoffProbe {
             param([bool] $Guarded)
 
