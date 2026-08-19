@@ -14,6 +14,8 @@ const STORAGE_KEY = "jdx-banner-dismissed";
 // Cached by the inline head script (config.ts) to reserve the banner's
 // space before first paint so the header doesn't jump when it arrives.
 const CACHE_KEY = "jdx-banner-cache";
+let activeBanner:
+  { element: HTMLElement; observer: ResizeObserver | null } | undefined;
 
 function getDismissedId(): string | null {
   try {
@@ -25,6 +27,9 @@ function getDismissedId(): string | null {
 
 export function initBanner(): void {
   if (typeof window === "undefined") return;
+  const cachedBanner = readCachedBanner();
+  if (cachedBanner) render(cachedBanner, false);
+
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 5000);
   fetch(ENDPOINT, { signal: controller.signal })
@@ -39,13 +44,40 @@ export function initBanner(): void {
         isExpired(b.expires) ||
         getDismissedId() === b.id
       ) {
+        removeActiveBanner();
         clearReserved();
         return;
       }
       render(b);
     })
-    .catch(clearCachedReservation)
+    .catch(() => {
+      clearCachedReservation();
+      if (!activeBanner) clearCurrentReservation();
+    })
     .finally(() => window.clearTimeout(timeout));
+}
+
+function readCachedBanner(): BannerData | null {
+  if (
+    !document.documentElement.style.getPropertyValue("--vp-layout-top-height")
+  ) {
+    return null;
+  }
+  try {
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null");
+    const b = cached?.banner;
+    return b &&
+      typeof b.id === "string" &&
+      typeof b.enabled === "boolean" &&
+      typeof b.message === "string" &&
+      (!b.link || typeof b.link === "string") &&
+      (!b.linkText || typeof b.linkText === "string") &&
+      (!b.expires || typeof b.expires === "string")
+      ? b
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function clearCachedReservation(): void {
@@ -81,7 +113,14 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function render(b: BannerData): void {
+function removeActiveBanner(): void {
+  activeBanner?.observer?.disconnect();
+  activeBanner?.element.remove();
+  activeBanner = undefined;
+}
+
+function render(b: BannerData, persist = true): void {
+  removeActiveBanner();
   const el = document.createElement("div");
   el.className = "jdx-banner";
   el.setAttribute("role", "region");
@@ -106,6 +145,7 @@ function render(b: BannerData): void {
       `${el.offsetHeight}px`,
     );
     try {
+      if (!persist) return;
       localStorage.setItem(
         CACHE_KEY,
         JSON.stringify({
@@ -116,6 +156,7 @@ function render(b: BannerData): void {
           pixelRatio: window.devicePixelRatio,
           cachedAt: Date.now(),
           expires: b.expires ?? null,
+          banner: b,
         }),
       );
     } catch {
@@ -138,13 +179,13 @@ function render(b: BannerData): void {
     } catch {
       // Dismiss for this page even when localStorage is unavailable.
     }
-    observer?.disconnect();
-    el.remove();
+    removeActiveBanner();
     clearReserved();
   });
   el.appendChild(btn);
 
   document.body.prepend(el);
+  activeBanner = { element: el, observer };
 
   requestAnimationFrame(syncHeight);
   observer?.observe(el);
