@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::context::Context;
 use crate::embedded_plugins::{self, EmbeddedPlugin};
 use crate::error::Result;
+use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
@@ -151,6 +152,26 @@ impl Plugin {
         Ok(())
     }
 
+    /// Register the default HTTP headers resolver used by artifact downloads
+    /// and the Lua HTTP module.
+    pub(crate) fn set_http_headers_resolver(&self, resolver: HttpHeadersResolver) -> Result<()> {
+        let func = self.lua.create_function(move |lua, value: String| {
+            let table = lua.create_table()?;
+            let Ok(url) = Url::parse(&value) else {
+                return Ok(table);
+            };
+            for (name, value) in resolver(&url).iter() {
+                if let Ok(value) = value.to_str() {
+                    table.set(name.as_str(), value)?;
+                }
+            }
+            Ok(table)
+        })?;
+        self.lua
+            .set_named_registry_value(crate::http::HTTP_HEADERS_RESOLVER_REGISTRY_KEY, func)?;
+        Ok(())
+    }
+
     pub fn list() -> Result<Vec<String>> {
         let config = Config::get();
         if !config.plugin_dir.exists() {
@@ -186,10 +207,15 @@ impl Plugin {
         Self::from_dir(&dir).unwrap()
     }
 
-    pub(crate) fn context(&self, version: Option<String>) -> Result<Context> {
+    pub(crate) fn context(
+        &self,
+        version: Option<String>,
+        options: indexmap::IndexMap<String, toml::Value>,
+    ) -> Result<Context> {
         let ctx = Context {
             args: vec![],
             version,
+            options,
             // version: "1.0.0".to_string(),
             // runtime_version: "xxx".to_string(),
         };

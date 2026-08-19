@@ -521,13 +521,14 @@ parsed — so only information available at OS level can be used.
 <div v-pre>
 
 ```toml
-# ~/.config/mise/miserc.toml
+# /workspaces/vcs/.config/miserc.toml
 
 # Use $HOME to set a ceiling path (stops config search at home directory)
 ceiling_paths = ["{{ env.HOME }}"]
 
-# Ignore a config path relative to home
-ignored_config_paths = ["{{ env.HOME }}/shared"]
+# Paths are relative to the directory containing this miserc file.
+# Recursive glob patterns are supported.
+ignored_config_paths = ["../vendor/**/mise.toml"]
 ```
 
 </div>

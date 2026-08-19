@@ -144,7 +144,12 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
-    timeout-minutes: 60
+    # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
+    # link this job now does is the long pole and its cost varies a lot with
+    # available memory — locally the same relink took ~20 minutes with RAM to spare
+    # and ~180 minutes when it did not. If this proves too tight on a runner,
+    # thin LTO for Windows is the fallback.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -212,7 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:343bdfdb61811f19dffcfe7d32c4124b38373ab5741cc7db4f0b16f09eea19a4
+    container: ghcr.io/jdx/mise:rpm@sha256:50e4032ca8bd5d2a5fbd911409f88fa2a9ca59767f2c09103598a59da1ffcc1c
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -236,7 +241,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:ac993ba57b85945957a6405fc15668db4286367f2b9361664d2817e3c407a1f9
+    container: ghcr.io/jdx/mise:deb@sha256:bf1cd854cde9a3c97c274c86a8fb164ea90811892999fe7a50ee42dcd54f2de8
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -39,32 +39,40 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         $viaCode | Should -Be 'false' -Because 'the new form is right in both directions'
     }
 
-    It 'guards _mise_hook, which --no-hook-env leaves undefined' {
-        # Now that the branch can actually be taken, what it calls has to exist. `--no-hook-env`
-        # suppresses the `_mise_hook` definition while still emitting this block.
+    It 'refreshes the environment itself when --no-hook-env leaves _mise_hook undefined' {
+        # `--no-hook-env` suppresses the `_mise_hook` definition while still emitting this block,
+        # so the refresh has to be spelled out here rather than reached through that function.
         $script = mise activate pwsh --no-hook-env | Out-String
 
         $script | Should -Not -Match 'function Global:_mise_hook'
         $script | Should -Match 'hook-not-found -s pwsh'
 
-        # A `-Not -Match` alone passes on any build that never had the branch, and a positive match
-        # that merely wants `Test-Path` somewhere would accept a guard around nothing. Pin the whole
-        # shape instead.
-        $guardedCall = 'LASTEXITCODE -eq 0\)\{[^}]*if \(Test-Path -Path Function:\\_mise_hook\)\{\s*_mise_hook\s*\}'
-        $script | Should -Match $guardedCall
-
-        # Then require it to be the only call in the branch: a second one, added later and left
-        # unguarded, would still satisfy the shape above.
         $branch = [regex]::Match($script, '(?s)hook-not-found -s pwsh.*?StopSearch = \$true').Value
         $branch | Should -Not -BeNullOrEmpty
+
+        # Nothing in the branch may call `_mise_hook`: an unresolved name inside a
+        # CommandNotFoundAction throws out of the handler, taking the $EventArgs handoff with it.
         $calls = [regex]::Matches($branch, '(?m)^\s*_mise_hook\s*$').Count
-        $calls | Should -Be 1 -Because 'the guarded one is the only call the branch may make'
+        $calls | Should -Be 0 -Because 'the refresh is inline, which is what makes it work under the flag'
+
+        # The refresh itself, gated the way `_mise_hook` gates its own body: `deactivate` unsets
+        # MISE_SHELL but leaves this handler registered, and a CommandNotFoundAction runs
+        # in-process, so an ungated refresh would re-apply mise's PATH there for good.
+        $refresh = '(?s)if \(\$env:MISE_SHELL -eq "pwsh"\)\{.*?hook-env[^\r\n]*--force -s pwsh'
+        $branch | Should -Match $refresh
+
+        # And it has to be the only one. The comment here used to promise uniqueness while the
+        # assertion under it checked mere existence, which a stray unguarded call would satisfy.
+        $hookEnvCalls = [regex]::Matches($script, 'hook-env[^\r\n]*-s pwsh').Count
+        $hookEnvCalls | Should -Be 1 -Because 'with the definition suppressed, this is the only hook-env in the script'
     }
 
     It 'because an unresolved name inside the handler throws instead of continuing' {
-        # A plain script block carries on past a command it cannot resolve, so the guard only looks
-        # unnecessary until it is run where mise actually runs it: inside a CommandNotFoundAction,
-        # where the same call aborts the handler and takes the $EventArgs handoff with it.
+        # Why the branch inlines `hook-env` instead of calling `_mise_hook`. A plain script block
+        # carries on past a command it cannot resolve, so the difference only shows up where mise
+        # actually runs this: inside a CommandNotFoundAction, where the call to a function
+        # `--no-hook-env` never defined aborts the handler and takes the $EventArgs handoff with
+        # it. `Guarded` here stands for any shape that does not make that call.
         function Invoke-MiseHandoffProbe {
             param([bool] $Guarded)
 
@@ -109,7 +117,7 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         # Reached false too, and the probe would look like it had demonstrated the abort.
         $unguarded.Entered | Should -BeTrue -Because 'the handler has to run for the rest to mean anything'
         $unguarded.Reached | Should -BeFalse -Because 'the handoff never runs when the hook is undefined'
-        # The surfaced error names the command the user typed, not the hook that went missing —
+        # The surfaced error names the command the user typed, not the hook that went missing,
         # so there is nothing in the message to match on, only the type.
         $unguarded.Error.Exception | Should -BeOfType ([System.Management.Automation.CommandNotFoundException])
 
@@ -117,5 +125,40 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         $guarded.Entered | Should -BeTrue
         $guarded.Reached | Should -BeTrue -Because 'guarding the call lets the installed command be handed back'
         $guarded.Error | Should -BeNullOrEmpty -Because 'the handoff ran, so nothing propagated out'
+    }
+}
+
+Describe 'the pwsh command-not-found hook leaves mise its own names' {
+    It 'skips them before spending a hook-not-found call' {
+        $script = mise activate pwsh | Out-String
+
+        $guard = $script.IndexOf("if (`$Name -eq 'mise' -or `$Name -like 'mise-*') { return }")
+        ($guard -ge 0) | Should -BeTrue -Because 'bash, zsh and fish all skip mise''s own names'
+
+        # Position matters, not just presence: past the guard the handler pays a full mise
+        # startup only to be told that `mise-foo` is not a tool.
+        $call = $script.IndexOf('hook-not-found -s pwsh')
+        ($guard -lt $call) | Should -BeTrue -Because 'the guard exists to avoid that call'
+    }
+
+    It 'skips exactly mise and mise-*, and nothing that merely contains it' {
+        # Evaluate the condition the script actually ships rather than a copy of it, so a
+        # rewrite to `-like ''mise*''` or `-match ''mise''` fails here instead of silently
+        # swallowing somebody else''s tool.
+        $script = mise activate pwsh | Out-String
+        $pattern = '(?m)^\s*if \((\$Name -eq .+?)\) \{ return \}'
+        $condition = [regex]::Match($script, $pattern).Groups[1].Value
+        $condition | Should -Not -BeNullOrEmpty
+
+        $skips = [scriptblock]::Create("param(`$Name) $condition")
+
+        # mise's own names, in the casing Windows lets you type them in
+        foreach ($name in 'mise', 'MISE', 'mise-foo', 'MISE-FOO') {
+            (& $skips $name) | Should -BeTrue -Because "$name is mise, not a tool"
+        }
+        # and names that only look like it
+        foreach ($name in 'premise', 'mise2', 'misexyz', 'my-mise-tool') {
+            (& $skips $name) | Should -BeFalse -Because "$name is somebody else's tool"
+        }
     }
 }

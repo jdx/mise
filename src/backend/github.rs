@@ -1170,9 +1170,9 @@ impl UnifiedGitBackend {
             asset.url_api.clone()
         };
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&download_url)
+            gitlab::get_headers(&download_url, &api_url)
         } else if self.is_forgejo() {
-            forgejo::get_headers(&download_url)
+            forgejo::get_headers(&download_url, &api_url)
         } else {
             github::get_headers(&download_url)?
         };
@@ -1413,9 +1413,9 @@ impl UnifiedGitBackend {
         };
 
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&url)
+            gitlab::get_headers(&url, &opts.api_url())
         } else if self.is_forgejo() {
-            forgejo::get_headers(&url)
+            forgejo::get_headers(&url, &opts.api_url())
         } else {
             github::get_headers(&url)?
         };
@@ -1520,9 +1520,9 @@ impl UnifiedGitBackend {
             asset.url_api.clone()
         };
         let headers = if self.is_gitlab() {
-            gitlab::get_headers(&url)
+            gitlab::get_headers(&url, &opts.api_url())
         } else if self.is_forgejo() {
-            forgejo::get_headers(&url)
+            forgejo::get_headers(&url, &opts.api_url())
         } else {
             github::get_headers(&url)?
         };

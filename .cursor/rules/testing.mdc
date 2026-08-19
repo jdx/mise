@@ -13,4 +13,8 @@ Testing and linting commands should be run via `mise run`.
 - `mise --cd crates/vfox run lint` runs the linting commands for the vfox crate
 - `mise --cd crates/vfox run lint-fix` runs the linting commands and fixes the issues for the vfox crate
 
+Never execute e2e scripts directly. Slow tests (`*_slow`) are skipped unless `TEST_ALL=1`.
+
+For GitHub API rate limits during e2e, set `MISE_GITHUB_TOKEN` (or `GITHUB_TOKEN`). Cloud Agents can use `export MISE_GITHUB_TOKEN="$(gh auth token)"` when those are unset.
+
 Other tasks can be found by running `mise task ls`

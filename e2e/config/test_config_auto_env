@@ -21,9 +21,15 @@ env.UNIX_LOADED = "1"' >mise.unix.toml
 echo "env.AAA = \"$os\"" >"mise.$os.toml"
 echo "env.AAA = \"$os-$arch\"" >"mise.$os-$arch.toml"
 echo 'env.AAA = "prod"' >mise.prod.toml
+mkdir -p .mise/conf.d
+echo 'env.CONF_D_AUTO = "base"' >.mise/conf.d/00-base.toml
+echo 'env.CONF_D_AUTO = "unix"' >.mise/conf.d/10-platform.unix.toml
+echo "env.CONF_D_AUTO = \"$os\"" >".mise/conf.d/20-platform.$os.toml"
+echo "env.CONF_D_AUTO = \"$os-$arch\"" >".mise/conf.d/30-platform.$os-$arch.toml"
 
 # default: off, platform configs are not loaded
 assert "mise env --json | jq -r .AAA" "base"
+assert "mise env --json | jq -r .CONF_D_AUTO" "base"
 
 # the rollout warning never fires once the user has set auto_env explicitly,
 # regardless of the phase the current version is in (the version-gated unset
@@ -35,6 +41,7 @@ assert_not_contains "MISE_AUTO_ENV=true mise env 2>&1" "load automatically"
 MISE_AUTO_ENV=true assert "mise env --json | jq -r .AAA" "$os-$arch"
 MISE_AUTO_ENV=true assert "mise env --json | jq -r .UNIX_LOADED" "1"
 MISE_AUTO_ENV=true assert "mise env --json | jq -r .BBB" "base"
+MISE_AUTO_ENV=true assert "mise env --json | jq -r .CONF_D_AUTO" "$os-$arch"
 
 # explicit MISE_ENV entries take precedence over auto platform envs
 MISE_AUTO_ENV=true MISE_ENV=prod assert "mise env --json | jq -r .AAA" "prod"
@@ -66,6 +73,10 @@ rm -f .miserc.toml
 # global config dir platform configs load too
 mkdir -p "$MISE_CONFIG_DIR"
 echo "env.GLOBAL_AUTO = \"$os\"" >"$MISE_CONFIG_DIR/config.$os.toml"
+mkdir -p "$MISE_CONFIG_DIR/conf.d"
+echo "env.GLOBAL_CONF_D_AUTO = \"$os\"" >"$MISE_CONFIG_DIR/conf.d/10-platform.$os.toml"
 MISE_AUTO_ENV=true assert "mise env --json | jq -r .GLOBAL_AUTO" "$os"
+MISE_AUTO_ENV=true assert "mise env --json | jq -r .GLOBAL_CONF_D_AUTO" "$os"
 assert "mise env --json | jq -r .GLOBAL_AUTO" "null"
+assert "mise env --json | jq -r .GLOBAL_CONF_D_AUTO" "null"
 rm -f "$MISE_CONFIG_DIR/config.$os.toml"

@@ -133,13 +133,13 @@ scenarios:
 # Run all E2E tests
 mise run test:e2e
 
-# Run specific E2E test
-./e2e/run_test test_name
+# Run specific E2E tests (preferred; always use this mise task)
+mise run test:e2e e2e/cli/test_version
 
-# Run E2E tests matching pattern
-./e2e/run_test task  # runs tests matching *task*
+# Run E2E tests under a feature directory
+mise run test:e2e e2e/tasks
 
-# Run all tests including slow ones
+# Run all tests including slow ones (`*_slow`)
 TEST_ALL=1 mise run test:e2e
 ```
 
@@ -162,6 +162,8 @@ TEST_ALL=1 mise run test:e2e
 - **Fast tests** (`test_*`): Run in normal test suites
 - **Slow tests** (`test_*_slow`): Only run when `TEST_ALL=1` is set
 - **Isolated environment**: Each test runs in a clean, isolated environment
+
+Do not execute files under `e2e/` directly; `mise run test:e2e` is the supported entry point (it depends on `build` and uses `e2e/run_all_tests`). Set `MISE_GITHUB_TOKEN` (or `GITHUB_TOKEN`) to avoid GitHub API rate limits.
 
 ### Coverage Tests
 
@@ -387,7 +389,7 @@ Use `mise tasks` to see all available development tasks:
 - `mise run test:unit` - Run unit tests only
 - `mise run test:e2e` - Run E2E tests only
 - `mise run lint` - Run linting
-- `mise run lint:fix` - Run linting with fixes
+- `mise run lint-fix` - Run linting with fixes
 - `mise run format` - Format code
 - `mise run clean` - Clean build artifacts
 - `mise run snapshots` - Update test snapshots
@@ -442,23 +444,20 @@ hk check --step shellcheck
 
 ### Using hk in Development
 
+`hk.pkl` currently defines `check` and `fix` steps only (no git `pre-commit` hook).
+`hk install --mise` may report that nothing is installed; that is expected. Use
+the mise tasks:
+
 ```bash
-# Run linting (used in CI and pre-commit)
+# Run linting (used in CI)
 mise run lint  # This runs hk check --all
 
 # Run linting with fixes
-hk fix --all
+mise run lint-fix
 
 # Check specific file types
 hk check --step prettier
 hk check --step shellcheck
-```
-
-### Setting Up Pre-commit Hooks
-
-```bash
-# Set up git hooks to run hk on pre-commit
-hk install --mise
 ```
 
 ### Running Checks Manually
@@ -503,7 +502,7 @@ Releases are cut automatically by the `release-plz` GitHub Actions workflow
 ## Linting
 
 - Lint codebase: `mise run lint`
-- Lint and fix codebase: `mise run lint:fix`
+- Lint and fix codebase: `mise run lint-fix`
 
 ## Generating readme and shell completion files
 
@@ -572,9 +571,12 @@ Common scopes used in mise:
 
 - `cli` - Command line interface changes
 - `config` - Configuration system changes
-- `parser` - Parsing logic changes
+- `task` - Task runner changes (use `task`, not `run`)
+- `backend` - Tool backend changes
+- `ci` - CI / Cloud Agent / infrastructure
 - `deps` - Dependency updates
 - `security` - Security-related changes
+- `registry` - Registry entries (usually used as the **type**, not a scope)
 
 ### Breaking Changes
 

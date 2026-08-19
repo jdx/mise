@@ -91,12 +91,12 @@ fn source_for_target(
     target: &std::path::Path,
     raw: &str,
 ) -> Result<Option<PathBuf>> {
-    for req in system::files::files_from_config(config) {
+    for req in system::files::files_from_config(config)? {
         if system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()]) {
             return Ok(Some(req.source));
         }
     }
-    let matching_edits = system::edits::edits_from_config(config)
+    let matching_edits = system::edits::edits_from_config(config)?
         .into_iter()
         .filter(|req| system::edits::matches_target(req, &[raw.to_string()]))
         .collect::<Vec<_>>();
@@ -143,11 +143,11 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
 async fn apply_target(target: &str) -> Result<()> {
     let config = Config::reset().await?;
     let targets = vec![target.to_string()];
-    let files = system::files::files_from_config(&config)
+    let files = system::files::files_from_config(&config)?
         .into_iter()
         .filter(|req| system::files::matches_target(&req.target, &req.target_raw, &targets))
         .collect::<Vec<_>>();
-    let edits = system::edits::edits_from_config(&config)
+    let edits = system::edits::edits_from_config(&config)?
         .into_iter()
         .filter(|req| system::edits::matches_target(req, &targets))
         .collect::<Vec<_>>();

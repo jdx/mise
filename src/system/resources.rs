@@ -31,6 +31,17 @@ pub struct ResourceOrigin {
     pub source: Option<PathBuf>,
 }
 
+impl ResourceOrigin {
+    /// Formats the declaration and source paths for a sibling-resource conflict.
+    pub fn conflict_description(&self) -> String {
+        let mut description = format!("config: {}", self.config.display());
+        if let Some(source) = &self.source {
+            description.push_str(&format!("\n    source: {}", source.display()));
+        }
+        description
+    }
+}
+
 const ENCODED_PATH_PREFIX: &str = "mise:path-";
 
 fn serialize_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
@@ -648,6 +659,10 @@ fn package_resource_state(
     let unsupported_pin = request.version.is_some() && !supports_version_pins;
     match state {
         PackageState::Installed { version } => {
+            (format!("installed ({version})"), ResourceAction::Noop)
+        }
+        #[cfg(unix)]
+        PackageState::InstalledAutoUpdates { version } => {
             (format!("installed ({version})"), ResourceAction::Noop)
         }
         PackageState::Missing if unsupported_pin => (

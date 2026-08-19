@@ -8,14 +8,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: snapcraft-publish-${{ github.event_name == 'release' && 'release' || github.ref }}
+  # Release events can arrive out of version order, so let the shared gate decide.
+  cancel-in-progress: false
+
 jobs:
-  publish-snapcraft:
+  build-snapcraft:
     strategy:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,9 +30,72 @@ jobs:
           snapcraft-channel: stable
         id: snapbuild
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: snap-${{ matrix.runs-on }}
+          path: ${{ steps.snapbuild.outputs.snap }}
+          retention-days: 1
+
+  check-release:
+    needs: build-snapcraft
+    runs-on: ubuntu-24.04
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - name: Check release is current
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          publish=true
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            latest_tag=""
+            for attempt in 1 2 3; do
+              if latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"; then
+                break
+              fi
+              if [[ "$attempt" == 3 ]]; then
+                echo "::error::Failed to fetch the latest release after $attempt attempts"
+                exit 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+            if [[ "$RELEASE_TAG" != "$latest_tag" ]]; then
+              echo "Skipping stale release $RELEASE_TAG; latest is $latest_tag"
+              publish=false
+            fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  publish-snapcraft:
+    needs: check-release
+    if: needs.check-release.outputs.publish == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        artifact: [snap-ubuntu-24.04, snap-ubuntu-24.04-arm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
+      - name: Find snap package
+        id: snap
+        run: |
+          mapfile -t snaps < <(find dist -maxdepth 1 -type f -name '*.snap')
+          if [[ "${#snaps[@]}" != 1 ]]; then
+            echo "::error::Expected one snap package, found ${#snaps[@]}"
+            exit 1
+          fi
+          echo "path=${snaps[0]}" >> "$GITHUB_OUTPUT"
+
       - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
-          snap: ${{ steps.snapbuild.outputs.snap }}
+          snap: ${{ steps.snap.outputs.path }}
           release: stable

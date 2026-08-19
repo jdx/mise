@@ -77,7 +77,7 @@ impl DotfilesAdd {
             None => system::files::default_mode(),
         };
         let config = Config::get().await?;
-        let managed = system::files::files_from_config(&config);
+        let managed = system::files::files_from_config(&config)?;
         let config_path = resolve_target_config_path(ConfigPathOptions {
             global: self.global || !self.local,
             path: self.path.clone(),
@@ -88,7 +88,7 @@ impl DotfilesAdd {
         })?;
 
         let mut planned = vec![];
-        let managed_edits = system::edits::edits_from_config(&config);
+        let managed_edits = system::edits::edits_from_config(&config)?;
         for target_raw in &self.targets {
             let target = system::files::resolve_target_arg(target_raw)
                 .components()

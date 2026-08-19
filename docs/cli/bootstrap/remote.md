@@ -29,6 +29,14 @@ SSH connection timeout in seconds
 
 **Default:** `10`
 
+### `--copy-link… <PATH>`
+
+Dereference one source-relative symbolic link; repeat for multiple links
+
+### `--copy-links`
+
+Dereference every symbolic link in the source archive
+
 ### `--exclude… <PATTERN>`
 
 Additional archive pattern to exclude; repeat for multiple patterns

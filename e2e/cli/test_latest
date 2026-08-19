@@ -21,8 +21,10 @@ assert "mise latest python@anaconda-2 | grep -E '\\-2(\\.[0-9]+)*$'"
 # Ruby
 # assert shorthand is a N.N.N version
 assert "mise latest ruby | grep -E '^[0-9]+(\\.[0-9]+)*$'"
-# assert vendor version ends with -N.N.N
-assert "mise latest ruby@truffleruby | grep -E '\\-[0-9]+(\\.[0-9]+)*$'"
+# assert base flavour preference (e.g. truffleruby instead of truffleruby+graalvm)
+assert "mise latest ruby@truffleruby | grep -E '^truffleruby\\-[0-9]+(\\.[0-9]+)*$'"
+# assert an explicit flavour still resolves to that flavour
+assert "mise latest ruby@truffleruby+graalvm | grep -E '^truffleruby\\+graalvm\\-[0-9]+(\\.[0-9]+)*$'"
 # assert vendor 22 version ends with -22.N.N
 assert "mise latest ruby@truffleruby-22 | grep -E '\\-22(\\.[0-9]+)*$'"
 

@@ -1,14 +1,14 @@
 use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
@@ -69,8 +69,16 @@ pub(crate) struct MonorepoUnion {
     pub repo_urls: HashMap<String, String>,
 }
 
+/// One independently composed bootstrap hierarchy and its scoped template context.
+#[derive(Clone)]
+struct BootstrapConfigMap {
+    config_files: ConfigMap,
+    tera_ctx: tera::Context,
+}
+
 pub struct Config {
     pub config_files: ConfigMap,
+    bootstrap_config_maps: Vec<BootstrapConfigMap>,
     pub project_root: Option<PathBuf>,
     pub all_aliases: AliasMap,
     pub repo_urls: HashMap<String, String>,
@@ -169,6 +177,7 @@ impl Config {
         Arc::new(Self {
             tera_ctx: self.tera_ctx.clone(),
             config_files,
+            bootstrap_config_maps: self.bootstrap_config_maps.clone(),
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: self.shorthands.clone(),
@@ -245,6 +254,7 @@ impl Config {
         let mut config = Self {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files,
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -265,6 +275,7 @@ impl Config {
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
             config_files: config.config_files.clone(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: config.shorthands.clone(),
@@ -305,6 +316,7 @@ impl Config {
         measure!("config::load validate", {
             config.validate()?;
         });
+        config.bootstrap_config_maps = load_bootstrap_config_maps(&config).await?;
 
         config.all_aliases = measure!("config::load all_aliases", { config.load_all_aliases() });
 
@@ -364,6 +376,28 @@ impl Config {
                 .map(|(k, (v, _))| (k.clone(), v.clone()))
                 .collect()
         })
+    }
+
+    /// Returns the independent config hierarchies that contribute bootstrap resources.
+    pub(crate) fn bootstrap_config_maps(&self) -> impl Iterator<Item = &ConfigMap> {
+        if self.bootstrap_config_maps.is_empty() {
+            Either::Left(std::iter::once(&self.config_files))
+        } else {
+            Either::Right(
+                self.bootstrap_config_maps
+                    .iter()
+                    .map(|config| &config.config_files),
+            )
+        }
+    }
+
+    /// Returns the root-scoped template context for a bootstrap resource declaration.
+    pub(crate) fn bootstrap_tera_ctx(&self, config_path: &Path) -> &tera::Context {
+        self.bootstrap_config_maps
+            .iter()
+            .find(|config| config.config_files.contains_key(config_path))
+            .map(|config| &config.tera_ctx)
+            .unwrap_or(&self.tera_ctx)
     }
     pub async fn env(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
@@ -1387,9 +1421,9 @@ fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<d
         .iter()
         .rev()
         .flat_map(|f| {
-            if f.contains('*') {
+            if is_glob_pattern(f) {
                 // Handle glob patterns by matching against actual config file paths
-                config_glob(dir, f)
+                load_config_glob(dir, f)
                     .into_iter()
                     .rev()
                     .filter_map(|path| config_files.get(&path))
@@ -1438,6 +1472,65 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>
     config_files
         .values()
         .find(|cf| cf.monorepo_root() == Some(true))
+}
+
+/// Loads each selected bootstrap root as an independent hierarchy with scoped variables.
+async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConfigMap>> {
+    let Some((declaring_config, patterns)) = config.config_files.iter().find_map(|(path, cf)| {
+        cf.bootstrap_config()
+            .and_then(|bootstrap| bootstrap.config_roots.map(|patterns| (path, patterns)))
+    }) else {
+        return Ok(vec![]);
+    };
+    if patterns.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let declaring_root = config
+        .config_files
+        .get(declaring_config)
+        .expect("declaring bootstrap config is loaded")
+        .config_root();
+    let mut roots = expand_bootstrap_config_roots(&declaring_root, &patterns)?;
+    roots.sort();
+    roots.dedup();
+    if roots.is_empty() {
+        bail!("[bootstrap].config_roots did not match any config roots");
+    }
+
+    let mut base = config.config_files.clone();
+    base.retain(|path, _| {
+        is_global_config(path)
+            || !path
+                .canonicalize()
+                .is_ok_and(|path| roots.iter().any(|root| path.starts_with(root)))
+    });
+    let mut maps = vec![BootstrapConfigMap {
+        config_files: base,
+        tera_ctx: config.tera_ctx.clone(),
+    }];
+    let idiomatic_filenames = BTreeMap::new();
+    for root in roots {
+        let paths = config_paths_in_dir_with_filenames(&root, &DEFAULT_CONFIG_FILENAMES);
+        let config_files = load_config_files_from_paths(&paths, &idiomatic_filenames).await?;
+        let vars_config = config.with_config_files(config_files.clone());
+        let vars_results = load_vars(&vars_config).await?;
+        let mut vars = config.vars.clone();
+        vars.extend(
+            vars_results
+                .vars
+                .iter()
+                .map(|(key, (value, _))| (key.clone(), value.clone())),
+        );
+        let mut tera_ctx = config.tera_ctx.clone();
+        tera_ctx.insert("vars", &vars);
+        tera_ctx.insert("config_root", &root);
+        maps.push(BootstrapConfigMap {
+            config_files,
+            tera_ctx,
+        });
+    }
+    Ok(maps)
 }
 
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
@@ -1604,17 +1697,22 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
 /// Config filename patterns for a single MISE_ENV environment, in precedence order
 /// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
 fn env_config_patterns(env: &str) -> Vec<String> {
+    let env = glob::Pattern::escape(env);
     vec![
+        format!(".config/mise/conf.d/*.{env}.toml"),
         format!(".config/mise/config.{env}.toml"),
         format!(".config/mise.{env}.toml"),
         format!("mise/config.{env}.toml"),
         format!("mise.{env}.toml"),
+        format!(".mise/conf.d/*.{env}.toml"),
         format!(".mise/config.{env}.toml"),
         format!(".mise.{env}.toml"),
+        format!(".config/mise/conf.d/*.{env}.local.toml"),
         format!(".config/mise/config.{env}.local.toml"),
         format!(".config/mise.{env}.local.toml"),
         format!("mise/config.{env}.local.toml"),
         format!("mise.{env}.local.toml"),
+        format!(".mise/conf.d/*.{env}.local.toml"),
         format!(".mise/config.{env}.local.toml"),
         format!(".mise.{env}.local.toml"),
     ]
@@ -1710,6 +1808,47 @@ fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+fn is_unconditional_conf_d_pattern(pattern: &str) -> bool {
+    pattern.ends_with("conf.d/*.toml")
+}
+
+/// Whether a conf.d fragment reserves a filename component for an environment.
+///
+/// `name.toml` and `name.local.toml` are unconditional. `name.dev.toml` and
+/// `name.dev.local.toml` are environment-specific. Environment names themselves
+/// may contain dots; active files are selected by exact glob patterns.
+fn conf_d_file_environment(path: &Path) -> Option<(&str, bool)> {
+    if !is_conf_d_file(path) {
+        return None;
+    }
+    let filename = path.file_name()?.to_str()?;
+    let stem = filename.strip_suffix(".toml")?;
+    let (stem, local) = stem
+        .strip_suffix(".local")
+        .map_or((stem, false), |stem| (stem, true));
+    let (name, environment) = stem.split_once('.')?;
+    (!name.is_empty() && !environment.is_empty()).then_some((environment, local))
+}
+
+fn is_environment_conf_d_file(path: &Path) -> bool {
+    conf_d_file_environment(path).is_some()
+}
+
+fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    config_glob(dir, pattern)
+        .into_iter()
+        .filter(|path| {
+            if is_unconditional_conf_d_pattern(pattern) {
+                !is_environment_conf_d_file(path)
+            } else if let Some((environment, _)) = conf_d_file_environment(path) {
+                env::MISE_ENV_WITH_AUTO.iter().any(|env| env == environment)
+            } else {
+                true
+            }
+        })
+        .collect()
+}
+
 pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
     DEFAULT_CONFIG_FILENAMES
         .iter()
@@ -1734,7 +1873,8 @@ pub(crate) fn environments_for_config_path(path: &Path) -> Vec<String> {
             ["config", "mise", ".mise"].into_iter().any(|prefix| {
                 filename == format!("{prefix}.{environment}.toml")
                     || filename == format!("{prefix}.{environment}.local.toml")
-            })
+            }) || conf_d_file_environment(path)
+                .is_some_and(|(file_environment, _)| file_environment == environment.as_str())
         })
         .cloned()
         .collect()
@@ -1745,8 +1885,8 @@ fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<P
         .iter()
         .rev()
         .flat_map(|f| {
-            if f.contains('*') {
-                config_glob(dir, f).into_iter().rev().collect()
+            if is_glob_pattern(f) {
+                load_config_glob(dir, f).into_iter().rev().collect()
             } else {
                 let path = dir.join(f);
                 if path.exists() { vec![path] } else { vec![] }
@@ -1814,7 +1954,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
     }
     filenames
         .iter()
-        .flat_map(|f| config_glob(dir, f))
+        .flat_map(|f| load_config_glob(dir, f))
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, false))
         .collect()
@@ -2104,20 +2244,28 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     // same file (e.g. ~/.config/mise/config.{env}.toml when cwd is under $HOME)
     let mut found = IndexSet::new();
     for dir in all_dirs().unwrap_or_default() {
-        if env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| dir.starts_with(p))
-        {
+        if config_file::is_ignored_via_setting(&dir) {
             continue;
         }
         for env_name in &candidate_envs {
             for pattern in env_config_patterns(env_name) {
-                found.extend(glob(&dir, &pattern).unwrap_or_default());
+                found.extend(
+                    glob(&dir, &pattern)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|path| {
+                            !is_conf_d_file(path)
+                                || conf_d_file_environment(path)
+                                    .is_some_and(|(environment, _)| environment == env_name)
+                        }),
+                );
             }
         }
     }
     for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
         for env_name in &candidate_envs {
+            found.extend(conf_d_environment_files(dir, env_name, false));
+            found.extend(conf_d_environment_files(dir, env_name, true));
             for filename in [
                 format!("config.{env_name}.toml"),
                 format!("mise.{env_name}.toml"),
@@ -2170,7 +2318,7 @@ pub async fn load_config_hierarchy_from_dir(
                 config_filenames
                     .iter()
                     .rev()
-                    .flat_map(|f| config_glob(dir, f).into_iter().rev())
+                    .flat_map(|f| load_config_glob(dir, f).into_iter().rev())
                     .collect()
             }
         })
@@ -2280,10 +2428,7 @@ fn is_default_config_dir_override_filtered(path: &Path) -> bool {
 }
 
 fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
-    !include_ignored
-        && env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| dir.starts_with(p))
+    !include_ignored && config_file::is_ignored_via_setting(dir)
 }
 
 fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
@@ -2341,21 +2486,6 @@ pub fn system_config_files() -> IndexSet<PathBuf> {
     config_files
 }
 
-static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    let mut filenames = vec!["config.toml".to_string(), "mise.toml".to_string()];
-    for env in &*env::MISE_ENV_WITH_AUTO {
-        filenames.push(format!("config.{env}.toml"));
-        filenames.push(format!("mise.{env}.toml"));
-    }
-    filenames.push("config.local.toml".to_string());
-    filenames.push("mise.local.toml".to_string());
-    for env in &*env::MISE_ENV_WITH_AUTO {
-        filenames.push(format!("config.{env}.local.toml"));
-        filenames.push(format!("mise.{env}.local.toml"));
-    }
-    filenames
-});
-
 /// Config files in a global/system config dir, lowest precedence first: `conf.d`,
 /// then `config.toml`/`mise.toml`, then the `.local` variants.
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
@@ -2364,12 +2494,41 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
             && file_name.ends_with(".toml")
+            && !is_environment_conf_d_file(&p)
         {
             files.insert(p);
         }
     }
-    files.extend(CONFIG_FILENAMES.iter().map(|f| dir.join(f)));
+    files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
+    for environment in &*env::MISE_ENV_WITH_AUTO {
+        files.extend(conf_d_environment_files(dir, environment, false));
+        files.extend([
+            dir.join(format!("config.{environment}.toml")),
+            dir.join(format!("mise.{environment}.toml")),
+        ]);
+    }
+    files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
+    for environment in &*env::MISE_ENV_WITH_AUTO {
+        files.extend(conf_d_environment_files(dir, environment, true));
+        files.extend([
+            dir.join(format!("config.{environment}.local.toml")),
+            dir.join(format!("mise.{environment}.local.toml")),
+        ]);
+    }
     files.into_iter().filter(|p| p.is_file()).collect()
+}
+
+fn conf_d_environment_files(dir: &Path, environment: &str, local: bool) -> Vec<PathBuf> {
+    file::ls(&dir.join("conf.d"))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| !name.starts_with('.'))
+                && conf_d_file_environment(path) == Some((environment, local))
+        })
+        .collect()
 }
 
 /// the preferred global config file to write to, or the path where it should be created.
@@ -3502,13 +3661,52 @@ fn expand_config_roots_inner(
     ctx: Option<&crate::task::TaskLoadContext>,
     filenames: Option<&[String]>,
 ) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner_for("monorepo", root, patterns, ctx, filenames, false)
+}
+
+/// Expands bootstrap root patterns using the normal mise config filenames.
+fn expand_bootstrap_config_roots(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
+    expand_config_roots_inner_for(
+        "bootstrap",
+        root,
+        patterns,
+        None,
+        Some(&DEFAULT_CONFIG_FILENAMES),
+        true,
+    )
+}
+
+/// Expands safe, single-level config-root patterns for a named config section.
+fn expand_config_roots_inner_for(
+    section: &str,
+    root: &Path,
+    patterns: &[String],
+    ctx: Option<&crate::task::TaskLoadContext>,
+    filenames: Option<&[String]>,
+    canonicalize_results: bool,
+) -> Result<Vec<PathBuf>> {
     let mut subdirs = Vec::new();
+    let canonical_root = match root.canonicalize() {
+        Ok(root) => root,
+        Err(err) => {
+            warn!(
+                "[{section}].config_roots: failed to resolve config root {}: {err}",
+                root.display()
+            );
+            return Ok(subdirs);
+        }
+    };
 
     for pattern in patterns {
-        // Reject absolute paths and parent directory escapes
-        if pattern.starts_with('/') || pattern.starts_with("..") || pattern.contains("/../") {
+        // Reject absolute paths and parent directory escapes.
+        if Path::new(pattern).components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        }) {
             warn!(
-                "[monorepo] config_roots: '{}' must be a relative path within the monorepo",
+                "[{section}].config_roots: '{}' must be a relative path within the config root",
                 pattern
             );
             continue;
@@ -3517,7 +3715,7 @@ fn expand_config_roots_inner(
         // Reject recursive glob patterns (**)
         if pattern.contains("**") {
             warn!(
-                "[monorepo] config_roots: recursive glob '**' not supported in '{}', use single-level '*' instead",
+                "[{section}].config_roots: recursive glob '**' not supported in '{}', use single-level '*' instead",
                 pattern
             );
             continue;
@@ -3531,59 +3729,79 @@ fn expand_config_roots_inner(
                     for entry in entries {
                         match entry {
                             Ok(path) => {
-                                // Verify path is within monorepo root
-                                if path.strip_prefix(root).is_err() {
+                                let canonical = match path.canonicalize() {
+                                    Ok(path) => path,
+                                    Err(err) => {
+                                        warn!(
+                                            "[{section}].config_roots: failed to resolve glob match {}: {err}",
+                                            path.display()
+                                        );
+                                        continue;
+                                    }
+                                };
+                                if !canonical.starts_with(&canonical_root) {
                                     warn!(
-                                        "[monorepo] config_roots: glob matched path outside monorepo root: {}",
+                                        "[{section}].config_roots: glob matched path outside config root: {}",
                                         path.display()
                                     );
                                     continue;
                                 }
-                                if path.is_dir()
+                                if canonical.is_dir()
                                     && filenames.is_none_or(|filenames| {
-                                        has_mise_config_with_filenames(&path, filenames)
+                                        has_mise_config_with_filenames(&canonical, filenames)
                                     })
                                 {
-                                    subdirs.push(path);
+                                    subdirs.push(if canonicalize_results {
+                                        canonical
+                                    } else {
+                                        path
+                                    });
                                 }
                             }
                             Err(e) => {
-                                warn!("[monorepo] config_roots glob error: {e}");
+                                warn!("[{section}].config_roots glob error: {e}");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    warn!("[monorepo] config_roots invalid glob pattern '{pattern}': {e}");
+                    warn!("[{section}].config_roots invalid glob pattern '{pattern}': {e}");
                 }
             }
         } else {
             // Explicit path
             let path = root.join(pattern);
-            // Verify path is within monorepo root after resolution
-            if let Ok(canonical) = path.canonicalize()
-                && let Ok(canonical_root) = root.canonicalize()
-                && !canonical.starts_with(&canonical_root)
-            {
+            let canonical = match path.canonicalize() {
+                Ok(path) => path,
+                Err(_) => {
+                    warn!("[{section}].config_roots: '{}' does not exist", pattern);
+                    continue;
+                }
+            };
+            if !canonical.starts_with(&canonical_root) {
                 warn!(
-                    "[monorepo] config_roots: '{}' resolves outside monorepo root",
+                    "[{section}].config_roots: '{}' resolves outside config root",
                     pattern
                 );
                 continue;
             }
-            if path.is_dir() {
+            if canonical.is_dir() {
                 if filenames
-                    .is_none_or(|filenames| has_mise_config_with_filenames(&path, filenames))
+                    .is_none_or(|filenames| has_mise_config_with_filenames(&canonical, filenames))
                 {
-                    subdirs.push(path);
+                    subdirs.push(if canonicalize_results {
+                        canonical
+                    } else {
+                        path
+                    });
                 } else {
                     warn!(
-                        "[monorepo] config_roots: '{}' has no mise config file",
+                        "[{section}].config_roots: '{}' has no mise config file",
                         pattern
                     );
                 }
             } else {
-                warn!("[monorepo] config_roots: '{}' does not exist", pattern);
+                warn!("[{section}].config_roots: '{}' is not a directory", pattern);
             }
         }
     }
@@ -3611,8 +3829,8 @@ fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
 
 fn has_config_file_with_filenames(dir: &Path, filenames: &[String]) -> bool {
     filenames.iter().any(|f| {
-        if f.contains('*') {
-            !config_glob(dir, f).is_empty()
+        if is_glob_pattern(f) {
+            !load_config_glob(dir, f).is_empty()
         } else {
             dir.join(f).exists()
         }
@@ -5173,6 +5391,58 @@ mod tests {
     }
 
     #[test]
+    fn test_project_conf_d_environment_precedence() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        for filename in [
+            "01-base.toml",
+            "02-local.local.toml",
+            "03-dev.dev.toml",
+            "04-dev-local.dev.local.toml",
+            "05-ci.ci.toml",
+        ] {
+            fs::write(confd.join(filename), "[env]\n")?;
+        }
+
+        let filenames = vec![
+            ".mise/conf.d/*.toml".to_string(),
+            ".mise/conf.d/*.dev.toml".to_string(),
+            ".mise/conf.d/*.dev.local.toml".to_string(),
+        ];
+        let paths = config_paths_in_dir_with_filenames(tmp.path(), &filenames);
+        let relative = paths
+            .iter()
+            .map(|path| path.strip_prefix(tmp.path()).unwrap())
+            .collect_vec();
+        assert_eq!(
+            relative,
+            vec![
+                Path::new(".mise/conf.d/02-local.local.toml"),
+                Path::new(".mise/conf.d/01-base.toml"),
+            ]
+        );
+
+        assert!(is_environment_conf_d_file(&confd.join("03-dev.dev.toml")));
+        assert_eq!(
+            conf_d_file_environment(&confd.join("03-dev.dev.toml")),
+            Some(("dev", false))
+        );
+        assert!(is_environment_conf_d_file(
+            &confd.join("04-dev-local.dev.local.toml")
+        ));
+        assert_eq!(
+            conf_d_file_environment(&confd.join("module.qa.prod.local.toml")),
+            Some(("qa.prod", true))
+        );
+        assert!(!is_environment_conf_d_file(
+            &confd.join("02-local.local.toml")
+        ));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_prefer_windows_file_task_siblings_keeps_windows_native_script() {
         let file_tasks = vec![
             Task {
@@ -5500,20 +5770,57 @@ mod tests {
         assert_eq!(
             env_config_patterns("linux"),
             vec![
+                ".config/mise/conf.d/*.linux.toml",
                 ".config/mise/config.linux.toml",
                 ".config/mise.linux.toml",
                 "mise/config.linux.toml",
                 "mise.linux.toml",
+                ".mise/conf.d/*.linux.toml",
                 ".mise/config.linux.toml",
                 ".mise.linux.toml",
+                ".config/mise/conf.d/*.linux.local.toml",
                 ".config/mise/config.linux.local.toml",
                 ".config/mise.linux.local.toml",
                 "mise/config.linux.local.toml",
                 "mise.linux.local.toml",
+                ".mise/conf.d/*.linux.local.toml",
                 ".mise/config.linux.local.toml",
                 ".mise.linux.local.toml",
             ]
         );
+    }
+
+    #[test]
+    fn test_env_config_patterns_escape_glob_characters() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("tools.qa*.toml"), "[env]\n")?;
+        fs::write(confd.join("tools.qa1.toml"), "[env]\n")?;
+
+        let pattern = env_config_patterns("qa*")
+            .into_iter()
+            .find(|pattern| pattern.starts_with(".mise/conf.d/") && !pattern.contains(".local."))
+            .unwrap();
+        let matches = glob(tmp.path(), &pattern)?;
+        assert_eq!(matches, vec![confd.join("tools.qa*.toml")]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_env_config_patterns_with_non_star_glob_characters() -> Result<()> {
+        for env_name in ["qa?", "qa[1]", "qa]"] {
+            let tmp = TempDir::new()?;
+            let path = tmp.path().join(format!("mise.{env_name}.toml"));
+            fs::write(&path, "[env]\n")?;
+
+            let patterns = env_config_patterns(env_name);
+            assert!(config_paths_in_dir_with_filenames(tmp.path(), &patterns).contains(&path));
+            assert!(has_config_file_with_filenames(tmp.path(), &patterns));
+        }
+
+        Ok(())
     }
 
     #[test]
@@ -5628,6 +5935,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5706,6 +6014,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5788,6 +6097,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5872,6 +6182,7 @@ mod tests {
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -5931,6 +6242,7 @@ mod tests {
             let config = Config {
                 tera_ctx: BASE_CONTEXT.clone(),
                 config_files: Default::default(),
+                bootstrap_config_maps: vec![],
                 env: OnceCell::new(),
                 env_with_sources: OnceCell::new(),
                 shorthands: get_shorthands(&Settings::get()),
@@ -6015,6 +6327,7 @@ config_roots = ["apps/api", "apps/web"]
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files,
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
@@ -6187,6 +6500,7 @@ config_roots = ["apps/api", "apps/web"]
         let config = Config {
             tera_ctx: BASE_CONTEXT.clone(),
             config_files: Default::default(),
+            bootstrap_config_maps: vec![],
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),

@@ -1,6 +1,6 @@
 use std::fmt;
-use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::fs::{self, File};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use eyre::{Context, Result, bail, eyre};
@@ -17,6 +17,10 @@ const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 pub struct RemoteTomlConfig {
     pub source: Option<PathBuf>,
     #[serde(default)]
+    pub copy_links: bool,
+    #[serde(default)]
+    pub copy_link: Vec<PathBuf>,
+    #[serde(default)]
     pub exclude: Vec<String>,
     #[serde(default)]
     pub hosts: IndexMap<String, RemoteHostTomlConfig>,
@@ -29,6 +33,9 @@ pub struct RemoteHostTomlConfig {
     pub port: Option<u16>,
     pub identity_file: Option<PathBuf>,
     pub source: Option<PathBuf>,
+    pub copy_links: Option<bool>,
+    #[serde(default)]
+    pub copy_link: Vec<PathBuf>,
     #[serde(default)]
     pub exclude: Vec<String>,
     #[serde(default)]
@@ -48,6 +55,8 @@ pub struct RemoteHost {
     pub port: Option<u16>,
     pub identity_file: Option<PathBuf>,
     pub source: PathBuf,
+    pub copy_links: bool,
+    pub copy_link: Vec<PathBuf>,
     pub exclude: Vec<String>,
     pub ssh_options: Vec<String>,
     pub tags: IndexSet<String>,
@@ -59,6 +68,8 @@ pub struct RemoteHost {
 #[derive(Clone, Debug, Default)]
 pub struct RemoteOverrides {
     pub source: Option<PathBuf>,
+    pub copy_links: bool,
+    pub copy_link: Vec<PathBuf>,
     pub port: Option<u16>,
     pub identity_file: Option<PathBuf>,
     pub exclude: Vec<String>,
@@ -113,6 +124,8 @@ pub fn hosts_from_config(
         let remote = bootstrap.remote;
         let base = cf.get_path().parent().unwrap_or_else(|| Path::new("."));
         let default_source = resolve_local_path(base, remote.source.as_deref())?;
+        let default_copy_links = remote.copy_links;
+        let default_copy_link = remote.copy_link;
         for (name, host) in remote.hosts {
             if hosts.contains_key(&name) {
                 continue;
@@ -127,6 +140,8 @@ pub fn hosts_from_config(
             let mut exclude = default_excludes();
             exclude.extend_from_slice(layered_excludes);
             exclude.extend(host.exclude);
+            let mut copy_link = default_copy_link.clone();
+            copy_link.extend(host.copy_link);
             let host = RemoteHost {
                 name: name.clone(),
                 host: host.host,
@@ -134,6 +149,8 @@ pub fn hosts_from_config(
                 port: host.port,
                 identity_file,
                 source,
+                copy_links: host.copy_links.unwrap_or(default_copy_links),
+                copy_link: dedupe_paths(copy_link),
                 exclude: dedupe(exclude),
                 ssh_options: dedupe(host.ssh_options),
                 tags: host.tags.into_iter().collect(),
@@ -172,6 +189,8 @@ pub fn ad_hoc_host(
         port: None,
         identity_file: None,
         source,
+        copy_links: false,
+        copy_link: vec![],
         exclude: dedupe(
             default_excludes()
                 .into_iter()
@@ -193,6 +212,11 @@ impl RemoteHost {
         if let Some(source) = &overrides.source {
             self.source = absolutize(source)?;
         }
+        if overrides.copy_links {
+            self.copy_links = true;
+        }
+        self.copy_link.extend(overrides.copy_link.clone());
+        self.copy_link = dedupe_paths(std::mem::take(&mut self.copy_link));
         if let Some(port) = overrides.port {
             self.port = Some(port);
         }
@@ -240,6 +264,13 @@ impl RemoteHost {
                 self.name,
                 self.source.display()
             );
+        }
+        if !self.copy_links {
+            for link in &self.copy_link {
+                validate_copy_link(&self.source, link).wrap_err_with(|| {
+                    format!("remote host '{}' has invalid copy_link", self.name)
+                })?;
+            }
         }
         if let Some(identity) = &self.identity_file
             && !identity.is_file()
@@ -398,21 +429,137 @@ async fn run_staged(
 fn upload_source(session: &SshSession<'_>, tar: &Path, project: &str) -> Result<()> {
     let temporary = tempfile::tempdir()?;
     let archive = temporary.path().join("source.tar.gz");
+    let archive_source = if session.host.copy_links || session.host.copy_link.is_empty() {
+        session.host.source.clone()
+    } else {
+        let source = temporary.path().join("source");
+        fs::create_dir(&source)?;
+        crate::file::copy_dir_all_preserve_symlinks(&session.host.source, &source)?;
+        for link in &session.host.copy_link {
+            materialize_link(&session.host.source, &source, link)?;
+        }
+        source
+    };
     let mut command = Command::new(tar);
     command.args(["-czf"]);
     command.arg(&archive);
+    if session.host.copy_links {
+        command.arg("-h");
+    }
     for exclude in &session.host.exclude {
         command.arg(format!("--exclude={exclude}"));
     }
-    let status = command
-        .args(["-C"])
-        .arg(&session.host.source)
-        .arg(".")
-        .status()?;
+    let status = command.args(["-C"]).arg(archive_source).arg(".").status()?;
     if !status.success() {
         bail!("failed to archive remote source with {status}");
     }
     session.status_with_stdin(&["tar", "-xzf", "-", "-C", project], File::open(archive)?)
+}
+
+fn validate_copy_link(source: &Path, link: &Path) -> Result<()> {
+    validate_copy_link_path(source, link)?;
+    let path = source.join(link);
+    fs::metadata(&path)
+        .wrap_err_with(|| format!("copy_link target does not exist: {}", link.display()))?;
+    Ok(())
+}
+
+fn validate_copy_link_path(source: &Path, link: &Path) -> Result<()> {
+    if link.as_os_str().is_empty()
+        || link.is_absolute()
+        || link.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        bail!(
+            "copy_link must be a relative path within the source: {}",
+            link.display()
+        );
+    }
+    let mut parent = source.to_path_buf();
+    for component in link.parent().unwrap_or_else(|| Path::new("")).components() {
+        if let Component::Normal(component) = component {
+            parent.push(component);
+            let metadata = fs::symlink_metadata(&parent).wrap_err_with(|| {
+                format!("copy_link parent does not exist: {}", parent.display())
+            })?;
+            if metadata.file_type().is_symlink() {
+                bail!(
+                    "copy_link cannot be nested below a symbolic link: {}",
+                    link.display()
+                );
+            }
+        }
+    }
+    let path = source.join(link);
+    let metadata = fs::symlink_metadata(&path)
+        .wrap_err_with(|| format!("copy_link does not exist: {}", link.display()))?;
+    if !metadata.file_type().is_symlink() {
+        bail!("copy_link is not a symbolic link: {}", link.display());
+    }
+    Ok(())
+}
+
+fn materialize_link(source: &Path, staged_source: &Path, link: &Path) -> Result<()> {
+    validate_copy_link_path(staged_source, link)
+        .wrap_err_with(|| format!("staged copy_link is unsafe: {}", link.display()))?;
+    let source_link = source.join(link);
+    let staged_link = staged_source.join(link);
+    let target = fs::canonicalize(&source_link)
+        .wrap_err_with(|| format!("failed to resolve copy_link {}", link.display()))?;
+    let parent = staged_link
+        .parent()
+        .expect("a validated copy_link has a staged parent");
+    let original_permissions = make_directory_writable(parent)?;
+    let result = (|| {
+        crate::file::remove_file(&staged_link)?;
+        if target.is_dir() {
+            fs::create_dir(&staged_link)?;
+            crate::file::copy_dir_all_preserve_symlinks(&target, &staged_link)?;
+        } else {
+            crate::file::copy(&target, &staged_link)?;
+        }
+        Ok(())
+    })();
+    if let Some(permissions) = original_permissions {
+        fs::set_permissions(parent, permissions).wrap_err_with(|| {
+            format!(
+                "failed to restore staged directory permissions: {}",
+                parent.display()
+            )
+        })?;
+    }
+    result
+}
+
+fn make_directory_writable(path: &Path) -> Result<Option<fs::Permissions>> {
+    let original = fs::metadata(path)?.permissions();
+    let mut writable = original.clone();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if original.mode() & 0o200 != 0 {
+            return Ok(None);
+        }
+        writable.set_mode(original.mode() | 0o200);
+    }
+    #[cfg(windows)]
+    {
+        if !original.readonly() {
+            return Ok(None);
+        }
+        writable.set_readonly(false);
+    }
+    fs::set_permissions(path, writable).wrap_err_with(|| {
+        format!(
+            "failed to make staged directory writable: {}",
+            path.display()
+        )
+    })?;
+    Ok(Some(original))
 }
 
 async fn provision_mise(
@@ -1548,9 +1695,157 @@ fn dedupe(values: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+fn dedupe_paths(values: Vec<PathBuf>) -> Vec<PathBuf> {
+    values
+        .into_iter()
+        .map(|path| {
+            path.components()
+                .filter(|component| !matches!(component, Component::CurDir))
+                .collect()
+        })
+        .collect::<IndexSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn materializes_only_the_selected_link() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let staged = temp.path().join("staged");
+        let shared = temp.path().join("shared");
+        fs::create_dir_all(shared.join("nested"))?;
+        fs::write(shared.join("module.toml"), "module")?;
+        symlink("../module.toml", shared.join("nested/module-link"))?;
+        fs::create_dir_all(&source)?;
+        symlink(&shared, source.join("shared"))?;
+
+        fs::create_dir(&staged)?;
+        crate::file::copy_dir_all_preserve_symlinks(&source, &staged)?;
+        materialize_link(&source, &staged, Path::new("shared"))?;
+
+        assert!(staged.join("shared").is_dir());
+        assert!(!staged.join("shared").is_symlink());
+        assert_eq!(
+            fs::read_to_string(staged.join("shared/module.toml"))?,
+            "module"
+        );
+        assert_eq!(
+            fs::read_link(staged.join("shared/nested/module-link"))?,
+            Path::new("../module.toml")
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn validates_copy_link_paths() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        fs::create_dir(&source)?;
+        fs::write(temp.path().join("target"), "target")?;
+        fs::write(source.join("regular"), "regular")?;
+        symlink(temp.path().join("target"), source.join("link"))?;
+        symlink("missing", source.join("dangling"))?;
+
+        assert!(validate_copy_link(&source, Path::new("link")).is_ok());
+        assert!(validate_copy_link(&source, Path::new("regular")).is_err());
+        assert!(validate_copy_link(&source, Path::new("dangling")).is_err());
+        assert!(validate_copy_link(&source, Path::new("../target")).is_err());
+        assert!(validate_copy_link(&source, &temp.path().join("target")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_copy_link_below_symlinked_parent() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let outside = temp.path().join("outside");
+        fs::create_dir(&source)?;
+        fs::create_dir(&outside)?;
+        fs::write(temp.path().join("target"), "target")?;
+        symlink(temp.path().join("target"), outside.join("child-link"))?;
+        symlink(&outside, source.join("linked-parent"))?;
+
+        let error = validate_copy_link(&source, Path::new("linked-parent/child-link"))
+            .expect_err("a selected link below a symlinked parent must be rejected");
+        assert!(error.to_string().contains("nested below a symbolic link"));
+        assert!(outside.join("child-link").is_symlink());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_symlinked_parent_introduced_in_staging() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let staged = temp.path().join("staged");
+        let outside = temp.path().join("outside");
+        fs::create_dir_all(source.join("parent"))?;
+        fs::create_dir(&staged)?;
+        fs::create_dir(&outside)?;
+        fs::write(temp.path().join("target"), "target")?;
+        symlink(temp.path().join("target"), source.join("parent/link"))?;
+        symlink(temp.path().join("target"), outside.join("link"))?;
+        symlink(&outside, staged.join("parent"))?;
+
+        let error = materialize_link(&source, &staged, Path::new("parent/link"))
+            .expect_err("a symlinked parent introduced in staging must be rejected");
+        assert!(error.to_string().contains("staged copy_link is unsafe"));
+        assert!(outside.join("link").is_symlink());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn materializes_link_below_read_only_directory() -> Result<()> {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let temp = tempfile::tempdir()?;
+        let source = temp.path().join("source");
+        let staged = temp.path().join("staged");
+        let parent = source.join("read-only");
+        fs::create_dir_all(&parent)?;
+        fs::write(temp.path().join("target"), "target")?;
+        symlink(temp.path().join("target"), parent.join("link"))?;
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o555))?;
+
+        fs::create_dir(&staged)?;
+        crate::file::copy_dir_all_preserve_symlinks(&source, &staged)?;
+        materialize_link(&source, &staged, Path::new("read-only/link"))?;
+
+        assert_eq!(fs::read_to_string(staged.join("read-only/link"))?, "target");
+        assert_eq!(
+            fs::metadata(staged.join("read-only"))?.permissions().mode() & 0o777,
+            0o555
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn dedupes_normalized_copy_link_paths() {
+        assert_eq!(
+            dedupe_paths(vec![
+                PathBuf::from("shared/link"),
+                PathBuf::from("./shared/link")
+            ]),
+            vec![PathBuf::from("shared/link")]
+        );
+    }
 
     #[test]
     fn parses_ad_hoc_destinations() {

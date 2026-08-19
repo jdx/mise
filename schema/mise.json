@@ -3874,6 +3874,13 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "config_roots": {
+          "type": "array",
+          "description": "independent config roots whose dotfiles and managed files/directories are composed into bootstrap",
+          "items": {
+            "type": "string"
+          }
+        },
         "plugins": {
           "type": "object",
           "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",
@@ -3916,6 +3923,10 @@
                         "minItems": 1
                       }
                     ]
+                  },
+                  "adopt": {
+                    "type": "boolean",
+                    "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
                   }
                 },
                 "additionalProperties": false
@@ -4557,6 +4568,10 @@
           "type": "object",
           "description": "Homebrew-specific bootstrap package config",
           "properties": {
+            "adopt": {
+              "type": "boolean",
+              "description": "adopt existing app artifacts by default for configured brew-cask packages"
+            },
             "taps": {
               "type": "object",
               "description": "Homebrew tap names mapped to custom git URLs",

@@ -90,7 +90,7 @@ const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
 
 async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>> {
     let url = format!("{api_url}/repos/{repo}/releases?limit=100");
-    let headers = get_headers(&url);
+    let headers = get_headers(&url, api_url);
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<ForgejoRelease>, _>(url, &headers)
         .await?;
@@ -107,7 +107,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<ForgejoRelease>
         {
             break;
         }
-        headers = get_headers(&next);
+        headers = get_headers(&next, api_url);
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<ForgejoRelease>, _>(next, &headers)
             .await?;
@@ -140,7 +140,7 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRel
     } else {
         format!("{api_url}/repos/{repo}/releases/tags/{tag}")
     };
-    let headers = get_headers(&url);
+    let headers = get_headers(&url, api_url);
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
@@ -160,13 +160,19 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("forgejo")
 }
 
-pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
+pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     // An invalid URL just means no auth headers; the real error surfaces when the
     // request is made. Avoid panicking here. See #3547.
     let Ok(url) = url.into_url() else {
         return headers;
     };
+    let Ok(api_url) = reqwest::Url::parse(api_url) else {
+        return headers;
+    };
+    if url.origin() != api_url.origin() {
+        return headers;
+    }
 
     if let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("codeberg.org")) {
         headers.insert(
@@ -287,12 +293,6 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     None
-}
-
-/// Returns true if the given hostname has a token available from a non-env-var source.
-pub fn is_forgejo_host(host: &str) -> bool {
-    MISE_FORGEJO_TOKENS.contains_key(host)
-        || (Settings::get().forgejo.fj_cli_tokens && FJ_HOSTS.contains_key(host))
 }
 
 // ── forgejo_tokens.toml ────────────────────────────────────────────
@@ -612,6 +612,27 @@ something_else = "value"
         fn drop(&mut self) {
             *test_support::TOKENS_FILE_OVERRIDE.write().unwrap() = None;
         }
+    }
+
+    #[test]
+    fn test_get_headers_only_authenticates_api_origin() {
+        let api_url = "https://forgejo.example.com/api/v1";
+        let _token = TokensFileOverrideGuard::set("forgejo.example.com");
+
+        let headers = get_headers(
+            "https://forgejo.example.com/releases/download/tool.tar.gz",
+            api_url,
+        );
+        assert_eq!(
+            headers.get(reqwest::header::AUTHORIZATION).unwrap(),
+            format!("Bearer {TEST_TOKEN}").as_str()
+        );
+
+        let headers = get_headers("https://downloads.example.com/tool.tar.gz", api_url);
+        assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
+
+        let headers = get_headers("http://forgejo.example.com/api/v1/page2", api_url);
+        assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
     }
 
     // Regression: every paginated request must carry the Authorization header. This loop is

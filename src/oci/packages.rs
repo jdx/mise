@@ -536,8 +536,43 @@ fn clean_apt_transients(rootfs: &Path) -> Result<()> {
 }
 
 fn clean_apk_transients(rootfs: &Path) -> Result<()> {
-    remove_dir_children(&rootfs.join("var/cache/apk"))?;
-    remove_path(&rootfs.join("var/log/apk.log"))
+    let cache = rootfs.join("var/cache/apk");
+    let log = rootfs.join("var/log/apk.log");
+    reject_symlink_components(rootfs, &cache)?;
+    reject_symlink_components(rootfs, &log)?;
+    remove_dir_children(&cache)?;
+    remove_path(&log)
+}
+
+/// Reject a cleanup target when it or any path component below `rootfs` is a
+/// symlink. OCI package layers are untrusted, so following one during cleanup
+/// could remove files outside the layer root.
+fn reject_symlink_components(rootfs: &Path, target: &Path) -> Result<()> {
+    let relative = target
+        .strip_prefix(rootfs)
+        .wrap_err_with(|| format!("cleanup target {} is outside rootfs", target.display()))?;
+    let mut current = rootfs.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            bail!("invalid cleanup target {}", target.display());
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!(
+                    "refusing cleanup through symlink component {}",
+                    current.display()
+                );
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("reading metadata for {}", current.display()));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Remove every regular file under `dir` (recursively), leaving the directory
@@ -793,6 +828,7 @@ mod tests {
         ManagerPackages {
             manager,
             requests,
+            options: Default::default(),
             disabled: false,
         }
     }
@@ -867,6 +903,41 @@ mod tests {
             fs::read_to_string(rootfs.join("usr/bin/jq")).unwrap(),
             "ELF-payload"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clean_apk_transients_rejects_symlinked_cache_parent() {
+        let td = TempDir::with_prefix("mise-oci-apk-clean-symlink-parent-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        let outside = td.path().join("outside");
+        write_file(&outside.join("apk/keep"), "outside");
+        file::create_dir_all(rootfs.join("var")).unwrap();
+        symlink(&outside, rootfs.join("var/cache")).unwrap();
+
+        let err = clean_apk_transients(&rootfs).unwrap_err();
+
+        assert!(err.to_string().contains("symlink component"));
+        assert_eq!(
+            fs::read_to_string(outside.join("apk/keep")).unwrap(),
+            "outside"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clean_apk_transients_rejects_symlinked_cache_directory() {
+        let td = TempDir::with_prefix("mise-oci-apk-clean-symlink-dir-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        let outside = td.path().join("outside");
+        write_file(&outside.join("keep"), "outside");
+        file::create_dir_all(rootfs.join("var/cache")).unwrap();
+        symlink(&outside, rootfs.join("var/cache/apk")).unwrap();
+
+        let err = clean_apk_transients(&rootfs).unwrap_err();
+
+        assert!(err.to_string().contains("symlink component"));
+        assert_eq!(fs::read_to_string(outside.join("keep")).unwrap(), "outside");
     }
 
     #[test]

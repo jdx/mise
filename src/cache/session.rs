@@ -254,6 +254,8 @@ struct ActionCacheStatsReport {
     remote_manifest_lookups: u64,
     remote_action_lookups: u64,
     remote_blob_requests: u64,
+    remote_blob_pack_requests: u64,
+    remote_blob_pack_blobs: u64,
     remote_manifest_lookup_duration_ns: u64,
     remote_action_lookup_duration_ns: u64,
     remote_blob_transfer_duration_ns: u64,
@@ -283,6 +285,8 @@ impl From<&AgentStats> for ActionCacheStatsReport {
             remote_manifest_lookups: stats.remote_manifest_lookups,
             remote_action_lookups: stats.remote_action_lookups,
             remote_blob_requests: stats.remote_blob_requests,
+            remote_blob_pack_requests: stats.remote_blob_pack_requests,
+            remote_blob_pack_blobs: stats.remote_blob_pack_blobs,
             remote_manifest_lookup_duration_ns: stats.remote_manifest_lookup_duration_ns,
             remote_action_lookup_duration_ns: stats.remote_action_lookup_duration_ns,
             remote_blob_transfer_duration_ns: stats.remote_blob_transfer_duration_ns,
@@ -891,6 +895,8 @@ mod tests {
             restored_output_files: 7,
             restored_output_bytes: 2048,
             remote_blob_requests: 4,
+            remote_blob_pack_requests: 2,
+            remote_blob_pack_blobs: 100,
             materialization_duration_ns: 9,
             ..AgentStats::default()
         };
@@ -909,6 +915,8 @@ mod tests {
         assert_eq!(report["restored_output_files"], 7);
         assert_eq!(report["restored_output_bytes"], 2048);
         assert_eq!(report["remote_blob_requests"], 4);
+        assert_eq!(report["remote_blob_pack_requests"], 2);
+        assert_eq!(report["remote_blob_pack_blobs"], 100);
         assert_eq!(report["materialization_duration_ns"], 9);
     }
 }

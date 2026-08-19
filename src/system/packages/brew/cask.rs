@@ -23,6 +23,7 @@ use crate::git::{CloneOptions, Git};
 use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::result::Result;
+use crate::system::ManagerPackageOptions;
 use crate::system::packages::{
     InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
 };
@@ -58,6 +59,8 @@ struct Cask {
     #[serde(default)]
     old_tokens: Vec<String>,
     version: String,
+    #[serde(default)]
+    auto_updates: bool,
     url: String,
     #[serde(default)]
     url_specs: CaskUrlSpecs,
@@ -272,6 +275,15 @@ struct CaskReceipt {
     #[serde(default)]
     schema_version: u8,
     version: String,
+    /// Self-updating apps are allowed to drift from the downloaded cask. For
+    /// these casks the receipt, rather than a stale Caskroom app copy, is the
+    /// durable ownership record.
+    #[serde(default)]
+    auto_updates: bool,
+    /// App bundles owned through metadata only, without a duplicate in the
+    /// versioned Caskroom directory (self-updating or adopted apps).
+    #[serde(default)]
+    metadata_only_apps: Vec<PathBuf>,
     #[serde(default)]
     apps: Vec<PathBuf>,
     #[serde(default)]
@@ -355,13 +367,53 @@ impl BrewCaskManager {
         Self {}
     }
 
+    async fn install_with_manager_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
+            bail!("brew casks are installed at their current version ('{p}')");
+        }
+        if opts.dry_run {
+            prefix::bootstrap(true)?;
+            for pkg in pkgs {
+                self.install_one(pkg, opts, None, manager_options).await?;
+            }
+            return Ok(());
+        }
+        let mpr = MultiProgressReport::get();
+        mpr.init_footer(false, "install", pkgs.len());
+        for pkg in pkgs {
+            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
+            match self
+                .install_one(pkg, opts, Some(&*pr), manager_options)
+                .await
+            {
+                Ok(version) => {
+                    pr.finish_with_message(version);
+                    mpr.footer_inc(1);
+                }
+                Err(err) => {
+                    pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                    mpr.footer_finish();
+                    return Err(err);
+                }
+            }
+        }
+        mpr.footer_finish();
+        Ok(())
+    }
+
     async fn install_one(
         &self,
         req: &PackageRequest,
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
+        manager_options: &ManagerPackageOptions,
     ) -> Result<String> {
-        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new())
+        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new(), manager_options)
             .await
     }
 
@@ -371,6 +423,7 @@ impl BrewCaskManager {
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
         ancestors: &BTreeSet<String>,
+        manager_options: &ManagerPackageOptions,
     ) -> Result<String> {
         let cask = fetch_cask(req).await?;
         if ancestors.contains(&cask.token) {
@@ -386,9 +439,12 @@ impl BrewCaskManager {
                 cask.token
             );
         }
-        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+        let installed_version = installed_cask_version(&cask, &artifacts)?;
+        if let Some(version) = installed_version.as_ref()
+            && (cask.auto_updates || version == &cask.version)
+        {
             info!("brew-cask:{}: already installed", cask.token);
-            return Ok(cask.version);
+            return Ok(version.clone());
         }
         for conflict in &cask.conflicts_with.cask {
             if !installed_versions(conflict).is_empty() {
@@ -420,7 +476,14 @@ impl BrewCaskManager {
                 version: None,
                 tap_url: None,
             };
-            Box::pin(self.install_one_with_ancestors(&request, opts, None, &ancestors)).await?;
+            Box::pin(self.install_one_with_ancestors(
+                &request,
+                opts,
+                None,
+                &ancestors,
+                manager_options,
+            ))
+            .await?;
         }
         if opts.dry_run {
             miseprintln!("install cask {}/{}", cask.token, cask.version);
@@ -459,6 +522,10 @@ impl BrewCaskManager {
         }
         prefix::bootstrap(false)?;
         let stage = fetch_and_stage(&cask, pr).await?;
+        let adopt = manager_options.brew_cask_adopt(&cask.token) && installed_version.is_none();
+        if adopt && !cask.auto_updates {
+            validate_adoptable_apps(&stage, &artifacts.apps)?;
+        }
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
         if homebrew_metadata_present(&cask.token) {
@@ -468,9 +535,11 @@ impl BrewCaskManager {
                 cask.token
             );
         }
-        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+        if let Some(version) = installed_cask_version(&cask, &artifacts)?
+            && (cask.auto_updates || version == cask.version)
+        {
             file::remove_all(stage)?;
-            return Ok(cask.version);
+            return Ok(version);
         }
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
@@ -528,8 +597,18 @@ impl BrewCaskManager {
             &mut flight_targets,
             |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
         )?;
+        let mut metadata_only_apps = Vec::new();
         for (index, app) in artifacts.apps.iter().enumerate() {
-            install_app(&stage, &tmp_caskroom, app)?;
+            if install_app(
+                &stage,
+                &tmp_caskroom,
+                app,
+                !cask.auto_updates,
+                adopt,
+                !cask.auto_updates,
+            )? {
+                metadata_only_apps.push(app_target_path(app.target_name())?);
+            }
             record_cask_action(&mut journal, &format!("app[{index}]"))?;
         }
         for (index, pkg) in artifacts.pkgs.iter().enumerate() {
@@ -600,6 +679,7 @@ impl BrewCaskManager {
                 flight_targets.installed_targets(),
                 flight_targets.uninstall_targets(),
                 flight_targets.installed_directories(),
+                &metadata_only_apps,
             )?;
             Ok(())
         });
@@ -782,6 +862,7 @@ impl SystemPackageManager for BrewCaskManager {
                     Some(requested) if version != *requested => {
                         PackageState::VersionMismatch { installed: version }
                     }
+                    _ if cask.auto_updates => PackageState::InstalledAutoUpdates { version },
                     _ => PackageState::Installed { version },
                 },
                 None => PackageState::Missing,
@@ -795,34 +876,18 @@ impl SystemPackageManager for BrewCaskManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
-            bail!("brew casks are installed at their current version ('{p}')");
-        }
-        if opts.dry_run {
-            prefix::bootstrap(true)?;
-            for pkg in pkgs {
-                self.install_one(pkg, opts, None).await?;
-            }
-            return Ok(());
-        }
-        let mpr = MultiProgressReport::get();
-        mpr.init_footer(false, "install", pkgs.len());
-        for pkg in pkgs {
-            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
-            match self.install_one(pkg, opts, Some(&*pr)).await {
-                Ok(version) => {
-                    pr.finish_with_message(version);
-                    mpr.footer_inc(1);
-                }
-                Err(err) => {
-                    pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
-                    mpr.footer_finish();
-                    return Err(err);
-                }
-            }
-        }
-        mpr.footer_finish();
-        Ok(())
+        self.install_with_manager_options(pkgs, opts, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn install_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.install_with_manager_options(pkgs, opts, manager_options)
+            .await
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -1187,12 +1252,18 @@ fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> 
     Ok(None)
 }
 
-fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
+fn install_app(
+    stage: &Path,
+    caskroom: &Path,
+    app: &AppArtifact,
+    keep_caskroom_copy: bool,
+    adopt: bool,
+    verify_adopt: bool,
+) -> Result<bool> {
     let source = find_app(stage, &app.source)
         .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name())?);
     file::remove_all(&caskroom_app)?;
-    ditto(&source, &caskroom_app)?;
     let logical_target = app_target_path(app.target_name())?;
     // Hold the verified appdir open for the whole mutation and address the app
     // only by name relative to that descriptor. Nothing below resolves a
@@ -1208,6 +1279,21 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
         .file_name()
         .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?
         .to_owned();
+    if adopt && exists_at(&parent.fd, &name)? {
+        if verify_adopt {
+            let source_fingerprint = cask_target_fingerprint(&source)?;
+            let target_fingerprint = cask_target_fingerprint(&logical_target)?;
+            if source_fingerprint != target_fingerprint {
+                bail!(
+                    "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                    logical_target.display()
+                );
+            }
+        }
+        return Ok(true);
+    }
+
+    ditto(&source, &caskroom_app)?;
     // Suffix hashes stay derived from the logical path so temporary and backup
     // names are stable across runs.
     let name_hash = crate::hash::hash_to_str(&logical_target.display().to_string());
@@ -1235,6 +1321,24 @@ fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
         ],
         &parent.fd,
     );
+    Ok(!keep_caskroom_copy)
+}
+
+fn validate_adoptable_apps(stage: &Path, apps: &[AppArtifact]) -> Result<()> {
+    for app in apps {
+        let target = app_target_path(app.target_name())?;
+        if target.symlink_metadata().is_err() {
+            continue;
+        }
+        let source = find_app(stage, &app.source)
+            .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+        if cask_target_fingerprint(&source)? != cask_target_fingerprint(&target)? {
+            bail!(
+                "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                target.display()
+            );
+        }
+    }
     Ok(())
 }
 
@@ -6385,7 +6489,15 @@ fn installed_cask_version_in(
                 let targets_match = receipt
                     .targets
                     .iter()
-                    .map(cask_target_record_matches)
+                    .map(|record| {
+                        if (cask.auto_updates || receipt.auto_updates)
+                            && receipt.apps.contains(&record.path)
+                        {
+                            Ok(record.path.is_dir())
+                        } else {
+                            cask_target_record_matches(record)
+                        }
+                    })
                     .collect::<Result<Vec<_>>>()?
                     .into_iter()
                     .all(|matches| matches);
@@ -6451,6 +6563,7 @@ fn write_receipt_with_flight_targets(
     flight_targets: &[PathBuf],
     flight_uninstall_targets: &BTreeMap<PathBuf, bool>,
     flight_directories: &[PathBuf],
+    metadata_only_apps: &[PathBuf],
 ) -> Result<()> {
     let mut target_paths = artifacts
         .apps
@@ -6479,10 +6592,25 @@ fn write_receipt_with_flight_targets(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let prune_blocker = cask_prune_blocker(cask, artifacts);
+    let metadata_only_apps = if cask.auto_updates {
+        artifacts
+            .apps
+            .iter()
+            .map(|app| app_target_path(app.target_name()))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        metadata_only_apps.to_vec()
+    };
+    let prune_blocker = cask_prune_blocker(cask, artifacts).or_else(|| {
+        (!metadata_only_apps.is_empty()).then(|| {
+            "metadata-only app ownership cannot be proven safely during pruning".to_string()
+        })
+    });
     let receipt = CaskReceipt {
         schema_version: 3,
         version: cask.version.clone(),
+        auto_updates: cask.auto_updates,
+        metadata_only_apps,
         apps: artifacts
             .apps
             .iter()
@@ -7012,6 +7140,9 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     if receipt.schema_version != 3 || !receipt.prune_safe || !receipt.pkg_ids.is_empty() {
         bail!("receipt is not marked safe for direct-artifact pruning");
     }
+    if !receipt.metadata_only_apps.is_empty() {
+        bail!("metadata-only app ownership cannot be proven safely during pruning");
+    }
     let records = receipt
         .targets
         .iter()
@@ -7028,6 +7159,10 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     if expected.is_empty()
         || records.len() != receipt.targets.len()
         || records.len() != expected.len()
+        || receipt
+            .metadata_only_apps
+            .iter()
+            .any(|path| !receipt.apps.contains(path))
     {
         bail!("receipt target inventory is incomplete or duplicated");
     }
@@ -7446,6 +7581,7 @@ mod tests {
             aliases: Vec::new(),
             old_tokens: Vec::new(),
             version: version.to_string(),
+            auto_updates: false,
             url: "https://example.com/example.zip".to_string(),
             url_specs: CaskUrlSpecs::default(),
             sha256: Some("no_check".to_string()),
@@ -7479,6 +7615,7 @@ mod tests {
             },
             &[],
             &BTreeMap::new(),
+            &[],
             &[],
         )?;
         Ok(target)
@@ -7608,6 +7745,7 @@ mod tests {
             &[],
             &BTreeMap::new(),
             &[],
+            &[],
         )?;
         assert_eq!(
             installed_cask_version(&cask, &artifacts)?,
@@ -7615,6 +7753,130 @@ mod tests {
         );
         crate::file::write(app_target.join("Contents/app"), "changed")?;
         assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("self-updating", "1.0.0");
+        cask.auto_updates = true;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let artifacts = CaskArtifacts {
+            apps: vec![app.clone()],
+            ..Default::default()
+        };
+        let app_target = app_target_path(app.target_name())?;
+        file::create_dir_all(app_target.join("Contents"))?;
+        crate::file::write(app_target.join("Contents/app"), "downloaded")?;
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
+        )?;
+
+        crate::file::write(app_target.join("Contents/app"), "updated by app")?;
+        cask.version = "2.0.0".to_string();
+        assert_eq!(
+            installed_cask_version(&cask, &artifacts)?,
+            Some("1.0.0".to_string())
+        );
+        let receipt = read_receipt(&caskroom)?.unwrap();
+        assert!(receipt.auto_updates);
+        assert!(!receipt.prune_safe);
+        assert!(
+            receipt
+                .prune_blocker
+                .as_deref()
+                .is_some_and(|reason| reason.contains("metadata-only app ownership"))
+        );
+        assert!(!caskroom.join("Example.app").exists());
+
+        // Fail closed for schema-3 receipts written before metadata-only apps
+        // were marked non-prunable. A replacement bundle at the same path
+        // must never become removable merely because it is a directory.
+        let mut legacy_receipt = receipt;
+        legacy_receipt.prune_safe = true;
+        legacy_receipt.prune_blocker = None;
+        file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&legacy_receipt)?,
+        )?;
+        let plan = cask_prune_plan_from_tokens(
+            &BTreeSet::new(),
+            &prefix::prefix().join(".mise-test-state"),
+        )?;
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "self-updating" && skip.reason.contains("metadata-only app ownership")
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn adopts_only_an_identical_existing_app() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = trusted_tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let _guard = BrewPrefixGuard::set(&root);
+        let stage = root.join("stage");
+        let caskroom = root.join("Caskroom/example/1.0.0");
+        let source = stage.join("Example.app/Contents");
+        let target = root.join("Applications/Example.app/Contents");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        crate::file::write(source.join("app"), "identical")?;
+        crate::file::write(target.join("app"), "identical")?;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+
+        assert!(install_app(&stage, &caskroom, &app, true, true, true)?);
+        assert!(!caskroom.join("Example.app").exists());
+
+        crate::file::write(target.join("app"), "different")?;
+        let error = install_app(&stage, &caskroom, &app, true, true, true).unwrap_err();
+        assert!(error.to_string().contains("is not identical"));
+        Ok(())
+    }
+
+    #[test]
+    fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = trusted_tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let _guard = BrewPrefixGuard::set(&root);
+        let stage = root.join("stage");
+        let caskroom = root.join("Caskroom/example/1.0.0");
+        let source = stage.join("Example.app/Contents");
+        let target = root.join("Applications/Example.app/Contents");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        crate::file::write(source.join("app"), "downloaded version")?;
+        crate::file::write(target.join("app"), "self-updated version")?;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+
+        assert!(install_app(&stage, &caskroom, &app, false, true, false)?);
+        assert_eq!(
+            std::fs::read_to_string(target.join("app"))?,
+            "self-updated version"
+        );
+        assert!(!caskroom.join("Example.app").exists());
         Ok(())
     }
 
@@ -8236,11 +8498,13 @@ mod tests {
             "token": "example",
             "version": "1.0.0",
             "url": "https://example.com/example.zip",
+            "auto_updates": true,
             "depends_on": null,
             "conflicts_with": null
         }))?;
         assert!(cask.depends_on.formula.is_empty());
         assert!(cask.conflicts_with.cask.is_empty());
+        assert!(cask.auto_updates);
         Ok(())
     }
 
@@ -8891,6 +9155,8 @@ mod tests {
         let receipt = CaskReceipt {
             schema_version: 3,
             version: "1.0.0".to_string(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: Vec::new(),
             binaries: Vec::new(),
             fonts: Vec::new(),
@@ -9097,6 +9363,8 @@ mod tests {
         let receipt = CaskReceipt {
             schema_version: 3,
             version: "1.0.0".to_string(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: Vec::new(),
             binaries: vec![binary],
             fonts: Vec::new(),
@@ -11891,6 +12159,8 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![app_target_path(app.target_name())?],
             binaries: vec![],
             fonts: vec![],
@@ -11931,6 +12201,8 @@ end
         let receipt = CaskReceipt {
             schema_version: 4,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: Vec::new(),
             binaries: Vec::new(),
             fonts: Vec::new(),
@@ -11981,6 +12253,7 @@ end
             &[],
             &BTreeMap::new(),
             &[],
+            &[],
         )?;
 
         let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
@@ -12021,6 +12294,7 @@ end
             &[],
             &BTreeMap::new(),
             &[],
+            &[],
         )?;
 
         let drifted = test_cask("drifted", "1.0.0");
@@ -12041,6 +12315,7 @@ end
             &[],
             &BTreeMap::new(),
             &[],
+            &[],
         )?;
         file::write(drifted_target.join("changed"), "changed")?;
 
@@ -12052,6 +12327,8 @@ end
             toml::to_string_pretty(&CaskReceipt {
                 schema_version: 2,
                 version: legacy.version.clone(),
+                auto_updates: false,
+                metadata_only_apps: Vec::new(),
                 apps: Vec::new(),
                 binaries: Vec::new(),
                 fonts: Vec::new(),
@@ -12330,6 +12607,8 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![app_target],
             binaries: Vec::new(),
             fonts: Vec::new(),
@@ -13176,6 +13455,8 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![],
             binaries: vec![],
             fonts: vec![],
@@ -13300,6 +13581,8 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![app_target_path(
                 "$HOMEBREW_PREFIX/Applications/Example.app",
             )?],
@@ -13498,6 +13781,7 @@ end
             aliases: vec![],
             old_tokens: vec![],
             version: "latest".to_string(),
+            auto_updates: false,
             url,
             url_specs: CaskUrlSpecs {
                 branch: Some("fonts-v2".to_string()),

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# vfox plugin metadata is cached on disk per plugin. Loading it boots a Lua VM
+# and executes the plugin's top-level metadata.lua, which can do arbitrary work
+# (e.g. probe system packages), so it must not re-run on every mise invocation —
+# only when the plugin's Lua sources change.
+
+marker="$PWD/metadata-loaded"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/sideeffect"
+mkdir -p "$PLUGIN_DIR/lib"
+
+# metadata.lua derives a field from a sibling module, so the cache has to track
+# that module too.
+write_metadata() { # $1 = version
+  cat <<EOF >"$PLUGIN_DIR/metadata.lua"
+local meta = require("meta")
+PLUGIN = {
+    name = "sideeffect",
+    version = "$1",
+    description = meta.description,
+}
+local f = io.open("$marker", "w")
+if f then
+    f:write("loaded")
+    f:close()
+end
+EOF
+}
+
+write_meta_module() { # $1 = description
+  cat <<EOF >"$PLUGIN_DIR/lib/meta.lua"
+return { description = "$1" }
+EOF
+}
+
+write_meta_module "first"
+write_metadata "0.1.0"
+
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+idiomatic_version_file_enable_tools = ["sideeffect"]
+EOF
+
+mise env >/dev/null
+assert "test -f '$marker'"
+
+rm -f "$marker"
+mise env >/dev/null
+assert_fail "test -f '$marker'" # served from the metadata cache, Lua did not run
+
+# Editing a sibling module leaves metadata.lua's mtime — and every directory
+# mtime — untouched, so an mtime-keyed cache would keep serving stale metadata.
+write_meta_module "second"
+mise env >/dev/null
+assert "test -f '$marker'"
+
+rm -f "$marker"
+mise env >/dev/null
+assert_fail "test -f '$marker'" # re-cached under the new sources
+
+# metadata.lua itself changing also refreshes.
+write_metadata "0.2.0"
+mise env >/dev/null
+assert "test -f '$marker'"
+
+# Lua resolves symlinks, so the fingerprint has to as well. A module symlinked
+# in from outside the plugin contributes nothing to a traversal that skips
+# links, so its edits would never invalidate the cache.
+mkdir -p "$PWD/external"
+printf 'return { description = "linked-first" }\n' >"$PWD/external/meta.lua"
+rm -f "$PLUGIN_DIR/lib/meta.lua"
+ln -s "$PWD/external/meta.lua" "$PLUGIN_DIR/lib/meta.lua"
+
+rm -f "$marker"
+mise env >/dev/null
+assert "test -f '$marker'" # sources changed (now a link), so it reloads
+
+rm -f "$marker"
+mise env >/dev/null
+assert_fail "test -f '$marker'" # cached again
+
+printf 'return { description = "linked-second" }\n' >"$PWD/external/meta.lua"
+mise env >/dev/null
+assert "test -f '$marker'" # editing through the symlink invalidates
