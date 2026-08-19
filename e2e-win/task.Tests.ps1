@@ -75,6 +75,45 @@ Write-Output "windows"
         mise run filetask.bat | Select -Last 1 | Should -Be 'mytask'
     }
 
+    It 'uses native separators in task path environment variables' {
+        @'
+[tasks.path_env]
+shell = "pwsh -NoProfile -Command"
+quiet = true
+run = '''
+[ordered]@{
+    original_cwd = $env:MISE_ORIGINAL_CWD
+    config_root = $env:MISE_CONFIG_ROOT
+    project_root = $env:MISE_PROJECT_ROOT
+    task_dir = $env:MISE_TASK_DIR
+    task_file = $env:MISE_TASK_FILE
+} | ConvertTo-Json -Compress
+'''
+'@ | Out-File -FilePath "$TestDrive\mise.task-path-env.toml" -Encoding utf8NoBOM
+
+        $oldConfig = $env:MISE_CONFIG_FILE
+        # Preserve the slash spelling that config discovery can produce when a global config is
+        # found through `.config/mise/config.toml` relative to the invocation directory (#12160).
+        $env:MISE_CONFIG_FILE = "$TestDrive/mise.task-path-env.toml"
+        try {
+            $paths = mise run path_env | ConvertFrom-Json
+            $LASTEXITCODE | Should -Be 0
+            foreach ($property in $paths.PSObject.Properties) {
+                $property.Value.Contains('/') | Should -BeFalse -Because (
+                    "$($property.Name) used mixed separators: $($property.Value)"
+                )
+            }
+        }
+        finally {
+            if ($null -eq $oldConfig) {
+                Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_CONFIG_FILE = $oldConfig
+            }
+            Remove-Item -Path "$TestDrive\mise.task-path-env.toml" -ErrorAction SilentlyContinue
+        }
+    }
+
     # `windows_executable_extensions` is what decides whether a file with no extension and no
     # shebang is a task at all -- there is no permission bit here for `is_executable` to consult.
     # Nothing else in this suite covers that boundary, and it is the reason the extensionless
