@@ -1633,12 +1633,12 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
 
     let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
     if is_gitlab {
-        return Ok(crate::gitlab::get_headers(url.as_str()));
+        return Ok(crate::gitlab::get_headers(url.as_str(), url.as_str()));
     }
 
     let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
     if is_forgejo {
-        return Ok(crate::forgejo::get_headers(url.as_str()));
+        return Ok(crate::forgejo::get_headers(url.as_str(), url.as_str()));
     }
 
     Ok(HeaderMap::new())
