@@ -22,6 +22,10 @@ cp bin/mise "bin with space/mise"
 
 cat >"$HOME/.local/bin/mise" <<'EOF'
 #!/bin/sh
+if test "${1:-}" = "--cd" && test "${MISE_ENV:-}" = "unexpected"; then
+  echo "inherited remote MISE_ENV was not cleared" >&2
+  exit 43
+fi
 if test "${1:-}" = "--cd" && test -e "$2/layered-secret"; then
   echo "layered remote exclude was not applied" >&2
   exit 42
@@ -98,12 +102,14 @@ cat >source/mise.toml <<EOF
 [bootstrap.remote]
 source = "."
 exclude = ["generated", "layered-secret"]
+mise_env = ["default", "linux"]
 
 [bootstrap.remote.hosts.cache]
 host = "example.test"
 user = "ubuntu"
 tags = ["cache", "production"]
 remote_mise = "mise"
+mise_env = ["server", "linux"]
 
 [bootstrap.remote.hosts.relative]
 host = "relative.test"
@@ -132,6 +138,7 @@ assert_fail "test -d '$bad_remote_stage'"
 
 assert_succeed "mise bootstrap remote cache --dry-run --yes --skip tools"
 assert_contains "cat $ssh_log" "ubuntu@example.test"
+assert_contains "cat $ssh_log" "MISE_ENV=server,linux"
 assert_contains "cat $ssh_log" "bootstrap --dry-run --yes --skip tools"
 assert_fail "test -d $remote_stage"
 
@@ -152,7 +159,13 @@ assert_fail "test -L $copy_links_stage/project/shared/nested/value-link"
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote relative --dry-run --yes"
 assert_contains "cat $ssh_log" "$remote_stage/project/bin/mise version"
+assert_contains "cat $ssh_log" "MISE_ENV=default,linux"
 assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote cache --remote-env ci,dotfiles --dry-run --yes"
+assert_contains "cat $ssh_log" "MISE_ENV=ci,dotfiles"
+assert_not_contains "cat $ssh_log" "MISE_ENV=server,linux"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote relative --all --dry-run --yes"
@@ -164,6 +177,11 @@ assert_fail "test -d $remote_stage"
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote layered --dry-run --yes"
 assert_contains "cat $ssh_log" "$HOME/.local/bin/mise version"
+
+: >"$ssh_log"
+assert_succeed "MISE_ENV=unexpected mise bootstrap remote layered --dry-run --yes"
+assert_contains "cat $ssh_log" "'MISE_ENV=' $HOME/.local/bin/mise --cd"
+assert_not_contains "cat $ssh_log" "MISE_ENV=unexpected"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote --host root@ad-hoc.test --source . --remote-mise $HOME/.local/bin/mise --dry-run --yes"
