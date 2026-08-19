@@ -1,4 +1,4 @@
-backends = ["aqua:pinterest/ktlint", "asdf:mise-plugins/mise-ktlint"]
+backends = ["aqua:ktlint/ktlint", "asdf:mise-plugins/mise-ktlint"]
 bins = ["ktlint"]
 description = "An anti-bikeshedding Kotlin linter with built-in formatter"
 version_order = "semver"
