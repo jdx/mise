@@ -345,9 +345,9 @@ Version prefixes like `v` are automatically stripped.
 mise preserves the order returned by the version source. By default, version
 resolution treats the last matching entry as the latest one. If the source
 returns semantic versions in another order, set `version_order = "semver"` to
-select versions by semantic precedence while keeping `mise ls-remote` in the
-source's canonical order. See [Version ordering](/dev-tools/#version-ordering)
-for the complete ordering contract.
+order `mise ls-remote` and select versions by semantic precedence. See
+[Version ordering](/dev-tools/#version-ordering) for the complete ordering
+contract.
 
 GitHub's releases API, for example, returns releases newest first. Opt into
 semantic ordering when using it as an HTTP version source:
@@ -463,9 +463,9 @@ including:
 - **`int(value)`**, **`float(value)`**, and **`string(value)`**: Convert compatible values
 
 mise adds **`sortVersions(array)`** for version-aware ordering. Prefer
-`version_order = "semver"` when only version resolution needs semantic ordering;
-use `sortVersions()` when the expression itself or the list returned by
-`mise ls-remote` must be sorted.
+`version_order = "semver"` when the discovered versions follow semantic
+versioning; use `sortVersions()` when the expression itself needs a sorted
+intermediate value.
 
 ::: tip
 `version_expr` is the final extraction step, so its result becomes the version
