@@ -13,10 +13,18 @@ bins = ["az"]
 # — not in the bin directory uv/pipx copy it to.
 [[backends]]
 full = "github:Azure/azure-cli"
-platforms = ["windows-x64"]
+platforms = ["windows"]
 
 [backends.options]
 version_prefix = "azure-cli-"
+
+# ARM64 gets the same x64 ZIP: Microsoft publishes no ARM64 asset, the launcher
+# defect above is not architecture-specific, and Windows 11 ARM runs x64 user-mode
+# code transparently. Verified on a `windows-11-arm` runner — `az --version` works
+# through `mise exec` and through the shim, and the bundled `python.exe` is an x64
+# binary. Same reasoning as `codeql`, which points macos-arm64 at the osx64 asset.
+[backends.options.platforms.windows-arm64]
+asset_pattern = "azure-cli-{{ version }}-x64.zip"
 
 # Everywhere else: PyPI. There is no Linux release asset, and the macOS tarball
 # does not bundle python — outside a Homebrew Cask path its launcher requires
