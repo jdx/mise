@@ -47,3 +47,6 @@ jobs:
       - run: mise run release-plz
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          # The full-feature build above already covers compilation. Avoid HK's
+          # redundant cargo-check, which enforces dependency rust-version metadata.
+          HK_SKIP_STEPS: cargo-check
