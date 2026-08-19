@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::context::Context;
 use crate::embedded_plugins::{self, EmbeddedPlugin};
 use crate::error::Result;
+use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
@@ -148,6 +149,26 @@ impl Plugin {
             .create_function(move |_, value: String| Ok(rewrite_url(value, &rewriter)))?;
         self.lua
             .set_named_registry_value(crate::http::URL_REWRITER_REGISTRY_KEY, func)?;
+        Ok(())
+    }
+
+    /// Register the default HTTP headers resolver used by artifact downloads
+    /// and the Lua HTTP module.
+    pub(crate) fn set_http_headers_resolver(&self, resolver: HttpHeadersResolver) -> Result<()> {
+        let func = self.lua.create_function(move |lua, value: String| {
+            let table = lua.create_table()?;
+            let Ok(url) = Url::parse(&value) else {
+                return Ok(table);
+            };
+            for (name, value) in resolver(&url).iter() {
+                if let Ok(value) = value.to_str() {
+                    table.set(name.as_str(), value)?;
+                }
+            }
+            Ok(table)
+        })?;
+        self.lua
+            .set_named_registry_value(crate::http::HTTP_HEADERS_RESOLVER_REGISTRY_KEY, func)?;
         Ok(())
     }
 

@@ -108,6 +108,10 @@ The vfox backend honors mise's [`url_replacements`](/url-replacements.html) sett
 tool artifact downloads and requests made through the plugin's built-in Lua HTTP module. This
 includes `http.get`, `http.head`, `http.download_file`, and their `try_*` variants.
 
+After applying URL replacements, vfox also uses mise's [`netrc`](/configuration/settings.html#netrc)
+setting to add HTTP Basic authentication for the destination host. An explicit `Authorization`
+header supplied by a plugin takes precedence when the request stays on the same origin.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these

@@ -1687,7 +1687,7 @@ fn apply_netrc_credentials(
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
-fn netrc_headers(url: &Url) -> HeaderMap {
+pub(crate) fn netrc_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
