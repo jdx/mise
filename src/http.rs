@@ -1630,18 +1630,29 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     let Some(host) = url.host_str() else {
         return Ok(HeaderMap::new());
     };
+    // Generic HTTP callers have no configured forge API URL to use as a trust
+    // boundary. Only infer that boundary for HTTPS requests. Backend-specific
+    // callers pass their configured API URL directly and can therefore support
+    // explicitly configured HTTP instances without trusting arbitrary HTTP URLs.
+    let Some(api_url) = inferred_forge_api_url(url) else {
+        return Ok(HeaderMap::new());
+    };
 
     let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
     if is_gitlab {
-        return Ok(crate::gitlab::get_headers(url.as_str(), url.as_str()));
+        return Ok(crate::gitlab::get_headers(url.as_str(), api_url));
     }
 
     let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
     if is_forgejo {
-        return Ok(crate::forgejo::get_headers(url.as_str(), url.as_str()));
+        return Ok(crate::forgejo::get_headers(url.as_str(), api_url));
     }
 
     Ok(HeaderMap::new())
+}
+
+fn inferred_forge_api_url(url: &Url) -> Option<&str> {
+    (url.scheme() == "https").then(|| url.as_str())
 }
 
 /// Decide whether netrc credentials should be applied to a request.
@@ -2830,6 +2841,15 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         // original host, so netrc (scoped to the new host) wins.
         assert!(netrc_should_apply(true, true));
         assert!(netrc_should_apply(true, false));
+    }
+
+    #[test]
+    fn test_inferred_forge_api_url_requires_https() {
+        let https = Url::parse("https://gitlab.com/api/v4/projects").unwrap();
+        assert_eq!(inferred_forge_api_url(&https), Some(https.as_str()));
+
+        let http = Url::parse("http://gitlab.com/api/v4/projects").unwrap();
+        assert_eq!(inferred_forge_api_url(&http), None);
     }
 
     fn basic_netrc_headers() -> HeaderMap {
