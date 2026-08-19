@@ -3,10 +3,27 @@
 --- @return table Version information with download URL
 
 local http = require("http")
+local os = require("os")
 
 -- GCS bucket configuration
 local GCS_BUCKET = "cloud-sdk-release"
 local BASE_URL = "https://storage.googleapis.com/" .. GCS_BUCKET
+
+local function use_bundled_python()
+    local value = os.getenv("MISE_TOOL_OPTS__BUNDLED_PYTHON")
+    if not value or value == "" then
+        return true
+    end
+
+    value = string.lower(value)
+    if value == "true" or value == "1" or value == "yes" or value == "on" then
+        return true
+    elseif value == "false" or value == "0" or value == "no" or value == "off" then
+        return false
+    end
+
+    error("bundled_python must be true or false, got: " .. value)
+end
 
 --- Get OS name for download URL
 local function get_os_name()
@@ -59,9 +76,15 @@ local function build_filename(version)
     local arch_name = get_arch_name()
     local ext = get_extension()
 
+    -- Prefer Google's Windows archive with its own Python runtime. The
+    -- unbundled archive requires a compatible Python to already be on PATH.
+    local variant = ""
+    if os_name == "windows" and arch_name == "x86_64" and use_bundled_python() then
+        variant = "-bundled-python"
+    end
+
     -- Format: google-cloud-sdk-{version}-{os}-{arch}.tar.gz
-    -- For bundled Python (recommended): google-cloud-sdk-{version}-{os}-{arch}-bundled-python.tar.gz
-    return "google-cloud-sdk-" .. version .. "-" .. os_name .. "-" .. arch_name .. ext
+    return "google-cloud-sdk-" .. version .. "-" .. os_name .. "-" .. arch_name .. variant .. ext
 end
 
 --- Fetch SHA256 checksum for the file
