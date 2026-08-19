@@ -2053,6 +2053,8 @@ pub trait Backend: Debug + Send + Sync {
     ///
     /// In offline mode, this reads the existing remote-versions cache without
     /// fetching or writing. If no cache exists, it returns an empty list.
+    /// The returned list applies the backend's configured `version_order`; the
+    /// cached value remains in source order.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
@@ -2072,14 +2074,19 @@ pub trait Backend: Debug + Send + Sync {
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
-        self.list_remote_versions_with_info_and_options(
-            config,
-            resolved_opts.options(),
-            resolved_opts.options(),
-            refresh,
-            has_local_version_listing_override,
-        )
-        .await
+        let opts = resolved_opts.options();
+        let versions = self
+            .list_remote_versions_with_info_and_options(
+                config,
+                opts,
+                opts,
+                refresh,
+                has_local_version_listing_override,
+            )
+            .await?;
+        Ok(self
+            .version_order(opts)?
+            .order_by(versions, |version| version.version.as_str()))
     }
 
     /// List remote versions while selecting candidates with the active request's options.
@@ -2097,14 +2104,18 @@ pub trait Backend: Debug + Send + Sync {
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
-        self.list_remote_versions_with_info_and_options(
-            config,
-            resolved_opts.options(),
-            opts,
-            refresh,
-            has_local_version_listing_override,
-        )
-        .await
+        let versions = self
+            .list_remote_versions_with_info_and_options(
+                config,
+                resolved_opts.options(),
+                opts,
+                refresh,
+                has_local_version_listing_override,
+            )
+            .await?;
+        Ok(self
+            .version_order(opts)?
+            .order_by(versions, |version| version.version.as_str()))
     }
 
     /// Common remote-version listing hook for both config- and request-aware callers.
@@ -3874,8 +3885,9 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Select the ordering policy supported by this backend.
     ///
-    /// Backends must opt in explicitly before `version_order` can affect
-    /// resolution. This keeps opaque version schemes source-ordered by default.
+    /// Backends must opt in explicitly before `version_order` can affect remote
+    /// version listing or resolution. This keeps opaque version schemes
+    /// source-ordered by default.
     fn version_order(&self, opts: &ToolVersionOptions) -> eyre::Result<VersionOrder> {
         if opts.opts.contains_key("version_order") {
             bail!("{} backend does not support version_order", self.get_type())
