@@ -1242,6 +1242,7 @@ impl Run {
                     deny_read: self.deny_read,
                     deny_write: self.deny_write,
                     deny_net: self.deny_net,
+                    deny_local_sockets: false,
                     deny_env: self.deny_env,
                     allow_read: self.allow_read.clone(),
                     allow_write: self.allow_write.clone(),
@@ -1250,6 +1251,7 @@ impl Run {
                     pass_through_env: vec![],
                     cache_env: vec![],
                     deny_system_temp_write: false,
+                    deny_mise_data_read: false,
                 },
             ),
         };

@@ -9,9 +9,12 @@
 //! real Homebrew can adopt mise-poured kegs. Unsupported lifecycle vocabulary
 //! fails before mutation.
 //!
-//! Formulae without a usable bottle are built from source, still without
-//! Homebrew: mise provisions a mise-managed ruby and evaluates the formula
-//! with its own Formula-DSL shim (see source.rs and shim.rb).
+//! On Linux, formulae without a usable bottle can be built from source, still
+//! without Homebrew: mise provisions a mise-managed ruby and evaluates the
+//! formula with its own Formula-DSL shim (see source.rs and shim.rb). macOS
+//! source builds fail closed because its sandbox cannot prove that detached
+//! descendants have stopped mutating the keg; compatible bottles remain
+//! supported there.
 //!
 //! Scope: formulae only. Casks are implemented by the sibling `brew-cask`
 //! manager. Services are not implemented. homebrew/core formulae use mise's

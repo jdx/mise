@@ -422,6 +422,7 @@ impl TaskExecutor {
             deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
             deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
+            deny_local_sockets: self.sandbox.deny_local_sockets,
             deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
             allow_read: task
                 .allow_read
@@ -462,6 +463,7 @@ impl TaskExecutor {
                 .cloned()
                 .collect(),
             deny_system_temp_write: self.sandbox.deny_system_temp_write,
+            deny_mise_data_read: self.sandbox.deny_mise_data_read,
         };
         if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
             && let Some(session) = &self.cache_session

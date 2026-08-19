@@ -24,6 +24,7 @@
 # (each verified against the sha256 declared in the formula).
 
 require "digest/sha2"
+require "date"
 require "etc"
 require "fileutils"
 require "open-uri"
@@ -62,6 +63,14 @@ class ShimUnsupportedError < StandardError; end
 def shim_unsupported!(feature)
   raise ShimUnsupportedError,
         "formula uses `#{feature}`, which mise's source-build shim does not support"
+end
+
+def checked_command_output!(*command)
+  output, status = Open3.capture2e(*command)
+  value = output.strip
+  return value if status.success? && !value.empty? && !value.include?("\0")
+
+  raise "command produced no valid output: #{command.join(" ")}"
 end
 
 module MiseDownload
@@ -140,12 +149,14 @@ class MacOSVersion
 
   def self.host
     @host ||= begin
-      version = OS.mac? ? `sw_vers -productVersion`.strip : "0"
-      new(version.empty? ? "0" : version)
+      version = OS.mac? ? checked_command_output!("/usr/bin/sw_vers", "-productVersion") : "0"
+      raise "invalid macOS version: #{version.inspect}" unless version.match?(/\A\d+(?:\.\d+)*\z/)
+
+      new(version)
     end
   end
 
-  def self.from_symbol(sym) = new(SYMBOLS.fetch(sym.to_sym, "0"))
+  def self.from_symbol(sym) = new(SYMBOLS.fetch(sym.to_sym))
 
   def initialize(version) = @version = version.to_s
 
@@ -157,7 +168,13 @@ class MacOSVersion
 
   def to_s = @version
   def major = @version.split(".").first.to_i
-  def requires_nehalem_cpu? = false
+  def requires_nehalem_cpu?
+    shim_unsupported!("MacOSVersion#requires_nehalem_cpu?; exact Intel CPU feature detection is not implemented")
+  end
+  alias requires_sse4? requires_nehalem_cpu?
+  alias requires_sse41? requires_nehalem_cpu?
+  alias requires_sse42? requires_nehalem_cpu?
+  alias requires_popcnt? requires_nehalem_cpu?
 end
 
 module Hardware
@@ -174,7 +191,12 @@ module MacOS
   def self.version = MacOSVersion.host
 
   def self.sdk_path
-    @sdk_path ||= Pathname.new(`xcrun --show-sdk-path 2>/dev/null`.strip)
+    @sdk_path ||= begin
+      path = Pathname.new(checked_command_output!("/usr/bin/xcrun", "--show-sdk-path"))
+      raise "xcrun returned an invalid SDK path: #{path}" unless path.absolute? && path.directory?
+
+      path
+    end
   end
 
   def self.sdk_path_if_needed = OS.mac? ? sdk_path : nil
@@ -184,16 +206,25 @@ module MacOS
   end
 
   module Xcode
-    def self.installed? = false
+    def self.installed? = shim_unsupported!("MacOS::Xcode.installed?; exact Xcode detection is not implemented")
   end
 end
 
 class Version
   include Comparable
 
+  NUMERIC = /\A\d+(?:\.\d+)*\z/
+
   def initialize(version) = @version = version.to_s
 
-  def <=>(other) = Gem::Version.new(@version.gsub(/[^0-9.].*\z/, "")) <=> Gem::Version.new(other.to_s.gsub(/[^0-9.].*\z/, ""))
+  def <=>(other)
+    other = other.to_s
+    unless @version.match?(NUMERIC) && other.match?(NUMERIC)
+      shim_unsupported!("opaque version comparison #{@version.inspect} <=> #{other.inspect}")
+    end
+
+    Gem::Version.new(@version) <=> Gem::Version.new(other)
+  end
   def to_s = @version
   def to_str = @version
   def inspect = @version.inspect
@@ -266,7 +297,7 @@ class Pathname
 
   def write(content, *args)
     dirname.mkpath
-    super
+    File.write(to_s, content, *args)
   end
 
   def atomic_write(content)
@@ -275,6 +306,8 @@ class Pathname
   end
 
   def append_lines(content)
+    raise "Cannot append file that doesn't exist: #{self}" unless exist?
+
     open("a") { |f| f.puts(content) }
   end
 
@@ -299,12 +332,6 @@ end
 # constant lookup always resolves `ENV` to Object::ENV, so the global must
 # carry the methods itself
 module BrewEnvExtension
-  KNOWN_NOOPS = %i[
-    permit_arch_flags runtime_cpu_detection O0 O1 O2 O3 Os
-    cxx11 libcxx no_fixup_chains deverbose_build refurbish_args
-    permit_weak_imports
-  ].freeze
-
   def append(keys, value, separator = " ")
     Array(keys).each do |key|
       old = self[key.to_s]
@@ -359,10 +386,7 @@ module BrewEnvExtension
   end
 
   def method_missing(name, *_args)
-    unless KNOWN_NOOPS.include?(name)
-      opoo "ENV.#{name} is not supported by mise's build shim (ignored)"
-    end
-    nil
+    shim_unsupported!("ENV.#{name}; exact Homebrew build-environment semantics are not implemented")
   end
 
   def respond_to_missing?(_name, _include_private = false) = true
@@ -558,12 +582,12 @@ class Formula
     def skip_clean(*); end
     def link_overwrite(*); end
     def conflicts_with(*, **); end
-    def fails_with(*, &) = nil
-    def needs(*); end
-    def env(*); end
+    def fails_with(*, &) = shim_unsupported!("fails_with compiler selection")
+    def needs(*) = shim_unsupported!("needs build requirement")
+    def env(*) = shim_unsupported!("env build-environment selection")
     def option(*, **); end
     def deprecated_option(*); end
-    def pour_bottle?(*, &) = nil
+    def pour_bottle?(*, &) = shim_unsupported!("pour_bottle? predicate")
     def allow_network_access!(*); end
     def deny_network_access!(*); end
 
@@ -571,8 +595,10 @@ class Formula
       opoo "formula is deprecated upstream#{kwargs[:because] ? " (#{kwargs[:because]})" : ""}"
     end
 
-    def disable!(**kwargs)
-      opoo "formula is disabled upstream#{kwargs[:because] ? " (#{kwargs[:because]})" : ""}"
+    def disable!(date:, because:, **)
+      return if Date.parse(date) > Date.today
+
+      shim_unsupported!("disabled formula (#{because})")
     end
 
     # ---- platform-conditional blocks ----
@@ -594,13 +620,16 @@ class Formula
 
     # `on_system :linux, macos: :ventura_or_older` — run on linux, or on
     # macOS when the host version matches the comparator
-    def on_system(*conditions, macos: nil, &block)
-      run = conditions.include?(:linux) && OS.linux?
-      run ||= OS.mac? && macos && macos_condition_matches?(macos)
+    def on_system(linux, macos:, &block)
+      raise ArgumentError, "The first argument to `on_system` must be `:linux`" unless linux == :linux
+
+      parsed = parse_macos_condition(macos)
+      run = OS.linux?
+      run ||= OS.mac? && macos_condition_matches?(parsed)
       class_exec(&block) if run && block
     end
 
-    def macos_condition_matches?(condition)
+    def parse_macos_condition(condition)
       sym = condition.to_s
       base, comparator = if sym.end_with?("_or_older")
         [sym.delete_suffix("_or_older"), :or_older]
@@ -613,19 +642,27 @@ class Formula
         # an unknown version symbol must not silently skip install logic
         shim_unsupported!("on_system macos condition #{condition.inspect}")
       end
+      [base.to_sym, comparator]
+    end
+
+    def macos_condition_matches?(parsed)
+      base, comparator = parsed
       host = MacOSVersion.host
-      target = MacOSVersion.from_symbol(base.to_sym)
+      target = MacOSVersion.from_symbol(base)
       case comparator
       when :or_older then host <= target
       when :or_newer then host >= target
       else host.major == target.major
       end
     end
-    private :macos_condition_matches?
+    private :parse_macos_condition, :macos_condition_matches?
 
     # macOS-version blocks (on_sonoma, on_ventura :or_older, ...)
     MacOSVersion::SYMBOLS.each_key do |sym|
-      define_method(:"on_#{sym}") do |comparator = :==, &block|
+      define_method(:"on_#{sym}") do |comparator = nil, &block|
+        unless [nil, :or_older, :or_newer].include?(comparator)
+          raise ArgumentError, "Invalid OS `or_*` condition: #{comparator.inspect}"
+        end
         next unless OS.mac? && block
         host = MacOSVersion.host
         target = MacOSVersion.from_symbol(sym)
@@ -639,39 +676,20 @@ class Formula
     end
 
     # ---- resources & patches ----
-    def resource(name, &block)
-      @resources ||= {}
-      res = Resource.new(name)
-      res.instance_eval(&block) if block
-      @resources[name] = res
+    def resource(name, &)
+      shim_unsupported!("resource #{name.inspect}; network-fetched resources are not supported")
     end
 
     def resources = (@resources ||= {})
 
     def patch(strip = :p1, src = nil, &block)
-      @patches ||= []
-      strip, src = :p1, strip if strip == :DATA || strip.is_a?(String)
-      spec = PatchSpec.new(strip.to_s.delete_prefix("p"), MISE_BREW_FORMULA_FILE)
-      if src == :DATA
-        spec.data!
-      elsif src.is_a?(String)
-        # inline patch string is unsupported; brew core doesn't use it
-        shim_unsupported!("inline patch strings")
-      end
-      spec.instance_eval(&block) if block
-      @patches << spec
+      shim_unsupported!("formula patches; source builds require pre-fetched typed patches")
     end
 
     def patches = (@patches ||= [])
 
-    # Unknown class-level DSL is almost always newly-added inert metadata
-    # (livecheck variants, autobump markers, ...) — formula files track
-    # brew's current DSL, so failing here would break working formulae every
-    # time brew adds an annotation. Warn so it stays visible. Install-time
-    # helpers (instance methods) still fail loudly: those shape the build.
     def method_missing(name, *_args, &_block)
-      opoo "ignoring unknown formula DSL `#{name}` (mise build shim)"
-      nil
+      shim_unsupported!("unknown formula DSL `#{name}`")
     end
 
     def respond_to_missing?(_name, _include_private = false) = true
@@ -719,8 +737,8 @@ class Formula
   def buildpath = MISE_BREW_BUILDPATH
   def testpath = shim_unsupported!("testpath")
 
-  def deps = []
-  def declared_deps = []
+  def deps = shim_unsupported!("deps; typed Dependency objects are not implemented")
+  def declared_deps = shim_unsupported!("declared_deps; typed Dependency objects are not implemented")
 
   def resource(name)
     res = self.class.resources.fetch(name) { raise "undefined resource #{name.inspect}" }
@@ -752,24 +770,29 @@ class Formula
     nil
   end
 
-  def inreplace(paths, before = nil, after = nil, audit_result = true, &block)
-    Array(paths).each do |path|
+  def inreplace(paths, before = nil, after = nil, audit_result: true, global: true, &block)
+    paths = Array(paths)
+    if paths.empty? || paths.all? { |path| path.nil? || path.to_s.empty? }
+      raise "inreplace: `paths` was empty"
+    end
+    paths.each do |path|
       path = Pathname.new(path.to_s)
       content = path.read
       replaced = content.dup
       if block
         ext = InreplaceText.new(replaced)
         block.call(ext)
+        raise "inreplace in #{path} failed: #{ext.errors.join("; ")}" unless ext.errors.empty?
+
         replaced = ext.text
       else
-        raise "inreplace: missing before/after" if before.nil?
-        case before
-        when Regexp then replaced.gsub!(before, after.to_s)
-        else replaced = replaced.gsub(before.to_s, after.to_s)
+        raise "inreplace: missing before/after" if before.nil? || after.nil?
+
+        before = before.to_s if before.is_a?(Pathname)
+        result = global ? replaced.gsub!(before, after.to_s) : replaced.sub!(before, after.to_s)
+        if result.nil? && audit_result
+          raise "inreplace in #{path}: expected replacement of #{before.inspect} with #{after.inspect}"
         end
-      end
-      if audit_result && replaced == content
-        raise "inreplace in #{path} made no substitutions — the formula may need updating"
       end
       path.write(replaced)
     end
@@ -863,23 +886,29 @@ class Formula
   def respond_to_missing?(_name, _include_private = false) = true
 
   class InreplaceText
-    attr_reader :text
+    attr_reader :errors, :text
 
-    def initialize(text) = @text = text
+    def initialize(text)
+      @text = text
+      @errors = []
+    end
 
-    def gsub!(before, after, audit_result = true)
+    def gsub!(before, after, audit_result: true)
+      before = before.to_s if before.is_a?(Pathname)
       result = @text.gsub!(before, after.to_s)
-      raise "inreplace: #{before.inspect} not found" if result.nil? && audit_result
+      @errors << "expected replacement of #{before.inspect} with #{after.inspect}" if result.nil? && audit_result
       result
     end
 
-    def sub!(before, after)
-      @text.sub!(before, after.to_s)
+    def sub!(before, after, audit_result: true)
+      result = @text.sub!(before, after.to_s)
+      @errors << "expected replacement of #{before.inspect} with #{after.inspect}" if result.nil? && audit_result
+      result
     end
 
     def change_make_var!(flag, new_value)
       replaced = @text.gsub!(/^#{Regexp.escape(flag)}[ \t]*[\\?\\+\\:]?=[ \t]*((?:.*\\\n)*.*)$/, "#{flag}=#{new_value}")
-      opoo "change_make_var! #{flag} did nothing" if replaced.nil?
+      @errors << "expected to change #{flag.inspect} to #{new_value.inspect}" if replaced.nil?
       replaced
     end
   end
@@ -890,6 +919,8 @@ def main
   klass = Formula.instance_variable_get(:@formula_subclass)
   odie "no Formula subclass found in #{MISE_BREW_FORMULA_FILE}" if klass.nil?
   formula = klass.new
+
+  exit 0 if ENV["MISE_BREW_INSPECT_ONLY"] == "1"
 
   Dir.chdir(MISE_BREW_BUILDPATH.to_s)
   klass.patches.each(&:apply!)

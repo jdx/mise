@@ -9,17 +9,7 @@ use super::SandboxConfig;
 /// System paths that are always readable on Linux.
 /// Note: /tmp and /dev are handled separately with full (read+write) access.
 const SYSTEM_READ_PATHS: &[&str] = &[
-    "/usr",
-    "/lib",
-    "/lib64",
-    "/bin",
-    "/sbin",
-    "/etc",
-    "/proc",
-    "/sys",
-    "/nix",
-    "/snap",
-    "/home/linuxbrew",
+    "/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/proc", "/sys", "/nix", "/snap",
 ];
 
 /// System files that may resolve outside [`SYSTEM_READ_PATHS`].
@@ -110,11 +100,13 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
             },
         )?;
         ruleset = add_read_rule(ruleset, "/dev", full_access)?;
-        let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
-        if installs_dir.exists() {
-            ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+        if !config.deny_mise_data_read {
+            let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
+            if installs_dir.exists() {
+                ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+            }
+            ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         }
-        ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         for path in &config.allow_read {
             ruleset = add_path_rule(ruleset, path, read_access)?;
         }
@@ -132,11 +124,13 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         // /tmp and /dev need read access (not in SYSTEM_READ_PATHS, handled separately)
         ruleset = add_read_rule(ruleset, "/tmp", read_access)?;
         ruleset = add_read_rule(ruleset, "/dev", read_access)?;
-        let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
-        if installs_dir.exists() {
-            ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+        if !config.deny_mise_data_read {
+            let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
+            if installs_dir.exists() {
+                ruleset = add_path_rule(ruleset, installs_dir, read_access)?;
+            }
+            ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         }
-        ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         for path in &config.allow_read {
             ruleset = add_path_rule(ruleset, path, read_access)?;
         }

@@ -19,6 +19,10 @@ pub struct SandboxConfig {
     pub deny_read: bool,
     pub deny_write: bool,
     pub deny_net: bool,
+    /// Also deny local/Unix-domain sockets when network access is denied.
+    /// This is stricter than the default network sandbox, which keeps local
+    /// IPC available for compatibility.
+    pub deny_local_sockets: bool,
     pub deny_env: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
@@ -31,6 +35,9 @@ pub struct SandboxConfig {
     /// Do not grant the sandbox's usual broad write access to system temp.
     /// Callers using this must add an explicit private temp path to `allow_write`.
     pub deny_system_temp_write: bool,
+    /// Do not grant the sandbox's usual broad read access to mise's data and
+    /// install roots. Security-sensitive callers must allow exact tool roots.
+    pub deny_mise_data_read: bool,
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -76,12 +83,14 @@ impl SandboxConfig {
         self.deny_read
             || self.deny_write
             || self.deny_net
+            || self.deny_local_sockets
             || self.deny_env
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
             || !self.allow_env.is_empty()
             || self.deny_system_temp_write
+            || self.deny_mise_data_read
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
@@ -117,7 +126,7 @@ impl SandboxConfig {
 
     #[cfg_attr(windows, allow(dead_code))]
     pub fn effective_deny_net(&self) -> bool {
-        self.deny_net || !self.allow_net.is_empty()
+        self.deny_net || self.deny_local_sockets || !self.allow_net.is_empty()
     }
 
     pub fn effective_deny_env(&self) -> bool {
@@ -228,7 +237,7 @@ impl SandboxConfig {
                      Use --deny-net to block all network, or remove --allow-net."
                 );
             }
-            seccomp::apply_seccomp_net_filter()?;
+            seccomp::apply_seccomp_net_filter(self.deny_local_sockets, false)?;
         }
         Ok(())
     }
@@ -273,8 +282,11 @@ pub fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
 
 /// Apply seccomp network filter (Linux only).
 #[cfg(target_os = "linux")]
-pub fn seccomp_apply() -> eyre::Result<()> {
-    seccomp::apply_seccomp_net_filter()
+pub fn seccomp_apply(
+    deny_local_sockets: bool,
+    deny_process_group_escape: bool,
+) -> eyre::Result<()> {
+    seccomp::apply_seccomp_net_filter(deny_local_sockets, deny_process_group_escape)
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).
@@ -460,5 +472,16 @@ mod tests {
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
+    }
+
+    #[test]
+    fn test_local_socket_denial_enables_strict_network_sandbox() {
+        let config = SandboxConfig {
+            deny_local_sockets: true,
+            ..Default::default()
+        };
+
+        assert!(config.is_active());
+        assert!(config.effective_deny_net());
     }
 }
