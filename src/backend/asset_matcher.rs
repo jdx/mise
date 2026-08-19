@@ -600,7 +600,15 @@ impl AssetPicker {
         }
 
         if format.is_archive() {
-            return 10;
+            return match format {
+                // Since we are downloading, prefer small archives: zstd and xz
+                // tend to be smaller archives.
+                ExtractionFormat::TarZst => 15,
+                // xz comes in after zst because it can cost more CPU to decompress.
+                ExtractionFormat::TarXz => 13,
+                // All other archive formats roughly created equal.
+                _ => 10,
+            };
         }
 
         // Platform-agnostic runtime archives (composer.phar, foo.jar, bar.pyz)
@@ -1688,6 +1696,36 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_archive_format_preference_order() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let tar_zst = "tool-1.0.0-linux-x86_64.tar.zst";
+        let tar_xz = "tool-1.0.0-linux-x86_64.tar.xz";
+        let tar_gz = "tool-1.0.0-linux-x86_64.tar.gz";
+
+        let picked = picker
+            .pick_best_asset(&[tar_gz.to_string(), tar_xz.to_string(), tar_zst.to_string()])
+            .unwrap();
+        assert_eq!(picked, tar_zst);
+
+        let picked = picker
+            .pick_best_asset(&[tar_gz.to_string(), tar_xz.to_string()])
+            .unwrap();
+        assert_eq!(picked, tar_xz);
+    }
+
+    #[test]
+    fn test_asset_name_stem_strips_shorthand_archive_suffixes() {
+        assert_eq!(
+            asset_name_stem("tool-1.0.0-linux-x86_64.tzst"),
+            "tool-1.0.0-linux-x86_64"
+        );
+        assert_eq!(
+            asset_name_stem("tool-1.0.0-linux-x86_64.txz"),
+            "tool-1.0.0-linux-x86_64"
+        );
     }
 
     #[test]
