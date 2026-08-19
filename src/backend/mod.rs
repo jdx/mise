@@ -219,6 +219,25 @@ fn has_local_version_listing_option_override(
     resolved_opts
         .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
 }
+
+/// Digest of the listing-relevant tool options, used to partition the remote-version cache.
+///
+/// The cached list is *shaped* by these options — `version_prefix` decides which tags survive
+/// and how they are spelled, `api_url` decides which host answered — so two different sets of
+/// values must not share a cache entry. Collected into a `BTreeMap` so the digest depends on
+/// the values rather than on the order the options were inserted, the same way asdf's
+/// `version_listing_cache_context` does.
+///
+/// `get_string` rather than `get`: the latter yields `None` for any non-string TOML scalar,
+/// which would quietly collapse two distinct values into one key.
+fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[&str]) -> String {
+    let values: BTreeMap<&str, String> = version_listing_opt_keys
+        .iter()
+        .filter_map(|key| opts.get_string(key).map(|value| (*key, value)))
+        .collect();
+    hash::hash_to_str(&values)
+}
+
 /// Remaps a backend-discovered path from the concrete install dir to the
 /// runtime path users put on PATH.
 ///
@@ -1188,6 +1207,76 @@ mod tests {
         ));
     }
 
+    /// The digest keys a cache, so it has to depend on the values and not on the order the
+    /// options happened to be inserted in — `opts` is insertion-ordered.
+    #[test]
+    fn test_listing_option_digest_is_stable_and_order_independent() {
+        use crate::toolset::ToolVersionOptions;
+
+        let keys = &["api_url", "version_prefix"];
+        let api_url = || toml::Value::String("https://github.example.com/api/v3".into());
+        let prefix = || toml::Value::String("release-".into());
+
+        let mut forward = ToolVersionOptions::default();
+        forward.opts.insert("api_url".to_string(), api_url());
+        forward.opts.insert("version_prefix".to_string(), prefix());
+
+        let mut reverse = ToolVersionOptions::default();
+        reverse.opts.insert("version_prefix".to_string(), prefix());
+        reverse.opts.insert("api_url".to_string(), api_url());
+
+        assert_eq!(
+            listing_option_digest(&forward, keys),
+            listing_option_digest(&reverse, keys),
+        );
+        assert_eq!(
+            listing_option_digest(&forward, keys),
+            listing_option_digest(&forward, keys),
+        );
+    }
+
+    /// Every distinction the version listing depends on has to reach the digest, and nothing
+    /// else may: an install-time option that cannot change the list must not split the cache.
+    #[test]
+    fn test_listing_option_digest_tracks_declared_keys_only() {
+        use crate::toolset::ToolVersionOptions;
+
+        let keys = &["api_url", "version_prefix"];
+        let empty = ToolVersionOptions::default();
+
+        let mut prefix_a = ToolVersionOptions::default();
+        prefix_a.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("a-".into()),
+        );
+
+        let mut prefix_b = ToolVersionOptions::default();
+        prefix_b.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("b-".into()),
+        );
+
+        // The defect this guards: two prefixes that produce different listings sharing an entry.
+        assert_ne!(
+            listing_option_digest(&prefix_a, keys),
+            listing_option_digest(&prefix_b, keys),
+        );
+        assert_ne!(
+            listing_option_digest(&empty, keys),
+            listing_option_digest(&prefix_a, keys),
+        );
+
+        let mut with_install_opt = prefix_a.clone();
+        with_install_opt.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-{{version}}.tar.gz".into()),
+        );
+        assert_eq!(
+            listing_option_digest(&prefix_a, keys),
+            listing_option_digest(&with_install_opt, keys),
+        );
+    }
+
     #[test]
     fn test_backend_arg_matches_registry_backend_ignores_inline_opts() {
         let ba = BackendArg::new(
@@ -2028,7 +2117,23 @@ pub trait Backend: Debug + Send + Sync {
         refresh: bool,
         has_local_version_listing_override: bool,
     ) -> eyre::Result<Vec<VersionInfo>> {
-        let cache_context = self.remote_version_cache_context(config).await?;
+        // The listing-relevant options shape the cached list, so they belong in its key.
+        // Only local overrides count: a registry-supplied value is identical for everyone, so
+        // one entry is correct for it, and leaving it out keeps the shared versions host
+        // available for the default case.
+        let opt_context = has_local_version_listing_override.then(|| {
+            listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
+        });
+        let cache_context = match (
+            self.remote_version_cache_context(config).await?,
+            opt_context,
+        ) {
+            (Some(backend_context), Some(opt_context)) => {
+                Some(hash::hash_to_str(&(backend_context, opt_context)))
+            }
+            (Some(context), None) | (None, Some(context)) => Some(context),
+            (None, None) => None,
+        };
         let remote_versions = match cache_context.as_deref() {
             Some(context) => self.get_remote_version_cache_with_context(Some(context)),
             None => self.get_remote_version_cache(),
@@ -2072,15 +2177,17 @@ pub trait Backend: Debug + Send + Sync {
                 ba.short, backend_type
             );
             false
-        } else if cache_context.is_some() {
+        } else if has_local_version_listing_override {
+            // Checked before the context: an option override now also produces a cache
+            // context, and this is the message that names the actual cause.
             trace!(
-                "Skipping versions host for {} because local context affects remote version listing",
+                "Skipping versions host for {} because local backend opts affect remote version listing",
                 ba.short,
             );
             false
-        } else if has_local_version_listing_override {
+        } else if cache_context.is_some() {
             trace!(
-                "Skipping versions host for {} because local backend opts affect remote version listing",
+                "Skipping versions host for {} because local context affects remote version listing",
                 ba.short,
             );
             false
@@ -4105,6 +4212,7 @@ mod latest_version_tests {
         stable_result: Option<String>,
         stable_info: Option<VersionInfo>,
         remote_versions: Vec<VersionInfo>,
+        listing_keys: &'static [&'static str],
         stable_calls: AtomicUsize,
         stable_info_calls: AtomicUsize,
         list_calls: AtomicUsize,
@@ -4128,6 +4236,7 @@ mod latest_version_tests {
                         ..Default::default()
                     },
                 ],
+                listing_keys: &[],
                 stable_calls: AtomicUsize::new(0),
                 stable_info_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
@@ -4146,6 +4255,13 @@ mod latest_version_tests {
 
         fn with_remote_versions(mut self, remote_versions: Vec<VersionInfo>) -> Self {
             self.remote_versions = remote_versions;
+            self
+        }
+
+        /// Declare tool options that shape this backend's version listing, the way the real
+        /// github/spm/ubi/http/s3 backends do.
+        fn with_listing_keys(mut self, listing_keys: &'static [&'static str]) -> Self {
+            self.listing_keys = listing_keys;
             self
         }
 
@@ -4170,6 +4286,10 @@ mod latest_version_tests {
 
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
+        }
+
+        fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+            self.listing_keys
         }
 
         async fn _list_remote_versions(
@@ -4624,6 +4744,86 @@ mod latest_version_tests {
         );
     }
 
+    /// The regression this fixes: two option values that produce different listings shared one
+    /// cache entry, so whichever ran first answered for both. `short` is the same for the two
+    /// (inline opts are stripped from it), so they do share a cache *directory* — only the key
+    /// keeps them apart.
+    #[tokio::test]
+    async fn test_remote_versions_cache_is_partitioned_by_listing_options() {
+        let config = Config::get().await.unwrap();
+        let version = |v: &str| VersionInfo {
+            version: v.to_string(),
+            ..Default::default()
+        };
+
+        let alpha = LatestBackend::new("test-listing-opts-partition[version_prefix=a-]")
+            .with_listing_keys(&["version_prefix"])
+            .with_remote_versions(vec![version("1.0.0")]);
+        let beta = LatestBackend::new("test-listing-opts-partition[version_prefix=b-]")
+            .with_listing_keys(&["version_prefix"])
+            .with_remote_versions(vec![version("2.0.0")]);
+        // Same value as `alpha`, different canned list: it must never be asked for it.
+        let alpha_again = LatestBackend::new("test-listing-opts-partition[version_prefix=a-]")
+            .with_listing_keys(&["version_prefix"])
+            .with_remote_versions(vec![version("3.0.0")]);
+        assert_eq!(alpha.ba().cache_path, beta.ba().cache_path);
+        let _ = fs::remove_dir_all(&alpha.ba().cache_path);
+
+        assert_eq!(
+            alpha.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+        // The defect: this read back the list `alpha` had cached under the shared key.
+        assert_eq!(
+            beta.list_remote_versions(&config).await.unwrap(),
+            vec!["2.0.0".to_string()]
+        );
+        // Same option value, same entry — which is what shows the key follows the value rather
+        // than the instance, and that the fix did not trade staleness for a refetch every time.
+        assert_eq!(
+            alpha_again.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+        assert_eq!(alpha_again.list_calls(), 0);
+    }
+
+    /// The other half of it: declaring listing options must not partition anything on its own.
+    /// With no local override there is no context, so the list has to land on the contextless
+    /// entry — that is the state in which the shared versions host stays available, and a
+    /// context here would take it away from every default installation of the tool.
+    #[tokio::test]
+    async fn test_declared_listing_keys_without_override_use_the_default_cache_entry() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-listing-opts-shared")
+            .with_listing_keys(&["api_url", "version_prefix"])
+            .with_remote_versions(vec![VersionInfo {
+                version: "1.0.0".to_string(),
+                ..Default::default()
+            }]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+
+        // `get_remote_version_cache()` is the `context: None` handle. Had a context been
+        // produced, the list would have been written somewhere else and this would be empty.
+        let cached = backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .get_cached()
+            .unwrap();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].version, "1.0.0");
+    }
+
     #[tokio::test]
     async fn test_offline_latest_uses_fast_path_when_available() {
         let config = Config::get().await.unwrap();
@@ -4721,6 +4921,7 @@ mod latest_version_tests {
             stable_result: Some("9.9.9".to_string()),
             stable_info: None,
             remote_versions: vec![],
+            listing_keys: &[],
             stable_calls: AtomicUsize::new(0),
             stable_info_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
