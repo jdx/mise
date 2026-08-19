@@ -85,7 +85,7 @@ jobs:
           } >> "$GITHUB_ENV"
           sccache --zero-stats
       - run: |
-          cargo build --all-features
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
       # Downstream jobs only execute this binary, so keep full debug symbols in
