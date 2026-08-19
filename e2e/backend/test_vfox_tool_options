@@ -94,29 +94,28 @@ git -C "$PLUGIN_DIR" -c user.name=mise -c user.email=mise@example.com commit -qm
 cat >mise.toml <<EOF
 [env]
 MISE_TOOL_OPTS__CONFIG_OVERRIDE = "from-config"
-RTX_TOOL_OPTS__CONFIG_OVERRIDE = "from-config"
 MISE_TEST_OPTION_OS_MARKER = "$OS_MARKER"
 
 [tools]
-"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", extensions = "opentelemetry,swoole", config_override = "from-option", install_override = "from-option", retries = 2, install_env = { MISE_TOOL_OPTS__INSTALL_OVERRIDE = "from-install-env", RTX_TOOL_OPTS__INSTALL_OVERRIDE = "from-install-env" } }
+"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", extensions = "opentelemetry,swoole", config_override = "from-option", install_override = "from-option", retries = 2, install_env = { MISE_TOOL_OPTS__INSTALL_OVERRIDE = "from-install-env" } }
 EOF
 
 export MISE_LOCKFILE=1
 detect_platform
 
-MISE_TOOL_OPTS__EXTENSIONS=ambient RTX_TOOL_OPTS__EXTENSIONS=ambient mise lock --platform "$MISE_PLATFORM"
+MISE_TOOL_OPTS__EXTENSIONS=ambient mise lock --platform "$MISE_PLATFORM"
 assert \
   "cat '$PRE_MARKER'" \
-  "opentelemetry,swoole|opentelemetry,swoole|from-config|from-config|from-option|from-option|2"
+  "opentelemetry,swoole|missing|from-config|missing|from-option|missing|2"
 
-MISE_TOOL_OPTS__EXTENSIONS=ambient RTX_TOOL_OPTS__EXTENSIONS=ambient mise install
+MISE_TOOL_OPTS__EXTENSIONS=ambient mise install
 assert \
   "cat '$PRE_MARKER'" \
-  "opentelemetry,swoole|opentelemetry,swoole|from-config|from-config|from-option|from-option|2"
+  "opentelemetry,swoole|missing|from-config|missing|from-option|missing|2"
 assert \
   "cat '$POST_MARKER'" \
-  "opentelemetry,swoole|opentelemetry,swoole|from-config|from-config|from-install-env|from-install-env"
-assert "cat '$OS_MARKER'" "opentelemetry,swoole"
+  "opentelemetry,swoole|missing|from-config|missing|from-install-env|missing"
+assert "cat '$OS_MARKER'" ""
 assert "mise exec -- tool-options" "tool-options"
 assert_contains "mise env" "VFOX_TOOL_OPTION=opentelemetry,swoole"
 assert_not_contains "mise env" "MISE_TOOL_OPTS__EXTENSIONS"
@@ -124,4 +123,4 @@ assert_not_contains "mise env" "MISE_TOOL_OPTS__EXTENSIONS"
 mise uninstall "vfox:file://$PLUGIN_DIR@1.0.0"
 assert \
   "cat '$UNINSTALL_MARKER'" \
-  "opentelemetry,swoole|opentelemetry,swoole"
+  "opentelemetry,swoole|missing"

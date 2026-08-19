@@ -114,8 +114,7 @@ The following [tool-options](/dev-tools/#tool-options) are available for the `vf
 go in `[tools]` in `mise.toml`.
 
 Traditional vfox lifecycle hooks for a selected tool version can read custom options from their
-hook environment. Option names are uppercased and exposed with both the current and legacy-compatible
-prefixes:
+hook environment. Option names are uppercased and exposed with the `MISE_TOOL_OPTS__` prefix:
 
 ```toml
 [tools]
@@ -124,7 +123,6 @@ prefixes:
 
 ```lua
 local extensions = os.getenv("MISE_TOOL_OPTS__EXTENSIONS")
--- RTX_TOOL_OPTS__EXTENSIONS contains the same value for legacy compatibility.
 ```
 
 These variables are available only while mise runs the plugin hook and are not exported to the
