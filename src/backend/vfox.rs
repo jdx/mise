@@ -113,14 +113,12 @@ fn set_env_var(
 fn add_tool_option_env(env: &mut indexmap::IndexMap<String, String>, options: &ToolOptions) {
     for (key, value) in options.opts_as_strings() {
         let key = key.to_uppercase();
-        set_env_var(env, format!("RTX_TOOL_OPTS__{key}"), value.clone());
         set_env_var(env, format!("MISE_TOOL_OPTS__{key}"), value);
     }
 }
 
 fn is_tool_option_env_key(key: &str) -> bool {
-    let matches =
-        |key: &str| key.starts_with("MISE_TOOL_OPTS__") || key.starts_with("RTX_TOOL_OPTS__");
+    let matches = |key: &str| key.starts_with("MISE_TOOL_OPTS__");
     if cfg!(windows) {
         matches(&key.to_uppercase())
     } else {
@@ -823,7 +821,6 @@ mod test {
 
         let mut env = indexmap::indexmap! {
             "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "ambient".to_string(),
-            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "ambient".to_string(),
         };
         add_tool_option_env(&mut env, &options);
 
@@ -831,12 +828,7 @@ mod test {
             env.get("MISE_TOOL_OPTS__EXTENSIONS").unwrap(),
             "opentelemetry\nswoole"
         );
-        assert_eq!(
-            env.get("RTX_TOOL_OPTS__EXTENSIONS").unwrap(),
-            "opentelemetry\nswoole"
-        );
         assert_eq!(env.get("MISE_TOOL_OPTS__RETRIES").unwrap(), "2");
-        assert_eq!(env.get("RTX_TOOL_OPTS__RETRIES").unwrap(), "2");
         assert!(!env.contains_key("MISE_TOOL_OPTS__DEPENDS"));
         assert!(!env.contains_key("MISE_TOOL_OPTS__INSTALL_ENV"));
     }
@@ -845,18 +837,15 @@ mod test {
     fn test_restore_config_tool_option_env() {
         let mut env = indexmap::indexmap! {
             "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "generated".to_string(),
-            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "generated".to_string(),
         };
         let config_env = indexmap::indexmap! {
             "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "configured".to_string(),
-            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "configured".to_string(),
             "UNRELATED".to_string() => "ignored".to_string(),
         };
 
         restore_config_tool_option_env(&mut env, &config_env);
 
         assert_eq!(env["MISE_TOOL_OPTS__EXTENSIONS"], "configured");
-        assert_eq!(env["RTX_TOOL_OPTS__EXTENSIONS"], "configured");
         assert!(!env.contains_key("UNRELATED"));
     }
 
@@ -876,9 +865,8 @@ mod test {
 
         add_tool_option_env(&mut env, &options);
 
-        assert_eq!(env.len(), 2);
+        assert_eq!(env.len(), 1);
         assert_eq!(env["MISE_TOOL_OPTS__EXTENSIONS"], "configured");
-        assert_eq!(env["RTX_TOOL_OPTS__EXTENSIONS"], "configured");
     }
 
     #[tokio::test]
