@@ -641,24 +641,6 @@ fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
         .find_map(file::which_non_pristine)
 }
 
-/// True when the OS will accept `path` as the program argument of a spawn.
-///
-/// [`file::can_execute_directly`] is *pure extension inspection* on Windows — it never
-/// touches the filesystem, so it answers true for a `foo.exe` that is not there. The
-/// `is_file()` guard supplies the existence check that [`file::is_executable`] performs
-/// inline; without it a lookup built on this would hand back paths to missing files.
-///
-/// The guard is `cfg!(windows)`-gated deliberately. On unix `can_execute_directly`
-/// delegates to `is_executable`, which stats already — and which answers true for a
-/// mode-0755 *directory*. Adding `is_file()` unconditionally would silently narrow every
-/// unix lookup below it, so unix keeps today's answer exactly.
-fn is_spawnable(path: &Path) -> bool {
-    if cfg!(windows) && !path.is_file() {
-        return false;
-    }
-    file::can_execute_directly(path)
-}
-
 /// Resolve `bin` inside `dirs`, in the order the OS itself resolves: directory-major,
 /// extension-minor.
 ///
@@ -690,7 +672,7 @@ where
     dirs.into_iter().find_map(|dir| {
         names.iter().map(|name| dir.join(name)).find(|candidate| {
             if spawnable {
-                is_spawnable(candidate)
+                file::is_spawnable(candidate)
             } else {
                 candidate.exists() && file::is_executable(candidate)
             }
@@ -910,7 +892,7 @@ mod tests {
         for name in ["a.ps1", "b.PS1", "c.vbs", "d.VBS"] {
             let path = dir.path().join(name);
             fs::write(&path, "exit 0\n").unwrap();
-            assert!(!is_spawnable(&path), "{name} must not be spawnable");
+            assert!(!file::is_spawnable(&path), "{name} must not be spawnable");
             assert!(
                 file::is_executable(&path),
                 "{name} should still satisfy the permissive predicate"
@@ -956,10 +938,10 @@ mod tests {
         let subdir = dir.path().join("subdir");
         fs::create_dir(&subdir).unwrap();
 
-        assert!(is_spawnable(&tool));
-        assert!(!is_spawnable(&plain));
+        assert!(file::is_spawnable(&tool));
+        assert!(!file::is_spawnable(&plain));
         assert_eq!(
-            is_spawnable(&subdir),
+            file::is_spawnable(&subdir),
             file::is_executable(&subdir),
             "a mode-0755 directory must be answered the same either way"
         );

@@ -1426,7 +1426,7 @@ pub(crate) fn os_can_launch_extension(ext: &str) -> bool {
 /// Note that on Windows this never touches the filesystem — it is pure extension
 /// inspection, so it answers true for a `foo.exe` that does not exist. `is_executable`
 /// checks `is_file()` inline; this one does not. A lookup that walks candidate paths must
-/// compose the two, which is what `backend::is_spawnable` does.
+/// compose the two, which is what [`is_spawnable`] does.
 pub fn can_execute_directly(path: &Path) -> bool {
     #[cfg(windows)]
     {
@@ -1440,6 +1440,14 @@ pub fn can_execute_directly(path: &Path) -> bool {
     {
         is_executable(path)
     }
+}
+
+/// True when the OS will accept `path` as the program argument of a spawn.
+pub(crate) fn is_spawnable(path: &Path) -> bool {
+    if cfg!(windows) && !path.is_file() {
+        return false;
+    }
+    can_execute_directly(path)
 }
 
 #[cfg(unix)]
@@ -1592,15 +1600,15 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     path
 }
 
-/// Returns the first executable in PATH, expanding configured executable
-/// extensions on Windows when `name` has no extension.
-pub(crate) fn which_with_extensions(name: &str) -> Option<PathBuf> {
+/// Returns the first directly spawnable executable in PATH, expanding configured
+/// executable extensions on Windows when `name` has no extension.
+pub(crate) fn which_spawnable(name: &str) -> Option<PathBuf> {
     let names = executable_names(name);
     env::PATH.iter().find_map(|dir| {
         names
             .iter()
             .map(|name| dir.join(name))
-            .find(|candidate| is_executable(candidate))
+            .find(|candidate| is_spawnable(candidate))
     })
 }
 
