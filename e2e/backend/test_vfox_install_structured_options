@@ -67,7 +67,7 @@ LUA
 
 git -C "$PLUGIN_DIR" init
 git -C "$PLUGIN_DIR" add .
-git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -m "initial plugin"
+git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -m "test(vfox): create structured options plugin"
 
 cat >mise.toml <<EOF
 [tools]
