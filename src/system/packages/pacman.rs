@@ -88,14 +88,35 @@ fn parse_pacman_deptest(output: &str) -> HashSet<&str> {
         .collect()
 }
 
-fn apply_provider_query<'a>(status: &mut PackageStatus, output: &'a str) -> Result<&'a str> {
+fn deptest_requirement(req: &PackageRequest) -> String {
+    match &req.version {
+        Some(version) => format!("{}={version}", req.name),
+        None => req.name.clone(),
+    }
+}
+
+fn apply_provider_query<'a>(
+    status: &mut PackageStatus,
+    output: &'a str,
+    constraint_satisfied: bool,
+) -> Result<&'a str> {
     let Some((provider, version)) = parse_pacman_package(output) else {
         bail!(
             "pacman -Q returned no package for satisfied requirement '{}'",
             status.request.name
         );
     };
-    status.state = package_state(&status.request, version);
+    // The provider's package version is display metadata; pacman -T evaluates
+    // the requested version against the version declared in Provides.
+    status.state = if constraint_satisfied {
+        PackageState::Installed {
+            version: version.to_string(),
+        }
+    } else {
+        PackageState::VersionMismatch {
+            installed: version.to_string(),
+        }
+    };
     Ok(provider)
 }
 
@@ -182,7 +203,7 @@ impl SystemPackageManager for PacmanManager {
         let apparent_missing = statuses
             .iter()
             .filter(|status| matches!(status.state, PackageState::Missing))
-            .map(|status| status.request.name.clone())
+            .map(|status| deptest_requirement(&status.request))
             .collect::<Vec<_>>();
         if apparent_missing.is_empty() {
             return Ok(statuses);
@@ -193,16 +214,33 @@ impl SystemPackageManager for PacmanManager {
         // genuinely unsatisfied; query the provider-satisfied names one at a
         // time so their returned versions can be associated positionally.
         let deptest = pacman_deptest(&apparent_missing).await?;
-        let missing = parse_pacman_deptest(&deptest);
+        let unsatisfied = parse_pacman_deptest(&deptest);
+        // A failed version constraint can still have a provider for the bare
+        // name. Distinguish that mismatch from a genuinely missing package.
+        let versioned_unsatisfied = statuses
+            .iter()
+            .filter(|status| {
+                status.request.version.is_some()
+                    && unsatisfied.contains(deptest_requirement(&status.request).as_str())
+            })
+            .map(|status| status.request.name.clone())
+            .collect::<Vec<_>>();
+        let bare_deptest = pacman_deptest(&versioned_unsatisfied).await?;
+        let bare_missing = parse_pacman_deptest(&bare_deptest);
         for status in statuses
             .iter_mut()
             .filter(|status| matches!(status.state, PackageState::Missing))
         {
-            if missing.contains(status.request.name.as_str()) {
+            let constraint_satisfied =
+                !unsatisfied.contains(deptest_requirement(&status.request).as_str());
+            if !constraint_satisfied
+                && (status.request.version.is_none()
+                    || bare_missing.contains(status.request.name.as_str()))
+            {
                 continue;
             }
             let output = pacman_query(std::slice::from_ref(&status.request.name)).await?;
-            let provider = apply_provider_query(status, &output)?;
+            let provider = apply_provider_query(status, &output, constraint_satisfied)?;
             debug!(
                 "pacman: {} is satisfied by installed provider {provider}",
                 status.request.name
@@ -331,12 +369,14 @@ mod tests {
     #[test]
     fn test_apply_provider_query() {
         let mut status = PackageStatus {
-            request: req("mariadb-clients", None),
+            request: req("mariadb-clients", Some("12.3.2")),
             state: PackageState::Missing,
         };
 
+        // pacman -T validated the version declared by Provides even though the
+        // provider package has a different version of its own.
         let provider =
-            apply_provider_query(&mut status, "percona-server-clients 9.7.1_1-1\n").unwrap();
+            apply_provider_query(&mut status, "percona-server-clients 9.7.1_1-1\n", true).unwrap();
 
         assert_eq!(provider, "percona-server-clients");
         assert_eq!(
@@ -344,6 +384,35 @@ mod tests {
             PackageState::Installed {
                 version: "9.7.1_1-1".to_string()
             }
+        );
+    }
+
+    #[test]
+    fn test_apply_provider_query_version_mismatch() {
+        let mut status = PackageStatus {
+            request: req("virtual-package", Some("2.0")),
+            state: PackageState::Missing,
+        };
+
+        apply_provider_query(&mut status, "provider-package 2.0-1\n", false).unwrap();
+
+        assert_eq!(
+            status.state,
+            PackageState::VersionMismatch {
+                installed: "2.0-1".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_deptest_requirement_includes_version() {
+        assert_eq!(
+            deptest_requirement(&req("virtual-package", Some("2.0"))),
+            "virtual-package=2.0"
+        );
+        assert_eq!(
+            deptest_requirement(&req("virtual-package", None)),
+            "virtual-package"
         );
     }
 
