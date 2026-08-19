@@ -19,6 +19,7 @@ let activeBanner:
       id: string;
       element: HTMLElement;
       observer: ResizeObserver | null;
+      update: (banner: BannerData) => void;
     }
   | undefined;
 
@@ -54,7 +55,7 @@ export function initBanner(): void {
         return;
       }
       if (activeBanner?.id === b.id) {
-        cacheBanner(b, activeBanner.element.offsetHeight);
+        activeBanner.update(b);
         return;
       }
       render(b);
@@ -150,36 +151,53 @@ function removeActiveBanner(): void {
 
 function render(b: BannerData, persist = true): void {
   removeActiveBanner();
+  let currentBanner = b;
+  let shouldPersist = persist;
   const el = document.createElement("div");
   el.className = "jdx-banner";
   el.setAttribute("role", "region");
   el.setAttribute("aria-label", "Site announcement");
 
   const msg = document.createElement("span");
-  msg.textContent = b.message;
   el.appendChild(msg);
 
-  if (b.link && isHttpUrl(b.link)) {
-    const a = document.createElement("a");
-    a.href = b.link;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = b.linkText || "Learn more";
-    el.appendChild(a);
-  }
+  const link = document.createElement("a");
+  link.target = "_blank";
+  link.rel = "noopener";
+  el.appendChild(link);
+
+  const updateContent = (next: BannerData) => {
+    currentBanner = next;
+    msg.textContent = next.message;
+    if (next.link && isHttpUrl(next.link)) {
+      link.href = next.link;
+      link.textContent = next.linkText || "Learn more";
+      link.hidden = false;
+    } else {
+      link.removeAttribute("href");
+      link.textContent = "";
+      link.hidden = true;
+    }
+  };
+  updateContent(b);
 
   const syncHeight = () => {
     document.documentElement.style.setProperty(
       "--vp-layout-top-height",
       `${el.offsetHeight}px`,
     );
-    if (persist) cacheBanner(b, el.offsetHeight);
+    if (shouldPersist) cacheBanner(currentBanner, el.offsetHeight);
   };
 
   const observer =
     typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(syncHeight)
       : null;
+  const update = (next: BannerData) => {
+    shouldPersist = true;
+    updateContent(next);
+    requestAnimationFrame(syncHeight);
+  };
 
   const btn = document.createElement("button");
   btn.type = "button";
@@ -187,7 +205,7 @@ function render(b: BannerData, persist = true): void {
   btn.textContent = "\u00d7";
   btn.addEventListener("click", () => {
     try {
-      localStorage.setItem(STORAGE_KEY, b.id);
+      localStorage.setItem(STORAGE_KEY, currentBanner.id);
     } catch {
       // Dismiss for this page even when localStorage is unavailable.
     }
@@ -197,7 +215,7 @@ function render(b: BannerData, persist = true): void {
   el.appendChild(btn);
 
   document.body.prepend(el);
-  activeBanner = { id: b.id, element: el, observer };
+  activeBanner = { id: b.id, element: el, observer, update };
 
   requestAnimationFrame(syncHeight);
   observer?.observe(el);
