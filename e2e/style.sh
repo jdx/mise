@@ -47,10 +47,10 @@ else
 fi
 
 as_group() {
-  local status=0
+  local exit_status=0
   start_group "$1"
   shift
-  "$*" || status=$?
+  "$*" || exit_status=$?
   end_group
-  return "$status"
+  return "$exit_status"
 }
