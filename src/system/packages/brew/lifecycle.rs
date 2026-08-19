@@ -257,6 +257,13 @@ pub(super) enum LifecycleHealth {
     ReinstallRequired(Vec<String>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LifecycleInstallProgress {
+    Absent,
+    Complete,
+    Incomplete,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum LifecyclePhase {
@@ -627,6 +634,22 @@ fn has_glob_magic(value: &str) -> bool {
 
 pub(super) fn needs_repair(keg: &Path) -> bool {
     !matches!(health(keg, false), LifecycleHealth::Healthy)
+}
+
+pub(super) fn install_progress(keg: &Path) -> LifecycleInstallProgress {
+    let path = state_path(keg);
+    if path.symlink_metadata().is_err() {
+        return LifecycleInstallProgress::Absent;
+    }
+    match crate::file::read_to_string(path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<LifecycleState>(&contents).ok())
+    {
+        Some(state) if state.complete && state.phase == LifecyclePhase::Complete => {
+            LifecycleInstallProgress::Complete
+        }
+        Some(_) | None => LifecycleInstallProgress::Incomplete,
+    }
 }
 
 /// Classify formula lifecycle health without fetching metadata or mutating state.

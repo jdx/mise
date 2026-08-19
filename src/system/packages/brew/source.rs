@@ -104,6 +104,10 @@ pub async fn build(
     let name = &formula.name;
     let pkg_version = formula.pkg_version()?;
     check_buildable(formula)?;
+    let keg = pour::keg_path(name, &pkg_version);
+    if pour::complete_interrupted_finalization(&keg)? {
+        return Ok(());
+    }
 
     pr.set_message("resolve ruby".to_string());
     let ruby = ruby_bin().await?;
@@ -125,7 +129,6 @@ pub async fn build(
 
     // formulae bake the final keg path into binaries, so the build installs
     // straight into the Cellar (same as brew); a failed build removes the keg
-    let keg = pour::keg_path(name, &pkg_version);
     let predecessor_keg = pour::active_keg(name);
     let existing_backup = pour::backup_existing_keg(&keg)?;
 

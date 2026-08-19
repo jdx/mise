@@ -71,6 +71,7 @@ enum FinalizationPhase {
     Receipt,
     Keg,
     Linked,
+    SharedState,
     Complete,
 }
 
@@ -1031,6 +1032,12 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
     } = input;
     let name = &rf.formula.name;
     let pkg_version = rf.formula.pkg_version()?;
+    if complete_interrupted_finalization(keg)? {
+        if staged_keg != keg && staged_keg.symlink_metadata().is_ok() {
+            crate::file::remove_all(staged_keg)?;
+        }
+        return Ok(());
+    }
     let previous_finalization_state = std::fs::read(finalization_state_path(keg)).ok();
     let previous_state = previous_finalization_state
         .as_deref()
@@ -1153,6 +1160,16 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
                  the linked keg and any recovery backup are retained as needs-repair"
             )
         })?;
+    write_finalization_state(
+        keg,
+        &FinalizationState {
+            formula: name.clone(),
+            version: pkg_version.clone(),
+            provenance: provenance_name.to_string(),
+            phase: FinalizationPhase::SharedState,
+            predecessor_keg: predecessor_keg.clone(),
+        },
+    )?;
     if let Some(backup) = backup {
         crate::file::remove_all(backup)?;
     }
@@ -1210,6 +1227,54 @@ fn validate_finalization_identity(keg: &Path, state: &FinalizationState) -> Resu
         );
     }
     Ok(())
+}
+
+pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
+    let Some(mut state) = read_finalization_state(keg)? else {
+        return Ok(false);
+    };
+    validate_finalization_identity(keg, &state)?;
+    if state.phase == FinalizationPhase::Complete {
+        return Ok(false);
+    }
+    match super::lifecycle::install_progress(keg) {
+        super::lifecycle::LifecycleInstallProgress::Absent => return Ok(false),
+        super::lifecycle::LifecycleInstallProgress::Incomplete => {
+            bail!(
+                "brew:{}/{} requires manual recovery: lifecycle execution has an unknown outcome",
+                state.formula,
+                state.version
+            )
+        }
+        super::lifecycle::LifecycleInstallProgress::Complete => {}
+    }
+    if !matches!(
+        state.phase,
+        FinalizationPhase::Linked | FinalizationPhase::SharedState
+    ) {
+        bail!(
+            "brew:{}/{} has inconsistent finalization and lifecycle phases",
+            state.formula,
+            state.version
+        );
+    }
+    let keg_metadata = keg
+        .symlink_metadata()
+        .wrap_err_with(|| format!("interrupted keg is missing: {}", keg.display()))?;
+    if !keg_metadata.is_dir() || keg_metadata.file_type().is_symlink() {
+        bail!("interrupted keg is not a directory: {}", keg.display());
+    }
+    let backup = recovery_backup_path(keg)?;
+    if backup.symlink_metadata().is_ok() {
+        let backup_metadata = backup.symlink_metadata()?;
+        if !backup_metadata.is_dir() || backup_metadata.file_type().is_symlink() {
+            bail!("recovery backup is not a directory: {}", backup.display());
+        }
+        crate::file::remove_all(backup)?;
+    }
+    state.phase = FinalizationPhase::Complete;
+    write_finalization_state(keg, &state)?;
+    Ok(true)
 }
 
 pub(super) fn remove_finalization_state(keg: &Path) -> Result<()> {
@@ -2342,6 +2407,49 @@ mod tests {
         );
         assert!(finalization_needs_repair(&keg));
         assert!(lifecycle::needs_repair(&keg));
+        let error = complete_interrupted_finalization(&keg).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("lifecycle execution has an unknown outcome")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalizer_commits_completed_lifecycle_without_replay() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let rf = resolved_formula("foo", "2.0");
+        let keg = keg_path("foo", "2.0");
+        let _state = FormulaStateGuard::new(&keg);
+        write_source_keg(&keg, "new")?;
+        crate::file::create_dir_all(keg.join(".bottle/etc/foo"))?;
+        crate::file::write(keg.join(".bottle/etc/foo/config"), "new-default")?;
+        let backup = recovery_backup_path(&keg)?;
+        write_source_keg(&backup, "old")?;
+        let prepared = lifecycle::prepare(&rf.formula, &keg)?;
+        lifecycle::install(&prepared, Some(&backup)).await?;
+        crate::file::write(prefix.join("etc/foo/config"), "user-after-install")?;
+        write_finalization_state(
+            &keg,
+            &FinalizationState {
+                formula: "foo".into(),
+                version: "2.0".into(),
+                provenance: "source_build".into(),
+                phase: FinalizationPhase::Linked,
+                predecessor_keg: Some(backup.clone()),
+            },
+        )?;
+
+        assert!(complete_interrupted_finalization(&keg)?);
+        assert_eq!(
+            crate::file::read_to_string(prefix.join("etc/foo/config"))?,
+            "user-after-install"
+        );
+        assert!(backup.symlink_metadata().is_err());
+        assert!(!finalization_needs_repair(&keg));
         Ok(())
     }
 
