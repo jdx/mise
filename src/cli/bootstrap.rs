@@ -667,6 +667,10 @@ struct BootstrapRemote {
     #[clap(long)]
     prompt_secrets: bool,
 
+    /// Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
+    #[clap(long, value_name = "ENV", value_delimiter = ',')]
+    remote_env: Option<Vec<String>>,
+
     /// Existing mise executable name or path; relative paths use the staged project
     #[clap(
         long,
@@ -2369,6 +2373,7 @@ impl BootstrapRemote {
 
         let overrides = system::remote::RemoteOverrides {
             source: self.source,
+            mise_env: self.remote_env,
             copy_links: self.copy_links,
             copy_link: self.copy_link,
             port: self.port,
