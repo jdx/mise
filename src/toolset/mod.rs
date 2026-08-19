@@ -753,15 +753,17 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        // A tracked config that fails to resolve protects nothing, but shouldn't
-        // abort the upgrade/prune either — parse failures are already only a
-        // warning in get_tracked_config_files, and tracked stubs below get the
-        // same treatment.
+        // A tracked config that fails here loses its protection (rendering
+        // failures lose all of it; ordinary per-tool resolution failures are
+        // swallowed inside resolve_with_opts and lose only that tool's), but
+        // it shouldn't abort the upgrade/prune either — parse failures are
+        // already only a warning in get_tracked_config_files, and tracked
+        // stubs below get the same treatment.
         let trs = match cf.to_tool_request_set() {
             Ok(trs) => trs,
             Err(err) => {
                 warn!(
-                    "error resolving tracked config {}: {err:#}",
+                    "error rendering tracked config {}, its tool versions will not be protected from removal: {err:#}",
                     display_path(&path)
                 );
                 continue;
@@ -770,7 +772,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
         let mut ts = Toolset::from(trs);
         if let Err(err) = ts.resolve_with_opts(config, &opts).await {
             warn!(
-                "error resolving tracked config versions {}: {err:#}",
+                "error resolving tracked config {}, its tool versions will not be protected from removal: {err:#}",
                 display_path(&path)
             );
             continue;

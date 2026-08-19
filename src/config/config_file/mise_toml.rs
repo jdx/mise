@@ -10,7 +10,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
@@ -24,10 +24,10 @@ use crate::config::config_file::{
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{
-    AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
+    AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue, shell_expand_env,
 };
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config, Settings};
+use crate::config::{Alias, AliasMap, Config, Settings, is_global_config};
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -1102,50 +1102,252 @@ impl MiseToml {
         if context.get("vars").is_some() {
             return;
         }
-        let mut vars: IndexMap<String, String> = IndexMap::new();
+        let config = Config::maybe_get();
+        let in_active_stack = config
+            .as_ref()
+            .is_some_and(|config| config.config_files.contains_key(&self.path));
         let mut had_vars_results = false;
-        let mut in_active_stack = false;
-        if let Some(config) = Config::maybe_get() {
-            in_active_stack = config.config_files.contains_key(&self.path);
+        let mut vars: IndexMap<String, String> = IndexMap::new();
+        let mut foreign_var_keys: HashSet<String> = HashSet::new();
+        if let Some(config) = &config {
             if let Some(vars_results) = config.vars_results_cached() {
                 had_vars_results = true;
-                vars.extend(
-                    vars_results
-                        .vars
-                        .iter()
-                        .map(|(k, (v, _))| (k.clone(), v.clone())),
-                );
-            } else {
+                // A config outside the loaded stack only inherits vars whose
+                // source lies under the config_root of a loaded config file
+                // that is an ancestor of this file: that covers the ancestor
+                // configs themselves (a monorepo root, a parent project) and
+                // the dotenv/script files they load — `_.file`/`_.source`
+                // record the loaded file, not the declaring config, as the
+                // source. A sibling project's shared `.env` at an ancestor
+                // directory stays foreign: it is not under any ancestor
+                // config's root. Global config files are matched explicitly
+                // rather than by containment, because their config_root is the
+                // home directory, under which every project file would count
+                // as ancestor-owned. The active project's other vars are not
+                // inherited — rendering another project's tracked config with
+                // them would silently produce the active project's values.
+                let ancestor_roots: Vec<PathBuf> = if in_active_stack {
+                    vec![]
+                } else {
+                    config
+                        .config_files
+                        .keys()
+                        .filter(|path| !is_global_config(path))
+                        .map(|path| config_root::config_root(path))
+                        .filter(|root| self.path.starts_with(root))
+                        .collect()
+                };
+                for (key, (value, source)) in &vars_results.vars {
+                    if in_active_stack
+                        || ancestor_roots.iter().any(|root| source.starts_with(root))
+                        || is_global_config(source)
+                    {
+                        vars.insert(key.clone(), value.clone());
+                    } else {
+                        // the merged map only keeps the nearest definition, so
+                        // a foreign winner may shadow a global value this file
+                        // would inherit — the key's inherited state is unknown
+                        foreign_var_keys.insert(key.clone());
+                    }
+                }
+            } else if in_active_stack {
                 vars.extend(config.vars.iter().map(|(k, v)| (k.clone(), v.clone())));
             }
         }
-        // A config parsed outside the active stack (e.g. a tracked config resolved
-        // by `mise upgrade`/`mise prune` from another directory) contributes nothing
-        // to the merged vars above, so a reference to its own `[vars]` would fail to
-        // render. Resolve its own vars here, overlaid on the active stack's. Only
-        // plain values are handled — other directives (`_.file`, `_.source`, …) need
-        // the async env resolver — and a value that fails to render is skipped
-        // rather than failing the whole parse.
         if !in_active_stack && !self.vars.0.is_empty() {
-            let mut own_context = context.clone();
-            for directive in &self.vars.0 {
-                if let EnvDirective::Val(key, value, _) = directive {
-                    // insert progressively so a var can reference the vars above it
-                    own_context.insert("vars", &vars);
-                    match self.parse_template_with_context(&own_context, value) {
-                        Ok(rendered) => {
-                            vars.insert(key.clone(), rendered);
-                        }
-                        Err(err) => debug!(
-                            "failed to render var {key} in {}: {err:#}",
-                            display_path(&self.path)
-                        ),
-                    }
-                }
-            }
+            self.resolve_own_vars(context, &mut vars, &foreign_var_keys);
         }
         if had_vars_results || !vars.is_empty() {
             context.insert("vars", &vars);
+        }
+    }
+
+    /// Resolves this file's own `[vars]` into `vars` for rendering outside the
+    /// active config stack: tracked configs during `mise upgrade`/`mise prune`,
+    /// monorepo child configs, and rendering during the initial config load.
+    /// Inside the stack the merged vars already contain them.
+    ///
+    /// Mirrors the real vars resolver for the directives that need no I/O and
+    /// fails closed everywhere else: a var that cannot be resolved faithfully
+    /// is removed rather than approximated, so a template referencing it fails
+    /// and the caller skips the config visibly instead of rendering another
+    /// project's value. Specifically:
+    ///
+    /// - `_.file`/`_.source` would read files and run shell scripts from
+    ///   every tracked project on every upgrade/prune, so they are not
+    ///   resolved — and since their output can define or override any key,
+    ///   including keys this file assigns itself, their presence leaves every
+    ///   var undefined. Plugin directives (`Module`/`PythonVenv`) cannot
+    ///   define vars, so inherited values survive them, but their env output
+    ///   is visible to later var templates — every own directive after one
+    ///   fails closed.
+    /// - age values are not decrypted, and redacted values are dropped because
+    ///   the redactor only knows the active stack's secrets.
+    /// - `tools = true` directives are inert, like the resolver's
+    ///   NonToolsOnly filter.
+    /// - `foreign_var_keys` are keys whose nearest definition in the loaded
+    ///   stack came from outside this file's hierarchy; the merged map may
+    ///   hide a global value beneath such a definition, so `default`/
+    ///   `required` cannot know their inherited state and fail closed.
+    ///
+    /// This resolves the file's own `[vars]` only — a value overridden by a
+    /// sibling (`mise.local.toml`) or defined by a parent directory's config
+    /// that is not part of the loaded stack is not seen here, and a var the
+    /// global config provides through `_.file` counts as foreign because its
+    /// recorded source is the dotenv, not the declaring config. A tool
+    /// template that wraps a var in tera's `default` filter opts into that
+    /// fallback whenever the var is unresolvable here, exactly as it does for
+    /// any undefined var.
+    fn resolve_own_vars(
+        &self,
+        context: &TeraContext,
+        vars: &mut IndexMap<String, String>,
+        foreign_var_keys: &HashSet<String>,
+    ) {
+        // The real resolver drops vars directives from non-global config
+        // entirely in safe mode — nothing here may assign or unset either.
+        if Settings::safe_mode() && !is_global_config(&self.path) {
+            return;
+        }
+        // A directive the resolver would drop is inert here too: it must not
+        // remove inherited values.
+        let dropped = |directive: &EnvDirective| directive.options().tools;
+        // `_.file`/`_.source` output can define or override any key — including
+        // keys this file assigns itself — so nothing here is trustworthy
+        // alongside one. Leave every var undefined: referencing templates fail
+        // and the caller skips the config visibly.
+        if self.vars.0.iter().any(|directive| {
+            !dropped(directive)
+                && matches!(directive, EnvDirective::File(..) | EnvDirective::Source(..))
+        }) {
+            vars.clear();
+            return;
+        }
+        let mut own_context = context.clone();
+        // Var values render against the process env, like the real resolver —
+        // not against this file's or the active project's [env]. Vars-mode
+        // `Rm` unsets keys from it for the directives that follow.
+        let mut own_env = env::PRISTINE_ENV.clone();
+        own_context.insert("env", &own_env);
+        // Set once a surviving plugin directive (`Module`/`PythonVenv`) is
+        // seen. Those cannot define vars, so inherited values — already
+        // resolved strings — stay valid, but their env output feeds every
+        // later directive's template and `$` expansion, which this path
+        // cannot reproduce: everything after them fails closed.
+        let mut env_opaque = false;
+        for directive in &self.vars.0 {
+            if dropped(directive) {
+                continue;
+            }
+            if matches!(
+                directive,
+                EnvDirective::Module(..) | EnvDirective::PythonVenv { .. }
+            ) {
+                env_opaque = true;
+                continue;
+            }
+            if env_opaque {
+                match directive {
+                    EnvDirective::Val(key, _, _)
+                    | EnvDirective::Default(key, _, _)
+                    | EnvDirective::Required(key, _)
+                    | EnvDirective::Age { key, .. } => {
+                        vars.shift_remove(key);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            let redacted = directive.options().redact == Some(true);
+            let (key, value) = match directive {
+                EnvDirective::Val(key, _, _) if redacted => {
+                    vars.shift_remove(key);
+                    continue;
+                }
+                EnvDirective::Val(key, value, _) => (key, value),
+                EnvDirective::Default(key, value, _) => {
+                    if redacted || foreign_var_keys.contains(key) {
+                        vars.shift_remove(key);
+                        continue;
+                    }
+                    // an inherited non-empty var wins, then a non-empty
+                    // process env var, then the fallback — the resolver's
+                    // vars-mode order
+                    if vars.get(key).is_some_and(|v| !v.is_empty()) {
+                        continue;
+                    }
+                    if let Some(v) = env::PRISTINE_ENV.get(key).filter(|v| !v.is_empty()) {
+                        vars.insert(key.clone(), v.clone());
+                        continue;
+                    }
+                    // the fallback template may fail; an inherited empty
+                    // value must not survive it
+                    vars.shift_remove(key);
+                    (key, value)
+                }
+                EnvDirective::Required(key, _) => {
+                    if redacted || foreign_var_keys.contains(key) {
+                        vars.shift_remove(key);
+                    } else if !vars.contains_key(key)
+                        && let Some(v) = env::PRISTINE_ENV.get(key)
+                    {
+                        // required never assigns; it only surfaces a process
+                        // env value so `{{ vars.KEY }}` can render
+                        vars.insert(key.clone(), v.clone());
+                    }
+                    continue;
+                }
+                EnvDirective::Rm(key, _) => {
+                    // the resolver's vars-mode `Rm` arm unsets the env key,
+                    // never the var
+                    own_env.remove(key);
+                    own_context.insert("env", &own_env);
+                    continue;
+                }
+                EnvDirective::Age { key, .. } => {
+                    vars.shift_remove(key);
+                    continue;
+                }
+                _ => continue,
+            };
+            let rendered = if contains_template_syntax(value) {
+                // progressive like the resolver: a var may reference — or
+                // extend — the vars visible above it, including an inherited
+                // value of its own key
+                own_context.insert("vars", &vars);
+                match self.parse_template_with_context(&own_context, value) {
+                    Ok(rendered) => rendered,
+                    Err(err) => {
+                        debug!(
+                            "failed to render var {key} in {}: {err:#}",
+                            display_path(&self.path)
+                        );
+                        // a key this file assigns must never keep a
+                        // same-named inherited value on failure
+                        vars.shift_remove(key);
+                        continue;
+                    }
+                }
+            } else {
+                value.clone()
+            };
+            let rendered = if rendered.contains('$') && Settings::get().env_shell_expand {
+                // the resolver's step-2 shell expansion; it leaves a missing
+                // env var unexpanded too, so assigning the result matches what
+                // this config would produce when active
+                let mut missing_vars = Vec::new();
+                let expanded = shell_expand_env(&rendered, &own_env, &mut missing_vars);
+                for var in missing_vars {
+                    debug!(
+                        "env var '{var}' is not defined and was left unexpanded while rendering vars in {}",
+                        display_path(&self.path)
+                    );
+                }
+                expanded
+            } else {
+                rendered
+            };
+            vars.insert(key.clone(), rendered);
         }
     }
 
@@ -3279,6 +3481,151 @@ mod tests {
         assert_eq!(version_of("node"), "1.2.3");
         // a var can reference the vars defined above it
         assert_eq!(version_of("terraform"), "1.2.3-beta");
+        file::remove_file(&p).unwrap();
+    }
+
+    /// A var the file declares but cannot resolve outside its stack must make a
+    /// referencing tool template fail, so the tracked-config caller skips the
+    /// config with a warning instead of protecting a bogus version.
+    #[tokio::test]
+    async fn test_unresolvable_own_var_fails() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.tracked.broken.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [vars]
+        broken = "{{ vars.does_not_exist_anywhere }}"
+
+        [tools]
+        node = "{{ vars.broken }}"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let err = cf.to_tool_request_set().unwrap_err().to_string();
+        assert!(err.contains("vars.broken"), "{err}");
+        file::remove_file(&p).unwrap();
+    }
+
+    /// A key the file assigns must never fall back to a same-named var
+    /// inherited from elsewhere: an unresolvable value leaves the key
+    /// undefined and a resolvable one overwrites the inherited value, while a
+    /// var may still extend an inherited value of its own key, and a `default`
+    /// whose inherited state is unknown (shadowed by a foreign definition)
+    /// fails closed.
+    #[tokio::test]
+    async fn test_own_var_shadows_inherited_value() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.tracked.shadow.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [vars]
+        broken = "{{ vars.does_not_exist_anywhere }}"
+        working = "own"
+        extended = "{{ vars.extended }}-own"
+        shadowed_default = { default = "fallback" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let mut vars = IndexMap::from([
+            ("broken".to_string(), "stale".to_string()),
+            ("working".to_string(), "stale".to_string()),
+            ("extended".to_string(), "inherited".to_string()),
+        ]);
+        let foreign = HashSet::from(["shadowed_default".to_string()]);
+        cf.resolve_own_vars(&TeraContext::new(), &mut vars, &foreign);
+        assert!(!vars.contains_key("broken"), "{vars:?}");
+        assert_eq!(vars.get("working").map(String::as_str), Some("own"));
+        assert_eq!(
+            vars.get("extended").map(String::as_str),
+            Some("inherited-own")
+        );
+        assert!(!vars.contains_key("shadowed_default"), "{vars:?}");
+        file::remove_file(&p).unwrap();
+    }
+
+    /// `_.file`/`_.source` output can define or override any key — including
+    /// keys the file assigns itself — so their presence leaves every var
+    /// undefined: the dotenv may hold the real value, and resolving anything,
+    /// inherited or own, would silently protect the wrong version.
+    #[tokio::test]
+    async fn test_opaque_vars_directive_fails_closed() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.tracked.opaque.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [vars]
+        _.file = ".env"
+        from_default = { default = "fallback" }
+        plain = "own"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let mut vars = IndexMap::from([("inherited".to_string(), "kept?".to_string())]);
+        cf.resolve_own_vars(&TeraContext::new(), &mut vars, &HashSet::new());
+        assert!(vars.is_empty(), "{vars:?}");
+        file::remove_file(&p).unwrap();
+    }
+
+    /// Plugin directives (`Module`) cannot define vars, so inherited values —
+    /// already resolved strings — survive them, and directives above them
+    /// resolve normally; but their env output feeds every later directive's
+    /// template, so everything after one fails closed.
+    #[tokio::test]
+    async fn test_plugin_vars_directive_fails_closed_after_it() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.tracked.module.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [vars]
+        before = "own-before"
+        _.somemod = {}
+        after = "own-after"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let mut vars = IndexMap::from([
+            ("inherited".to_string(), "kept".to_string()),
+            ("after".to_string(), "stale".to_string()),
+        ]);
+        cf.resolve_own_vars(&TeraContext::new(), &mut vars, &HashSet::new());
+        assert_eq!(vars.get("inherited").map(String::as_str), Some("kept"));
+        assert_eq!(vars.get("before").map(String::as_str), Some("own-before"));
+        assert!(!vars.contains_key("after"), "{vars:?}");
+        file::remove_file(&p).unwrap();
+    }
+
+    /// `{ default = "…" }` vars resolve outside the active stack like the real
+    /// resolver: an unset process env var falls back to the default value.
+    #[tokio::test]
+    async fn test_own_default_var_outside_active_config_stack() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".test.tracked.default.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [vars]
+        mise_test_tracked_default_var = { default = "4.5.6" }
+
+        [tools]
+        node = "{{ vars.mise_test_tracked_default_var }}"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let (_, tvp) = trs.tools.iter().find(|(ba, _)| ba.short == "node").unwrap();
+        assert_eq!(tvp[0].version(), "4.5.6");
         file::remove_file(&p).unwrap();
     }
 

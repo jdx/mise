@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# A monorepo child config's [tools] can reference a var defined at the
+# monorepo root: the child is loaded outside the active config stack, but the
+# root is part of the child's own hierarchy, so its vars must still resolve.
+# This holds both for vars the root defines inline and for vars it loads from
+# a dotenv via `_.file` (whose recorded source is the dotenv, not the config).
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["infra/stacks/*"]
+
+[vars]
+_.file = ".env"
+ROOT_TOOL_VERSION = "1.0.0"
+EOF
+
+echo "DOTENV_TOOL_VERSION=2.3.4" >.env
+
+mkdir -p infra/stacks/gcp infra/stacks/aws
+cat <<'EOF' >infra/stacks/gcp/mise.toml
+[tools]
+dummy = "{{ vars.ROOT_TOOL_VERSION }}"
+EOF
+cat <<'EOF' >infra/stacks/aws/mise.toml
+[tools]
+dummy = "{{ vars.DOTENV_TOOL_VERSION }}"
+EOF
+
+output=$(mise ls --monorepo 2>&1)
+assert_contains "echo '$output'" "dummy"
+assert_contains "echo '$output'" "1.0.0"
+assert_contains "echo '$output'" "2.3.4"

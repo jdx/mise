@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# A tracked config in another directory that pins a tool through its own
+# [vars] must keep protecting that version from `mise prune`. Rendering it
+# used to fail ("Field `dummy_version` is not defined") and abort the prune.
+mkdir varsproj other
+
+cat <<'EOF' >varsproj/mise.toml
+[vars]
+dummy_version = "1.0.0"
+
+[tools]
+dummy = "{{ vars.dummy_version }}"
+EOF
+mise -C varsproj install
+
+# installed but requested by no config, so prune must still offer to remove it
+mise install dummy@2.0.0
+
+cd other || exit 1
+output=$(mise prune --dry-run --tools --raw 2>&1)
+
+assert_not_contains "echo '$output'" "dummy@1.0.0"
+assert_contains "echo '$output'" "dummy@2.0.0"
