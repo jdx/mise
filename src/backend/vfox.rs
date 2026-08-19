@@ -634,29 +634,41 @@ impl VfoxBackend {
         }
     }
 
-    /// Loads (or reads from the disk cache) the metadata snapshot of a
-    /// filesystem plugin. Returns `None` for tools without a plugin dir
-    /// (embedded plugins) — their metadata is compiled in and cheap to load.
+    /// This plugin's metadata: idiomatic filenames, tool dependencies and
+    /// system dependencies.
+    ///
+    /// An installed plugin directory wins so a user override still applies, and
+    /// it is read through the disk cache — loading it boots a Lua VM and runs
+    /// the plugin's top-level code. An embedded plugin is used otherwise;
+    /// reading only the directory would silently drop the declarations of every
+    /// embedded plugin, since those ship compiled into the binary and have no
+    /// directory. `None` when there is no plugin at all.
     fn plugin_metadata_snapshot(&self) -> eyre::Result<Option<VfoxMetadataSnapshot>> {
         let plugin_path = dirs::PLUGINS.join(&self.pathname);
-        if !plugin_path.exists() {
+        let installed = plugin_path.exists();
+        if !installed && vfox::embedded_plugins::get_embedded_plugin(&self.pathname).is_none() {
             return Ok(None);
         }
-        let cache = self.metadata_snapshot_cache.get_or_init(|| {
-            CacheManagerBuilder::new(self.ba.cache_path.join("metadata.msgpack.z"))
-                .with_cache_key(lua_sources_fingerprint(&plugin_path))
-                .build()
-        });
-        let snapshot = cache.get_or_try_init(|| {
-            let plugin = vfox::Plugin::from_dir(&plugin_path)?;
+        let load = || {
+            let plugin = vfox::Plugin::from_name_or_dir(&self.pathname, &plugin_path)?;
             let metadata = plugin.get_metadata()?;
             Ok(VfoxMetadataSnapshot {
                 legacy_filenames: metadata.legacy_filenames,
                 depends: metadata.depends,
                 system_dependencies: metadata.system_dependencies,
             })
-        })?;
-        Ok(Some(snapshot.clone()))
+        };
+        if !installed {
+            // Embedded: the Lua is compiled in, so loading costs no I/O and
+            // there are no source files to key a cache on.
+            return Ok(Some(load()?));
+        }
+        let cache = self.metadata_snapshot_cache.get_or_init(|| {
+            CacheManagerBuilder::new(self.ba.cache_path.join("metadata.msgpack.z"))
+                .with_cache_key(lua_sources_fingerprint(&plugin_path))
+                .build()
+        });
+        Ok(Some(cache.get_or_try_init(load)?.clone()))
     }
 
     fn load_metadata_deps(&self) -> eyre::Result<Vec<String>> {
