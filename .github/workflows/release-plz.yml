@@ -47,6 +47,9 @@ jobs:
       - run: mise run release-plz
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          # render tasks rebuild mise after bumping its version. Allow that nested
+          # build to use dependencies whose rust-version metadata exceeds our MSRV.
+          MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
           # The full-feature build above already covers compilation. Avoid HK's
           # redundant cargo-check, which enforces dependency rust-version metadata.
           HK_SKIP_STEPS: cargo-check

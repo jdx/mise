@@ -14,8 +14,8 @@ depends = ['lint:*']
 
 [build]
 alias = "b"
-run = "cargo build --all-features"
-run_windows = "cargo build"
+run = "cargo build --all-features {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
+run_windows = "cargo build {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
 description = "Build the project"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
