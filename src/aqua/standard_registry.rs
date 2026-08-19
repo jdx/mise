@@ -108,6 +108,39 @@ mod tests {
     }
 
     #[test]
+    fn aqua_backends_name_canonical_packages() {
+        let stale = crate::registry::baked_registry()
+            .iter()
+            .flat_map(|(short, tool)| {
+                tool.backends
+                    .iter()
+                    .map(move |backend| (short, backend.full))
+            })
+            .filter_map(|(short, full)| {
+                let id = full.strip_prefix("aqua:")?;
+                let id = id.split('[').next().unwrap_or(id);
+                if AQUA_STANDARD_REGISTRY_FILES.contains_key(id) {
+                    return None;
+                }
+                let Some(canonical) = AQUA_STANDARD_REGISTRY_ALIASES.get(id) else {
+                    return Some(format!(
+                        "  registry/{short}.toml: aqua:{id} names no package"
+                    ));
+                };
+                // The gate lowercases both sides, so a case-only alias still matches.
+                (!canonical.eq_ignore_ascii_case(id))
+                    .then(|| format!("  registry/{short}.toml: aqua:{id} -> aqua:{canonical}"))
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            stale.is_empty(),
+            "aqua backends not naming a package the aqua registry keys:\n{}",
+            stale.join("\n")
+        );
+    }
+
+    #[test]
     fn test_baked_registry_numeric_replacement_keys() {
         let package = package("sharkdp/hyperfine").unwrap().unwrap();
 

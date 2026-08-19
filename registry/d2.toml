@@ -4,7 +4,7 @@ version_order = "semver"
 
 bins = ["d2"]
 [[backends]]
-full = "aqua:terrastruct/d2"
+full = "aqua:d2lang/d2"
 
 [[backends]]
 full = "github:terrastruct/d2"

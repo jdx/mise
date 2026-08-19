@@ -1,4 +1,4 @@
-backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui", "cargo:gitui"]
+backends = ["aqua:gitui-org/gitui", "asdf:looztra/asdf-gitui", "cargo:gitui"]
 bins = ["gitui"]
 description = "Blazing 💥 fast terminal-ui for git written in rust"
 version_order = "semver"
