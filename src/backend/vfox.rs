@@ -62,7 +62,11 @@ struct VfoxMetadataSnapshot {
 /// lazily: plugins whose metadata is never requested read nothing.
 fn lua_sources_fingerprint(plugin_path: &Path) -> String {
     let mut sources: Vec<(String, Vec<u8>)> = WalkDir::new(plugin_path)
-        .follow_links(false)
+        // Lua resolves symlinks, so the fingerprint has to as well: a plugin
+        // linked into place (`mise plugins link`) or carrying a symlinked
+        // module would otherwise contribute nothing and never invalidate.
+        // Symlink cycles surface as errors here and are skipped below.
+        .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
