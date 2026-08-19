@@ -20,6 +20,7 @@ let activeBanner:
       element: HTMLElement;
       observer: ResizeObserver | null;
       update: (banner: BannerData) => void;
+      cancelExpiration: () => void;
     }
   | undefined;
 
@@ -144,6 +145,7 @@ function cacheBanner(b: BannerData, height: number): void {
 }
 
 function removeActiveBanner(): void {
+  activeBanner?.cancelExpiration();
   activeBanner?.observer?.disconnect();
   activeBanner?.element.remove();
   activeBanner = undefined;
@@ -193,9 +195,35 @@ function render(b: BannerData, persist = true): void {
     typeof ResizeObserver !== "undefined"
       ? new ResizeObserver(syncHeight)
       : null;
+  let expirationTimer: number | undefined;
+  const cancelExpiration = () => {
+    if (expirationTimer !== undefined) window.clearTimeout(expirationTimer);
+    expirationTimer = undefined;
+  };
+  const scheduleExpiration = () => {
+    cancelExpiration();
+    if (!currentBanner.expires) return;
+    const expiresAt = Date.parse(currentBanner.expires);
+    if (Number.isNaN(expiresAt)) return;
+    const expire = () => {
+      if (activeBanner?.element !== el) return;
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) {
+        removeActiveBanner();
+        clearReserved();
+        return;
+      }
+      expirationTimer = window.setTimeout(
+        expire,
+        Math.min(remaining, 2_147_483_647),
+      );
+    };
+    expire();
+  };
   const update = (next: BannerData) => {
     shouldPersist = true;
     updateContent(next);
+    scheduleExpiration();
     requestAnimationFrame(syncHeight);
   };
 
@@ -215,7 +243,14 @@ function render(b: BannerData, persist = true): void {
   el.appendChild(btn);
 
   document.body.prepend(el);
-  activeBanner = { id: b.id, element: el, observer, update };
+  activeBanner = {
+    id: b.id,
+    element: el,
+    observer,
+    update,
+    cancelExpiration,
+  };
+  scheduleExpiration();
 
   requestAnimationFrame(syncHeight);
   observer?.observe(el);

@@ -66,7 +66,7 @@
     flex-direction: column;
     gap: 0.125rem;
     font-size: 0.8rem;
-    padding: 0.5rem 2.75rem;
+    padding: 0.5rem max(2.75rem, 44px);
     line-height: 1.3;
     text-wrap: balance;
   }
