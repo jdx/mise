@@ -24,5 +24,11 @@ touch uv.lock
 
 mise i
 
-# Validate that uv venv takes precedence when executing via another tool
-assert "mise x tiny@3 -- which python" "$PWD/.venv/bin/python"
+# Installation evaluates the environment before uv is available, so it must
+# leave venv creation for the subsequent exec.
+assert_directory_not_exists "$PWD/.venv"
+
+# Validate that a fresh environment computation creates and selects the uv
+# venv while executing through another tool override.
+assert "mise x --fresh-env tiny@3 -- which python" "$PWD/.venv/bin/python"
+assert_directory_exists "$PWD/.venv"
