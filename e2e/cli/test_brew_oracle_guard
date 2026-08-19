@@ -16,7 +16,7 @@ MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE=6.0.17
 MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA=1111111111111111111111111111111111111111
 MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE
 MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA
-unset CI MISE_BREW_ORACLE_UNFORWARDED
+unset CI MISE_BREW_ORACLE_UNFORWARDED GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN
 
 export RUNNER_TRACKING_ID=tracking-is-not-authorization
 unset MISE_BREW_ORACLE_DISPOSABLE
@@ -26,11 +26,14 @@ fi
 unset RUNNER_TRACKING_ID
 
 MISE_BREW_ORACLE_DISPOSABLE=1
-export GITHUB_TOKEN=must-not-leak
-if brew_oracle_require_disposable credential-leak /opt/homebrew; then
-  fail "CI credential was accepted by the destructive oracle"
-fi
-unset GITHUB_TOKEN
+for credential in GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN; do
+  printf -v "$credential" '%s' must-not-leak
+  export "${credential?}"
+  if brew_oracle_require_disposable credential-leak /opt/homebrew; then
+    fail "CI credential $credential was accepted by the destructive oracle"
+  fi
+  unset "$credential"
+done
 brew_oracle_require_disposable valid-marker /opt/homebrew
 brew_oracle_complete test_brew_oracle_guard 2 /opt/homebrew
 brew_oracle_verify_marker \
