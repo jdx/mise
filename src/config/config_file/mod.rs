@@ -30,6 +30,7 @@ use crate::{
     registry::REGISTRY,
 };
 use eyre::{Result, eyre};
+use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -611,13 +612,50 @@ fn path_is_under_any(path: &Path, ignored: &[PathBuf]) -> bool {
         .any(|p| canonical.starts_with(p))
 }
 
+#[derive(Default)]
+struct IgnoredConfigPathMatcher {
+    literals: Vec<PathBuf>,
+    globs: Vec<GlobMatcher>,
+}
+
+impl IgnoredConfigPathMatcher {
+    fn new(paths: &[PathBuf]) -> Self {
+        let mut matcher = Self::default();
+        for path in paths {
+            let pattern = path.to_string_lossy();
+            if !pattern.contains(['*', '?', '[', '{']) {
+                matcher.literals.push(path.clone());
+                continue;
+            }
+            match GlobBuilder::new(&pattern).literal_separator(true).build() {
+                Ok(glob) => matcher.globs.push(glob.compile_matcher()),
+                Err(err) => {
+                    warn!("invalid ignored_config_paths glob {pattern}: {err}");
+                    matcher.literals.push(path.clone());
+                }
+            }
+        }
+        matcher
+    }
+
+    fn is_match(&self, path: &Path) -> bool {
+        path_is_under_any(path, &self.literals)
+            || self.globs.iter().any(|glob| glob.is_match(path))
+            || file::canonicalize_cached(path)
+                .is_some_and(|path| self.globs.iter().any(|glob| glob.is_match(&path)))
+    }
+}
+
+static IGNORED_CONFIG_PATH_MATCHER: Lazy<IgnoredConfigPathMatcher> =
+    Lazy::new(|| IgnoredConfigPathMatcher::new(&env::MISE_IGNORED_CONFIG_PATHS));
+
 /// Whether `path` is under an explicitly-configured `ignored_config_paths`
 /// (`MISE_IGNORED_CONFIG_PATHS`) entry.
 ///
 /// This is an explicit "never load this config" instruction and is a hard
 /// block: it takes precedence over `trusted_config_paths`.
 pub fn is_ignored_via_setting(path: &Path) -> bool {
-    path_is_under_any(path, &env::MISE_IGNORED_CONFIG_PATHS)
+    IGNORED_CONFIG_PATH_MATCHER.is_match(path)
 }
 
 /// Whether `path` is in the persisted ignore list.
@@ -1023,6 +1061,26 @@ mod ignored_config_path_tests {
             &tmp.path().join("other").join("config.toml"),
             &ignored
         ));
+    }
+
+    #[test]
+    fn recursive_glob_matches_config_path_but_not_sibling_name() {
+        let root = tempfile::tempdir().unwrap();
+        let pattern = root.path().join("vendor").join("**").join("mise.toml");
+        let matcher = IgnoredConfigPathMatcher::new(&[pattern]);
+
+        assert!(matcher.is_match(&root.path().join("vendor/jj/.config/mise.toml")));
+        assert!(!matcher.is_match(&root.path().join("vendor/jj/.config/.mise.toml")));
+    }
+
+    #[test]
+    fn literal_entries_keep_directory_prefix_behavior() {
+        let root = tempfile::tempdir().unwrap();
+        let ignored = root.path().join("vendor");
+        let matcher = IgnoredConfigPathMatcher::new(&[ignored]);
+
+        assert!(matcher.is_match(&root.path().join("vendor/jj/mise.toml")));
+        assert!(!matcher.is_match(&root.path().join("vendor-other/mise.toml")));
     }
 }
 
