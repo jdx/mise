@@ -342,6 +342,25 @@ The version list URL can return data in multiple formats:
 
 Version prefixes like `v` are automatically stripped.
 
+mise preserves the order returned by the version source. By default, version
+resolution treats the last matching entry as the latest one. If the source
+returns semantic versions in another order, set `version_order = "semver"` to
+select versions by semantic precedence while keeping `mise ls-remote` in the
+source's canonical order. See [Version ordering](/dev-tools/#version-ordering)
+for the complete ordering contract.
+
+GitHub's releases API, for example, returns releases newest first. Opt into
+semantic ordering when using it as an HTTP version source:
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+version_order = "semver"
+url = "https://example.com/my-tool-{{ version }}.tar.gz"
+version_list_url = "https://api.github.com/repos/owner/my-tool/releases"
+version_json_path = ".[].tag_name"
+```
+
 ### `version_regex`
 
 Extract versions from the version list URL response using a regular expression:
@@ -409,7 +428,10 @@ version_list_url = "https://example.com/versions.txt"
 version_expr = 'split(body, "\n")'
 ```
 
-The expression receives the HTTP response body as the `body` variable and should return an array of version strings.
+The expression receives the HTTP response body as the `body` variable and
+should return an array of version strings. It also receives `versions`, which
+contains values already extracted by `version_regex` or `version_json_path` and
+is empty when no earlier extractor produced values.
 
 Example expressions:
 
@@ -423,18 +445,32 @@ version_expr = 'filter(split(body, "\n"), # != "")'
 # Parse JSON and extract object keys (useful for HashiCorp-style JSON)
 # e.g., {"versions": {"1.0.0": {}, "2.0.0": {}}}
 version_expr = 'keys(fromJSON(body).versions)'
+
+# Sort versions with mise's version-aware comparator
+version_expr = 'fromJSON(body) | map({ trimPrefix(#.tag_name, "v") }) | sortVersions()'
 ```
 
-The [expr-lang](https://expr-lang.org/) library provides built-in functions including:
+The [expr-lang](https://expr-lang.org/) library provides built-in functions
+including:
 
 - **`fromJSON(string)`**: Parse a JSON string into a value
 - **`toJSON(value)`**: Convert a value to a JSON string
 - **`keys(map)`**: Get the keys of an object/map as an array
 - **`values(map)`**: Get the values of an object/map as an array
 - **`len(value)`**: Get the length of a string, array, or map
+- **`filter(array, predicate)`** and **`map(array, predicate)`**: Filter or transform array values
+- **`sort(array)`** and **`reverse(array)`**: Reorder values lexically
+- **`int(value)`**, **`float(value)`**, and **`string(value)`**: Convert compatible values
+
+mise adds **`sortVersions(array)`** for version-aware ordering. Prefer
+`version_order = "semver"` when only version resolution needs semantic ordering;
+use `sortVersions()` when the expression itself or the list returned by
+`mise ls-remote` must be sorted.
 
 ::: tip
-`version_expr` takes precedence over `version_regex` and `version_json_path` if multiple are specified. Use it when the other options aren't flexible enough for your use case.
+`version_expr` is the final extraction step, so its result becomes the version
+list. Use the `versions` variable to post-process values produced by
+`version_regex` or `version_json_path`.
 :::
 
 ### `bin_path`
