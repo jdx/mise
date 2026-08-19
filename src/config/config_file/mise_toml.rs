@@ -1298,8 +1298,9 @@ impl MiseToml {
                     continue;
                 }
                 EnvDirective::Rm(key, _) => {
-                    // the resolver's vars-mode `Rm` arm unsets the env key,
-                    // never the var
+                    // the resolver's vars-mode `Rm` arm unsets the env key —
+                    // never the var, and never the pristine-env lookups that
+                    // `default`/`required` use in vars mode
                     own_env.remove(key);
                     own_context.insert("env", &own_env);
                     continue;
