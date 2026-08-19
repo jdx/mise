@@ -36,6 +36,18 @@ brew_oracle_validate_homebrew_identity() {
   fi
 }
 
+brew_oracle_validate_executor_identity() {
+  local executor_image_digest=$1
+
+  if [[ $executor_image_digest == not-containerized ]]; then
+    return 0
+  fi
+  if [[ ! $executor_image_digest =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    brew_oracle_fail "exact executor image digest or not-containerized is required"
+    return 1
+  fi
+}
+
 brew_oracle_configure_runtime() {
   local expected_prefix=$1 brew_source repository bridge
   local brew_real repository_real runner_real prefix_real prefix_owner repository_owner
@@ -226,6 +238,8 @@ brew_oracle_require_disposable() {
     "${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}" \
     "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}" \
     "${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}" || return 1
+  brew_oracle_validate_executor_identity \
+    "${MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST:-}" || return 1
 
   # These are deliberately set by the workflow but must not cross env -i.
   if [[ -n ${CI+x} ]]; then
@@ -236,7 +250,7 @@ brew_oracle_require_disposable() {
     brew_oracle_fail "a non-allowlisted variable leaked through the e2e sanitizer"
     return 1
   fi
-  for credential_name in GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN; do
+  for credential_name in GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN FORGEJO_TOKEN; do
     if [[ -n ${!credential_name:-} ]]; then
       brew_oracle_fail "CI credential leaked into destructive oracle: $credential_name"
       return 1
@@ -282,6 +296,7 @@ brew_oracle_complete() {
     printf 'homebrew_reference_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
     printf 'homebrew_runtime_version=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE"
     printf 'homebrew_runtime_sha=%s\n' "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA"
+    printf 'executor_image_digest=%s\n' "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST"
   } >"$tmp"
   if [[ -n $result_uid || -n $result_gid ]]; then
     if [[ ! $result_uid =~ ^[0-9]+$ || ! $result_gid =~ ^[0-9]+$ ]]; then
@@ -306,6 +321,7 @@ brew_oracle_complete() {
 brew_oracle_verify_marker() {
   local marker=$1 test_name=$2 fixture_count=$3 prefix=$4 mise_sha=$5
   local reference_version=$6 reference_sha=$7 runtime_version=$8 runtime_sha=$9
+  local executor_image_digest=${10}
 
   if [[ ! -f $marker || -L $marker ]]; then
     brew_oracle_fail "missing completion marker: $marker"
@@ -317,6 +333,7 @@ brew_oracle_verify_marker() {
   fi
   brew_oracle_validate_homebrew_identity \
     "$reference_version" "$reference_sha" "$runtime_version" "$runtime_sha" || return 1
+  brew_oracle_validate_executor_identity "$executor_image_digest" || return 1
   if ! cmp -s "$marker" <(printf '%s\n' \
     "test_name=$test_name" \
     "fixture_count=$fixture_count" \
@@ -325,8 +342,44 @@ brew_oracle_verify_marker() {
     "homebrew_reference_version=$reference_version" \
     "homebrew_reference_sha=$reference_sha" \
     "homebrew_runtime_version=$runtime_version" \
-    "homebrew_runtime_sha=$runtime_sha"); then
+    "homebrew_runtime_sha=$runtime_sha" \
+    "executor_image_digest=$executor_image_digest"); then
     brew_oracle_fail "completion marker does not exactly match expected proof: $marker"
+    return 1
+  fi
+}
+
+brew_oracle_verify_job_context() {
+  local context=$1 mise_sha=$2 platform=$3 reference_version=$4 reference_sha=$5
+  local runtime_version=$6 runtime_sha=$7 executor_image_digest=$8 tests=$9
+
+  if [[ ! -f $context || -L $context ]]; then
+    brew_oracle_fail "missing oracle job context: $context"
+    return 1
+  fi
+  if [[ ! $mise_sha =~ ^[0-9a-f]{40}$ ]]; then
+    brew_oracle_fail "invalid expected mise SHA"
+    return 1
+  fi
+  for value in "$platform" "$tests"; do
+    if [[ -z $value || $value == *$'\n'* || $value == *$'\r'* ]]; then
+      brew_oracle_fail "job context values must be nonempty and single-line"
+      return 1
+    fi
+  done
+  brew_oracle_validate_homebrew_identity \
+    "$reference_version" "$reference_sha" "$runtime_version" "$runtime_sha" || return 1
+  brew_oracle_validate_executor_identity "$executor_image_digest" || return 1
+  if ! cmp -s "$context" <(printf '%s\n' \
+    "mise_sha=$mise_sha" \
+    "platform=$platform" \
+    "homebrew_reference_version=$reference_version" \
+    "homebrew_reference_sha=$reference_sha" \
+    "homebrew_runtime_version=$runtime_version" \
+    "homebrew_runtime_sha=$runtime_sha" \
+    "executor_image_digest=$executor_image_digest" \
+    "tests=$tests"); then
+    brew_oracle_fail "job context does not exactly match expected proof: $context"
     return 1
   fi
 }

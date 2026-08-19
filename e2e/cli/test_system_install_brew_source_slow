@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Source-build pipeline test: builds GNU hello from source with mise's
-# formula shim (mise-managed ruby, no Homebrew installed). Uses a throwaway
+# formula shim (mise-managed ruby, no Homebrew runtime). Uses a throwaway
 # prefix, so no root is needed. Requires network and a C toolchain.
 if [[ "$(uname)" != "Linux" ]] || ! command -v cc >/dev/null 2>&1; then
   exit 0
@@ -17,9 +17,20 @@ if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
   source_prefix=${MISE_BREW_ORACLE_SOURCE_PREFIX:-}
   brew_oracle_require_disposable linux-source "$source_prefix"
   brew_oracle_require_absent_path "$source_prefix" "foreign or stale source-build prefix"
-  if [[ ${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-} == not-installed ]] &&
-    command -v brew >/dev/null 2>&1; then
-    brew_oracle_fail "Homebrew is available although the source oracle runtime is not-installed"
+  if [[ ${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-} == not-installed ]]; then
+    # GitHub's Ubuntu image preinstalls Homebrew outside the source oracle.
+    # Exclude that runtime from the already sanitized E2E PATH, then prove no
+    # other brew executable can influence the build recorded as not-installed.
+    IFS=: read -r -a source_path_entries <<<"$PATH"
+    source_path=
+    for entry in "${source_path_entries[@]}"; do
+      [[ $entry == /home/linuxbrew/.linuxbrew/bin ]] && continue
+      source_path="${source_path:+$source_path:}$entry"
+    done
+    export PATH=$source_path
+    if command -v brew >/dev/null 2>&1; then
+      brew_oracle_fail "Homebrew is available although the source oracle runtime is not-installed"
+    fi
   fi
   cleanup_source_prefix() {
     rm -rf "$source_prefix"
