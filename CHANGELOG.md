@@ -1,5 +1,114 @@
 # Changelog
 
+## [2026.8.9](https://github.com/jdx/mise/compare/v2026.8.8..v2026.8.9) - 2026-08-19
+
+### 🚀 Features
+
+- **(bootstrap)** expose resource provenance by @jdx in [#12100](https://github.com/jdx/mise/pull/12100)
+- **(bootstrap)** support self-updating and adopted brew casks by @ascarter in [#12074](https://github.com/jdx/mise/pull/12074)
+- **(bootstrap)** compose config roots by @jdx in [#12105](https://github.com/jdx/mise/pull/12105)
+- **(bootstrap)** compose services and compose projects by @jdx in [#12132](https://github.com/jdx/mise/pull/12132)
+- **(bootstrap)** add symlink copy controls by @jdx in [#12121](https://github.com/jdx/mise/pull/12121)
+- **(config)** implicitly trust config for execution commands by @jdx in [#12107](https://github.com/jdx/mise/pull/12107)
+- **(config)** support environment-specific conf.d files by @jdx in [#12151](https://github.com/jdx/mise/pull/12151)
+- **(config)** support relative ignored config globs by @jdx in [#12169](https://github.com/jdx/mise/pull/12169)
+- **(system)** let plugins declare candidate package names by @jdx in [#12149](https://github.com/jdx/mise/pull/12149)
+- **(vfox)** pass tool options in hook contexts by @jdx in [#12174](https://github.com/jdx/mise/pull/12174)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** prefer glibc assets with musl fallback by @jdx in [#12093](https://github.com/jdx/mise/pull/12093)
+- **(backend)** keep flavour queries from crossing a '+' by @Marukome0743 in [#12118](https://github.com/jdx/mise/pull/12118)
+- **(backend)** key the remote version cache by listing tool options by @JamBalaya56562 in [#12164](https://github.com/jdx/mise/pull/12164)
+- **(bootstrap)** create missing directory parents by @jdx in [#12096](https://github.com/jdx/mise/pull/12096)
+- **(docs)** route tool search results to mise-versions by @jdx in [#12097](https://github.com/jdx/mise/pull/12097)
+- **(github)** match arm assets on arm64 by @jdx in [#12098](https://github.com/jdx/mise/pull/12098)
+- **(hook-env)** preserve runtime environment overrides by @jdx in [#12094](https://github.com/jdx/mise/pull/12094)
+- **(http)** order remote versions consistently by @jdx in [#12170](https://github.com/jdx/mise/pull/12170)
+- **(python)** resolve configured uv for automatic venv by @jdx in [#12177](https://github.com/jdx/mise/pull/12177)
+- **(shell)** branch on the exit code in the pwsh command-not-found hook by @JamBalaya56562 in [#12089](https://github.com/jdx/mise/pull/12089)
+- **(shell)** skip mise's own commands in the pwsh command-not-found hook by @JamBalaya56562 in [#12131](https://github.com/jdx/mise/pull/12131)
+- **(shell)** refresh the environment on auto-install when --no-hook-env omits the hook by @JamBalaya56562 in [#12117](https://github.com/jdx/mise/pull/12117)
+- **(system)** resolve dependency executables on Windows by @jdx in [#12178](https://github.com/jdx/mise/pull/12178)
+- **(task)** support azure devops cloud ssh urls (remote git sources) by @cheesemans in [#12102](https://github.com/jdx/mise/pull/12102)
+- **(task)** normalize Windows task environment paths by @jdx in [#12173](https://github.com/jdx/mise/pull/12173)
+- **(use)** scope global install hooks by @jdx in [#12101](https://github.com/jdx/mise/pull/12101)
+- **(vfox)** follow symlinks when fingerprinting plugin sources by @jdx in [#12155](https://github.com/jdx/mise/pull/12155)
+- **(vfox)** honor systemDependencies in embedded plugins by @jdx in [#12152](https://github.com/jdx/mise/pull/12152)
+- **(vfox)** apply netrc credentials to HTTP requests by @jdx in [#12168](https://github.com/jdx/mise/pull/12168)
+- **(which)** report uninstalled --tool version instead of "not active" by @TrevorBurnham in [#12106](https://github.com/jdx/mise/pull/12106)
+- asset selection for non-gz tar variants by @sgammon in [#12156](https://github.com/jdx/mise/pull/12156)
+
+### 🚜 Refactor
+
+- **(backend)** remove legacy RTX environment variables by @jdx in [#12172](https://github.com/jdx/mise/pull/12172)
+
+### 📚 Documentation
+
+- fix installing mise links by @jdx in [#12104](https://github.com/jdx/mise/pull/12104)
+
+### ⚡ Performance
+
+- **(activate)** stop pwsh running hook-env twice per directory change by @jdx in [#12147](https://github.com/jdx/mise/pull/12147)
+- **(cache)** batch remote blob prefetch by @jdx in [#12103](https://github.com/jdx/mise/pull/12103)
+- **(config)** gate idiomatic file detection on idiomatic_version_file_enable_tools by @jdx in [#12143](https://github.com/jdx/mise/pull/12143)
+- **(release)** build windows with the serious profile and one TLS stack by @jdx in [#12146](https://github.com/jdx/mise/pull/12146)
+- **(vfox)** cache plugin metadata on disk by @jdx in [#12145](https://github.com/jdx/mise/pull/12145)
+
+### 🧪 Testing
+
+- **(java)** cover version matching with unit tests instead of live metadata by @Marukome0743 in [#12116](https://github.com/jdx/mise/pull/12116)
+
+### 📦️ Dependency Updates
+
+- update h2 to 0.4.16 for RUSTSEC-2026-0258 by @Marukome0743 in [#12119](https://github.com/jdx/mise/pull/12119)
+- update ghcr.io/jdx/mise:rpm docker digest to 50e4032 by @renovate[bot] in [#12124](https://github.com/jdx/mise/pull/12124)
+- update swatinem/rust-cache digest to 6323deb by @renovate[bot] in [#12125](https://github.com/jdx/mise/pull/12125)
+- update ghcr.io/jdx/mise:deb docker digest to bf1cd85 by @renovate[bot] in [#12123](https://github.com/jdx/mise/pull/12123)
+- update rust crate async-trait to v0.1.92 by @renovate[bot] in [#12128](https://github.com/jdx/mise/pull/12128)
+- update ghcr.io/jdx/mise:alpine docker digest to d21f898 by @renovate[bot] in [#12122](https://github.com/jdx/mise/pull/12122)
+- update rust crate blake3 to v1.8.6 by @renovate[bot] in [#12129](https://github.com/jdx/mise/pull/12129)
+- update rust crate clap to v4.6.6 by @renovate[bot] in [#12130](https://github.com/jdx/mise/pull/12130)
+- update dependency esbuild to v0.28.2 by @renovate[bot] in [#12126](https://github.com/jdx/mise/pull/12126)
+- update dependency python to v3.14.7 by @renovate[bot] in [#12127](https://github.com/jdx/mise/pull/12127)
+- lock file maintenance by @renovate[bot] in [#12084](https://github.com/jdx/mise/pull/12084)
+- update rust crate ctor to v1.0.13 by @renovate[bot] in [#12134](https://github.com/jdx/mise/pull/12134)
+- update rust crate expr-lang to v2 by @renovate[bot] in [#12154](https://github.com/jdx/mise/pull/12154)
+- update aws-sdk-rust monorepo to v1.10.1 by @renovate[bot] in [#12139](https://github.com/jdx/mise/pull/12139)
+
+### 📦 Registry
+
+- point vlang at the maintained v backend by @jdx in [#12153](https://github.com/jdx/mise/pull/12153)
+- fix llama.cpp version test by @jdx in [#12157](https://github.com/jdx/mise/pull/12157)
+
+### Chore
+
+- **(ci)** refresh cursor cloud agent environment by @jdx in [#12112](https://github.com/jdx/mise/pull/12112)
+- **(ci)** prevent stale snapcraft releases by @jdx in [#12142](https://github.com/jdx/mise/pull/12142)
+- **(ci)** ignore dependency rust-version in automated builds by @jdx in [#12159](https://github.com/jdx/mise/pull/12159)
+- **(ci)** retry transient R2 upload failures by @jdx in [#12158](https://github.com/jdx/mise/pull/12158)
+- **(ci)** skip redundant release cargo check by @jdx in [#12166](https://github.com/jdx/mise/pull/12166)
+- **(ci)** propagate rust-version override to release build by @jdx in [#12175](https://github.com/jdx/mise/pull/12175)
+
+### Security
+
+- **(backend)** restrict forge tokens to api origin by @jdx in [#12167](https://github.com/jdx/mise/pull/12167)
+- block tool install code in safe mode by @jdx in [#12140](https://github.com/jdx/mise/pull/12140)
+
+### New Contributors
+
+- @sgammon made their first contribution in [#12156](https://github.com/jdx/mise/pull/12156)
+- @ascarter made their first contribution in [#12074](https://github.com/jdx/mise/pull/12074)
+- @TrevorBurnham made their first contribution in [#12106](https://github.com/jdx/mise/pull/12106)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`Arata1202/ascdir`](https://github.com/Arata1202/ascdir)
+- [`Genymobile/scrcpy`](https://github.com/Genymobile/scrcpy)
+- [`cloudsmith-io/cloudsmith-cli`](https://github.com/cloudsmith-io/cloudsmith-cli)
+
 ## [2026.8.8](https://github.com/jdx/mise/compare/v2026.8.7..v2026.8.8) - 2026-08-17
 
 ### 🐛 Bug Fixes

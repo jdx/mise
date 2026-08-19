@@ -9,7 +9,7 @@ if ! type -P usage &> /dev/null
 end
 set -l spec_dir (if set -q XDG_CACHE_HOME; echo $XDG_CACHE_HOME; else; echo $HOME/.cache; end)/usage
 test -d "$spec_dir"; or mkdir -p -m 700 "$spec_dir"
-set -l spec_file "$spec_dir/usage__usage_spec_mise_2026_8_8.spec"
+set -l spec_file "$spec_dir/usage__usage_spec_mise_2026_8_9.spec"
 if not test -f "$spec_file"
     find "$spec_dir" -maxdepth 1 -name 'usage__usage_spec_mise_*.spec' -type f -mtime +30 -delete 2>/dev/null
     mise usage | string collect > "$spec_file"

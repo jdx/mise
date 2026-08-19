@@ -1,4 +1,4 @@
-backends = ["aqua:sbstp/kubie", "asdf:johnhamelink/asdf-kubie"]
+backends = ["aqua:kubie-org/kubie", "asdf:johnhamelink/asdf-kubie"]
 bins = ["kubie"]
 description = "A more powerful alternative to kubectx and kubens"
 version_order = "semver"

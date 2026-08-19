@@ -427,6 +427,22 @@ packages:
           linux: unknown-linux-gnu
           amd64: x86_64
   - type: github_release
+    repo_owner: Arata1202
+    repo_name: ascdir
+    description: Manage App Store Connect text metadata as local files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ascdir_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: Arriven
     repo_name: db1000n
     version_constraint: "false"
@@ -3762,6 +3778,94 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: Genymobile
+    repo_name: scrcpy
+    description: Display and control your Android device
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.5-fixversion"
+        asset: scrcpy-{{.OS}}-v1.5.{{.Format}}
+        format: zip
+        files:
+          - name: scrcpy
+            src: scrcpy-{{.OS}}/scrcpy
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v3.0"
+        asset: scrcpy-{{.OS}}-{{.Version}}.zip
+        format: zip
+        files:
+          - name: scrcpy
+            src: "{{.AssetWithoutExt}}/scrcpy"
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 1.1.0")
+        asset: scrcpy-{{.OS}}-with-deps-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: scrcpy
+            src: scrcpy-windows-{{.Version}}/scrcpy
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 2.7.0")
+        asset: scrcpy-{{.OS}}-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: scrcpy
+            src: "{{.AssetWithoutExt}}/scrcpy"
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: "true"
+        asset: scrcpy-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: scrcpy
+            src: "{{.AssetWithoutExt}}/scrcpy"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            asset: scrcpy-{{.OS}}-{{.Version}}.{{.Format}}
+            files:
+              - name: scrcpy
+                src: "{{.AssetWithoutExt}}/scrcpy"
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows/amd64
   - type: github_release
     repo_owner: Getdeck
     repo_name: getdeck
@@ -26957,6 +27061,35 @@ packages:
           linux: Linux
           amd64: x86_64
           windows: Windows
+  - type: github_release
+    repo_owner: cloudsmith-io
+    repo_name: cloudsmith-cli
+    description: Cloudsmith Command Line Interface (CLI)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.19.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: cloudsmith-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: cloudsmith
+            src: cloudsmith/cloudsmith
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: cloudsmith-{{trimV .Version}}-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
   - type: go_install
     repo_owner: cloudspannerecosystem
     repo_name: spanner-cli

@@ -909,7 +909,8 @@ div[class*="language-"] .copy:hover {
   font-size: 0.95rem;
   width: 100%;
   margin: 0;
-  display: table;
+  display: block;
+  overflow-x: auto;
 }
 
 .vp-doc th {
