@@ -63,7 +63,6 @@ maven                         aqua:apache/maven vfox:mise-plugins/vfox-maven
 php                           vfox:mise-plugins/vfox-php
 scala                         vfox:mise-plugins/vfox-scala
 terraform                     aqua:hashicorp/terraform vfox:mise-plugins/vfox-terraform
-vlang                         vfox:mise-plugins/vfox-vlang
 ```
 
 And they will be installed when running commands such as `mise use -g cmake` without needing to
