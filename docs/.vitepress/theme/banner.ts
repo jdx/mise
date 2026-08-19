@@ -15,7 +15,12 @@ const STORAGE_KEY = "jdx-banner-dismissed";
 // space before first paint so the header doesn't jump when it arrives.
 const CACHE_KEY = "jdx-banner-cache";
 let activeBanner:
-  { element: HTMLElement; observer: ResizeObserver | null } | undefined;
+  | {
+      id: string;
+      element: HTMLElement;
+      observer: ResizeObserver | null;
+    }
+  | undefined;
 
 function getDismissedId(): string | null {
   try {
@@ -46,6 +51,10 @@ export function initBanner(): void {
       ) {
         removeActiveBanner();
         clearReserved();
+        return;
+      }
+      if (activeBanner?.id === b.id) {
+        cacheBanner(b, activeBanner.element.offsetHeight);
         return;
       }
       render(b);
@@ -113,6 +122,26 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function cacheBanner(b: BannerData, height: number): void {
+  try {
+    localStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify({
+        id: b.id,
+        height: `${height}px`,
+        width: window.innerWidth,
+        fontSize: getComputedStyle(document.documentElement).fontSize,
+        pixelRatio: window.devicePixelRatio,
+        cachedAt: Date.now(),
+        expires: b.expires ?? null,
+        banner: b,
+      }),
+    );
+  } catch {
+    // localStorage unavailable — skip caching; next load just pops in.
+  }
+}
+
 function removeActiveBanner(): void {
   activeBanner?.observer?.disconnect();
   activeBanner?.element.remove();
@@ -144,24 +173,7 @@ function render(b: BannerData, persist = true): void {
       "--vp-layout-top-height",
       `${el.offsetHeight}px`,
     );
-    try {
-      if (!persist) return;
-      localStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({
-          id: b.id,
-          height: `${el.offsetHeight}px`,
-          width: window.innerWidth,
-          fontSize: getComputedStyle(document.documentElement).fontSize,
-          pixelRatio: window.devicePixelRatio,
-          cachedAt: Date.now(),
-          expires: b.expires ?? null,
-          banner: b,
-        }),
-      );
-    } catch {
-      // localStorage unavailable — skip caching; next load just pops in.
-    }
+    if (persist) cacheBanner(b, el.offsetHeight);
   };
 
   const observer =
@@ -185,7 +197,7 @@ function render(b: BannerData, persist = true): void {
   el.appendChild(btn);
 
   document.body.prepend(el);
-  activeBanner = { element: el, observer };
+  activeBanner = { id: b.id, element: el, observer };
 
   requestAnimationFrame(syncHeight);
   observer?.observe(el);
