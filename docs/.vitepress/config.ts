@@ -192,12 +192,17 @@ export default withMermaid(
     }
     var c = JSON.parse(localStorage.getItem("jdx-banner-cache") || "null");
     var expires = c && c.expires ? Date.parse(c.expires) : NaN;
+    var now = Date.now();
     if (
       c &&
       c.id &&
       c.height &&
       c.width === innerWidth &&
-      (!c.expires || isNaN(expires) || Date.now() < expires) &&
+      c.fontSize === getComputedStyle(d).fontSize &&
+      c.pixelRatio === devicePixelRatio &&
+      Number.isFinite(c.cachedAt) &&
+      now - c.cachedAt < 300000 &&
+      (!c.expires || (Number.isFinite(expires) && now < expires)) &&
       localStorage.getItem("jdx-banner-dismissed") !== c.id
     )
       d.style.setProperty("--vp-layout-top-height", c.height);

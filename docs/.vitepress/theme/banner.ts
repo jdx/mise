@@ -28,7 +28,10 @@ export function initBanner(): void {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 5000);
   fetch(ENDPOINT, { signal: controller.signal })
-    .then((r) => (r.ok ? (r.json() as Promise<BannerData>) : null))
+    .then((r) => {
+      if (!r.ok) throw new Error(`banner request failed: ${r.status}`);
+      return r.json() as Promise<BannerData>;
+    })
     .then((b) => {
       if (
         !b ||
@@ -41,8 +44,16 @@ export function initBanner(): void {
       }
       render(b);
     })
-    .catch(clearCurrentReservation)
+    .catch(clearCachedReservation)
     .finally(() => window.clearTimeout(timeout));
+}
+
+function clearCachedReservation(): void {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {
+    // localStorage unavailable — nothing cached to clear.
+  }
 }
 
 function clearCurrentReservation(): void {
@@ -51,11 +62,7 @@ function clearCurrentReservation(): void {
 
 function clearReserved(): void {
   clearCurrentReservation();
-  try {
-    localStorage.removeItem(CACHE_KEY);
-  } catch {
-    // localStorage unavailable — nothing cached to clear.
-  }
+  clearCachedReservation();
 }
 
 function isExpired(expires: string | undefined): boolean {
@@ -105,6 +112,9 @@ function render(b: BannerData): void {
           id: b.id,
           height: `${el.offsetHeight}px`,
           width: window.innerWidth,
+          fontSize: getComputedStyle(document.documentElement).fontSize,
+          pixelRatio: window.devicePixelRatio,
+          cachedAt: Date.now(),
           expires: b.expires ?? null,
         }),
       );
