@@ -1421,7 +1421,7 @@ fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<d
         .iter()
         .rev()
         .flat_map(|f| {
-            if f.contains('*') {
+            if is_glob_pattern(f) {
                 // Handle glob patterns by matching against actual config file paths
                 load_config_glob(dir, f)
                     .into_iter()
@@ -1885,7 +1885,7 @@ fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<P
         .iter()
         .rev()
         .flat_map(|f| {
-            if f.contains('*') {
+            if is_glob_pattern(f) {
                 load_config_glob(dir, f).into_iter().rev().collect()
             } else {
                 let path = dir.join(f);
@@ -3835,7 +3835,7 @@ fn has_mise_config_with_filenames(dir: &Path, filenames: &[String]) -> bool {
 
 fn has_config_file_with_filenames(dir: &Path, filenames: &[String]) -> bool {
     filenames.iter().any(|f| {
-        if f.contains('*') {
+        if is_glob_pattern(f) {
             !load_config_glob(dir, f).is_empty()
         } else {
             dir.join(f).exists()
@@ -5810,6 +5810,21 @@ mod tests {
             .unwrap();
         let matches = glob(tmp.path(), &pattern)?;
         assert_eq!(matches, vec![confd.join("tools.qa*.toml")]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_env_config_patterns_with_non_star_glob_characters() -> Result<()> {
+        for env_name in ["qa?", "qa[1]", "qa]"] {
+            let tmp = TempDir::new()?;
+            let path = tmp.path().join(format!("mise.{env_name}.toml"));
+            fs::write(&path, "[env]\n")?;
+
+            let patterns = env_config_patterns(env_name);
+            assert!(config_paths_in_dir_with_filenames(tmp.path(), &patterns).contains(&path));
+            assert!(has_config_file_with_filenames(tmp.path(), &patterns));
+        }
 
         Ok(())
     }
