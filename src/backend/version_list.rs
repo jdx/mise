@@ -196,7 +196,7 @@ fn value_to_strings(value: Value) -> Result<Vec<String>> {
 fn value_as_string(value: &Value) -> Option<String> {
     match value {
         Value::String(s) => Some(s.clone()),
-        Value::Number(n) => Some(n.to_string()),
+        Value::Integer(n) => Some(n.to_string()),
         _ => None,
     }
 }
