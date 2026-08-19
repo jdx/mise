@@ -2267,8 +2267,8 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     }
     for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
         for env_name in &candidate_envs {
-            found.extend(conf_d_environment_files(&dir, env_name, false));
-            found.extend(conf_d_environment_files(&dir, env_name, true));
+            found.extend(conf_d_environment_files(dir, env_name, false));
+            found.extend(conf_d_environment_files(dir, env_name, true));
             for filename in [
                 format!("config.{env_name}.toml"),
                 format!("mise.{env_name}.toml"),
