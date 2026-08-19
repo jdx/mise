@@ -1423,7 +1423,7 @@ fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<d
         .flat_map(|f| {
             if f.contains('*') {
                 // Handle glob patterns by matching against actual config file paths
-                config_glob(dir, f)
+                load_config_glob(dir, f)
                     .into_iter()
                     .rev()
                     .filter_map(|path| config_files.get(&path))
@@ -1697,6 +1697,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
 /// Config filename patterns for a single MISE_ENV environment, in precedence order
 /// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
 fn env_config_patterns(env: &str) -> Vec<String> {
+    let env = glob::Pattern::escape(env);
     vec![
         format!(".config/mise/conf.d/*.{env}.toml"),
         format!(".config/mise/config.{env}.toml"),
@@ -1816,26 +1817,34 @@ fn is_unconditional_conf_d_pattern(pattern: &str) -> bool {
 /// `name.toml` and `name.local.toml` are unconditional. `name.dev.toml` and
 /// `name.dev.local.toml` are environment-specific. Environment names themselves
 /// may contain dots; active files are selected by exact glob patterns.
-fn is_environment_conf_d_file(path: &Path) -> bool {
+fn conf_d_file_environment(path: &Path) -> Option<(&str, bool)> {
     if !is_conf_d_file(path) {
-        return false;
+        return None;
     }
-    let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    let Some(stem) = filename.strip_suffix(".toml") else {
-        return false;
-    };
-    let stem = stem.strip_suffix(".local").unwrap_or(stem);
-    stem.split_once('.')
-        .is_some_and(|(name, env)| !name.is_empty() && !env.is_empty())
+    let filename = path.file_name()?.to_str()?;
+    let stem = filename.strip_suffix(".toml")?;
+    let (stem, local) = stem
+        .strip_suffix(".local")
+        .map_or((stem, false), |stem| (stem, true));
+    let (name, environment) = stem.split_once('.')?;
+    (!name.is_empty() && !environment.is_empty()).then_some((environment, local))
+}
+
+fn is_environment_conf_d_file(path: &Path) -> bool {
+    conf_d_file_environment(path).is_some()
 }
 
 fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     config_glob(dir, pattern)
         .into_iter()
         .filter(|path| {
-            !is_unconditional_conf_d_pattern(pattern) || !is_environment_conf_d_file(path)
+            if is_unconditional_conf_d_pattern(pattern) {
+                !is_environment_conf_d_file(path)
+            } else if let Some((environment, _)) = conf_d_file_environment(path) {
+                env::MISE_ENV_WITH_AUTO.iter().any(|env| env == environment)
+            } else {
+                true
+            }
         })
         .collect()
 }
@@ -1864,9 +1873,8 @@ pub(crate) fn environments_for_config_path(path: &Path) -> Vec<String> {
             ["config", "mise", ".mise"].into_iter().any(|prefix| {
                 filename == format!("{prefix}.{environment}.toml")
                     || filename == format!("{prefix}.{environment}.local.toml")
-            }) || (is_conf_d_file(path)
-                && (filename.ends_with(&format!(".{environment}.toml"))
-                    || filename.ends_with(&format!(".{environment}.local.toml"))))
+            }) || conf_d_file_environment(path)
+                .is_some_and(|(file_environment, _)| file_environment == environment.as_str())
         })
         .cloned()
         .collect()
@@ -2244,7 +2252,16 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
         }
         for env_name in &candidate_envs {
             for pattern in env_config_patterns(env_name) {
-                found.extend(glob(&dir, &pattern).unwrap_or_default());
+                found.extend(
+                    glob(&dir, &pattern)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|path| {
+                            !is_conf_d_file(path)
+                                || conf_d_file_environment(path)
+                                    .is_some_and(|(environment, _)| environment == env_name)
+                        }),
+                );
             }
         }
     }
@@ -2304,7 +2321,7 @@ pub async fn load_config_hierarchy_from_dir(
                 config_filenames
                     .iter()
                     .rev()
-                    .flat_map(|f| config_glob(dir, f).into_iter().rev())
+                    .flat_map(|f| load_config_glob(dir, f).into_iter().rev())
                     .collect()
             }
         })
@@ -2508,18 +2525,14 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
 }
 
 fn conf_d_environment_files(dir: &Path, environment: &str, local: bool) -> Vec<PathBuf> {
-    let suffix = if local {
-        format!(".{environment}.local.toml")
-    } else {
-        format!(".{environment}.toml")
-    };
     file::ls(&dir.join("conf.d"))
         .unwrap_or_default()
         .into_iter()
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| !name.starts_with('.') && name.ends_with(&suffix))
+                .is_some_and(|name| !name.starts_with('.'))
+                && conf_d_file_environment(path) == Some((environment, local))
         })
         .collect()
 }
@@ -5411,17 +5424,23 @@ mod tests {
         assert_eq!(
             relative,
             vec![
-                Path::new(".mise/conf.d/04-dev-local.dev.local.toml"),
-                Path::new(".mise/conf.d/03-dev.dev.toml"),
                 Path::new(".mise/conf.d/02-local.local.toml"),
                 Path::new(".mise/conf.d/01-base.toml"),
             ]
         );
 
         assert!(is_environment_conf_d_file(&confd.join("03-dev.dev.toml")));
+        assert_eq!(
+            conf_d_file_environment(&confd.join("03-dev.dev.toml")),
+            Some(("dev", false))
+        );
         assert!(is_environment_conf_d_file(
             &confd.join("04-dev-local.dev.local.toml")
         ));
+        assert_eq!(
+            conf_d_file_environment(&confd.join("module.qa.prod.local.toml")),
+            Some(("qa.prod", true))
+        );
         assert!(!is_environment_conf_d_file(
             &confd.join("02-local.local.toml")
         ));
@@ -5775,6 +5794,24 @@ mod tests {
                 ".mise.linux.local.toml",
             ]
         );
+    }
+
+    #[test]
+    fn test_env_config_patterns_escape_glob_characters() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let confd = tmp.path().join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("tools.qa*.toml"), "[env]\n")?;
+        fs::write(confd.join("tools.qa1.toml"), "[env]\n")?;
+
+        let pattern = env_config_patterns("qa*")
+            .into_iter()
+            .find(|pattern| pattern.starts_with(".mise/conf.d/") && !pattern.contains(".local."))
+            .unwrap();
+        let matches = glob(tmp.path(), &pattern)?;
+        assert_eq!(matches, vec![confd.join("tools.qa*.toml")]);
+
+        Ok(())
     }
 
     #[test]

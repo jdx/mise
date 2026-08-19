@@ -43,3 +43,25 @@ EOF
 assert "mise env --json | jq -r '[.CONF_D_COMMON, .CONF_D_ENV, .CONF_D_ALWAYS_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'base\tbase\tlocal\t'
 MISE_ENV=test assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'test\ttest-local\t'
 MISE_ENV=test,ci assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL] | @tsv'" $'ci\ttest-local'
+
+# Environment names are matched literally and by the complete suffix after the first dot
+cat >'.mise/conf.d/30-literal.qa*.toml' <<'EOF'
+[env]
+CONF_D_LITERAL = "literal"
+EOF
+cat >.mise/conf.d/31-unrelated.qa1.toml <<'EOF'
+[env]
+CONF_D_UNRELATED = "loaded"
+EOF
+cat >.mise/conf.d/40-dotted.qa.prod.toml <<'EOF'
+[env]
+CONF_D_DOTTED = "dotted"
+EOF
+cat >.mise/conf.d/41-prod.prod.toml <<'EOF'
+[env]
+CONF_D_PROD = "prod"
+EOF
+
+MISE_ENV='qa*' assert "mise env --json | jq -r '[.CONF_D_LITERAL, .CONF_D_UNRELATED] | @tsv'" $'literal\t'
+MISE_ENV=prod assert "mise env --json | jq -r '[.CONF_D_DOTTED, .CONF_D_PROD] | @tsv'" $'\tprod'
+MISE_ENV=qa.prod assert "mise env --json | jq -r '[.CONF_D_DOTTED, .CONF_D_PROD] | @tsv'" $'dotted\t'

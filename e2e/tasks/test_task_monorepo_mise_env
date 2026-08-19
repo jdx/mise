@@ -37,6 +37,8 @@ echo "FRONTEND_VAR=\$FRONTEND_VAR"
 echo "ENV_VAR=\$ENV_VAR"
 echo "DEV_VAR=\$DEV_VAR"
 echo "PROD_VAR=\$PROD_VAR"
+echo "DEV_CONF_D=\$DEV_CONF_D"
+echo "PROD_CONF_D=\$PROD_CONF_D"
 echo "ROOT_VAR=\$ROOT_VAR"
 '''
 EOF
@@ -53,6 +55,10 @@ cat <<EOF >projects/frontend/mise.prod.toml
 ENV_VAR = "frontend_prod"
 PROD_VAR = "frontend_prod_only"
 EOF
+
+mkdir -p projects/frontend/.mise/conf.d
+echo 'env.DEV_CONF_D = "dev-conf-d"' >projects/frontend/.mise/conf.d/frontend.dev.toml
+echo 'env.PROD_CONF_D = "prod-conf-d"' >projects/frontend/.mise/conf.d/frontend.prod.toml
 
 # Create backend project
 mkdir -p projects/backend
@@ -99,6 +105,8 @@ echo "$output"
 assert_contains "echo '$output'" "ENV_VAR=frontend_default"
 assert_contains "echo '$output'" "FRONTEND_VAR=frontend_value"
 assert_contains "echo '$output'" "ROOT_VAR=root_value"
+assert_not_contains "echo '$output'" "dev-conf-d"
+assert_not_contains "echo '$output'" "prod-conf-d"
 
 # Test 4: Frontend task with MISE_ENV=dev should load mise.dev.toml
 echo "=== Test 4: Frontend task with MISE_ENV=dev ==="
@@ -112,6 +120,8 @@ assert_contains "echo '$output'" "DEV_VAR=frontend_dev_only"
 assert_contains "echo '$output'" "ROOT_VAR=root_value"
 # Should have FRONTEND_VAR from base frontend config
 assert_contains "echo '$output'" "FRONTEND_VAR=frontend_value"
+assert_contains "echo '$output'" "DEV_CONF_D=dev-conf-d"
+assert_not_contains "echo '$output'" "prod-conf-d"
 
 # Test 5: Frontend task with MISE_ENV=prod should load mise.prod.toml
 echo "=== Test 5: Frontend task with MISE_ENV=prod ==="
@@ -121,6 +131,8 @@ echo "$output"
 assert_contains "echo '$output'" "ENV_VAR=frontend_prod"
 # Should load PROD_VAR from frontend/mise.prod.toml
 assert_contains "echo '$output'" "PROD_VAR=frontend_prod_only"
+assert_contains "echo '$output'" "PROD_CONF_D=prod-conf-d"
+assert_not_contains "echo '$output'" "dev-conf-d"
 
 # Test 6: Backend task with MISE_ENV=dev should load backend's dev config
 echo "=== Test 6: Backend task with MISE_ENV=dev ==="
