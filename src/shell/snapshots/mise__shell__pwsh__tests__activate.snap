@@ -188,14 +188,29 @@ if (-not (Test-Path variable:global:__mise_pwsh_command_not_found)){
                     # and get its status; this is the same thing spelled for pwsh.
                     & '/some/dir/mise' hook-not-found -s pwsh -- $Name | Out-Null
                     if ($LASTEXITCODE -eq 0){
-                        # `--no-hook-env` omits the `_mise_hook` definition but still
-                        # emits this block, and an unresolved name inside a
-                        # CommandNotFoundAction throws out of the handler instead of
-                        # continuing: the handoff below would never run, so the tool
-                        # just installed would still not start. The `mise` wrapper and
-                        # the prompt function guard the call for the same reason.
-                        if (Test-Path -Path Function:\_mise_hook){
-                            _mise_hook
+                        # Refresh inline rather than through `_mise_hook`:
+                        # `--no-hook-env` omits that definition while still emitting
+                        # this block, an unresolved name inside a
+                        # CommandNotFoundAction throws out of the handler, and
+                        # skipping the refresh leaves the tool just installed off
+                        # PATH for the handoff below. fish inlines `hook-env` here
+                        # for the same reason.
+                        #
+                        # The MISE_SHELL check is the one `_mise_hook` carries.
+                        # `deactivate` unsets the variable but leaves this handler
+                        # registered, and a CommandNotFoundAction runs in-process:
+                        # without the gate, a deactivated session would get mise's
+                        # PATH and `__MISE_SESSION` re-applied for good.
+                        #
+                        # `--force` because an install just happened: with
+                        # `hook_env.cache_ttl` set and an inherited `__MISE_SESSION`,
+                        # the TTL fast path returns before the check that would
+                        # notice it, and the handoff below would find nothing.
+                        if ($env:MISE_SHELL -eq "pwsh"){
+                            $output = & '/some/dir/mise' hook-env --status --force -s pwsh | Out-String
+                            if ($output -and $output.Trim()) {
+                                $output | Invoke-Expression
+                            }
                         }
                         if (Get-Command $Name -ErrorAction SilentlyContinue){
                             $EventArgs.Command = Get-Command $Name
