@@ -61,3 +61,23 @@ assert_fail "test -f '$marker'" # re-cached under the new sources
 write_metadata "0.2.0"
 mise env >/dev/null
 assert "test -f '$marker'"
+
+# Lua resolves symlinks, so the fingerprint has to as well. A module symlinked
+# in from outside the plugin contributes nothing to a traversal that skips
+# links, so its edits would never invalidate the cache.
+mkdir -p "$PWD/external"
+printf 'return { description = "linked-first" }\n' >"$PWD/external/meta.lua"
+rm -f "$PLUGIN_DIR/lib/meta.lua"
+ln -s "$PWD/external/meta.lua" "$PLUGIN_DIR/lib/meta.lua"
+
+rm -f "$marker"
+mise env >/dev/null
+assert "test -f '$marker'" # sources changed (now a link), so it reloads
+
+rm -f "$marker"
+mise env >/dev/null
+assert_fail "test -f '$marker'" # cached again
+
+printf 'return { description = "linked-second" }\n' >"$PWD/external/meta.lua"
+mise env >/dev/null
+assert "test -f '$marker'" # editing through the symlink invalidates
