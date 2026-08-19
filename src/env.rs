@@ -373,17 +373,18 @@ pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
 pub static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
 pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    let invocation_cwd = miserc::invocation_cwd()
+        .map(Path::to_path_buf)
+        .or_else(|| current_dir().ok())
+        .unwrap_or_default();
     var_os("MISE_IGNORED_CONFIG_PATHS")
         .map(|v| {
             split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(replace_path)
+                .map(|p| miserc::resolve_ignored_config_path(p, &invocation_cwd))
                 .collect()
         })
-        .or_else(|| {
-            miserc::get_ignored_config_paths()
-                .map(|paths| paths.iter().cloned().map(replace_path).collect())
-        })
+        .or_else(|| miserc::get_ignored_config_paths().map(|paths| paths.iter().cloned().collect()))
         .unwrap_or_default()
 });
 pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {

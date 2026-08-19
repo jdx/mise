@@ -1327,6 +1327,11 @@ config file discovery has already occurred by the time `mise.toml` is read.
 
 Paths are separated by the OS path separator when using the environment variable,
 `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).
+
+Relative paths in `.miserc.toml` are resolved from the directory containing that
+file. Relative paths from the environment or CLI are resolved from the directory
+where mise was invoked. Glob patterns are supported, including recursive `**`
+patterns. Paths without glob metacharacters retain directory-prefix matching.
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"

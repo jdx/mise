@@ -2244,10 +2244,7 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     // same file (e.g. ~/.config/mise/config.{env}.toml when cwd is under $HOME)
     let mut found = IndexSet::new();
     for dir in all_dirs().unwrap_or_default() {
-        if env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| dir.starts_with(p))
-        {
+        if config_file::is_ignored_via_setting(&dir) {
             continue;
         }
         for env_name in &candidate_envs {
@@ -2431,10 +2428,7 @@ fn is_default_config_dir_override_filtered(path: &Path) -> bool {
 }
 
 fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
-    !include_ignored
-        && env::MISE_IGNORED_CONFIG_PATHS
-            .iter()
-            .any(|p| dir.starts_with(p))
+    !include_ignored && config_file::is_ignored_via_setting(dir)
 }
 
 fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
