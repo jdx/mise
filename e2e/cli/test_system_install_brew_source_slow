@@ -17,6 +17,10 @@ if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
   source_prefix=${MISE_BREW_ORACLE_SOURCE_PREFIX:-}
   brew_oracle_require_disposable linux-source "$source_prefix"
   brew_oracle_require_absent_path "$source_prefix" "foreign or stale source-build prefix"
+  if [[ ${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-} == not-installed ]] &&
+    command -v brew >/dev/null 2>&1; then
+    brew_oracle_fail "Homebrew is available although the source oracle runtime is not-installed"
+  fi
   cleanup_source_prefix() {
     rm -rf "$source_prefix"
   }

@@ -385,6 +385,12 @@ jobs:
           MISE_DISABLE_TOOLS: "1"
           MISE_AUTO_INSTALL: "false"
         run: |
+          for command in bash cc make ar ranlib git jq realpath stat awk sed grep install mkdir xargs; do
+            if ! command -v "$command" >/dev/null; then
+              echo "missing source-build oracle prerequisite: $command" >&2
+              exit 1
+            fi
+          done
           env \
             MISE_BREW_ORACLE_DISPOSABLE="$MISE_BREW_ORACLE_DISPOSABLE" \
             MISE_BREW_ORACLE_RESULT_DIR="$MISE_BREW_ORACLE_RESULT_DIR" \
@@ -398,7 +404,6 @@ jobs:
             MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
             MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
             MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
-            MISE_E2E_DOCKER=1 \
             mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
       - name: Verify oracle completion record
         if: always()
@@ -745,6 +750,8 @@ jobs:
       - bootstrap-linux-host
       - windows-unit
       - windows-e2e
+      - brew-oracle-macos
+      - brew-oracle-linux
     # Evaluate skipped and failed dependencies, but do not waste a runner when
     # the workflow is cancelled.
     if: ${{ always() && !cancelled() }}
@@ -782,6 +789,14 @@ jobs:
               echo "e2e failed or was skipped"
               exit 1
             fi
+            if [ "${{ needs.brew-oracle-macos.result }}" != "success" ]; then
+              echo "brew-oracle-macos failed or was skipped"
+              exit 1
+            fi
+            if [ "${{ needs.brew-oracle-linux.result }}" != "success" ]; then
+              echo "brew-oracle-linux failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.bootstrap-linux-host.result }}" != "success" ]; then
               echo "bootstrap-linux-host failed or was skipped"
               exit 1
@@ -801,7 +816,9 @@ jobs:
               "${{ needs.e2e.result }}" \
               "${{ needs.bootstrap-linux-host.result }}" \
               "${{ needs.windows-unit.result }}" \
-              "${{ needs.windows-e2e.result }}"; do
+              "${{ needs.windows-e2e.result }}" \
+              "${{ needs.brew-oracle-macos.result }}" \
+              "${{ needs.brew-oracle-linux.result }}"; do
               if [ "$result" != "skipped" ]; then
                 echo "docs-only jobs should be skipped"
                 exit 1

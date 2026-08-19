@@ -1081,7 +1081,7 @@ end
             ),
             (
                 r#"class Test < Formula
-  disable! because: :unmaintained
+  disable! date: "2020-01-01", because: :unmaintained
 end
 "#,
                 true,

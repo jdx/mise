@@ -1035,6 +1035,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
+                    #[cfg(unix)]
                     if self.cleanup_process_group {
                         if let Some(g) = &timeout_guard {
                             g.cancel();
@@ -1254,6 +1255,7 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
+        #[cfg(unix)]
         if self.cleanup_process_group {
             if let Some(g) = &timeout_guard {
                 g.cancel();
@@ -1697,6 +1699,9 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
+            if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
+                crate::sandbox::ensure_landlock_available()?;
+            }
             // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
             // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
             if sandbox.effective_deny_env() {
@@ -2308,6 +2313,45 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_strict_process_cleanup_composes_or_reports_unavailable_landlock() {
+        if !super::should_use_pgroup() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let readable_file = root.path().join("formula.rb");
+        std::fs::write(&readable_file, "class Test; end").unwrap();
+        let writable = root.path().join("writable");
+        std::fs::create_dir(&writable).unwrap();
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_read: true,
+            deny_write: true,
+            deny_net: true,
+            deny_local_sockets: true,
+            deny_env: true,
+            allow_read: vec![root.path().to_path_buf(), readable_file],
+            allow_write: vec![writable],
+            deny_system_temp_write: true,
+            deny_mise_data_read: true,
+            ..Default::default()
+        };
+        sandbox.resolve_paths();
+        let mut runner = super::CmdLineRunner::new("/bin/true")
+            .env_clear()
+            .with_sandbox(sandbox)
+            .with_process_group_cleanup();
+
+        if let Err(error) = runner.apply_sandbox().await {
+            assert!(
+                error.to_string().contains("landlock is unavailable"),
+                "unexpected strict sandbox preflight failure: {error:#}"
+            );
+            return;
+        }
+        runner.execute_async().await.unwrap();
+    }
+
     #[tokio::test]
     async fn test_execute_async_skips_pre_cancelled_command() {
         let err = super::CmdLineRunner::new("sh")
@@ -2538,18 +2582,15 @@ mod tests {
         runner.apply_sandbox().await.unwrap();
         let result = runner.execute_async().await;
 
+        assert!(result.is_err());
         assert!(!outside.join("escaped").exists());
-        if allowed.join("inside").is_file() {
-            assert!(result.is_err());
-            let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
-            assert!(child_env.contains("DOCUMENTED=yes"));
-            assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
-        } else {
-            // Kernels that cannot apply the requested confinement must stop
-            // the child before its first write, never run it unsandboxed.
-            assert!(result.is_err());
-            assert!(!allowed.join("env").exists());
-        }
+        assert!(
+            allowed.join("inside").is_file(),
+            "sandboxed child never reached an authorized write"
+        );
+        let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
+        assert!(child_env.contains("DOCUMENTED=yes"));
+        assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]

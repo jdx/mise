@@ -166,13 +166,20 @@ mod tests {
         }
 
         let test_name = "sandbox::seccomp::tests::test_local_socket_policy_is_opt_in";
+        let cwd_sentinel = tempfile::NamedTempFile::new_in(std::env::current_dir().unwrap())
+            .expect("create parent cwd sentinel");
         for policy in ["default", "local", "escape", "strict"] {
             let status = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", test_name])
                 .env(CHILD_ENV, policy)
+                .env(crate::test::INHERIT_TEST_PROCESS_ENV, "1")
                 .status()
                 .unwrap();
             assert!(status.success(), "seccomp child failed for {policy}");
+            assert!(
+                cwd_sentinel.path().is_file(),
+                "seccomp child reset the parent test process's cwd"
+            );
         }
     }
 }

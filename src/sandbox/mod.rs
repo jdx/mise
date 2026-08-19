@@ -280,6 +280,13 @@ pub fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
     landlock::apply_landlock(config)
 }
 
+/// Fail before spawning when filesystem confinement is unavailable. This
+/// keeps the real Landlock diagnostic instead of `pre_exec`'s synthetic EINVAL.
+#[cfg(target_os = "linux")]
+pub fn ensure_landlock_available() -> eyre::Result<()> {
+    landlock::ensure_landlock_available()
+}
+
 /// Apply seccomp network filter (Linux only).
 #[cfg(target_os = "linux")]
 pub fn seccomp_apply(

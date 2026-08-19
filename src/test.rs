@@ -8,8 +8,15 @@ use indoc::indoc;
 
 use crate::{env, file};
 
+/// Re-executed unit-test children inherit the already-initialized test
+/// environment and must not delete/recreate the parent process's shared cwd.
+pub(crate) const INHERIT_TEST_PROCESS_ENV: &str = "MISE_TEST_INHERIT_PROCESS_ENV";
+
 #[ctor::ctor(unsafe)]
 fn init() {
+    if std::env::var_os(INHERIT_TEST_PROCESS_ENV).is_some() {
+        return;
+    }
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "debug")
     }

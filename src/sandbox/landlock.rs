@@ -6,6 +6,20 @@ use landlock::{
 
 use super::SandboxConfig;
 
+/// Verify that the running kernel can create a Landlock ruleset before the
+/// command enters `pre_exec`. Errors returned from `pre_exec` lose their
+/// structured message in Rust's spawn protocol and otherwise surface as a
+/// synthetic `EINVAL`, hiding an unsupported confinement environment.
+pub fn ensure_landlock_available() -> Result<()> {
+    Ruleset::default()
+        .set_compatibility(landlock::CompatLevel::HardRequirement)
+        .handle_access(AccessFs::Execute)
+        .map_err(|e| eyre!("landlock is unavailable: {e}"))?
+        .create()
+        .map(|_| ())
+        .map_err(|e| eyre!("landlock is unavailable: {e}"))
+}
+
 /// System paths that are always readable on Linux.
 /// Note: /tmp and /dev are handled separately with full (read+write) access.
 const SYSTEM_READ_PATHS: &[&str] = &[

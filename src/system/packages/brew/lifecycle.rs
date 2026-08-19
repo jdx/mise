@@ -3007,6 +3007,13 @@ async fn execute_run(
     };
 
     let shared_write_targets = run_shared_write_targets(run)?;
+    // The sandbox grants only the exact declared output path. Creating a file
+    // still requires its parent directory to exist, so establish missing real
+    // directory components here without granting the child any parent or
+    // sibling authority. The guard removes only directories whose identity we
+    // created and which remain empty if setup or the command fails.
+    let shared_write_parents =
+        prepare_run_shared_write_parents(&prepared.keg, &shared_write_targets)?;
     let env = run_environment(prepared, run, &temp)?;
     let mut allow_write = vec![prepared.keg.clone(), run.log_dir.clone(), temp.clone()];
     allow_write.extend(shared_write_targets.iter().cloned());
@@ -3025,6 +3032,7 @@ async fn execute_run(
     let mut command = CmdLineRunner::new(&run.executable)
         .args(&run.args)
         .with_sandbox(sandbox);
+    shared_write_parents.validate()?;
     command.apply_sandbox().await?;
     command = command
         .env_clear()
@@ -3050,6 +3058,7 @@ async fn execute_run(
             )
         });
     }
+    shared_write_parents.validate()?;
 
     if let Some(publish) = stdout_publish {
         persist_staged_node(publish.temporary, &publish.destination, &publish.authority)?;
@@ -3080,6 +3089,121 @@ fn run_shared_write_targets(run: &PreparedRun) -> Result<BTreeSet<PathBuf>> {
         }
     }
     Ok(targets)
+}
+
+#[derive(Debug)]
+struct CreatedRunSharedDirectory {
+    path: PathBuf,
+    device: u64,
+    inode: u64,
+}
+
+#[derive(Debug)]
+struct RunSharedWriteParents {
+    created: Vec<CreatedRunSharedDirectory>,
+    ancestries: Vec<DirectoryAncestry>,
+}
+
+impl RunSharedWriteParents {
+    fn validate(&self) -> Result<()> {
+        for ancestry in &self.ancestries {
+            validate_directory_ancestry(ancestry)
+                .wrap_err("post-install shared output parent changed after preflight")?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for RunSharedWriteParents {
+    fn drop(&mut self) {
+        for created in self.created.iter().rev() {
+            let Ok(Some(metadata)) = symlink_metadata_if_exists(&created.path) else {
+                continue;
+            };
+            let Ok((device, inode)) = permission_device_inode(&metadata) else {
+                continue;
+            };
+            if metadata.file_type().is_dir()
+                && !metadata.file_type().is_symlink()
+                && (device, inode) == (created.device, created.inode)
+            {
+                // Never recurse: a command output or concurrent foreign node
+                // makes the directory non-empty and therefore preserves it.
+                let _ = fs::remove_dir(&created.path);
+            }
+        }
+    }
+}
+
+fn prepare_run_shared_write_parents(
+    keg: &Path,
+    targets: &BTreeSet<PathBuf>,
+) -> Result<RunSharedWriteParents> {
+    let shared = super::pour::lexical_normalize(&prefix::prefix());
+    let mut prepared = RunSharedWriteParents {
+        created: vec![],
+        ancestries: vec![],
+    };
+    for target in targets {
+        if path_is_within_keg(keg, target) {
+            continue;
+        }
+        let parent = target.parent().ok_or_else(|| {
+            eyre!(
+                "post-install shared output has no parent: {}",
+                target.display()
+            )
+        })?;
+        let relative = parent.strip_prefix(&shared).wrap_err_with(|| {
+            format!(
+                "post-install shared output parent escapes {}: {}",
+                shared.display(),
+                parent.display()
+            )
+        })?;
+        let mut current = shared.clone();
+        for component in relative.components() {
+            current.push(component.as_os_str());
+            match symlink_metadata_if_exists(&current)? {
+                Some(metadata)
+                    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {}
+                Some(_) => bail!(
+                    "post-install shared output parent is not a real directory: {}",
+                    current.display()
+                ),
+                None => {
+                    fs::create_dir(&current).wrap_err_with(|| {
+                        format!(
+                            "could not create post-install shared output parent: {}",
+                            current.display()
+                        )
+                    })?;
+                    let metadata = current.symlink_metadata()?;
+                    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+                        bail!(
+                            "post-install shared output parent is not a real directory: {}",
+                            current.display()
+                        )
+                    }
+                    let (device, inode) = permission_device_inode(&metadata)?;
+                    prepared.created.push(CreatedRunSharedDirectory {
+                        path: current.clone(),
+                        device,
+                        inode,
+                    });
+                }
+            }
+        }
+        prepared
+            .ancestries
+            .push(capture_directory_ancestry(parent).wrap_err_with(|| {
+                format!(
+                    "post-install shared output parent ancestry is invalid: {}",
+                    parent.display()
+                )
+            })?);
+    }
+    Ok(prepared)
 }
 
 struct RunStdoutPublish {
@@ -4603,6 +4727,55 @@ mod tests {
         };
 
         assert_eq!(run_shared_write_targets(run)?, BTreeSet::from([declared]));
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn run_creates_only_declared_output_parent_before_sandbox() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let executable = keg.join("libexec/post-install");
+        let source = keg.join("share/openssl@3/cacert.pem");
+        let target = prefix.join("etc/openssl@3/cert.pem");
+        let sibling = prefix.join("etc/sibling-sentinel");
+        crate::file::create_dir_all(executable.parent().unwrap())?;
+        crate::file::create_dir_all(source.parent().unwrap())?;
+        crate::file::create_dir_all(sibling.parent().unwrap())?;
+        crate::file::write(&source, "certificate-data")?;
+        crate::file::write(&sibling, "preserve")?;
+        crate::file::write(
+            &executable,
+            r#"#!/bin/sh
+set -eu
+mkdir -p "$(dirname "$2")"
+if printf mutated > "$(dirname "$2")/../sibling-sentinel" 2>/dev/null; then
+  exit 97
+fi
+cp "$1" "$2"
+"#,
+        )?;
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
+        assert!(target.parent().unwrap().symlink_metadata().is_err());
+        let prepared = prepare(
+            &formula(vec![serde_json::json!({
+                "command": {"base": "libexec", "path": "post-install"},
+                "type": "run",
+                "args": ["{{pkgshare}}/cacert.pem", "{{pkgetc}}/cert.pem"]
+            })]),
+            &keg,
+        )?;
+
+        let effects = execute_step(&prepared, &prepared.steps[0]).await?;
+
+        assert_eq!(crate::file::read_to_string(&target)?, "certificate-data");
+        assert_eq!(crate::file::read_to_string(&sibling)?, "preserve");
+        assert!(effects.required_paths.contains(&target));
         Ok(())
     }
 
