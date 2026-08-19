@@ -553,7 +553,7 @@ impl SPMBackend {
         file::create_dir_all(&bundle_dir)?;
         let download_path = tv.download_path().join(&asset.name);
         let headers = match provider.kind {
-            GitProviderKind::GitLab => gitlab::get_headers(&asset.url),
+            GitProviderKind::GitLab => gitlab::get_headers(&asset.url, &provider.api_url),
             GitProviderKind::GitHub => github::get_headers(&asset.url)?,
         };
         ctx.pr.set_message(format!("download {}", asset.name));

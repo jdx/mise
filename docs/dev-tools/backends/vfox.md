@@ -63,7 +63,6 @@ maven                         aqua:apache/maven vfox:mise-plugins/vfox-maven
 php                           vfox:mise-plugins/vfox-php
 scala                         vfox:mise-plugins/vfox-scala
 terraform                     aqua:hashicorp/terraform vfox:mise-plugins/vfox-terraform
-vlang                         vfox:mise-plugins/vfox-vlang
 ```
 
 And they will be installed when running commands such as `mise use -g cmake` without needing to
@@ -109,27 +108,35 @@ The vfox backend honors mise's [`url_replacements`](/url-replacements.html) sett
 tool artifact downloads and requests made through the plugin's built-in Lua HTTP module. This
 includes `http.get`, `http.head`, `http.download_file`, and their `try_*` variants.
 
+After applying URL replacements, vfox also uses mise's [`netrc`](/configuration/settings.html#netrc)
+setting to add HTTP Basic authentication for the destination host. An explicit `Authorization`
+header supplied by a plugin takes precedence when the request stays on the same origin.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these
 go in `[tools]` in `mise.toml`.
 
-Traditional vfox lifecycle hooks for a selected tool version can read custom options from their
-hook environment. Option names are uppercased and exposed with both the current and legacy-compatible
-prefixes:
+Traditional vfox `PreInstall` and `PostInstall` hooks receive custom options in the structured
+`ctx.options` table. Scalar values use mise's existing string representation, while arrays and
+tables remain structured:
 
 ```toml
 [tools]
-"vfox:example/plugin" = { version = "1.0.0", extensions = "opentelemetry,swoole" }
+"vfox:example/plugin" = { version = "1.0.0", bundled = false, channels = ["stable", "beta"] }
 ```
 
 ```lua
-local extensions = os.getenv("MISE_TOOL_OPTS__EXTENSIONS")
--- RTX_TOOL_OPTS__EXTENSIONS contains the same value for legacy compatibility.
+function PLUGIN:PreInstall(ctx)
+    local bundled = ctx.options.bundled == "false"
+    local channels = ctx.options.channels
+    -- ...
+end
 ```
 
-These variables are available only while mise runs the plugin hook and are not exported to the
-user's shell. Backend plugins should use the structured `ctx.options` value instead.
+Existing plugins can continue reading custom options from their hook environment with the
+`MISE_TOOL_OPTS__` prefix. Those variables are available only while mise runs the plugin hook and
+are not exported to the user's shell. New plugins should use `ctx.options`.
 
 ### `install_env`
 

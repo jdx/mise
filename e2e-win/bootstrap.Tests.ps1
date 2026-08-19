@@ -48,4 +48,23 @@ content = "managed"
         $LASTEXITCODE | Should -Not -Be 0
         $out | Should -BeLike '*managed system files are only supported on Unix*'
     }
+
+    It 'rejects services selected through bootstrap config roots' {
+        $serviceRoot = Join-Path $TestDrive 'service-root'
+        New-Item -ItemType Directory -Path $serviceRoot | Out-Null
+        @"
+[bootstrap.services.example]
+state = "stopped"
+enabled = false
+"@ | Out-File -FilePath (Join-Path $serviceRoot 'mise.toml') -Encoding utf8NoBOM
+
+        @"
+[bootstrap]
+config_roots = ["service-root"]
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap services apply --yes 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $out | Should -BeLike '*bootstrap system services are only supported on Linux*'
+    }
 }

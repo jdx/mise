@@ -92,6 +92,27 @@ struct PreparedTaskContext {
     extra_vars: Option<IndexMap<String, String>>,
 }
 
+/// Format a task path for a child process without leaking the mixture of `/` and `\` that
+/// `PathBuf` preserves when a Windows root is joined to a multi-component config pattern.
+///
+/// Extended-length paths are exempt: `/` is an ordinary character after the `\\?\` prefix, so
+/// rewriting it there could change which file the value names. Unix paths are returned unchanged.
+fn task_env_path(path: &Path) -> String {
+    let path = path.display().to_string();
+    #[cfg(windows)]
+    {
+        if path.starts_with(r"\\?\") {
+            path
+        } else {
+            path.replace('/', "\\")
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
+}
+
 #[derive(Clone, Copy)]
 struct TaskInjectionContext<'a> {
     config: &'a Arc<Config>,
@@ -2047,7 +2068,7 @@ impl TaskExecutor {
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_ORIGINAL_CWD",
-                cwd.display().to_string(),
+                task_env_path(cwd),
             );
         }
 
@@ -2063,7 +2084,7 @@ impl TaskExecutor {
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_PROJECT_ROOT",
-                root.display().to_string(),
+                task_env_path(&root),
             );
         }
         if let Some(monorepo_root) = config.monorepo_root() {
@@ -2071,7 +2092,7 @@ impl TaskExecutor {
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_MONOREPO_ROOT",
-                monorepo_root.display().to_string(),
+                task_env_path(&monorepo_root),
             );
         }
         Self::insert_env_excluded_from_nested_mise_diff(
@@ -2095,14 +2116,14 @@ impl TaskExecutor {
             &mut env,
             &mut nested_mise_diff_exclude_keys,
             "MISE_TASK_FILE",
-            task_file.display().to_string(),
+            task_env_path(&task_file),
         );
         if let Some(dir) = task_file.parent() {
             Self::insert_env_excluded_from_nested_mise_diff(
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_TASK_DIR",
-                dir.display().to_string(),
+                task_env_path(dir),
             );
         }
         if let Some(config_root) = &task.config_root {
@@ -2110,7 +2131,7 @@ impl TaskExecutor {
                 &mut env,
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_CONFIG_ROOT",
-                config_root.display().to_string(),
+                task_env_path(config_root),
             );
         }
         if Settings::get().env_cache {
@@ -2383,6 +2404,31 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_env_path_preserves_host_path_spelling() {
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                task_env_path(Path::new(r"C:\Users\me\.config/mise/config.toml")),
+                r"C:\Users\me\.config\mise\config.toml"
+            );
+            assert_eq!(
+                task_env_path(Path::new(r"\\server\share/tasks/build.ps1")),
+                r"\\server\share\tasks\build.ps1"
+            );
+            // Within an extended-length path `/` is data, not a separator.
+            assert_eq!(
+                task_env_path(Path::new(r"\\?\C:\tasks/a/b")),
+                r"\\?\C:\tasks/a/b"
+            );
+        }
+        #[cfg(not(windows))]
+        assert_eq!(
+            task_env_path(Path::new(r"/tmp/tasks\build")),
+            r"/tmp/tasks\build"
+        );
+    }
 
     #[test]
     fn task_cache_stats_saturate_and_accumulate() {

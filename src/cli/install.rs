@@ -218,12 +218,7 @@ impl Install {
                 Ok(statuses) => {
                     missing += statuses
                         .iter()
-                        .filter(|s| {
-                            !matches!(
-                                s.state,
-                                crate::system::packages::PackageState::Installed { .. }
-                            ) && !s.state.is_unavailable()
-                        })
+                        .filter(|s| !s.state.is_installed() && !s.state.is_unavailable())
                         .count();
                 }
                 // a transient query failure must not start the 24h throttle
@@ -583,6 +578,7 @@ impl Install {
                     None,
                     Some(&[]),
                     self.is_dry_run(),
+                    false,
                 )
                 .await;
                 (vec![], Ok(()))

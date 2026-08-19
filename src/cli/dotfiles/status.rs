@@ -30,7 +30,7 @@ impl DotfilesStatus {
         let config = Config::get().await?;
         let mut any_missing = false;
 
-        let all_files = system::files::files_from_config(&config);
+        let all_files = system::files::files_from_config(&config)?;
         let files = all_files
             .iter()
             .filter(|req| {
@@ -58,6 +58,7 @@ impl DotfilesStatus {
                     "source": (req.mode != system::files::FileMode::Content)
                         .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
+                    "origin": &req.origin,
                     "state": match &state {
                         FileState::Applied => "applied",
                         FileState::Missing => "missing",
@@ -74,12 +75,13 @@ impl DotfilesStatus {
                     } else {
                         req.source.display_user()
                     },
+                    req.origin.config.display_user(),
                     state_str,
                 ]);
             }
         }
 
-        let all_edits = system::edits::edits_from_config(&config);
+        let all_edits = system::edits::edits_from_config(&config)?;
         let edits = all_edits
             .iter()
             .filter(|req| system::edits::matches_target(req, &self.targets))
@@ -113,6 +115,7 @@ impl DotfilesStatus {
                 json_edits.push(json!({
                     "path": req.path_raw,
                     "edit": req.describe_op(),
+                    "origin": &req.origin,
                     "state": match &state {
                         FileState::Applied => "applied",
                         FileState::Missing => "missing",
@@ -121,7 +124,12 @@ impl DotfilesStatus {
                     },
                 }));
             } else {
-                edit_rows.push(vec![req.path_raw.clone(), req.describe_op(), state_str]);
+                edit_rows.push(vec![
+                    req.path_raw.clone(),
+                    req.describe_op(),
+                    req.origin.config.display_user(),
+                    state_str,
+                ]);
             }
         }
 
@@ -143,14 +151,15 @@ impl DotfilesStatus {
                 info!("nothing configured in [dotfiles]");
             }
             if !file_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["Target", "Mode", "Source", "State"]);
+                let mut table =
+                    MiseTable::new(false, &["Target", "Mode", "Source", "Config", "State"]);
                 for row in file_rows {
                     table.add_row(row);
                 }
                 table.print()?;
             }
             if !edit_rows.is_empty() {
-                let mut table = MiseTable::new(false, &["File", "Edit", "State"]);
+                let mut table = MiseTable::new(false, &["File", "Edit", "Config", "State"]);
                 for row in edit_rows {
                     table.add_row(row);
                 }

@@ -80,7 +80,7 @@ impl Toolset {
             paths.push(venv.venv_path.clone());
         }
 
-        // 4. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        // 4. tool_add_paths (MISE_ADD_PATH from tools)
         paths.extend(env_results.tool_add_paths);
 
         // 5. Tool paths
@@ -115,7 +115,7 @@ impl Toolset {
             tool_paths.push(venv.venv_path.clone());
         }
 
-        // tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        // tool_add_paths (MISE_ADD_PATH from tools)
         tool_paths.extend(env_results.tool_add_paths);
 
         // Tool installation paths

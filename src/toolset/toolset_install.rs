@@ -167,6 +167,7 @@ impl Toolset {
 
         self.init_request_options(&mut versions);
         ensure_compatible_install_requests(&versions)?;
+        ensure_safe_install_options(&versions)?;
 
         // Validate shared install destinations before plugin installation or
         // hooks introduce side effects.
@@ -181,7 +182,16 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
-        hooks::run_one_hook(config, self, Hooks::Preinstall, None, opts.dry_run).await;
+        hooks::run_one_hook_with_context(
+            config,
+            self,
+            Hooks::Preinstall,
+            None,
+            None,
+            opts.dry_run,
+            opts.global_hooks_only,
+        )
+        .await;
 
         show_python_install_hint(&versions);
 
@@ -286,6 +296,7 @@ impl Toolset {
                 None,
                 None,
                 opts.dry_run,
+                opts.global_hooks_only,
             )
             .await;
         } else {
@@ -302,6 +313,7 @@ impl Toolset {
                 None,
                 Some(&installed_tools),
                 opts.dry_run,
+                opts.global_hooks_only,
             )
             .await;
         }
@@ -718,6 +730,13 @@ impl Toolset {
     fn parse_plugin_key(key: &str) -> (PluginType, &str) {
         PluginType::from_plugin_config(key)
     }
+}
+
+fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
+    for request in versions {
+        request.ensure_safe_install_options()?;
+    }
+    Ok(())
 }
 
 /// Whether install-time resolution should refresh the remote-versions cache

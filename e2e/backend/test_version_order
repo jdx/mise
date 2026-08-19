@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# version_order changes candidate selection without changing the canonical
-# source order displayed by ls-remote.
+# version_order changes both candidate selection and the order displayed by
+# ls-remote.
 
 VERSION_LIST_DIR="$TMPDIR/version-order-list"
 mkdir -p "$VERSION_LIST_DIR"
@@ -39,6 +39,10 @@ version_regex = '(v[0-9.]+|nightly)'
 EOF
 
 assert "mise latest http:version-order" "v10.34.5"
+assert "mise ls-remote http:version-order" "v11.11.0
+nightly
+v10.99.0
+v10.34.5"
 
 cat <<EOF >mise.toml
 [tools."http:version-order"]
@@ -52,10 +56,10 @@ EOF
 assert "mise latest http:version-order" "v11.11.0"
 assert "mise latest http:version-order@10" "v10.99.0"
 assert "mise latest http:version-order nightly" "nightly"
-assert "mise ls-remote http:version-order" "v11.11.0
-nightly
+assert "mise ls-remote http:version-order" "nightly
+v10.34.5
 v10.99.0
-v10.34.5"
+v11.11.0"
 
 assert_fail 'mise install --dry-run "cargo:ripgrep[version_order=semver]@14.1.1"' \
   "cargo backend does not support version_order"

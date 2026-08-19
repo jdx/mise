@@ -170,6 +170,9 @@ static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
     ]
 });
 
+static BARE_ARM_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:\b|_)arm(?:\b|_)").unwrap());
+
 static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
     vec![
         (
@@ -524,6 +527,14 @@ impl AssetPicker {
                     // this below a real x64/amd64 match so correctly named
                     // assets win when both are present.
                     5
+                } else if *arch == AssetArch::Arm
+                    && AssetArch::Arm64.matches_target(&self.target_arch)
+                    && BARE_ARM_PATTERN.is_match(asset)
+                {
+                    // Modern projects often use bare "arm" for their 64-bit ARM
+                    // artifacts. Keep this below a real arm64/aarch64 match, and
+                    // do not apply it to explicitly 32-bit armv0-armv7 assets.
+                    5
                 } else {
                     // Architecture mismatch should be disqualifying - don't silently
                     // fall back to incompatible architectures (e.g., x86_64 when arm64
@@ -589,7 +600,15 @@ impl AssetPicker {
         }
 
         if format.is_archive() {
-            return 10;
+            return match format {
+                // Since we are downloading, prefer small archives: zstd and xz
+                // tend to be smaller archives.
+                ExtractionFormat::TarZst => 15,
+                // xz comes in after zst because it can cost more CPU to decompress.
+                ExtractionFormat::TarXz => 13,
+                // All other archive formats roughly created equal.
+                _ => 10,
+            };
         }
 
         // Platform-agnostic runtime archives (composer.phar, foo.jar, bar.pyz)
@@ -733,8 +752,8 @@ fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
 fn asset_name_stem(asset: &str) -> String {
     let mut name = asset.rsplit('/').next().unwrap_or(asset).to_lowercase();
     let suffixes = [
-        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".tar", ".zip", ".gz", ".xz", ".bz2",
-        ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
+        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".txz", ".tzst", ".tar", ".zip",
+        ".gz", ".xz", ".bz2", ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
     ];
 
     if let Some(suffix) = suffixes.iter().find(|suffix| name.ends_with(*suffix)) {
@@ -1677,6 +1696,36 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_archive_format_preference_order() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let tar_zst = "tool-1.0.0-linux-x86_64.tar.zst";
+        let tar_xz = "tool-1.0.0-linux-x86_64.tar.xz";
+        let tar_gz = "tool-1.0.0-linux-x86_64.tar.gz";
+
+        let picked = picker
+            .pick_best_asset(&[tar_gz.to_string(), tar_xz.to_string(), tar_zst.to_string()])
+            .unwrap();
+        assert_eq!(picked, tar_zst);
+
+        let picked = picker
+            .pick_best_asset(&[tar_gz.to_string(), tar_xz.to_string()])
+            .unwrap();
+        assert_eq!(picked, tar_xz);
+    }
+
+    #[test]
+    fn test_asset_name_stem_strips_shorthand_archive_suffixes() {
+        assert_eq!(
+            asset_name_stem("tool-1.0.0-linux-x86_64.tzst"),
+            "tool-1.0.0-linux-x86_64"
+        );
+        assert_eq!(
+            asset_name_stem("tool-1.0.0-linux-x86_64.txz"),
+            "tool-1.0.0-linux-x86_64"
+        );
     }
 
     #[test]
@@ -2726,6 +2775,42 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             score < 0,
             "Architecture mismatch should result in negative score, got {}",
             score
+        );
+    }
+
+    #[test]
+    fn test_arm_is_arm64_fallback() {
+        let assets = vec![
+            "elm-0.19.2-linux-arm.gz".to_string(),
+            "elm-0.19.2-mac-arm.gz".to_string(),
+            "elm-0.19.2-windows.exe".to_string(),
+        ];
+
+        let macos_picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            macos_picker.pick_best_asset(&assets).as_deref(),
+            Some("elm-0.19.2-mac-arm.gz")
+        );
+
+        let linux_picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            linux_picker.pick_best_asset(&assets).as_deref(),
+            Some("elm-0.19.2-linux-arm.gz")
+        );
+
+        let explicit_assets = vec![
+            "tool-linux-arm.gz".to_string(),
+            "tool-linux-arm64.gz".to_string(),
+        ];
+        assert_eq!(
+            linux_picker.pick_best_asset(&explicit_assets).as_deref(),
+            Some("tool-linux-arm64.gz")
+        );
+
+        assert!(
+            linux_picker
+                .pick_best_asset(&["tool-linux-armv7.gz".to_string()])
+                .is_none()
         );
     }
 

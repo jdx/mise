@@ -39,6 +39,7 @@ When enabled, mise **refuses with an error** (never a silent fallback) to:
 
 - run `exec()` or `read_file()` in config templates
 - run hooks (suppressed like `--no-hooks`, since hooks fire ambiently from `mise env`/`hook-env`)
+- run tool-level `postinstall` hooks or apply tool-level `install_env` during installation
 - run tasks
 - execute asdf plugin scripts
 - install plugins

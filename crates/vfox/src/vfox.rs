@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use itertools::Itertools;
 use reqwest::Url;
+use reqwest::header::HeaderMap;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -23,7 +24,7 @@ use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
 use crate::hooks::pre_uninstall::PreUninstallContext;
-use crate::http::{CLIENT, retry_async};
+use crate::http::{CLIENT, HttpHeadersResolver, retry_async};
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
 use crate::registry;
@@ -69,6 +70,7 @@ pub struct Vfox {
     /// Optional runtime env type (`gnu` or `musl`) exposed to plugin hooks.
     pub runtime_env_type: Option<String>,
     url_rewriter: Option<UrlRewriter>,
+    http_headers_resolver: Option<HttpHeadersResolver>,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -94,6 +96,10 @@ impl std::fmt::Debug for Vfox {
                 "url_rewriter",
                 &self.url_rewriter.as_ref().map(|_| "<closure>"),
             )
+            .field(
+                "http_headers_resolver",
+                &self.http_headers_resolver.as_ref().map(|_| "<closure>"),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -114,6 +120,13 @@ impl Vfox {
         F: Fn(&mut Url) + Send + Sync + 'static,
     {
         self.url_rewriter = Some(Arc::new(rewriter));
+    }
+
+    pub fn set_http_headers_resolver<F>(&mut self, resolver: F)
+    where
+        F: Fn(&Url) -> HeaderMap + Send + Sync + 'static,
+    {
+        self.http_headers_resolver = Some(Arc::new(resolver));
     }
 
     fn rewrite_url(&self, url: &mut Url) {
@@ -181,6 +194,9 @@ impl Vfox {
         self.set_cmd_shell(&plugin)?;
         if let Some(rewriter) = &self.url_rewriter {
             plugin.set_url_rewriter(rewriter.clone())?;
+        }
+        if let Some(resolver) = &self.http_headers_resolver {
+            plugin.set_http_headers_resolver(resolver.clone())?;
         }
         Ok(plugin)
     }
@@ -281,9 +297,29 @@ impl Vfox {
         install_dir: ID,
         download_dir: DD,
     ) -> Result<InstallResult> {
+        self.install_with_download_dir_and_options(
+            sdk,
+            version,
+            install_dir,
+            download_dir,
+            Default::default(),
+        )
+        .await
+    }
+
+    pub async fn install_with_download_dir_and_options<ID: AsRef<Path>, DD: AsRef<Path>>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+        download_dir: DD,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
         let sdk = self.get_sdk_with_env(sdk)?;
-        let pre_install = sdk.pre_install(version).await?;
+        let pre_install = sdk
+            .pre_install_with_options(version, options.clone())
+            .await?;
         let install_dir = install_dir.as_ref();
         let download_dir = download_dir.as_ref();
         trace!("{pre_install:?}");
@@ -305,6 +341,7 @@ impl Vfox {
                 root_path: install_dir.to_path_buf(),
                 runtime_version: version.to_string(),
                 sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
+                options,
             })
             .await?;
         }
@@ -346,8 +383,21 @@ impl Vfox {
         os: &str,
         arch: &str,
     ) -> Result<PreInstall> {
+        self.pre_install_for_platform_with_options(sdk, version, os, arch, Default::default())
+            .await
+    }
+
+    pub async fn pre_install_for_platform_with_options(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<PreInstall> {
         let sdk = self.get_sdk_with_env(sdk)?;
-        sdk.pre_install_for_platform(version, os, arch).await
+        sdk.pre_install_for_platform_with_options(version, os, arch, options)
+            .await
     }
 
     /// Returns the download URL and the highest-priority verified attestation type
@@ -360,8 +410,26 @@ impl Vfox {
         os: &str,
         arch: &str,
     ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
+        self.pre_install_provenance_for_platform_with_options(
+            sdk,
+            version,
+            os,
+            arch,
+            Default::default(),
+        )
+        .await
+    }
+
+    pub async fn pre_install_provenance_for_platform_with_options(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
         let pre = self
-            .pre_install_for_platform(sdk, version, os, arch)
+            .pre_install_for_platform_with_options(sdk, version, os, arch, options)
             .await?;
         let att = pre.attestation.and_then(attestation_to_verified);
         // Note: pre.sha256 / pre.sha512 are intentionally not returned here;
@@ -566,7 +634,11 @@ impl Vfox {
         self.log_emit(format!("Downloading {request_url}"));
         let url_str = request_url.to_string();
         let bytes = retry_async(&url_str, || async {
-            let resp = CLIENT.get(request_url.clone()).send().await?;
+            let mut request = CLIENT.get(request_url.clone());
+            if let Some(resolver) = &self.http_headers_resolver {
+                request = request.headers(resolver(&request_url));
+            }
+            let resp = request.send().await?;
             let resp = resp.error_for_status()?;
             resp.bytes().await
         })
@@ -769,6 +841,7 @@ impl Default for Vfox {
             github_token_resolver: None,
             runtime_env_type: None,
             url_rewriter: None,
+            http_headers_resolver: None,
             log_tx: None,
         }
     }
@@ -818,6 +891,7 @@ mod tests {
                 github_token_resolver: None,
                 runtime_env_type: None,
                 url_rewriter: None,
+                http_headers_resolver: None,
                 log_tx: None,
             }
         }
@@ -956,6 +1030,49 @@ mod tests {
             path,
             PathBuf::from("custom/downloads/vfox-dummy/1.0.0/dummy-1.0.0/tool.tar.gz")
         );
+    }
+
+    #[tokio::test]
+    async fn test_download_resolves_headers_after_url_rewrite() {
+        use reqwest::header::{AUTHORIZATION, HeaderValue};
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/mirror/tool.tar.gz"))
+            .and(header("Authorization", "Basic bWlycm9yOnNlY3JldA=="))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"artifact"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp = TempDir::new().unwrap();
+        let plugin_dir = temp.path().join("dummy");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let plugin = Plugin::from_dir(&plugin_dir).unwrap();
+        let mut vfox = Vfox::test();
+        let mirror_url = Url::parse(&format!("{}/mirror/tool.tar.gz", server.uri())).unwrap();
+        vfox.set_url_rewriter({
+            let mirror_url = mirror_url.clone();
+            move |url| *url = mirror_url.clone()
+        });
+        vfox.set_http_headers_resolver(move |url| {
+            assert_eq!(url, &mirror_url);
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                AUTHORIZATION,
+                HeaderValue::from_static("Basic bWlycm9yOnNlY3JldA=="),
+            );
+            headers
+        });
+
+        let original_url = Url::parse("https://upstream.invalid/tool.tar.gz").unwrap();
+        let downloaded = vfox
+            .download(&original_url, &plugin, "1.0.0", temp.path())
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(downloaded).unwrap(), b"artifact");
     }
 
     #[tokio::test]

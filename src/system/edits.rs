@@ -34,6 +34,7 @@ use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
 use crate::system::files::FileState;
+use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
 /// one `[dotfiles]` edit entry as written in mise.toml. Operations stay loosely typed so configs using operations
@@ -72,14 +73,14 @@ pub struct EditTomlTable {
 }
 
 /// where a block's content comes from
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BlockSource {
     Inline(String),
     /// absolute path, resolved against the declaring config file
     File(PathBuf),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum EditOp {
     Block {
         source: BlockSource,
@@ -107,6 +108,7 @@ pub struct EditRequest {
     pub base: PathBuf,
     /// config file that declared this edit
     pub config_path: PathBuf,
+    pub origin: ResourceOrigin,
 }
 
 impl EditRequest {
@@ -145,8 +147,38 @@ pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
 /// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
-pub fn edits_from_config(config: &Config) -> Vec<EditRequest> {
-    edits_from_config_files(&config.config_files)
+pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
+    let mut composed: IndexMap<String, EditRequest> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for request in edits_from_config_files(config_files) {
+            let key = format!("{}\u{0}{}", request.path.display(), request.id);
+            if let Some(existing) = composed.get(&key) {
+                if edit_requests_match(config, existing, &request) {
+                    continue;
+                }
+                bail!(
+                    "conflicting dotfile edit declarations for {}/{}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    request.path.display(),
+                    request.id,
+                    existing.origin.conflict_description(),
+                    request.origin.conflict_description(),
+                );
+            }
+            composed.insert(key, request);
+        }
+    }
+    Ok(composed.into_values().collect())
+}
+
+/// Returns whether sibling declarations produce the same file edit.
+fn edit_requests_match(config: &Config, first: &EditRequest, second: &EditRequest) -> bool {
+    first.path == second.path
+        && first.id == second.id
+        && first.op == second.op
+        && (!matches!(first.op, EditOp::Block { template: true, .. })
+            || first.base == second.base
+                && config.bootstrap_tera_ctx(&first.origin.config)
+                    == config.bootstrap_tera_ctx(&second.origin.config))
 }
 
 pub fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditRequest> {
@@ -228,6 +260,12 @@ fn resolve_entry(
             "\"{path_raw}\".{id:?}: ids may only contain letters, digits, '_', '-', and '.', ignoring entry"
         );
     }
+    let mut origin = ResourceOrigin {
+        config: config_path.to_path_buf(),
+        config_root: crate::config::config_file::config_root::config_root(config_path),
+        environment: crate::config::environments_for_config_path(config_path),
+        source: None,
+    };
     let entry = match entry {
         EditTomlEntry::Block(inline) => EditTomlTable {
             block: Some(inline),
@@ -260,11 +298,13 @@ fn resolve_entry(
                 (Some(inline), None) => BlockSource::Inline(inline),
                 (None, Some(src)) => {
                     let src = file::replace_path(&src);
-                    BlockSource::File(if src.is_relative() {
+                    let src = if src.is_relative() {
                         base.join(src)
                     } else {
                         src
-                    })
+                    };
+                    origin.source = Some(src.clone());
+                    BlockSource::File(src)
                 }
                 (None, None) => unreachable!("is_block"),
             };
@@ -305,6 +345,7 @@ fn resolve_entry(
         op,
         base: base.to_path_buf(),
         config_path: config_path.to_path_buf(),
+        origin,
     })
 }
 
@@ -396,7 +437,12 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     };
     let content = if *template {
         let mut tera = crate::tera::get_tera(Some(&req.base));
-        crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
+        crate::tera::render_str(
+            &mut tera,
+            &raw,
+            config.bootstrap_tera_ctx(&req.origin.config),
+        )
+        .map_err(|err| {
             eyre::eyre!(
                 "[dotfiles].\"{}/{}\": failed to render template: {err}",
                 req.path_raw,

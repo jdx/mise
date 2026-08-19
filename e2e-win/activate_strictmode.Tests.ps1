@@ -25,6 +25,10 @@ Set-Location $env:TEMP
 # the command-not-found hook inspects PSReadLine history, which is unavailable
 # here - it must stay quiet instead of erroring on every unknown command
 try { some-command-that-does-not-exist-xyz } catch { }
+# deactivate removes the marker while the prompt wrapper remains installed;
+# rendering the next prompt must not read the removed global under StrictMode
+mise deactivate
+prompt | Out-Null
 # only StrictMode/handler violations count - mise's own warnings and the shell's
 # own "not recognized" error must not fail this
 $pattern = 'has not been set|cannot be found on this object|Cannot index into a null array|Unable to find type|Index was outside the bounds'

@@ -260,7 +260,7 @@ mise watch --restart dev
 ## Share task catalogs
 
 For projects with a lot of tasks,
-[`task_config.includes`](/tasks/task-configuration.html#task-config-includes)
+[`task_config.includes`](/tasks/task-configuration.html#task_config.includes)
 can load task definitions from additional directories, `tasks.toml` files, or
 remote git repositories:
 

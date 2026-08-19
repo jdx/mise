@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.8.6"
+version = "2026.8.8"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -111,7 +111,7 @@ dotenvy = "0.15"
 duct = "1"
 dunce = "1"
 homedir = "0.3"
-expr-lang = "1"
+expr-lang = "2"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"

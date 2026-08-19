@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use eyre::Result;
+use path_absolutize::Absolutize;
 use tera::Context;
 
 use crate::config::config_file::diagnostic::toml_parse_error;
@@ -22,11 +23,13 @@ use crate::tera::{
 };
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
+static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 /// Initialize miserc settings by loading .miserc.toml files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.
 pub fn init() -> Result<()> {
+    let _ = invocation_cwd();
     let settings = load_miserc_settings()?;
     let _ = MISERC.set(settings);
     // Discard any files tracked via hash_file/file_size/last_modified during miserc
@@ -35,6 +38,14 @@ pub fn init() -> Result<()> {
     // contribute to that list.
     let _ = take_tera_accessed_files();
     Ok(())
+}
+
+/// The working directory mise was invoked from, before settings such as `cd`
+/// change the process working directory.
+pub fn invocation_cwd() -> Option<&'static Path> {
+    INVOCATION_CWD
+        .get_or_init(|| std::env::current_dir().ok())
+        .as_deref()
 }
 
 /// Get the loaded miserc settings, or default if not initialized.
@@ -139,13 +150,32 @@ fn load_miserc_settings() -> Result<MisercSettings> {
         if let Ok(content) = file::read_to_string(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));
             let content = render_miserc_template(&mut tera, &content, config_root);
-            let settings = toml::from_str::<MisercSettings>(&content)
+            let mut settings = toml::from_str::<MisercSettings>(&content)
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
+            resolve_ignored_config_paths(&mut settings, config_root);
             merge_settings(&mut merged, settings);
         }
     }
 
     Ok(merged)
+}
+
+fn resolve_ignored_config_paths(settings: &mut MisercSettings, config_root: &Path) {
+    let Some(paths) = settings.ignored_config_paths.take() else {
+        return;
+    };
+    settings.ignored_config_paths = Some(
+        paths
+            .into_iter()
+            .map(|path| resolve_ignored_config_path(path, config_root))
+            .collect(),
+    );
+}
+
+pub(crate) fn resolve_ignored_config_path(path: PathBuf, relative_to: &Path) -> PathBuf {
+    file::replace_path(path)
+        .absolutize_from(relative_to)
+        .into_owned()
 }
 
 /// Merge source settings into target, where source values override target.
@@ -261,6 +291,23 @@ ceiling_paths = ["/home/user"]
             Some(vec!["development".to_string(), "local".to_string()])
         );
         assert!(settings.ceiling_paths.is_some());
+    }
+
+    #[test]
+    fn test_resolve_ignored_config_paths_from_declaring_file() {
+        let mut settings = MisercSettings {
+            ignored_config_paths: Some(BTreeSet::from([PathBuf::from("../vendor/./**/mise.toml")])),
+            ..Default::default()
+        };
+
+        resolve_ignored_config_paths(&mut settings, Path::new("/workspaces/vcs/.config"));
+
+        assert_eq!(
+            settings.ignored_config_paths,
+            Some(BTreeSet::from([PathBuf::from(
+                "/workspaces/vcs/vendor/**/mise.toml"
+            )]))
+        );
     }
 
     #[test]

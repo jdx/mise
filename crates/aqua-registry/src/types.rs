@@ -768,7 +768,7 @@ impl AquaPackage {
 
     /// Check if a version passes the version filter
     pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
-        if let Some(filter) = self.version_filter_expr.clone() {
+        if let Some(filter) = &self.version_filter_expr {
             if let Value::Bool(expr) = self.expr(v, filter)? {
                 Ok(expr)
             } else {
@@ -783,7 +783,7 @@ impl AquaPackage {
         }
     }
 
-    fn expr(&self, v: &str, program: Program) -> Result<Value> {
+    fn expr(&self, v: &str, program: &Program) -> Result<Value> {
         let expr = self.expr_parser(v);
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }

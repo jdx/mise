@@ -192,6 +192,7 @@ impl Use {
                     jobs: self.jobs,
                     raw: self.raw,
                     dry_run: self.is_dry_run(),
+                    global_hooks_only: self.global,
                     resolve_options,
                     ..Default::default()
                 },

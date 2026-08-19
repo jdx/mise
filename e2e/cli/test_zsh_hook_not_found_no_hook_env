@@ -1,0 +1,82 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -eu
+
+# `mise activate zsh --no-hook-env` omits the `_mise_hook` definition, but the
+# command-not-found handler is emitted independently (not_found_auto_install is on by
+# default) and called it. Nothing refreshed the environment, so a tool that
+# hook-not-found had just installed was still not on PATH when the handler ran "$@".
+# bash and fish already refresh here; this is the zsh half.
+#
+# The second half of the test is the other side of that refresh: `mise deactivate`
+# leaves this handler registered, so the refresh has to be gated on MISE_SHELL.
+#
+# Checks are written out rather than using the assert.sh helpers: those declare
+# `local status`, and `status` is read-only in zsh, so they misreport. Every other zsh
+# test in this suite checks directly for the same reason.
+
+eval "$(mise activate zsh --no-hook-env)"
+
+# The premise: the definition is gone, the handler is not. `typeset -f` rather than
+# `$+functions`: that special comes from `zsh/parameter`, which zsh dlopens on first
+# reference, and the point of the line under test is that this path no longer loads it.
+if typeset -f _mise_hook >/dev/null 2>&1; then
+  echo "expected --no-hook-env to omit _mise_hook"
+  exit 1
+fi
+if ! typeset -f command_not_found_handler >/dev/null 2>&1; then
+  echo "expected the command-not-found handler to be installed"
+  exit 1
+fi
+
+# `bins = ["rtx-tiny"]` in registry/tiny.toml is what maps the missing bin back to the
+# tool, so declaring tiny in the local config is all the setup this needs.
+cat >mise.toml <<TOML
+[tools]
+tiny = "3.0.0"
+TOML
+
+# Call the handler directly rather than relying on zsh dispatching an unknown command from
+# a non-interactive script: this runs exactly the line under test, and its exit status is
+# the assertion. Without the refresh the handler installs the tool and then fails to run it.
+if ! command_not_found_handler rtx-tiny >/dev/null; then
+  echo "the handler installed the tool but could not run it: the environment was never refreshed"
+  exit 1
+fi
+
+if ! mise ls tiny --installed | grep -q 3.0.0; then
+  echo "expected the handler to have installed tiny@3.0.0"
+  exit 1
+fi
+
+# `mise deactivate` unsets MISE_SHELL but leaves this handler registered. The handler may
+# still install what the user asked for; what it must not do is put mise's environment back
+# into a shell that was explicitly deactivated.
+mise deactivate
+
+if [ -n "${MISE_SHELL:-}" ]; then
+  echo "expected deactivate to unset MISE_SHELL"
+  exit 1
+fi
+if ! typeset -f command_not_found_handler >/dev/null 2>&1; then
+  echo "expected deactivate to leave the command-not-found handler installed"
+  exit 1
+fi
+
+cat >mise.toml <<TOML
+[tools]
+tiny = "3.1.0"
+TOML
+
+# Fails on the handoff, exactly as it did before this handler refreshed anything: without
+# MISE_SHELL there is no refresh, so "$@" does not find the tool. That is the point.
+command_not_found_handler rtx-tiny >/dev/null 2>&1 || true
+
+if ! mise ls tiny --installed | grep -q 3.1.0; then
+  echo "expected the handler to still install what was asked for"
+  exit 1
+fi
+if [ -n "${__MISE_SESSION:-}" ]; then
+  echo "the handler re-applied mise's environment in a shell the user had deactivated"
+  exit 1
+fi

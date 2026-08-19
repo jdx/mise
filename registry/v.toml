@@ -1,4 +1,5 @@
+aliases = ["vlang"]
 backends = ["vfox:jdx/vfox-v", "asdf:mise-plugins/mise-v"]
 bins = ["v"]
-description = "V - https://vlang.io"
+description = "The V Programming Language. Simple, fast, safe, compiled. For developing maintainable software"
 version_order = "source"

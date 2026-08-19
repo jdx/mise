@@ -1426,7 +1426,7 @@ pub(crate) fn os_can_launch_extension(ext: &str) -> bool {
 /// Note that on Windows this never touches the filesystem — it is pure extension
 /// inspection, so it answers true for a `foo.exe` that does not exist. `is_executable`
 /// checks `is_file()` inline; this one does not. A lookup that walks candidate paths must
-/// compose the two, which is what `backend::is_spawnable` does.
+/// compose the two, which is what [`is_spawnable`] does.
 pub fn can_execute_directly(path: &Path) -> bool {
     #[cfg(windows)]
     {
@@ -1440,6 +1440,14 @@ pub fn can_execute_directly(path: &Path) -> bool {
     {
         is_executable(path)
     }
+}
+
+/// True when the OS will accept `path` as the program argument of a spawn.
+pub(crate) fn is_spawnable(path: &Path) -> bool {
+    if cfg!(windows) && !path.is_file() {
+        return false;
+    }
+    can_execute_directly(path)
 }
 
 #[cfg(unix)]
@@ -1592,6 +1600,18 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     path
 }
 
+/// Returns the first directly spawnable executable in PATH, expanding configured
+/// executable extensions on Windows when `name` has no extension.
+pub(crate) fn which_spawnable(name: &str) -> Option<PathBuf> {
+    let names = executable_names(name);
+    env::PATH.iter().find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| is_spawnable(candidate))
+    })
+}
+
 /// returns the first executable in PATH
 /// will include mise bin paths or other paths added by mise
 pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
@@ -1708,6 +1728,29 @@ fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
         let bin = path.join(name);
         if is_executable(&bin) { Some(bin) } else { None }
     })
+}
+
+#[cfg(not(windows))]
+pub(crate) fn executable_names(bin: &str) -> Vec<String> {
+    vec![bin.to_string()]
+}
+
+#[cfg(windows)]
+pub(crate) fn executable_names(bin: &str) -> Vec<String> {
+    let mut names = vec![bin.to_string()];
+    if Path::new(bin).extension().is_none() {
+        for ext in &Settings::get().windows_executable_extensions {
+            let name = if ext.is_empty() {
+                bin.to_string()
+            } else {
+                format!("{bin}.{ext}")
+            };
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {

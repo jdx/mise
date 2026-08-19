@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, config_file};
 use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
@@ -288,6 +288,13 @@ pub(crate) fn expand_deferred_subcommands(mut command: clap::Command) -> clap::C
 }
 
 impl Commands {
+    fn implicitly_trusts_active_config(&self) -> bool {
+        matches!(
+            self,
+            Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
+        )
+    }
+
     pub async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
@@ -772,10 +779,19 @@ impl Cli {
             <Cli as clap::FromArgMatches>::from_arg_matches(&matches)
                 .map_err(|err| clap_error(err.format(&mut Cli::command())))
         })?;
+        config_file::set_implicitly_trust_active_config(
+            cli.command
+                .as_ref()
+                .is_some_and(Commands::implicitly_trusts_active_config)
+                || cli.task.is_some(),
+        );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
+        measure!("trust_active_config", {
+            config_file::trust_active_config()?
+        });
         measure!("logger", { logger::init() });
         if !print_version {
             measure!("registry::refresh", { crate::registry::refresh().await });
@@ -982,6 +998,43 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use clap::Parser;
+
+    use super::*;
+
+    #[test]
+    fn test_commands_that_implicitly_trust_active_config() {
+        let trusting = [
+            vec!["mise", "run", "task"],
+            vec!["mise", "install"],
+            vec!["mise", "exec", "--", "true"],
+            vec!["mise", "watch", "task"],
+        ];
+        for args in trusting {
+            let cli = Cli::try_parse_from(&args).unwrap();
+            assert!(
+                cli.command
+                    .as_ref()
+                    .is_some_and(Commands::implicitly_trusts_active_config),
+                "expected {args:?} to imply config trust"
+            );
+        }
+
+        let non_trusting = [
+            vec!["mise", "hook-env", "-s", "bash"],
+            vec!["mise", "env"],
+            vec!["mise", "ls"],
+        ];
+        for args in non_trusting {
+            let cli = Cli::try_parse_from(&args).unwrap();
+            assert!(
+                !cli.command
+                    .as_ref()
+                    .is_some_and(Commands::implicitly_trusts_active_config),
+                "expected {args:?} not to imply config trust"
+            );
+        }
+    }
 
     /// Guards [`GLOBAL_FLAGS_WITH_VALUES`]. It is hardcoded so that startup does
     /// not have to build the clap tree; this keeps it honest. If you added a
@@ -1001,8 +1054,6 @@ mod tests {
             "GLOBAL_FLAGS_WITH_VALUES is stale; clap reports {derived:?}"
         );
     }
-    use super::*;
-
     #[tokio::test]
     async fn exit_signal_drops_command_future_before_returning() {
         struct DropGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);

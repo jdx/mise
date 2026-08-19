@@ -41,7 +41,7 @@ impl DotfilesApply {
         Vec<system::files::FileRequest>,
         Vec<system::edits::EditRequest>,
     )> {
-        let all_files = system::files::files_from_config(config);
+        let all_files = system::files::files_from_config(config)?;
         let files = all_files
             .iter()
             .filter(|req| {
@@ -49,7 +49,7 @@ impl DotfilesApply {
             })
             .cloned()
             .collect::<Vec<_>>();
-        let all_edits = system::edits::edits_from_config(config);
+        let all_edits = system::edits::edits_from_config(config)?;
         let edits = all_edits
             .iter()
             .filter(|req| system::edits::matches_target(req, &self.targets))

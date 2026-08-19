@@ -14,26 +14,29 @@ mise settings paranoid=1
 ## Config files
 
 Normally `mise` will make sure some config files are "trusted" before loading
-them. This will prompt you to confirm that you want to load the file, e.g.:
+them. This can prompt you to confirm that you want to load the file, e.g.:
 
 ```sh
-$ mise install
-mise ~/src/mise/.tool-versions is not trusted. Trust it [y/n]?
+$ mise env
+mise ~/src/mise/mise.toml is not trusted. Trust it [y/n]?
 ```
 
-In normal mode, mise checks trust before parsing `mise.toml` files because they
-can contain behavior that executes code or affects the environment. Some
-discovery paths that look at previously tracked configs may skip untrusted files
-instead of prompting. Commands that directly need an untrusted config, such as
-`mise lock`, can fail with an untrusted-config error when mise cannot prompt.
-When mise detects that it is running in CI, configs are assumed to be trusted
-unless paranoid mode is enabled.
+In normal mode, `mise run`, naked task invocations such as `mise <TASK>`,
+`mise install`, `mise exec`, and `mise watch` automatically trust their active
+config because they explicitly execute project-defined behavior. Automatic shell
+activation through `hook-env` does not.
+
+Other commands check trust before parsing `mise.toml` files because they can
+contain behavior that executes code or affects the environment. Some discovery
+paths that look at previously tracked configs may skip untrusted files instead
+of prompting. Commands that directly need an untrusted config can fail with an
+untrusted-config error when mise cannot prompt. When mise detects that it is
+running in CI, configs are assumed to be trusted unless paranoid mode is enabled.
 
 Under paranoid, all config files must be trusted first, including formats that
-normally do not require trust.
-
-Also, in normal mode, a config file only needs to be trusted a single time.
-In paranoid, the contents of the file are hashed to check if the file changes.
+normally do not require trust. Automatic trust for execution commands is disabled.
+In normal mode, a config file only needs to be trusted a single time. In paranoid,
+the contents of the file are hashed to check if it changes.
 If you change your config file, you'll need to trust it again.
 
 Note that global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check. This allows paranoid mode to be enabled in a global config without requiring a trust prompt for that file itself.

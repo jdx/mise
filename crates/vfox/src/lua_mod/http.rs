@@ -204,15 +204,37 @@ fn add_default_headers_for_request(
 
     // Do not forward credentials selected for the original origin, but retain
     // non-sensitive plugin headers that may be required by the replacement.
-    if !same_origin {
-        return headers
+    let headers = if !same_origin {
+        headers
             .iter()
             .filter(|(name, _)| !is_sensitive_header(name))
             .map(|(name, value)| (name.clone(), value.clone()))
-            .collect();
-    }
+            .collect()
+    } else {
+        add_default_headers(lua, original_url, headers)
+    };
 
-    add_default_headers(lua, original_url, headers)
+    add_resolved_headers(lua, request_url, headers)
+}
+
+fn add_resolved_headers(lua: &Lua, url: &str, mut headers: HeaderMap) -> HeaderMap {
+    let Ok(resolver) =
+        lua.named_registry_value::<mlua::Function>(crate::http::HTTP_HEADERS_RESOLVER_REGISTRY_KEY)
+    else {
+        return headers;
+    };
+    let Ok(table) = resolver.call::<Table>(url) else {
+        return headers;
+    };
+    let Ok(resolved) = into_headers(&table) else {
+        return headers;
+    };
+    for (name, value) in resolved {
+        if let Some(name) = name {
+            headers.entry(name).or_insert(value);
+        }
+    }
+    headers
 }
 
 fn is_sensitive_header(name: &HeaderName) -> bool {
@@ -627,6 +649,16 @@ mod tests {
             .unwrap();
         lua.set_named_registry_value(crate::http::URL_REWRITER_REGISTRY_KEY, rewriter)
             .unwrap();
+        let headers_resolver = lua
+            .create_function(|lua, _: String| {
+                lua.create_table_from([("Authorization", "Basic bWlycm9yOnNlY3JldA==")])
+            })
+            .unwrap();
+        lua.set_named_registry_value(
+            crate::http::HTTP_HEADERS_RESOLVER_REGISTRY_KEY,
+            headers_resolver,
+        )
+        .unwrap();
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let download_path = temp_dir.path().join("download.txt");
@@ -701,7 +733,13 @@ mod tests {
                     .and_then(|value| value.to_str().ok()),
                 Some("application/vnd.vfox+json")
             );
-            assert!(!request.headers.contains_key(AUTHORIZATION));
+            assert_eq!(
+                request
+                    .headers
+                    .get(AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok()),
+                Some("Basic bWlycm9yOnNlY3JldA==")
+            );
             assert!(!request.headers.contains_key("cookie"));
             assert!(!request.headers.contains_key("cookie2"));
             assert!(!request.headers.contains_key("proxy-authorization"));

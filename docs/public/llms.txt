@@ -283,7 +283,7 @@
 - [mise trust](https://mise.jdx.dev/cli/trust.html): Marks a config file as trusted
 - [mise uninstall](https://mise.jdx.dev/cli/uninstall.html): Removes installed tool versions
 - [mise unset](https://mise.jdx.dev/cli/unset.html): Remove environment variable(s) from the config file.
-- [mise untrust](https://mise.jdx.dev/cli/untrust.html): No longer trust a config, will prompt in the future
+- [mise untrust](https://mise.jdx.dev/cli/untrust.html): Remove explicit trust for a config
 - [mise unuse](https://mise.jdx.dev/cli/unuse.html): Removes installed tool versions from mise.toml
 - [mise upgrade](https://mise.jdx.dev/cli/upgrade.html): Upgrades outdated tools
 - [mise use](https://mise.jdx.dev/cli/use.html): Installs a tool and adds the version to mise.toml.

@@ -477,10 +477,7 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
     let plugin_path_s = plugin_path.to_string_lossy().to_string();
     let token = env::GITHUB_TOKEN.as_deref().unwrap_or("");
     ScriptManager::new(plugin_path.to_path_buf())
-        .with_env("ASDF_PLUGIN_PATH", plugin_path_s.clone())
-        .with_env("RTX_PLUGIN_PATH", plugin_path_s.clone())
-        .with_env("RTX_PLUGIN_NAME", name.to_string())
-        .with_env("RTX_SHIMS_DIR", *dirs::SHIMS)
+        .with_env("ASDF_PLUGIN_PATH", plugin_path_s)
         .with_env("MISE_PLUGIN_NAME", name.to_string())
         .with_env("MISE_PLUGIN_PATH", plugin_path)
         .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)

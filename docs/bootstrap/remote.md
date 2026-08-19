@@ -12,6 +12,7 @@ machine needs local `ssh` and `tar` commands.
 [bootstrap.remote]
 source = "."
 exclude = [".env.local", "artifacts"]
+copy_link = ["modules/common", "playbooks/shared"]
 
 [bootstrap.remote.hosts.cache]
 host = "cache.example.com"
@@ -93,6 +94,20 @@ OpenSSH's existing host-key verification is never weakened automatically.
 default. Add repeatable `exclude` config entries or `--exclude` flags for
 generated files and local secrets. Use `--keep-staging` only for debugging; it
 prints the retained path instead of deleting it.
+
+Symbolic links are archived as links by default. Use repeatable, source-relative
+`copy_link` entries or `--copy-link <PATH>` flags to replace only named links
+with their targets in the staged project. A selected directory link is copied
+as a real directory while links nested inside its target remain links. This is
+the safer choice for sharing selected modules or playbooks without changing
+unrelated links in deep dependency trees. Host-level `copy_link` entries add to
+the top-level list, and command-line entries add to both.
+
+Set `copy_links = true` or pass `--copy-links` to dereference every symbolic
+link encountered recursively. This matches tools such as `rsync --copy-links`,
+but can unexpectedly expand small links deep in vendored, generated, or
+dependency trees and can copy content outside the source directory. Explicit
+`copy_link` selections are ignored when this global mode is enabled.
 
 ## Provisioning mise itself
 

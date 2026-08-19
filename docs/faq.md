@@ -246,11 +246,12 @@ mise upgrade --bump node
 ## My config file is being ignored / `mise trust` issues
 
 mise requires you to trust config files that were not created by you. Safe config files —
-those that only contain `min_version`, `[tools]` entries with plain version strings (or
-arrays of them), and `[tasks]` (no templates and no tool options) — are loaded without trust, since nothing in
-them executes code at load time: tools install and tasks run only on explicit commands like
-`mise install` or `mise run`. Everything else (env vars, hooks, settings, aliases, templates,
-tool options) requires trust. Common issues:
+those that only contain `min_version`, `[tools]` entries whose values are plain version
+strings or arrays of strings, and `[tasks]` without templates — load without trust. Tool-option
+tables and other top-level settings require trust. In normal mode, `mise run`, naked task
+invocations such as `mise <TASK>`, `mise install`, `mise exec`, and `mise watch` automatically
+trust the active config because they explicitly execute project-defined behavior. Other unsafe
+config requires trust. Common issues:
 
 - **Accidentally denied trust**: If mise prompted you to trust a file and you said no, it gets
   added to the ignore list. Check the `ignored-configs` directory in your
@@ -259,17 +260,18 @@ tool options) requires trust. Common issues:
 - **Symlinked configs**: If your config is symlinked (e.g., via GNU Stow), mise may track the
   symlink target path. Try `mise trust` pointing to the actual file path.
 - **CI**: In detected CI, mise assumes configs are trusted unless paranoid mode is enabled.
-- **Non-interactive mode**: In non-interactive shells outside detected CI, such as IDE extensions or
-  scripts without a TTY, mise cannot prompt you to trust a config. Commands that directly load an
-  untrusted `mise.toml` can fail with an untrusted-config error. Commands that discover previously
-  tracked configs may skip untrusted entries instead. Either run `mise trust` beforehand or set
+- **Non-interactive mode**: In a non-interactive shell, such as an IDE extension or script without
+  a TTY, mise cannot prompt you to trust a config. Outside normal-mode `mise run`, `mise <TASK>`,
+  `mise install`, `mise exec`, and `mise watch`, commands that directly load an untrusted
+  `mise.toml` can fail with an untrusted-config error. Commands that discover previously tracked
+  configs may skip untrusted entries instead. Either run `mise trust` beforehand or set
   [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings
   for configs you trust.
 - **Global config** (`~/.config/mise/config.toml`) should be auto-trusted. If it's not, run
   `mise trust ~/.config/mise/config.toml` explicitly.
 
-Run `mise doctor` (`mise dr`) to see if any config files are untrusted — it will list them
-under "problems".
+Run `mise doctor` (`mise dr`) to see if any config files are untrusted — it will
+list them under "problems".
 
 ## How do idiomatic version files (`.python-version`, `.node-version`, etc.) work?
 

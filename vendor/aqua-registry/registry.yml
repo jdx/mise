@@ -64771,6 +64771,19 @@ packages:
     description: "Free & Open Source CLI for Wolt: discover venues, inspect menus and options, manage carts, and preview checkout from the terminal"
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 2.4.0")
+        asset: wolt_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: wolt
+          - name: wolt-mcp
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: wolt_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -64784,6 +64797,8 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: mekedron/wolt-cli/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: mercari
     repo_name: hcledit
@@ -97775,6 +97790,43 @@ packages:
         files:
           - name: coreutils
             src: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}/coreutils
+  - type: github_release
+    repo_owner: uutils
+    repo_name: sed
+    description: Rewrite of sed in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "latest-commit"
+        error_message: The version 'latest-commit' is not supported
+      - version_constraint: Version == "0.1.1"
+        asset: sed-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        files:
+          - name: sed
+            src: "{{.AssetWithoutExt}}/sed"
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+            files:
+              - name: sed
   - type: github_release
     repo_owner: uw-labs
     repo_name: strongbox

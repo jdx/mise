@@ -4,8 +4,8 @@ use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-use crate::system::resources::{ResourceId, ResourcePlan};
+use crate::config::{Config, ConfigMap};
+use crate::system::resources::{ResourceId, ResourceOrigin, ResourcePlan};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,7 +25,7 @@ pub enum ServiceChangeAction {
     None,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ServiceTomlConfig {
     #[serde(default)]
     pub state: ServiceState,
@@ -75,24 +75,48 @@ impl ServiceNotifications {
 }
 
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
-    let mut names = IndexSet::new();
-    for cf in config.config_files.values() {
-        if let Some(bootstrap) = cf.bootstrap_config() {
-            for (name, service) in bootstrap.services {
-                let _ = (
-                    service.state,
-                    service.enabled,
-                    service.masked,
-                    service.on_change,
+    let mut composed: IndexMap<String, (ServiceTomlConfig, ResourceOrigin)> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (name, declaration) in services_from_config_files(config_files) {
+            if let Some(existing) = composed.get(&name) {
+                if existing.0 == declaration.0 {
+                    continue;
+                }
+                bail!(
+                    "conflicting bootstrap service declarations for {name}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
                 );
-                names.insert(name);
+            }
+            composed.insert(name, declaration);
+        }
+    }
+    Ok(composed
+        .into_iter()
+        .map(|(name, _)| ServiceRequest { name })
+        .collect())
+}
+
+fn services_from_config_files(
+    config_files: &ConfigMap,
+) -> IndexMap<String, (ServiceTomlConfig, ResourceOrigin)> {
+    let mut merged = IndexMap::new();
+    for (path, cf) in config_files {
+        if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: path.clone(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(path),
+                source: None,
+            };
+            for (name, service) in bootstrap.services {
+                merged
+                    .entry(name)
+                    .or_insert_with(|| (service, origin.clone()));
             }
         }
     }
-    Ok(names
-        .into_iter()
-        .map(|name| ServiceRequest { name })
-        .collect())
+    merged
 }
 
 pub fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
@@ -164,9 +188,11 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
 }
 
 fn reject_configured(config: &Config) -> Result<Vec<ServiceRequest>> {
-    let configured = config.config_files.values().any(|cf| {
-        cf.bootstrap_config()
-            .is_some_and(|bootstrap| !bootstrap.services.is_empty())
+    let configured = config.bootstrap_config_maps().any(|config_files| {
+        config_files.values().any(|cf| {
+            cf.bootstrap_config()
+                .is_some_and(|bootstrap| !bootstrap.services.is_empty())
+        })
     });
     if configured {
         bail!("bootstrap system services are only supported on Linux");

@@ -85,7 +85,7 @@ jobs:
           } >> "$GITHUB_ENV"
           sccache --zero-stats
       - run: |
-          cargo build --all-features
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
       # Downstream jobs only execute this binary, so keep full debug symbols in
@@ -111,7 +111,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
@@ -525,8 +525,8 @@ jobs:
               CARGO_TARGET_DIR: target/msrv
           - name: Run Clippy
             run: |
-              cargo clippy -- -D warnings
-              cargo clippy --all-features --all-targets -- -D warnings
+              cargo clippy --ignore-rust-version -- -D warnings
+              cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
       - run: sccache --show-stats
         if: always()
 
@@ -679,7 +679,7 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}

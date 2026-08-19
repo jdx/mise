@@ -1,5 +1,125 @@
 # Changelog
 
+## [2026.8.8](https://github.com/jdx/mise/compare/v2026.8.7..v2026.8.8) - 2026-08-17
+
+### 🐛 Bug Fixes
+
+- **(release)** install newer libclang for armv7 builds by @jdx in [#12088](https://github.com/jdx/mise/pull/12088)
+
+## [2026.8.7](https://github.com/jdx/mise/compare/v2026.8.6..v2026.8.7) - 2026-08-17
+
+### 🚀 Features
+
+- **(bootstrap)** add launchd throttle and queue keys by @CallumKerson in [#12015](https://github.com/jdx/mise/pull/12015)
+- **(brew-cask)** add MISE_BREW_CASK_OPT_APPDIR by @st1971 in [#12068](https://github.com/jdx/mise/pull/12068)
+- **(cache)** report action cache phase timings by @jdx in [#12077](https://github.com/jdx/mise/pull/12077)
+- **(config)** support project conf.d fragments by @Marukome0743 in [#12061](https://github.com/jdx/mise/pull/12061)
+- **(dotfiles)** create real symlinks on Windows when allowed by @JamBalaya56562 in [#11978](https://github.com/jdx/mise/pull/11978)
+- **(generate)** support checksum algorithm selection by @Marukome0743 in [#12047](https://github.com/jdx/mise/pull/12047)
+- **(generate)** add --windows to write a Windows bootstrap launcher by @JamBalaya56562 in [#11919](https://github.com/jdx/mise/pull/11919)
+- **(generate)** write Windows launchers beside generated stubs by @JamBalaya56562 in [#11888](https://github.com/jdx/mise/pull/11888)
+- **(install)** include task-specific tools by @Marukome0743 in [#11988](https://github.com/jdx/mise/pull/11988)
+- **(oci)** support apk bootstrap packages by @jdx in [#12083](https://github.com/jdx/mise/pull/12083)
+- **(task)** expose prefix color to tasks by @Marukome0743 in [#12056](https://github.com/jdx/mise/pull/12056)
+
+### 🐛 Bug Fixes
+
+- **(activate)** stop repeated shims path growth by @Marukome0743 in [#12063](https://github.com/jdx/mise/pull/12063)
+- **(age)** resolve key paths from config files by @Marukome0743 in [#12052](https://github.com/jdx/mise/pull/12052)
+- **(aqua)** keep the lock-time artifact download out of TEMP by @JamBalaya56562 in [#12064](https://github.com/jdx/mise/pull/12064)
+- **(backend)** preserve installed backend metadata by @jdx in [#12010](https://github.com/jdx/mise/pull/12010)
+- **(brew)** avoid duplicate cask app copies by @jdx in [#12072](https://github.com/jdx/mise/pull/12072)
+- **(cli)** report a missing shell instead of panicking by @JamBalaya56562 in [#12048](https://github.com/jdx/mise/pull/12048)
+- **(completion)** avoid loading project config by @Marukome0743 in [#12018](https://github.com/jdx/mise/pull/12018)
+- **(config)** write config files atomically by @TheTrueFerret in [#12040](https://github.com/jdx/mise/pull/12040)
+- **(config)** match runtime options by configured version by @risu729 in [#11714](https://github.com/jdx/mise/pull/11714)
+- **(env)** redact caller-provided values for required env directives by @stevenpollack in [#12017](https://github.com/jdx/mise/pull/12017)
+- **(env)** default to pwsh on Windows instead of bash by @JamBalaya56562 in [#12055](https://github.com/jdx/mise/pull/12055)
+- **(erlang)** verify precompiled checksums by @leosmigel in [#12053](https://github.com/jdx/mise/pull/12053)
+- **(file)** safely inspect and remove directory links by @risu729 in [#11715](https://github.com/jdx/mise/pull/11715)
+- **(file)** stop trusting a configured extension to be OS-launchable by @JamBalaya56562 in [#12023](https://github.com/jdx/mise/pull/12023)
+- **(file)** say why a Windows file operation failed by @JamBalaya56562 in [#12058](https://github.com/jdx/mise/pull/12058)
+- **(http)** detect archive formats after redirects by @Marukome0743 in [#12011](https://github.com/jdx/mise/pull/12011)
+- **(path)** show one separator in a displayed Windows path by @JamBalaya56562 in [#12024](https://github.com/jdx/mise/pull/12024)
+- **(path)** stop printing the extended-length prefix on UNC paths by @JamBalaya56562 in [#12078](https://github.com/jdx/mise/pull/12078)
+- **(release)** push mise tag separately by @jdx in [#12071](https://github.com/jdx/mise/pull/12071)
+- **(self-update)** refuse to update when TEMP would exceed MAX_PATH by @JamBalaya56562 in [#12062](https://github.com/jdx/mise/pull/12062)
+- **(self-update)** stop leaving 145MB copies behind and blaming a shim by @JamBalaya56562 in [#12080](https://github.com/jdx/mise/pull/12080)
+- **(settings)** split path lists on the OS separator in the CLI by @JamBalaya56562 in [#12012](https://github.com/jdx/mise/pull/12012)
+- **(shell)** escape single quotes in pwsh env output by @JamBalaya56562 in [#12016](https://github.com/jdx/mise/pull/12016)
+- **(shell)** detect the shell from SHELL on Windows by @JamBalaya56562 in [#12050](https://github.com/jdx/mise/pull/12050)
+- **(shim)** use snap payload for unix shims by @jdx in [#12035](https://github.com/jdx/mise/pull/12035)
+- **(shims)** match mise's own name case-insensitively on Windows by @JamBalaya56562 in [#11986](https://github.com/jdx/mise/pull/11986)
+- **(sops)** support multiple age keys by @Marukome0743 in [#12034](https://github.com/jdx/mise/pull/12034)
+- **(task)** warn on an unknown file-task header key instead of failing by @JamBalaya56562 in [#12007](https://github.com/jdx/mise/pull/12007)
+- **(task)** find a file task whose shebang follows a byte-order mark by @JamBalaya56562 in [#12013](https://github.com/jdx/mise/pull/12013)
+- **(task)** treat a .sh sibling as the POSIX half on Windows by @JamBalaya56562 in [#11992](https://github.com/jdx/mise/pull/11992)
+- **(task)** preserve HTTP task snapshots by @risu729 in [#11222](https://github.com/jdx/mise/pull/11222)
+- **(task)** make a trailing `**` enumerate files in sources and outputs by @stevenpollack in [#12022](https://github.com/jdx/mise/pull/12022)
+- **(task)** anchor cache-audit reports and `..` sources at the task directory by @stevenpollack in [#11995](https://github.com/jdx/mise/pull/11995)
+- **(task)** parse attached run option values by @jdx in [#12070](https://github.com/jdx/mise/pull/12070)
+- **(task)** refuse a UNC working directory the cmd shell cannot use by @JamBalaya56562 in [#12066](https://github.com/jdx/mise/pull/12066)
+- **(tera)** quote strings safely for posix shells by @Marukome0743 in [#12065](https://github.com/jdx/mise/pull/12065)
+- **(tool)** exclude os-inactive inspection versions by @risu729 in [#12021](https://github.com/jdx/mise/pull/12021)
+- **(trust)** stop printing extended-length path prefixes by @JamBalaya56562 in [#12014](https://github.com/jdx/mise/pull/12014)
+- **(use)** preserve concurrent global config updates by @jdx in [#12069](https://github.com/jdx/mise/pull/12069)
+- **(vfox)** install latest chromedriver on Windows by @jdx in [#12039](https://github.com/jdx/mise/pull/12039)
+
+### 📚 Documentation
+
+- **(config)** add vars reference by @jdx in [#12073](https://github.com/jdx/mise/pull/12073)
+- **(deps)** preserve tera examples in rendered page by @jdx in [#12030](https://github.com/jdx/mise/pull/12030)
+- **(task)** document all task properties by @risu729 in [#12059](https://github.com/jdx/mise/pull/12059)
+- **(tasks)** describe how a file task is detected on Windows by @JamBalaya56562 in [#12008](https://github.com/jdx/mise/pull/12008)
+- **(tasks)** a .sh file is the POSIX half of a Windows task pair by @JamBalaya56562 in [#12051](https://github.com/jdx/mise/pull/12051)
+- document devEngines and packageManager config support by @iloveitaly in [#12043](https://github.com/jdx/mise/pull/12043)
+- fix ref link to `env._.path` by @muzimuzhi in [#12049](https://github.com/jdx/mise/pull/12049)
+- correct and normalize links to task configs/settings by @muzimuzhi in [#12079](https://github.com/jdx/mise/pull/12079)
+
+### 🧪 Testing
+
+- **(brew)** take ENV_LOCK without inheriting a poisoned failure by @JamBalaya56562 in [#12045](https://github.com/jdx/mise/pull/12045)
+- **(cli)** use actual dummy backend in where fixture by @jdx in [#12029](https://github.com/jdx/mise/pull/12029)
+- **(task)** re-enable the task_source_files case disabled on Windows by @JamBalaya56562 in [#12032](https://github.com/jdx/mise/pull/12032)
+- stop a poisoned test lock turning one failure into twenty-nine by @JamBalaya56562 in [#12041](https://github.com/jdx/mise/pull/12041)
+
+### 📦️ Dependency Updates
+
+- bump aube to 1.41.0 by @jdx in [#12075](https://github.com/jdx/mise/pull/12075)
+
+### Chore
+
+- **(ci)** enable greptile reviews for draft prs by @risu729 in [#12001](https://github.com/jdx/mise/pull/12001)
+- **(ci)** preserve paired e2e tranche failures by @jdx in [#12033](https://github.com/jdx/mise/pull/12033)
+- **(settings)** remove the dead aqua.cosign_extra_args setting by @JamBalaya56562 in [#11837](https://github.com/jdx/mise/pull/11837)
+
+### E2e
+
+- install libgtk-3-0t64 so GTK tools can run their registry test by @dmezhnov in [#12009](https://github.com/jdx/mise/pull/12009)
+
+### Mise
+
+- armv7: use hf suffix for gnueabi by @neheb in [#12082](https://github.com/jdx/mise/pull/12082)
+
+### New Contributors
+
+- @neheb made their first contribution in [#12082](https://github.com/jdx/mise/pull/12082)
+- @leosmigel made their first contribution in [#12053](https://github.com/jdx/mise/pull/12053)
+- @st1971 made their first contribution in [#12068](https://github.com/jdx/mise/pull/12068)
+- @CallumKerson made their first contribution in [#12015](https://github.com/jdx/mise/pull/12015)
+- @TheTrueFerret made their first contribution in [#12040](https://github.com/jdx/mise/pull/12040)
+- @dmezhnov made their first contribution in [#12009](https://github.com/jdx/mise/pull/12009)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`uutils/sed`](https://github.com/uutils/sed)
+
+#### Updated Packages (1)
+
+- [`mekedron/wolt-cli`](https://github.com/mekedron/wolt-cli)
+
 ## [2026.8.6](https://github.com/jdx/mise/compare/v2026.8.5..v2026.8.6) - 2026-08-14
 
 ### 🚀 Features

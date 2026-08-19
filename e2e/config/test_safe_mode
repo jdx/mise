@@ -98,6 +98,24 @@ assert "mise latest dummy" "2.0.0"
 echo "=== plugin installation is refused ==="
 assert_fail "MISE_SAFE=1 mise plugins install tiny https://github.com/jdx/vfox-tiny" "installing plugins is disabled in safe mode (MISE_SAFE=1)"
 
+echo "=== tool-level install options are refused before installation ==="
+cat <<'EOF' >mise.toml
+[tools]
+"http:safe-install" = { version = "1.0.0", url = "https://example.invalid/archive.tar.gz", postinstall = "touch postinstall-ran" }
+EOF
+assert_fail "MISE_SAFE=1 mise install --force" "running tool-level postinstall hooks for http:safe-install is disabled in safe mode (MISE_SAFE=1)"
+assert_fail "test -e postinstall-ran"
+assert_fail "MISE_SAFE=1 mise install-into http:safe-install@1.0.0 safe-install-into" "running tool-level postinstall hooks for http:safe-install is disabled in safe mode (MISE_SAFE=1)"
+assert_fail "test -e safe-install-into"
+
+cat <<'EOF' >mise.toml
+[tools]
+"http:safe-install" = { version = "1.0.0", url = "https://example.invalid/archive.tar.gz", install_env = { BASH_ENV = "./untrusted.sh" } }
+EOF
+assert_fail "MISE_SAFE=1 mise install --force" "using tool-level install_env for http:safe-install is disabled in safe mode (MISE_SAFE=1)"
+assert_fail "MISE_SAFE=1 mise install-into http:safe-install@1.0.0 safe-install-into" "using tool-level install_env for http:safe-install is disabled in safe mode (MISE_SAFE=1)"
+assert_fail "test -e safe-install-into"
+
 # Note: safe mode also skips the trust requirement (trust_check returns Ok when
 # `safe` is set). That isn't exercised here because the e2e harness auto-trusts
 # the workdir (MISE_TRUSTED_CONFIG_PATHS) and applies CI-implicit trust, so a

@@ -150,6 +150,7 @@ impl VfoxPlugin {
             crate::github::resolve_token("github.com").map(|(token, _)| token)
         }));
         vfox.set_url_rewriter(crate::http::apply_url_replacements);
+        vfox.set_http_headers_resolver(crate::http::netrc_headers);
         let rx = vfox.log_subscribe();
         Ok((vfox, rx))
     }

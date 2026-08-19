@@ -51,6 +51,8 @@ assert "cat $managed_file" "first"
 assert "stat -c %a $managed_nested" "750"
 assert_succeed "mise bootstrap files status --missing"
 assert_succeed "mise bootstrap files status --json | jq -e . >/dev/null"
+assert_succeed "mise bootstrap files status --json | jq -e '.[] | select(.id.kind == \"file\") | .origin.config == \"$PWD/mise.toml\" and .origin.config_root == \"$PWD\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.kind == \"file\") | .origin.config == \"$PWD/mise.toml\" and .origin.config_root == \"$PWD\"'"
 assert_contains "mise bootstrap status --json" '"files"'
 
 # Applying the same declarations again is a no-op.
@@ -182,18 +184,23 @@ state = "absent"
 EOF
 assert_succeed "mise bootstrap files apply --yes"
 
-# Missing ancestors must be declared instead of receiving implicit defaults.
+# Missing ancestors are created with mkdir -p semantics.
 undeclared_parent="$PWD/undeclared-parent"
+undeclared_nested="$undeclared_parent/one/two"
 cat <<EOF >mise.toml
-[bootstrap.directories."$undeclared_parent/nested"]
+[bootstrap.directories."$undeclared_nested"]
 mode = "0750"
 EOF
-assert_fail "mise bootstrap files apply --yes"
-assert_directory_not_exists "$undeclared_parent"
+assert_succeed "mise bootstrap files apply --yes"
+assert_directory_exists "$undeclared_parent/one"
+assert_directory_exists "$undeclared_nested"
+assert "stat -c %a $undeclared_nested" "750"
 cat <<EOF >mise.toml
-[bootstrap.directories."$collision"]
+[bootstrap.directories."$undeclared_parent"]
 state = "absent"
+recursive = true
 EOF
+assert_succeed "mise bootstrap files apply --yes"
 
 # The nearest configuration wins when the same target is declared in layers.
 layered_dir="$PWD/layered"

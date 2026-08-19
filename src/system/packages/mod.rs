@@ -8,6 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::result::Result;
+use crate::system::ManagerPackageOptions;
 
 pub mod apk;
 pub mod apt;
@@ -50,6 +51,13 @@ pub enum PackageState {
     Installed {
         version: String,
     },
+    /// Installed cask whose upstream definition declares `auto_updates`.
+    /// The version is the cask receipt version, not necessarily the live app
+    /// bundle version after it has updated itself.
+    #[cfg(unix)]
+    InstalledAutoUpdates {
+        version: String,
+    },
     Missing,
     /// installed, but a manager-owned record needs local repair
     #[cfg_attr(windows, allow(dead_code))]
@@ -70,6 +78,23 @@ pub enum PackageState {
 }
 
 impl PackageState {
+    pub fn is_installed(&self) -> bool {
+        match self {
+            Self::Installed { .. } => true,
+            #[cfg(unix)]
+            Self::InstalledAutoUpdates { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub fn auto_updates(&self) -> bool {
+        match self {
+            #[cfg(unix)]
+            Self::InstalledAutoUpdates { .. } => true,
+            _ => false,
+        }
+    }
+
     #[cfg(unix)]
     pub fn unavailable(reason: impl Into<String>) -> Self {
         Self::Unavailable {
@@ -137,8 +162,34 @@ pub trait SystemPackageManager: Send + Sync {
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
 
+    /// Whether each name exists as an installable package, positionally.
+    ///
+    /// This is *availability*, not installed state — [`Self::installed`]
+    /// cannot answer it (apt's asks dpkg, which only knows what is already on
+    /// the box). Used to resolve a plugin's candidate package names, where the
+    /// same capability is packaged under different names across distro
+    /// releases. Must be side-effect free and never elevate.
+    ///
+    /// The default reports every name as available, which makes candidate
+    /// resolution pick the first one — the behavior before candidate lists
+    /// existed. Managers override it where the query is cheap.
+    async fn available(&self, names: &[String]) -> Result<Vec<bool>> {
+        Ok(vec![true; names.len()])
+    }
+
     /// Install the given packages (already filtered to missing, mismatched, or repairable).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
+
+    /// Install with manager-specific declarative options. Managers without
+    /// additional package options use the ordinary install path unchanged.
+    async fn install_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.install(pkgs, opts).await
+    }
 
     /// Upgrade the given packages (already filtered to installed ones).
     /// Defaults to `install` — for brew that is exactly right (pouring a
