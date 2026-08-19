@@ -117,20 +117,26 @@ header supplied by a plugin takes precedence when the request stays on the same 
 The following [tool-options](/dev-tools/#tool-options) are available for the `vfox` backend—these
 go in `[tools]` in `mise.toml`.
 
-Traditional vfox lifecycle hooks for a selected tool version can read custom options from their
-hook environment. Option names are uppercased and exposed with the `MISE_TOOL_OPTS__` prefix:
+Traditional vfox `PreInstall` and `PostInstall` hooks receive custom options in the structured
+`ctx.options` table. Scalar values use mise's existing string representation, while arrays and
+tables remain structured:
 
 ```toml
 [tools]
-"vfox:example/plugin" = { version = "1.0.0", extensions = "opentelemetry,swoole" }
+"vfox:example/plugin" = { version = "1.0.0", bundled = false, channels = ["stable", "beta"] }
 ```
 
 ```lua
-local extensions = os.getenv("MISE_TOOL_OPTS__EXTENSIONS")
+function PLUGIN:PreInstall(ctx)
+    local bundled = ctx.options.bundled == "false"
+    local channels = ctx.options.channels
+    -- ...
+end
 ```
 
-These variables are available only while mise runs the plugin hook and are not exported to the
-user's shell. Backend plugins should use the structured `ctx.options` value instead.
+Existing plugins can continue reading custom options from their hook environment with the
+`MISE_TOOL_OPTS__` prefix. Those variables are available only while mise runs the plugin hook and
+are not exported to the user's shell. New plugins should use `ctx.options`.
 
 ### `install_env`
 

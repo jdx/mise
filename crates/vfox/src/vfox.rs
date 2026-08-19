@@ -297,9 +297,29 @@ impl Vfox {
         install_dir: ID,
         download_dir: DD,
     ) -> Result<InstallResult> {
+        self.install_with_download_dir_and_options(
+            sdk,
+            version,
+            install_dir,
+            download_dir,
+            Default::default(),
+        )
+        .await
+    }
+
+    pub async fn install_with_download_dir_and_options<ID: AsRef<Path>, DD: AsRef<Path>>(
+        &self,
+        sdk: &str,
+        version: &str,
+        install_dir: ID,
+        download_dir: DD,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
         let sdk = self.get_sdk_with_env(sdk)?;
-        let pre_install = sdk.pre_install(version).await?;
+        let pre_install = sdk
+            .pre_install_with_options(version, options.clone())
+            .await?;
         let install_dir = install_dir.as_ref();
         let download_dir = download_dir.as_ref();
         trace!("{pre_install:?}");
@@ -321,6 +341,7 @@ impl Vfox {
                 root_path: install_dir.to_path_buf(),
                 runtime_version: version.to_string(),
                 sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info)]),
+                options,
             })
             .await?;
         }
@@ -362,8 +383,21 @@ impl Vfox {
         os: &str,
         arch: &str,
     ) -> Result<PreInstall> {
+        self.pre_install_for_platform_with_options(sdk, version, os, arch, Default::default())
+            .await
+    }
+
+    pub async fn pre_install_for_platform_with_options(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<PreInstall> {
         let sdk = self.get_sdk_with_env(sdk)?;
-        sdk.pre_install_for_platform(version, os, arch).await
+        sdk.pre_install_for_platform_with_options(version, os, arch, options)
+            .await
     }
 
     /// Returns the download URL and the highest-priority verified attestation type
@@ -376,8 +410,26 @@ impl Vfox {
         os: &str,
         arch: &str,
     ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
+        self.pre_install_provenance_for_platform_with_options(
+            sdk,
+            version,
+            os,
+            arch,
+            Default::default(),
+        )
+        .await
+    }
+
+    pub async fn pre_install_provenance_for_platform_with_options(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
         let pre = self
-            .pre_install_for_platform(sdk, version, os, arch)
+            .pre_install_for_platform_with_options(sdk, version, os, arch, options)
             .await?;
         let att = pre.attestation.and_then(attestation_to_verified);
         // Note: pre.sha256 / pre.sha512 are intentionally not returned here;
