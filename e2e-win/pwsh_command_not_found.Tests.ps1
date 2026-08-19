@@ -117,7 +117,7 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         # Reached false too, and the probe would look like it had demonstrated the abort.
         $unguarded.Entered | Should -BeTrue -Because 'the handler has to run for the rest to mean anything'
         $unguarded.Reached | Should -BeFalse -Because 'the handoff never runs when the hook is undefined'
-        # The surfaced error names the command the user typed, not the hook that went missing —
+        # The surfaced error names the command the user typed, not the hook that went missing,
         # so there is nothing in the message to match on, only the type.
         $unguarded.Error.Exception | Should -BeOfType ([System.Management.Automation.CommandNotFoundException])
 

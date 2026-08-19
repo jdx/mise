@@ -17,12 +17,14 @@ set -eu
 
 eval "$(mise activate zsh --no-hook-env)"
 
-# The premise: the definition is gone, the handler is not.
-if (($+functions[_mise_hook])); then
+# The premise: the definition is gone, the handler is not. `typeset -f` rather than
+# `$+functions`: that special comes from `zsh/parameter`, which zsh dlopens on first
+# reference, and the point of the line under test is that this path no longer loads it.
+if typeset -f _mise_hook >/dev/null 2>&1; then
   echo "expected --no-hook-env to omit _mise_hook"
   exit 1
 fi
-if ! (($+functions[command_not_found_handler])); then
+if ! typeset -f command_not_found_handler >/dev/null 2>&1; then
   echo "expected the command-not-found handler to be installed"
   exit 1
 fi
@@ -56,7 +58,7 @@ if [ -n "${MISE_SHELL:-}" ]; then
   echo "expected deactivate to unset MISE_SHELL"
   exit 1
 fi
-if ! (($+functions[command_not_found_handler])); then
+if ! typeset -f command_not_found_handler >/dev/null 2>&1; then
   echo "expected deactivate to leave the command-not-found handler installed"
   exit 1
 fi
