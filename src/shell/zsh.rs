@@ -113,7 +113,14 @@ impl Shell for Zsh {
 
                 function command_not_found_handler() {{
                     if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s zsh -- "$1"; then
-                      _mise_hook
+                      # `--no-hook-env` omits the `_mise_hook` definition while this handler is
+                      # still emitted, so refresh inline when it is absent: otherwise "$@" runs
+                      # before the tool that was just installed is on PATH. fish does the same.
+                      if (( $+functions[_mise_hook] )); then
+                        _mise_hook
+                      else
+                        eval "$({exe} hook-env{flags} -s zsh)"
+                      fi
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handler)" ]; then
                         _command_not_found_handler "$@"
@@ -203,6 +210,25 @@ mod tests {
             prelude: vec![],
         };
         assert_snapshot!(zsh.activate(opts));
+    }
+
+    /// `--no-hook-env` drops the `_mise_hook` definition but still emits
+    /// `command_not_found_handler`, so the handler has to refresh the environment on its
+    /// own — otherwise `"$@"` runs before the tool it just installed is on PATH.
+    #[test]
+    fn test_activate_no_hook_env_refreshes_after_auto_install() {
+        let opts = ActivateOptions {
+            exe: Path::new("/some/dir/mise").to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: true,
+            prelude: vec![],
+        };
+        let script = Zsh::default().activate(opts);
+
+        assert!(!script.contains("_mise_hook() {"));
+        assert!(script.contains("hook-not-found -s zsh"));
+        // With the definition gone, the only `hook-env` left in the script is the fallback.
+        assert!(script.contains("hook-env --status -s zsh"));
     }
 
     #[test]

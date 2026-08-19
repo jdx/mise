@@ -223,13 +223,20 @@ impl Shell for Pwsh {
                                 & '{exe}' hook-not-found -s pwsh -- $Name | Out-Null
                                 if ($LASTEXITCODE -eq 0){{
                                     # `--no-hook-env` omits the `_mise_hook` definition but still
-                                    # emits this block, and an unresolved name inside a
-                                    # CommandNotFoundAction throws out of the handler instead of
-                                    # continuing: the handoff below would never run, so the tool
-                                    # just installed would still not start. The `mise` wrapper and
-                                    # the prompt function guard the call for the same reason.
+                                    # emits this block, so the refresh cannot depend on it: an
+                                    # unresolved name inside a CommandNotFoundAction throws out of
+                                    # the handler, and skipping the refresh leaves the tool that was
+                                    # just installed off PATH for the handoff below. fish inlines
+                                    # `hook-env` here for the same reason.
                                     if (Test-Path -Path Function:\_mise_hook){{
                                         _mise_hook
+                                    }} else {{
+                                        $status = $global:LASTEXITCODE
+                                        $output = & '{exe}' hook-env{flags} -s pwsh | Out-String
+                                        if ($output -and $output.Trim()) {{
+                                            $output | Invoke-Expression
+                                        }}
+                                        $global:LASTEXITCODE = $status
                                     }}
                                     if (Get-Command $Name -ErrorAction SilentlyContinue){{
                                         $EventArgs.Command = Get-Command $Name
@@ -374,6 +381,25 @@ mod tests {
             guard < call,
             "the guard has to run before the call it avoids"
         );
+    }
+
+    /// `--no-hook-env` drops the `_mise_hook` definition but still emits the
+    /// command-not-found block, so that block has to refresh the environment on its own —
+    /// otherwise the tool it just installed is not on PATH when the handoff looks for it.
+    #[test]
+    fn test_activate_no_hook_env_refreshes_after_auto_install() {
+        let opts = ActivateOptions {
+            exe: Path::new("/some/dir/mise").to_path_buf(),
+            flags: " --status".into(),
+            no_hook_env: true,
+            prelude: vec![],
+        };
+        let script = Pwsh::default().activate(opts);
+
+        assert!(!script.contains("function Global:_mise_hook"));
+        assert!(script.contains("hook-not-found -s pwsh"));
+        // With the definition gone, the only `hook-env` left in the script is the fallback.
+        assert!(script.contains("hook-env --status -s pwsh"));
     }
 
     #[test]

@@ -39,7 +39,7 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         $viaCode | Should -Be 'false' -Because 'the new form is right in both directions'
     }
 
-    It 'guards _mise_hook, which --no-hook-env leaves undefined' {
+    It 'refreshes the environment itself when --no-hook-env leaves _mise_hook undefined' {
         # Now that the branch can actually be taken, what it calls has to exist. `--no-hook-env`
         # suppresses the `_mise_hook` definition while still emitting this block.
         $script = mise activate pwsh --no-hook-env | Out-String
@@ -59,6 +59,13 @@ Describe 'the pwsh command-not-found hook branches on the exit code' {
         $branch | Should -Not -BeNullOrEmpty
         $calls = [regex]::Matches($branch, '(?m)^\s*_mise_hook\s*$').Count
         $calls | Should -Be 1 -Because 'the guarded one is the only call the branch may make'
+
+        # Not throwing is only half of it: skipping the refresh leaves the tool that was just
+        # installed off PATH, so the handoff finds nothing. The branch has to refresh on its own.
+        $fallback = 'Function:\\_mise_hook\)\{\s*_mise_hook\s*\} else \{'
+        $script | Should -Match $fallback
+        # With the definition suppressed, the only `hook-env` left in the script is that fallback.
+        $script | Should -Match 'hook-env.*-s pwsh'
     }
 
     It 'because an unresolved name inside the handler throws instead of continuing' {
