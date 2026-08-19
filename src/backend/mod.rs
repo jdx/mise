@@ -635,45 +635,10 @@ fn parse_matching_registry_idiomatic_file(
     }
 }
 
-fn executable_names(bin: &str) -> Vec<String> {
-    let mut names = vec![bin.to_string()];
-    if cfg!(target_os = "windows") && Path::new(bin).extension().is_none() {
-        for ext in &Settings::get().windows_executable_extensions {
-            let name = if ext.is_empty() {
-                bin.to_string()
-            } else {
-                format!("{bin}.{ext}")
-            };
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-    }
-    names
-}
-
 fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
-    executable_names(bin)
+    file::executable_names(bin)
         .into_iter()
         .find_map(file::which_non_pristine)
-}
-
-/// True when the OS will accept `path` as the program argument of a spawn.
-///
-/// [`file::can_execute_directly`] is *pure extension inspection* on Windows — it never
-/// touches the filesystem, so it answers true for a `foo.exe` that is not there. The
-/// `is_file()` guard supplies the existence check that [`file::is_executable`] performs
-/// inline; without it a lookup built on this would hand back paths to missing files.
-///
-/// The guard is `cfg!(windows)`-gated deliberately. On unix `can_execute_directly`
-/// delegates to `is_executable`, which stats already — and which answers true for a
-/// mode-0755 *directory*. Adding `is_file()` unconditionally would silently narrow every
-/// unix lookup below it, so unix keeps today's answer exactly.
-fn is_spawnable(path: &Path) -> bool {
-    if cfg!(windows) && !path.is_file() {
-        return false;
-    }
-    file::can_execute_directly(path)
 }
 
 /// Resolve `bin` inside `dirs`, in the order the OS itself resolves: directory-major,
@@ -689,7 +654,7 @@ fn is_spawnable(path: &Path) -> bool {
 ///   searching **past** a candidate it rejects, so `None` means "nothing spawnable
 ///   exists" rather than "the first thing I looked at was not spawnable".
 ///
-/// Directory-major only matters on Windows, where [`executable_names`] yields several
+/// Directory-major only matters on Windows, where [`file::executable_names`] yields several
 /// candidates per directory. It is the order `CreateProcess`+`PATHEXT`, `cmd.exe` and the
 /// `which` crate all use, and the order [`Backend::which`] has always used. It diverges
 /// from [`which_non_pristine_executable`], which is *name-major* — the bare name is tried
@@ -697,17 +662,17 @@ fn is_spawnable(path: &Path) -> bool {
 /// directory-major resolves the case this exists for: mise's own node install ships a
 /// shebang `npm` and an `npm.cmd` side by side in one directory, with no `npm.exe`.
 ///
-/// On unix `executable_names` returns exactly one name, so both orders are the same
+/// On unix `file::executable_names` returns exactly one name, so both orders are the same
 /// traversal and this degenerates to `file::_which` with a different predicate.
 fn which_in_dirs<I>(dirs: I, bin: &str, spawnable: bool) -> Option<PathBuf>
 where
     I: IntoIterator<Item = PathBuf>,
 {
-    let names = executable_names(bin);
+    let names = file::executable_names(bin);
     dirs.into_iter().find_map(|dir| {
         names.iter().map(|name| dir.join(name)).find(|candidate| {
             if spawnable {
-                is_spawnable(candidate)
+                file::is_spawnable(candidate)
             } else {
                 candidate.exists() && file::is_executable(candidate)
             }
@@ -935,7 +900,7 @@ mod tests {
         for name in ["a.ps1", "b.PS1", "c.vbs", "d.VBS"] {
             let path = dir.path().join(name);
             fs::write(&path, "exit 0\n").unwrap();
-            assert!(!is_spawnable(&path), "{name} must not be spawnable");
+            assert!(!file::is_spawnable(&path), "{name} must not be spawnable");
             assert!(
                 file::is_executable(&path),
                 "{name} should still satisfy the permissive predicate"
@@ -981,10 +946,10 @@ mod tests {
         let subdir = dir.path().join("subdir");
         fs::create_dir(&subdir).unwrap();
 
-        assert!(is_spawnable(&tool));
-        assert!(!is_spawnable(&plain));
+        assert!(file::is_spawnable(&tool));
+        assert!(!file::is_spawnable(&plain));
         assert_eq!(
-            is_spawnable(&subdir),
+            file::is_spawnable(&subdir),
             file::is_executable(&subdir),
             "a mode-0755 directory must be answered the same either way"
         );

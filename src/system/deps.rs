@@ -307,13 +307,13 @@ async fn check_bin(
     name: &str,
     constraint: Option<&VersionConstraint>,
 ) -> (bool, Option<String>, Option<String>) {
-    let Some(path) = crate::file::which(name) else {
+    let Some(path) = crate::file::which_spawnable(name) else {
         return (false, None, Some(format!("`{name}` not found on PATH")));
     };
     let Some(constraint) = constraint else {
         return (true, None, None);
     };
-    match run_capture(&path.to_string_lossy(), &["--version"]).await {
+    match run_capture(&path, &["--version"]).await {
         Some((_, output)) => match extract_version(&output) {
             Some(v) => {
                 let versioning = Versioning::new(&v);
@@ -349,14 +349,14 @@ async fn check_pkgconfig(
     name: &str,
     constraint: Option<&VersionConstraint>,
 ) -> (bool, Option<String>, Option<String>) {
-    if crate::file::which("pkg-config").is_none() {
+    let Some(path) = crate::file::which_spawnable("pkg-config") else {
         return (
             false,
             None,
             Some("pkg-config is not installed (needed to detect this library)".to_string()),
         );
-    }
-    match run_capture("pkg-config", &["--exists", name]).await {
+    };
+    match run_capture(&path, &["--exists", name]).await {
         Some((true, _)) => {}
         Some((false, _)) => {
             return (
@@ -377,7 +377,7 @@ async fn check_pkgconfig(
     let Some(constraint) = constraint else {
         return (true, None, None);
     };
-    match run_capture("pkg-config", &["--modversion", name]).await {
+    match run_capture(&path, &["--modversion", name]).await {
         Some((true, output)) => {
             let v = output.trim().to_string();
             match Versioning::new(&v) {
@@ -456,7 +456,11 @@ async fn check_command(cmd: &str) -> (bool, Option<String>, Option<String>) {
 /// Silent and side-effect free — never elevates. A 5s wall-clock timeout keeps
 /// a hanging binary (e.g. one that blocks on `--version`) from stalling the
 /// whole install.
-async fn run_capture(program: &str, args: &[&str]) -> Option<(bool, String)> {
+async fn run_capture(
+    program: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+) -> Option<(bool, String)> {
+    let program = program.as_ref();
     let fut = tokio::process::Command::new(program)
         .args(args)
         .stdin(std::process::Stdio::null())
@@ -465,7 +469,10 @@ async fn run_capture(program: &str, args: &[&str]) -> Option<(bool, String)> {
         Ok(Ok(output)) => output,
         Ok(Err(_)) => return None,
         Err(_) => {
-            debug!("system dep: `{program}` timed out, treating check as inconclusive");
+            debug!(
+                "system dep: `{}` timed out, treating check as inconclusive",
+                program.to_string_lossy()
+            );
             return None;
         }
     };
@@ -884,9 +891,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_bin_present_and_missing() {
-        // `file::which` does no PATHEXT resolution, so on Windows the name must
-        // carry the `.exe` extension (cmd.exe lives in System32, on PATH on CI).
-        let present = if cfg!(windows) { "cmd.exe" } else { "sh" };
+        // The bare name resolves through configured executable extensions on Windows.
+        let present = if cfg!(windows) { "cmd" } else { "sh" };
         let (ok, _, _) = check_bin(present, None).await;
         assert!(ok);
 
