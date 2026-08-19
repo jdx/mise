@@ -17,7 +17,7 @@ $BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
 # OpenSSL was compiled into every release and never called.
 $Features = "rustls-native-roots,self_update,vfox/vendored-lua"
 
-cargo build --profile=serious --no-default-features --features "$Features" --target "$Target"
+cargo build --profile=serious --ignore-rust-version --no-default-features --features "$Features" --target "$Target"
 cargo build --profile=serious -p mise-shim --target "$Target"
 mkdir -p dist/mise/bin
 cp "target/$Target/serious/mise.exe" dist/mise/bin/mise.exe

@@ -108,7 +108,7 @@ fi
 rustup toolchain install "$msrv" --profile minimal --no-self-update -c rustfmt,clippy
 rustup default "$msrv"
 
-cargo build --all-features
+cargo build --all-features --ignore-rust-version
 # Always invoke this binary. `mise activate --shims` prepends shims that may
 # point at an older mise which still ran tool-level postinstall under MISE_SAFE.
 mise_bin=/usr/local/bin/mise

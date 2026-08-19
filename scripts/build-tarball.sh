@@ -103,11 +103,11 @@ if [[ -n "${MISE_PGO:-}" ]]; then
 		build_tool=cross
 	fi
 	MISE_PGO_BUILD_TOOL="$build_tool" MISE_PGO_TARGET="$RUST_TRIPLE" \
-		bash scripts/pgo.bash --no-default-features --features "$features"
+		bash scripts/pgo.bash --ignore-rust-version --no-default-features --features "$features"
 elif [[ $os == "linux" ]]; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	cross build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
 else
-	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	cargo build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
 fi
 
 # Use CARGO_TARGET_DIR if set, otherwise default to target
