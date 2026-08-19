@@ -183,10 +183,21 @@ pub(crate) async fn create_python_venv(
         return Ok(false);
     }
 
-    let uv_bin = ts
-        .which_bin(config, "uv")
-        .await
-        .or_else(|| which_no_shims("uv"));
+    let uv_bin = if let Some(uv_bin) = ts.which_bin(config, "uv").await {
+        Some(uv_bin)
+    } else {
+        // Commands such as `mise x tiny@3` can provide a caller toolset that does not
+        // include the configured uv version. Resolve a uv-only toolset as a fallback so
+        // an installed configured uv remains available for automatic venv creation.
+        let trs = config.get_tool_request_set().await?;
+        let filtered_trs = trs.filter_by_tool(HashSet::from(["uv".to_string()]));
+        let mut uv_ts: Toolset = filtered_trs.into();
+        let _ = uv_ts.resolve(config).await;
+        uv_ts
+            .which_bin(config, "uv")
+            .await
+            .or_else(|| which_no_shims("uv"))
+    };
 
     if require_uv && uv_bin.is_none() {
         warn_once!(
