@@ -67,6 +67,10 @@ function Global:_mise_hook {
     }
 }
 
+# Declared up front because the prompt reads it before any directory change
+# has set it, and Set-StrictMode makes reading an unset variable an error.
+$Global:__mise_pwsh_chpwd_handled = $null
+
 function __enable_mise_chpwd{
     if ($PSVersionTable.PSVersion.Major -lt 7) {
         if ($env:MISE_PWSH_CHPWD_WARNING -ne '0') {
@@ -80,6 +84,20 @@ function __enable_mise_chpwd{
             param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
             end {
                 _mise_hook
+                # The prompt fires immediately after this handler, and its own
+                # hook-env would find the directory unchanged and early-exit. On
+                # Windows that costs a whole process (~22ms, almost entirely
+                # CreateProcess) to learn nothing. Record the directory and MISE_*
+                # state already handled so the prompt can skip it. $PWD is the new
+                # location by the time this handler runs.
+                $Global:__mise_pwsh_chpwd_handled = [PSCustomObject]@{
+                    Path = $PWD.Path
+                    MiseEnv = [string]::Join("`0", [string[]]@(
+                        Get-ChildItem Env:MISE_* |
+                            Sort-Object Name |
+                            ForEach-Object { "$($_.Name)`0$($_.Value)" }
+                    ))
+                }
             }
         };
         $__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
@@ -100,7 +118,27 @@ function __enable_mise_prompt {
         $Global:__mise_pwsh_previous_prompt_function=$function:prompt
         function global:prompt {
             if (Test-Path -Path Function:\_mise_hook){
-                _mise_hook
+                # Skip only when the chpwd handler already ran hook-env for this
+                # exact directory and the MISE_* state has not changed since.
+                $handled = if (Test-Path variable:global:__mise_pwsh_chpwd_handled) {
+                    $Global:__mise_pwsh_chpwd_handled
+                } else {
+                    $null
+                }
+                if (Test-Path variable:global:__mise_pwsh_chpwd_handled) {
+                    $Global:__mise_pwsh_chpwd_handled = $null
+                }
+                if (
+                    $null -eq $handled -or
+                    $handled.Path -ne $PWD.Path -or
+                    $handled.MiseEnv -ne [string]::Join("`0", [string[]]@(
+                        Get-ChildItem Env:MISE_* |
+                            Sort-Object Name |
+                            ForEach-Object { "$($_.Name)`0$($_.Value)" }
+                    ))
+                ) {
+                    _mise_hook
+                }
             }
             & $__mise_pwsh_previous_prompt_function
         }
