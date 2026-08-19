@@ -53,6 +53,8 @@
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   opacity: 0.85;
 }
@@ -64,7 +66,7 @@
     flex-direction: column;
     gap: 0.125rem;
     font-size: 0.8rem;
-    padding: 0.5rem 2.25rem;
+    padding: 0.5rem 2.75rem;
     line-height: 1.3;
     text-wrap: balance;
   }

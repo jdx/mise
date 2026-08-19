@@ -190,10 +190,17 @@ export default withMermaid(
     } else {
       d.classList.add("preboot-sidebar");
     }
-    var id = localStorage.getItem("jdx-banner-id");
-    var h = localStorage.getItem("jdx-banner-height");
-    if (id && h && localStorage.getItem("jdx-banner-dismissed") !== id)
-      d.style.setProperty("--vp-layout-top-height", h);
+    var c = JSON.parse(localStorage.getItem("jdx-banner-cache") || "null");
+    var expires = c && c.expires ? Date.parse(c.expires) : NaN;
+    if (
+      c &&
+      c.id &&
+      c.height &&
+      c.width === innerWidth &&
+      (!c.expires || isNaN(expires) || Date.now() < expires) &&
+      localStorage.getItem("jdx-banner-dismissed") !== c.id
+    )
+      d.style.setProperty("--vp-layout-top-height", c.height);
   } catch (e) {}
 })();`,
       ],
