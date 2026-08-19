@@ -415,9 +415,7 @@ async fn run_staged(
         "env".to_string(),
         format!("MISE_TRUSTED_CONFIG_PATHS={project}"),
     ];
-    if !session.host.mise_env.is_empty() {
-        argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
-    }
+    argv.push(format!("MISE_ENV={}", session.host.mise_env.join(",")));
     argv.extend([mise, "--cd".to_string(), project, "bootstrap".to_string()]);
     if options.dry_run {
         argv.push("--dry-run".to_string());

@@ -655,10 +655,6 @@ struct BootstrapRemote {
     )]
     mise_bin: Option<std::path::PathBuf>,
 
-    /// Config environments to load on the remote host
-    #[clap(long, value_name = "ENV", value_delimiter = ',')]
-    remote_env: Option<Vec<String>>,
-
     /// Run only one or more remote bootstrap parts
     #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
     only: Vec<BootstrapPart>,
@@ -670,6 +666,10 @@ struct BootstrapRemote {
     /// Prompt securely for missing secret inputs on the remote host
     #[clap(long)]
     prompt_secrets: bool,
+
+    /// Config environments to load on the remote host
+    #[clap(long, value_name = "ENV", value_delimiter = ',')]
+    remote_env: Option<Vec<String>>,
 
     /// Existing mise executable name or path; relative paths use the staged project
     #[clap(

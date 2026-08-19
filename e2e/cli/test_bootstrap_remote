@@ -22,6 +22,10 @@ cp bin/mise "bin with space/mise"
 
 cat >"$HOME/.local/bin/mise" <<'EOF'
 #!/bin/sh
+if test "${1:-}" = "--cd" && test "${MISE_ENV:-}" = "unexpected"; then
+  echo "inherited remote MISE_ENV was not cleared" >&2
+  exit 43
+fi
 if test "${1:-}" = "--cd" && test -e "$2/layered-secret"; then
   echo "layered remote exclude was not applied" >&2
   exit 42
@@ -173,6 +177,11 @@ assert_fail "test -d $remote_stage"
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote layered --dry-run --yes"
 assert_contains "cat $ssh_log" "$HOME/.local/bin/mise version"
+
+: >"$ssh_log"
+assert_succeed "MISE_ENV=unexpected mise bootstrap remote layered --dry-run --yes"
+assert_contains "cat $ssh_log" "'MISE_ENV=' $HOME/.local/bin/mise --cd"
+assert_not_contains "cat $ssh_log" "MISE_ENV=unexpected"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote --host root@ad-hoc.test --source . --remote-mise $HOME/.local/bin/mise --dry-run --yes"
