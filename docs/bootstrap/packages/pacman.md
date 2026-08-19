@@ -10,7 +10,9 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 
 ## Behavior
 
-- Package state is checked with `pacman -Q` (read-only, never elevates).
+- Package state is checked with `pacman -Q` and `pacman -T` (read-only, never
+  elevates). An installed package that satisfies the requested name through
+  `Provides` counts as installed.
 - Missing packages are installed with `pacman -S --noconfirm --needed`,
   elevated with sudo when necessary (see
   [sudo](/bootstrap/packages/#sudo)). `--needed` makes installs
@@ -19,8 +21,9 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
   runs `pacman -Sy` automatically before installing. Force a refresh with
   `mise bootstrap packages apply --update`.
 - `mise bootstrap packages upgrade` runs `pacman -Sy` and then upgrades only the
-  configured packages. Note that Arch officially supports only full-system
-  upgrades (`pacman -Syu`) — upgrading individual packages is a
+  configured packages. Requests satisfied through `Provides` are skipped to
+  avoid replacing the installed provider. Note that Arch officially supports
+  only full-system upgrades (`pacman -Syu`) — upgrading individual packages is a
   [partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
   so prefer running `pacman -Syu` yourself on a rolling-release system.
 
