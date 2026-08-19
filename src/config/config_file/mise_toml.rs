@@ -1094,26 +1094,58 @@ impl MiseToml {
 
     fn template_context(&self) -> TeraContext {
         let mut context = self.context.clone();
-        Self::insert_resolved_vars(&mut context);
+        self.insert_resolved_vars(&mut context);
         context
     }
 
-    fn insert_resolved_vars(context: &mut TeraContext) {
+    fn insert_resolved_vars(&self, context: &mut TeraContext) {
         if context.get("vars").is_some() {
             return;
         }
-        let Some(config) = Config::maybe_get() else {
-            return;
-        };
-        if let Some(vars_results) = config.vars_results_cached() {
-            let vars = vars_results
-                .vars
-                .iter()
-                .map(|(k, (v, _))| (k.clone(), v.clone()))
-                .collect::<IndexMap<_, _>>();
+        let mut vars: IndexMap<String, String> = IndexMap::new();
+        let mut had_vars_results = false;
+        let mut in_active_stack = false;
+        if let Some(config) = Config::maybe_get() {
+            in_active_stack = config.config_files.contains_key(&self.path);
+            if let Some(vars_results) = config.vars_results_cached() {
+                had_vars_results = true;
+                vars.extend(
+                    vars_results
+                        .vars
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone())),
+                );
+            } else {
+                vars.extend(config.vars.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+        }
+        // A config parsed outside the active stack (e.g. a tracked config resolved
+        // by `mise upgrade`/`mise prune` from another directory) contributes nothing
+        // to the merged vars above, so a reference to its own `[vars]` would fail to
+        // render. Resolve its own vars here, overlaid on the active stack's. Only
+        // plain values are handled — other directives (`_.file`, `_.source`, …) need
+        // the async env resolver — and a value that fails to render is skipped
+        // rather than failing the whole parse.
+        if !in_active_stack && !self.vars.0.is_empty() {
+            let mut own_context = context.clone();
+            for directive in &self.vars.0 {
+                if let EnvDirective::Val(key, value, _) = directive {
+                    // insert progressively so a var can reference the vars above it
+                    own_context.insert("vars", &vars);
+                    match self.parse_template_with_context(&own_context, value) {
+                        Ok(rendered) => {
+                            vars.insert(key.clone(), rendered);
+                        }
+                        Err(err) => debug!(
+                            "failed to render var {key} in {}: {err:#}",
+                            display_path(&self.path)
+                        ),
+                    }
+                }
+            }
+        }
+        if had_vars_results || !vars.is_empty() {
             context.insert("vars", &vars);
-        } else if !config.vars.is_empty() {
-            context.insert("vars", &config.vars);
         }
     }
 
@@ -1457,7 +1489,7 @@ impl ConfigFile for MiseToml {
             );
             context.insert("env", &env_vars);
         }
-        Self::insert_resolved_vars(&mut context);
+        self.insert_resolved_vars(&mut context);
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.request)?;
@@ -3211,6 +3243,43 @@ mod tests {
         // ...and a real selector still survives being rendered late
         assert_eq!(version_of("jq"), "ref:main");
         assert_eq!(version_of("node"), "20.0.0");
+    }
+
+    /// `mise upgrade`/`mise prune` parse tracked configs from other directories,
+    /// where the active stack's merged vars do not include them. A tool version
+    /// referencing the config's own `[vars]` must still render.
+    #[tokio::test]
+    async fn test_tool_version_uses_own_vars_outside_active_config_stack() {
+        let _config = Config::get().await.unwrap();
+        // not a recognized config filename, so it is never part of the active stack
+        let p = CWD.as_ref().unwrap().join(".test.tracked.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [vars]
+        libver = "1.2.3"
+        tagged = "{{ vars.libver }}-beta"
+
+        [tools]
+        node = "{{ vars.libver }}"
+        terraform = "{{ vars.tagged }}"
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let version_of = |short: &str| {
+            trs.tools
+                .iter()
+                .find(|(ba, _)| ba.short == short)
+                .unwrap_or_else(|| panic!("{short} missing"))
+                .1[0]
+                .version()
+        };
+        assert_eq!(version_of("node"), "1.2.3");
+        // a var can reference the vars defined above it
+        assert_eq!(version_of("terraform"), "1.2.3-beta");
+        file::remove_file(&p).unwrap();
     }
 
     /// The version is no longer validated at deserialize time, so a template that renders to an

@@ -753,8 +753,28 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        let mut ts = Toolset::from(cf.to_tool_request_set()?);
-        ts.resolve_with_opts(config, &opts).await?;
+        // A tracked config that fails to resolve protects nothing, but shouldn't
+        // abort the upgrade/prune either — parse failures are already only a
+        // warning in get_tracked_config_files, and tracked stubs below get the
+        // same treatment.
+        let trs = match cf.to_tool_request_set() {
+            Ok(trs) => trs,
+            Err(err) => {
+                warn!(
+                    "error resolving tracked config {}: {err:#}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
+        let mut ts = Toolset::from(trs);
+        if let Err(err) = ts.resolve_with_opts(config, &opts).await {
+            warn!(
+                "error resolving tracked config versions {}: {err:#}",
+                display_path(&path)
+            );
+            continue;
+        }
         collect_needed_versions(&ts, offline, &mut needed);
     }
     Ok(needed)
