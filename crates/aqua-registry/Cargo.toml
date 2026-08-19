@@ -33,7 +33,7 @@ strum = { version = "0.28", features = ["derive"] }
 tempfile = "3"
 
 # Template parsing and evaluation
-expr-lang = "1"
+expr-lang = "2"
 heck = "0.5"
 versions = { version = "7", features = ["serde"] }
 
