@@ -744,8 +744,8 @@ fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
 fn asset_name_stem(asset: &str) -> String {
     let mut name = asset.rsplit('/').next().unwrap_or(asset).to_lowercase();
     let suffixes = [
-        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".tar", ".zip", ".gz", ".xz", ".bz2",
-        ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
+        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".txz", ".tzst", ".tar", ".zip",
+        ".gz", ".xz", ".bz2", ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
     ];
 
     if let Some(suffix) = suffixes.iter().find(|suffix| name.ends_with(*suffix)) {
