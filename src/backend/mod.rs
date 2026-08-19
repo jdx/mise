@@ -746,6 +746,14 @@ fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
     which_in_dirs(dirs, bin, true)
 }
 
+pub(crate) fn which_no_shims_spawnable(bin: &str) -> Option<PathBuf> {
+    let dirs = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| !file::is_mise_shims_dir(p))
+        .cloned();
+    which_in_dirs(dirs, bin, true)
+}
+
 pub(crate) async fn configured_toolset_or_path_which(
     config: &Arc<Config>,
     tools: impl IntoIterator<Item = String>,
