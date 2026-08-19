@@ -1,4 +1,6 @@
-use reqwest::{Client, ClientBuilder, StatusCode};
+use reqwest::header::HeaderMap;
+use reqwest::{Client, ClientBuilder, StatusCode, Url};
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -11,6 +13,8 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
 });
 
 pub(crate) const URL_REWRITER_REGISTRY_KEY: &str = "url_rewriter_fn";
+pub(crate) const HTTP_HEADERS_RESOLVER_REGISTRY_KEY: &str = "http_headers_resolver_fn";
+pub(crate) type HttpHeadersResolver = Arc<dyn Fn(&Url) -> HeaderMap + Send + Sync>;
 
 static HTTP_CANCELLATION: LazyLock<HttpCancellation> = LazyLock::new(Default::default);
 
