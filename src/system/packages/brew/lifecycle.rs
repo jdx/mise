@@ -216,6 +216,10 @@ struct LifecycleState {
     #[serde(default)]
     phase: LifecyclePhase,
     #[serde(default)]
+    install_identity: Option<LifecycleInstallIdentity>,
+    #[serde(default)]
+    shared_state: Vec<LifecycleSharedState>,
+    #[serde(default)]
     symlinks: Vec<LifecycleSymlink>,
     #[serde(default)]
     required_paths: Vec<PathBuf>,
@@ -225,6 +229,60 @@ struct LifecycleState {
     permissions: Vec<LifecyclePermission>,
     #[serde(default)]
     repair: Option<LifecycleRepairJournal>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleInstallIdentity {
+    formula: String,
+    receipt: LifecycleReceiptIdentity,
+    formula_snapshot_sha256: String,
+    incarnation: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleReceiptIdentity {
+    #[serde(default)]
+    built_as_bottle: Option<bool>,
+    #[serde(default)]
+    poured_from_bottle: Option<bool>,
+    #[serde(default)]
+    time: Option<u64>,
+    #[serde(default)]
+    source_modified_time: Option<u64>,
+    #[serde(default)]
+    arch: Option<String>,
+    #[serde(default)]
+    source: LifecycleReceiptSource,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleReceiptSource {
+    #[serde(default)]
+    spec: Option<String>,
+    #[serde(default)]
+    versions: LifecycleReceiptVersions,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    tap: Option<String>,
+    #[serde(default)]
+    tap_git_head: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleReceiptVersions {
+    #[serde(default)]
+    stable: Option<String>,
+    #[serde(default)]
+    head: Option<String>,
+    #[serde(default)]
+    version_scheme: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleSharedState {
+    source: PathBuf,
+    target: PathBuf,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -632,6 +690,113 @@ fn has_glob_magic(value: &str) -> bool {
     value.contains(['*', '?', '['])
 }
 
+fn identity_marker_path(keg: &Path) -> PathBuf {
+    keg.join(".brew/.mise-lifecycle-incarnation")
+}
+
+fn immutable_file_sha256(path: &Path, label: &str) -> Result<String> {
+    let metadata = path
+        .symlink_metadata()
+        .wrap_err_with(|| format!("lifecycle {label} is missing: {}", path.display()))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        bail!(
+            "lifecycle {label} is not an immutable regular file: {}",
+            path.display()
+        )
+    }
+    crate::hash::file_hash_sha256(path, None)
+}
+
+fn read_receipt_identity(keg: &Path) -> Result<LifecycleReceiptIdentity> {
+    let path = keg.join("INSTALL_RECEIPT.json");
+    let metadata = path
+        .symlink_metadata()
+        .wrap_err_with(|| format!("lifecycle install receipt is missing: {}", path.display()))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        bail!(
+            "lifecycle install receipt is not an immutable regular file: {}",
+            path.display()
+        )
+    }
+    serde_json::from_slice(&std::fs::read(&path)?)
+        .wrap_err_with(|| format!("lifecycle install receipt is malformed: {}", path.display()))
+}
+
+fn formula_name_from_keg(keg: &Path) -> Result<String> {
+    keg.parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| eyre!("lifecycle keg has no UTF-8 formula name: {}", keg.display()))
+}
+
+fn capture_install_identity(
+    prepared: &PreparedFormulaLifecycle,
+) -> Result<LifecycleInstallIdentity> {
+    let formula = formula_name_from_keg(&prepared.keg)?;
+    if formula != prepared.formula {
+        bail!(
+            "brew:{} lifecycle formula does not match keg {}",
+            prepared.formula,
+            prepared.keg.display()
+        )
+    }
+    let receipt = read_receipt_identity(&prepared.keg)?;
+    let formula_snapshot_sha256 = immutable_file_sha256(
+        &prepared
+            .keg
+            .join(".brew")
+            .join(format!("{}.rb", prepared.formula)),
+        "formula snapshot",
+    )?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    let incarnation = crate::hash::hash_sha256_to_str(&format!(
+        "{}\0{}\0{}\0{}\0{}",
+        prepared.keg.display(),
+        serde_json::to_string(&receipt)?,
+        formula_snapshot_sha256,
+        std::process::id(),
+        nonce
+    ));
+    crate::file::write(identity_marker_path(&prepared.keg), &incarnation)?;
+    Ok(LifecycleInstallIdentity {
+        formula,
+        receipt,
+        formula_snapshot_sha256,
+        incarnation,
+    })
+}
+
+fn validate_install_identity(keg: &Path, state: &LifecycleState) -> Result<()> {
+    let expected = state
+        .install_identity
+        .as_ref()
+        .ok_or_else(|| eyre!("lifecycle state has no bound install identity"))?;
+    if formula_name_from_keg(keg)? != expected.formula {
+        bail!("lifecycle state formula does not match current keg")
+    }
+    let marker = identity_marker_path(keg);
+    let metadata = marker
+        .symlink_metadata()
+        .wrap_err("lifecycle install-incarnation marker is missing")?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        bail!("lifecycle install-incarnation marker is not a regular file")
+    }
+    if crate::file::read_to_string(&marker)? != expected.incarnation {
+        bail!("lifecycle install incarnation does not match current keg")
+    }
+    if read_receipt_identity(keg)? != expected.receipt {
+        bail!("lifecycle install receipt does not match current keg")
+    }
+    let snapshot = keg.join(".brew").join(format!("{}.rb", expected.formula));
+    if immutable_file_sha256(&snapshot, "formula snapshot")? != expected.formula_snapshot_sha256 {
+        bail!("lifecycle formula snapshot does not match current keg")
+    }
+    Ok(())
+}
+
 pub(super) fn needs_repair(keg: &Path) -> bool {
     !matches!(health(keg, false), LifecycleHealth::Healthy)
 }
@@ -645,7 +810,12 @@ pub(super) fn install_progress(keg: &Path) -> LifecycleInstallProgress {
         .ok()
         .and_then(|contents| serde_json::from_str::<LifecycleState>(&contents).ok())
     {
-        Some(state) if state.complete && state.phase == LifecyclePhase::Complete => {
+        Some(state)
+            if validate_install_identity(keg, &state).is_ok()
+                && validate_shared_state(keg, &state).is_ok()
+                && state.complete
+                && state.phase == LifecyclePhase::Complete =>
+        {
             LifecycleInstallProgress::Complete
         }
         Some(_) | None => LifecycleInstallProgress::Incomplete,
@@ -672,27 +842,14 @@ pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
             );
             return LifecycleHealth::Repairable(reasons);
         }
-        return if shared_missing.is_empty() {
-            LifecycleHealth::Healthy
-        } else {
-            LifecycleHealth::ReinstallRequired(
-                shared_missing
-                    .into_iter()
-                    .map(|(_, target)| {
-                        format!(
-                            "native Homebrew shared path missing without mise repair provenance: {}",
-                            target.display()
-                        )
-                    })
-                    .collect(),
-            )
-        };
+        return native_health(shared_missing);
     }
     let state = match crate::file::read_to_string(&path)
         .ok()
         .and_then(|contents| serde_json::from_str::<LifecycleState>(&contents).ok())
     {
         Some(state) => state,
+        None if !mise_owned => return native_health(shared_missing),
         None => {
             return LifecycleHealth::ReinstallRequired(vec![format!(
                 "lifecycle state is unreadable: {}",
@@ -700,11 +857,24 @@ pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
             )]);
         }
     };
+    if let Err(error) = validate_install_identity(keg, &state) {
+        if !mise_owned {
+            return native_health(shared_missing);
+        }
+        return LifecycleHealth::ReinstallRequired(vec![format!(
+            "lifecycle state does not match current keg installation: {error}"
+        )]);
+    }
     if !state.complete || state.phase != LifecyclePhase::Complete {
         return LifecycleHealth::ReinstallRequired(vec![
             "lifecycle stopped before completion; a post-install action may have an unknown outcome"
                 .to_string(),
         ]);
+    }
+    if let Err(error) = validate_shared_state(keg, &state) {
+        return LifecycleHealth::ReinstallRequired(vec![format!(
+            "shared lifecycle provenance is invalid: {error}"
+        )]);
     }
 
     let mut repairable = BTreeSet::new();
@@ -712,11 +882,11 @@ pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
     if state.repair.is_some() {
         repairable.insert("an idempotent lifecycle repair journal is incomplete".to_string());
     }
-    for (source, target) in shared_missing {
-        if source.symlink_metadata().is_ok() {
+    for mapping in &state.shared_state {
+        if !node_exists(&mapping.target) {
             repairable.insert(format!(
                 "shared lifecycle path missing: {}",
-                target.display()
+                mapping.target.display()
             ));
         }
     }
@@ -741,6 +911,13 @@ pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
         }
     }
     for required in &state.required_paths {
+        if state
+            .shared_state
+            .iter()
+            .any(|mapping| mapping.target == *required)
+        {
+            continue;
+        }
         if !node_exists(required) {
             let is_shared_default = ["etc", "var"].into_iter().any(|root| {
                 required
@@ -814,28 +991,94 @@ fn node_exists(path: &Path) -> bool {
     }
 }
 
-fn shared_missing_paths(keg: &Path) -> Vec<(PathBuf, PathBuf)> {
-    let mut paths = vec![];
+fn native_health(shared_missing: Vec<(PathBuf, PathBuf)>) -> LifecycleHealth {
+    if shared_missing.is_empty() {
+        LifecycleHealth::Healthy
+    } else {
+        LifecycleHealth::ReinstallRequired(
+            shared_missing
+                .into_iter()
+                .map(|(_, target)| {
+                    format!(
+                        "native Homebrew shared path missing without mise repair provenance: {}",
+                        target.display()
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+fn shared_sources(keg: &Path) -> Vec<PathBuf> {
+    let mut sources = vec![];
     for root in ["etc", "var"] {
         let source_root = keg.join(".bottle").join(root);
         if !source_root.is_dir() {
             continue;
         }
-        for entry in walkdir::WalkDir::new(&source_root)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| !entry.file_type().is_dir())
-        {
-            if let Ok(relative) = entry.path().strip_prefix(&source_root) {
+        sources.extend(
+            walkdir::WalkDir::new(source_root)
+                .follow_links(false)
+                .into_iter()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| !entry.file_type().is_dir())
+                .map(|entry| entry.into_path()),
+        );
+    }
+    sources.sort();
+    sources
+}
+
+fn validate_shared_mapping(keg: &Path, mapping: &LifecycleSharedState) -> bool {
+    ["etc", "var"].into_iter().any(|root| {
+        mapping
+            .source
+            .strip_prefix(keg.join(".bottle").join(root))
+            .ok()
+            .is_some_and(|relative| {
                 let target = prefix::prefix().join(root).join(relative);
-                if !node_exists(&target) {
-                    paths.push((entry.path().to_path_buf(), target));
-                }
-            }
+                mapping.target == target
+                    || mapping.target == PathBuf::from(format!("{}.default", target.display()))
+            })
+    })
+}
+
+fn validate_shared_state(keg: &Path, state: &LifecycleState) -> Result<()> {
+    let mut recorded_sources = BTreeSet::new();
+    let mut recorded_targets = BTreeSet::new();
+    for mapping in &state.shared_state {
+        if !validate_shared_mapping(keg, mapping) || !state.required_paths.contains(&mapping.target)
+        {
+            bail!(
+                "unowned source-to-target mapping {} -> {}",
+                mapping.source.display(),
+                mapping.target.display()
+            )
+        }
+        if !recorded_sources.insert(mapping.source.clone())
+            || !recorded_targets.insert(mapping.target.clone())
+        {
+            bail!("duplicate shared-state source or target mapping")
         }
     }
-    paths
+    let current_sources = shared_sources(keg).into_iter().collect::<BTreeSet<_>>();
+    if recorded_sources != current_sources {
+        bail!("recorded shared-state sources do not match current keg")
+    }
+    Ok(())
+}
+
+fn shared_missing_paths(keg: &Path) -> Vec<(PathBuf, PathBuf)> {
+    shared_sources(keg)
+        .into_iter()
+        .filter_map(|source| {
+            ["etc", "var"].into_iter().find_map(|root| {
+                let relative = source.strip_prefix(keg.join(".bottle").join(root)).ok()?;
+                let target = prefix::prefix().join(root).join(relative);
+                (!node_exists(&target)).then_some((source.clone(), target))
+            })
+        })
+        .collect()
 }
 
 pub(super) async fn install(
@@ -844,11 +1087,14 @@ pub(super) async fn install(
 ) -> Result<()> {
     let keg = &prepared.keg;
     let state_path = state_path(keg);
+    let install_identity = capture_install_identity(prepared)?;
     write_state(
         &state_path,
         &LifecycleState {
             complete: false,
             phase: LifecyclePhase::Initial,
+            install_identity: Some(install_identity.clone()),
+            shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
             absent_patterns: vec![],
@@ -856,25 +1102,30 @@ pub(super) async fn install(
             repair: None,
         },
     )?;
+    let mut shared_state = vec![];
     let mut symlinks = vec![];
     let mut required_paths = vec![];
     let mut absent_patterns = vec![];
     let mut permissions = vec![];
     let result: Result<()> = async {
         for root in ["etc", "var"] {
-            required_paths.extend(install_shared_tree(
+            let installed = install_shared_tree(
                 &prepared.formula,
                 root,
                 &keg.join(".bottle").join(root),
                 &prefix::prefix().join(root),
                 predecessor_keg,
-            )?);
+            )?;
+            required_paths.extend(installed.iter().map(|mapping| mapping.target.clone()));
+            shared_state.extend(installed);
         }
         write_state(
             &state_path,
             &LifecycleState {
                 complete: false,
                 phase: LifecyclePhase::SharedState,
+                install_identity: Some(install_identity.clone()),
+                shared_state: shared_state.clone(),
                 symlinks: vec![],
                 required_paths: required_paths.clone(),
                 absent_patterns: vec![],
@@ -901,6 +1152,8 @@ pub(super) async fn install(
             &LifecycleState {
                 complete: true,
                 phase: LifecyclePhase::Complete,
+                install_identity: Some(install_identity),
+                shared_state,
                 symlinks,
                 required_paths,
                 absent_patterns,
@@ -948,6 +1201,13 @@ pub(super) async fn repair(
         return Ok(true);
     }
     let mut state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+    validate_install_identity(keg, &state).wrap_err_with(|| {
+        format!(
+            "brew:{} requires reinstall: lifecycle state belongs to another install",
+            prepared.formula
+        )
+    })?;
+    validate_shared_state(keg, &state)?;
     if !state.complete || state.phase != LifecyclePhase::Complete {
         bail!(
             "brew:{} requires reinstall: lifecycle completion is unknown",
@@ -958,7 +1218,7 @@ pub(super) async fn repair(
         .repair
         .take()
         .unwrap_or_else(|| LifecycleRepairJournal {
-            effects: repair_effects(keg, &state),
+            effects: repair_effects(&state),
             next: 0,
         });
     validate_repair_journal(keg, &state, &journal)?;
@@ -1005,6 +1265,13 @@ pub(super) fn preflight_repair(
         return Ok(true);
     }
     let state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+    validate_install_identity(keg, &state).wrap_err_with(|| {
+        format!(
+            "brew:{} requires reinstall: lifecycle state belongs to another install",
+            prepared.formula
+        )
+    })?;
+    validate_shared_state(keg, &state)?;
     if !state.complete || state.phase != LifecyclePhase::Complete {
         bail!(
             "brew:{} requires reinstall: lifecycle completion is unknown",
@@ -1015,7 +1282,7 @@ pub(super) fn preflight_repair(
         .repair
         .clone()
         .unwrap_or_else(|| LifecycleRepairJournal {
-            effects: repair_effects(keg, &state),
+            effects: repair_effects(&state),
             next: 0,
         });
     validate_repair_journal(keg, &state, &journal)?;
@@ -1053,10 +1320,15 @@ fn validate_legacy_formula_snapshot(prepared: &PreparedFormulaLifecycle) -> Resu
     Ok(())
 }
 
-fn repair_effects(keg: &Path, state: &LifecycleState) -> Vec<LifecycleRepairEffect> {
-    let mut effects = shared_missing_paths(keg)
-        .into_iter()
-        .map(|(source, target)| LifecycleRepairEffect::Copy { source, target })
+fn repair_effects(state: &LifecycleState) -> Vec<LifecycleRepairEffect> {
+    let mut effects = state
+        .shared_state
+        .iter()
+        .filter(|mapping| !node_exists(&mapping.target))
+        .map(|mapping| LifecycleRepairEffect::Copy {
+            source: mapping.source.clone(),
+            target: mapping.target.clone(),
+        })
         .collect::<Vec<_>>();
     effects.extend(
         state
@@ -1092,15 +1364,20 @@ fn validate_repair_journal(
     for effect in &journal.effects {
         match effect {
             LifecycleRepairEffect::Copy { source, target } => {
-                let mapping_matches = ["etc", "var"].into_iter().any(|root| {
-                    source
-                        .strip_prefix(keg.join(".bottle").join(root))
-                        .ok()
-                        .is_some_and(|relative| {
-                            target == &prefix::prefix().join(root).join(relative)
-                        })
-                });
-                if !mapping_matches || !state.required_paths.contains(target) {
+                let mapping_matches = state
+                    .shared_state
+                    .iter()
+                    .any(|mapping| mapping.source == *source && mapping.target == *target);
+                if !mapping_matches
+                    || !validate_shared_mapping(
+                        keg,
+                        &LifecycleSharedState {
+                            source: source.clone(),
+                            target: target.clone(),
+                        },
+                    )
+                    || !state.required_paths.contains(target)
+                {
                     bail!(
                         "lifecycle repair journal contains an unowned shared-state effect: {}",
                         target.display()
@@ -1221,7 +1498,13 @@ pub(super) fn remove_owned_state(keg: &Path) -> Result<()> {
     let path = state_path(keg);
     if path.exists() {
         let state: LifecycleState = serde_json::from_str(&crate::file::read_to_string(&path)?)?;
-        remove_lifecycle_symlinks(&state)?;
+        if validate_install_identity(keg, &state).is_ok() {
+            remove_lifecycle_symlinks(&state)?;
+            let marker = identity_marker_path(keg);
+            if marker.symlink_metadata().is_ok() {
+                crate::file::remove_file(marker)?;
+            }
+        }
         crate::file::remove_file(path)?;
     }
     Ok(())
@@ -1247,7 +1530,7 @@ fn install_shared_tree(
     source_root: &Path,
     destination_root: &Path,
     predecessor_keg: Option<&Path>,
-) -> Result<Vec<PathBuf>> {
+) -> Result<Vec<LifecycleSharedState>> {
     if !source_root.is_dir() {
         return Ok(vec![]);
     }
@@ -1272,7 +1555,10 @@ fn install_shared_tree(
             predecessor_keg,
         )?;
         atomic_copy(entry.path(), &destination)?;
-        installed_paths.push(destination);
+        installed_paths.push(LifecycleSharedState {
+            source: entry.path().to_path_buf(),
+            target: destination,
+        });
     }
     Ok(installed_paths)
 }
@@ -2048,6 +2334,135 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn native_replacement_cannot_apply_stale_mise_lifecycle_state() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let snapshot = keg.join(".brew/openssl@3.rb");
+        let shared_source = keg.join(".bottle/etc/openssl@3/openssl.cnf");
+        let shared_target = prefix.join("etc/openssl@3/openssl.cnf");
+        let link_source = keg.join("bin/openssl");
+        let link_target = prefix.join("bin/openssl");
+        for path in [&snapshot, &shared_source, &shared_target, &link_source] {
+            crate::file::create_dir_all(path.parent().unwrap())?;
+        }
+        crate::file::write(&snapshot, "class OpensslAT3; end")?;
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            r#"{"homebrew_version":"6.0.17 (mise)","installed_on_request":false,"installed_as_dependency":true,"built_as_bottle":true,"poured_from_bottle":true,"time":123,"source_modified_time":100,"arch":"arm64","source":{"spec":"stable","versions":{"stable":"1","head":null,"version_scheme":0},"path":"/api/formula.jws.json","tap":"homebrew/core","tap_git_head":"core-head"}}"#,
+        )?;
+        crate::file::write(&shared_source, "default")?;
+        crate::file::write(&shared_target, "default")?;
+        crate::file::write(&link_source, "binary")?;
+        let prepared = prepare(&formula(vec![]), &keg)?;
+        let identity = capture_install_identity(&prepared)?;
+        let state = LifecycleState {
+            complete: true,
+            phase: LifecyclePhase::Complete,
+            install_identity: Some(identity),
+            shared_state: vec![LifecycleSharedState {
+                source: shared_source,
+                target: shared_target.clone(),
+            }],
+            symlinks: vec![LifecycleSymlink {
+                source: link_source.clone(),
+                target: link_target.clone(),
+            }],
+            required_paths: vec![shared_target],
+            absent_patterns: vec![],
+            permissions: vec![],
+            repair: Some(LifecycleRepairJournal {
+                effects: vec![LifecycleRepairEffect::Symlink {
+                    source: link_source,
+                    target: link_target.clone(),
+                }],
+                next: 0,
+            }),
+        };
+        write_state(&state_path(&keg), &state)?;
+
+        // Real Homebrew replaced this exact rack/version from another receipt
+        // while the external mise state and incarnation marker survived.
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            r#"{"source":{"tap_git_head":"vendor-head","tap":"vendor/tools","path":"/api/formula.jws.json","versions":{"version_scheme":0,"head":null,"stable":"1"},"spec":"stable"},"arch":"arm64","source_modified_time":100,"time":123,"poured_from_bottle":true,"built_as_bottle":true,"installed_as_dependency":false,"installed_on_request":true,"homebrew_version":"6.0.17"}"#,
+        )?;
+
+        assert_eq!(health(&keg, false), LifecycleHealth::Healthy);
+        assert!(matches!(
+            health(&keg, true),
+            LifecycleHealth::ReinstallRequired(_)
+        ));
+        assert!(!preflight_repair(&prepared, false)?);
+        assert!(link_target.symlink_metadata().is_err());
+        remove_owned_state(&keg)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn repair_restores_exact_default_mapping_without_repouring() -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let snapshot = keg.join(".brew/openssl@3.rb");
+        let source = keg.join(".bottle/etc/openssl@3/openssl.cnf");
+        let user_config = prefix.join("etc/openssl@3/openssl.cnf");
+        let default = PathBuf::from(format!("{}.default", user_config.display()));
+        let keg_binary = keg.join("bin/openssl");
+        let public_link = prefix.join("bin/openssl");
+        for path in [&snapshot, &source, &user_config, &keg_binary] {
+            crate::file::create_dir_all(path.parent().unwrap())?;
+        }
+        crate::file::write(&snapshot, "class OpensslAT3; end")?;
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            r#"{"homebrew_version":"6.0.17 (mise)","installed_on_request":false,"installed_as_dependency":true,"built_as_bottle":true,"poured_from_bottle":true,"time":123,"source_modified_time":100,"arch":"arm64","source":{"spec":"stable","versions":{"stable":"1","head":null,"version_scheme":0},"path":"/api/formula.jws.json","tap":"homebrew/core","tap_git_head":"core-head"}}"#,
+        )?;
+        crate::file::write(&source, "new-default")?;
+        crate::file::write(&user_config, "user-modified")?;
+        crate::file::write(&keg_binary, "binary")?;
+        crate::file::create_dir_all(public_link.parent().unwrap())?;
+        crate::file::make_symlink(&keg_binary, &public_link)?;
+        let prepared = prepare(&formula(vec![]), &keg)?;
+        install(&prepared, None).await?;
+        assert_eq!(crate::file::read_to_string(&default)?, "new-default");
+
+        let keg_inode = keg.metadata()?.ino();
+        let receipt_inode = keg.join("INSTALL_RECEIPT.json").metadata()?.ino();
+        let public_link_inode = public_link.symlink_metadata()?.ino();
+        // Homebrew legitimately rewrites these mutable Tab flags. Key order
+        // and unrelated mutable fields are not part of lifecycle authority.
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            r#"{"source":{"tap_git_head":"core-head","tap":"homebrew/core","path":"/api/formula.jws.json","versions":{"version_scheme":0,"head":null,"stable":"1"},"spec":"stable"},"arch":"arm64","source_modified_time":100,"time":123,"poured_from_bottle":true,"built_as_bottle":true,"installed_as_dependency":false,"installed_on_request":true,"homebrew_version":"6.0.17 (mise)"}"#,
+        )?;
+        assert_eq!(health(&keg, true), LifecycleHealth::Healthy);
+        crate::file::remove_file(&default)?;
+        assert!(matches!(health(&keg, true), LifecycleHealth::Repairable(_)));
+
+        assert!(repair(&prepared, true, false).await?);
+        assert_eq!(crate::file::read_to_string(&user_config)?, "user-modified");
+        assert_eq!(crate::file::read_to_string(&default)?, "new-default");
+        assert_eq!(keg.metadata()?.ino(), keg_inode);
+        assert_eq!(
+            keg.join("INSTALL_RECEIPT.json").metadata()?.ino(),
+            receipt_inode
+        );
+        assert_eq!(public_link.symlink_metadata()?.ino(), public_link_inode);
+        assert_eq!(fs::read_link(&public_link)?, keg_binary);
+        remove_owned_state(&keg)?;
+        Ok(())
+    }
+
     #[test]
     fn preserves_modified_config_as_default() -> Result<()> {
         let tmp = tempfile::tempdir()?;
@@ -2068,7 +2483,13 @@ mod tests {
         assert_eq!(crate::file::read_to_string(&destination)?, "user");
         let default = PathBuf::from(format!("{}.default", destination.display()));
         assert_eq!(crate::file::read_to_string(&default)?, "new");
-        assert_eq!(installed, vec![default]);
+        assert_eq!(
+            installed,
+            vec![LifecycleSharedState {
+                source,
+                target: default,
+            }]
+        );
         Ok(())
     }
 
@@ -2094,7 +2515,13 @@ mod tests {
             Some(&rack.join("1")),
         )?;
         assert_eq!(crate::file::read_to_string(&destination)?, "new");
-        assert_eq!(installed, vec![destination.clone()]);
+        assert_eq!(
+            installed,
+            vec![LifecycleSharedState {
+                source,
+                target: destination.clone(),
+            }]
+        );
         assert!(!PathBuf::from(format!("{}.default", destination.display())).exists());
         Ok(())
     }
@@ -2128,7 +2555,13 @@ mod tests {
         assert_eq!(crate::file::read_to_string(&destination)?, "user-selected");
         let default = PathBuf::from(format!("{}.default", destination.display()));
         assert_eq!(crate::file::read_to_string(&default)?, "new-default");
-        assert_eq!(installed, vec![default]);
+        assert_eq!(
+            installed,
+            vec![LifecycleSharedState {
+                source,
+                target: default,
+            }]
+        );
         Ok(())
     }
 
@@ -2156,7 +2589,10 @@ mod tests {
         assert_eq!(crate::file::read_to_string(&destination)?, "user");
         assert_eq!(
             installed,
-            vec![PathBuf::from(format!("{}.default", destination.display()))]
+            vec![LifecycleSharedState {
+                source,
+                target: PathBuf::from(format!("{}.default", destination.display())),
+            }]
         );
         Ok(())
     }
@@ -2400,6 +2836,8 @@ mod tests {
         let state = LifecycleState {
             complete: true,
             phase: LifecyclePhase::Complete,
+            install_identity: None,
+            shared_state: vec![],
             symlinks: vec![LifecycleSymlink {
                 source: source.clone(),
                 target: target.clone(),

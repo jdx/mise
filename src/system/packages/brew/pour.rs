@@ -525,7 +525,10 @@ fn preflight_topology_repair(
         if symlink_points_to(&destination, &target) {
             continue;
         }
-        if brew_owned_ancestor(&destination).is_some() {
+        if let Some(ancestor) = brew_owned_ancestor(&destination) {
+            if path_matches_through_brew_owned_ancestor(&destination, &target, &ancestor) {
+                continue;
+            }
             bail!(
                 "brew:{name}/{version}: topology repair would traverse a directory symlink: {}",
                 destination.display()
@@ -1667,6 +1670,24 @@ fn brew_owned_ancestor(dest: &Path) -> Option<PathBuf> {
     None
 }
 
+/// A leaf reached through a Homebrew directory link already satisfies the
+/// topology only when that exact ancestor-plus-suffix maps to the expected keg
+/// leaf. Merely entering the Cellar is insufficient: another keg or subtree
+/// must remain a hard conflict.
+fn path_matches_through_brew_owned_ancestor(
+    destination: &Path,
+    target: &Path,
+    ancestor: &Path,
+) -> bool {
+    let Some(ancestor_target) = resolved_symlink_target(ancestor) else {
+        return false;
+    };
+    let Ok(suffix) = destination.strip_prefix(ancestor) else {
+        return false;
+    };
+    resolved_path(&ancestor_target.join(suffix)) == resolved_path(target)
+}
+
 /// Replace brew-created directory symlinks on the way to `dest` with real
 /// directories of symlinks to their old contents — the same expansion brew
 /// performs when another keg needs to place files inside a wholesale-linked
@@ -2424,11 +2445,19 @@ mod tests {
         let rf = resolved_formula("foo", "2.0");
         let keg = keg_path("foo", "2.0");
         let _state = FormulaStateGuard::new(&keg);
-        write_source_keg(&keg, "new")?;
+        let snapshot = write_source_keg(&keg, "new")?;
         crate::file::create_dir_all(keg.join(".bottle/etc/foo"))?;
         crate::file::write(keg.join(".bottle/etc/foo/config"), "new-default")?;
         let backup = recovery_backup_path(&keg)?;
         write_source_keg(&backup, "old")?;
+        write_receipt(
+            &rf,
+            "test",
+            &keg,
+            &Default::default(),
+            &[],
+            &source_provenance(snapshot),
+        )?;
         let prepared = lifecycle::prepare(&rf.formula, &keg)?;
         lifecycle::install(&prepared, Some(&backup)).await?;
         crate::file::write(prefix.join("etc/foo/config"), "user-after-install")?;
@@ -2745,6 +2774,70 @@ mod tests {
     }
 
     #[test]
+    fn test_topology_repair_preserves_matching_brew_directory_links() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_lib_keg(&prefix, "foo", "1.0")?;
+        brew_style_link(&prefix, "foo", "1.0")?;
+        let linked = prefix::linked_keg_record("foo");
+        crate::file::create_dir_all(linked.parent().unwrap())?;
+        crate::file::make_symlink(Path::new("../../../Cellar/foo/1.0"), &linked)?;
+
+        let public_dir = prefix.join("include/foo");
+        let public_dir_target = std::fs::read_link(&public_dir)?;
+        let public_header = public_dir.join("header.h");
+        let public_header_contents = crate::file::read_to_string(&public_header)?;
+        crate::file::remove_file(prefix.join("opt/foo"))?;
+        crate::file::remove_file(&linked)?;
+
+        let repairs = preflight_topology_repair("foo", "1.0", &keg)?;
+        assert_eq!(repairs.len(), 2);
+        apply_topology_repair(&repairs)?;
+
+        assert_eq!(std::fs::read_link(&public_dir)?, public_dir_target);
+        assert_eq!(
+            crate::file::read_to_string(&public_header)?,
+            public_header_contents
+        );
+        assert_eq!(
+            std::fs::read_link(prefix.join("opt/foo"))?,
+            PathBuf::from("../Cellar/foo/1.0")
+        );
+        assert_eq!(
+            std::fs::read_link(&linked)?,
+            PathBuf::from("../../../Cellar/foo/1.0")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_topology_repair_rejects_mismatched_brew_directory_links() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_lib_keg(&prefix, "foo", "1.0")?;
+        brew_style_link(&prefix, "foo", "1.0")?;
+        write_lib_keg(&prefix, "foo", "2.0")?;
+
+        let public_dir = prefix.join("include/foo");
+        crate::file::remove_file(&public_dir)?;
+        let mismatched_target = PathBuf::from("../Cellar/foo/2.0/include/foo");
+        crate::file::make_symlink(&mismatched_target, &public_dir)?;
+        crate::file::remove_file(prefix.join("opt/foo"))?;
+
+        let error = preflight_topology_repair("foo", "1.0", &keg).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("topology repair would traverse a directory symlink")
+        );
+        assert_eq!(std::fs::read_link(&public_dir)?, mismatched_target);
+        assert!(prefix.join("opt/foo").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
     fn test_repairs_dangling_owned_records_but_not_foreign_records() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let (_tmp, prefix) = canonical_tempdir()?;
@@ -3007,21 +3100,14 @@ mod tests {
         let _guard = BrewPrefixGuard::set(&prefix);
         let keg = write_installed_formula(&prefix, "foo", "1", true, &[])?;
         let _state = FormulaStateGuard::new(&keg);
-        let state = lifecycle::test_state_path(&keg);
-        crate::file::create_dir_all(state.parent().unwrap())?;
-        crate::file::write(
-            &state,
-            serde_json::to_vec(&json!({
-                "complete": false,
-                "phase": "shared_state",
-                "symlinks": [],
-                "required_paths": [],
-                "absent_patterns": [],
-                "repair": null
-            }))?,
-        )?;
         let rf = resolved_formula("foo", "1");
         let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        lifecycle::install(&lifecycle, None).await?;
+        let state = lifecycle::test_state_path(&keg);
+        let mut interrupted: Value = serde_json::from_slice(&std::fs::read(&state)?)?;
+        interrupted["complete"] = json!(false);
+        interrupted["phase"] = json!("shared_state");
+        crate::file::write(&state, serde_json::to_vec(&interrupted)?)?;
         let health = installed_formula_health("foo", "1");
         assert_eq!(health.kind, FormulaHealthKind::ReinstallRequired);
 
@@ -3048,24 +3134,16 @@ mod tests {
         crate::file::write(&source, "default")?;
         crate::file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(&target, "default")?;
-        let state = lifecycle::test_state_path(&keg);
-        crate::file::create_dir_all(state.parent().unwrap())?;
-        crate::file::write(
-            &state,
-            serde_json::to_vec(&json!({
-                "complete": true,
-                "phase": "complete",
-                "symlinks": [],
-                "required_paths": [target],
-                "absent_patterns": [],
-                "repair": {
-                    "effects": [{"type": "copy", "source": source, "target": target}],
-                    "next": 0
-                }
-            }))?,
-        )?;
         let rf = resolved_formula("foo", "1");
         let lifecycle = lifecycle::prepare(&rf.formula, &keg)?;
+        lifecycle::install(&lifecycle, None).await?;
+        let state = lifecycle::test_state_path(&keg);
+        let mut persisted: Value = serde_json::from_slice(&std::fs::read(&state)?)?;
+        persisted["repair"] = json!({
+            "effects": [{"type": "copy", "source": source, "target": target}],
+            "next": 0
+        });
+        crate::file::write(&state, serde_json::to_vec(&persisted)?)?;
         let health = installed_formula_health("foo", "1");
         assert_eq!(health.kind, FormulaHealthKind::Repairable);
         assert!(repair_formula(&health, &lifecycle, false).await?);
