@@ -364,11 +364,12 @@ impl Backend for VfoxBackend {
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
-            .install_with_download_dir(
+            .install_with_download_dir_and_options(
                 &self.pathname,
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
+                tool_options.into_backend_options().into_map(),
             )
             .await?;
 
@@ -506,8 +507,13 @@ impl Backend for VfoxBackend {
 
         let (mut vfox, _log_rx) = self.plugin.vfox()?;
         vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
+        let options = self
+            .tool_options_for_tv(&config, tv)
+            .await
+            .into_backend_options()
+            .into_map();
         let pre_install = vfox
-            .pre_install_for_platform(&self.pathname, &tv.version, os, arch)
+            .pre_install_for_platform_with_options(&self.pathname, &tv.version, os, arch, options)
             .await?;
 
         Ok(pre_install.url)
@@ -531,8 +537,19 @@ impl Backend for VfoxBackend {
 
         let (mut vfox, _log_rx) = self.plugin.vfox()?;
         vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
+        let options = self
+            .tool_options_for_tv(&config, tv)
+            .await
+            .into_backend_options()
+            .into_map();
         let (url, att) = vfox
-            .pre_install_provenance_for_platform(&self.pathname, &tv.version, os, arch)
+            .pre_install_provenance_for_platform_with_options(
+                &self.pathname,
+                &tv.version,
+                os,
+                arch,
+                options,
+            )
             .await?;
 
         let provenance = att.map(verified_attestation_to_provenance);

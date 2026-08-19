@@ -207,10 +207,15 @@ impl Plugin {
         Self::from_dir(&dir).unwrap()
     }
 
-    pub(crate) fn context(&self, version: Option<String>) -> Result<Context> {
+    pub(crate) fn context(
+        &self,
+        version: Option<String>,
+        options: indexmap::IndexMap<String, toml::Value>,
+    ) -> Result<Context> {
         let ctx = Context {
             args: vec![],
             version,
+            options,
             // version: "1.0.0".to_string(),
             // runtime_version: "xxx".to_string(),
         };
