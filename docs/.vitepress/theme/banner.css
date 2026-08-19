@@ -14,6 +14,7 @@
   font-size: 0.9rem;
   line-height: 1.4;
   text-align: center;
+  min-height: 2.75rem;
   /* arrives async (remote fetch) — fade in instead of popping */
   animation: jdx-banner-in 0.25s ease;
 }
@@ -48,7 +49,11 @@
   font-size: 1.25rem;
   cursor: pointer;
   line-height: 1;
-  padding: 0 0.5rem;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
   opacity: 0.85;
 }
 .jdx-banner button:hover {
@@ -64,8 +69,12 @@
     text-wrap: balance;
   }
   .jdx-banner button {
-    top: 0.25rem;
-    right: 0.25rem;
-    transform: none;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
   }
+}
+
+body:has(.DocSearch-Container) > .jdx-banner {
+  visibility: hidden;
 }
