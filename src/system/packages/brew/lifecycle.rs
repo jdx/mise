@@ -1,13 +1,19 @@
 //! Persistent formula state and typed post-install operations.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File, OpenOptions};
+#[cfg(not(unix))]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
+#[cfg(unix)]
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use eyre::{WrapErr, bail, eyre};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(unix)]
+use sha2::{Digest, Sha256};
 
 use super::api::Formula;
 use super::prefix;
@@ -16,6 +22,14 @@ use crate::result::Result;
 use crate::sandbox::SandboxConfig;
 
 const MAX_FAILURE_LOG_BYTES: usize = 32 * 1024;
+// Audited Homebrew ca-certificates 2026-08-13 recipe/helper. Any recipe or
+// helper update must be re-audited and these pins updated; drift fails closed.
+#[cfg(target_os = "macos")]
+const AUDITED_CA_CERTIFICATES_FORMULA_SHA256: &str =
+    "69dcb65421d8cae528a62542ea4870af0b1be5f90d98389a6e3cb5278d4d8af3";
+#[cfg(target_os = "macos")]
+const AUDITED_CA_CERTIFICATES_HELPER_SHA256: &str =
+    "0d382c7231f5f0378947729c5815f7fb8f6c12c16396172513109b13bd59b900";
 
 #[derive(Debug, Serialize)]
 pub(super) struct PreparedFormulaLifecycle {
@@ -66,7 +80,10 @@ enum PreparedStep {
         non_recursive: bool,
         guards: Vec<PreparedGuard>,
     },
+    #[cfg(not(target_os = "macos"))]
     Run(PreparedRun),
+    #[cfg(target_os = "macos")]
+    AuditedCaCertificates(PreparedRun),
 }
 
 #[derive(Debug, Serialize)]
@@ -224,6 +241,8 @@ struct LifecycleState {
     #[serde(default)]
     required_paths: Vec<PathBuf>,
     #[serde(default)]
+    run_files: Vec<LifecycleRunFile>,
+    #[serde(default)]
     absent_patterns: Vec<String>,
     #[serde(default)]
     permissions: Vec<LifecyclePermission>,
@@ -285,6 +304,17 @@ struct LifecycleSharedState {
     target: PathBuf,
     #[serde(default)]
     kind: LifecycleSharedStateKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleRunFile {
+    path: PathBuf,
+    sha256: String,
+    #[serde(default)]
+    metadata_sha256: Option<String>,
+    device: u64,
+    inode: u64,
+    mode: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -563,6 +593,15 @@ fn prepare_run(formula: &Formula, keg: &Path, index: usize, raw: RawRun) -> Resu
         .as_ref()
         .map(|path| resolve_read_path(formula, keg, path))
         .transpose()?;
+    if cwd
+        .as_ref()
+        .is_some_and(|path| !path_is_within_keg(keg, path))
+    {
+        bail!(
+            "brew:{} post-install step {index} working directory must remain inside its keg; no package state was changed",
+            formula.name
+        )
+    }
     let mut env = BTreeMap::new();
     for (key, value) in raw.env {
         if key.is_empty()
@@ -582,13 +621,22 @@ fn prepare_run(formula: &Formula, keg: &Path, index: usize, raw: RawRun) -> Resu
         .as_ref()
         .map(|path| resolve_read_path(formula, keg, path))
         .transpose()?;
+    if stdin_path
+        .as_ref()
+        .is_some_and(|path| !path_is_within_keg(keg, path))
+    {
+        bail!(
+            "brew:{} post-install step {index} stdin must remain inside its keg; no package state was changed",
+            formula.name
+        )
+    }
     let stdout_path = raw
         .stdout_path
         .as_ref()
         .map(|path| resolve_write_path(formula, keg, path))
         .transpose()?;
     let identity = crate::hash::hash_to_str(&(prefix::prefix(), &formula.name, keg));
-    Ok(PreparedStep::Run(PreparedRun {
+    let run = PreparedRun {
         step_index: index,
         executable,
         args,
@@ -601,7 +649,58 @@ fn prepare_run(formula: &Formula, keg: &Path, index: usize, raw: RawRun) -> Resu
             .join("brew-formula-lifecycle")
             .join("logs")
             .join(identity),
-    }))
+    };
+    #[cfg(target_os = "macos")]
+    {
+        let audited_ca_shape = formula.name == "ca-certificates"
+            && run.executable == keg.join("libexec/post-install")
+            && run.args
+                == [
+                    keg.join("share/ca-certificates/cacert.pem")
+                        .to_string_lossy()
+                        .into_owned(),
+                    prefix::prefix()
+                        .join("etc/ca-certificates/cert.pem")
+                        .to_string_lossy()
+                        .into_owned(),
+                ]
+            && run.cwd.is_none()
+            && run.env.is_empty()
+            && run.stdin_path.is_none()
+            && run.stdout_path.is_none()
+            && run.guards.is_empty();
+        if audited_ca_shape {
+            if formula
+                .ruby_source_checksum
+                .as_ref()
+                .and_then(|checksum| checksum.sha256.as_deref())
+                != Some(AUDITED_CA_CERTIFICATES_FORMULA_SHA256)
+            {
+                bail!(
+                    "brew:ca-certificates formula snapshot is not the audited macOS lifecycle recipe; no package state was changed"
+                )
+            }
+            return Ok(PreparedStep::AuditedCaCertificates(run));
+        }
+        bail!(
+            "brew:{} post-install step {index} requires generic macOS process containment that is unavailable; no package state was changed",
+            formula.name
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if !run
+            .guards
+            .iter()
+            .any(|guard| matches!(guard, PreparedGuard::Platform(false)))
+        {
+            crate::sandbox::ensure_strict_formula_execution_available(&format!(
+                "brew:{} post-install step {index}",
+                formula.name
+            ))?;
+        }
+        Ok(PreparedStep::Run(run))
+    }
 }
 
 fn ensure_step_kind(actual: &str, expected: &str) -> Result<()> {
@@ -1168,11 +1267,29 @@ pub(super) fn health(keg: &Path, mise_owned: bool) -> LifecycleHealth {
             },
         }
     }
+    for file in &state.run_files {
+        match lifecycle_run_file_matches(file) {
+            Ok(true) => {}
+            Ok(false) => {
+                reinstall.insert(format!(
+                    "post-install regular-file identity or contents changed: {}",
+                    file.path.display()
+                ));
+            }
+            Err(error) => {
+                reinstall.insert(format!(
+                    "post-install regular-file output is unreadable at {}: {error}",
+                    file.path.display()
+                ));
+            }
+        }
+    }
     for required in &state.required_paths {
         if state
             .shared_state
             .iter()
             .any(|mapping| mapping.target == *required)
+            || state.run_files.iter().any(|file| file.path == *required)
         {
             continue;
         }
@@ -1309,6 +1426,49 @@ fn native_health(shared_missing: Vec<(PathBuf, PathBuf)>) -> LifecycleHealth {
     }
 }
 
+fn lifecycle_run_file_matches(expected: &LifecycleRunFile) -> Result<bool> {
+    #[cfg(unix)]
+    {
+        let Some(parent_path) = expected.path.parent() else {
+            return Ok(false);
+        };
+        let Some(name) = expected.path.file_name() else {
+            return Ok(false);
+        };
+        let parent = BoundRunSharedParent::open_existing(parent_path)?;
+        let Some(current) = open_bound_run_file(&parent, name)? else {
+            return Ok(false);
+        };
+        Ok(run_file_device(current.device)? == expected.device
+            && current.inode == expected.inode
+            && u32::from(current.mode) == expected.mode
+            && current.sha256 == expected.sha256
+            && expected
+                .metadata_sha256
+                .as_ref()
+                .is_none_or(|digest| current.metadata_sha256 == *digest))
+    }
+    #[cfg(not(unix))]
+    {
+        let Some(metadata) = symlink_metadata_if_exists(&expected.path)? else {
+            return Ok(false);
+        };
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Ok(false);
+        }
+        let (device, inode) = permission_device_inode(&metadata)?;
+        Ok(device == expected.device
+            && inode == expected.inode
+            && regular_file_mode(&metadata) == expected.mode
+            && crate::hash::file_hash_sha256(&expected.path, None)? == expected.sha256)
+    }
+}
+
+#[cfg(not(unix))]
+fn regular_file_mode(_metadata: &fs::Metadata) -> u32 {
+    0
+}
+
 fn shared_authorities(keg: &Path) -> Result<Vec<(PathBuf, LifecycleSharedStateKind)>> {
     let mut sources = vec![];
     for root in ["etc", "var"] {
@@ -1413,6 +1573,23 @@ fn validate_shared_state(keg: &Path, state: &LifecycleState) -> Result<()> {
     if recorded_sources != current_sources {
         bail!("recorded shared-state sources do not match current keg")
     }
+    let mut run_paths = BTreeSet::new();
+    for file in &state.run_files {
+        ensure_runtime_write_path(&file.path, true)?;
+        if !state.required_paths.contains(&file.path)
+            || state
+                .shared_state
+                .iter()
+                .any(|mapping| mapping.target == file.path)
+            || state.symlinks.iter().any(|link| link.target == file.path)
+            || !run_paths.insert(file.path.clone())
+        {
+            bail!(
+                "invalid or duplicate typed post-install regular-file effect: {}",
+                file.path.display()
+            )
+        }
+    }
     Ok(())
 }
 
@@ -1454,6 +1631,7 @@ pub(super) async fn install(
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -1462,6 +1640,7 @@ pub(super) async fn install(
     let mut shared_state = vec![];
     let mut symlinks = vec![];
     let mut required_paths = vec![];
+    let mut run_files = vec![];
     let mut absent_patterns = vec![];
     let mut permissions = vec![];
     let result: Result<()> = async {
@@ -1485,6 +1664,7 @@ pub(super) async fn install(
                 shared_state: shared_state.clone(),
                 symlinks: vec![],
                 required_paths: required_paths.clone(),
+                run_files: vec![],
                 absent_patterns: vec![],
                 permissions: vec![],
                 repair: None,
@@ -1495,6 +1675,7 @@ pub(super) async fn install(
             merge_step_effects(
                 &mut symlinks,
                 &mut required_paths,
+                &mut run_files,
                 &mut absent_patterns,
                 &mut permissions,
                 effects,
@@ -1524,6 +1705,7 @@ pub(super) async fn install(
                 shared_state,
                 symlinks,
                 required_paths,
+                run_files,
                 absent_patterns,
                 permissions,
                 repair: None,
@@ -2601,6 +2783,7 @@ fn files_equal(left: &Path, right: &Path) -> Result<bool> {
 struct StepEffects {
     symlinks: Vec<LifecycleSymlink>,
     required_paths: Vec<PathBuf>,
+    run_files: Vec<LifecycleRunFile>,
     absent_patterns: Vec<String>,
     permissions: Vec<LifecyclePermission>,
     removed_paths: Vec<(PathBuf, bool)>,
@@ -2615,6 +2798,7 @@ struct StepEffects {
 fn merge_step_effects(
     symlinks: &mut Vec<LifecycleSymlink>,
     required_paths: &mut Vec<PathBuf>,
+    run_files: &mut Vec<LifecycleRunFile>,
     absent_patterns: &mut Vec<String>,
     permissions: &mut Vec<LifecyclePermission>,
     effects: StepEffects,
@@ -2623,6 +2807,7 @@ fn merge_step_effects(
         let removes = |path: &Path| path == removed || (*recursive && path.starts_with(removed));
         symlinks.retain(|link| !removes(&link.target));
         required_paths.retain(|path| !removes(path));
+        run_files.retain(|file| !removes(&file.path));
         permissions.retain(|permission| !removes(&permission.path));
     }
     absent_patterns.extend(effects.absent_patterns);
@@ -2636,6 +2821,16 @@ fn merge_step_effects(
     }
     symlinks.extend(effects.symlinks);
     required_paths.extend(effects.required_paths);
+    for file in effects.run_files {
+        if let Some(existing) = run_files
+            .iter_mut()
+            .find(|existing| existing.path == file.path)
+        {
+            *existing = file;
+        } else {
+            run_files.push(file);
+        }
+    }
     for permission in effects.permissions {
         if let Some(existing) = permissions.iter_mut().find(|existing| {
             existing.path == permission.path && existing.permission == permission.permission
@@ -2666,7 +2861,10 @@ async fn execute_step(
         | PreparedStep::Copy { guards, .. }
         | PreparedStep::Symlink { guards, .. }
         | PreparedStep::SetPermissions { guards, .. } => guards,
+        #[cfg(not(target_os = "macos"))]
         PreparedStep::Run(run) => &run.guards,
+        #[cfg(target_os = "macos")]
+        PreparedStep::AuditedCaCertificates(run) => &run.guards,
     };
     if !guards_match(guards)? {
         return Ok(StepEffects::default());
@@ -2818,7 +3016,19 @@ async fn execute_step(
                 ..Default::default()
             })
         }
-        PreparedStep::Run(run) => execute_run(prepared, run).await,
+        #[cfg(not(target_os = "macos"))]
+        PreparedStep::Run(run) => execute_run(prepared, run, None).await,
+        #[cfg(target_os = "macos")]
+        PreparedStep::AuditedCaCertificates(run) => {
+            if prepared.formula_snapshot_sha256.as_deref()
+                != Some(AUDITED_CA_CERTIFICATES_FORMULA_SHA256)
+            {
+                bail!(
+                    "brew:ca-certificates formula snapshot is not the audited macOS lifecycle recipe"
+                )
+            }
+            execute_run(prepared, run, Some(AUDITED_CA_CERTIFICATES_HELPER_SHA256)).await
+        }
     }
 }
 
@@ -2979,8 +3189,32 @@ fn paths_exist(paths: &[PathBuf]) -> Result<bool> {
 async fn execute_run(
     prepared: &PreparedFormulaLifecycle,
     run: &PreparedRun,
+    audited_executable_sha256: Option<&str>,
 ) -> Result<StepEffects> {
-    let temp = crate::dirs::CACHE
+    #[cfg(unix)]
+    let audited_executable = if let Some(expected_sha256) = audited_executable_sha256 {
+        let parent_path = run
+            .executable
+            .parent()
+            .ok_or_else(|| eyre!("audited post-install helper has no parent"))?;
+        let parent = BoundRunSharedParent::open_existing(parent_path)?;
+        let name = run
+            .executable
+            .file_name()
+            .ok_or_else(|| eyre!("audited post-install helper has no filename"))?
+            .to_os_string();
+        let identity = open_bound_run_file(&parent, &name)?
+            .ok_or_else(|| eyre!("audited post-install helper is missing"))?;
+        if identity.sha256 != expected_sha256 {
+            bail!("audited post-install helper contents changed; no package state was changed")
+        }
+        Some((parent, name, identity))
+    } else {
+        None
+    };
+    #[cfg(not(unix))]
+    let _ = audited_executable_sha256;
+    let temp_base = crate::dirs::CACHE
         .join("system-brew")
         .join("post-install")
         .join(crate::hash::hash_to_str(&(
@@ -2988,51 +3222,153 @@ async fn execute_run(
             &prepared.keg,
             run.step_index,
         )));
-    crate::file::create_dir_all(&temp)?;
-    crate::file::create_dir_all(&run.log_dir)?;
-    let stdout_log = run.log_dir.join(format!("{}.stdout.log", run.step_index));
-    let stderr_log = run.log_dir.join(format!("{}.stderr.log", run.step_index));
-
-    let (stdout, stdout_publish) = match &run.stdout_path {
-        Some(path) => {
-            ensure_runtime_write_path(path, false)?;
-            prepare_run_stdout(prepared, path)?
+    let temp_guard = BoundRunPrivateTree::create(&temp_base, "run-")?;
+    let temp = temp_guard.path().to_path_buf();
+    #[cfg(unix)]
+    let (execution_executable, audited_copy) = if let Some((_, _, identity)) = &audited_executable {
+        let name = std::ffi::OsString::from("audited-post-install");
+        let mut copy = create_bound_run_file(&temp_guard.parent, &name)?;
+        copy_open_file_to(&identity.file, &mut copy)?;
+        copy_run_file_metadata(&identity.file, &copy)?;
+        copy.sync_all()?;
+        temp_guard.parent.sync()?;
+        let copy = open_bound_run_file(&temp_guard.parent, &name)?
+            .ok_or_else(|| eyre!("private audited post-install helper copy is missing"))?;
+        if copy.sha256 != identity.sha256 {
+            bail!("private audited post-install helper copy changed")
         }
-        None => (open_truncated(&stdout_log)?, None),
+        (temp.join(&name), Some((name, copy)))
+    } else {
+        (run.executable.clone(), None)
     };
-    let stderr = open_truncated(&stderr_log)?;
+    #[cfg(not(unix))]
+    let execution_executable = run.executable.clone();
+    #[cfg(unix)]
+    let audited_input = if audited_executable.is_some() {
+        let path = run
+            .args
+            .first()
+            .ok_or_else(|| eyre!("audited post-install helper has no source input"))?;
+        Some(open_run_stdin(&prepared.keg, Path::new(path))?)
+    } else {
+        None
+    };
+    #[cfg(unix)]
+    let audited_input_copy = if let Some((_, _, identity)) = &audited_input {
+        let name = std::ffi::OsString::from("audited-source-input");
+        let mut copy = create_bound_run_file(&temp_guard.parent, &name)?;
+        copy_open_file_to(&identity.file, &mut copy)?;
+        copy_run_file_metadata(&identity.file, &copy)?;
+        copy.sync_all()?;
+        temp_guard.parent.sync()?;
+        let copy = open_bound_run_file(&temp_guard.parent, &name)?
+            .ok_or_else(|| eyre!("private audited post-install source copy is missing"))?;
+        if copy.sha256 != identity.sha256 {
+            bail!("private audited post-install source copy changed")
+        }
+        Some((name, copy))
+    } else {
+        None
+    };
+    #[cfg(unix)]
+    let log_parent = BoundRunSharedParent::open_private_beneath(Path::new("/"), &run.log_dir)?;
+    #[cfg(unix)]
+    let (stdout_log_writer, _stdout_log_path) =
+        create_unique_run_log(&log_parent, &format!("{}-stdout-", run.step_index))?;
+    #[cfg(unix)]
+    let (stderr_log_writer, _stderr_log_path) =
+        create_unique_run_log(&log_parent, &format!("{}-stderr-", run.step_index))?;
+    #[cfg(not(unix))]
+    let (stdout_log_writer, _stdout_log_path) = {
+        crate::file::create_dir_all(&run.log_dir)?;
+        let path = run.log_dir.join(format!("{}.stdout.log", run.step_index));
+        (open_truncated(&path)?, path)
+    };
+    #[cfg(not(unix))]
+    let (stderr_log_writer, _stderr_log_path) = {
+        let path = run.log_dir.join(format!("{}.stderr.log", run.step_index));
+        (open_truncated(&path)?, path)
+    };
+    let mut stdout_log_reader = stdout_log_writer.try_clone()?;
+    let mut stderr_log_reader = stderr_log_writer.try_clone()?;
+
+    let shared_write_targets = run_shared_write_targets(run)?;
+    let mut shared_writes = prepare_run_shared_writes(
+        &prepared.keg,
+        &shared_write_targets,
+        run.stdout_path.as_deref(),
+        &temp,
+    )?;
+    let mut rewritten_args = shared_writes.rewrite_args(&run.args);
+    #[cfg(unix)]
+    if audited_input_copy.is_some() {
+        rewritten_args[0] = temp.join("audited-source-input").display().to_string();
+    }
+    let stdout = match &run.stdout_path {
+        Some(path) => shared_writes.open_stdout(path)?,
+        None => stdout_log_writer,
+    };
+    let stderr = stderr_log_writer;
+    #[cfg(unix)]
+    let bound_stdin = run
+        .stdin_path
+        .as_ref()
+        .map(|path| open_run_stdin(&prepared.keg, path))
+        .transpose()?;
+    #[cfg(unix)]
+    let stdin = match &bound_stdin {
+        Some((parent, name, identity)) => {
+            validate_bound_run_file_identity(parent, name, identity)?;
+            let mut child = open_bound_run_file(parent, name)?
+                .ok_or_else(|| eyre!("post-install stdin disappeared before execution"))?;
+            if (child.device, child.inode) != (identity.device, identity.inode)
+                || child.sha256 != identity.sha256
+                || child.metadata_sha256 != identity.metadata_sha256
+            {
+                bail!("post-install stdin changed before execution")
+            }
+            child.file.seek(std::io::SeekFrom::Start(0))?;
+            Stdio::from(child.file)
+        }
+        None => Stdio::null(),
+    };
+    #[cfg(not(unix))]
     let stdin = match &run.stdin_path {
         Some(path) => Stdio::from(File::open(path)?),
         None => Stdio::null(),
     };
 
-    let shared_write_targets = run_shared_write_targets(run)?;
-    // The sandbox grants only the exact declared output path. Creating a file
-    // still requires its parent directory to exist, so establish missing real
-    // directory components here without granting the child any parent or
-    // sibling authority. The guard removes only directories whose identity we
-    // created and which remain empty if setup or the command fails.
-    let shared_write_parents =
-        prepare_run_shared_write_parents(&prepared.keg, &shared_write_targets)?;
-    let env = run_environment(prepared, run, &temp)?;
-    let mut allow_write = vec![prepared.keg.clone(), run.log_dir.clone(), temp.clone()];
-    allow_write.extend(shared_write_targets.iter().cloned());
-    if let Some(publish) = &stdout_publish {
-        allow_write.push(publish.temporary.to_path_buf());
-    }
-    let mut sandbox = SandboxConfig {
-        deny_write: true,
-        deny_net: true,
-        deny_env: true,
-        allow_write,
-        deny_system_temp_write: true,
-        ..Default::default()
-    };
+    let env = run_environment(prepared, run, &temp, audited_executable_sha256.is_some())?;
+    let read_paths = vec![run.executable.clone()];
+    let mut sandbox = lifecycle_run_sandbox(
+        &prepared.keg,
+        &read_paths,
+        &_stdout_log_path,
+        &_stderr_log_path,
+        &temp,
+        None,
+        audited_executable_sha256.is_none(),
+    );
     sandbox.resolve_paths();
-    let mut command = CmdLineRunner::new(&run.executable)
-        .args(&run.args)
+    let cwd = run.cwd.as_deref().unwrap_or(&prepared.keg);
+    #[cfg(unix)]
+    let bound_cwd = BoundRunSharedParent::open_existing(cwd)?;
+    #[cfg(unix)]
+    let command =
+        CmdLineRunner::new(&execution_executable).current_dir_fd(nix::unistd::dup(bound_cwd.fd())?);
+    #[cfg(not(unix))]
+    let command = CmdLineRunner::new(&execution_executable).current_dir(cwd);
+    let mut command = command
+        .args(&rewritten_args)
+        .with_process_group_cleanup()
         .with_sandbox(sandbox);
-    shared_write_parents.validate()?;
+    shared_writes.validate()?;
+    #[cfg(unix)]
+    bound_cwd.validate()?;
+    #[cfg(unix)]
+    if let Some((parent, name, identity)) = &bound_stdin {
+        validate_bound_run_file_identity(parent, name, identity)?;
+    }
     command.apply_sandbox().await?;
     command = command
         .env_clear()
@@ -3040,17 +3376,13 @@ async fn execute_run(
         .stdin(stdin)
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
-    if let Some(cwd) = &run.cwd {
-        command = command.current_dir(cwd);
-    }
     if let Err(error) = command.execute_async().await {
-        let stdout = log_tail(
-            stdout_publish
-                .as_ref()
-                .map(|publish| publish.temporary.as_ref())
-                .unwrap_or(&stdout_log),
-        )?;
-        let stderr = log_tail(&stderr_log)?;
+        let stdout = if let Some(path) = &run.stdout_path {
+            shared_writes.stdout_tail(path)?
+        } else {
+            log_tail_file(&mut stdout_log_reader)?
+        };
+        let stderr = log_tail_file(&mut stderr_log_reader)?;
         return Err(error).wrap_err_with(|| {
             format!(
                 "brew:{} post-install run step {} failed\nstdout tail:\n{}\nstderr tail:\n{}",
@@ -3058,24 +3390,125 @@ async fn execute_run(
             )
         });
     }
-    shared_write_parents.validate()?;
-
-    if let Some(publish) = stdout_publish {
-        persist_staged_node(publish.temporary, &publish.destination, &publish.authority)?;
+    shared_writes.validate()?;
+    #[cfg(unix)]
+    bound_cwd
+        .validate()
+        .wrap_err("post-install working directory changed during execution")?;
+    #[cfg(unix)]
+    if let Some((parent, name, identity)) = &bound_stdin {
+        validate_bound_run_file_identity(parent, name, identity)
+            .wrap_err("post-install stdin changed during execution")?;
     }
-    let mut required_paths = vec![];
+    #[cfg(unix)]
+    if let Some((parent, name, identity)) = &audited_executable {
+        validate_bound_run_file_identity(parent, name, identity)
+            .wrap_err("audited post-install helper changed during execution")?;
+    }
+    #[cfg(unix)]
+    if let Some((name, identity)) = &audited_copy {
+        validate_bound_run_file_identity(&temp_guard.parent, name, identity)
+            .wrap_err("private audited post-install helper changed during execution")?;
+    }
+    #[cfg(unix)]
+    if let Some((parent, name, identity)) = &audited_input {
+        validate_bound_run_file_identity(parent, name, identity)
+            .wrap_err("audited post-install source input changed during execution")?;
+    }
+    #[cfg(unix)]
+    if let Some((name, identity)) = &audited_input_copy {
+        validate_bound_run_file_identity(&temp_guard.parent, name, identity)
+            .wrap_err("private audited post-install source copy changed during execution")?;
+    }
+
+    let published = shared_writes.publish()?;
+    let mut required_paths = published
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
     for path in shared_write_targets {
-        if symlink_metadata_if_exists(&path)?.is_some() {
+        if path_is_within_keg(&prepared.keg, &path) && symlink_metadata_if_exists(&path)?.is_some()
+        {
             required_paths.push(path);
         }
     }
-    if let Some(path) = &run.stdout_path {
-        required_paths.push(path.clone());
-    }
     Ok(StepEffects {
         required_paths,
+        run_files: published.files,
+        absent_patterns: published
+            .deleted
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
         ..Default::default()
     })
+}
+
+#[cfg(unix)]
+fn open_run_stdin(
+    keg: &Path,
+    path: &Path,
+) -> Result<(
+    BoundRunSharedParent,
+    std::ffi::OsString,
+    BoundRunFileIdentity,
+)> {
+    if !path_is_within_keg(keg, path) {
+        bail!("post-install stdin escapes its keg: {}", path.display())
+    }
+    let parent_path = path
+        .parent()
+        .ok_or_else(|| eyre!("post-install stdin has no parent"))?;
+    let parent = BoundRunSharedParent::open_existing(parent_path)?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| eyre!("post-install stdin has no filename"))?;
+    let identity = open_bound_run_file(&parent, name)?
+        .ok_or_else(|| eyre!("post-install stdin is missing: {}", path.display()))?;
+    Ok((parent, name.to_os_string(), identity))
+}
+
+fn lifecycle_run_sandbox(
+    keg: &Path,
+    read_paths: &[PathBuf],
+    stdout_log: &Path,
+    stderr_log: &Path,
+    temp: &Path,
+    stdout_temporary: Option<&Path>,
+    writable_keg: bool,
+) -> SandboxConfig {
+    let mut allow_read = vec![keg.to_path_buf()];
+    allow_read.extend(read_paths.iter().cloned());
+    let mut allow_write = vec![
+        stdout_log.to_path_buf(),
+        stderr_log.to_path_buf(),
+        temp.to_path_buf(),
+    ];
+    if writable_keg {
+        allow_write.push(keg.to_path_buf());
+    }
+    if let Some(stdout_temporary) = stdout_temporary {
+        allow_write.push(stdout_temporary.to_path_buf());
+    }
+    SandboxConfig {
+        deny_read: cfg!(target_os = "linux"),
+        deny_write: true,
+        deny_net: true,
+        deny_local_sockets: true,
+        deny_env: true,
+        allow_read,
+        allow_write,
+        deny_system_temp_write: true,
+        deny_mise_data_read: cfg!(target_os = "linux"),
+        require_full_filesystem_confinement: cfg!(target_os = "linux"),
+        system_access_profile: if cfg!(target_os = "linux") {
+            crate::sandbox::SystemAccessProfile::FormulaExecution
+        } else {
+            crate::sandbox::SystemAccessProfile::Compatibility
+        },
+        ..Default::default()
+    }
 }
 
 fn run_shared_write_targets(run: &PreparedRun) -> Result<BTreeSet<PathBuf>> {
@@ -3091,190 +3524,2306 @@ fn run_shared_write_targets(run: &PreparedRun) -> Result<BTreeSet<PathBuf>> {
     Ok(targets)
 }
 
+#[cfg(unix)]
 #[derive(Debug)]
-struct CreatedRunSharedDirectory {
+struct BoundRunDirectory {
     path: PathBuf,
-    device: u64,
-    inode: u64,
+    fd: std::os::fd::OwnedFd,
+    device: nix::libc::dev_t,
+    inode: nix::libc::ino_t,
+    created: bool,
+    name: Option<std::ffi::OsString>,
 }
 
+#[cfg(unix)]
 #[derive(Debug)]
-struct RunSharedWriteParents {
-    created: Vec<CreatedRunSharedDirectory>,
-    ancestries: Vec<DirectoryAncestry>,
+struct BoundRunSharedParent {
+    directories: Vec<BoundRunDirectory>,
 }
 
-impl RunSharedWriteParents {
-    fn validate(&self) -> Result<()> {
-        for ancestry in &self.ancestries {
-            validate_directory_ancestry(ancestry)
-                .wrap_err("post-install shared output parent changed after preflight")?;
-        }
-        Ok(())
+#[cfg(unix)]
+impl BoundRunSharedParent {
+    fn open(parent: &Path) -> Result<Self> {
+        Self::open_beneath(&prefix::prefix(), parent)
     }
-}
 
-impl Drop for RunSharedWriteParents {
-    fn drop(&mut self) {
-        for created in self.created.iter().rev() {
-            let Ok(Some(metadata)) = symlink_metadata_if_exists(&created.path) else {
-                continue;
-            };
-            let Ok((device, inode)) = permission_device_inode(&metadata) else {
-                continue;
-            };
-            if metadata.file_type().is_dir()
-                && !metadata.file_type().is_symlink()
-                && (device, inode) == (created.device, created.inode)
-            {
-                // Never recurse: a command output or concurrent foreign node
-                // makes the directory non-empty and therefore preserves it.
-                let _ = fs::remove_dir(&created.path);
-            }
-        }
+    fn open_existing(parent: &Path) -> Result<Self> {
+        Self::open_beneath_mode_inner(Path::new("/"), parent, nix::sys::stat::Mode::empty(), false)
     }
-}
 
-fn prepare_run_shared_write_parents(
-    keg: &Path,
-    targets: &BTreeSet<PathBuf>,
-) -> Result<RunSharedWriteParents> {
-    let shared = super::pour::lexical_normalize(&prefix::prefix());
-    let mut prepared = RunSharedWriteParents {
-        created: vec![],
-        ancestries: vec![],
-    };
-    for target in targets {
-        if path_is_within_keg(keg, target) {
-            continue;
-        }
-        let parent = target.parent().ok_or_else(|| {
-            eyre!(
-                "post-install shared output has no parent: {}",
-                target.display()
-            )
-        })?;
-        let relative = parent.strip_prefix(&shared).wrap_err_with(|| {
+    fn open_beneath(root: &Path, parent: &Path) -> Result<Self> {
+        Self::open_beneath_mode(
+            root,
+            parent,
+            nix::sys::stat::Mode::S_IRWXU
+                | nix::sys::stat::Mode::S_IRGRP
+                | nix::sys::stat::Mode::S_IXGRP
+                | nix::sys::stat::Mode::S_IROTH
+                | nix::sys::stat::Mode::S_IXOTH,
+        )
+    }
+
+    fn open_private_beneath(root: &Path, parent: &Path) -> Result<Self> {
+        Self::open_beneath_mode(root, parent, nix::sys::stat::Mode::S_IRWXU)
+    }
+
+    fn open_beneath_mode(
+        root: &Path,
+        parent: &Path,
+        create_mode: nix::sys::stat::Mode,
+    ) -> Result<Self> {
+        Self::open_beneath_mode_inner(root, parent, create_mode, true)
+    }
+
+    fn open_beneath_mode_inner(
+        root: &Path,
+        parent: &Path,
+        create_mode: nix::sys::stat::Mode,
+        allow_create: bool,
+    ) -> Result<Self> {
+        use nix::fcntl::{OFlag, open, openat};
+        use nix::sys::stat::{Mode, SFlag, fstat};
+
+        let shared = super::pour::lexical_normalize(root);
+        let parent = super::pour::lexical_normalize(parent);
+        parent.strip_prefix(&shared).wrap_err_with(|| {
             format!(
                 "post-install shared output parent escapes {}: {}",
                 shared.display(),
                 parent.display()
             )
         })?;
-        let mut current = shared.clone();
-        for component in relative.components() {
-            current.push(component.as_os_str());
-            match symlink_metadata_if_exists(&current)? {
-                Some(metadata)
-                    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {}
-                Some(_) => bail!(
-                    "post-install shared output parent is not a real directory: {}",
-                    current.display()
-                ),
-                None => {
-                    fs::create_dir(&current).wrap_err_with(|| {
+        let shared_components = shared
+            .strip_prefix(Path::new("/"))
+            .wrap_err("post-install shared prefix is not absolute")?
+            .components()
+            .count();
+        let components = parent
+            .strip_prefix(Path::new("/"))
+            .wrap_err("post-install shared output parent is not absolute")?
+            .components()
+            .map(|component| match component {
+                std::path::Component::Normal(name) => Ok(name.to_os_string()),
+                _ => bail!("post-install shared output parent has an invalid component"),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+        let root_fd = open(Path::new("/"), flags, Mode::empty())?;
+        let root_stat = fstat(&root_fd)?;
+        if !SFlag::from_bits_truncate(root_stat.st_mode).contains(SFlag::S_IFDIR) {
+            bail!("filesystem root is not a real directory")
+        }
+        let mut bound = Self {
+            directories: vec![BoundRunDirectory {
+                path: PathBuf::from("/"),
+                fd: root_fd,
+                device: root_stat.st_dev,
+                inode: root_stat.st_ino,
+                created: false,
+                name: None,
+            }],
+        };
+        let mut current = PathBuf::from("/");
+        for (index, name) in components.iter().enumerate() {
+            current.push(name);
+            let parent_fd = &bound.directories.last().unwrap().fd;
+            let create_missing = allow_create && index >= shared_components;
+            let (fd, created) = match openat(parent_fd, name.as_os_str(), flags, Mode::empty()) {
+                Ok(fd) => (fd, false),
+                Err(nix::errno::Errno::ENOENT) if create_missing => {
+                    let created =
+                        match nix::sys::stat::mkdirat(parent_fd, name.as_os_str(), create_mode) {
+                            Ok(()) => true,
+                            Err(nix::errno::Errno::EEXIST) => false,
+                            Err(error) => {
+                                return Err(error).wrap_err_with(|| {
+                                    format!(
+                                        "could not create post-install shared output parent: {}",
+                                        current.display()
+                                    )
+                                });
+                            }
+                        };
+                    let fd = openat(parent_fd, name.as_os_str(), flags, Mode::empty())
+                        .wrap_err_with(|| {
+                            format!(
+                                "could not bind post-install shared output parent: {}",
+                                current.display()
+                            )
+                        })?;
+                    (fd, created)
+                }
+                Err(error) => {
+                    return Err(error).wrap_err_with(|| {
                         format!(
-                            "could not create post-install shared output parent: {}",
-                            current.display()
-                        )
-                    })?;
-                    let metadata = current.symlink_metadata()?;
-                    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
-                        bail!(
                             "post-install shared output parent is not a real directory: {}",
                             current.display()
                         )
-                    }
-                    let (device, inode) = permission_device_inode(&metadata)?;
-                    prepared.created.push(CreatedRunSharedDirectory {
-                        path: current.clone(),
-                        device,
-                        inode,
                     });
+                }
+            };
+            let stat = fstat(&fd)?;
+            if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR) {
+                bail!(
+                    "post-install shared output parent is not a real directory: {}",
+                    current.display()
+                )
+            }
+            bound.directories.push(BoundRunDirectory {
+                path: current.clone(),
+                fd,
+                device: stat.st_dev,
+                inode: stat.st_ino,
+                created,
+                name: Some(name.clone()),
+            });
+        }
+        bound.validate()?;
+        Ok(bound)
+    }
+
+    fn fd(&self) -> &std::os::fd::OwnedFd {
+        &self.directories.last().unwrap().fd
+    }
+
+    fn final_was_created(&self) -> bool {
+        self.directories
+            .last()
+            .is_some_and(|directory| directory.created)
+    }
+
+    fn path(&self) -> &Path {
+        &self.directories.last().unwrap().path
+    }
+
+    fn cleanup_created_tree(&mut self) -> Result<()> {
+        let index = self.directories.len() - 1;
+        if !self.directories[index].created {
+            bail!("post-install private tree was not created by this transaction")
+        }
+        self.validate()?;
+        remove_run_tree_contents(&self.directories[index].fd)?;
+        self.sync()?;
+        let parent = &self.directories[index - 1];
+        let name = self.directories[index]
+            .name
+            .as_deref()
+            .ok_or_else(|| eyre!("post-install private tree has no bound name"))?;
+        nix::unistd::unlinkat(&parent.fd, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
+        nix::unistd::fsync(&parent.fd)?;
+        self.directories[index].created = false;
+        Ok(())
+    }
+
+    fn sync(&self) -> Result<()> {
+        nix::unistd::fsync(self.fd())?;
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<()> {
+        use nix::sys::stat::{SFlag, fstat};
+
+        for directory in &self.directories {
+            let stat = fstat(&directory.fd)?;
+            if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR)
+                || (stat.st_dev, stat.st_ino) != (directory.device, directory.inode)
+            {
+                bail!(
+                    "post-install shared output parent descriptor changed: {}",
+                    directory.path.display()
+                )
+            }
+            let metadata = directory.path.symlink_metadata().wrap_err_with(|| {
+                format!(
+                    "post-install shared output parent changed after preflight: {}",
+                    directory.path.display()
+                )
+            })?;
+            let (device, inode) = permission_device_inode(&metadata)?;
+            if !metadata.file_type().is_dir()
+                || metadata.file_type().is_symlink()
+                || u64::try_from(directory.device).ok() != Some(device)
+                || directory.inode != inode
+            {
+                bail!(
+                    "post-install shared output parent changed after preflight: {}",
+                    directory.path.display()
+                )
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn remove_run_tree_contents<Fd: std::os::fd::AsFd>(directory: Fd) -> Result<()> {
+    let mount = run_directory_mount_identity(&directory)?;
+    remove_run_tree_contents_on_mount(directory, mount)
+}
+
+#[cfg(target_os = "linux")]
+fn run_directory_mount_identity<Fd: std::os::fd::AsFd>(directory: &Fd) -> Result<u64> {
+    use std::os::fd::AsRawFd;
+
+    let mut statx = std::mem::MaybeUninit::<nix::libc::statx>::zeroed();
+    let result = unsafe {
+        nix::libc::statx(
+            directory.as_fd().as_raw_fd(),
+            c"".as_ptr(),
+            nix::libc::AT_EMPTY_PATH | nix::libc::AT_SYMLINK_NOFOLLOW,
+            nix::libc::STATX_MNT_ID,
+            statx.as_mut_ptr(),
+        )
+    };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let statx = unsafe { statx.assume_init() };
+    if statx.stx_mask & nix::libc::STATX_MNT_ID == 0 {
+        bail!("post-install private tree mount identity is unavailable")
+    }
+    Ok(statx.stx_mnt_id)
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn run_directory_mount_identity<Fd: std::os::fd::AsFd>(directory: &Fd) -> Result<u64> {
+    Ok(u64::try_from(nix::sys::stat::fstat(directory)?.st_dev)?)
+}
+
+#[cfg(unix)]
+fn remove_run_tree_contents_on_mount<Fd: std::os::fd::AsFd>(
+    directory: Fd,
+    expected_mount: u64,
+) -> Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let fd = nix::fcntl::openat(
+        &directory,
+        ".",
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW
+            | nix::fcntl::OFlag::O_CLOEXEC,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let mut entries = nix::dir::Dir::from_fd(fd)?;
+    if run_directory_mount_identity(&entries)? != expected_mount {
+        bail!("post-install private tree crossed an unexpected mount boundary")
+    }
+    let names = entries
+        .iter()
+        .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for name in names {
+        if name.as_bytes() == b"." || name.as_bytes() == b".." {
+            continue;
+        }
+        let stat = nix::sys::stat::fstatat(
+            &entries,
+            std::ffi::OsStr::from_bytes(name.to_bytes()),
+            nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+        )?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+        if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+            let child = nix::fcntl::openat(
+                &entries,
+                std::ffi::OsStr::from_bytes(name.to_bytes()),
+                nix::fcntl::OFlag::O_RDONLY
+                    | nix::fcntl::OFlag::O_DIRECTORY
+                    | nix::fcntl::OFlag::O_NOFOLLOW
+                    | nix::fcntl::OFlag::O_CLOEXEC,
+                nix::sys::stat::Mode::empty(),
+            )?;
+            if run_directory_mount_identity(&child)? != expected_mount {
+                bail!(
+                    "post-install private tree contains an unexpected mounted directory: {}",
+                    Path::new(std::ffi::OsStr::from_bytes(name.to_bytes())).display()
+                )
+            }
+            remove_run_tree_contents_on_mount(&child, expected_mount)?;
+            nix::unistd::fsync(&child)?;
+            nix::unistd::unlinkat(
+                &entries,
+                std::ffi::OsStr::from_bytes(name.to_bytes()),
+                nix::unistd::UnlinkatFlags::RemoveDir,
+            )?;
+        } else {
+            nix::unistd::unlinkat(
+                &entries,
+                std::ffi::OsStr::from_bytes(name.to_bytes()),
+                nix::unistd::UnlinkatFlags::NoRemoveDir,
+            )?;
+        }
+    }
+    nix::unistd::fsync(&entries)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct BoundRunPrivateTree {
+    parent: BoundRunSharedParent,
+}
+
+#[cfg(unix)]
+impl BoundRunPrivateTree {
+    fn create(base: &Path, prefix: &str) -> Result<Self> {
+        let base = BoundRunSharedParent::open_private_beneath(Path::new("/"), base)?;
+        loop {
+            let path = base
+                .path()
+                .join(format!("{prefix}{}", crate::rand::random_string(16)));
+            let parent = BoundRunSharedParent::open_private_beneath(base.path(), &path)?;
+            if parent.final_was_created() {
+                return Ok(Self { parent });
+            }
+        }
+    }
+
+    fn path(&self) -> &Path {
+        self.parent.path()
+    }
+}
+
+#[cfg(unix)]
+impl Drop for BoundRunPrivateTree {
+    fn drop(&mut self) {
+        let _ = self.parent.cleanup_created_tree();
+    }
+}
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct BoundRunPrivateTree(tempfile::TempDir);
+
+#[cfg(not(unix))]
+impl BoundRunPrivateTree {
+    fn create(base: &Path, prefix: &str) -> Result<Self> {
+        crate::file::create_dir_all(base)?;
+        Ok(Self(
+            tempfile::Builder::new().prefix(prefix).tempdir_in(base)?,
+        ))
+    }
+
+    fn path(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+#[cfg(unix)]
+impl Drop for BoundRunSharedParent {
+    fn drop(&mut self) {
+        use nix::sys::stat::{SFlag, fstat, fstatat};
+        use nix::unistd::{UnlinkatFlags, unlinkat};
+
+        for index in (1..self.directories.len()).rev() {
+            let child = &self.directories[index];
+            if !child.created {
+                continue;
+            }
+            let parent = &self.directories[index - 1];
+            let Some(name) = child.name.as_deref() else {
+                continue;
+            };
+            let Ok(fd_stat) = fstat(&child.fd) else {
+                continue;
+            };
+            let Ok(path_stat) = fstatat(&parent.fd, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)
+            else {
+                continue;
+            };
+            if SFlag::from_bits_truncate(fd_stat.st_mode).contains(SFlag::S_IFDIR)
+                && SFlag::from_bits_truncate(path_stat.st_mode).contains(SFlag::S_IFDIR)
+                && (fd_stat.st_dev, fd_stat.st_ino) == (child.device, child.inode)
+                && (path_stat.st_dev, path_stat.st_ino) == (child.device, child.inode)
+            {
+                // Never recurse. A published output or concurrent foreign node
+                // keeps the directory non-empty and therefore preserves it.
+                let _ = unlinkat(&parent.fd, name, UnlinkatFlags::RemoveDir);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct BoundRunFileIdentity {
+    file: File,
+    sha256: String,
+    metadata_sha256: String,
+    device: nix::libc::dev_t,
+    inode: nix::libc::ino_t,
+    mode: nix::libc::mode_t,
+    uid: nix::libc::uid_t,
+    gid: nix::libc::gid_t,
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+enum BoundRunLeafAuthority {
+    Missing,
+    Existing(BoundRunFileIdentity),
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct RunSharedOutput {
+    destination: PathBuf,
+    staging: PathBuf,
+    parent: BoundRunSharedParent,
+    name: std::ffi::OsString,
+    staging_parent: BoundRunSharedParent,
+    staging_name: std::ffi::OsString,
+    rollback_parent: BoundRunSharedParent,
+    authority: BoundRunLeafAuthority,
+    stdout: bool,
+}
+
+#[cfg(unix)]
+impl RunSharedOutput {
+    fn prepare(
+        destination: &Path,
+        staging: PathBuf,
+        staging_root: &Path,
+        stdout: bool,
+        allow_existing_stdout: bool,
+    ) -> Result<Self> {
+        use nix::fcntl::{OFlag, openat};
+        use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+
+        let parent_path = destination.parent().ok_or_else(|| {
+            eyre!(
+                "post-install shared output has no parent: {}",
+                destination.display()
+            )
+        })?;
+        let parent = BoundRunSharedParent::open(parent_path)?;
+        let name = destination
+            .file_name()
+            .ok_or_else(|| eyre!("post-install shared output has no filename"))?
+            .to_os_string();
+        let staging_parent_path = staging
+            .parent()
+            .ok_or_else(|| eyre!("post-install shared staging output has no parent"))?;
+        let staging_parent = BoundRunSharedParent::open_beneath(staging_root, staging_parent_path)?;
+        let staging_name = staging
+            .file_name()
+            .ok_or_else(|| eyre!("post-install shared staging output has no filename"))?
+            .to_os_string();
+        let rollback_parent = loop {
+            let path = parent_path.join(format!(
+                ".mise-lifecycle-rollback-{}",
+                crate::rand::random_string(16)
+            ));
+            let candidate = BoundRunSharedParent::open_private_beneath(parent_path, &path)?;
+            if candidate.final_was_created() {
+                break candidate;
+            }
+        };
+        let authority = match fstatat(
+            parent.fd(),
+            name.as_os_str(),
+            nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+        ) {
+            Err(nix::errno::Errno::ENOENT) => BoundRunLeafAuthority::Missing,
+            Err(error) => return Err(error.into()),
+            Ok(stat) => {
+                if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG) {
+                    bail!(
+                        "post-install shared output is not an exact regular file: {}",
+                        destination.display()
+                    )
+                }
+                if stdout && !allow_existing_stdout {
+                    bail!(
+                        "post-install stdout target has unproven ownership: {}",
+                        destination.display()
+                    )
+                }
+                let fd = openat(
+                    parent.fd(),
+                    name.as_os_str(),
+                    OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                    Mode::empty(),
+                )?;
+                let opened = fstat(&fd)?;
+                if !SFlag::from_bits_truncate(opened.st_mode).contains(SFlag::S_IFREG)
+                    || (opened.st_dev, opened.st_ino) != (stat.st_dev, stat.st_ino)
+                {
+                    bail!(
+                        "post-install shared output changed while binding: {}",
+                        destination.display()
+                    )
+                }
+                let file = File::from(fd);
+                let sha256 = open_file_sha256(&file)?;
+                BoundRunLeafAuthority::Existing(BoundRunFileIdentity {
+                    metadata_sha256: run_file_metadata_sha256(&file)?,
+                    file,
+                    sha256,
+                    device: stat.st_dev,
+                    inode: stat.st_ino,
+                    mode: stat.st_mode as nix::libc::mode_t & 0o7777,
+                    uid: stat.st_uid,
+                    gid: stat.st_gid,
+                })
+            }
+        };
+        if !stdout && let BoundRunLeafAuthority::Existing(identity) = &authority {
+            let mut staged = create_bound_run_file(&staging_parent, &staging_name)?;
+            copy_open_file_to(&identity.file, &mut staged)?;
+            copy_run_file_metadata(&identity.file, &staged)?;
+            staged.sync_all()?;
+        }
+        Ok(Self {
+            destination: destination.to_path_buf(),
+            staging,
+            parent,
+            name,
+            staging_parent,
+            staging_name,
+            rollback_parent,
+            authority,
+            stdout,
+        })
+    }
+
+    fn validate(&self) -> Result<()> {
+        self.parent.validate()?;
+        self.staging_parent.validate()?;
+        self.rollback_parent.validate()?;
+        validate_bound_run_leaf(self.parent.fd(), &self.name, &self.authority).wrap_err_with(|| {
+            format!(
+                "post-install shared output changed after preflight: {}",
+                self.destination.display()
+            )
+        })
+    }
+
+    fn open_stdout(&self) -> Result<File> {
+        create_bound_run_file(&self.staging_parent, &self.staging_name)
+    }
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct RunSharedWrites {
+    outputs: Vec<RunSharedOutput>,
+    _staging: tempfile::TempDir,
+}
+
+#[cfg(unix)]
+impl RunSharedWrites {
+    fn validate(&self) -> Result<()> {
+        for output in &self.outputs {
+            output.validate()?;
+        }
+        Ok(())
+    }
+
+    fn rewrite_args(&self, args: &[String]) -> Vec<String> {
+        args.iter()
+            .map(|argument| {
+                let path = super::pour::lexical_normalize(Path::new(argument));
+                self.outputs
+                    .iter()
+                    .find(|output| !output.stdout && output.destination == path)
+                    .map_or_else(
+                        || argument.clone(),
+                        |output| output.staging.display().to_string(),
+                    )
+            })
+            .collect()
+    }
+
+    fn open_stdout(&self, destination: &Path) -> Result<File> {
+        let output = self
+            .outputs
+            .iter()
+            .find(|output| output.stdout && output.destination == destination)
+            .ok_or_else(|| eyre!("post-install shared stdout was not prepared"))?;
+        output.open_stdout()
+    }
+
+    fn stdout_tail(&self, destination: &Path) -> Result<String> {
+        let output = self
+            .outputs
+            .iter()
+            .find(|output| output.stdout && output.destination == destination)
+            .ok_or_else(|| eyre!("post-install shared stdout was not prepared"))?;
+        let Some(mut identity) = open_bound_run_file(&output.staging_parent, &output.staging_name)?
+        else {
+            return Ok(String::new());
+        };
+        log_tail_file(&mut identity.file)
+    }
+
+    fn publish(&mut self) -> Result<RunPublishResult> {
+        publish_run_outputs(&self.outputs)
+    }
+}
+
+#[cfg(not(unix))]
+#[derive(Debug)]
+struct RunSharedWrites;
+
+#[cfg(not(unix))]
+impl RunSharedWrites {
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn rewrite_args(&self, args: &[String]) -> Vec<String> {
+        args.to_vec()
+    }
+
+    fn open_stdout(&self, _destination: &Path) -> Result<File> {
+        bail!("shared post-install stdout is unsupported on this platform")
+    }
+
+    fn stdout_tail(&self, _destination: &Path) -> Result<String> {
+        Ok(String::new())
+    }
+
+    fn publish(&mut self) -> Result<RunPublishResult> {
+        Ok(RunPublishResult::default())
+    }
+}
+
+#[cfg(unix)]
+fn prepare_run_shared_writes(
+    keg: &Path,
+    targets: &BTreeSet<PathBuf>,
+    stdout: Option<&Path>,
+    private_root: &Path,
+) -> Result<RunSharedWrites> {
+    let staging = tempfile::Builder::new()
+        .prefix("shared-outputs-")
+        .tempdir_in(private_root)?;
+    let mut outputs = vec![];
+    for target in targets {
+        if path_is_within_keg(keg, target) {
+            continue;
+        }
+        let output = RunSharedOutput::prepare(
+            target,
+            run_shared_staging_path(staging.path(), target)?,
+            staging.path(),
+            false,
+            false,
+        )?;
+        outputs.push(output);
+    }
+    if let Some(stdout) = stdout {
+        if outputs.iter().any(|output| output.destination == stdout) {
+            bail!(
+                "post-install stdout duplicates a shared argument target: {}",
+                stdout.display()
+            )
+        }
+        outputs.push(RunSharedOutput::prepare(
+            stdout,
+            run_shared_staging_path(staging.path(), stdout)?,
+            staging.path(),
+            true,
+            path_is_within_keg(keg, stdout),
+        )?);
+    }
+    Ok(RunSharedWrites {
+        outputs,
+        _staging: staging,
+    })
+}
+
+#[cfg(not(unix))]
+fn prepare_run_shared_writes(
+    keg: &Path,
+    targets: &BTreeSet<PathBuf>,
+    stdout: Option<&Path>,
+    _private_root: &Path,
+) -> Result<RunSharedWrites> {
+    if targets
+        .iter()
+        .any(|target| !path_is_within_keg(keg, target))
+        || stdout.is_some_and(|path| !path_is_within_keg(keg, path))
+    {
+        bail!("shared post-install outputs are unsupported on this platform")
+    }
+    Ok(RunSharedWrites)
+}
+
+#[cfg(unix)]
+fn run_shared_staging_path(staging: &Path, destination: &Path) -> Result<PathBuf> {
+    let shared = super::pour::lexical_normalize(&prefix::prefix());
+    let destination = super::pour::lexical_normalize(destination);
+    let relative = destination.strip_prefix(&shared).wrap_err_with(|| {
+        format!(
+            "post-install shared output escapes {}: {}",
+            shared.display(),
+            destination.display()
+        )
+    })?;
+    if relative.as_os_str().is_empty() {
+        bail!("post-install shared output cannot replace the shared prefix")
+    }
+    Ok(staging.join("prefix").join(relative))
+}
+
+#[cfg(unix)]
+fn open_file_sha256(file: &File) -> Result<String> {
+    let mut file = file.try_clone()?;
+    file.seek(std::io::SeekFrom::Start(0))?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(hex::encode(digest.finalize()))
+}
+
+#[cfg(unix)]
+fn create_bound_run_file(parent: &BoundRunSharedParent, name: &std::ffi::OsStr) -> Result<File> {
+    use nix::fcntl::{OFlag, openat};
+    use nix::sys::stat::Mode;
+
+    let fd = openat(
+        parent.fd(),
+        name,
+        OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::S_IRUSR | Mode::S_IWUSR,
+    )?;
+    Ok(File::from(fd))
+}
+
+#[cfg(unix)]
+fn create_unique_run_log(parent: &BoundRunSharedParent, prefix: &str) -> Result<(File, PathBuf)> {
+    loop {
+        let name =
+            std::ffi::OsString::from(format!("{prefix}{}.log", crate::rand::random_string(16)));
+        match create_bound_run_file(parent, &name) {
+            Ok(file) => {
+                parent.sync()?;
+                return Ok((file, parent.path().join(name)));
+            }
+            Err(error)
+                if error
+                    .downcast_ref::<nix::errno::Errno>()
+                    .is_some_and(|error| *error == nix::errno::Errno::EEXIST) => {}
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn copy_open_file_to(source: &File, destination: &mut File) -> Result<()> {
+    let mut source = source.try_clone()?;
+    source.seek(std::io::SeekFrom::Start(0))?;
+    destination.seek(std::io::SeekFrom::Start(0))?;
+    destination.set_len(0)?;
+    std::io::copy(&mut source, destination)?;
+    destination.flush()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn validate_bound_run_leaf(
+    parent: &std::os::fd::OwnedFd,
+    name: &std::ffi::OsStr,
+    expected: &BoundRunLeafAuthority,
+) -> Result<()> {
+    use nix::fcntl::{OFlag, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+
+    let stat = match fstatat(parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => Some(stat),
+        Err(nix::errno::Errno::ENOENT) => None,
+        Err(error) => return Err(error.into()),
+    };
+    match (expected, stat) {
+        (BoundRunLeafAuthority::Missing, None) => Ok(()),
+        (BoundRunLeafAuthority::Missing, Some(_)) => {
+            bail!("post-install shared output appeared after preflight")
+        }
+        (BoundRunLeafAuthority::Existing(_), None) => {
+            bail!("post-install shared output disappeared after preflight")
+        }
+        (BoundRunLeafAuthority::Existing(expected), Some(stat)) => {
+            if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG)
+                || (stat.st_dev, stat.st_ino) != (expected.device, expected.inode)
+            {
+                bail!("post-install shared output identity changed after preflight")
+            }
+            let retained = fstat(&expected.file)?;
+            if !SFlag::from_bits_truncate(retained.st_mode).contains(SFlag::S_IFREG)
+                || (retained.st_dev, retained.st_ino) != (expected.device, expected.inode)
+                || (retained.st_mode as nix::libc::mode_t & 0o7777) != expected.mode
+                || retained.st_uid != expected.uid
+                || retained.st_gid != expected.gid
+                || open_file_sha256(&expected.file)? != expected.sha256
+                || run_file_metadata_sha256(&expected.file)? != expected.metadata_sha256
+            {
+                bail!("post-install shared output contents changed after preflight")
+            }
+            let current = openat(
+                parent,
+                name,
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?;
+            let current = File::from(current);
+            let opened = fstat(&current)?;
+            if (opened.st_dev, opened.st_ino) != (expected.device, expected.inode)
+                || open_file_sha256(&current)? != expected.sha256
+                || run_file_metadata_sha256(&current)? != expected.metadata_sha256
+            {
+                bail!("post-install shared output changed while validating")
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(unix)]
+fn open_bound_run_file(
+    parent: &BoundRunSharedParent,
+    name: &std::ffi::OsStr,
+) -> Result<Option<BoundRunFileIdentity>> {
+    use nix::fcntl::{OFlag, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+
+    let stat = match fstatat(parent.fd(), name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(nix::errno::Errno::ENOENT) => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG) {
+        bail!("bound post-install output is not a regular file")
+    }
+    let fd = openat(
+        parent.fd(),
+        name,
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let opened = fstat(&fd)?;
+    if (opened.st_dev, opened.st_ino) != (stat.st_dev, stat.st_ino)
+        || !SFlag::from_bits_truncate(opened.st_mode).contains(SFlag::S_IFREG)
+    {
+        bail!("bound post-install output changed while opening")
+    }
+    let file = File::from(fd);
+    Ok(Some(BoundRunFileIdentity {
+        sha256: open_file_sha256(&file)?,
+        metadata_sha256: run_file_metadata_sha256(&file)?,
+        file,
+        device: stat.st_dev,
+        inode: stat.st_ino,
+        mode: stat.st_mode as nix::libc::mode_t & 0o7777,
+        uid: stat.st_uid,
+        gid: stat.st_gid,
+    }))
+}
+
+#[cfg(unix)]
+fn lifecycle_run_file(path: &Path, identity: &BoundRunFileIdentity) -> Result<LifecycleRunFile> {
+    Ok(LifecycleRunFile {
+        path: path.to_path_buf(),
+        sha256: identity.sha256.clone(),
+        metadata_sha256: Some(identity.metadata_sha256.clone()),
+        device: run_file_device(identity.device)?,
+        inode: identity.inode,
+        mode: u32::from(identity.mode),
+    })
+}
+
+#[cfg(unix)]
+fn run_file_device(device: nix::libc::dev_t) -> Result<u64> {
+    u64::try_from(device).map_err(|_| eyre!("post-install output has an invalid device identity"))
+}
+
+#[cfg(unix)]
+fn validate_retained_run_file(expected: &BoundRunFileIdentity) -> Result<()> {
+    use nix::sys::stat::{SFlag, fstat};
+
+    let stat = fstat(&expected.file)?;
+    if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG)
+        || (stat.st_dev, stat.st_ino) != (expected.device, expected.inode)
+        || (stat.st_mode as nix::libc::mode_t & 0o7777) != expected.mode
+        || stat.st_uid != expected.uid
+        || stat.st_gid != expected.gid
+        || open_file_sha256(&expected.file)? != expected.sha256
+        || run_file_metadata_sha256(&expected.file)? != expected.metadata_sha256
+    {
+        bail!("retained post-install regular-file identity changed")
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn validate_bound_run_file_identity(
+    parent: &BoundRunSharedParent,
+    name: &std::ffi::OsStr,
+    expected: &BoundRunFileIdentity,
+) -> Result<()> {
+    parent.validate()?;
+    validate_retained_run_file(expected)?;
+    let current = open_bound_run_file(parent, name)?
+        .ok_or_else(|| eyre!("bound post-install regular file disappeared"))?;
+    if (current.device, current.inode) != (expected.device, expected.inode)
+        || current.sha256 != expected.sha256
+        || current.mode != expected.mode
+        || current.uid != expected.uid
+        || current.gid != expected.gid
+        || current.metadata_sha256 != expected.metadata_sha256
+    {
+        bail!("bound post-install regular-file identity changed")
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn bound_run_file_is_missing(
+    parent: &BoundRunSharedParent,
+    name: &std::ffi::OsStr,
+) -> Result<bool> {
+    use nix::sys::stat::fstatat;
+
+    parent.validate()?;
+    match fstatat(parent.fd(), name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Err(nix::errno::Errno::ENOENT) => Ok(true),
+        Err(error) => Err(error.into()),
+        Ok(_) => Ok(false),
+    }
+}
+
+#[cfg(unix)]
+fn copy_run_file_xattrs(source: &File, destination: &File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+
+    #[cfg(target_os = "macos")]
+    let count = unsafe { nix::libc::flistxattr(source.as_raw_fd(), std::ptr::null_mut(), 0, 0) };
+    #[cfg(not(target_os = "macos"))]
+    let count = unsafe { nix::libc::flistxattr(source.as_raw_fd(), std::ptr::null_mut(), 0) };
+    if count == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    if count == 0 {
+        return Ok(());
+    }
+    let mut names = vec![0_u8; usize::try_from(count)?];
+    #[cfg(target_os = "macos")]
+    let listed = unsafe {
+        nix::libc::flistxattr(
+            source.as_raw_fd(),
+            names.as_mut_ptr().cast(),
+            names.len(),
+            0,
+        )
+    };
+    #[cfg(not(target_os = "macos"))]
+    let listed = unsafe {
+        nix::libc::flistxattr(source.as_raw_fd(), names.as_mut_ptr().cast(), names.len())
+    };
+    if listed == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    names.truncate(usize::try_from(listed)?);
+    for name in names
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        let name = std::ffi::CString::new(name)?;
+        #[cfg(target_os = "macos")]
+        let size = unsafe {
+            nix::libc::fgetxattr(
+                source.as_raw_fd(),
+                name.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let size = unsafe {
+            nix::libc::fgetxattr(source.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0)
+        };
+        if size == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let mut value = vec![0_u8; usize::try_from(size)?];
+        #[cfg(target_os = "macos")]
+        let read = unsafe {
+            nix::libc::fgetxattr(
+                source.as_raw_fd(),
+                name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let read = unsafe {
+            nix::libc::fgetxattr(
+                source.as_raw_fd(),
+                name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+            )
+        };
+        if read == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        value.truncate(usize::try_from(read)?);
+        #[cfg(target_os = "macos")]
+        let set = unsafe {
+            nix::libc::fsetxattr(
+                destination.as_raw_fd(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let set = unsafe {
+            nix::libc::fsetxattr(
+                destination.as_raw_fd(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+            )
+        };
+        if set == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn run_file_xattrs(file: &File) -> Result<BTreeMap<Vec<u8>, Vec<u8>>> {
+    use std::os::fd::AsRawFd;
+
+    #[cfg(target_os = "macos")]
+    let count = unsafe { nix::libc::flistxattr(file.as_raw_fd(), std::ptr::null_mut(), 0, 0) };
+    #[cfg(not(target_os = "macos"))]
+    let count = unsafe { nix::libc::flistxattr(file.as_raw_fd(), std::ptr::null_mut(), 0) };
+    if count == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut names = vec![0_u8; usize::try_from(count)?];
+    if names.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    #[cfg(target_os = "macos")]
+    let listed = unsafe {
+        nix::libc::flistxattr(file.as_raw_fd(), names.as_mut_ptr().cast(), names.len(), 0)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let listed =
+        unsafe { nix::libc::flistxattr(file.as_raw_fd(), names.as_mut_ptr().cast(), names.len()) };
+    if listed == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    names.truncate(usize::try_from(listed)?);
+    let mut values = BTreeMap::new();
+    for name in names
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        let c_name = std::ffi::CString::new(name)?;
+        #[cfg(target_os = "macos")]
+        let size = unsafe {
+            nix::libc::fgetxattr(
+                file.as_raw_fd(),
+                c_name.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let size = unsafe {
+            nix::libc::fgetxattr(file.as_raw_fd(), c_name.as_ptr(), std::ptr::null_mut(), 0)
+        };
+        if size == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let mut value = vec![0_u8; usize::try_from(size)?];
+        #[cfg(target_os = "macos")]
+        let read = unsafe {
+            nix::libc::fgetxattr(
+                file.as_raw_fd(),
+                c_name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let read = unsafe {
+            nix::libc::fgetxattr(
+                file.as_raw_fd(),
+                c_name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+            )
+        };
+        if read == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        value.truncate(usize::try_from(read)?);
+        values.insert(name.to_vec(), value);
+    }
+    Ok(values)
+}
+
+#[cfg(unix)]
+fn run_file_metadata_sha256(file: &File) -> Result<String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = file.metadata()?;
+    let mut digest = Sha256::new();
+    digest.update(b"mise-lifecycle-run-file-metadata-v1\0");
+    digest.update((metadata.mode() & 0o7777).to_le_bytes());
+    digest.update(metadata.mtime().to_le_bytes());
+    digest.update(metadata.mtime_nsec().to_le_bytes());
+    #[cfg(target_os = "macos")]
+    digest.update(std::os::macos::fs::MetadataExt::st_flags(&metadata).to_le_bytes());
+    for (name, value) in run_file_xattrs(file)? {
+        digest.update(u64::try_from(name.len())?.to_le_bytes());
+        digest.update(name);
+        digest.update(u64::try_from(value.len())?.to_le_bytes());
+        digest.update(value);
+    }
+    Ok(hex::encode(digest.finalize()))
+}
+
+#[cfg(unix)]
+fn run_file_metadata_matches(
+    left: &BoundRunFileIdentity,
+    right: &BoundRunFileIdentity,
+) -> Result<bool> {
+    Ok(left.metadata_sha256 == right.metadata_sha256)
+}
+
+#[cfg(unix)]
+fn copy_run_file_metadata(source: &File, destination: &File) -> Result<()> {
+    use nix::sys::stat::{Mode, fchmod, fstat, futimens};
+    use nix::sys::time::TimeSpec;
+    use std::os::unix::fs::MetadataExt;
+
+    let stat = fstat(source)?;
+    // Ownership is intentionally inherited from the real destination parent.
+    // The source lives under a private mirror whose parent ownership is not the
+    // ownership the command would have received beside the shared target.
+    fchmod(
+        destination,
+        Mode::from_bits_truncate(stat.st_mode as nix::libc::mode_t & 0o7777),
+    )?;
+    copy_run_file_xattrs(source, destination)?;
+    let metadata = source.metadata()?;
+    futimens(
+        destination,
+        &TimeSpec::new(metadata.atime(), metadata.atime_nsec()),
+        &TimeSpec::new(metadata.mtime(), metadata.mtime_nsec()),
+    )?;
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::fd::AsRawFd;
+        let flags = std::os::macos::fs::MetadataExt::st_flags(&metadata);
+        if unsafe { nix::libc::fchflags(destination.as_raw_fd(), flags) } == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+    }
+    if run_file_metadata_sha256(source)? != run_file_metadata_sha256(destination)? {
+        bail!("post-install regular-file metadata could not be preserved exactly")
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct BoundAdjacentRunFile {
+    parent: std::os::fd::OwnedFd,
+    name: std::ffi::OsString,
+    file: File,
+    cleanup_identity: Option<(nix::libc::dev_t, nix::libc::ino_t)>,
+}
+
+#[cfg(unix)]
+impl BoundAdjacentRunFile {
+    fn create(parent: &BoundRunSharedParent) -> Result<Self> {
+        use nix::fcntl::{OFlag, openat};
+        use nix::sys::stat::{Mode, fstat};
+
+        let parent_fd = nix::unistd::dup(parent.fd())?;
+        loop {
+            let name = std::ffi::OsString::from(format!(
+                ".mise-lifecycle-run-{}",
+                crate::rand::random_string(16)
+            ));
+            let fd = match openat(
+                &parent_fd,
+                name.as_os_str(),
+                OFlag::O_RDWR
+                    | OFlag::O_CREAT
+                    | OFlag::O_EXCL
+                    | OFlag::O_NOFOLLOW
+                    | OFlag::O_CLOEXEC,
+                Mode::S_IRUSR | Mode::S_IWUSR,
+            ) {
+                Ok(fd) => fd,
+                Err(nix::errno::Errno::EEXIST) => continue,
+                Err(error) => return Err(error.into()),
+            };
+            // Install the cleanup guard immediately after the creating openat.
+            // Even a later fstat/copy/metadata failure cannot leak this node.
+            let mut adjacent = Self {
+                parent: parent_fd,
+                name,
+                file: File::from(fd),
+                cleanup_identity: None,
+            };
+            let stat = fstat(&adjacent.file)?;
+            adjacent.cleanup_identity = Some((stat.st_dev, stat.st_ino));
+            parent.sync()?;
+            return Ok(adjacent);
+        }
+    }
+
+    fn identity(&self) -> Result<BoundRunFileIdentity> {
+        use nix::sys::stat::fstat;
+
+        let file = self.file.try_clone()?;
+        let stat = fstat(&file)?;
+        Ok(BoundRunFileIdentity {
+            sha256: open_file_sha256(&file)?,
+            metadata_sha256: run_file_metadata_sha256(&file)?,
+            file,
+            device: stat.st_dev,
+            inode: stat.st_ino,
+            mode: stat.st_mode as nix::libc::mode_t & 0o7777,
+            uid: stat.st_uid,
+            gid: stat.st_gid,
+        })
+    }
+
+    fn link_existing(
+        source_parent: &BoundRunSharedParent,
+        source_name: &std::ffi::OsStr,
+        destination_parent: &BoundRunSharedParent,
+        expected: &BoundRunFileIdentity,
+    ) -> Result<Self> {
+        let parent_fd = nix::unistd::dup(destination_parent.fd())?;
+        let file = expected.file.try_clone()?;
+        validate_bound_run_file_identity(source_parent, source_name, expected)?;
+        loop {
+            let name = std::ffi::OsString::from(format!(
+                ".mise-lifecycle-rollback-{}",
+                crate::rand::random_string(16)
+            ));
+            match nix::unistd::linkat(
+                source_parent.fd(),
+                source_name,
+                &parent_fd,
+                name.as_os_str(),
+                nix::fcntl::AtFlags::empty(),
+            ) {
+                Ok(()) => {
+                    // Install the cleanup guard before any fallible work after
+                    // link creation.
+                    let rollback = Self {
+                        parent: parent_fd,
+                        name,
+                        file,
+                        cleanup_identity: Some((expected.device, expected.inode)),
+                    };
+                    nix::unistd::fsync(&rollback.parent)?;
+                    validate_bound_run_file_identity(destination_parent, &rollback.name, expected)?;
+                    return Ok(rollback);
+                }
+                Err(nix::errno::Errno::EEXIST) => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
+    fn set_cleanup_identity(&mut self, identity: &BoundRunFileIdentity) {
+        self.cleanup_identity = Some((identity.device, identity.inode));
+    }
+
+    fn disarm(&mut self) {
+        self.cleanup_identity = None;
+    }
+
+    fn cleanup(&mut self) -> Result<()> {
+        let Some(identity) = self.cleanup_identity else {
+            return Ok(());
+        };
+        unlink_bound_run_file(&self.parent, &self.name, identity)?;
+        nix::unistd::fsync(&self.parent)?;
+        self.cleanup_identity = None;
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+impl Drop for BoundAdjacentRunFile {
+    fn drop(&mut self) {
+        let _ = self.cleanup();
+    }
+}
+
+#[cfg(unix)]
+fn prepare_adjacent_run_file(
+    output: &RunSharedOutput,
+    staged: Option<&BoundRunFileIdentity>,
+) -> Result<BoundAdjacentRunFile> {
+    let mut adjacent = BoundAdjacentRunFile::create(&output.parent)?;
+    if let Some(staged) = staged {
+        validate_retained_run_file(staged)?;
+        copy_open_file_to(&staged.file, &mut adjacent.file)?;
+        copy_run_file_metadata(&staged.file, &adjacent.file)?;
+        validate_retained_run_file(staged)?;
+    }
+    adjacent.file.sync_all()?;
+    Ok(adjacent)
+}
+
+#[derive(Debug, Default)]
+struct RunPublishResult {
+    files: Vec<LifecycleRunFile>,
+    deleted: Vec<PathBuf>,
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+enum RunPublishPhase {
+    Prepared,
+    Created,
+    Swapped,
+    TombstoneUnlinked,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RunPublishCheckpoint {
+    CreateLink,
+    ReplaceExchange,
+    DeleteExchange,
+    DeleteUnlink,
+    ParentSync,
+    Validation,
+    RollbackParentSync,
+}
+
+#[cfg(all(unix, test))]
+thread_local! {
+    static RUN_PUBLISH_FAULT: std::cell::Cell<Option<RunPublishCheckpoint>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+#[cfg(unix)]
+fn run_publish_checkpoint(checkpoint: RunPublishCheckpoint) -> Result<()> {
+    #[cfg(test)]
+    if RUN_PUBLISH_FAULT.get() == Some(checkpoint) {
+        RUN_PUBLISH_FAULT.set(None);
+        bail!("injected post-install publish failure at {checkpoint:?}")
+    }
+    #[cfg(not(test))]
+    let _ = checkpoint;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+enum RunPublishAction {
+    Absent,
+    Unchanged {
+        staged: BoundRunFileIdentity,
+    },
+    Create {
+        staged: BoundRunFileIdentity,
+        adjacent: BoundAdjacentRunFile,
+        new: BoundRunFileIdentity,
+        phase: RunPublishPhase,
+    },
+    Replace {
+        staged: BoundRunFileIdentity,
+        adjacent: BoundAdjacentRunFile,
+        rollback: Option<BoundAdjacentRunFile>,
+        new: BoundRunFileIdentity,
+        phase: RunPublishPhase,
+    },
+    Delete {
+        adjacent: BoundAdjacentRunFile,
+        rollback: Option<BoundAdjacentRunFile>,
+        tombstone: BoundRunFileIdentity,
+        phase: RunPublishPhase,
+    },
+}
+
+#[cfg(unix)]
+#[derive(Debug)]
+struct PreparedRunPublish {
+    output: usize,
+    action: RunPublishAction,
+}
+
+#[cfg(unix)]
+impl PreparedRunPublish {
+    fn prepare(output: usize, target: &RunSharedOutput) -> Result<Self> {
+        target.validate()?;
+        let staged = open_bound_run_file(&target.staging_parent, &target.staging_name)?;
+        let action = match (&target.authority, staged) {
+            (BoundRunLeafAuthority::Missing, None) => {
+                if target.stdout {
+                    bail!(
+                        "post-install stdout did not produce its declared output: {}",
+                        target.destination.display()
+                    )
+                }
+                RunPublishAction::Absent
+            }
+            (BoundRunLeafAuthority::Missing, Some(staged)) => {
+                let adjacent = prepare_adjacent_run_file(target, Some(&staged))?;
+                let new = adjacent.identity()?;
+                RunPublishAction::Create {
+                    staged,
+                    adjacent,
+                    new,
+                    phase: RunPublishPhase::Prepared,
+                }
+            }
+            (BoundRunLeafAuthority::Existing(existing), Some(staged))
+                if existing.sha256 == staged.sha256
+                    && run_file_metadata_matches(existing, &staged)? =>
+            {
+                RunPublishAction::Unchanged { staged }
+            }
+            (BoundRunLeafAuthority::Existing(_), Some(staged)) => {
+                let adjacent = prepare_adjacent_run_file(target, Some(&staged))?;
+                let new = adjacent.identity()?;
+                RunPublishAction::Replace {
+                    staged,
+                    adjacent,
+                    rollback: None,
+                    new,
+                    phase: RunPublishPhase::Prepared,
+                }
+            }
+            (BoundRunLeafAuthority::Existing(_), None) => {
+                let adjacent = prepare_adjacent_run_file(target, None)?;
+                let tombstone = adjacent.identity()?;
+                RunPublishAction::Delete {
+                    adjacent,
+                    rollback: None,
+                    tombstone,
+                    phase: RunPublishPhase::Prepared,
+                }
+            }
+        };
+        Ok(Self { output, action })
+    }
+
+    fn prevalidate(&self, target: &RunSharedOutput) -> Result<()> {
+        target.validate()?;
+        match &self.action {
+            RunPublishAction::Absent => {
+                if !bound_run_file_is_missing(&target.staging_parent, &target.staging_name)? {
+                    bail!("post-install staging output appeared after precommit")
+                }
+            }
+            RunPublishAction::Unchanged { staged }
+            | RunPublishAction::Create { staged, .. }
+            | RunPublishAction::Replace { staged, .. } => {
+                validate_bound_run_file_identity(
+                    &target.staging_parent,
+                    &target.staging_name,
+                    staged,
+                )?;
+            }
+            RunPublishAction::Delete { .. } => {
+                if !bound_run_file_is_missing(&target.staging_parent, &target.staging_name)? {
+                    bail!("deleted post-install staging output reappeared after precommit")
                 }
             }
         }
-        prepared
-            .ancestries
-            .push(capture_directory_ancestry(parent).wrap_err_with(|| {
-                format!(
-                    "post-install shared output parent ancestry is invalid: {}",
-                    parent.display()
-                )
-            })?);
+        Ok(())
     }
-    Ok(prepared)
+
+    fn apply(&mut self, target: &RunSharedOutput) -> Result<()> {
+        match &mut self.action {
+            RunPublishAction::Absent | RunPublishAction::Unchanged { .. } => Ok(()),
+            RunPublishAction::Create {
+                adjacent,
+                new,
+                phase,
+                ..
+            } => {
+                validate_bound_run_file_identity(&target.parent, &adjacent.name, new)?;
+                validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)?;
+                nix::unistd::linkat(
+                    target.parent.fd(),
+                    adjacent.name.as_os_str(),
+                    target.parent.fd(),
+                    target.name.as_os_str(),
+                    nix::fcntl::AtFlags::empty(),
+                )?;
+                *phase = RunPublishPhase::Created;
+                run_publish_checkpoint(RunPublishCheckpoint::CreateLink)?;
+                target.parent.sync()?;
+                run_publish_checkpoint(RunPublishCheckpoint::ParentSync)?;
+                validate_bound_run_file_identity(&target.parent, &target.name, new)?;
+                run_publish_checkpoint(RunPublishCheckpoint::Validation)?;
+                Ok(())
+            }
+            RunPublishAction::Replace {
+                adjacent,
+                new,
+                phase,
+                ..
+            } => {
+                validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)?;
+                validate_bound_run_file_identity(&target.parent, &adjacent.name, new)?;
+                adjacent.disarm();
+                if let Err(error) = rename_exchange_at(
+                    target.parent.fd(),
+                    adjacent.name.as_os_str(),
+                    target.parent.fd(),
+                    target.name.as_os_str(),
+                ) {
+                    if validate_bound_run_file_identity(&target.parent, &adjacent.name, new).is_ok()
+                    {
+                        adjacent.set_cleanup_identity(new);
+                    }
+                    return Err(error);
+                }
+                *phase = RunPublishPhase::Swapped;
+                run_publish_checkpoint(RunPublishCheckpoint::ReplaceExchange)?;
+                let destination_is_new =
+                    validate_bound_run_file_identity(&target.parent, &target.name, new).is_ok();
+                let backup_is_old =
+                    validate_bound_run_leaf(target.parent.fd(), &adjacent.name, &target.authority)
+                        .is_ok();
+                if !destination_is_new || !backup_is_old {
+                    // A rollback exchange is safe only when both sides still
+                    // have the exact identities produced by our exchange.
+                    // Never move an unexpected/foreign node a second time.
+                    bail!(
+                        "post-install replacement identities changed during atomic exchange: {}",
+                        target.destination.display()
+                    )
+                }
+                run_publish_checkpoint(RunPublishCheckpoint::Validation)?;
+                let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+                    unreachable!()
+                };
+                adjacent.set_cleanup_identity(old);
+                target.parent.sync()?;
+                run_publish_checkpoint(RunPublishCheckpoint::ParentSync)?;
+                Ok(())
+            }
+            RunPublishAction::Delete {
+                adjacent,
+                tombstone,
+                phase,
+                ..
+            } => {
+                validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)?;
+                validate_bound_run_file_identity(&target.parent, &adjacent.name, tombstone)?;
+                adjacent.disarm();
+                if let Err(error) = rename_exchange_at(
+                    target.parent.fd(),
+                    adjacent.name.as_os_str(),
+                    target.parent.fd(),
+                    target.name.as_os_str(),
+                ) {
+                    if validate_bound_run_file_identity(&target.parent, &adjacent.name, tombstone)
+                        .is_ok()
+                    {
+                        adjacent.set_cleanup_identity(tombstone);
+                    }
+                    return Err(error);
+                }
+                *phase = RunPublishPhase::Swapped;
+                run_publish_checkpoint(RunPublishCheckpoint::DeleteExchange)?;
+                let destination_is_tombstone =
+                    validate_bound_run_file_identity(&target.parent, &target.name, tombstone)
+                        .is_ok();
+                let backup_is_old =
+                    validate_bound_run_leaf(target.parent.fd(), &adjacent.name, &target.authority)
+                        .is_ok();
+                if !destination_is_tombstone || !backup_is_old {
+                    bail!(
+                        "post-install deletion identities changed during atomic exchange: {}",
+                        target.destination.display()
+                    )
+                }
+                run_publish_checkpoint(RunPublishCheckpoint::Validation)?;
+                let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+                    unreachable!()
+                };
+                adjacent.set_cleanup_identity(old);
+                unlink_bound_run_file(
+                    target.parent.fd(),
+                    &target.name,
+                    (tombstone.device, tombstone.inode),
+                )?;
+                *phase = RunPublishPhase::TombstoneUnlinked;
+                run_publish_checkpoint(RunPublishCheckpoint::DeleteUnlink)?;
+                target.parent.sync()?;
+                run_publish_checkpoint(RunPublishCheckpoint::ParentSync)?;
+                Ok(())
+            }
+        }
+    }
+
+    fn cleanup_private_rollback(&mut self) -> Result<()> {
+        match &mut self.action {
+            RunPublishAction::Replace { rollback, .. }
+            | RunPublishAction::Delete { rollback, .. } => {
+                if let Some(rollback) = rollback {
+                    rollback.cleanup()?;
+                }
+                Ok(())
+            }
+            RunPublishAction::Absent
+            | RunPublishAction::Unchanged { .. }
+            | RunPublishAction::Create { .. } => Ok(()),
+        }
+    }
+
+    fn validate_applied(&self, target: &RunSharedOutput) -> Result<()> {
+        target.parent.validate()?;
+        target.staging_parent.validate()?;
+        match &self.action {
+            RunPublishAction::Absent => {
+                validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)
+            }
+            RunPublishAction::Unchanged { staged } => {
+                validate_retained_run_file(staged)?;
+                validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)
+            }
+            RunPublishAction::Create {
+                adjacent,
+                new,
+                phase,
+                ..
+            } => {
+                if !matches!(phase, RunPublishPhase::Created) {
+                    bail!("post-install create was not durably applied")
+                }
+                validate_retained_run_file(new)?;
+                validate_bound_run_file_identity(&target.parent, &target.name, new)?;
+                let cleanup = adjacent.cleanup_identity.ok_or_else(|| {
+                    eyre!("post-install rollback authority is missing after publish")
+                })?;
+                let stat = nix::sys::stat::fstatat(
+                    &adjacent.parent,
+                    adjacent.name.as_os_str(),
+                    nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+                )?;
+                if (stat.st_dev, stat.st_ino) != cleanup {
+                    bail!("post-install rollback node changed after publish")
+                }
+                Ok(())
+            }
+            RunPublishAction::Replace {
+                adjacent,
+                new,
+                phase,
+                ..
+            } => {
+                if !matches!(phase, RunPublishPhase::Swapped) {
+                    bail!("post-install replacement was not durably applied")
+                }
+                validate_retained_run_file(new)?;
+                validate_bound_run_file_identity(&target.parent, &target.name, new)?;
+                let cleanup = adjacent.cleanup_identity.ok_or_else(|| {
+                    eyre!("post-install rollback authority is missing after publish")
+                })?;
+                let stat = nix::sys::stat::fstatat(
+                    &adjacent.parent,
+                    adjacent.name.as_os_str(),
+                    nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+                )?;
+                if (stat.st_dev, stat.st_ino) != cleanup {
+                    bail!("post-install rollback node changed after publish")
+                }
+                Ok(())
+            }
+            RunPublishAction::Delete {
+                adjacent, phase, ..
+            } => {
+                if !matches!(phase, RunPublishPhase::TombstoneUnlinked) {
+                    bail!("post-install deletion was not durably applied")
+                }
+                if !bound_run_file_is_missing(&target.parent, &target.name)? {
+                    bail!("post-install deletion target reappeared after publish")
+                }
+                let cleanup = adjacent
+                    .cleanup_identity
+                    .ok_or_else(|| eyre!("post-install deletion rollback authority is missing"))?;
+                let stat = nix::sys::stat::fstatat(
+                    &adjacent.parent,
+                    adjacent.name.as_os_str(),
+                    nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+                )?;
+                if (stat.st_dev, stat.st_ino) != cleanup {
+                    bail!("post-install deletion rollback node changed after publish")
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn rollback(&mut self, target: &RunSharedOutput) -> Result<()> {
+        match &mut self.action {
+            RunPublishAction::Absent | RunPublishAction::Unchanged { .. } => Ok(()),
+            RunPublishAction::Create {
+                adjacent,
+                new,
+                phase,
+                ..
+            } if matches!(phase, RunPublishPhase::Created) => {
+                validate_bound_run_file_identity(&target.parent, &target.name, new)?;
+                unlink_bound_run_file(target.parent.fd(), &target.name, (new.device, new.inode))?;
+                *phase = RunPublishPhase::Prepared;
+                target.parent.sync()?;
+                adjacent.set_cleanup_identity(new);
+                Ok(())
+            }
+            RunPublishAction::Replace {
+                adjacent,
+                rollback,
+                new,
+                phase,
+                ..
+            } if matches!(phase, RunPublishPhase::Swapped) => {
+                let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+                    unreachable!()
+                };
+                // Do not exchange unless both entries are still exactly ours.
+                validate_bound_run_file_identity(&target.parent, &target.name, new)?;
+                let (backup, backup_parent) = if let Some(rollback) = rollback.as_mut() {
+                    (rollback, &target.rollback_parent)
+                } else {
+                    (adjacent, &target.parent)
+                };
+                validate_bound_run_leaf(backup_parent.fd(), &backup.name, &target.authority)?;
+                backup.disarm();
+                if let Err(error) = rename_exchange_at(
+                    backup_parent.fd(),
+                    backup.name.as_os_str(),
+                    target.parent.fd(),
+                    target.name.as_os_str(),
+                ) {
+                    if validate_bound_run_leaf(backup_parent.fd(), &backup.name, &target.authority)
+                        .is_ok()
+                    {
+                        backup.set_cleanup_identity(old);
+                    }
+                    return Err(error);
+                }
+                *phase = RunPublishPhase::Prepared;
+                let target_is_old =
+                    validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)
+                        .is_ok();
+                let backup_is_new =
+                    validate_bound_run_file_identity(backup_parent, &backup.name, new).is_ok();
+                if !target_is_old || !backup_is_new {
+                    if backup_is_new {
+                        backup.set_cleanup_identity(new);
+                    }
+                    bail!("post-install rollback identities changed during atomic exchange")
+                }
+                backup.set_cleanup_identity(new);
+                validate_retained_run_file(old)?;
+                target.parent.sync()?;
+                run_publish_checkpoint(RunPublishCheckpoint::RollbackParentSync)?;
+                Ok(())
+            }
+            RunPublishAction::Delete {
+                adjacent,
+                rollback,
+                tombstone,
+                phase,
+                ..
+            } if matches!(phase, RunPublishPhase::Swapped) => {
+                let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+                    unreachable!()
+                };
+                let (backup, backup_parent) = if let Some(rollback) = rollback.as_mut() {
+                    (rollback, &target.rollback_parent)
+                } else {
+                    (adjacent, &target.parent)
+                };
+                validate_bound_run_file_identity(&target.parent, &target.name, tombstone)?;
+                validate_bound_run_leaf(backup_parent.fd(), &backup.name, &target.authority)?;
+                backup.disarm();
+                if let Err(error) = rename_exchange_at(
+                    backup_parent.fd(),
+                    backup.name.as_os_str(),
+                    target.parent.fd(),
+                    target.name.as_os_str(),
+                ) {
+                    if validate_bound_run_leaf(backup_parent.fd(), &backup.name, &target.authority)
+                        .is_ok()
+                    {
+                        backup.set_cleanup_identity(old);
+                    }
+                    return Err(error);
+                }
+                *phase = RunPublishPhase::Prepared;
+                let target_is_old =
+                    validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)
+                        .is_ok();
+                let backup_is_tombstone =
+                    validate_bound_run_file_identity(backup_parent, &backup.name, tombstone)
+                        .is_ok();
+                if !target_is_old || !backup_is_tombstone {
+                    if backup_is_tombstone {
+                        backup.set_cleanup_identity(tombstone);
+                    }
+                    bail!("post-install deletion rollback identities changed during exchange")
+                }
+                backup.set_cleanup_identity(tombstone);
+                validate_retained_run_file(old)?;
+                target.parent.sync()?;
+                run_publish_checkpoint(RunPublishCheckpoint::RollbackParentSync)?;
+                Ok(())
+            }
+            RunPublishAction::Delete {
+                adjacent,
+                rollback,
+                phase,
+                ..
+            } if matches!(phase, RunPublishPhase::TombstoneUnlinked) => {
+                let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+                    unreachable!()
+                };
+                if !bound_run_file_is_missing(&target.parent, &target.name)? {
+                    bail!("foreign node appeared at deleted post-install target")
+                }
+                let (backup, backup_parent) = if let Some(rollback) = rollback.as_mut() {
+                    (rollback, &target.rollback_parent)
+                } else {
+                    (adjacent, &target.parent)
+                };
+                validate_bound_run_leaf(backup_parent.fd(), &backup.name, &target.authority)?;
+                nix::unistd::linkat(
+                    backup_parent.fd(),
+                    backup.name.as_os_str(),
+                    target.parent.fd(),
+                    target.name.as_os_str(),
+                    nix::fcntl::AtFlags::empty(),
+                )?;
+                *phase = RunPublishPhase::Prepared;
+                validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority)?;
+                backup.set_cleanup_identity(old);
+                target.parent.sync()?;
+                run_publish_checkpoint(RunPublishCheckpoint::RollbackParentSync)?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn preserve_predecessor_after_rollback_failure(
+        &mut self,
+        target: &RunSharedOutput,
+    ) -> Result<Option<PathBuf>> {
+        let (adjacent, rollback) = match &mut self.action {
+            RunPublishAction::Replace {
+                adjacent, rollback, ..
+            }
+            | RunPublishAction::Delete {
+                adjacent, rollback, ..
+            } => (adjacent, rollback),
+            _ => return Ok(None),
+        };
+        let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+            unreachable!()
+        };
+        if let Some(rollback) = rollback
+            && validate_bound_run_leaf(
+                target.rollback_parent.fd(),
+                &rollback.name,
+                &target.authority,
+            )
+            .is_ok()
+        {
+            rollback.disarm();
+            return Ok(Some(target.rollback_parent.path().join(&rollback.name)));
+        }
+        if validate_bound_run_leaf(target.parent.fd(), &adjacent.name, &target.authority).is_ok() {
+            // Disarm the last exact predecessor before any further fallible
+            // work. If the private hardlink cannot be created, the adjacent
+            // path remains the surfaced recovery authority instead of Drop
+            // deleting it.
+            adjacent.disarm();
+            let adjacent_path = target.parent.path().join(&adjacent.name);
+            let mut recovery = match BoundAdjacentRunFile::link_existing(
+                &target.parent,
+                &adjacent.name,
+                &target.rollback_parent,
+                old,
+            ) {
+                Ok(recovery) => recovery,
+                Err(error) => {
+                    warn!(
+                        "could not move post-install predecessor into private recovery; retaining {}: {error:#}",
+                        adjacent_path.display()
+                    );
+                    return Ok(Some(adjacent_path));
+                }
+            };
+            let path = target.rollback_parent.path().join(&recovery.name);
+            recovery.disarm();
+            adjacent.set_cleanup_identity(old);
+            if let Err(error) = adjacent.cleanup() {
+                warn!(
+                    "could not remove redundant adjacent post-install predecessor {}: {error:#}",
+                    adjacent_path.display()
+                );
+            }
+            return Ok(Some(path));
+        }
+        if validate_bound_run_leaf(target.parent.fd(), &target.name, &target.authority).is_ok() {
+            let mut recovery = match BoundAdjacentRunFile::link_existing(
+                &target.parent,
+                &target.name,
+                &target.rollback_parent,
+                old,
+            ) {
+                Ok(recovery) => recovery,
+                Err(error) => {
+                    warn!(
+                        "could not duplicate restored post-install predecessor into private recovery; retaining {}: {error:#}",
+                        target.destination.display()
+                    );
+                    return Ok(Some(target.destination.clone()));
+                }
+            };
+            let path = target.rollback_parent.path().join(&recovery.name);
+            recovery.disarm();
+            return Ok(Some(path));
+        }
+        bail!("no exact predecessor authority remains after rollback failure")
+    }
+
+    fn effect(&self, target: &RunSharedOutput) -> Result<Option<LifecycleRunFile>> {
+        match &self.action {
+            RunPublishAction::Absent | RunPublishAction::Delete { .. } => Ok(None),
+            RunPublishAction::Unchanged { .. } => {
+                let BoundRunLeafAuthority::Existing(existing) = &target.authority else {
+                    unreachable!()
+                };
+                lifecycle_run_file(&target.destination, existing).map(Some)
+            }
+            RunPublishAction::Create { new, .. } | RunPublishAction::Replace { new, .. } => {
+                lifecycle_run_file(&target.destination, new).map(Some)
+            }
+        }
+    }
+
+    fn cleanup(&mut self) -> Result<()> {
+        match &mut self.action {
+            RunPublishAction::Create { adjacent, .. }
+            | RunPublishAction::Replace { adjacent, .. }
+            | RunPublishAction::Delete { adjacent, .. } => adjacent.cleanup(),
+            RunPublishAction::Absent | RunPublishAction::Unchanged { .. } => Ok(()),
+        }
+    }
+
+    fn arm_cleanup_rollback(&mut self, target: &RunSharedOutput) -> Result<()> {
+        match &mut self.action {
+            RunPublishAction::Replace {
+                adjacent,
+                rollback,
+                phase: RunPublishPhase::Swapped,
+                ..
+            }
+            | RunPublishAction::Delete {
+                adjacent,
+                rollback,
+                phase: RunPublishPhase::TombstoneUnlinked,
+                ..
+            } => {
+                let BoundRunLeafAuthority::Existing(old) = &target.authority else {
+                    unreachable!()
+                };
+                if rollback.is_none() {
+                    *rollback = Some(BoundAdjacentRunFile::link_existing(
+                        &target.parent,
+                        &adjacent.name,
+                        &target.rollback_parent,
+                        old,
+                    )?);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
-struct RunStdoutPublish {
-    temporary: tempfile::TempPath,
-    destination: PathBuf,
-    authority: AtomicCopyTargetAuthority,
+#[cfg(unix)]
+fn rollback_run_publishes(
+    publishes: &mut [PreparedRunPublish],
+    outputs: &[RunSharedOutput],
+) -> Result<()> {
+    let mut failures = vec![];
+    for publish in publishes.iter_mut().rev() {
+        if let Err(error) = publish.rollback(&outputs[publish.output]) {
+            let recovery = match publish
+                .preserve_predecessor_after_rollback_failure(&outputs[publish.output])
+            {
+                Ok(Some(path)) => format!("; predecessor retained at {}", path.display()),
+                Ok(None) => String::new(),
+                Err(preserve_error) => {
+                    format!("; predecessor preservation also failed: {preserve_error:#}")
+                }
+            };
+            failures.push(format!(
+                "{}: {error:#}{recovery}",
+                outputs[publish.output].destination.display(),
+            ));
+        }
+    }
+    if !failures.is_empty() {
+        bail!(
+            "failed to roll back one or more post-install outputs: {}",
+            failures.join("; ")
+        )
+    }
+    Ok(())
 }
 
-fn prepare_run_stdout(
-    prepared: &PreparedFormulaLifecycle,
-    destination: &Path,
-) -> Result<(File, Option<RunStdoutPublish>)> {
-    let authority = atomic_copy_target_authority(destination)?;
-    if !path_is_within_keg(&prepared.keg, destination)
-        && matches!(authority, AtomicCopyTargetAuthority::Existing(_))
+#[cfg(unix)]
+fn publish_run_outputs(outputs: &[RunSharedOutput]) -> Result<RunPublishResult> {
+    let mut publishes = outputs
+        .iter()
+        .enumerate()
+        .map(|(index, output)| PreparedRunPublish::prepare(index, output))
+        .collect::<Result<Vec<_>>>()?;
+    for publish in &publishes {
+        publish.prevalidate(&outputs[publish.output])?;
+    }
+    for index in 0..publishes.len() {
+        let output = publishes[index].output;
+        if let Err(error) = publishes[index].apply(&outputs[output]) {
+            let rollback = rollback_run_publishes(&mut publishes, outputs);
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(error).wrap_err_with(|| {
+                    format!("post-install output rollback also failed: {rollback_error:#}")
+                }),
+            };
+        }
+    }
+    if let Err(error) = publishes
+        .iter()
+        .try_for_each(|publish| publish.validate_applied(&outputs[publish.output]))
     {
-        bail!(
-            "post-install stdout target has unproven ownership: {}",
-            destination.display()
-        )
+        let rollback = rollback_run_publishes(&mut publishes, outputs);
+        return match rollback {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(error).wrap_err_with(|| {
+                format!("post-install output rollback also failed: {rollback_error:#}")
+            }),
+        };
     }
-    if matches!(
-        authority,
-        AtomicCopyTargetAuthority::Existing(AtomicCopyTargetIdentity::Symlink { .. })
-    ) {
-        bail!(
-            "post-install stdout target is an ambiguous symlink: {}",
-            destination.display()
-        )
+    let result = match (|| -> Result<RunPublishResult> {
+        Ok(RunPublishResult {
+            files: publishes
+                .iter()
+                .filter_map(|publish| publish.effect(&outputs[publish.output]).transpose())
+                .collect::<Result<Vec<_>>>()?,
+            deleted: publishes
+                .iter()
+                .filter(|publish| matches!(publish.action, RunPublishAction::Delete { .. }))
+                .map(|publish| outputs[publish.output].destination.clone())
+                .collect(),
+        })
+    })() {
+        Ok(result) => result,
+        Err(error) => {
+            let rollback = rollback_run_publishes(&mut publishes, outputs);
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(error).wrap_err_with(|| {
+                    format!(
+                        "post-install effect validation rollback also failed: {rollback_error:#}"
+                    )
+                }),
+            };
+        }
+    };
+    // Preserve a second exact link to every predecessor before removing any
+    // shared temporary. A later cleanup failure can therefore roll back every
+    // output, including outputs whose primary backup was already removed.
+    for index in 0..publishes.len() {
+        let output = publishes[index].output;
+        if let Err(error) = publishes[index].arm_cleanup_rollback(&outputs[output]) {
+            let rollback = rollback_run_publishes(&mut publishes, outputs);
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(error).wrap_err_with(|| {
+                    format!(
+                        "post-install cleanup preparation rollback also failed: {rollback_error:#}"
+                    )
+                }),
+            };
+        }
     }
-    crate::file::create_dir_all(destination.parent().unwrap())?;
-    let mut builder = tempfile::Builder::new();
-    builder.prefix(".mise-lifecycle-stdout-");
-    #[cfg(unix)]
+    for publish in &mut publishes {
+        if let Err(error) = publish.cleanup() {
+            let rollback = rollback_run_publishes(&mut publishes, outputs);
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(error).wrap_err_with(|| {
+                    format!("post-install cleanup rollback also failed: {rollback_error:#}")
+                }),
+            };
+        }
+    }
+    // Secondary authorities live in per-output 0700 directories on the
+    // destination filesystem. Cleanup is explicit. If an identity-bound
+    // unlink is raced or the filesystem fails after semantic commit, retain
+    // that private directory as the safe recovery disposition; never report a
+    // shared output failure that can no longer be rolled back atomically.
+    for publish in &mut publishes {
+        if let Err(error) = publish.cleanup_private_rollback() {
+            warn!(
+                "failed to clean private post-install rollback authority for {}: {error:#}",
+                outputs[publish.output].destination.display()
+            );
+        }
+    }
+    Ok(result)
+}
+
+#[cfg(unix)]
+fn unlink_bound_run_file(
+    parent: &std::os::fd::OwnedFd,
+    name: &std::ffi::OsStr,
+    expected: (nix::libc::dev_t, nix::libc::ino_t),
+) -> Result<()> {
+    use nix::sys::stat::{SFlag, fstatat};
+
+    let stat = match fstatat(parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(nix::errno::Errno::ENOENT) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG)
+        || (stat.st_dev, stat.st_ino) != expected
     {
-        use std::os::unix::fs::PermissionsExt;
-        builder.permissions(fs::Permissions::from_mode(0o666));
+        bail!("post-install temporary output changed before cleanup")
     }
-    let temporary = builder.tempfile_in(destination.parent().unwrap())?;
-    if matches!(authority, AtomicCopyTargetAuthority::Existing(_)) {
-        temporary
-            .as_file()
-            .set_permissions(destination.metadata()?.permissions())?;
+    nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn rename_exchange_at(
+    left_parent: &std::os::fd::OwnedFd,
+    left: &std::ffi::OsStr,
+    right_parent: &std::os::fd::OwnedFd,
+    right: &std::ffi::OsStr,
+) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+
+    let left = std::ffi::CString::new(left.as_bytes())?;
+    let right = std::ffi::CString::new(right.as_bytes())?;
+    let result = unsafe {
+        nix::libc::syscall(
+            nix::libc::SYS_renameat2,
+            left_parent.as_raw_fd(),
+            left.as_ptr(),
+            right_parent.as_raw_fd(),
+            right.as_ptr(),
+            nix::libc::RENAME_EXCHANGE,
+        )
+    };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error().into());
     }
-    let stdout = temporary.reopen()?;
-    Ok((
-        stdout,
-        Some(RunStdoutPublish {
-            temporary: temporary.into_temp_path(),
-            destination: destination.to_path_buf(),
-            authority,
-        }),
-    ))
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn rename_exchange_at(
+    left_parent: &std::os::fd::OwnedFd,
+    left: &std::ffi::OsStr,
+    right_parent: &std::os::fd::OwnedFd,
+    right: &std::ffi::OsStr,
+) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+
+    let left = std::ffi::CString::new(left.as_bytes())?;
+    let right = std::ffi::CString::new(right.as_bytes())?;
+    let result = unsafe {
+        nix::libc::renameatx_np(
+            left_parent.as_raw_fd(),
+            left.as_ptr(),
+            right_parent.as_raw_fd(),
+            right.as_ptr(),
+            nix::libc::RENAME_SWAP,
+        )
+    };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn rename_exchange_at(
+    _left_parent: &std::os::fd::OwnedFd,
+    _left: &std::ffi::OsStr,
+    _right_parent: &std::os::fd::OwnedFd,
+    _right: &std::ffi::OsStr,
+) -> Result<()> {
+    bail!("atomic shared lifecycle replacement is unsupported on this platform")
 }
 
 fn run_environment(
     prepared: &PreparedFormulaLifecycle,
     run: &PreparedRun,
     temp: &Path,
+    audited_system_path: bool,
 ) -> Result<BTreeMap<String, String>> {
     let shared = prefix::prefix();
-    let path = std::env::join_paths([
-        prepared.keg.join("bin"),
-        prepared.keg.join("sbin"),
-        shared.join("bin"),
-        shared.join("sbin"),
+    let mut path_entries = vec![];
+    if !audited_system_path {
+        path_entries.extend([prepared.keg.join("bin"), prepared.keg.join("sbin")]);
+        #[cfg(not(target_os = "linux"))]
+        path_entries.extend([shared.join("bin"), shared.join("sbin")]);
+    }
+    path_entries.extend([
         PathBuf::from("/usr/bin"),
         PathBuf::from("/bin"),
         PathBuf::from("/usr/sbin"),
         PathBuf::from("/sbin"),
-    ])?;
+    ]);
+    let path = std::env::join_paths(path_entries)?;
     let mut env = BTreeMap::from([
         ("HOME".to_string(), temp.to_string_lossy().into_owned()),
         ("LANG".to_string(), "C".to_string()),
@@ -3294,6 +5843,7 @@ fn run_environment(
     Ok(env)
 }
 
+#[cfg(not(unix))]
 fn open_truncated(path: &Path) -> Result<File> {
     Ok(OpenOptions::new()
         .create(true)
@@ -3302,13 +5852,17 @@ fn open_truncated(path: &Path) -> Result<File> {
         .open(path)?)
 }
 
-fn log_tail(path: &Path) -> Result<String> {
-    if !path.is_file() {
-        return Ok(String::new());
-    }
-    let bytes = fs::read(path)?;
-    let start = bytes.len().saturating_sub(MAX_FAILURE_LOG_BYTES);
-    Ok(String::from_utf8_lossy(&bytes[start..]).into_owned())
+fn log_tail_file(file: &mut File) -> Result<String> {
+    use std::io::{Read, Seek};
+
+    let length = file.metadata()?.len();
+    file.seek(std::io::SeekFrom::Start(
+        length.saturating_sub(MAX_FAILURE_LOG_BYTES as u64),
+    ))?;
+    let mut output = Vec::with_capacity(MAX_FAILURE_LOG_BYTES);
+    file.take(MAX_FAILURE_LOG_BYTES as u64)
+        .read_to_end(&mut output)?;
+    Ok(String::from_utf8_lossy(&output).into_owned())
 }
 
 fn resolve_sources(sources: &PreparedSources) -> Result<Vec<PathBuf>> {
@@ -3648,12 +6202,63 @@ fn template_base(formula: &Formula, keg: &Path, base: &str) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    fn set_test_xattr(path: &Path, value: &[u8]) -> Result<()> {
+        use std::os::fd::AsRawFd;
+
+        let file = File::options().read(true).write(true).open(path)?;
+        let name = c"user.mise-lifecycle-test";
+        #[cfg(target_os = "macos")]
+        let result = unsafe {
+            nix::libc::fsetxattr(
+                file.as_raw_fd(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "macos"))]
+        let result = unsafe {
+            nix::libc::fsetxattr(
+                file.as_raw_fd(),
+                name.as_ptr(),
+                value.as_ptr().cast(),
+                value.len(),
+                0,
+            )
+        };
+        if result == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    }
+
     fn formula(steps: Vec<Value>) -> Formula {
         serde_json::from_value(serde_json::json!({
             "name": "openssl@3",
             "versions": {"stable": "1"},
             "bottle": {},
             "post_install_steps": steps
+        }))
+        .unwrap()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn ca_certificates_formula() -> Formula {
+        serde_json::from_value(serde_json::json!({
+            "name": "ca-certificates",
+            "versions": {"stable": "2026-08-13"},
+            "bottle": {},
+            "ruby_source_checksum": {
+                "sha256": AUDITED_CA_CERTIFICATES_FORMULA_SHA256
+            },
+            "post_install_steps": [{
+                "command": {"base": "libexec", "path": "post-install"},
+                "type": "run",
+                "args": ["{{pkgshare}}/cacert.pem", "{{pkgetc}}/cert.pem"]
+            }]
         }))
         .unwrap()
     }
@@ -3671,21 +6276,193 @@ mod tests {
     }
 
     #[test]
+    fn log_tail_lossily_reports_binary_output() -> Result<()> {
+        let mut file = tempfile::tempfile()?;
+        file.write_all(&[b'o', b'k', 0xff])?;
+
+        assert_eq!(log_tail_file(&mut file)?, "ok\u{fffd}");
+        Ok(())
+    }
+
+    #[test]
+    fn log_tail_lossily_reports_a_split_multibyte_boundary() -> Result<()> {
+        let mut file = tempfile::tempfile()?;
+        let mut bytes = "€".as_bytes().to_vec();
+        bytes.extend(std::iter::repeat_n(b'a', MAX_FAILURE_LOG_BYTES - 2));
+        file.write_all(&bytes)?;
+
+        let tail = log_tail_file(&mut file)?;
+
+        assert!(tail.starts_with('\u{fffd}'));
+        assert!(tail.ends_with('a'));
+        Ok(())
+    }
+
+    #[test]
+    fn log_tail_is_bounded_to_the_sampled_window() -> Result<()> {
+        let mut file = tempfile::tempfile()?;
+        file.write_all(&vec![b'a'; MAX_FAILURE_LOG_BYTES * 2])?;
+
+        assert_eq!(log_tail_file(&mut file)?.len(), MAX_FAILURE_LOG_BYTES);
+        Ok(())
+    }
+
+    #[test]
     fn accepts_ca_certificates_and_openssl_steps() {
-        let ca = formula(vec![serde_json::json!({
-            "command": {"base": "libexec", "path": "post-install"},
-            "type": "run",
-            "args": ["{{pkgshare}}/cacert.pem", "{{pkgetc}}/cert.pem"]
-        })]);
+        let ca: Formula = serde_json::from_value(serde_json::json!({
+            "name": "ca-certificates",
+            "versions": {"stable": "1"},
+            "bottle": {},
+            "post_install_steps": [{
+                "command": {"base": "libexec", "path": "post-install"},
+                "type": "run",
+                "args": ["{{pkgshare}}/cacert.pem", "{{pkgetc}}/cert.pem"]
+            }]
+        }))
+        .unwrap();
+        #[cfg(target_os = "macos")]
+        let ca = {
+            let mut ca = ca;
+            ca.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
+                sha256: Some(AUDITED_CA_CERTIFICATES_FORMULA_SHA256.into()),
+            });
+            ca
+        };
         let openssl = formula(vec![serde_json::json!({
             "source": {"path": "{{etc}}/ca-certificates/cert.pem"},
             "target": {"path": "{{pkgetc}}/cert.pem"},
             "force": true,
             "type": "symlink"
         })]);
-        let keg = prefix::cellar().join("openssl@3/1");
-        prepare(&ca, &keg).unwrap();
-        prepare(&openssl, &keg).unwrap();
+        prepare(&ca, &prefix::cellar().join("ca-certificates/1")).unwrap();
+        prepare(&openssl, &prefix::cellar().join("openssl@3/1")).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_rejects_generic_run_but_accepts_exact_audited_ca_shape() {
+        let generic = formula(vec![serde_json::json!({
+            "type": "run",
+            "command": {"path": "/bin/true"}
+        })]);
+        let error = prepare(&generic, &prefix::cellar().join("openssl@3/1")).unwrap_err();
+        assert!(format!("{error:#}").contains("generic macOS process containment"));
+
+        let prepared = prepare(
+            &ca_certificates_formula(),
+            &prefix::cellar().join("ca-certificates/2026-08-13"),
+        )
+        .unwrap();
+        assert!(matches!(
+            prepared.steps.as_slice(),
+            [PreparedStep::AuditedCaCertificates(_)]
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_audited_ca_rejects_wrong_formula_snapshot_during_prepare() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/ca-certificates/2026-08-13");
+        let target = prefix.join("etc/ca-certificates/cert.pem");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(&target, "preserve")?;
+        let mut formula = ca_certificates_formula();
+        formula.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
+            sha256: Some("wrong-snapshot".into()),
+        });
+
+        let error = prepare(&formula, &keg).unwrap_err();
+
+        assert!(format!("{error:#}").contains("formula snapshot is not the audited"));
+        assert_eq!(crate::file::read_to_string(&target)?, "preserve");
+        assert!(keg.symlink_metadata().is_err());
+        assert!(state_path(&keg).symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_audited_ca_revalidates_formula_snapshot_before_output() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/ca-certificates/2026-08-13");
+        let target = prefix.join("etc/ca-certificates/cert.pem");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::write(&target, "preserve")?;
+        let mut prepared = prepare(&ca_certificates_formula(), &keg)?;
+        prepared.set_formula_snapshot_sha256("wrong-snapshot".into());
+
+        let error = match execute_step(&prepared, &prepared.steps[0]).await {
+            Err(error) => error,
+            Ok(_) => panic!("wrong formula snapshot unexpectedly executed"),
+        };
+
+        assert!(format!("{error:#}").contains("formula snapshot is not the audited"));
+        assert_eq!(crate::file::read_to_string(&target)?, "preserve");
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn macos_audited_ca_rejects_wrong_helper_before_output() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/ca-certificates/2026-08-13");
+        let helper = keg.join("libexec/post-install");
+        let source = keg.join("share/ca-certificates/cacert.pem");
+        let target = prefix.join("etc/ca-certificates/cert.pem");
+        for path in [&helper, &source, &target] {
+            crate::file::create_dir_all(path.parent().unwrap())?;
+        }
+        crate::file::write(&helper, "#!/bin/sh\nexit 0\n")?;
+        crate::file::write(&source, "certificate-data")?;
+        crate::file::write(&target, "preserve")?;
+        let mut prepared = prepare(&ca_certificates_formula(), &keg)?;
+        prepared.set_formula_snapshot_sha256(AUDITED_CA_CERTIFICATES_FORMULA_SHA256.into());
+
+        let error = match execute_step(&prepared, &prepared.steps[0]).await {
+            Err(error) => error,
+            Ok(_) => panic!("wrong audited helper unexpectedly executed"),
+        };
+
+        assert!(format!("{error:#}").contains("helper contents changed"));
+        assert_eq!(crate::file::read_to_string(&target)?, "preserve");
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_audited_ca_uses_system_only_path_and_read_only_keg() -> Result<()> {
+        let prepared = prepare(
+            &ca_certificates_formula(),
+            &prefix::cellar().join("ca-certificates/2026-08-13"),
+        )?;
+        let PreparedStep::AuditedCaCertificates(run) = &prepared.steps[0] else {
+            unreachable!()
+        };
+        let env = run_environment(&prepared, run, Path::new("/private/temp"), true)?;
+        assert_eq!(env["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin");
+        assert!(!env["PATH"].contains(&prefix::prefix().display().to_string()));
+        let sandbox = lifecycle_run_sandbox(
+            &prepared.keg,
+            std::slice::from_ref(&run.executable),
+            Path::new("/private/stdout.log"),
+            Path::new("/private/stderr.log"),
+            Path::new("/private/temp"),
+            None,
+            false,
+        );
+        assert!(!sandbox.allow_write.contains(&prepared.keg));
+        assert!(sandbox.allow_read.contains(&prepared.keg));
+        Ok(())
     }
 
     #[test]
@@ -3848,6 +6625,7 @@ mod tests {
                 target: link_target.clone(),
             }],
             required_paths: vec![shared_target.clone()],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: Some(LifecycleRepairJournal {
@@ -3939,6 +6717,7 @@ mod tests {
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -4382,6 +7161,7 @@ mod tests {
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -4409,6 +7189,7 @@ mod tests {
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -4435,6 +7216,7 @@ mod tests {
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -4498,6 +7280,7 @@ mod tests {
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -4674,7 +7457,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn run_stdout_does_not_truncate_unknown_shared_file() -> Result<()> {
         let tmp = tempfile::tempdir()?;
@@ -4700,7 +7483,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     #[test]
     fn run_write_allowlist_contains_only_explicit_shared_arguments() -> Result<()> {
         let tmp = tempfile::tempdir()?;
@@ -4730,9 +7513,85 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
+    #[test]
+    fn run_sandbox_denies_network_and_local_socket_brokers() {
+        let config = lifecycle_run_sandbox(
+            Path::new("/private/keg"),
+            &[PathBuf::from("/private/keg/libexec/post-install")],
+            Path::new("/private/stdout.log"),
+            Path::new("/private/stderr.log"),
+            Path::new("/private/temp"),
+            None,
+            true,
+        );
+
+        assert!(config.deny_net);
+        assert!(config.deny_local_sockets);
+        assert!(config.deny_write);
+        assert!(config.deny_env);
+        #[cfg(target_os = "linux")]
+        {
+            assert!(config.deny_read);
+            assert!(config.deny_mise_data_read);
+            assert!(config.require_full_filesystem_confinement);
+            assert_eq!(
+                config.system_access_profile,
+                crate::sandbox::SystemAccessProfile::FormulaExecution
+            );
+        }
+        assert!(
+            config
+                .allow_write
+                .contains(&PathBuf::from("/private/stdout.log"))
+        );
+        assert!(
+            config
+                .allow_write
+                .contains(&PathBuf::from("/private/stderr.log"))
+        );
+        assert!(!config.allow_write.contains(&PathBuf::from("/private")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_run_temp_and_log_binding_reject_symlinked_ancestors() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let outside = crate::file::desymlink_path(&tmp.path().join("outside"));
+        let linked = crate::file::desymlink_path(&tmp.path().join("linked"));
+        crate::file::create_dir_all(&outside)?;
+        crate::file::write(outside.join("sentinel"), "preserve")?;
+        crate::file::make_symlink(&outside, &linked)?;
+
+        assert!(BoundRunPrivateTree::create(&linked.join("temp"), "run-").is_err());
+        assert!(
+            BoundRunSharedParent::open_private_beneath(Path::new("/"), &linked.join("logs"))
+                .is_err()
+        );
+        assert_eq!(
+            crate::file::read_to_string(outside.join("sentinel"))?,
+            "preserve"
+        );
+        assert!(outside.join("temp").symlink_metadata().is_err());
+        assert!(outside.join("logs").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn private_run_cleanup_can_distinguish_mount_boundaries() -> Result<()> {
+        let root = File::open("/")?;
+        let proc = File::open("/proc")?;
+
+        assert_ne!(
+            run_directory_mount_identity(&root)?,
+            run_directory_mount_identity(&proc)?
+        );
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn run_creates_only_declared_output_parent_before_sandbox() -> Result<()> {
+    async fn run_uses_private_mirror_for_adjacent_atomic_output() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
         let tmp = tempfile::tempdir()?;
@@ -4751,14 +7610,19 @@ mod tests {
         crate::file::write(&sibling, "preserve")?;
         crate::file::write(
             &executable,
-            r#"#!/bin/sh
+            format!(
+                r#"#!/bin/sh
 set -eu
-mkdir -p "$(dirname "$2")"
-if printf mutated > "$(dirname "$2")/../sibling-sentinel" 2>/dev/null; then
+[ "$(basename "$2")" = cert.pem ] || exit 98
+temporary=$(mktemp "$(dirname "$2")/.ca-certificates.XXXXXX")
+cp "$1" "$temporary"
+mv "$temporary" "$2"
+if printf mutated > "{}" 2>/dev/null; then
   exit 97
 fi
-cp "$1" "$2"
 "#,
+                sibling.display()
+            ),
         )?;
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
         assert!(target.parent().unwrap().symlink_metadata().is_err());
@@ -4776,6 +7640,873 @@ cp "$1" "$2"
         assert_eq!(crate::file::read_to_string(&target)?, "certificate-data");
         assert_eq!(crate::file::read_to_string(&sibling)?, "preserve");
         assert!(effects.required_paths.contains(&target));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn lifecycle_run_cannot_read_host_secret_or_escape_process_group() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let secret = crate::file::desymlink_path(&tmp.path().join("host-secret"));
+        let escaped = crate::file::desymlink_path(&tmp.path().join("escaped"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let executable = keg.join("libexec/post-install");
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(executable.parent().unwrap())?;
+        crate::file::write(&secret, "host-secret")?;
+        crate::file::write(
+            &executable,
+            format!(
+                r#"#!/bin/sh
+set -eu
+if IFS= read -r _ < "{}" 2>/dev/null; then
+  exit 91
+fi
+if command -v setsid >/dev/null 2>&1 && setsid /bin/sh -c 'printf escaped > "{}"'; then
+  exit 92
+fi
+printf confined > "$1"
+"#,
+                secret.display(),
+                escaped.display()
+            ),
+        )?;
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
+        let prepared = prepare(
+            &formula(vec![serde_json::json!({
+                "command": {"base": "libexec", "path": "post-install"},
+                "type": "run",
+                "args": [target]
+            })]),
+            &keg,
+        )?;
+
+        let effects = execute_step(&prepared, &prepared.steps[0]).await?;
+
+        assert_eq!(crate::file::read_to_string(&target)?, "confined");
+        assert_eq!(crate::file::read_to_string(&secret)?, "host-secret");
+        assert!(escaped.symlink_metadata().is_err());
+        assert!(effects.required_paths.contains(&target));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn lifecycle_run_receives_nonempty_bound_stdin_from_offset_zero() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let input = keg.join("input");
+        let output = keg.join("output");
+        crate::file::create_dir_all(&keg)?;
+        crate::file::write(&input, "nonempty-stdin")?;
+        let prepared = prepare(
+            &formula(vec![serde_json::json!({
+                "command": {"path": "/bin/cat"},
+                "type": "run",
+                "stdin_path": {"path": "input"},
+                "stdout_path": {"path": "output"}
+            })]),
+            &keg,
+        )?;
+
+        execute_step(&prepared, &prepared.steps[0]).await?;
+
+        assert_eq!(crate::file::read_to_string(output)?, "nonempty-stdin");
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn run_shared_stdout_uses_bound_parent_and_exact_publish() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        crate::file::create_dir_all(&prefix)?;
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let target = prefix.join("etc/openssl@3/nested/generated");
+        let prepared = prepare(
+            &formula(vec![serde_json::json!({
+                "type": "run",
+                "command": {"path": "/bin/echo"},
+                "args": ["generated"],
+                "stdout_path": {"base": "pkgetc", "path": "nested/generated"}
+            })]),
+            &keg,
+        )?;
+
+        let effects = execute_step(&prepared, &prepared.steps[0]).await?;
+
+        assert_eq!(crate::file::read_to_string(&target)?, "generated\n");
+        assert_eq!(effects.required_paths, [target]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_inside_keg_stdout_uses_the_same_bound_publish_transaction() -> Result<()> {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let target = keg.join("share/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let mut writes =
+            prepare_run_shared_writes(&keg, &BTreeSet::new(), Some(&target), &private)?;
+        let mut stdout = writes.open_stdout(&target)?;
+        stdout.write_all(b"new")?;
+        stdout.sync_all()?;
+        drop(stdout);
+
+        let published = writes.publish()?;
+
+        assert_eq!(crate::file::read_to_string(&target)?, "new");
+        assert_eq!(published.files.len(), 1);
+        assert_eq!(published.files[0].path, target);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_publish_rejects_ancestor_swap_without_touching_outside() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let outside = crate::file::desymlink_path(&tmp.path().join("outside"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        crate::file::create_dir_all(prefix.join("etc"))?;
+        crate::file::create_dir_all(&outside)?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(outside.join("sentinel"), "preserve")?;
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let target = prefix.join("etc/openssl@3/generated");
+        let mut writes =
+            prepare_run_shared_writes(&keg, &BTreeSet::from([target.clone()]), None, &private)?;
+        crate::file::write(&writes.outputs[0].staging, "generated")?;
+
+        fs::rename(prefix.join("etc"), prefix.join("etc-bound"))?;
+        crate::file::make_symlink(&outside, &prefix.join("etc"))?;
+
+        assert!(writes.publish().is_err());
+        assert_eq!(
+            crate::file::read_to_string(outside.join("sentinel"))?,
+            "preserve"
+        );
+        assert!(
+            outside
+                .join("openssl@3/generated")
+                .symlink_metadata()
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn run_shared_publish_replaces_only_bound_regular_leaf() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let mut writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+
+        let published = writes.publish()?;
+        assert_eq!(published.files.len(), 1);
+        assert_eq!(published.files[0].path, target);
+        assert_eq!(crate::file::read_to_string(target)?, "new");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_publish_preserves_unchanged_inode_and_metadata() -> Result<()> {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/unchanged");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "same")?;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640))?;
+        let before = target.symlink_metadata()?;
+        let mut writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+
+        let published = writes.publish()?;
+
+        let after = target.symlink_metadata()?;
+        assert_eq!(before.ino(), after.ino());
+        assert_eq!(before.permissions().mode(), after.permissions().mode());
+        assert_eq!(published.files.len(), 1);
+        assert_eq!(published.files[0].inode, after.ino());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_publish_preserves_updated_mode_and_xattrs() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/metadata");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let mut writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+        fs::set_permissions(
+            &writes.outputs[0].staging,
+            fs::Permissions::from_mode(0o640),
+        )?;
+        set_test_xattr(&writes.outputs[0].staging, b"bound-value")?;
+
+        let published = writes.publish()?;
+
+        let target_file = File::open(&target)?;
+        assert_eq!(crate::file::read_to_string(&target)?, "new");
+        assert_eq!(
+            target.symlink_metadata()?.permissions().mode() & 0o7777,
+            0o640
+        );
+        assert_eq!(
+            run_file_xattrs(&target_file)?
+                .get(b"user.mise-lifecycle-test".as_slice())
+                .map(Vec::as_slice),
+            Some(b"bound-value".as_slice())
+        );
+        assert_eq!(
+            published.files[0].sha256,
+            crate::hash::file_hash_sha256(&target, None)?
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn typed_run_file_health_requires_regular_identity_mode_and_contents() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        crate::file::create_dir_all(&prefix)?;
+        let path = prefix.join("published");
+        crate::file::write(&path, "expected")?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640))?;
+        let metadata = path.symlink_metadata()?;
+        let (device, inode) = permission_device_inode(&metadata)?;
+        let expected = LifecycleRunFile {
+            path: path.clone(),
+            sha256: crate::hash::file_hash_sha256(&path, None)?,
+            metadata_sha256: None,
+            device,
+            inode,
+            mode: metadata.permissions().mode() & 0o7777,
+        };
+        assert!(lifecycle_run_file_matches(&expected)?);
+
+        crate::file::write(&path, "changed")?;
+        assert!(!lifecycle_run_file_matches(&expected)?);
+        fs::remove_file(&path)?;
+        crate::file::write(tmp.path().join("foreign"), "expected")?;
+        crate::file::make_symlink(&tmp.path().join("foreign"), &path)?;
+        assert!(lifecycle_run_file_matches(&expected).is_err());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_publish_journals_exact_deleted_file() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/deleted");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let mut writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        fs::remove_file(&writes.outputs[0].staging)?;
+
+        let published = writes.publish()?;
+
+        assert!(target.symlink_metadata().is_err());
+        assert!(published.files.is_empty());
+        assert_eq!(published.deleted, std::slice::from_ref(&target));
+        drop(writes);
+        assert!(fs::read_dir(target.parent().unwrap())?.all(|entry| {
+            !entry
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".mise-lifecycle-")
+        }));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adjacent_run_file_has_immediate_identity_bound_cleanup() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let parent_path = crate::file::desymlink_path(&tmp.path().join("prefix/etc"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", parent_path.parent().unwrap());
+        crate::file::create_dir_all(&parent_path)?;
+        let parent = BoundRunSharedParent::open(&parent_path)?;
+        let adjacent = BoundAdjacentRunFile::create(&parent)?;
+        let path = parent_path.join(&adjacent.name);
+        assert!(path.is_file());
+
+        drop(adjacent);
+
+        assert!(path.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_publish_rejects_private_staging_ancestor_swap() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let outside = crate::file::desymlink_path(&tmp.path().join("outside"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        crate::file::create_dir_all(&prefix)?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::create_dir_all(&outside)?;
+        crate::file::write(outside.join("sentinel"), "preserve")?;
+        let target = prefix.join("etc/openssl@3/generated");
+        let mut writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "generated")?;
+        let staging_parent = writes.outputs[0].staging.parent().unwrap();
+        let moved = staging_parent.with_extension("bound");
+        fs::rename(staging_parent, &moved)?;
+        crate::file::make_symlink(&outside, staging_parent)?;
+
+        assert!(writes.publish().is_err());
+        assert!(target.symlink_metadata().is_err());
+        assert_eq!(
+            crate::file::read_to_string(outside.join("sentinel"))?,
+            "preserve"
+        );
+        assert!(outside.join("generated").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_publish_preserves_concurrent_leaf_replacement() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let mut writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+        fs::rename(&target, target.with_extension("old"))?;
+        crate::file::write(&target, "foreign")?;
+
+        assert!(writes.publish().is_err());
+        assert_eq!(crate::file::read_to_string(target)?, "foreign");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_create_rolls_back_after_every_post_link_failure() -> Result<()> {
+        for checkpoint in [
+            RunPublishCheckpoint::CreateLink,
+            RunPublishCheckpoint::ParentSync,
+            RunPublishCheckpoint::Validation,
+        ] {
+            let tmp = tempfile::tempdir()?;
+            let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+            let private = crate::file::desymlink_path(&tmp.path().join("private"));
+            let mut env = crate::test::EnvVarGuard::new();
+            env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+            crate::file::create_dir_all(&prefix)?;
+            crate::file::create_dir_all(&private)?;
+            let target = prefix.join("etc/openssl@3/generated");
+            let mut writes = prepare_run_shared_writes(
+                &prefix.join("Cellar/openssl@3/1"),
+                &BTreeSet::from([target.clone()]),
+                None,
+                &private,
+            )?;
+            crate::file::write(&writes.outputs[0].staging, "new")?;
+            RUN_PUBLISH_FAULT.set(Some(checkpoint));
+
+            assert!(writes.publish().is_err(), "checkpoint {checkpoint:?}");
+            assert!(
+                target.symlink_metadata().is_err(),
+                "checkpoint {checkpoint:?}"
+            );
+            assert_eq!(RUN_PUBLISH_FAULT.get(), None);
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_replace_rolls_back_after_every_post_exchange_failure() -> Result<()> {
+        for checkpoint in [
+            RunPublishCheckpoint::ReplaceExchange,
+            RunPublishCheckpoint::Validation,
+            RunPublishCheckpoint::ParentSync,
+        ] {
+            let tmp = tempfile::tempdir()?;
+            let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+            let private = crate::file::desymlink_path(&tmp.path().join("private"));
+            let mut env = crate::test::EnvVarGuard::new();
+            env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+            crate::file::create_dir_all(&private)?;
+            let target = prefix.join("etc/openssl@3/generated");
+            crate::file::create_dir_all(target.parent().unwrap())?;
+            crate::file::write(&target, "old")?;
+            let mut writes = prepare_run_shared_writes(
+                &prefix.join("Cellar/openssl@3/1"),
+                &BTreeSet::from([target.clone()]),
+                None,
+                &private,
+            )?;
+            crate::file::write(&writes.outputs[0].staging, "new")?;
+            RUN_PUBLISH_FAULT.set(Some(checkpoint));
+
+            assert!(writes.publish().is_err(), "checkpoint {checkpoint:?}");
+            assert_eq!(
+                crate::file::read_to_string(&target)?,
+                "old",
+                "checkpoint {checkpoint:?}"
+            );
+            assert_eq!(RUN_PUBLISH_FAULT.get(), None);
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_delete_rolls_back_after_every_namespace_failure() -> Result<()> {
+        for checkpoint in [
+            RunPublishCheckpoint::DeleteExchange,
+            RunPublishCheckpoint::Validation,
+            RunPublishCheckpoint::DeleteUnlink,
+            RunPublishCheckpoint::ParentSync,
+        ] {
+            let tmp = tempfile::tempdir()?;
+            let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+            let private = crate::file::desymlink_path(&tmp.path().join("private"));
+            let mut env = crate::test::EnvVarGuard::new();
+            env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+            crate::file::create_dir_all(&private)?;
+            let target = prefix.join("etc/openssl@3/generated");
+            crate::file::create_dir_all(target.parent().unwrap())?;
+            crate::file::write(&target, "old")?;
+            let mut writes = prepare_run_shared_writes(
+                &prefix.join("Cellar/openssl@3/1"),
+                &BTreeSet::from([target.clone()]),
+                None,
+                &private,
+            )?;
+            crate::file::remove_file(&writes.outputs[0].staging)?;
+            RUN_PUBLISH_FAULT.set(Some(checkpoint));
+
+            assert!(writes.publish().is_err(), "checkpoint {checkpoint:?}");
+            assert_eq!(
+                crate::file::read_to_string(&target)?,
+                "old",
+                "checkpoint {checkpoint:?}"
+            );
+            assert_eq!(RUN_PUBLISH_FAULT.get(), None);
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_rollback_never_exchanges_a_foreign_backup_node() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+        let mut publish = PreparedRunPublish::prepare(0, &writes.outputs[0])?;
+        publish.prevalidate(&writes.outputs[0])?;
+        publish.apply(&writes.outputs[0])?;
+        let adjacent_name = match &publish.action {
+            RunPublishAction::Replace { adjacent, .. } => adjacent.name.clone(),
+            _ => unreachable!(),
+        };
+        let adjacent = target.parent().unwrap().join(adjacent_name);
+        let saved_old = target.parent().unwrap().join("saved-old");
+        fs::rename(&adjacent, &saved_old)?;
+        crate::file::write(&adjacent, "foreign")?;
+
+        assert!(publish.rollback(&writes.outputs[0]).is_err());
+        assert_eq!(crate::file::read_to_string(&target)?, "new");
+        assert_eq!(crate::file::read_to_string(&adjacent)?, "foreign");
+        assert_eq!(crate::file::read_to_string(&saved_old)?, "old");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_rollback_retains_predecessor_in_private_recovery() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+        let mut publishes = vec![PreparedRunPublish::prepare(0, &writes.outputs[0])?];
+        publishes[0].prevalidate(&writes.outputs[0])?;
+        publishes[0].apply(&writes.outputs[0])?;
+        let moved_new = target.with_extension("transaction-new");
+        fs::rename(&target, &moved_new)?;
+        crate::file::write(&target, "foreign")?;
+
+        let error = rollback_run_publishes(&mut publishes, &writes.outputs).unwrap_err();
+        let recovery_dir = writes.outputs[0].rollback_parent.path().to_path_buf();
+        let recovery = fs::read_dir(&recovery_dir)?
+            .collect::<std::io::Result<Vec<_>>>()?
+            .into_iter()
+            .map(|entry| entry.path())
+            .find(|path| path.is_file())
+            .ok_or_else(|| eyre!("predecessor recovery file is missing"))?;
+        assert!(format!("{error:#}").contains(&recovery.display().to_string()));
+        assert_eq!(crate::file::read_to_string(&recovery)?, "old");
+        drop(publishes);
+        drop(writes);
+
+        assert_eq!(crate::file::read_to_string(&target)?, "foreign");
+        assert_eq!(crate::file::read_to_string(&recovery)?, "old");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rollback_fsync_failure_retains_restored_predecessor_recovery() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+        let mut publishes = vec![PreparedRunPublish::prepare(0, &writes.outputs[0])?];
+        publishes[0].apply(&writes.outputs[0])?;
+        RUN_PUBLISH_FAULT.set(Some(RunPublishCheckpoint::RollbackParentSync));
+
+        let error = rollback_run_publishes(&mut publishes, &writes.outputs).unwrap_err();
+        let recovery_dir = writes.outputs[0].rollback_parent.path().to_path_buf();
+        let recovery = fs::read_dir(&recovery_dir)?
+            .collect::<std::io::Result<Vec<_>>>()?
+            .into_iter()
+            .map(|entry| entry.path())
+            .find(|path| path.is_file())
+            .ok_or_else(|| eyre!("predecessor recovery file is missing"))?;
+
+        assert!(format!("{error:#}").contains(&recovery.display().to_string()));
+        assert_eq!(crate::file::read_to_string(&target)?, "old");
+        assert_eq!(crate::file::read_to_string(&recovery)?, "old");
+        assert_eq!(RUN_PUBLISH_FAULT.get(), None);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_private_recovery_link_retains_adjacent_predecessor() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(target.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&target, "old")?;
+        let writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target.clone()]),
+            None,
+            &private,
+        )?;
+        crate::file::write(&writes.outputs[0].staging, "new")?;
+        let mut publishes = vec![PreparedRunPublish::prepare(0, &writes.outputs[0])?];
+        publishes[0].apply(&writes.outputs[0])?;
+        let adjacent = match &publishes[0].action {
+            RunPublishAction::Replace { adjacent, .. } => {
+                target.parent().unwrap().join(&adjacent.name)
+            }
+            _ => unreachable!(),
+        };
+        fs::set_permissions(
+            writes.outputs[0].rollback_parent.path(),
+            fs::Permissions::from_mode(0o500),
+        )?;
+        fs::rename(&target, target.with_extension("transaction-new"))?;
+        crate::file::write(&target, "foreign")?;
+
+        let error = rollback_run_publishes(&mut publishes, &writes.outputs).unwrap_err();
+
+        assert!(format!("{error:#}").contains(&adjacent.display().to_string()));
+        drop(publishes);
+        drop(writes);
+        assert_eq!(crate::file::read_to_string(&target)?, "foreign");
+        assert_eq!(crate::file::read_to_string(&adjacent)?, "old");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_multi_output_cleanup_failure_rolls_back_every_output() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let first = prefix.join("etc/openssl@3/first");
+        let second = prefix.join("etc/openssl@3/second");
+        crate::file::create_dir_all(first.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&first, "old-first")?;
+        crate::file::write(&second, "old-second")?;
+        let writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([first.clone(), second.clone()]),
+            None,
+            &private,
+        )?;
+        for output in &writes.outputs {
+            crate::file::write(
+                &output.staging,
+                format!(
+                    "new-{}",
+                    output.destination.file_name().unwrap().to_string_lossy()
+                ),
+            )?;
+        }
+        let mut publishes = writes
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(index, output)| PreparedRunPublish::prepare(index, output))
+            .collect::<Result<Vec<_>>>()?;
+        for publish in &publishes {
+            publish.prevalidate(&writes.outputs[publish.output])?;
+        }
+        for publish in &mut publishes {
+            publish.apply(&writes.outputs[publish.output])?;
+            publish.validate_applied(&writes.outputs[publish.output])?;
+            publish.arm_cleanup_rollback(&writes.outputs[publish.output])?;
+        }
+        publishes[0].cleanup()?;
+        let adjacent_name = match &publishes[1].action {
+            RunPublishAction::Replace { adjacent, .. } => adjacent.name.clone(),
+            _ => unreachable!(),
+        };
+        let adjacent = second.parent().unwrap().join(adjacent_name);
+        let saved_old = second.parent().unwrap().join("saved-second-old");
+        fs::rename(&adjacent, &saved_old)?;
+        crate::file::write(&adjacent, "foreign")?;
+
+        assert!(publishes[1].cleanup().is_err());
+        rollback_run_publishes(&mut publishes, &writes.outputs)?;
+
+        assert_eq!(crate::file::read_to_string(&first)?, "old-first");
+        assert_eq!(crate::file::read_to_string(&second)?, "old-second");
+        assert_eq!(crate::file::read_to_string(&adjacent)?, "foreign");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_rollback_continues_after_one_foreign_backup() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        crate::file::create_dir_all(&private)?;
+        let targets =
+            ["first", "middle", "last"].map(|name| prefix.join("etc/openssl@3").join(name));
+        for target in &targets {
+            crate::file::create_dir_all(target.parent().unwrap())?;
+            crate::file::write(
+                target,
+                format!("old-{}", target.file_name().unwrap().to_string_lossy()),
+            )?;
+        }
+        let writes = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &targets.iter().cloned().collect(),
+            None,
+            &private,
+        )?;
+        for output in &writes.outputs {
+            crate::file::write(
+                &output.staging,
+                format!(
+                    "new-{}",
+                    output.destination.file_name().unwrap().to_string_lossy()
+                ),
+            )?;
+        }
+        let mut publishes = writes
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(index, output)| PreparedRunPublish::prepare(index, output))
+            .collect::<Result<Vec<_>>>()?;
+        for publish in &publishes {
+            publish.prevalidate(&writes.outputs[publish.output])?;
+        }
+        for publish in &mut publishes {
+            publish.apply(&writes.outputs[publish.output])?;
+        }
+        let middle_index = writes
+            .outputs
+            .iter()
+            .position(|output| output.destination.ends_with("middle"))
+            .unwrap();
+        let adjacent_name = match &publishes[middle_index].action {
+            RunPublishAction::Replace { adjacent, .. } => adjacent.name.clone(),
+            _ => unreachable!(),
+        };
+        let adjacent = targets[1].parent().unwrap().join(adjacent_name);
+        let saved_old = targets[1].parent().unwrap().join("saved-middle-old");
+        fs::rename(&adjacent, &saved_old)?;
+        crate::file::write(&adjacent, "foreign")?;
+
+        let error = rollback_run_publishes(&mut publishes, &writes.outputs).unwrap_err();
+
+        assert!(format!("{error:#}").contains("failed to roll back one or more"));
+        assert_eq!(crate::file::read_to_string(&targets[0])?, "old-first");
+        assert_eq!(crate::file::read_to_string(&targets[1])?, "new-middle");
+        assert_eq!(crate::file::read_to_string(&targets[2])?, "old-last");
+        assert_eq!(crate::file::read_to_string(&adjacent)?, "foreign");
+        assert_eq!(crate::file::read_to_string(&saved_old)?, "old-middle");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_shared_output_rejects_non_regular_leaf() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let target = prefix.join("etc/openssl@3/generated");
+        crate::file::create_dir_all(&target)?;
+        crate::file::create_dir_all(&private)?;
+
+        let error = prepare_run_shared_writes(
+            &prefix.join("Cellar/openssl@3/1"),
+            &BTreeSet::from([target]),
+            None,
+            &private,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("not an exact regular file"));
         Ok(())
     }
 
@@ -5017,6 +8748,7 @@ cp "$1" "$2"
             target: root.join("old-link"),
         }];
         let mut required_paths = vec![root.join("old-file")];
+        let mut run_files = vec![];
         let mut absent_patterns = vec![];
         let mut permissions = vec![LifecyclePermission {
             path: root.join("old-file"),
@@ -5030,6 +8762,7 @@ cp "$1" "$2"
         merge_step_effects(
             &mut symlinks,
             &mut required_paths,
+            &mut run_files,
             &mut absent_patterns,
             &mut permissions,
             StepEffects {
@@ -5047,6 +8780,7 @@ cp "$1" "$2"
         merge_step_effects(
             &mut symlinks,
             &mut required_paths,
+            &mut run_files,
             &mut absent_patterns,
             &mut permissions,
             StepEffects {
@@ -5117,6 +8851,120 @@ cp "$1" "$2"
     }
 
     #[test]
+    fn run_preflight_rejects_non_keg_cwd_and_stdin() {
+        let keg = prefix::cellar().join("openssl@3/1");
+        let cases = [
+            (
+                serde_json::json!({
+                    "type": "run",
+                    "command": {"base": "bin", "path": "tool"},
+                    "chdir": {"path": "/etc"}
+                }),
+                "working directory must remain inside its keg",
+            ),
+            (
+                serde_json::json!({
+                    "type": "run",
+                    "command": {"base": "bin", "path": "tool"},
+                    "stdin_path": {
+                        "path": prefix::prefix().join("etc/private-secret")
+                    }
+                }),
+                "stdin must remain inside its keg",
+            ),
+        ];
+        for (step, expected) in cases {
+            let error = prepare(&formula(vec![step]), &keg).unwrap_err();
+            assert!(format!("{error:#}").contains(expected));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_stdin_rejects_symlinked_leaf_and_ancestor() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let keg = crate::file::desymlink_path(&tmp.path().join("Cellar/foo/1"));
+        let outside = crate::file::desymlink_path(&tmp.path().join("outside"));
+        crate::file::create_dir_all(&keg)?;
+        crate::file::create_dir_all(&outside)?;
+        crate::file::write(outside.join("secret"), "preserve")?;
+        crate::file::make_symlink(&outside.join("secret"), &keg.join("leaf"))?;
+        crate::file::make_symlink(&outside, &keg.join("parent"))?;
+
+        assert!(open_run_stdin(&keg, &keg.join("leaf")).is_err());
+        assert!(open_run_stdin(&keg, &keg.join("parent/secret")).is_err());
+        assert!(open_run_stdin(&keg, &keg.join("missing/input")).is_err());
+        assert!(keg.join("missing").symlink_metadata().is_err());
+        assert_eq!(
+            crate::file::read_to_string(outside.join("secret"))?,
+            "preserve"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn audited_source_copy_is_private_and_original_mutation_is_detected() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let keg = crate::file::desymlink_path(&tmp.path().join("Cellar/ca-certificates/1"));
+        let source = keg.join("share/ca-certificates/cacert.pem");
+        let private = crate::file::desymlink_path(&tmp.path().join("private"));
+        crate::file::create_dir_all(source.parent().unwrap())?;
+        crate::file::create_dir_all(&private)?;
+        crate::file::write(&source, "original")?;
+        let (parent, name, identity) = open_run_stdin(&keg, &source)?;
+        let temp = BoundRunPrivateTree::create(&private, "run-")?;
+        let copy_name = std::ffi::OsString::from("audited-source-input");
+        let mut copy = create_bound_run_file(&temp.parent, &copy_name)?;
+        copy_open_file_to(&identity.file, &mut copy)?;
+        copy.sync_all()?;
+        crate::file::write(&source, "mutated")?;
+
+        assert!(validate_bound_run_file_identity(&parent, &name, &identity).is_err());
+        assert_eq!(
+            crate::file::read_to_string(temp.path().join(copy_name))?,
+            "original"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_cwd_binding_rejects_symlinked_keg_subdirectory() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let keg = crate::file::desymlink_path(&tmp.path().join("Cellar/foo/1"));
+        let outside = crate::file::desymlink_path(&tmp.path().join("outside"));
+        crate::file::create_dir_all(&keg)?;
+        crate::file::create_dir_all(&outside)?;
+        crate::file::write(outside.join("sentinel"), "preserve")?;
+        crate::file::make_symlink(&outside, &keg.join("cwd"))?;
+
+        assert!(BoundRunSharedParent::open_existing(&keg.join("cwd")).is_err());
+        assert!(BoundRunSharedParent::open_existing(&keg.join("missing/cwd")).is_err());
+        assert!(keg.join("missing").symlink_metadata().is_err());
+        assert_eq!(
+            crate::file::read_to_string(outside.join("sentinel"))?,
+            "preserve"
+        );
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn statically_disabled_run_does_not_require_linux_confinement() -> Result<()> {
+        prepare(
+            &formula(vec![serde_json::json!({
+                "type": "run",
+                "command": {"path": "/bin/true"},
+                "guards": [{"condition": "on", "value": "macos"}]
+            })]),
+            &prefix::cellar().join("openssl@3/1"),
+        )?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
     fn run_environment_contains_only_fixed_and_typed_keys() -> Result<()> {
         let formula = formula(vec![serde_json::json!({
             "type": "run",
@@ -5127,7 +8975,12 @@ cp "$1" "$2"
         let PreparedStep::Run(run) = &prepared.steps[0] else {
             panic!("expected prepared run")
         };
-        let env = run_environment(&prepared, run, Path::new("/private/tmp/mise-private"))?;
+        let env = run_environment(
+            &prepared,
+            run,
+            Path::new("/private/tmp/mise-private"),
+            false,
+        )?;
         assert_eq!(
             env.keys().map(String::as_str).collect::<Vec<_>>(),
             [
@@ -5172,6 +9025,7 @@ cp "$1" "$2"
                 target: target.clone(),
             }],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,
@@ -5204,6 +9058,7 @@ cp "$1" "$2"
                 target: target.clone(),
             }],
             required_paths: vec![],
+            run_files: vec![],
             absent_patterns: vec![],
             permissions: vec![],
             repair: None,

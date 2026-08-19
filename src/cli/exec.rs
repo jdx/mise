@@ -276,6 +276,8 @@ impl Exec {
                 cache_env: vec![],
                 deny_system_temp_write: false,
                 deny_mise_data_read: false,
+                require_full_filesystem_confinement: false,
+                system_access_profile: crate::sandbox::SystemAccessProfile::Compatibility,
             },
         );
         sandbox.resolve_paths();

@@ -34,6 +34,7 @@ use crate::ui::progress_report::SingleReport;
 
 const SHIM_RB: &str = include_str!("shim.rb");
 const HOMEBREW_CORE_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-core";
+const SOURCE_SYSTEM_PATH: &[&str] = &["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
 
 /// does this formula have a bottle that can be poured on this machine?
 pub fn has_bottle(formula: &Formula) -> bool {
@@ -114,9 +115,16 @@ fn validate_source_build_platform(name: &str) -> Result<()> {
     )
 }
 
-#[cfg(not(target_os = "macos"))]
-fn validate_source_build_platform(_name: &str) -> Result<()> {
-    Ok(())
+#[cfg(target_os = "linux")]
+fn validate_source_build_platform(name: &str) -> Result<()> {
+    crate::sandbox::ensure_strict_formula_execution_available(&format!("brew:{name}: source build"))
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn validate_source_build_platform(name: &str) -> Result<()> {
+    bail!(
+        "brew:{name}: source builds are supported only on Linux with fully enforced Landlock confinement; install a compatible bottle"
+    )
 }
 
 fn valid_sha256(value: &str) -> bool {
@@ -349,6 +357,8 @@ fn source_sandbox_config(
         allow_write,
         deny_system_temp_write: true,
         deny_mise_data_read: true,
+        require_full_filesystem_confinement: true,
+        system_access_profile: crate::sandbox::SystemAccessProfile::FormulaExecution,
         ..Default::default()
     };
     sandbox.resolve_paths();
@@ -695,7 +705,7 @@ fn build_env(
         .filter(|p| p.is_dir())
         .map(|p| p.display().to_string())
         .collect();
-    for dir in ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
+    for dir in SOURCE_SYSTEM_PATH {
         path.push(dir.to_string());
     }
 
@@ -923,7 +933,10 @@ mod tests {
             assert!(error.contains("source builds are unsupported on macOS"));
             assert!(error.contains("install a compatible bottle"));
         } else {
-            assert!(check_buildable(&buildable).is_ok());
+            assert_eq!(
+                check_buildable(&buildable).is_ok(),
+                validate_source_build_platform(&buildable.name).is_ok()
+            );
         }
 
         let mut git_source = formula(&[]);
@@ -959,11 +972,10 @@ mod tests {
     fn source_platform_gate_does_not_disable_bottles() {
         let bottled = formula(&["all"]);
         assert!(has_bottle(&bottled));
-        if cfg!(target_os = "macos") {
-            assert!(check_buildable(&bottled).is_err());
-        } else {
-            assert!(check_buildable(&bottled).is_ok());
-        }
+        assert_eq!(
+            check_buildable(&bottled).is_ok(),
+            validate_source_build_platform(&bottled.name).is_ok()
+        );
     }
 
     #[test]
@@ -971,6 +983,12 @@ mod tests {
         assert!(SHIM_RB.contains("def etc = prefix + \".bottle/etc\""));
         assert!(SHIM_RB.contains("def var = prefix + \".bottle/var\""));
         assert!(!SHIM_RB.contains("formula.post_install"));
+    }
+
+    #[test]
+    fn source_path_excludes_unrelated_local_tools() {
+        assert!(!SOURCE_SYSTEM_PATH.contains(&"/usr/local/bin"));
+        assert_eq!(SOURCE_SYSTEM_PATH[0], "/usr/bin");
     }
 
     #[test]
@@ -1085,7 +1103,7 @@ end
 end
 "#,
                 true,
-                "disabled formula policy",
+                "disabled formula (unmaintained)",
             ),
         ];
         for (source, inspect_only, expected) in cases {

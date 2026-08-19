@@ -122,6 +122,7 @@ pub struct CmdLineRunner<'a> {
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
     cleanup_process_group: bool,
+    #[cfg(unix)]
     process_group_prepared: bool,
 }
 
@@ -636,6 +637,7 @@ impl<'a> CmdLineRunner<'a> {
             timeout: None,
             sandbox: None,
             cleanup_process_group: false,
+            #[cfg(unix)]
             process_group_prepared: false,
         }
     }
@@ -650,6 +652,7 @@ impl<'a> CmdLineRunner<'a> {
     /// Require a private Unix process group and remove every process that
     /// remains in it after the command leader exits. This is opt-in because
     /// ordinary interactive commands may intentionally leave descendants.
+    #[cfg(unix)]
     pub fn with_process_group_cleanup(mut self) -> Self {
         self.cleanup_process_group = true;
         self
@@ -741,6 +744,29 @@ impl<'a> CmdLineRunner<'a> {
 
     pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
         self.cmd.current_dir(dir);
+        self
+    }
+
+    /// Bind the child working directory to an already-audited directory
+    /// descriptor. Register this before `apply_sandbox()` so `fchdir` runs
+    /// before Landlock and seccomp are installed in the child.
+    #[cfg(unix)]
+    pub(crate) fn current_dir_fd(mut self, dir: std::os::fd::OwnedFd) -> Self {
+        use std::os::fd::AsRawFd;
+
+        unsafe {
+            self.cmd.as_std_mut().pre_exec(move || {
+                if nix::libc::fchdir(dir.as_raw_fd()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if nix::libc::fcntl(dir.as_raw_fd(), nix::libc::F_SETFD, nix::libc::FD_CLOEXEC)
+                    == -1
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
         self
     }
 
@@ -1687,6 +1713,7 @@ impl<'a> CmdLineRunner<'a> {
         if !sandbox.is_active() {
             return Ok(());
         }
+        sandbox.validate_formula_execution_for_runner(self.cleanup_process_group)?;
 
         // Fail early on Linux if per-host network filtering is requested
         #[cfg(target_os = "linux")]
@@ -1699,7 +1726,15 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
-            if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
+            let strict_formula_execution = sandbox.system_access_profile
+                == crate::sandbox::SystemAccessProfile::FormulaExecution;
+            if strict_formula_execution {
+                crate::sandbox::ensure_strict_formula_execution_available(
+                    "formula-execution sandbox",
+                )?;
+            } else if sandbox.require_full_filesystem_confinement
+                && (sandbox.effective_deny_read() || sandbox.effective_deny_write())
+            {
                 crate::sandbox::ensure_landlock_available()?;
             }
             // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
@@ -1716,7 +1751,7 @@ impl<'a> CmdLineRunner<'a> {
                     self.cmd.env(k, v);
                 }
             }
-            // Strict source commands must enter their dedicated process group
+            // Strict formula commands must enter their dedicated process group
             // before seccomp denies setpgid/setsid. Every descendant inherits
             // the filter, so none can escape the group cleanup boundary.
             if self.cleanup_process_group && !self.process_group_prepared {
@@ -1733,10 +1768,14 @@ impl<'a> CmdLineRunner<'a> {
                         crate::sandbox::landlock_apply(&sandbox)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
-                    if sandbox.effective_deny_net() || deny_process_group_escape {
+                    if sandbox.effective_deny_net()
+                        || deny_process_group_escape
+                        || strict_formula_execution
+                    {
                         crate::sandbox::seccomp_apply(
                             sandbox.deny_local_sockets,
                             deny_process_group_escape,
+                            strict_formula_execution,
                         )
                         .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
@@ -2234,6 +2273,7 @@ mod tests {
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_process_group_cleanup_is_opt_in() {
         assert!(!super::CmdLineRunner::new("true").cleanup_process_group);
@@ -2244,6 +2284,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_execute_async_cleans_descendants_after_success() {
         if !super::should_use_pgroup() {
@@ -2334,6 +2375,8 @@ mod tests {
             allow_write: vec![writable],
             deny_system_temp_write: true,
             deny_mise_data_read: true,
+            require_full_filesystem_confinement: true,
+            system_access_profile: crate::sandbox::SystemAccessProfile::FormulaExecution,
             ..Default::default()
         };
         sandbox.resolve_paths();
@@ -2342,13 +2385,14 @@ mod tests {
             .with_sandbox(sandbox)
             .with_process_group_cleanup();
 
+        let expected_preflight =
+            crate::sandbox::ensure_strict_formula_execution_available("formula-execution sandbox")
+                .map_err(|error| error.to_string());
         if let Err(error) = runner.apply_sandbox().await {
-            assert!(
-                error.to_string().contains("landlock is unavailable"),
-                "unexpected strict sandbox preflight failure: {error:#}"
-            );
+            assert_eq!(Err(error.to_string()), expected_preflight);
             return;
         }
+        expected_preflight.unwrap();
         runner.execute_async().await.unwrap();
     }
 
@@ -2401,6 +2445,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(output, "out");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_current_dir_fd_stays_bound_across_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("cwd");
+        let moved = root.path().join("moved");
+        std::fs::create_dir(&original).unwrap();
+        std::fs::write(original.join("marker"), "bound").unwrap();
+        let directory = std::fs::File::open(&original).unwrap();
+        std::fs::rename(&original, &moved).unwrap();
+        std::fs::create_dir(&original).unwrap();
+        std::fs::write(original.join("marker"), "replacement").unwrap();
+
+        let output = super::CmdLineRunner::new("/bin/sh")
+            .args(["-c", "cat marker"])
+            .current_dir_fd(directory.into())
+            .read()
+            .await
+            .unwrap();
+
+        assert_eq!(output, "bound");
     }
 
     #[tokio::test]
@@ -2570,6 +2637,7 @@ mod tests {
             deny_env: true,
             allow_write: vec![allowed.clone()],
             deny_system_temp_write: true,
+            require_full_filesystem_confinement: true,
             ..Default::default()
         };
         sandbox.resolve_paths();
@@ -2579,7 +2647,13 @@ mod tests {
             .env_clear()
             .env("DOCUMENTED", "yes")
             .with_sandbox(sandbox);
-        runner.apply_sandbox().await.unwrap();
+        if let Err(error) = runner.apply_sandbox().await {
+            assert!(
+                error.to_string().starts_with("landlock is unavailable:"),
+                "unexpected sandbox preflight failure: {error:#}"
+            );
+            return;
+        }
         let result = runner.execute_async().await;
 
         assert!(result.is_err());
