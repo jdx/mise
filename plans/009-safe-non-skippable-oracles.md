@@ -131,6 +131,19 @@ also records the same exact runtime Homebrew version/SHA; Linux records the
 intentional runtime value `not-installed`. The workflow's aggregate `test-ci`
 gate passed in [job 94574628303](https://github.com/jdx/mise/actions/runs/31735998370/job/94574628303).
 
+Latest-main revalidation: merge commit `b112975e0d6858c2b872259970f84b4002bc9d5e`
+integrated `origin/main` `619854b468dd3fffe0d475a08d69e4c82da80acd`.
+Oracle compatibility corrections are `58e26829048d29f09d749327a8dcca15cc862f36`
+and `1c3ce7cecb049a198fb64a658b9389cdbe9241d6`. Exact implementation head
+`1c3ce7cecb049a198fb64a658b9389cdbe9241d6` passed the complete
+[test workflow](https://github.com/jdx/mise/actions/runs/32275082730), including
+the [macOS oracle](https://github.com/jdx/mise/actions/runs/32275082730/job/96140855866)
+and [Linux/source oracle](https://github.com/jdx/mise/actions/runs/32275082730/job/96140855969).
+The validated markers record macOS cask/lifecycle fixture counts `1`/`5` and
+Linux formula/source counts `1`/`1`, exact mise head, and Homebrew `6.0.17` at
+`4dacfe77a24dead72de749c0876028b77b99cd04`; only isolated Linux source
+intentionally records runtime `not-installed`.
+
 ```bash
 rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
 rtk mise run test:e2e e2e/cli/test_system_install_brew_linux

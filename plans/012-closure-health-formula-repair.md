@@ -197,6 +197,17 @@ Completed proof:
   `7048be7c5b0f5bc62dc061cf32afd72a0dde9b61` directly exercises all 31
   downstream formula roots in
   [run 31921306723](https://github.com/jdx/mise/actions/runs/31921306723).
+- Latest-main closure proof: merge commit
+  `b112975e0d6858c2b872259970f84b4002bc9d5e` integrated `origin/main`
+  `619854b468dd3fffe0d475a08d69e4c82da80acd`. Exact implementation head
+  `1c3ce7cecb049a198fb64a658b9389cdbe9241d6` passed
+  [run 32275082730](https://github.com/jdx/mise/actions/runs/32275082730).
+  Its [macOS oracle](https://github.com/jdx/mise/actions/runs/32275082730/job/96140855866)
+  validates the five-fixture lifecycle marker, including root-only Kimi
+  OpenSSL/CA diagnosis and repair. Its
+  [Linux/source oracle](https://github.com/jdx/mise/actions/runs/32275082730/job/96140855969)
+  validates both isolated fixtures. All markers bind the exact head and pinned
+  Homebrew `6.0.17` source `4dacfe77a24dead72de749c0876028b77b99cd04`.
 
 ```bash
 rtk cargo test --bin mise system::packages::brew
