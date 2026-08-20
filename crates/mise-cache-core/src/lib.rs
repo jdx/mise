@@ -4,7 +4,8 @@ use futures_util::TryStreamExt as _;
 use log::warn;
 use reqwest::StatusCode;
 use reqwest::header::{
-    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, ETAG, HeaderValue, IF_MATCH, IF_NONE_MATCH,
+    ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, ETAG, HeaderMap, HeaderValue, IF_MATCH,
+    IF_NONE_MATCH,
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
@@ -38,7 +39,10 @@ pub const TASK_ACTION_MANIFEST_MEDIA_TYPE: &str =
 pub const BLOB_MEDIA_TYPE: &str = "application/octet-stream";
 pub const BLOB_PACK_MEDIA_TYPE: &str = "application/vnd.mise.cache-blob-pack.v1";
 const DIGEST_LIST_MEDIA_TYPE: &str = "application/vnd.mise.cache-digests.v1+json";
+const BLOB_PACK_BLOBS_HEADER: &str = "mise-cache-pack-blobs";
+const BLOB_PACK_BYTES_HEADER: &str = "mise-cache-pack-bytes";
 const BLOB_PACK_MAGIC: &[u8; 8] = b"MISEPK01";
+const BLOB_PACK_HEADER_BYTES: u64 = 1 + 32 + 8;
 const MAX_STAGED_BLOB_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_STAGED_BLOB_PACK_ITEMS: usize = 2 * 1024;
 const BLOB_PACK_TIMEOUT_BYTES_PER_UNIT: u64 = MAX_STAGED_BLOB_PACK_BYTES / 4;
@@ -274,11 +278,87 @@ pub struct RemoteBlobPack {
     pub blobs: Vec<(CacheDigest, PathBuf)>,
     pub requests: u64,
     pub requested: Vec<CacheDigest>,
+    pub blob_count: u64,
+    pub payload_bytes: u64,
+    pub framed_bytes: u64,
 }
 
 struct DownloadedBlobPack {
     directory: tempfile::TempDir,
     blobs: Vec<(CacheDigest, PathBuf)>,
+    metadata: BlobPackResponseStats,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct BlobPackResponseMetadata {
+    content_length: Option<u64>,
+    blob_count: Option<u64>,
+    payload_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BlobPackResponseStats {
+    blob_count: u64,
+    payload_bytes: u64,
+    framed_bytes: u64,
+}
+
+impl BlobPackResponseMetadata {
+    fn from_headers(headers: &HeaderMap) -> Result<Self> {
+        Ok(Self {
+            content_length: optional_u64_header(headers, CONTENT_LENGTH.as_str())?,
+            blob_count: optional_u64_header(headers, BLOB_PACK_BLOBS_HEADER)?,
+            payload_bytes: optional_u64_header(headers, BLOB_PACK_BYTES_HEADER)?,
+        })
+    }
+
+    fn validate(self, decoded: BlobPackResponseStats) -> Result<BlobPackResponseStats> {
+        if let Some(content_length) = self.content_length
+            && content_length != decoded.framed_bytes
+        {
+            bail!(
+                "remote cache blob pack content length metadata mismatch: expected {}, decoded {}",
+                content_length,
+                decoded.framed_bytes
+            );
+        }
+        if let Some(blob_count) = self.blob_count
+            && blob_count != decoded.blob_count
+        {
+            bail!(
+                "remote cache blob pack blob count metadata mismatch: expected {}, decoded {}",
+                blob_count,
+                decoded.blob_count
+            );
+        }
+        if let Some(payload_bytes) = self.payload_bytes
+            && payload_bytes != decoded.payload_bytes
+        {
+            bail!(
+                "remote cache blob pack payload byte metadata mismatch: expected {}, decoded {}",
+                payload_bytes,
+                decoded.payload_bytes
+            );
+        }
+        Ok(BlobPackResponseStats {
+            blob_count: self.blob_count.unwrap_or(decoded.blob_count),
+            payload_bytes: self.payload_bytes.unwrap_or(decoded.payload_bytes),
+            framed_bytes: self.content_length.unwrap_or(decoded.framed_bytes),
+        })
+    }
+}
+
+fn optional_u64_header(headers: &HeaderMap, name: &str) -> Result<Option<u64>> {
+    let Some(value) = headers.get(name) else {
+        return Ok(None);
+    };
+    let value = value
+        .to_str()
+        .map_err(|_| eyre!("remote cache blob pack {name} header is not valid UTF-8"))?;
+    let value = value
+        .parse::<u64>()
+        .map_err(|_| eyre!("remote cache blob pack {name} header is not an unsigned integer"))?;
+    Ok(Some(value))
 }
 
 #[derive(Debug, Deserialize)]
@@ -501,6 +581,9 @@ impl RemoteCacheClient {
                 blobs: Vec::new(),
                 requests: 0,
                 requested: Vec::new(),
+                blob_count: 0,
+                payload_bytes: 0,
+                framed_bytes: BLOB_PACK_MAGIC.len() as u64,
             }));
         }
         match self.download_blob_pack_chunk(&chunk, staging_dir).await? {
@@ -509,6 +592,9 @@ impl RemoteCacheClient {
                 blobs: pack.blobs,
                 requests: 1,
                 requested: chunk,
+                blob_count: pack.metadata.blob_count,
+                payload_bytes: pack.metadata.payload_bytes,
+                framed_bytes: pack.metadata.framed_bytes,
             })),
             None => {
                 self.blob_packs_disabled.store(true, Ordering::Relaxed);
@@ -801,6 +887,7 @@ async fn decode_blob_pack(
     requested: &[CacheDigest],
     staging_dir: &Path,
 ) -> Result<DownloadedBlobPack> {
+    let metadata = BlobPackResponseMetadata::from_headers(response.headers())?;
     let requested = requested.iter().cloned().collect::<BTreeSet<_>>();
     let stream = response.bytes_stream().map_err(std::io::Error::other);
     let mut reader = tokio_util::io::StreamReader::new(stream);
@@ -813,6 +900,8 @@ async fn decode_blob_pack(
     let directory = tempfile::tempdir_in(staging_dir)?;
     let mut seen = BTreeSet::new();
     let mut blobs = Vec::new();
+    let mut payload_bytes = 0_u64;
+    let mut framed_bytes = BLOB_PACK_MAGIC.len() as u64;
     loop {
         let mut algorithm = [0_u8; 1];
         if reader.read(&mut algorithm).await? == 0 {
@@ -841,6 +930,13 @@ async fn decode_blob_pack(
         if !seen.insert(digest.clone()) {
             bail!("remote cache blob pack returned a duplicate digest");
         }
+        framed_bytes = framed_bytes
+            .checked_add(BLOB_PACK_HEADER_BYTES)
+            .and_then(|bytes| bytes.checked_add(digest.size))
+            .ok_or_else(|| eyre!("remote cache blob pack is too large"))?;
+        payload_bytes = payload_bytes
+            .checked_add(digest.size)
+            .ok_or_else(|| eyre!("remote cache blob pack payload is too large"))?;
 
         let path = directory.path().join(blobs.len().to_string());
         let mut output = tokio::fs::File::create(&path).await?;
@@ -863,7 +959,17 @@ async fn decode_blob_pack(
         }
         blobs.push((digest, path));
     }
-    Ok(DownloadedBlobPack { directory, blobs })
+    let blob_count = blobs.len().try_into().unwrap_or(u64::MAX);
+    let metadata = metadata.validate(BlobPackResponseStats {
+        blob_count,
+        payload_bytes,
+        framed_bytes,
+    })?;
+    Ok(DownloadedBlobPack {
+        directory,
+        blobs,
+        metadata,
+    })
 }
 
 enum BlobPackHasher {
@@ -1348,6 +1454,9 @@ mod tests {
             (&first, first_bytes.as_slice()),
             (&second, second_bytes.as_slice()),
         ]);
+        let packed_len = packed.len().to_string();
+        let packed_blobs = 2.to_string();
+        let packed_payload_bytes = (first.size + second.size).to_string();
         let request = server
             .mock("POST", "/v1/blobs:pack")
             .match_header(PROTOCOL_HEADER, "1")
@@ -1355,6 +1464,9 @@ mod tests {
             .match_header("content-type", DIGEST_LIST_MEDIA_TYPE)
             .with_status(200)
             .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
+            .with_header("content-length", &packed_len)
+            .with_header(BLOB_PACK_BLOBS_HEADER, &packed_blobs)
+            .with_header(BLOB_PACK_BYTES_HEADER, &packed_payload_bytes)
             .with_body(packed)
             .expect(1)
             .create_async()
@@ -1372,11 +1484,69 @@ mod tests {
             .unwrap();
 
         assert_eq!(pack.requests, 1);
+        assert_eq!(pack.blob_count, 2);
+        assert_eq!(pack.payload_bytes, first.size + second.size);
+        assert_eq!(
+            pack.framed_bytes,
+            BLOB_PACK_MAGIC.len() as u64 + 2 * BLOB_PACK_HEADER_BYTES + first.size + second.size
+        );
         assert_eq!(pack.blobs.len(), 2);
         assert_eq!(fs::read(&pack.blobs[0].1).unwrap(), first_bytes);
         assert_eq!(fs::read(&pack.blobs[1].1).unwrap(), second_bytes);
         capabilities.assert_async().await;
         request.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn rejects_mismatched_blob_pack_metadata() {
+        let mut server = mockito::Server::new_async().await;
+        let contents = b"packed blob";
+        let digest = CacheDigest::blake3(contents);
+        mock_blob_pack_capabilities(&mut server).await;
+        server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
+            .with_header(BLOB_PACK_BLOBS_HEADER, "2")
+            .with_body(encode_blob_pack(&[(&digest, contents.as_slice())]))
+            .create_async()
+            .await;
+        let client = test_client(&server);
+        let staging = tempfile::tempdir().unwrap();
+
+        let error = client
+            .get_blob_pack(&[digest], staging.path())
+            .await
+            .err()
+            .unwrap();
+
+        assert!(error.to_string().contains("blob count metadata mismatch"));
+    }
+
+    #[tokio::test]
+    async fn rejects_malformed_blob_pack_metadata() {
+        let mut server = mockito::Server::new_async().await;
+        let contents = b"packed blob";
+        let digest = CacheDigest::blake3(contents);
+        mock_blob_pack_capabilities(&mut server).await;
+        server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", BLOB_PACK_MEDIA_TYPE)
+            .with_header(BLOB_PACK_BYTES_HEADER, "not-a-number")
+            .with_body(encode_blob_pack(&[(&digest, contents.as_slice())]))
+            .create_async()
+            .await;
+        let client = test_client(&server);
+        let staging = tempfile::tempdir().unwrap();
+
+        let error = client
+            .get_blob_pack(&[digest], staging.path())
+            .await
+            .err()
+            .unwrap();
+
+        assert!(error.to_string().contains("not an unsigned integer"));
     }
 
     #[tokio::test]
