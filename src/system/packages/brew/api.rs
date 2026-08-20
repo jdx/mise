@@ -22,6 +22,10 @@ const BASE64_URL_NO_PAD: GeneralPurpose = GeneralPurpose::new(
         .with_encode_padding(false)
         .with_decode_padding_mode(DecodePaddingMode::RequireNone),
 );
+const BASE64_URL_SIGNATURE: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::URL_SAFE,
+    GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FetchMode {
@@ -461,7 +465,7 @@ fn verify_internal_api_envelope_with_key(raw: &str, spki: &[u8]) -> Result<Strin
     if protected.alg != "PS512" || protected.b64 || protected.crit.as_slice() != ["b64"] {
         bail!("unsupported Homebrew internal API signature parameters");
     }
-    let signature_bytes = BASE64_URL_NO_PAD
+    let signature_bytes = BASE64_URL_SIGNATURE
         .decode(&signature.signature)
         .wrap_err("invalid Homebrew internal API signature encoding")?;
     let mut signing_input =
