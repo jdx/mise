@@ -809,8 +809,13 @@ impl Cli {
             version::show_latest().await;
             return Err(request_exit(0));
         }
-        let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();
         let cmd = cli.get_command().await?;
+        if matches!(&cmd, Commands::Mcp(_)) {
+            // MCP scopes no-cache artifacts per request because the server is
+            // long-lived and must not pin its first remote snapshot forever.
+            return measure!("run {cmd}", { cmd.run().await });
+        }
+        let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();
         measure!("run {cmd}", { cmd.run().await })
     }
 

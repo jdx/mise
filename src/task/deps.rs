@@ -2,7 +2,7 @@ use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{Task, TaskRunPhase, dep_has_usage_ref, parse_usage_values_from_task};
-use crate::{config::Config, task::task_list::resolve_depends};
+use crate::{config::Config, task::task_list::resolve_depends_with_no_cache};
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::algo::kosaraju_scc;
@@ -127,20 +127,28 @@ fn same_task_without_phase(task: &Task, other: &Task) -> bool {
 /// manages a dependency graph of tasks so `mise run` knows what to run next
 impl Deps {
     pub async fn new(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_options(config, tasks, Some(1), false).await
+        Self::new_with_options(config, tasks, Some(1), false, false).await
+    }
+
+    pub async fn new_with_no_cache(
+        config: &Arc<Config>,
+        tasks: Vec<Task>,
+        no_cache: bool,
+    ) -> eyre::Result<Self> {
+        Self::new_with_options(config, tasks, Some(1), false, no_cache).await
     }
 
     pub(crate) async fn new_for_validation(
         config: &Arc<Config>,
         tasks: Vec<Task>,
     ) -> eyre::Result<Self> {
-        Self::new_with_options(config, tasks, None, true).await
+        Self::new_with_options(config, tasks, None, true, false).await
     }
 
     /// Build a dependency graph for passive display without allowing remote
     /// providers to perform network or Git work from an untrusted config.
     pub async fn new_for_display(config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<Self> {
-        Self::new_with_options(config, tasks, Some(1), true).await
+        Self::new_with_options(config, tasks, Some(1), true, false).await
     }
 
     async fn new_with_options(
@@ -148,6 +156,7 @@ impl Deps {
         tasks: Vec<Task>,
         cycle_limit: Option<usize>,
         trust_before_fetch: bool,
+        no_cache: bool,
     ) -> eyre::Result<Self> {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
@@ -170,8 +179,8 @@ impl Deps {
             stack.push(t.clone());
             add_idx(&t, &mut graph);
         }
-        let all_tasks_to_run = resolve_depends(config, tasks).await?;
-        let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+        let all_tasks_to_run = resolve_depends_with_no_cache(config, tasks, no_cache).await?;
+        let no_cache = no_cache || Settings::get().task.remote_no_cache.unwrap_or(false);
         let fetcher = if trust_before_fetch {
             TaskFetcher::new(no_cache).require_trust_before_fetch()
         } else {
@@ -211,7 +220,9 @@ impl Deps {
             // Update the graph node with the fetched version of the task
             // (add_idx may have returned an existing index with an unfetched task)
             graph[a_idx] = a.clone();
-            let resolved = a.resolve_depends(config, &all_tasks_to_run).await?;
+            let resolved = a
+                .resolve_depends(config, &all_tasks_to_run, no_cache)
+                .await?;
             for b in resolved.depends {
                 let b = b.with_run_phase(a.run_phase);
                 let b_idx = add_idx(&b, &mut graph);
@@ -333,12 +344,13 @@ impl Deps {
     /// Create a sub-graph that prunes tasks already completed by the caller.
     /// `completed` is a snapshot of task keys that have finished in the parent
     /// graph — these are removed from the sub-graph so they don't run again.
-    pub async fn new_pruned(
+    pub async fn new_pruned_with_no_cache(
         config: &Arc<Config>,
         tasks: Vec<Task>,
         completed: &TaskCompletionState,
+        no_cache: bool,
     ) -> eyre::Result<Self> {
-        let mut deps = Self::new(config, tasks).await?;
+        let mut deps = Self::new_with_no_cache(config, tasks, no_cache).await?;
         deps.did_work.extend(completed.did_work.iter().cloned());
         deps.cache_keys.extend(completed.cache_keys.clone());
         let mut to_remove = vec![];
@@ -766,9 +778,10 @@ mod tests {
         };
         let config = Config::get().await.unwrap();
 
-        let deps = Deps::new_pruned(&config, vec![completed_task], &completion_state)
-            .await
-            .unwrap();
+        let deps =
+            Deps::new_pruned_with_no_cache(&config, vec![completed_task], &completion_state, false)
+                .await
+                .unwrap();
         let propagated = deps.completion_state();
 
         assert!(deps.is_empty());

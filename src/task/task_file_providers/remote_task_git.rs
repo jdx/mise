@@ -101,7 +101,7 @@ impl RemoteTaskGit {
 
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
         let key = format!(
-            "{}{}",
+            "{}\0{}",
             repo_structure.url_without_path,
             repo_structure.branch.to_owned().unwrap_or("".to_string())
         );
@@ -132,12 +132,19 @@ impl RemoteTaskGit {
         git_repo.clone(repo_structure.url_without_path.as_str(), clone_options)
     }
 
+    fn path_cache_destination(&self, cache_key: &str, repo_path: &str) -> PathBuf {
+        // Hash the complete identity into one component so gix temporary pack
+        // paths remain below the legacy Windows path limit.
+        let path_key = hash::hash_sha256_to_str(&format!("{cache_key}\0{repo_path}"));
+        self.storage_path.join(format!("path-{path_key}"))
+    }
+
     fn fetch_to_destination(
         &self,
         repo_structure: &GitRepoStructure,
         destination: &PathBuf,
         reuse_existing: bool,
-    ) -> Result<PathBuf> {
+    ) -> Result<Option<PathBuf>> {
         let repo_file_path = repo_structure.path.clone();
         let full_path = destination.join(&repo_file_path);
 
@@ -152,10 +159,17 @@ impl RemoteTaskGit {
             })
             .lock()?;
 
-        if reuse_existing && full_path.exists() {
+        let destination_metadata = destination.symlink_metadata().ok();
+        let published_directory = destination_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.file_type().is_dir());
+        if reuse_existing && published_directory && full_path.exists() {
             debug!("Using cached file: {:?}", full_path);
             Self::prepare_remote_path(destination, &full_path)?;
-            return Ok(full_path);
+            return Ok(Some(full_path));
+        }
+        if reuse_existing && destination_metadata.is_some() {
+            return Ok(None);
         }
 
         let mut tmp_destination = destination.as_os_str().to_os_string();
@@ -165,30 +179,59 @@ impl RemoteTaskGit {
             crate::file::remove_all(&tmp_destination)?;
         }
 
-        match Self::clone_to(repo_structure, &tmp_destination) {
-            Ok(()) => {
-                if destination.exists()
-                    && let Err(e) = crate::file::remove_all(destination)
-                {
-                    let _ = crate::file::remove_all(&tmp_destination);
-                    return Err(e);
-                }
-                if let Err(e) = std::fs::rename(&tmp_destination, destination) {
-                    let _ = crate::file::remove_all(&tmp_destination);
-                    return Err(eyre::eyre!(
-                        "failed to move cloned repo into cache at {}: {e}",
-                        display_path(destination)
-                    ));
-                }
-            }
-            Err(e) => {
-                let _ = crate::file::remove_all(&tmp_destination);
-                return Err(e);
-            }
+        if let Err(err) = Self::clone_to(repo_structure, &tmp_destination) {
+            let _ = crate::file::remove_all(&tmp_destination);
+            return Err(err);
         }
 
-        Self::prepare_remote_path(destination, &full_path)?;
-        Ok(full_path)
+        let tmp_full_path = tmp_destination.join(&repo_file_path);
+        if let Err(err) = Self::prepare_remote_path(&tmp_destination, &tmp_full_path) {
+            let _ = crate::file::remove_all(&tmp_destination);
+            return Err(err);
+        }
+
+        let destination_metadata = destination.symlink_metadata().ok();
+        let published_directory = destination_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.file_type().is_dir());
+        if destination_metadata.is_some() {
+            let _ = crate::file::remove_all(&tmp_destination);
+            if reuse_existing && published_directory && full_path.exists() {
+                Self::prepare_remote_path(destination, &full_path)?;
+                return Ok(Some(full_path));
+            }
+            return Ok(None);
+        }
+
+        if let Err(err) = file::rename(&tmp_destination, destination) {
+            let _ = crate::file::remove_all(&tmp_destination);
+            return Err(eyre::eyre!(
+                "failed to move cloned repo into cache at {}: {err}",
+                display_path(destination)
+            ));
+        }
+
+        Ok(Some(full_path))
+    }
+
+    fn get_cached_path(&self, repo_structure: &GitRepoStructure) -> Result<PathBuf> {
+        let cache_key = self.get_cache_key(repo_structure);
+        let destination = self.storage_path.join(&cache_key);
+        if let Some(path) = self.fetch_to_destination(repo_structure, &destination, true)? {
+            return Ok(path);
+        }
+
+        // Never replace a published repo tree that another process may still
+        // be reading. A path-specific snapshot handles paths added later.
+        let destination = self.path_cache_destination(&cache_key, &repo_structure.path);
+        self.fetch_to_destination(repo_structure, &destination, true)?
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "remote git task cache at {} does not contain {}",
+                    display_path(&destination),
+                    repo_structure.path
+                )
+            })
     }
 }
 
@@ -206,9 +249,13 @@ impl TaskFileProvider for RemoteTaskGit {
 
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let repo_structure = self.get_repo_structure(file);
+        if self.is_cached {
+            return self.get_cached_path(&repo_structure);
+        }
         let cache_key = self.get_cache_key(&repo_structure);
-        let destination = self.storage_path.join(&cache_key);
-        self.fetch_to_destination(&repo_structure, &destination, self.is_cached)
+        let destination = self.unique_artifact_root(&cache_key)?;
+        self.fetch_to_destination(&repo_structure, &destination, false)?
+            .ok_or_else(|| eyre::eyre!("failed to publish remote git task snapshot"))
     }
 
     async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
@@ -232,6 +279,114 @@ impl TaskFileProvider for RemoteTaskGit {
 mod tests {
 
     use super::*;
+    use std::process::Command;
+
+    fn run_git(repo: &std::path::Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn test_repo() -> tempfile::TempDir {
+        let repo = tempfile::tempdir().unwrap();
+        run_git(repo.path(), &["init"]);
+        run_git(repo.path(), &["config", "user.name", "Mise Test"]);
+        run_git(
+            repo.path(),
+            &["config", "user.email", "mise-test@example.com"],
+        );
+        repo
+    }
+
+    fn commit_file(repo: &std::path::Path, path: &str, body: &str) {
+        let path = repo.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+        run_git(repo, &["add", "."]);
+        run_git(repo, &["commit", "-m", "update task fixture"]);
+    }
+
+    #[test]
+    fn test_cached_missing_path_preserves_published_repo_tree() {
+        let source = test_repo();
+        commit_file(source.path(), "tasks/first", "first revision\n");
+        let source_url = url::Url::from_directory_path(source.path())
+            .unwrap()
+            .to_string();
+        let storage = tempfile::tempdir().unwrap();
+        let provider = RemoteTaskGit {
+            storage_path: storage.path().to_path_buf(),
+            is_cached: true,
+        };
+
+        let first_repo = GitRepoStructure::new(&source_url, "tasks/first", None);
+        let first_path = provider.get_cached_path(&first_repo).unwrap();
+        let cache_key = provider.get_cache_key(&first_repo);
+        let published_repo = storage.path().join(&cache_key);
+        let reader_marker = published_repo.join("reader-marker");
+        std::fs::write(&reader_marker, "live reader state\n").unwrap();
+
+        commit_file(source.path(), "tasks/second", "second revision\n");
+        let second_repo = GitRepoStructure::new(&source_url, "tasks/second", None);
+        let second_path = provider.get_cached_path(&second_repo).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&first_path)
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "first revision\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&reader_marker).unwrap(),
+            "live reader state\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&second_path)
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "second revision\n"
+        );
+        assert!(first_path.starts_with(&published_repo));
+        assert!(!second_path.starts_with(&published_repo));
+
+        commit_file(source.path(), "tasks/second", "third revision\n");
+        let cached_second_path = provider.get_cached_path(&second_repo).unwrap();
+        assert_eq!(cached_second_path, second_path);
+        assert_eq!(
+            std::fs::read_to_string(cached_second_path)
+                .unwrap()
+                .replace("\r\n", "\n"),
+            "second revision\n"
+        );
+    }
+
+    #[test]
+    fn test_missing_path_does_not_publish_invalid_cache_tree() {
+        let source = test_repo();
+        commit_file(source.path(), "tasks/first", "first revision\n");
+        let source_url = url::Url::from_directory_path(source.path())
+            .unwrap()
+            .to_string();
+        let storage = tempfile::tempdir().unwrap();
+        let provider = RemoteTaskGit {
+            storage_path: storage.path().to_path_buf(),
+            is_cached: true,
+        };
+        let missing_repo = GitRepoStructure::new(&source_url, "tasks/missing", None);
+        let destination = storage.path().join(provider.get_cache_key(&missing_repo));
+
+        assert!(provider.get_cached_path(&missing_repo).is_err());
+        assert!(!destination.exists());
+    }
 
     fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
         RemoteSource::parse_git_ssh(file).map(Into::into)
@@ -624,6 +779,13 @@ mod tests {
                 "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
                 "git::https://dev.azure/org/project/_git/example//subfolder/myfile?ref=v1.0.0",
                 true,
+            ),
+            // URL and ref need an explicit identity boundary. These otherwise
+            // concatenate to the same text.
+            (
+                "git::https://github.com/example.git//myfile?ref=next.gitmain",
+                "git::https://github.com/example.gitnext.git//myfile?ref=main",
+                false,
             ),
         ];
 

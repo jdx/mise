@@ -67,6 +67,12 @@ pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 type RemoteTaskIncludeKey = (String, Option<String>);
 type RemoteTaskIncludeArtifacts = DashMap<RemoteTaskIncludeKey, Arc<OnceCell<TaskFileArtifact>>>;
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct TasksCacheKey {
+    context: crate::task::TaskLoadContext,
+    remote_no_cache: bool,
+}
+type TasksCache = DashMap<TasksCacheKey, Arc<OnceCell<Arc<BTreeMap<String, Task>>>>>;
 static REMOTE_TASK_INCLUDE_ARTIFACTS: Lazy<RemoteTaskIncludeArtifacts> = Lazy::new(DashMap::new);
 
 pub(crate) fn take_remote_task_include_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
@@ -132,7 +138,7 @@ pub struct Config {
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Option<PathBuf>, Hook)>>,
-    tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
+    tasks_cache: Arc<TasksCache>,
     /// Lenient graph shared across task-loading and strict inspection contexts.
     /// Provider errors remain on the graph so strict consumers can reject it.
     workspace_project_graph_cache:
@@ -851,33 +857,42 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
-        // Use the entire context as cache key
-        // Default context (None) becomes TaskLoadContext::default()
-        let cache_key = ctx.cloned().unwrap_or_default();
+        self.tasks_with_context_no_cache(ctx, false).await
+    }
 
-        // Check if already cached
-        if let Some(cached) = self.tasks_cache.get(&cache_key) {
-            return Ok(cached.value().clone());
-        }
-
-        // Not cached, load tasks
-        let tasks = measure!("config::load_all_tasks_with_context", {
-            self.load_all_tasks_with_context(ctx).await?
-        });
-        let tasks_arc = Arc::new(tasks);
-
-        // Insert into cache
-        self.tasks_cache.insert(cache_key, tasks_arc.clone());
-
-        Ok(tasks_arc)
+    pub async fn tasks_with_context_no_cache(
+        &self,
+        ctx: Option<&crate::task::TaskLoadContext>,
+        no_cache: bool,
+    ) -> Result<Arc<BTreeMap<String, Task>>> {
+        let remote_no_cache = no_cache || Settings::get().task.remote_no_cache.unwrap_or(false);
+        let cache_key = TasksCacheKey {
+            context: ctx.cloned().unwrap_or_default(),
+            remote_no_cache,
+        };
+        let cell = self
+            .tasks_cache
+            .entry(cache_key)
+            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .clone();
+        let tasks = cell
+            .get_or_try_init(|| async {
+                let tasks = measure!("config::load_all_tasks_with_context", {
+                    self.load_all_tasks_with_context(ctx, remote_no_cache)
+                        .await?
+                });
+                Ok::<_, eyre::Report>(Arc::new(tasks))
+            })
+            .await?;
+        Ok(tasks.clone())
     }
 
     pub async fn reload_tasks_with_context(
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
-        let cache_key = ctx.cloned().unwrap_or_default();
-        self.tasks_cache.remove(&cache_key);
+        let context = ctx.cloned().unwrap_or_default();
+        self.tasks_cache.retain(|key, _| key.context != context);
         self.tasks_with_context(ctx).await
     }
 
@@ -945,6 +960,7 @@ impl Config {
     async fn load_all_tasks_with_context(
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
+        remote_no_cache: bool,
     ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
@@ -960,8 +976,8 @@ impl Config {
         );
 
         let mut local_tasks =
-            load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
-        let global_tasks = load_global_tasks(&config, &task_definitions).await?;
+            load_local_tasks_with_context(&config, ctx, &task_definitions, remote_no_cache).await?;
+        let global_tasks = load_global_tasks(&config, &task_definitions, remote_no_cache).await?;
         local_tasks.retain(|local| {
             !global_tasks
                 .iter()
@@ -2889,8 +2905,15 @@ impl Debug for Config {
         s.field("Config Files", &config_files);
         // Note: tasks are now lazily loaded and cached, so we can't access them synchronously here
         // Try to get the default (current hierarchy) cache entry
-        let default_ctx = crate::task::TaskLoadContext::default();
-        if let Some(tasks) = self.tasks_cache.get(&default_ctx) {
+        let default_key = TasksCacheKey {
+            context: crate::task::TaskLoadContext::default(),
+            remote_no_cache: Settings::get().task.remote_no_cache.unwrap_or(false),
+        };
+        if let Some(tasks) = self
+            .tasks_cache
+            .get(&default_key)
+            .and_then(|cell| cell.get().cloned())
+        {
             s.field(
                 "Tasks",
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
@@ -3496,6 +3519,7 @@ async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
     templates: &TaskDefinitions,
+    remote_no_cache: bool,
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
@@ -3527,8 +3551,14 @@ async fn load_local_tasks_with_context(
             );
             continue;
         }
-        let mut dir_tasks =
-            load_tasks_in_dir_with_definitions(config, &d, &local_config_files, templates).await?;
+        let mut dir_tasks = load_tasks_in_dir_with_definitions(
+            config,
+            &d,
+            &local_config_files,
+            templates,
+            remote_no_cache,
+        )
+        .await?;
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -3629,6 +3659,7 @@ async fn load_local_tasks_with_context(
                             &templates,
                             true,
                             cascaded_task_config.as_ref(),
+                            remote_no_cache,
                         )
                         .await?;
                         prefix_monorepo_task_names(&mut tasks, &subdir, &monorepo_root);
@@ -3644,6 +3675,7 @@ async fn load_local_tasks_with_context(
                         &templates,
                         true,
                         cascaded_task_config.as_ref(),
+                        remote_no_cache,
                     )
                     .await?;
                     prefix_monorepo_task_names(&mut tasks, &subdir, &monorepo_root);
@@ -4008,7 +4040,11 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
+async fn load_global_tasks(
+    config: &Arc<Config>,
+    templates: &TaskDefinitions,
+    remote_no_cache: bool,
+) -> Result<Vec<Task>> {
     // User-global config overrides system config. Within each group the path
     // lists are lowest-first, so reverse them before applying first-wins task
     // precedence.
@@ -4049,6 +4085,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             false,
             None,
             Some(&mut rendered_file_tasks),
+            remote_no_cache,
         )
         .await?;
         rendered_file_tasks.finish_config();
@@ -4474,9 +4511,8 @@ fn is_mise_config_file_in_task_include(root: &Path, path: &Path) -> bool {
     })
 }
 
-async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
-    let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
-    if !no_cache {
+async fn resolve_git_url_to_path(git_url: &str, remote_no_cache: bool) -> Result<TaskFileArtifact> {
+    if !remote_no_cache {
         let task_file_providers = TaskFileProvidersBuilder::new().with_cache(true).build();
         return match task_file_providers.get_provider(git_url) {
             Some(provider) => provider.get_local_artifact(git_url).await,
@@ -4687,7 +4723,9 @@ pub async fn load_tasks_in_dir(
             .and_then(|graph| graph.as_ref().ok())
             .map(Arc::as_ref),
     );
-    load_tasks_in_dir_with_definitions(config, dir, config_files, &definitions).await
+    let remote_no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+    load_tasks_in_dir_with_definitions(config, dir, config_files, &definitions, remote_no_cache)
+        .await
 }
 
 async fn load_tasks_in_dir_with_definitions(
@@ -4695,6 +4733,7 @@ async fn load_tasks_in_dir_with_definitions(
     dir: &Path,
     config_files: &ConfigMap,
     templates: &TaskDefinitions,
+    remote_no_cache: bool,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
     let cascaded_task_config = cascaded_task_config_for_dir(dir, config_files)?;
@@ -4705,6 +4744,7 @@ async fn load_tasks_in_dir_with_definitions(
         templates,
         false,
         cascaded_task_config.as_ref(),
+        remote_no_cache,
     )
     .await
 }
@@ -4865,6 +4905,7 @@ async fn load_tasks_from_configs(
     templates: &TaskDefinitions,
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
+    remote_no_cache: bool,
 ) -> Result<Vec<Task>> {
     Ok(load_task_sources_from_configs(
         config,
@@ -4874,6 +4915,7 @@ async fn load_tasks_from_configs(
         monorepo_context,
         cascaded_task_config,
         None,
+        remote_no_cache,
     )
     .await?
     .into_tasks())
@@ -4892,6 +4934,7 @@ async fn load_task_sources_from_configs(
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    remote_no_cache: bool,
 ) -> Result<TaskSources> {
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
@@ -5011,7 +5054,7 @@ async fn load_task_sources_from_configs(
     };
     for include in &includes {
         let artifacts = if include.starts_with("git::") {
-            vec![resolve_git_url_to_path(include).await?]
+            vec![resolve_git_url_to_path(include, remote_no_cache).await?]
         } else {
             expand_task_include(&resolve_dir, include)
                 .into_iter()

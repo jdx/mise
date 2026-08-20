@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use clap::Parser;
 use rmcp::{
     RoleServer, ServiceExt,
@@ -374,11 +374,22 @@ impl ServerHandler for MiseServer {
                     data: None,
                 })?;
 
-                let tasks = config.tasks().await.map_err(|e| ErrorData {
-                    code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load tasks: {e}")),
-                    data: None,
-                })?;
+                let remote_no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+                let _artifacts =
+                    remote_no_cache.then(crate::task::task_fetcher::RemoteTaskArtifactsGuard::new);
+                let task_config = if remote_no_cache {
+                    config.with_config_files(config.config_files.clone())
+                } else {
+                    config
+                };
+                let tasks = task_config
+                    .tasks_with_context_no_cache(None, remote_no_cache)
+                    .await
+                    .map_err(|e| ErrorData {
+                        code: ErrorCode::INTERNAL_ERROR,
+                        message: Cow::Owned(format!("Failed to load tasks: {e}")),
+                        data: None,
+                    })?;
 
                 let task_list: Vec<_> = tasks.iter().map(|(name, task)| {
                     json!({

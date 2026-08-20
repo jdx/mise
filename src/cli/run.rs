@@ -15,7 +15,7 @@ use crate::file::display_path;
 use crate::task::has_any_usage_spec;
 use crate::task::task_executor::TaskRunContext;
 use crate::task::task_helpers::task_needs_permit;
-use crate::task::task_list::{get_task_lists, resolve_depends};
+use crate::task::task_list::{get_task_lists_with_no_cache, resolve_depends_with_no_cache};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
@@ -332,6 +332,7 @@ async fn get_affected_task_list(
     head: Option<&str>,
     explain: bool,
     json: bool,
+    no_cache: bool,
 ) -> Result<Vec<Task>> {
     Settings::get().ensure_experimental("affected tasks")?;
     let workspace_root = config
@@ -396,7 +397,8 @@ async fn get_affected_task_list(
         .collect::<BTreeSet<_>>();
 
     let args = affected_task_args(args);
-    let mut tasks = get_task_lists(config, &args, true, only, false).await?;
+    let mut tasks =
+        get_task_lists_with_no_cache(config, &args, true, only, false, no_cache).await?;
     // Restrict only the task-pattern matches. `Run::run` calls `resolve_depends`
     // after this returns, so prerequisites from unaffected projects remain intact.
     tasks.retain(|task| {
@@ -601,7 +603,9 @@ impl Run {
                 )
                 .collect_vec();
 
-            let mut task_list = get_task_lists(&config, &args, false, false, false).await?;
+            let mut task_list =
+                get_task_lists_with_no_cache(&config, &args, false, false, false, self.no_cache)
+                    .await?;
             // Help is passive discovery, but remote usage and metadata must be
             // fetched before display. Require trust before that network/Git work.
             crate::task::task_fetcher::TaskFetcher::new(self.no_cache)
@@ -657,10 +661,19 @@ impl Run {
                 self.affected_head.as_deref(),
                 self.affected_explain,
                 self.affected_json,
+                self.no_cache,
             )
             .await?
         } else {
-            get_task_lists(&config, &args, true, self.skip_deps, self.all).await?
+            get_task_lists_with_no_cache(
+                &config,
+                &args,
+                true,
+                self.skip_deps,
+                self.all,
+                self.no_cache,
+            )
+            .await?
         };
         if self.affected_json {
             return Ok(());
@@ -706,7 +719,8 @@ impl Run {
         // 2. Include monorepo subdirectory tools in the toolset before installing
         // 3. Validate and install tools for the complete dependency set before execution
         let execution_tasks = task_list.clone();
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let resolved_tasks =
+            resolve_depends_with_no_cache(&config, task_list, self.no_cache).await?;
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -1164,7 +1178,7 @@ impl Run {
     async fn prepare_tasks(&mut self, config: &Arc<Config>, mut tasks: Vec<Task>) -> Result<Deps> {
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         fetcher.fetch_tasks(config, &mut tasks).await?;
-        let mut tasks = Deps::new(config, tasks).await?;
+        let mut tasks = Deps::new_with_no_cache(config, tasks, self.no_cache).await?;
         tasks.mark_ambiguous_prefixes();
         self.is_linear = tasks.is_linear();
         Ok(tasks)
@@ -1234,6 +1248,7 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            no_cache: self.no_cache,
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
             task_cache_explain_json: self.task_cache_explain_json,

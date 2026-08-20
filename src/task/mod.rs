@@ -1689,6 +1689,7 @@ impl Task {
         &self,
         config: &Arc<Config>,
         tasks_to_run: &[Task],
+        no_cache: bool,
     ) -> Result<ResolvedTaskDependencies> {
         use crate::task::{TaskLoadContext, task_fetcher::TaskFetcher};
 
@@ -1722,7 +1723,9 @@ impl Task {
             None
         };
 
-        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+        let all_tasks = config
+            .tasks_with_context_no_cache(ctx.as_ref(), no_cache)
+            .await?;
         let resolve = |all_tasks: &BTreeMap<String, Task>| -> Result<_> {
             let tasks = build_task_ref_map(all_tasks.iter());
             // Skip deps with unresolved {{usage.*}} references — they'll be resolved
@@ -1785,7 +1788,7 @@ impl Task {
         match resolve(&all_tasks) {
             Ok(dependencies) => Ok(dependencies),
             Err(err) if err.downcast_ref::<TaskNotFoundError>().is_some() => {
-                let all_tasks = TaskFetcher::new(false)
+                let all_tasks = TaskFetcher::new(no_cache)
                     .require_trust_before_fetch()
                     .fetch_task_map(config, &all_tasks)
                     .await?;
