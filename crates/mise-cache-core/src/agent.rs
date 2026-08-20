@@ -1107,10 +1107,8 @@ impl CacheAgent {
                 transfer_duration_ns,
             );
             atomic_saturating_add(&self.stats.remote_blob_pack_requests, pack.requests);
-            atomic_saturating_add(
-                &self.stats.remote_blob_pack_blobs,
-                pack.blobs.len().try_into().unwrap_or(u64::MAX),
-            );
+            atomic_saturating_add(&self.stats.remote_blob_pack_blobs, pack.blob_count);
+            atomic_saturating_add(&self.stats.downloaded_bytes, pack.payload_bytes);
             if pack.requested.is_empty() {
                 break;
             }
@@ -1167,7 +1165,6 @@ impl CacheAgent {
     }
 
     async fn ingest_packed_blob(&self, digest: CacheDigest, source: PathBuf) -> Result<PathBuf> {
-        atomic_saturating_add(&self.stats.downloaded_bytes, digest.size);
         let digest_size = digest.size;
         let lock = self.write_lock(&digest);
         let _guard = lock.lock().await;
@@ -2914,6 +2911,63 @@ mod tests {
         capabilities.assert_async().await;
         first_pack.assert_async().await;
         failed_pack.assert_async().await;
+        fallback.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn malformed_blob_pack_metadata_falls_back_to_individual_blobs() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let bytes = b"fallback blob";
+        let digest = CacheDigest::blake3(bytes);
+        server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_header(crate::BLOB_PACK_BYTES_HEADER, "not-a-number")
+            .with_body(blob_pack_body(&[(digest.clone(), bytes.as_slice())]))
+            .expect(1)
+            .create_async()
+            .await;
+        let fallback = server
+            .mock("GET", blob_path(&digest).as_str())
+            .with_status(200)
+            .with_body(bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let remote = agent.remote.as_deref().unwrap();
+
+        let verified = agent
+            .fetch_remote_blobs(remote, vec![digest.clone()], None)
+            .await;
+
+        assert_eq!(fs::read(&verified[&digest]).unwrap(), bytes);
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_pack_requests, 0);
+        assert_eq!(stats.remote_blob_pack_blobs, 0);
+        assert_eq!(stats.remote_blob_requests, 1);
+        pack.assert_async().await;
         fallback.assert_async().await;
     }
 
