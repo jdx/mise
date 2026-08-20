@@ -15,3 +15,16 @@ assert "mise search --match-type equal jq" "jq  Command-line JSON processor. htt
 assert_contains "mise search 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type contains 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type equal 7zip" "aqua:ip7z/7zip"
+
+# Backend prefixes are identifiers, not broad search terms
+assert_not_contains "mise search cargo" "cargo:broot"
+assert_not_contains "mise search aqua" "aqua:"
+
+# Aqua Cargo and GoInstall packages use runnable backends in search results
+assert_contains "mise search --match-type equal broot" "cargo:broot"
+assert_not_contains "mise search --match-type equal broot" "aqua:crates.io/broot"
+assert_contains "mise search --match-type equal benchstat" "go:golang.org/x/perf/cmd/benchstat"
+assert_not_contains "mise search --match-type equal benchstat" "aqua:golang.org/x/perf/cmd/benchstat"
+
+# Aqua GoBuild packages are excluded from search
+assert_fail "mise search --match-type equal ycat" "not found in registry"

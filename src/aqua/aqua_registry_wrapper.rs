@@ -476,36 +476,86 @@ fn github_repo_slug(registry_url: &str) -> Option<(String, String)> {
 }
 
 struct AquaSuggestionsCache {
-    name_to_ids: HashMap<&'static str, Vec<&'static str>>,
+    name_to_entries: HashMap<&'static str, Vec<AquaSearchEntry>>,
     names: Vec<&'static str>,
 }
 
-static AQUA_SUGGESTIONS_CACHE: Lazy<AquaSuggestionsCache> = Lazy::new(|| {
-    let ids = super::standard_registry::package_ids();
-    let mut name_to_ids: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
-    for id in ids {
-        if let Some((_, name)) = id.rsplit_once('/') {
-            name_to_ids.entry(name).or_default().push(id);
-        }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AquaSearchEntry {
+    pub id: &'static str,
+    backend_override: Option<&'static str>,
+}
+
+impl AquaSearchEntry {
+    pub(crate) fn name(&self) -> &'static str {
+        let searchable_id = self.backend_override.unwrap_or(self.id);
+        searchable_id.rsplit_once('/').map_or_else(
+            || {
+                searchable_id
+                    .split_once(':')
+                    .map_or(searchable_id, |(_, name)| name)
+            },
+            |(_, name)| name,
+        )
     }
-    let names = name_to_ids.keys().copied().collect();
-    AquaSuggestionsCache { name_to_ids, names }
+
+    pub(crate) fn backend(&self) -> String {
+        self.backend_override
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("aqua:{}", self.id))
+    }
+
+    pub(crate) fn backend_matches(&self, query: &str) -> bool {
+        self.backend_override.map_or_else(
+            || query.strip_prefix("aqua:") == Some(self.id),
+            |b| b == query,
+        )
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct AquaSuggestion {
+    pub name: String,
+    pub backend: String,
+}
+
+pub(crate) fn aqua_search_entries() -> impl Iterator<Item = AquaSearchEntry> {
+    super::standard_registry::search_entries().filter_map(|(id, backend_override)| {
+        (backend_override != Some("")).then_some(AquaSearchEntry {
+            id,
+            backend_override,
+        })
+    })
+}
+
+static AQUA_SUGGESTIONS_CACHE: Lazy<AquaSuggestionsCache> = Lazy::new(|| {
+    let mut name_to_entries: HashMap<&'static str, Vec<AquaSearchEntry>> = HashMap::new();
+    for entry in aqua_search_entries() {
+        name_to_entries.entry(entry.name()).or_default().push(entry);
+    }
+    let names = name_to_entries.keys().copied().collect();
+    AquaSuggestionsCache {
+        name_to_entries,
+        names,
+    }
 });
 
-/// Search aqua packages by tool name, returning "owner/name" IDs
-/// where the name part is similar to the query.
-pub(crate) fn aqua_suggest(query: &str) -> Vec<String> {
+/// Search Aqua packages by tool name, returning runnable mise backend suggestions.
+pub(crate) fn aqua_suggest(query: &str) -> Vec<AquaSuggestion> {
     let cache = &*AQUA_SUGGESTIONS_CACHE;
 
     // Use a higher threshold (0.8) to avoid noisy suggestions
     let similar_names = xx::suggest::similar_n_with_threshold(query, &cache.names, 5, 0.8);
 
-    // Map back to full IDs
+    // Map back to runnable backend identifiers.
     let mut results = Vec::new();
     for matched_name in &similar_names {
-        if let Some(full_ids) = cache.name_to_ids.get(matched_name.as_str()) {
-            for full_id in full_ids {
-                results.push(full_id.to_string());
+        if let Some(entries) = cache.name_to_entries.get(matched_name.as_str()) {
+            for entry in entries {
+                results.push(AquaSuggestion {
+                    name: matched_name.clone(),
+                    backend: entry.backend(),
+                });
                 if results.len() >= 5 {
                     return results;
                 }

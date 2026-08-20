@@ -160,19 +160,19 @@ impl Search {
             return vec![];
         }
 
-        crate::aqua::standard_registry::package_ids()
-            .filter_map(|id| {
-                let tool_name = id.rsplit_once('/').map_or(id, |(_, name)| name);
+        crate::aqua::aqua_registry_wrapper::aqua_search_entries()
+            .filter_map(|entry| {
+                let tool_name = entry.name();
                 let score = match self.match_type {
                     MatchType::Equal => {
-                        if tool_name == name || id == name || format!("aqua:{id}") == name {
+                        if tool_name == name || entry.id == name || entry.backend_matches(name) {
                             Some(0)
                         } else {
                             None
                         }
                     }
                     MatchType::Contains => {
-                        if tool_name.contains(name) || id.contains(name) {
+                        if tool_name.contains(name) || entry.id.contains(name) {
                             Some(0)
                         } else {
                             None
@@ -183,7 +183,10 @@ impl Search {
                     }
                 }?;
 
-                Some((score, format!("aqua:{id}"), get_aqua_description(id)))
+                let search_backend = entry.backend();
+                let description = get_aqua_description(entry.id, &search_backend);
+
+                Some((score, search_backend, description))
             })
             .collect()
     }
@@ -263,8 +266,8 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
         .collect()
 }
 
-fn get_aqua_description(id: &str) -> String {
-    let fallback = format!("aqua:{id}");
+fn get_aqua_description(id: &str, search_backend: &str) -> String {
+    let fallback = search_backend.to_string();
     let Ok(pkg) =
         crate::aqua::standard_registry::package(id).unwrap_or_else(|| Ok(Default::default()))
     else {
@@ -274,7 +277,12 @@ fn get_aqua_description(id: &str) -> String {
     let backend = if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
         format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name)
     } else {
-        fallback
+        let (backend_type, tool) = search_backend.split_once(':').unwrap_or_default();
+        match backend_type {
+            "cargo" => format!("https://crates.io/crates/{tool}"),
+            "go" => format!("https://pkg.go.dev/{tool}"),
+            _ => fallback,
+        }
     };
 
     match pkg.description.as_deref().filter(|d| !d.is_empty()) {

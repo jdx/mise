@@ -23,9 +23,18 @@ static AQUA_STANDARD_REGISTRY_ALIASES: phf::Map<&'static str, &'static str> = in
     "/aqua_standard_registry_aliases.rs"
 ));
 
-/// Returns all package IDs from the baked-in Aqua registry without allocating a collection.
-pub(crate) fn package_ids() -> impl Iterator<Item = &'static str> {
-    AQUA_STANDARD_REGISTRY_FILES.keys().copied()
+/// Baked exceptions to the default `aqua:<id>` search backend.
+/// An empty value marks a package that cannot be represented by a runnable mise backend.
+static AQUA_STANDARD_REGISTRY_SEARCH: phf::Map<&'static str, &'static str> = include!(concat!(
+    env!("OUT_DIR"),
+    "/aqua_standard_registry_search.rs"
+));
+
+/// Returns searchable Aqua package IDs and any precomputed backend override.
+pub(crate) fn search_entries() -> impl Iterator<Item = (&'static str, Option<&'static str>)> {
+    AQUA_STANDARD_REGISTRY_FILES
+        .keys()
+        .map(|id| (*id, AQUA_STANDARD_REGISTRY_SEARCH.get(id).copied()))
 }
 
 pub(crate) fn package(package_id: &str) -> Option<Result<AquaPackage>> {
@@ -63,6 +72,19 @@ mod tests {
             package.path.as_deref(),
             Some("golang.org/x/perf/cmd/benchstat")
         );
+    }
+
+    #[test]
+    fn test_baked_registry_search_entries() {
+        let entries = search_entries().collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(entries.get("crates.io/broot"), Some(&Some("cargo:broot")));
+        assert_eq!(
+            entries.get("golang.org/x/perf/cmd/benchstat"),
+            Some(&Some("go:golang.org/x/perf/cmd/benchstat"))
+        );
+        assert_eq!(entries.get("goccy/go-yaml/ycat"), Some(&Some("")));
+        assert_eq!(entries.get("cli/cli"), Some(&None));
     }
 
     #[test]
