@@ -805,7 +805,9 @@ fn is_asset_stem_format(format: ExtractionFormat, ext: &str) -> bool {
         | ExtractionFormat::TarZst
         | ExtractionFormat::Zst
         | ExtractionFormat::Tar => true,
-        ExtractionFormat::Zip => ext == "zip",
+        // VSIX uses ZIP extraction too, but it is an extension package rather
+        // than a preferred executable asset.
+        ExtractionFormat::Zip if ext == "zip" => true,
         _ => false,
     }
 }
