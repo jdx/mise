@@ -121,7 +121,7 @@ This example uses `pnpm` as the package manager. It expects the `devEngines.pack
 }
 ```
 
-The install task will be skipped when the lockfile has not changed.
+The install task will be skipped when `package.json`, `pnpm-lock.yaml`, and `mise.toml` have not changed.
 
 ```toml [mise.toml]
 [tools]
