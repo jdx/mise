@@ -179,10 +179,14 @@ impl Formula {
             );
         }
 
-        if !policy.requirements.is_empty() {
-            let requirements = policy
-                .requirements
-                .iter()
+        let unsupported_requirements = policy
+            .requirements
+            .iter()
+            .filter(|requirement| !requirement.is_satisfied())
+            .collect::<Vec<_>>();
+        if !unsupported_requirements.is_empty() {
+            let requirements = unsupported_requirements
+                .into_iter()
                 .map(FormulaRequirement::describe)
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -289,6 +293,28 @@ impl Formula {
 }
 
 impl FormulaRequirement {
+    fn is_satisfied(&self) -> bool {
+        if !cfg!(target_os = "macos")
+            || self.name != "xcode"
+            || self.version.is_some()
+            || self.cask.is_some()
+            || self.download.is_some()
+            || self.contexts.as_slice() != ["build"]
+            || self.specs.as_slice() != ["stable"]
+        {
+            return false;
+        }
+        let selected = std::process::Command::new("/usr/bin/xcode-select")
+            .arg("-p")
+            .output()
+            .is_ok_and(|output| output.status.success() && !output.stdout.is_empty());
+        let compiler = std::process::Command::new("/usr/bin/xcrun")
+            .args(["--find", "clang"])
+            .output()
+            .is_ok_and(|output| output.status.success() && !output.stdout.is_empty());
+        selected && compiler
+    }
+
     fn describe(&self) -> String {
         let mut attributes = Vec::new();
         if let Some(version) = &self.version {

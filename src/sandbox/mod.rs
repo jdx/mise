@@ -79,8 +79,6 @@ pub(super) struct BoundSandboxPath {
 #[cfg(target_os = "linux")]
 impl BoundSandboxPath {
     fn from_fd(path: &std::path::Path, fd: std::os::fd::OwnedFd) -> eyre::Result<Self> {
-        use std::os::fd::AsRawFd;
-
         let retained_stat = nix::sys::stat::fstat(&fd)?;
         let kind = nix::sys::stat::SFlag::from_bits_truncate(retained_stat.st_mode);
         if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
@@ -90,8 +88,10 @@ impl BoundSandboxPath {
             )
         }
         let authority = nix::fcntl::open(
-            format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str(),
-            nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC,
+            path,
+            nix::fcntl::OFlag::O_PATH
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC,
             nix::sys::stat::Mode::empty(),
         )?;
         let authority_stat = nix::sys::stat::fstat(&authority)?;
