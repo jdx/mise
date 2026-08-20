@@ -118,14 +118,14 @@ impl ToolVersion {
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(config, request, &v, &opts).await?
+                Self::resolve_version(config, request, &backend, &v, &opts).await?
             }
             ToolRequest::Prefix { prefix, .. } => {
-                Self::resolve_prefix(config, request, &prefix, &opts).await?
+                Self::resolve_prefix(config, request, &backend, &prefix, &opts).await?
             }
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(config, request, &sub, &orig_version, &opts).await?,
+            } => Self::resolve_sub(config, request, &backend, &sub, &orig_version, &opts).await?,
             _ => {
                 let version = request.version();
                 Self::new(request, version)
@@ -350,11 +350,11 @@ impl ToolVersion {
     async fn resolve_version(
         config: &Arc<Config>,
         request: ToolRequest,
+        backend: &ABackend,
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
-        let backend = request.backend()?;
-        let v = config.resolve_alias(&backend, v).await?;
+        let v = config.resolve_alias(backend, v).await?;
 
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
@@ -408,15 +408,16 @@ impl ToolVersion {
                 return Self::resolve_path(PathBuf::from(p), &request);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(config, request, p, opts).await;
+                return Self::resolve_prefix(config, request, backend, p, opts).await;
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(config, request, sub, v, opts).await;
+                return Self::resolve_sub(config, request, backend, sub, v, opts).await;
             }
             _ => (),
         }
 
+        let selection_opts = request.options();
         let build = |v| Ok(Self::new(request.clone(), v));
 
         if v.matches('.').count() >= 2 {
@@ -490,15 +491,17 @@ impl ToolVersion {
         if v == "latest" {
             if !opts.latest_versions
                 && !should_filter_installed_versions
-                && let Some(v) = backend.latest_installed_version(None)?
+                && let Some(v) = backend
+                    .latest_installed_version_with_selection_options(None, &selection_opts)?
             {
                 return build(v);
             }
             if !is_offline
                 && let Some(v) = backend
-                    .latest_version_with_refresh(
+                    .latest_version_with_selection_options(
                         config,
                         None,
+                        &selection_opts,
                         opts.before_date,
                         opts.refresh_remote_versions,
                     )
@@ -508,7 +511,11 @@ impl ToolVersion {
             }
             if !is_offline {
                 let versions = backend
-                    .list_remote_versions_with_refresh(config, opts.refresh_remote_versions)
+                    .list_remote_versions_with_selection_options(
+                        config,
+                        &selection_opts,
+                        opts.refresh_remote_versions,
+                    )
                     .await?;
                 if versions.is_empty()
                     && let Some(v) = backend.unresolved_latest_version()
@@ -523,17 +530,17 @@ impl ToolVersion {
             if opts.offline {
                 return build(v);
             }
-            return Err(Self::no_versions_found(&backend, opts.before_date));
+            return Err(Self::no_versions_found(backend, opts.before_date));
         }
-        let installed_matches =
-            (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
+        let installed_matches = (!opts.latest_versions).then(|| {
+            backend.list_installed_versions_matching_with_selection_options(&v, &selection_opts)
+        });
         if installed_matches
             .as_ref()
             .is_some_and(|matches| matches.contains(&v))
         {
             return build(v);
         }
-
         let mut pin_remote_matches = None;
         if opts.prefer_exact_version && !is_offline && !crate::semver::is_npm_semver_range_query(&v)
         {
@@ -541,7 +548,13 @@ impl ToolVersion {
             // bypasses an installed fuzzy match. Some backend exact resolvers
             // only validate syntax and defer existence checks to installation.
             let matches = backend
-                .list_versions_matching_with_opts(config, &v, None, opts.refresh_remote_versions)
+                .list_versions_matching_with_selection_options(
+                    config,
+                    &v,
+                    &selection_opts,
+                    None,
+                    opts.refresh_remote_versions,
+                )
                 .await?;
             if matches.contains(&v) {
                 return build(v);
@@ -576,8 +589,9 @@ impl ToolVersion {
                 let versions = match opts.before_date {
                     Some(before) => {
                         let versions_with_info = backend
-                            .list_remote_versions_with_info_with_refresh(
+                            .list_remote_versions_with_info_with_selection_options(
                                 config,
+                                &selection_opts,
                                 opts.refresh_remote_versions,
                             )
                             .await?;
@@ -588,7 +602,11 @@ impl ToolVersion {
                     }
                     None => {
                         backend
-                            .list_remote_versions_with_refresh(config, opts.refresh_remote_versions)
+                            .list_remote_versions_with_selection_options(
+                                config,
+                                &selection_opts,
+                                opts.refresh_remote_versions,
+                            )
                             .await?
                     }
                 };
@@ -626,9 +644,10 @@ impl ToolVersion {
             Some(matches) => matches,
             None => {
                 backend
-                    .list_versions_matching_with_opts(
+                    .list_versions_matching_with_selection_options(
                         config,
                         &v,
+                        &selection_opts,
                         opts.before_date,
                         opts.refresh_remote_versions,
                     )
@@ -644,7 +663,15 @@ impl ToolVersion {
         // If date filter is active and exact version not found, check without filter.
         // Explicit pinned versions like "22.5.0" should not be filtered by date.
         if opts.before_date.is_some() {
-            let all_versions = backend.list_versions_matching(config, &v).await?;
+            let all_versions = backend
+                .list_versions_matching_with_selection_options(
+                    config,
+                    &v,
+                    &selection_opts,
+                    None,
+                    false,
+                )
+                .await?;
             if all_versions.contains(&v) {
                 // Exact match exists but was filtered by date - use it anyway
                 return build(v);
@@ -657,11 +684,12 @@ impl ToolVersion {
     async fn resolve_sub(
         config: &Arc<Config>,
         request: ToolRequest,
+        backend: &ABackend,
         sub: &str,
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let backend = request.backend()?;
+        let selection_opts = request.options();
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
             let path = backend.ba().installs_path.join(&pathname);
@@ -670,7 +698,10 @@ impl ToolVersion {
                 && target.starts_with("./")
                 && let Some(version) = target.file_name().map(|v| v.to_string_lossy().to_string())
             {
-                return Box::pin(Self::resolve_version(config, request, &version, opts)).await;
+                return Box::pin(Self::resolve_version(
+                    config, request, backend, &version, opts,
+                ))
+                .await;
             }
             // Can't resolve sub-N:latest offline (no remote latest, and
             // applying version_sub to latest_installed_version would shift
@@ -682,23 +713,25 @@ impl ToolVersion {
         }
         let v = resolve_sub_base(
             config,
-            &backend,
+            backend,
+            &selection_opts,
             sub,
             v,
             opts.before_date,
             opts.refresh_remote_versions,
         )
         .await?;
-        Box::pin(Self::resolve_version(config, request, &v, opts)).await
+        Box::pin(Self::resolve_version(config, request, backend, &v, opts)).await
     }
 
     async fn resolve_prefix(
         config: &Arc<Config>,
         request: ToolRequest,
+        backend: &ABackend,
         prefix: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let backend = request.backend()?;
+        let selection_opts = request.options();
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
         let prefer_offline =
@@ -710,7 +743,9 @@ impl ToolVersion {
             && !prefer_offline;
         if !opts.latest_versions
             && !should_filter_installed_versions
-            && let Some(v) = backend.list_installed_versions_matching(prefix).last()
+            && let Some(v) = backend
+                .list_installed_versions_matching_with_selection_options(prefix, &selection_opts)
+                .last()
         {
             return Ok(Self::new(request, v.to_string()));
         }
@@ -718,16 +753,17 @@ impl ToolVersion {
             return Ok(Self::new(request, prefix.to_string()));
         }
         let matches = backend
-            .list_versions_matching_with_opts(
+            .list_versions_matching_with_selection_options(
                 config,
                 prefix,
+                &selection_opts,
                 opts.before_date,
                 opts.refresh_remote_versions,
             )
             .await?;
         let v = matches
             .last()
-            .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?;
+            .ok_or_else(|| Self::no_versions_found(backend, opts.before_date))?;
         Ok(Self::new(request, v.to_string()))
     }
 
@@ -770,6 +806,7 @@ impl ToolVersion {
 pub(crate) async fn resolve_sub_base(
     config: &Arc<Config>,
     backend: &ABackend,
+    selection_opts: &ToolVersionOptions,
     sub: &str,
     base: &str,
     before_date: Option<Timestamp>,
@@ -785,9 +822,43 @@ pub(crate) async fn resolve_sub_base(
     };
     let v = if base == "latest" {
         backend
-            .latest_version_with_refresh(config, None, before_date, refresh_remote_versions)
+            .latest_version_with_selection_options(
+                config,
+                None,
+                selection_opts,
+                before_date,
+                refresh_remote_versions,
+            )
             .await?
             .ok_or_else(|| ToolVersion::no_versions_found(backend, before_date))?
+    } else {
+        base
+    };
+    tool_request::version_sub(&v, sub)
+}
+
+/// Resolve the base of a `sub-N:<base>` request without applying release-age cutoffs.
+///
+/// Upgrade uses this to compare an age-filtered candidate with the true upstream
+/// baseline. In particular, `sub-N:latest` must derive its range from the unfiltered
+/// latest release or hidden releases will disappear from the comparison.
+pub(crate) async fn resolve_sub_base_unfiltered(
+    config: &Arc<Config>,
+    backend: &ABackend,
+    selection_opts: &ToolVersionOptions,
+    sub: &str,
+    base: &str,
+) -> Result<String> {
+    let base = if base == "latest" {
+        base.to_string()
+    } else {
+        config.resolve_alias(backend, base).await?
+    };
+    let v = if base == "latest" {
+        backend
+            .latest_version_unfiltered_with_selection_options(config, None, selection_opts)
+            .await?
+            .ok_or_else(|| ToolVersion::no_versions_found(backend, None))?
     } else {
         base
     };
@@ -993,6 +1064,10 @@ impl Display for ResolveOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::{
+        Backend, VersionInfo,
+        test_helpers::{RemoteVersionsBackend, prerelease_options},
+    };
     use crate::cli::args::BackendResolution;
     use crate::toolset::CoreToolOptions;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1019,6 +1094,190 @@ mod tests {
         );
         backend.installs_path = installs_path;
         backend
+    }
+
+    #[tokio::test]
+    async fn resolve_version_uses_each_requests_prerelease_option() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from(unique_name("request-options")));
+        let backend_impl = Arc::new(RemoteVersionsBackend::stable_and_prerelease(ba.clone()));
+        backend_impl
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        let stable_options = ToolVersionOptions::default();
+        let stable_request = ToolRequest::Version {
+            backend: ba.clone(),
+            version: "1".to_string(),
+            options: stable_options,
+            source: ToolSource::Argument,
+        };
+        let prerelease_request = ToolRequest::Version {
+            backend: ba,
+            version: "1".to_string(),
+            options: prerelease_options(),
+            source: ToolSource::Argument,
+        };
+        let resolve_options = ResolveOptions {
+            latest_versions: true,
+            use_locked_version: false,
+            ..Default::default()
+        };
+
+        let backend: ABackend = backend_impl.clone();
+        let stable =
+            ToolVersion::resolve_version(&config, stable_request, &backend, "1", &resolve_options)
+                .await
+                .unwrap();
+        let prerelease = ToolVersion::resolve_version(
+            &config,
+            prerelease_request,
+            &backend,
+            "1",
+            &resolve_options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(stable.version, "1.0.0");
+        assert_eq!(prerelease.version, "1.1.0-rc.1");
+        assert_eq!(backend_impl.list_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_version_uses_request_options_for_installed_versions() {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let short = unique_name("request-options-installed");
+        let mut ba = BackendArg::from(short);
+        ba.installs_path = temp_dir.path().join("installs");
+        std::fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(ba.installs_path.join("1.1.0-rc.1")).unwrap();
+        let ba = Arc::new(ba);
+        let backend_impl = Arc::new(RemoteVersionsBackend::new(ba.clone(), vec![], None));
+
+        let stable_request = ToolRequest::Version {
+            backend: ba.clone(),
+            version: "latest".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let prerelease_request = ToolRequest::Version {
+            backend: ba,
+            version: "latest".to_string(),
+            options: prerelease_options(),
+            source: ToolSource::Argument,
+        };
+        let resolve_options = ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+
+        let backend: ABackend = backend_impl.clone();
+        let stable = ToolVersion::resolve_version(
+            &config,
+            stable_request,
+            &backend,
+            "latest",
+            &resolve_options,
+        )
+        .await
+        .unwrap();
+        let prerelease = ToolVersion::resolve_version(
+            &config,
+            prerelease_request,
+            &backend,
+            "latest",
+            &resolve_options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(stable.version, "1.0.0");
+        assert_eq!(prerelease.version, "1.1.0-rc.1");
+        assert_eq!(backend_impl.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn resolve_version_uses_each_requests_minimum_release_age() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from(unique_name("request-age")));
+        let backend_impl = Arc::new(RemoteVersionsBackend::new(
+            ba.clone(),
+            vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2000-01-01T00:00:00Z".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.1.0".to_string(),
+                    created_at: Some("2999-01-01T00:00:00Z".to_string()),
+                    ..Default::default()
+                },
+            ],
+            None,
+        ));
+        backend_impl
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        let unrestricted_request = ToolRequest::Version {
+            backend: ba.clone(),
+            version: "1".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let mut aged_options = ToolVersionOptions::default();
+        aged_options.opts.insert(
+            "minimum_release_age".to_string(),
+            toml::Value::String("1d".to_string()),
+        );
+        let aged_request = ToolRequest::Version {
+            backend: ba,
+            version: "1".to_string(),
+            options: aged_options,
+            source: ToolSource::Argument,
+        };
+        let resolve_options = ResolveOptions {
+            latest_versions: true,
+            use_locked_version: false,
+            ..Default::default()
+        };
+        let unrestricted_resolve_options = unrestricted_request
+            .resolve_options(&resolve_options)
+            .unwrap();
+        let aged_resolve_options = aged_request.resolve_options(&resolve_options).unwrap();
+
+        let backend: ABackend = backend_impl.clone();
+        let unrestricted = ToolVersion::resolve_version(
+            &config,
+            unrestricted_request,
+            &backend,
+            "1",
+            &unrestricted_resolve_options,
+        )
+        .await
+        .unwrap();
+        let aged = ToolVersion::resolve_version(
+            &config,
+            aged_request,
+            &backend,
+            "1",
+            &aged_resolve_options,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(unrestricted.version, "1.1.0");
+        assert_eq!(aged.version, "1.0.0");
+        assert_eq!(backend_impl.list_calls(), 1);
     }
 
     #[test]

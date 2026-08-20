@@ -274,6 +274,10 @@ impl Backend for NPMBackend {
         true
     }
 
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        is_semver_prerelease(version)
+    }
+
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         // Version queries hit the npm registry over HTTP and installs use the
         // embedded aube package manager, so by default neither needs a
@@ -2616,6 +2620,9 @@ mod tests {
         assert!(is_semver_prerelease("3.0.0-foo"));
         // Maintainer-invented tag mise's regex doesn't know about — still flagged.
         assert!(is_semver_prerelease("4.0.0-internal-build-7"));
+
+        let backend = NPMBackend::from_arg("npm:prerelease-test".into());
+        assert!(backend.is_prerelease_version("4.0.0-internal-build-7"));
     }
 
     #[test]
@@ -2625,6 +2632,36 @@ mod tests {
         assert!(!is_semver_prerelease("v22.6.0"));
         // Build metadata alone is not a pre-release.
         assert!(!is_semver_prerelease("1.0.0+sha.abc1234"));
+    }
+
+    #[test]
+    fn test_latest_installed_filters_arbitrary_semver_prerelease() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::from("npm:installed-prerelease-test");
+        ba.installs_path = temp_dir.path().join("installs");
+        std::fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(ba.installs_path.join("2.0.0-internal-build-7")).unwrap();
+        let backend = NPMBackend::from_arg(ba);
+        let mut prerelease_options = ToolVersionOptions::default();
+        prerelease_options
+            .opts
+            .insert("prerelease".into(), toml::Value::Boolean(true));
+
+        assert_eq!(
+            backend
+                .latest_installed_version_with_selection_options(
+                    None,
+                    &ToolVersionOptions::default(),
+                )
+                .unwrap(),
+            Some("1.0.0".into())
+        );
+        assert_eq!(
+            backend
+                .latest_installed_version_with_selection_options(None, &prerelease_options)
+                .unwrap(),
+            Some("2.0.0-internal-build-7".into())
+        );
     }
 
     #[test]
