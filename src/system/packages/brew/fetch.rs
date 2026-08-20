@@ -306,7 +306,11 @@ fn oci_metadata_from_index(
     bottle_sha256: &str,
     index: &Value,
 ) -> Result<OciBottleMetadata> {
-    let expected_ref = format!("{}.{tag}", manifest_version_rebuild(pkg_version, rebuild));
+    let expected_ref = if rebuild == 0 {
+        format!("{pkg_version}.{tag}")
+    } else {
+        format!("{pkg_version}.{tag}.{rebuild}")
+    };
     let descriptor = index
         .get("manifests")
         .and_then(Value::as_array)
@@ -406,7 +410,7 @@ mod tests {
         let index = serde_json::json!({
             "manifests": [{
                 "annotations": {
-                    "org.opencontainers.image.ref.name": "1.0-1.arm64_tahoe",
+                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe.1",
                     "sh.brew.bottle.digest": "abc123",
                     "sh.brew.tab": "{\"compiler\":\"clang\"}"
                 }
