@@ -12,7 +12,6 @@
 //! authenticate mise-owned metadata queries. User-level `~/.npmrc` (or
 //! `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` env vars still apply.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 
@@ -78,13 +77,10 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
 /// stable position at the end.
 pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
     let packument = fetch_packument(name).await?;
-    let all_versions_deprecated = packument
+    let versions = packument
         .versions
-        .values()
-        .all(|metadata| metadata.deprecated.is_some());
-    let versions = packument.versions.iter().filter_map(|(version, metadata)| {
-        (all_versions_deprecated || metadata.deprecated.is_none()).then_some(version)
-    });
+        .iter()
+        .filter_map(|(version, metadata)| metadata.deprecated.is_none().then_some(version));
     Ok(sort_versions(versions)
         .into_iter()
         .map(|version| VersionInfo {
@@ -94,27 +90,6 @@ pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
             ..Default::default()
         })
         .collect())
-}
-
-/// Exclude selectively deprecated releases from fuzzy/latest resolution. If a
-/// package deprecated every release, retain them all so the package remains
-/// installable and npm can display its package-level deprecation warning.
-pub(super) fn filter_deprecated_versions(
-    versions: Vec<VersionInfo>,
-    deprecated_versions: &HashSet<String>,
-) -> Vec<VersionInfo> {
-    if deprecated_versions.is_empty()
-        || versions
-            .iter()
-            .all(|version| deprecated_versions.contains(&version.version))
-    {
-        return versions;
-    }
-
-    versions
-        .into_iter()
-        .filter(|version| !deprecated_versions.contains(&version.version))
-        .collect()
 }
 
 fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a String> {
@@ -136,7 +111,16 @@ fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a Stri
 /// Resolve the `latest` dist-tag for a package, if the registry publishes one.
 pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
     let packument = fetch_packument(name).await?;
-    Ok(packument.dist_tags.get("latest").cloned())
+    Ok(packument
+        .dist_tags
+        .get("latest")
+        .filter(|version| {
+            packument
+                .versions
+                .get(*version)
+                .is_none_or(|metadata| metadata.deprecated.is_none())
+        })
+        .cloned())
 }
 
 /// Download the exact npm registry tarball for a package version, honoring
@@ -153,10 +137,7 @@ pub async fn download_tarball(name: &str, version: &str, path: &Path) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
-    use super::{filter_deprecated_versions, sort_versions};
-    use crate::backend::VersionInfo;
+    use super::sort_versions;
 
     #[test]
     fn sort_versions_supports_npm_safe_integer_components() {
@@ -185,48 +166,6 @@ mod tests {
                 "0.1.0",
                 "0.52.0",
             ]
-        );
-    }
-
-    #[test]
-    fn deprecated_versions_are_filtered_when_usable_versions_remain() {
-        let versions = ["1.0.0", "1.1.0", "2.0.0"]
-            .map(|version| VersionInfo {
-                version: version.into(),
-                ..Default::default()
-            })
-            .into();
-        let deprecated_versions = HashSet::from(["1.1.0".into(), "2.0.0".into()]);
-
-        let filtered = filter_deprecated_versions(versions, &deprecated_versions);
-
-        assert_eq!(
-            filtered
-                .iter()
-                .map(|version| version.version.as_str())
-                .collect::<Vec<_>>(),
-            ["1.0.0"]
-        );
-    }
-
-    #[test]
-    fn fully_deprecated_packages_remain_installable() {
-        let versions = ["1.0.0", "1.1.0"]
-            .map(|version| VersionInfo {
-                version: version.into(),
-                ..Default::default()
-            })
-            .into();
-        let deprecated_versions = HashSet::from(["1.0.0".into(), "1.1.0".into()]);
-
-        let filtered = filter_deprecated_versions(versions, &deprecated_versions);
-
-        assert_eq!(
-            filtered
-                .iter()
-                .map(|version| version.version.as_str())
-                .collect::<Vec<_>>(),
-            ["1.0.0", "1.1.0"]
         );
     }
 }

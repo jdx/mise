@@ -631,7 +631,7 @@ impl NPMBackend {
                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                 .read()?;
                 let data: Value = serde_json::from_str(&raw)?;
-                let versions = npm_view_versions_time(&data)?;
+                let mut versions = npm_view_versions_time(&data)?;
 
                 // `npm view <package> versions time` omits per-version
                 // deprecation metadata. The shell-out compatibility path
@@ -651,11 +651,9 @@ impl NPMBackend {
                 .read()?;
                 let deprecated_versions =
                     npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
+                versions.retain(|version| !deprecated_versions.contains(&version.version));
 
-                Ok(npm_registry::filter_deprecated_versions(
-                    versions,
-                    &deprecated_versions,
-                ))
+                Ok(versions)
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -671,6 +669,7 @@ impl NPMBackend {
             "view",
             self.tool_name(),
             "dist-tags",
+            "deprecated",
             "--json",
             "--prefix",
             &prefix
@@ -1562,7 +1561,17 @@ fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> 
 }
 
 fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
-    Ok(match npm_view_json(data)?["latest"] {
+    let data = npm_view_json(data)?;
+    let deprecated = match data.get("deprecated") {
+        Some(Value::String(message)) => !message.trim().is_empty(),
+        Some(Value::Bool(deprecated)) => *deprecated,
+        _ => false,
+    };
+    if deprecated {
+        return Ok(None);
+    }
+    let dist_tags = data.get("dist-tags").unwrap_or(data);
+    Ok(match dist_tags["latest"] {
         Value::String(ref s) => Some(s.clone()),
         _ => None,
     })
@@ -2062,6 +2071,29 @@ aws-cdk@2.0.0 'published accidentally'
     fn test_npm_view_latest_dist_tag_accepts_npm12_array() {
         let data = serde_json::json!([{
             "latest": "1.0.0"
+        }]);
+
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_returns_none_when_deprecated() {
+        let data = serde_json::json!([{
+            "dist-tags": { "latest": "1.0.0" },
+            "deprecated": "use another package"
+        }]);
+
+        assert_eq!(npm_view_latest_dist_tag(&data).unwrap(), None);
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_accepts_nested_dist_tags() {
+        let data = serde_json::json!([{
+            "dist-tags": { "latest": "1.0.0" },
+            "deprecated": ""
         }]);
 
         assert_eq!(
