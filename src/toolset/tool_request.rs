@@ -165,6 +165,24 @@ impl ToolRequest {
         *tvr.resolved_options_mut() = resolved;
         Ok(tvr)
     }
+
+    /// Construct an unvalidated version request for tests that exercise paths
+    /// derived from otherwise-invalid version strings.
+    #[cfg(test)]
+    pub(crate) fn new_version_for_test(
+        backend: Arc<BackendArg>,
+        version: &str,
+        source: ToolSource,
+    ) -> Self {
+        let options = backend.resolve_opts_with_config_and_request(None, None);
+        Self::Version {
+            backend,
+            version: version.to_string(),
+            options,
+            source,
+        }
+    }
+
     pub(crate) fn set_source(&mut self, source: ToolSource) -> Self {
         match self {
             Self::Version { source: s, .. }
