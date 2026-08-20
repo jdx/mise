@@ -3519,6 +3519,11 @@ async fn load_local_tasks_with_context(
         .config_files
         .values()
         .any(|cf| config_set_contains(&user_global_config_paths, cf.get_path()));
+    let system_config_paths = system_config_files();
+    let has_system_config = config
+        .config_files
+        .values()
+        .any(|cf| config_set_contains(&system_config_paths, cf.get_path()));
     for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
@@ -3551,25 +3556,33 @@ async fn load_local_tasks_with_context(
         )
         .await?;
 
-        let mut suppress_if_global_duplicate = !has_user_global_config;
+        let mut suppress_if_global_duplicate = false;
         let mut local_inline_task_names = HashSet::new();
-        if has_user_global_config && file::same_file(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
+        if (has_user_global_config || has_system_config)
+            && file::same_file(&d, &env::MISE_GLOBAL_CONFIG_ROOT)
+        {
             let local_file_context = local_configs
                 .iter()
                 .any(|cf| task_config_has_file_context(cf.task_config()))
                 || effective_cascaded_task_config
                     .is_some_and(|tc| task_config_has_file_context(&tc.task_config));
-            suppress_if_global_duplicate = false;
             if !local_file_context {
                 local_inline_task_names = local_configs
                     .iter()
                     .flat_map(|cf| cf.tasks())
                     .map(|task| task.name.clone())
                     .collect();
-                // A user-global config owns the HOME include decision, so
-                // omitted defaults must not be resurrected by the local
-                // hierarchy walk.
-                dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+                if has_user_global_config {
+                    // A user-global config owns the HOME include decision, so
+                    // omitted defaults must not be resurrected by the local
+                    // hierarchy walk.
+                    dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+                } else {
+                    // A system config is lower precedence than local HOME
+                    // tasks. Suppress only incidental copies of sources that
+                    // the system pass actually loaded.
+                    suppress_if_global_duplicate = true;
+                }
             }
         }
 
@@ -3709,7 +3722,7 @@ async fn load_local_tasks_with_context(
         while let Some(result) = join_set.join_next().await {
             tasks.extend(result??.into_iter().map(|task| LoadedLocalTask {
                 task,
-                suppress_if_global_duplicate: !has_user_global_config,
+                suppress_if_global_duplicate: false,
             }));
         }
     }
