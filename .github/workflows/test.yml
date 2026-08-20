@@ -316,6 +316,7 @@ jobs:
             mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_linux
 
   brew-formula-linux-source:
+    # Landlock is a host-kernel boundary; Namespace/container images cannot supply ABI v6.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
