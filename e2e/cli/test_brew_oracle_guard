@@ -14,6 +14,7 @@ if brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew; then
   exit 1
 fi
 export MISE_BREW_ORACLE_DISPOSABLE=1
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN FORGEJO_TOKEN
 brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew
 if brew_oracle_require_disposable linux-formula /opt/homebrew; then
   exit 1
