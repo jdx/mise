@@ -5881,6 +5881,28 @@ fn open_truncated(path: &Path) -> Result<File> {
 }
 
 fn log_tail_file(file: &mut File) -> Result<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+
+        let length = file.metadata()?.len();
+        let start = length.saturating_sub(MAX_FAILURE_LOG_BYTES as u64);
+        let sample_length = usize::try_from(length - start)?;
+        let mut output = vec![0; sample_length];
+        let mut read = 0;
+        while read < output.len() {
+            let count = file.read_at(&mut output[read..], start + read as u64)?;
+            if count == 0 {
+                break;
+            }
+            read += count;
+        }
+        output.truncate(read);
+        Ok(String::from_utf8_lossy(&output).into_owned())
+    }
+
+    #[cfg(not(unix))]
+    {
     use std::io::{Read, Seek};
 
     let length = file.metadata()?.len();
@@ -5890,7 +5912,8 @@ fn log_tail_file(file: &mut File) -> Result<String> {
     let mut output = Vec::with_capacity(MAX_FAILURE_LOG_BYTES);
     file.take(MAX_FAILURE_LOG_BYTES as u64)
         .read_to_end(&mut output)?;
-    Ok(String::from_utf8_lossy(&output).into_owned())
+        Ok(String::from_utf8_lossy(&output).into_owned())
+    }
 }
 
 fn resolve_sources(sources: &PreparedSources) -> Result<Vec<PathBuf>> {
