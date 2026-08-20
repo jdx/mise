@@ -565,7 +565,7 @@ pub struct WatchexecArgs {
 		short = 'w',
 		long = "watch",
 		help_heading = "Filtering",
-		value_hint = ValueHint::AnyPath,
+		value_hint = usage_rs::ValueHint::AnyPath,
 		value_name = "PATH",
     )]
     pub recursive_paths: Vec<PathBuf>,
@@ -579,7 +579,7 @@ pub struct WatchexecArgs {
 		short = 'W',
 		long = "watch-non-recursive",
 		help_heading = "Filtering",
-		value_hint = ValueHint::AnyPath,
+		value_hint = usage_rs::ValueHint::AnyPath,
 		value_name = "PATH",
     )]
     pub non_recursive_paths: Vec<PathBuf>,
@@ -596,7 +596,7 @@ pub struct WatchexecArgs {
 		short = 'F',
 		long,
 		help_heading = "Filtering",
-		value_hint = ValueHint::AnyPath,
+		value_hint = usage_rs::ValueHint::AnyPath,
 		value_name = "PATH",
     )]
     pub watch_file: Option<PathBuf>,
@@ -1121,7 +1121,7 @@ pub struct WatchexecArgs {
     /// When set, Watchexec will also not bother searching, which can be significantly faster.
     #[arg(
 		long,
-		value_hint = ValueHint::DirPath,
+		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
     )]
     pub project_origin: Option<PathBuf>,
@@ -1132,7 +1132,7 @@ pub struct WatchexecArgs {
     /// can change that with this option. Note that paths may be less intuitive to use with this.
     #[arg(
 		long,
-		value_hint = ValueHint::DirPath,
+		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
     )]
     pub workdir: Option<PathBuf>,
@@ -1173,7 +1173,7 @@ pub struct WatchexecArgs {
     #[arg(
 		long = "filter-file",
 		help_heading = "Filtering",
-		value_hint = ValueHint::FilePath,
+		value_hint = usage_rs::ValueHint::FilePath,
 		value_name = "PATH",
 		env = "WATCHEXEC_FILTER_FILES",
 		hide_env = true,
@@ -1272,7 +1272,7 @@ pub struct WatchexecArgs {
     #[arg(
 		long = "ignore-file",
 		help_heading = "Filtering",
-		value_hint = ValueHint::FilePath,
+		value_hint = usage_rs::ValueHint::FilePath,
 		value_name = "PATH",
 		env = "WATCHEXEC_IGNORE_FILES",
 		hide_env = true,

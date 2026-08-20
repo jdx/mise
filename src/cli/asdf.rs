@@ -13,7 +13,7 @@ use crate::toolset::ToolsetBuilder;
 #[command(hide = true, verbatim_doc_comment)]
 pub struct Asdf {
     /// all arguments
-    #[arg(allow_hyphen_values = true, value_hint = CommandWithArguments, trailing_var_arg = true)]
+    #[arg(allow_hyphen_values = true, value_hint = usage_rs::ValueHint::CommandWithArguments, trailing_var_arg = true)]
     args: Vec<String>,
 }
 

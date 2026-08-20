@@ -41,7 +41,7 @@ pub struct Exec {
     pub command: Option<Vec<String>>,
 
     /// Command string to execute
-    #[arg(short, long = "command", value_hint = ValueHint::CommandString, conflicts_with = "command")]
+    #[arg(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts_with = "command")]
     pub c: Option<String>,
 
     /// Number of jobs to run in parallel
