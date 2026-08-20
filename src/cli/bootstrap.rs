@@ -2915,7 +2915,9 @@ impl BootstrapStatus {
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let mut json_files = vec![];
-        for req in system::files::files_from_config(config)? {
+        let files = system::files::files_from_config(config)?;
+        system::files::validate_composed_symlink_each(&files)?;
+        for req in files {
             let state = match system::files::check(config, &req) {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),

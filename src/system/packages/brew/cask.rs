@@ -8523,6 +8523,18 @@ mod tests {
     }
 
     #[test]
+    fn cask_metadata_treats_null_auto_updates_as_false() -> Result<()> {
+        let cask: Cask = serde_json::from_value(serde_json::json!({
+            "token": "example",
+            "version": "1.0.0",
+            "url": "https://example.com/example.zip",
+            "auto_updates": null
+        }))?;
+        assert!(!cask.auto_updates);
+        Ok(())
+    }
+
+    #[test]
     fn structured_symlink_preserves_relative_source() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let appdir = tmp.path().join("Applications");
