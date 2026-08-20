@@ -154,18 +154,9 @@ pub fn apply_seccomp_net_filter(
         // fchmodat2 is syscall 452 on both supported Linux architectures but
         // older libc headers expose the constant only on x86_64.
         rules.insert(452, vec![]);
-        // Permit pathname timestamp updates inside Landlock-authorized build
-        // roots, but reject futimens' null pathname so a retained descriptor
-        // cannot mutate an object outside the confined hierarchy.
-        rules.insert(
-            syscall_number(libc::SYS_utimensat),
-            vec![SeccompRule::new(vec![SeccompCondition::new(
-                1,
-                SeccompCmpArgLen::Qword,
-                SeccompCmpOp::Eq,
-                0,
-            )?])?],
-        );
+        // Timestamp mutation remains available. Every retained authority is
+        // CLOEXEC, so executed formula code can acquire timestamp-capable file
+        // descriptors only through the Landlock-confined hierarchy.
         // clone remains available for ordinary processes and threads, but no
         // descendant may create a new namespace.
         let namespace_flags = [
@@ -256,16 +247,6 @@ pub fn apply_seccomp_net_filter(
         ] {
             rules.insert(syscall_number(syscall), vec![]);
         }
-        #[cfg(target_arch = "x86_64")]
-        rules.insert(
-            syscall_number(libc::SYS_futimesat),
-            vec![SeccompRule::new(vec![SeccompCondition::new(
-                1,
-                SeccompCmpArgLen::Qword,
-                SeccompCmpOp::Eq,
-                0,
-            )?])?],
-        );
 
         // Make modern libc fall back to clone(2), whose namespace flags can be
         // inspected above, without breaking normal thread/process creation.
@@ -480,11 +461,7 @@ mod tests {
                             0,
                         )
                     },
-                    -1
-                );
-                assert_eq!(
-                    std::io::Error::last_os_error().raw_os_error(),
-                    Some(libc::EPERM)
+                    0
                 );
 
                 for family in [libc::AF_NETLINK, libc::AF_PACKET] {
