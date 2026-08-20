@@ -1370,7 +1370,7 @@ mod tests {
             backend.installs_path = installs_path;
         }
         let backend = Arc::new(backend);
-        let request = ToolRequest::new(backend, version, ToolSource::Argument).unwrap();
+        let request = ToolRequest::new_version_for_test(backend, version, ToolSource::Argument);
         ToolVersion::new(request, version.to_string())
     }
 
